@@ -1,0 +1,20 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: mcap_finance
+      MYSQL_USER: mcap
+      MYSQL_PASSWORD: change_me
+      MYSQL_ROOT_PASSWORD: change_root_me
+    ports:
+      - "3306:3306"
+    volumes:
+      - mcap_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  mcap_mysql_data:

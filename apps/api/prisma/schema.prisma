@@ -1,0 +1,975 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+enum SessionState {
+  PRE_AUTH
+  AUTHENTICATED
+}
+
+enum SecuritySeverity {
+  INFO
+  WARNING
+  HIGH
+  CRITICAL
+}
+
+enum IdempotencyStatus {
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum FiscalYearStatus {
+  OPEN
+  CLOSED
+}
+
+enum FiscalPeriodStatus {
+  OPEN
+  CLOSED
+  REOPENED
+}
+
+enum AccountingDocumentType {
+  MANUAL_JOURNAL
+  RECEIPT
+  PAYMENT
+  PERIOD_CLOSE
+  SALES_INVOICE
+  SALES_CREDIT_NOTE
+  PURCHASE_INVOICE
+  PURCHASE_DEBIT_NOTE
+}
+
+enum AccountingDocumentStatus {
+  DRAFT
+  POSTED
+  REVERSED
+  CANCELLED
+}
+
+enum AccountClass {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+enum NormalBalance {
+  DEBIT
+  CREDIT
+}
+
+enum StatementSection {
+  BALANCE_SHEET
+  INCOME_STATEMENT
+}
+
+enum AddressType {
+  LEGAL
+  BILLING
+  PAYMENT
+  OTHER
+}
+
+enum CashBankAccountType {
+  CASH
+  BANK
+}
+
+enum PaymentMethodScope {
+  GLOBAL
+  COMPANY
+}
+
+model Organization {
+  id        BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  code      String    @unique @default(uuid()) @db.VarChar(80)
+  name      String    @db.VarChar(200)
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  companies Company[]
+
+  @@map("organizations")
+}
+
+model Currency {
+  id               BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  code             String            @unique @db.Char(3)
+  nameAr           String            @map("name_ar") @db.VarChar(100)
+  decimals         Int               @default(2) @db.UnsignedTinyInt
+  isActive         Boolean           @default(true) @map("is_active")
+  companies        Company[]
+  journalLines     JournalLine[]
+  receipts         Receipt[]
+  payments         Payment[]
+  salesInvoices    SalesInvoice[]
+  purchaseInvoices PurchaseInvoice[]
+
+  @@map("currencies")
+}
+
+model Company {
+  id                               BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
+  organizationId                   BigInt                 @map("organization_id") @db.UnsignedBigInt
+  baseCurrencyId                   BigInt                 @map("base_currency_id") @db.UnsignedBigInt
+  code                             String                 @default(uuid()) @db.VarChar(80)
+  name                             String                 @db.VarChar(200)
+  timezone                         String                 @db.VarChar(64)
+  isActive                         Boolean                @default(true) @map("is_active")
+  manualJournalMakerCheckerEnabled Boolean                @default(true) @map("manual_journal_maker_checker_enabled")
+  createdAt                        DateTime               @default(now()) @map("created_at")
+  updatedAt                        DateTime               @updatedAt @map("updated_at")
+  organization                     Organization           @relation(fields: [organizationId], references: [id])
+  baseCurrency                     Currency               @relation(fields: [baseCurrencyId], references: [id])
+  assignments                      UserCompany[]
+  sessions                         Session[]
+  idempotency                      IdempotencyRecord[]
+  roles                            Role[]
+  auditLogs                        AuditLog[]
+  securityEvents                   SecurityEvent[]
+  fiscalYears                      FiscalYear[]
+  fiscalPeriods                    FiscalPeriod[]
+  documentSequences                DocumentSequence[]
+  accountingDocuments              AccountingDocument[]
+  journalEntries                   JournalEntry[]
+  journalLines                     JournalLine[]
+  accounts                         Account[]
+  costCenters                      CostCenter[]
+  customers                        Customer[]
+  customerAddresses                CustomerAddress[]
+  cashBankAccounts                 CashBankAccount[]
+  paymentMethods                   PaymentMethod[]
+  receipts                         Receipt[]
+  receiptAllocations               ReceiptAllocation[]
+  suppliers                        Supplier[]
+  supplierAddresses                SupplierAddress[]
+  payments                         Payment[]
+  paymentAllocations               PaymentAllocation[]
+  taxRates                         TaxRate[]
+  salesInvoices                    SalesInvoice[]
+  salesInvoiceLines                SalesInvoiceLine[]
+  purchaseInvoices                 PurchaseInvoice[]
+  purchaseInvoiceLines             PurchaseInvoiceLine[]
+  documentPrintArchives            DocumentPrintArchive[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("companies")
+}
+
+model User {
+  id                   BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
+  emailNormalized      String                 @unique @map("email_normalized") @db.VarChar(320)
+  passwordHash         String                 @map("password_hash") @db.VarChar(255)
+  displayName          String                 @map("display_name") @db.VarChar(160)
+  nameEn               String?                @map("name_en") @db.VarChar(160)
+  isActive             Boolean                @default(true) @map("is_active")
+  failedLoginAttempts  Int                    @default(0) @map("failed_login_attempts") @db.UnsignedTinyInt
+  lockedUntil          DateTime?              @map("locked_until")
+  lastLoginAt          DateTime?              @map("last_login_at")
+  createdAt            DateTime               @default(now()) @map("created_at")
+  updatedAt            DateTime               @updatedAt @map("updated_at")
+  assignments          UserCompany[]
+  sessions             Session[]
+  idempotency          IdempotencyRecord[]
+  auditLogs            AuditLog[]
+  securityEvents       SecurityEvent[]       @relation("SecurityEventUser")
+  securityEventsAcknowledged SecurityEvent[] @relation("SecurityEventAcknowledgedBy")
+  periodsClosed        FiscalPeriod[]         @relation("PeriodClosedBy")
+  periodsReopened      FiscalPeriod[]         @relation("PeriodReopenedBy")
+  documentsCreated     AccountingDocument[]   @relation("DocumentCreatedBy")
+  documentsPosted      AccountingDocument[]   @relation("DocumentPostedBy")
+  printArchivesCreated DocumentPrintArchive[] @relation("PrintArchiveCreatedBy")
+
+  @@map("users")
+}
+
+model UserCompany {
+  userId    BigInt            @map("user_id") @db.UnsignedBigInt
+  companyId BigInt            @map("company_id") @db.UnsignedBigInt
+  isActive  Boolean           @default(true) @map("is_active")
+  createdAt DateTime          @default(now()) @map("created_at")
+  user      User              @relation(fields: [userId], references: [id])
+  company   Company           @relation(fields: [companyId], references: [id])
+  roles     UserCompanyRole[]
+
+  @@id([userId, companyId])
+  @@index([companyId])
+  @@map("user_companies")
+}
+
+model Role {
+  id           BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId    BigInt            @map("company_id") @db.UnsignedBigInt
+  code         String            @db.VarChar(80)
+  nameAr       String            @map("name_ar") @db.VarChar(120)
+  nameEn       String?           @map("name_en") @db.VarChar(120)
+  isSystemRole Boolean           @default(false) @map("is_system_role")
+  isActive     Boolean           @default(true) @map("is_active")
+  createdAt    DateTime          @default(now()) @map("created_at")
+  company      Company           @relation(fields: [companyId], references: [id])
+  permissions  RolePermission[]
+  assignments  UserCompanyRole[]
+
+  @@unique([companyId, code])
+  @@unique([id, companyId])
+  @@map("roles")
+}
+
+model Permission {
+  id            BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
+  code          String           @unique @db.VarChar(120)
+  module        String           @db.VarChar(80)
+  descriptionAr String           @map("description_ar") @db.VarChar(255)
+  roles         RolePermission[]
+
+  @@map("permissions")
+}
+
+model AuditLog {
+  id          BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId   BigInt   @map("company_id") @db.UnsignedBigInt
+  actorUserId BigInt   @map("actor_user_id") @db.UnsignedBigInt
+  action      String   @db.VarChar(120)
+  entityType  String   @map("entity_type") @db.VarChar(80)
+  entityId    String   @map("entity_id") @db.VarChar(64)
+  details     Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+  company     Company  @relation(fields: [companyId], references: [id])
+  actor       User     @relation(fields: [actorUserId], references: [id])
+
+  @@index([companyId, createdAt])
+  @@index([actorUserId])
+  @@map("audit_logs")
+}
+
+model SecurityEvent {
+  id               BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId        BigInt           @map("company_id") @db.UnsignedBigInt
+  userId           BigInt?          @map("user_id") @db.UnsignedBigInt
+  sessionId        BigInt?          @map("session_id") @db.UnsignedBigInt
+  eventType        String           @map("event_type") @db.VarChar(80)
+  severity         SecuritySeverity
+  emailSnapshot    String?          @map("email_snapshot") @db.VarChar(320)
+  ipAddress        String?          @map("ip_address") @db.VarChar(64)
+  userAgent        String?          @map("user_agent") @db.VarChar(500)
+  details          Json?
+  acknowledgedAt   DateTime?        @map("acknowledged_at")
+  acknowledgedById BigInt?          @map("acknowledged_by_id") @db.UnsignedBigInt
+  createdAt        DateTime         @default(now()) @map("created_at")
+  company          Company          @relation(fields: [companyId], references: [id])
+  user             User?            @relation("SecurityEventUser", fields: [userId], references: [id])
+  acknowledgedBy   User?            @relation("SecurityEventAcknowledgedBy", fields: [acknowledgedById], references: [id])
+
+  @@index([companyId, createdAt])
+  @@index([companyId, severity, acknowledgedAt])
+  @@index([userId, createdAt])
+  @@index([sessionId])
+  @@map("security_events")
+}
+
+model FiscalYear {
+  id        BigInt             @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId BigInt             @map("company_id") @db.UnsignedBigInt
+  name      String             @db.VarChar(80)
+  startDate DateTime           @map("start_date") @db.Date
+  endDate   DateTime           @map("end_date") @db.Date
+  status    FiscalYearStatus   @default(OPEN)
+  createdAt DateTime           @default(now()) @map("created_at")
+  updatedAt DateTime           @updatedAt @map("updated_at")
+  company   Company            @relation(fields: [companyId], references: [id])
+  periods   FiscalPeriod[]
+  sequences DocumentSequence[]
+
+  @@unique([companyId, name])
+  @@unique([id, companyId])
+  @@index([companyId, startDate, endDate])
+  @@map("fiscal_years")
+}
+
+model FiscalPeriod {
+  id             BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId      BigInt               @map("company_id") @db.UnsignedBigInt
+  fiscalYearId   BigInt               @map("fiscal_year_id") @db.UnsignedBigInt
+  periodNumber   Int                  @map("period_number") @db.UnsignedTinyInt
+  name           String               @db.VarChar(80)
+  startDate      DateTime             @map("start_date") @db.Date
+  endDate        DateTime             @map("end_date") @db.Date
+  status         FiscalPeriodStatus   @default(OPEN)
+  closedBy       BigInt?              @map("closed_by") @db.UnsignedBigInt
+  closedAt       DateTime?            @map("closed_at")
+  reopenedBy     BigInt?              @map("reopened_by") @db.UnsignedBigInt
+  reopenedAt     DateTime?            @map("reopened_at")
+  reopenReason   String?              @map("reopen_reason") @db.VarChar(500)
+  version        Int                  @default(0) @db.UnsignedInt
+  createdAt      DateTime             @default(now()) @map("created_at")
+  updatedAt      DateTime             @updatedAt @map("updated_at")
+  company        Company              @relation(fields: [companyId], references: [id])
+  fiscalYear     FiscalYear           @relation(fields: [fiscalYearId, companyId], references: [id, companyId])
+  closedByUser   User?                @relation("PeriodClosedBy", fields: [closedBy], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  reopenedByUser User?                @relation("PeriodReopenedBy", fields: [reopenedBy], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  documents      AccountingDocument[]
+
+  @@unique([fiscalYearId, periodNumber])
+  @@unique([id, companyId])
+  @@index([companyId, startDate, endDate])
+  @@map("fiscal_periods")
+}
+
+model DocumentSequence {
+  id           BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId    BigInt     @map("company_id") @db.UnsignedBigInt
+  fiscalYearId BigInt     @map("fiscal_year_id") @db.UnsignedBigInt
+  documentType String     @map("document_type") @db.VarChar(40)
+  prefix       String     @db.VarChar(20)
+  nextNumber   BigInt     @default(1) @map("next_number") @db.UnsignedBigInt
+  padding      Int        @default(6) @db.UnsignedTinyInt
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+  company      Company    @relation(fields: [companyId], references: [id])
+  fiscalYear   FiscalYear @relation(fields: [fiscalYearId, companyId], references: [id, companyId])
+
+  @@unique([fiscalYearId, documentType])
+  @@unique([companyId, documentType, prefix])
+  @@index([companyId, fiscalYearId])
+  @@map("document_sequences")
+}
+
+model AccountingDocument {
+  id                   BigInt                   @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId            BigInt                   @map("company_id") @db.UnsignedBigInt
+  fiscalPeriodId       BigInt                   @map("fiscal_period_id") @db.UnsignedBigInt
+  documentType         AccountingDocumentType   @map("document_type")
+  documentNumber       String                   @map("document_number") @db.VarChar(60)
+  documentDate         DateTime                 @map("document_date") @db.Date
+  description          String                   @db.VarChar(500)
+  status               AccountingDocumentStatus @default(DRAFT)
+  createdBy            BigInt                   @map("created_by") @db.UnsignedBigInt
+  postedBy             BigInt?                  @map("posted_by") @db.UnsignedBigInt
+  postedAt             DateTime?                @map("posted_at")
+  reversedByDocumentId BigInt?                  @map("reversed_by_document_id") @db.UnsignedBigInt
+  version              Int                      @default(0) @db.UnsignedInt
+  createdAt            DateTime                 @default(now()) @map("created_at")
+  updatedAt            DateTime                 @updatedAt @map("updated_at")
+  company              Company                  @relation(fields: [companyId], references: [id])
+  fiscalPeriod         FiscalPeriod             @relation(fields: [fiscalPeriodId, companyId], references: [id, companyId])
+  creator              User                     @relation("DocumentCreatedBy", fields: [createdBy], references: [id])
+  poster               User?                    @relation("DocumentPostedBy", fields: [postedBy], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  reversedByDocument   AccountingDocument?      @relation("DocumentReversal", fields: [reversedByDocumentId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  reversesDocument     AccountingDocument?      @relation("DocumentReversal")
+  journalEntries       JournalEntry[]
+  receipt              Receipt?
+  payment              Payment?
+  salesInvoice         SalesInvoice?
+  purchaseInvoice      PurchaseInvoice?
+  printArchive         DocumentPrintArchive?
+
+  @@unique([companyId, documentType, documentNumber])
+  @@unique([id, companyId])
+  @@unique([reversedByDocumentId, companyId])
+  @@index([companyId, documentDate, status])
+  @@index([fiscalPeriodId, status])
+  @@map("accounting_documents")
+}
+
+model DocumentPrintArchive {
+  id                   BigInt             @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId            BigInt             @map("company_id") @db.UnsignedBigInt
+  accountingDocumentId BigInt             @unique @map("accounting_document_id") @db.UnsignedBigInt
+  formatVersion        Int                @default(1) @map("format_version") @db.UnsignedSmallInt
+  snapshot             Json
+  snapshotHash         String             @map("snapshot_hash") @db.Char(64)
+  createdBy            BigInt             @map("created_by") @db.UnsignedBigInt
+  printCount           Int                @default(0) @map("print_count") @db.UnsignedInt
+  firstPrintedAt       DateTime?          @map("first_printed_at")
+  lastPrintedAt        DateTime?          @map("last_printed_at")
+  createdAt            DateTime           @default(now()) @map("created_at")
+  company              Company            @relation(fields: [companyId], references: [id])
+  accountingDocument   AccountingDocument @relation(fields: [accountingDocumentId, companyId], references: [id, companyId])
+  creator              User               @relation("PrintArchiveCreatedBy", fields: [createdBy], references: [id])
+
+  @@unique([id, companyId])
+  @@unique([accountingDocumentId, companyId])
+  @@index([companyId, createdAt])
+  @@map("document_print_archives")
+}
+
+model JournalEntry {
+  id                       BigInt             @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId                BigInt             @map("company_id") @db.UnsignedBigInt
+  accountingDocumentId     BigInt             @map("accounting_document_id") @db.UnsignedBigInt
+  entryNumber              Int                @map("entry_number") @db.UnsignedSmallInt
+  entryDate                DateTime           @map("entry_date") @db.Date
+  description              String             @db.VarChar(500)
+  reversalOfJournalEntryId BigInt?            @map("reversal_of_journal_entry_id") @db.UnsignedBigInt
+  createdAt                DateTime           @default(now()) @map("created_at")
+  company                  Company            @relation(fields: [companyId], references: [id])
+  accountingDocument       AccountingDocument @relation(fields: [accountingDocumentId, companyId], references: [id, companyId])
+  reversalOf               JournalEntry?      @relation("JournalEntryReversal", fields: [reversalOfJournalEntryId, companyId], references: [id, companyId])
+  reversedBy               JournalEntry?      @relation("JournalEntryReversal")
+  lines                    JournalLine[]
+
+  @@unique([accountingDocumentId, entryNumber])
+  @@unique([id, companyId])
+  @@unique([reversalOfJournalEntryId, companyId])
+  @@index([companyId, entryDate])
+  @@map("journal_entries")
+}
+
+model JournalLine {
+  id                 BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId          BigInt              @map("company_id") @db.UnsignedBigInt
+  journalEntryId     BigInt              @map("journal_entry_id") @db.UnsignedBigInt
+  lineNumber         Int                 @map("line_number") @db.UnsignedSmallInt
+  accountId          BigInt              @map("account_id") @db.UnsignedBigInt
+  costCenterId       BigInt?             @map("cost_center_id") @db.UnsignedBigInt
+  customerId         BigInt?             @map("customer_id") @db.UnsignedBigInt
+  supplierId         BigInt?             @map("supplier_id") @db.UnsignedBigInt
+  description        String?             @db.VarChar(500)
+  currencyId         BigInt              @map("currency_id") @db.UnsignedBigInt
+  exchangeRate       Decimal             @default(1) @map("exchange_rate") @db.Decimal(19, 8)
+  debitAmount        Decimal             @map("debit_amount") @db.Decimal(19, 4)
+  creditAmount       Decimal             @map("credit_amount") @db.Decimal(19, 4)
+  baseDebitAmount    Decimal             @map("base_debit_amount") @db.Decimal(19, 4)
+  baseCreditAmount   Decimal             @map("base_credit_amount") @db.Decimal(19, 4)
+  company            Company             @relation(fields: [companyId], references: [id])
+  journalEntry       JournalEntry        @relation(fields: [journalEntryId, companyId], references: [id, companyId])
+  currency           Currency            @relation(fields: [currencyId], references: [id])
+  account            Account             @relation(fields: [accountId, companyId], references: [id, companyId])
+  costCenter         CostCenter?         @relation(fields: [costCenterId, companyId], references: [id, companyId])
+  customer           Customer?           @relation(fields: [customerId, companyId], references: [id, companyId])
+  supplier           Supplier?           @relation(fields: [supplierId, companyId], references: [id, companyId])
+  receiptAllocations ReceiptAllocation[]
+  paymentAllocations PaymentAllocation[]
+  invoiceArLine      SalesInvoice?       @relation("SalesInvoiceArLine")
+  purchaseApLine     PurchaseInvoice?    @relation("PurchaseInvoiceApLine")
+
+  @@unique([journalEntryId, lineNumber])
+  @@unique([id, companyId])
+  @@index([companyId, accountId])
+  @@index([companyId, customerId])
+  @@index([companyId, supplierId])
+  @@map("journal_lines")
+}
+
+model AccountType {
+  id               BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  code             String            @unique @db.VarChar(40)
+  nameAr           String            @map("name_ar") @db.VarChar(120)
+  class            AccountClass
+  normalBalance    NormalBalance     @map("normal_balance")
+  statementSection StatementSection? @map("statement_section")
+  accounts         Account[]
+
+  @@map("account_types")
+}
+
+model Account {
+  id                     BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId              BigInt                @map("company_id") @db.UnsignedBigInt
+  accountTypeId          BigInt                @map("account_type_id") @db.UnsignedBigInt
+  parentAccountId        BigInt?               @map("parent_account_id") @db.UnsignedBigInt
+  code                   String                @db.VarChar(40)
+  nameAr                 String                @map("name_ar") @db.VarChar(180)
+  nameEn                 String?               @map("name_en") @db.VarChar(180)
+  level                  Int                   @db.UnsignedTinyInt
+  allowsPosting          Boolean               @map("allows_posting")
+  isControlAccount       Boolean               @default(false) @map("is_control_account")
+  isActive               Boolean               @default(true) @map("is_active")
+  createdAt              DateTime              @default(now()) @map("created_at")
+  updatedAt              DateTime              @updatedAt @map("updated_at")
+  company                Company               @relation(fields: [companyId], references: [id])
+  accountType            AccountType           @relation(fields: [accountTypeId], references: [id])
+  parent                 Account?              @relation("AccountTree", fields: [parentAccountId, companyId], references: [id, companyId])
+  children               Account[]             @relation("AccountTree")
+  journalLines           JournalLine[]
+  customers              Customer[]
+  cashBankAccounts       CashBankAccount[]
+  receiptCounterAccounts Receipt[]             @relation("ReceiptCounterAccount")
+  suppliers              Supplier[]
+  paymentCounterAccounts Payment[]             @relation("PaymentCounterAccount")
+  outputTaxRates         TaxRate[]             @relation("OutputTaxAccount")
+  inputTaxRates          TaxRate[]             @relation("InputTaxAccount")
+  salesInvoiceLines      SalesInvoiceLine[]    @relation("SalesRevenueAccount")
+  purchaseInvoiceLines   PurchaseInvoiceLine[] @relation("PurchaseDebitAccount")
+
+  @@unique([companyId, code])
+  @@unique([id, companyId])
+  @@index([parentAccountId, companyId])
+  @@map("accounts")
+}
+
+model CostCenter {
+  id                   BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId            BigInt                @map("company_id") @db.UnsignedBigInt
+  parentId             BigInt?               @map("parent_id") @db.UnsignedBigInt
+  code                 String                @db.VarChar(40)
+  nameAr               String                @map("name_ar") @db.VarChar(160)
+  nameEn               String?               @map("name_en") @db.VarChar(160)
+  isActive             Boolean               @default(true) @map("is_active")
+  createdAt            DateTime              @default(now()) @map("created_at")
+  updatedAt            DateTime              @updatedAt @map("updated_at")
+  company              Company               @relation(fields: [companyId], references: [id])
+  parent               CostCenter?           @relation("CostCenterTree", fields: [parentId, companyId], references: [id, companyId])
+  children             CostCenter[]          @relation("CostCenterTree")
+  journalLines         JournalLine[]
+  salesInvoiceLines    SalesInvoiceLine[]
+  purchaseInvoiceLines PurchaseInvoiceLine[]
+
+  @@unique([companyId, code])
+  @@unique([id, companyId])
+  @@index([parentId, companyId])
+  @@map("cost_centers")
+}
+
+model Customer {
+  id                  BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId           BigInt            @map("company_id") @db.UnsignedBigInt
+  receivableAccountId BigInt            @map("receivable_account_id") @db.UnsignedBigInt
+  code                String            @db.VarChar(40)
+  nameAr              String            @map("name_ar") @db.VarChar(200)
+  nameEn              String?           @map("name_en") @db.VarChar(200)
+  phone               String?           @db.VarChar(40)
+  email               String?           @db.VarChar(320)
+  taxNumberLast4      String?           @map("tax_number_last4") @db.VarChar(4)
+  isActive            Boolean           @default(true) @map("is_active")
+  createdAt           DateTime          @default(now()) @map("created_at")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
+  company             Company           @relation(fields: [companyId], references: [id])
+  receivableAccount   Account           @relation(fields: [receivableAccountId, companyId], references: [id, companyId])
+  addresses           CustomerAddress[]
+  journalLines        JournalLine[]
+  receipts            Receipt[]
+  salesInvoices       SalesInvoice[]
+
+  @@unique([companyId, code])
+  @@unique([id, companyId])
+  @@index([companyId, nameAr])
+  @@map("customers")
+}
+
+model CustomerAddress {
+  id          BigInt      @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId   BigInt      @map("company_id") @db.UnsignedBigInt
+  customerId  BigInt      @map("customer_id") @db.UnsignedBigInt
+  addressType AddressType @map("address_type")
+  line1       String      @db.VarChar(200)
+  line2       String?     @db.VarChar(200)
+  city        String?     @db.VarChar(100)
+  region      String?     @db.VarChar(100)
+  postalCode  String?     @map("postal_code") @db.VarChar(20)
+  countryCode String?     @map("country_code") @db.Char(2)
+  isPrimary   Boolean     @default(false) @map("is_primary")
+  company     Company     @relation(fields: [companyId], references: [id])
+  customer    Customer    @relation(fields: [customerId, companyId], references: [id, companyId])
+
+  @@unique([id, companyId])
+  @@index([customerId, companyId])
+  @@map("customer_addresses")
+}
+
+model CashBankAccount {
+  id                 BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId          BigInt              @map("company_id") @db.UnsignedBigInt
+  ledgerAccountId    BigInt              @map("ledger_account_id") @db.UnsignedBigInt
+  accountType        CashBankAccountType @map("account_type")
+  code               String              @db.VarChar(40)
+  nameAr             String              @map("name_ar") @db.VarChar(160)
+  nameEn             String?             @map("name_en") @db.VarChar(160)
+  bankName           String?             @map("bank_name") @db.VarChar(160)
+  accountNumberLast4 String?             @map("account_number_last4") @db.VarChar(4)
+  ibanLast4          String?             @map("iban_last4") @db.VarChar(4)
+  isActive           Boolean             @default(true) @map("is_active")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+  company            Company             @relation(fields: [companyId], references: [id])
+  ledgerAccount      Account             @relation(fields: [ledgerAccountId, companyId], references: [id, companyId])
+  receipts           Receipt[]
+  payments           Payment[]
+
+  @@unique([companyId, code])
+  @@unique([id, companyId])
+  @@map("cash_bank_accounts")
+}
+
+model PaymentMethod {
+  id                BigInt             @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId         BigInt?            @map("company_id") @db.UnsignedBigInt
+  code              String             @unique @db.VarChar(40)
+  nameAr            String             @map("name_ar") @db.VarChar(120)
+  requiresReference Boolean            @default(false) @map("requires_reference")
+  isActive          Boolean            @default(true) @map("is_active")
+  scope             PaymentMethodScope @default(GLOBAL)
+  company           Company?           @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  receipts          Receipt[]
+  payments          Payment[]
+
+  @@index([companyId, isActive])
+  @@map("payment_methods")
+}
+
+model Receipt {
+  id                          BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId                   BigInt              @map("company_id") @db.UnsignedBigInt
+  accountingDocumentId        BigInt              @unique @map("accounting_document_id") @db.UnsignedBigInt
+  customerId                  BigInt?             @map("customer_id") @db.UnsignedBigInt
+  counterAccountId            BigInt?             @map("counter_account_id") @db.UnsignedBigInt
+  cashBankAccountId           BigInt              @map("cash_bank_account_id") @db.UnsignedBigInt
+  paymentMethodId             BigInt              @map("payment_method_id") @db.UnsignedBigInt
+  currencyId                  BigInt              @map("currency_id") @db.UnsignedBigInt
+  exchangeRate                Decimal             @map("exchange_rate") @db.Decimal(19, 8)
+  amount                      Decimal             @db.Decimal(19, 4)
+  baseAmount                  Decimal             @map("base_amount") @db.Decimal(19, 4)
+  referenceNumber             String?             @map("reference_number") @db.VarChar(100)
+  counterpartyNameSnapshot    String              @map("counterparty_name_snapshot") @db.VarChar(200)
+  counterpartyTaxLast4        String?             @map("counterparty_tax_last4") @db.VarChar(4)
+  counterpartyAddressSnapshot String?             @map("counterparty_address_snapshot") @db.VarChar(500)
+  notes                       String?             @db.VarChar(1000)
+  company                     Company             @relation(fields: [companyId], references: [id])
+  accountingDocument          AccountingDocument  @relation(fields: [accountingDocumentId, companyId], references: [id, companyId])
+  customer                    Customer?           @relation(fields: [customerId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  counterAccount              Account?            @relation("ReceiptCounterAccount", fields: [counterAccountId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  cashBankAccount             CashBankAccount     @relation(fields: [cashBankAccountId, companyId], references: [id, companyId])
+  paymentMethod               PaymentMethod       @relation(fields: [paymentMethodId], references: [id])
+  currency                    Currency            @relation(fields: [currencyId], references: [id])
+  allocations                 ReceiptAllocation[]
+
+  @@unique([id, companyId])
+  @@unique([accountingDocumentId, companyId])
+  @@index([companyId, customerId])
+  @@map("receipts")
+}
+
+model ReceiptAllocation {
+  id                  BigInt      @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId           BigInt      @map("company_id") @db.UnsignedBigInt
+  receiptId           BigInt      @map("receipt_id") @db.UnsignedBigInt
+  targetJournalLineId BigInt      @map("target_journal_line_id") @db.UnsignedBigInt
+  allocatedAmount     Decimal     @map("allocated_amount") @db.Decimal(19, 4)
+  company             Company     @relation(fields: [companyId], references: [id])
+  receipt             Receipt     @relation(fields: [receiptId, companyId], references: [id, companyId])
+  targetJournalLine   JournalLine @relation(fields: [targetJournalLineId, companyId], references: [id, companyId])
+
+  @@unique([receiptId, targetJournalLineId])
+  @@index([companyId, targetJournalLineId])
+  @@map("receipt_allocations")
+}
+
+model TaxRate {
+  id                   BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId            BigInt                @map("company_id") @db.UnsignedBigInt
+  outputTaxAccountId   BigInt?               @map("output_tax_account_id") @db.UnsignedBigInt
+  inputTaxAccountId    BigInt?               @map("input_tax_account_id") @db.UnsignedBigInt
+  code                 String                @db.VarChar(40)
+  nameAr               String                @map("name_ar") @db.VarChar(120)
+  rate                 Decimal               @db.Decimal(9, 4)
+  isActive             Boolean               @default(true) @map("is_active")
+  createdAt            DateTime              @default(now()) @map("created_at")
+  updatedAt            DateTime              @updatedAt @map("updated_at")
+  company              Company               @relation(fields: [companyId], references: [id])
+  outputTaxAccount     Account?              @relation("OutputTaxAccount", fields: [outputTaxAccountId, companyId], references: [id, companyId])
+  inputTaxAccount      Account?              @relation("InputTaxAccount", fields: [inputTaxAccountId, companyId], references: [id, companyId])
+  invoiceLines         SalesInvoiceLine[]
+  purchaseInvoiceLines PurchaseInvoiceLine[]
+
+  @@unique([companyId, code])
+  @@unique([id, companyId])
+  @@index([companyId, isActive])
+  @@map("tax_rates")
+}
+
+model SalesInvoice {
+  id                      BigInt             @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId               BigInt             @map("company_id") @db.UnsignedBigInt
+  accountingDocumentId    BigInt             @unique @map("accounting_document_id") @db.UnsignedBigInt
+  customerId              BigInt             @map("customer_id") @db.UnsignedBigInt
+  sourceInvoiceId         BigInt?            @map("source_invoice_id") @db.UnsignedBigInt
+  arJournalLineId         BigInt?            @unique @map("ar_journal_line_id") @db.UnsignedBigInt
+  currencyId              BigInt             @map("currency_id") @db.UnsignedBigInt
+  exchangeRate            Decimal            @map("exchange_rate") @db.Decimal(19, 8)
+  dueDate                 DateTime           @map("due_date") @db.Date
+  subtotal                Decimal            @db.Decimal(19, 4)
+  discountTotal           Decimal            @map("discount_total") @db.Decimal(19, 4)
+  taxableTotal            Decimal            @map("taxable_total") @db.Decimal(19, 4)
+  taxTotal                Decimal            @map("tax_total") @db.Decimal(19, 4)
+  total                   Decimal            @db.Decimal(19, 4)
+  baseTotal               Decimal            @map("base_total") @db.Decimal(19, 4)
+  customerNameSnapshot    String             @map("customer_name_snapshot") @db.VarChar(200)
+  customerTaxLast4        String?            @map("customer_tax_last4") @db.VarChar(4)
+  customerAddressSnapshot String?            @map("customer_address_snapshot") @db.VarChar(500)
+  notes                   String?            @db.VarChar(1000)
+  company                 Company            @relation(fields: [companyId], references: [id])
+  accountingDocument      AccountingDocument @relation(fields: [accountingDocumentId, companyId], references: [id, companyId])
+  customer                Customer           @relation(fields: [customerId, companyId], references: [id, companyId])
+  sourceInvoice           SalesInvoice?      @relation("SalesCreditNotes", fields: [sourceInvoiceId, companyId], references: [id, companyId])
+  creditNotes             SalesInvoice[]     @relation("SalesCreditNotes")
+  arJournalLine           JournalLine?       @relation("SalesInvoiceArLine", fields: [arJournalLineId, companyId], references: [id, companyId])
+  currency                Currency           @relation(fields: [currencyId], references: [id])
+  lines                   SalesInvoiceLine[]
+
+  @@unique([id, companyId])
+  @@unique([accountingDocumentId, companyId])
+  @@unique([arJournalLineId, companyId])
+  @@index([companyId, customerId, dueDate])
+  @@index([sourceInvoiceId, companyId])
+  @@map("sales_invoices")
+}
+
+model SalesInvoiceLine {
+  id               BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId        BigInt       @map("company_id") @db.UnsignedBigInt
+  salesInvoiceId   BigInt       @map("sales_invoice_id") @db.UnsignedBigInt
+  lineNumber       Int          @map("line_number") @db.UnsignedSmallInt
+  revenueAccountId BigInt       @map("revenue_account_id") @db.UnsignedBigInt
+  costCenterId     BigInt?      @map("cost_center_id") @db.UnsignedBigInt
+  taxRateId        BigInt?      @map("tax_rate_id") @db.UnsignedBigInt
+  description      String       @db.VarChar(500)
+  quantity         Decimal      @db.Decimal(19, 4)
+  unitPrice        Decimal      @map("unit_price") @db.Decimal(19, 4)
+  discountAmount   Decimal      @map("discount_amount") @db.Decimal(19, 4)
+  netAmount        Decimal      @map("net_amount") @db.Decimal(19, 4)
+  taxRateSnapshot  Decimal      @map("tax_rate_snapshot") @db.Decimal(9, 4)
+  taxAmount        Decimal      @map("tax_amount") @db.Decimal(19, 4)
+  totalAmount      Decimal      @map("total_amount") @db.Decimal(19, 4)
+  company          Company      @relation(fields: [companyId], references: [id])
+  salesInvoice     SalesInvoice @relation(fields: [salesInvoiceId, companyId], references: [id, companyId])
+  revenueAccount   Account      @relation("SalesRevenueAccount", fields: [revenueAccountId, companyId], references: [id, companyId])
+  costCenter       CostCenter?  @relation(fields: [costCenterId, companyId], references: [id, companyId])
+  taxRate          TaxRate?     @relation(fields: [taxRateId, companyId], references: [id, companyId])
+
+  @@unique([salesInvoiceId, lineNumber])
+  @@index([companyId, revenueAccountId])
+  @@index([companyId, taxRateId])
+  @@map("sales_invoice_lines")
+}
+
+model Supplier {
+  id               BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId        BigInt            @map("company_id") @db.UnsignedBigInt
+  payableAccountId BigInt            @map("payable_account_id") @db.UnsignedBigInt
+  code             String            @db.VarChar(40)
+  nameAr           String            @map("name_ar") @db.VarChar(200)
+  nameEn           String?           @map("name_en") @db.VarChar(200)
+  phone            String?           @db.VarChar(40)
+  email            String?           @db.VarChar(320)
+  taxNumberLast4   String?           @map("tax_number_last4") @db.VarChar(4)
+  isActive         Boolean           @default(true) @map("is_active")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+  company          Company           @relation(fields: [companyId], references: [id])
+  payableAccount   Account           @relation(fields: [payableAccountId, companyId], references: [id, companyId])
+  addresses        SupplierAddress[]
+  journalLines     JournalLine[]
+  payments         Payment[]
+  purchaseInvoices PurchaseInvoice[]
+
+  @@unique([companyId, code])
+  @@unique([id, companyId])
+  @@index([companyId, nameAr])
+  @@map("suppliers")
+}
+
+model PurchaseInvoice {
+  id                      BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId               BigInt                @map("company_id") @db.UnsignedBigInt
+  accountingDocumentId    BigInt                @unique @map("accounting_document_id") @db.UnsignedBigInt
+  supplierId              BigInt                @map("supplier_id") @db.UnsignedBigInt
+  sourceInvoiceId         BigInt?               @map("source_invoice_id") @db.UnsignedBigInt
+  apJournalLineId         BigInt?               @unique @map("ap_journal_line_id") @db.UnsignedBigInt
+  currencyId              BigInt                @map("currency_id") @db.UnsignedBigInt
+  exchangeRate            Decimal               @map("exchange_rate") @db.Decimal(19, 8)
+  dueDate                 DateTime              @map("due_date") @db.Date
+  subtotal                Decimal               @db.Decimal(19, 4)
+  discountTotal           Decimal               @map("discount_total") @db.Decimal(19, 4)
+  taxableTotal            Decimal               @map("taxable_total") @db.Decimal(19, 4)
+  taxTotal                Decimal               @map("tax_total") @db.Decimal(19, 4)
+  total                   Decimal               @db.Decimal(19, 4)
+  baseTotal               Decimal               @map("base_total") @db.Decimal(19, 4)
+  supplierNameSnapshot    String                @map("supplier_name_snapshot") @db.VarChar(200)
+  supplierTaxLast4        String?               @map("supplier_tax_last4") @db.VarChar(4)
+  supplierAddressSnapshot String?               @map("supplier_address_snapshot") @db.VarChar(500)
+  supplierInvoiceNumber   String?               @map("supplier_invoice_number") @db.VarChar(100)
+  notes                   String?               @db.VarChar(1000)
+  company                 Company               @relation(fields: [companyId], references: [id])
+  accountingDocument      AccountingDocument    @relation(fields: [accountingDocumentId, companyId], references: [id, companyId])
+  supplier                Supplier              @relation(fields: [supplierId, companyId], references: [id, companyId])
+  sourceInvoice           PurchaseInvoice?      @relation("PurchaseDebitNotes", fields: [sourceInvoiceId, companyId], references: [id, companyId])
+  debitNotes              PurchaseInvoice[]     @relation("PurchaseDebitNotes")
+  apJournalLine           JournalLine?          @relation("PurchaseInvoiceApLine", fields: [apJournalLineId, companyId], references: [id, companyId])
+  currency                Currency              @relation(fields: [currencyId], references: [id])
+  lines                   PurchaseInvoiceLine[]
+
+  @@unique([id, companyId])
+  @@unique([accountingDocumentId, companyId])
+  @@unique([apJournalLineId, companyId])
+  @@index([companyId, supplierId, dueDate])
+  @@index([sourceInvoiceId, companyId])
+  @@index([companyId, supplierInvoiceNumber])
+  @@map("purchase_invoices")
+}
+
+model PurchaseInvoiceLine {
+  id                BigInt          @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId         BigInt          @map("company_id") @db.UnsignedBigInt
+  purchaseInvoiceId BigInt          @map("purchase_invoice_id") @db.UnsignedBigInt
+  lineNumber        Int             @map("line_number") @db.UnsignedSmallInt
+  debitAccountId    BigInt          @map("debit_account_id") @db.UnsignedBigInt
+  costCenterId      BigInt?         @map("cost_center_id") @db.UnsignedBigInt
+  taxRateId         BigInt?         @map("tax_rate_id") @db.UnsignedBigInt
+  description       String          @db.VarChar(500)
+  quantity          Decimal         @db.Decimal(19, 4)
+  unitPrice         Decimal         @map("unit_price") @db.Decimal(19, 4)
+  discountAmount    Decimal         @map("discount_amount") @db.Decimal(19, 4)
+  netAmount         Decimal         @map("net_amount") @db.Decimal(19, 4)
+  taxRateSnapshot   Decimal         @map("tax_rate_snapshot") @db.Decimal(9, 4)
+  taxAmount         Decimal         @map("tax_amount") @db.Decimal(19, 4)
+  totalAmount       Decimal         @map("total_amount") @db.Decimal(19, 4)
+  company           Company         @relation(fields: [companyId], references: [id])
+  purchaseInvoice   PurchaseInvoice @relation(fields: [purchaseInvoiceId, companyId], references: [id, companyId])
+  debitAccount      Account         @relation("PurchaseDebitAccount", fields: [debitAccountId, companyId], references: [id, companyId])
+  costCenter        CostCenter?     @relation(fields: [costCenterId, companyId], references: [id, companyId])
+  taxRate           TaxRate?        @relation(fields: [taxRateId, companyId], references: [id, companyId])
+
+  @@unique([purchaseInvoiceId, lineNumber])
+  @@index([companyId, debitAccountId])
+  @@index([companyId, taxRateId])
+  @@map("purchase_invoice_lines")
+}
+
+model SupplierAddress {
+  id          BigInt      @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId   BigInt      @map("company_id") @db.UnsignedBigInt
+  supplierId  BigInt      @map("supplier_id") @db.UnsignedBigInt
+  addressType AddressType @map("address_type")
+  line1       String      @db.VarChar(200)
+  line2       String?     @db.VarChar(200)
+  city        String?     @db.VarChar(100)
+  region      String?     @db.VarChar(100)
+  postalCode  String?     @map("postal_code") @db.VarChar(20)
+  countryCode String?     @map("country_code") @db.Char(2)
+  isPrimary   Boolean     @default(false) @map("is_primary")
+  company     Company     @relation(fields: [companyId], references: [id])
+  supplier    Supplier    @relation(fields: [supplierId, companyId], references: [id, companyId])
+
+  @@unique([id, companyId])
+  @@index([supplierId, companyId])
+  @@map("supplier_addresses")
+}
+
+model Payment {
+  id                          BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId                   BigInt              @map("company_id") @db.UnsignedBigInt
+  accountingDocumentId        BigInt              @unique @map("accounting_document_id") @db.UnsignedBigInt
+  supplierId                  BigInt?             @map("supplier_id") @db.UnsignedBigInt
+  counterAccountId            BigInt?             @map("counter_account_id") @db.UnsignedBigInt
+  cashBankAccountId           BigInt              @map("cash_bank_account_id") @db.UnsignedBigInt
+  paymentMethodId             BigInt              @map("payment_method_id") @db.UnsignedBigInt
+  currencyId                  BigInt              @map("currency_id") @db.UnsignedBigInt
+  exchangeRate                Decimal             @map("exchange_rate") @db.Decimal(19, 8)
+  amount                      Decimal             @db.Decimal(19, 4)
+  baseAmount                  Decimal             @map("base_amount") @db.Decimal(19, 4)
+  referenceNumber             String?             @map("reference_number") @db.VarChar(100)
+  counterpartyNameSnapshot    String              @map("counterparty_name_snapshot") @db.VarChar(200)
+  counterpartyTaxLast4        String?             @map("counterparty_tax_last4") @db.VarChar(4)
+  counterpartyAddressSnapshot String?             @map("counterparty_address_snapshot") @db.VarChar(500)
+  notes                       String?             @db.VarChar(1000)
+  company                     Company             @relation(fields: [companyId], references: [id])
+  accountingDocument          AccountingDocument  @relation(fields: [accountingDocumentId, companyId], references: [id, companyId])
+  supplier                    Supplier?           @relation(fields: [supplierId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  counterAccount              Account?            @relation("PaymentCounterAccount", fields: [counterAccountId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  cashBankAccount             CashBankAccount     @relation(fields: [cashBankAccountId, companyId], references: [id, companyId])
+  paymentMethod               PaymentMethod       @relation(fields: [paymentMethodId], references: [id])
+  currency                    Currency            @relation(fields: [currencyId], references: [id])
+  allocations                 PaymentAllocation[]
+
+  @@unique([id, companyId])
+  @@unique([accountingDocumentId, companyId])
+  @@index([companyId, supplierId])
+  @@map("payments")
+}
+
+model PaymentAllocation {
+  id                  BigInt      @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId           BigInt      @map("company_id") @db.UnsignedBigInt
+  paymentId           BigInt      @map("payment_id") @db.UnsignedBigInt
+  targetJournalLineId BigInt      @map("target_journal_line_id") @db.UnsignedBigInt
+  allocatedAmount     Decimal     @map("allocated_amount") @db.Decimal(19, 4)
+  company             Company     @relation(fields: [companyId], references: [id])
+  payment             Payment     @relation(fields: [paymentId, companyId], references: [id, companyId])
+  targetJournalLine   JournalLine @relation(fields: [targetJournalLineId, companyId], references: [id, companyId])
+
+  @@unique([paymentId, targetJournalLineId])
+  @@index([companyId, targetJournalLineId])
+  @@map("payment_allocations")
+}
+
+model RolePermission {
+  roleId       BigInt     @map("role_id") @db.UnsignedBigInt
+  permissionId BigInt     @map("permission_id") @db.UnsignedBigInt
+  role         Role       @relation(fields: [roleId], references: [id])
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model UserCompanyRole {
+  userId     BigInt      @map("user_id") @db.UnsignedBigInt
+  companyId  BigInt      @map("company_id") @db.UnsignedBigInt
+  roleId     BigInt      @map("role_id") @db.UnsignedBigInt
+  createdAt  DateTime    @default(now()) @map("created_at")
+  assignment UserCompany @relation(fields: [userId, companyId], references: [userId, companyId])
+  role       Role        @relation(fields: [roleId, companyId], references: [id, companyId])
+
+  @@id([userId, companyId, roleId])
+  @@index([roleId])
+  @@map("user_company_roles")
+}
+
+model Session {
+  id                BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
+  tokenHash         Bytes        @unique @map("token_hash") @db.Binary(32)
+  csrfHash          Bytes        @map("csrf_hash") @db.Binary(32)
+  state             SessionState @map("session_state")
+  userId            BigInt?      @map("user_id") @db.UnsignedBigInt
+  selectedCompanyId BigInt?      @map("selected_company_id") @db.UnsignedBigInt
+  authenticatedAt   DateTime?    @map("authenticated_at")
+  expiresAt         DateTime     @map("expires_at")
+  lastSeenAt        DateTime     @default(now()) @map("last_seen_at")
+  revokedAt         DateTime?    @map("revoked_at")
+  createdAt         DateTime     @default(now()) @map("created_at")
+  user              User?        @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  selectedCompany   Company?     @relation(fields: [selectedCompanyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([userId, revokedAt, expiresAt])
+  @@index([selectedCompanyId])
+  @@map("sessions")
+}
+
+model IdempotencyRecord {
+  id                 BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId          BigInt            @map("company_id") @db.UnsignedBigInt
+  userId             BigInt            @map("user_id") @db.UnsignedBigInt
+  operation          String            @db.VarChar(100)
+  keyHash            Bytes             @map("key_hash") @db.Binary(32)
+  requestFingerprint Bytes             @map("request_fingerprint") @db.Binary(32)
+  status             IdempotencyStatus
+  responseStatus     Int?              @map("response_status") @db.UnsignedSmallInt
+  responseBody       Json?             @map("response_body")
+  expiresAt          DateTime          @map("expires_at")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  completedAt        DateTime?         @map("completed_at")
+  company            Company           @relation(fields: [companyId], references: [id])
+  user               User              @relation(fields: [userId], references: [id])
+
+  @@unique([companyId, userId, operation, keyHash])
+  @@index([expiresAt])
+  @@map("idempotency_records")
+}

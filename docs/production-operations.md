@@ -1,0 +1,142 @@
+# تشغيل منصة المحاسبة متعدد الشركات في الإنتاج
+
+## الحدود الحالية
+
+هذه الحزمة تشغّل منصة محاسبية متعددة الشركات في قاعدة متوافقة مع MySQL ومخطط مشترك. هوية المستخدم عالمية، بينما الإسناد والأدوار والبيانات التشغيلية مقيدة بالشركة. إنشاء الشركات يتم حاليًا بأمر إداري على الخادم ولا توجد لوحة تحكم عامة لمدير المنصة.
+
+## بوابات الإنتاج
+
+يفشل التطبيق عند `NODE_ENV=production` إذا غاب `DATABASE_URL`، أو كان `WEB_ORIGIN` دون HTTPS، أو لم تُفعّل `SESSION_COOKIE_SECURE` و`TRUST_PROXY`. استخدم `.env.production.example` كنموذج ولا تحفظ الأسرار في Git.
+
+- `/live`: حياة عملية Node دون الاعتماد على قاعدة البيانات.
+- `/health` و`/ready`: جاهزية التطبيق واتصال قاعدة البيانات؛ تعيدان 503 عند فشل قاعدة البيانات.
+- يسجل كل طلب بصيغة JSON ومعرّف `X-Request-ID` دون جسم الطلب أو بيانات الاعتماد.
+- تطبق حدود منفصلة على API وعلى مساري CSRF والدخول.
+- يتعامل الخادم مع `SIGTERM` و`SIGINT` ويغلق HTTP وPrisma ضمن المهلة المحددة.
+
+## إنشاء شركة
+
+يجب تطبيق Migrations ثم تشغيل Seed المرجعيات الإنتاجي الآمن أولًا. هذا الأمر متكرر التشغيل ولا ينشئ شركة تجريبية أو مستخدمًا تجريبيًا:
+
+```bash
+npm run database:seed-reference
+```
+
+بعد ذلك جهّز القيم التالية كمتغيرات مؤقتة من مدير أسرار، ولا تضع كلمة المرور المؤقتة في ملف دائم:
+
+```text
+PROVISION_ORGANIZATION_CODE
+PROVISION_ORGANIZATION_NAME
+PROVISION_COMPANY_CODE
+PROVISION_COMPANY_NAME
+PROVISION_COMPANY_TIMEZONE
+PROVISION_BASE_CURRENCY_CODE
+PROVISION_ADMIN_EMAIL
+PROVISION_ADMIN_DISPLAY_NAME
+PROVISION_ADMIN_PASSWORD
+PROVISION_CONFIRM=CREATE:<ORGANIZATION_CODE>/<COMPANY_CODE>
+```
+
+ثم من جذر الإصدار:
+
+```bash
+npm run company:provision
+```
+
+الأمر ذري ومتكرر التشغيل: يعيد استخدام المؤسسة والشركة بحسب الرموز المستقرة، ويعيد استخدام هوية المستخدم العالمية دون تغيير كلمة مرور مستخدم موجود، ثم ينشئ إسنادًا ودور مدير مستقلين داخل الشركة. يرفض تغيير العملة الأساسية لشركة موجودة ويكتب Audit Log داخل الشركة.
+
+بعد الإنشاء يضبط مدير الشركة السنة والفترات ودليل الحسابات والخزينة والأرصدة الافتتاحية من الواجهة. لا تشغّل `prisma:seed:demo` في الإنتاج.
+
+## النشر
+
+تشغّل CI بوابتين: MySQL 8.4.11 مع Node 24.19.0 لإنتاج Artifact، وMariaDB 10.11.11 مع Node 22.23.2 لمطابقة iFastNet. تنشئ كل بوابة المخطط من قاعدة فارغة وتشغّل اختبارات قاعدة البيانات والبناء، ثم تنتج البوابة الأساسية Artifact باسم `mcap-finance-linux-x64` يحتوي:
+
+- `mcap-finance-linux-x64.tgz`: شجرة التشغيل المنقاة.
+- `mcap-finance-linux-x64.tgz.sha256`: بصمة الأرشيف من قناة CI الموثوقة.
+- `mcap-finance-linux-x64.manifest.json`: رقم الإصدار والمنصة وبصمة وحجم كل ملف.
+- سكربتي التثبيت والرجوع داخل `deploy/scripts`.
+
+تُبنى الحزمة على Linux x64 فقط، وترفض أداة التحقق تشغيل حزمة بُنيت لمنصة أخرى. يثبت `release-manifest.json` كل ملف داخل الأرشيف، بينما تُنشأ `tgz` بترتيب وملكية وتوقيت ثابتة اعتمادًا على وقت Git commit.
+
+### تجهيز مسار الإصدارات مرة واحدة
+
+```bash
+sudo install -d -o mcap -g mcap -m 0750 /opt/mcap /opt/mcap/releases
+sudo install -d -o root -g mcap -m 0750 /opt/mcap/bin
+sudo install -o root -g mcap -m 0750 deploy/scripts/install-release.sh /opt/mcap/bin/
+sudo install -o root -g mcap -m 0750 deploy/scripts/rollback-release.sh /opt/mcap/bin/
+```
+
+يتكون المسار من مجلد ثابت لكل إصدار، ورابط `current` للإصدار النشط، ورابط `previous` للإصدار السابق. لا تحذف الأدوات أي إصدار تلقائيًا.
+
+### نشر إصدار
+
+1. نزّل ملفات Artifact من تشغيل CI ناجح فقط.
+2. تحقق من بصمة الأرشيف قبل فكّه:
+
+```bash
+sha256sum --check mcap-finance-linux-x64.tgz.sha256
+release_id=$(node -e 'process.stdout.write(require("./mcap-finance-linux-x64.manifest.json").releaseId)')
+release_sha=$(awk '{print $1}' mcap-finance-linux-x64.tgz.sha256)
+```
+
+3. خذ نسخة مشفرة، ثم شغّل `prisma migrate deploy` بحساب DDL منفصل. يجب أن تبقى الترحيلات متوافقة مع الإصدار السابق لأن الرجوع الآلي يعيد التطبيق فقط ولا يعكس مخطط قاعدة البيانات.
+4. بدّل الإصدار بحساب `mcap` وبالتأكيد المطابق:
+
+```bash
+sudo -u mcap env MCAP_DEPLOY_CONFIRM="DEPLOY:$release_id" \
+  /opt/mcap/bin/install-release.sh "$PWD/mcap-finance-linux-x64.tgz" "$release_sha"
+```
+
+يتحقق المثبّت من SHA-256 ومن جميع ملفات Manifest ومن أن المنصة `linux-x64`، ويمنع عمليتي نشر متزامنتين، ثم ينقل الإصدار المكتمل إلى `/opt/mcap/releases/<release-id>` ويبدّل رابط `current` ذريًا. يعيد PM2 التشغيل ويفحص `/ready` حتى 30 مرة؛ عند الفشل يعيد رابط الإصدار السابق ويختبر جاهزيته. أول نشر لا يملك إصدارًا سابقًا للرجوع.
+
+5. اختبر الدخول واختيار شركتين بحساب متعدد الإسناد، وراقب 5xx و429 وفشل الجاهزية والنسخ الاحتياطية ومساحة القرص.
+
+### رجوع يدوي
+
+اعرض الهدف أولًا، ثم استخدم التأكيد المطابق تمامًا:
+
+```bash
+readlink -f /opt/mcap/current
+rollback_id=$(basename "$(readlink -f /opt/mcap/previous)")
+sudo -u mcap env MCAP_ROLLBACK_CONFIRM="ROLLBACK:$rollback_id" \
+  /opt/mcap/bin/rollback-release.sh
+```
+
+يتحقق السكربت من Manifest للإصدار السابق، ويبدّل الرابط، ويعيد PM2، ويفحص الجاهزية. إذا فشل الإصدار المطلوب يعيد الإصدار الذي كان نشطًا. الرجوع لا يحذف ملفات ولا يعكس Migration.
+
+## النسخ والاستعادة
+
+تحتاج قاعدة البيانات المشتركة نسخة MySQL/MariaDB متسقة يومية مشفرة، ونسخة قبل كل Migration، ونسخة خارج الخادم، وbinlogs للاستعادة إلى نقطة زمنية عندما تتيحها الاستضافة. لا تضع `BACKUP_ENCRYPTION_PASSPHRASE` في crontab أو Git؛ حمّلها وقت التنفيذ من مدير الأسرار.
+
+يتضمن `deploy/systemd` وحدة وتوقيتًا نموذجيين يشغّلان النسخ يوميًا بحساب `mcap` و`UMask=0077` وصلاحية كتابة محصورة في `/var/backups/mcap`. يوضع ملف `/etc/mcap/backup.env` بملكية root وصلاحية `0600`، ويحتوي متغيرات قاعدة البيانات والتشفير ومسارات أدوات MySQL فقط.
+
+إنشاء نسخة مشفرة ومضغوطة:
+
+```bash
+npm run db:backup
+```
+
+يستخدم الأمر `mysqldump --single-transaction`، ولا يضع كلمة المرور في قائمة العمليات، ويكتب ملفًا ذريًا بصيغة `.jwb` مشفرًا بإطارات AES-256-GCM، وManifest يحوي SHA-256 وإصدار قاعدة البيانات وعدد الترحيلات وعدد الصفوف المرجعية وإجمالي المدين والدائن. يرفض إنشاء النسخة إذا لم يتساو إجمالي المدين والدائن.
+
+لاختبار الاستعادة أنشئ قاعدة فارغة ومستخدم تشغيل محدودًا عليها، ثم اضبط:
+
+```text
+DATABASE_URL=mysql://.../mcap_restore_test
+BACKUP_FILE=/var/backups/mcap/<backup>.jwb
+RESTORE_CONFIRM=RESTORE:mcap_restore_test
+```
+
+ثم شغّل:
+
+```bash
+npm run db:restore
+```
+
+ترفض الأداة الاستعادة فوق قاعدة تحتوي أي جدول. قبل الإدخال تتحقق من حجم الملف وSHA-256 وسلامة تشفير GCM، وبعده تقارن عدد الجداول والترحيلات وعدد الصفوف المرجعية وإجمالي القيود مع Manifest. يجب تنفيذ تجربة استعادة مجدولة شهريًا إلى بيئة معزولة، ثم حذف البيئة التجريبية وفق إجراء تشغيلي معتمد.
+
+استعادة شركة واحدة لا تتم مباشرة فوق الإنتاج؛ تُستعاد النسخة الكاملة إلى بيئة معزولة، ثم تُستخرج صفوف الشركة وعلاقاتها ويُتحقق من ميزان المراجعة قبل أي إعادة إدخال.
+
+## تنبيهات الاعتماديات
+
+يفشل CI عند وجود تنبيه Critical في أدوات البناء، أو High في حزمة التشغيل المنقاة. الاستثناء المؤقت الخاص بأداة Prisma موثق في `docs/security-advisories.md`، ولا يدخل Artifact الإنتاج.

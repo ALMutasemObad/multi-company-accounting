@@ -1,0 +1,143 @@
+import cors from 'cors';
+import express, { type ErrorRequestHandler } from 'express';
+import helmet from 'helmet';
+import { fileURLToPath } from 'node:url';
+import type { AppConfig } from './config.js';
+import { AuthError, type AuthService } from './auth/auth-service.js';
+import { createAuthRouter } from './auth/auth-router.js';
+import type { UserService } from './users/user-service.js';
+import { createUserRouter } from './users/user-router.js';
+import type { FiscalService } from './fiscal/fiscal-service.js';
+import { createFiscalRouter } from './fiscal/fiscal-router.js';
+import type { AccountService } from './accounts/account-service.js';
+import { createAccountRouter } from './accounts/account-router.js';
+import type { ManualJournalService } from './journals/manual-journal-service.js';
+import { createManualJournalRouter } from './journals/manual-journal-router.js';
+import type { ReceiptReferenceService } from './receipts/reference-service.js';
+import { createReceiptReferenceRouter } from './receipts/reference-router.js';
+import type { ReceiptService } from './receipts/receipt-service.js';
+import { createReceiptRouter } from './receipts/receipt-router.js';
+import type { SupplierReferenceService } from './suppliers/supplier-service.js';
+import { createSupplierRouter } from './suppliers/supplier-router.js';
+import type { PaymentService } from './payments/payment-service.js';
+import { createPaymentRouter } from './payments/payment-router.js';
+import type { ReportService } from './reports/report-service.js';
+import { createReportRouter } from './reports/report-router.js';
+import type { CompanyService } from './companies/company-service.js';
+import { createCompanyRouter } from './companies/company-router.js';
+import type { PrintService } from './printing/print-service.js';
+import { createPrintRouter } from './printing/print-router.js';
+import type { AuditService } from './audit/audit-service.js';
+import { createAuditRouter } from './audit/audit-router.js';
+import type { SalesInvoiceService } from './sales/sales-invoice-service.js';
+import { createSalesInvoiceRouter } from './sales/sales-invoice-router.js';
+import type { PurchaseInvoiceService } from './purchases/purchase-invoice-service.js';
+import { createPurchaseInvoiceRouter } from './purchases/purchase-invoice-router.js';
+import type { SecurityEventService } from './security/security-event-service.js';
+import { createSecurityEventRouter } from './security/security-event-router.js';
+import type { ReadinessCheck } from './operations/readiness-service.js';
+import { createRateLimiter } from './operations/rate-limit.js';
+import { logEvent, requestLogger } from './operations/logger.js';
+
+export function createApp(config: AppConfig, services: { readiness?: ReadinessCheck; auth?: AuthService; users?: UserService; companies?: CompanyService; printing?: PrintService; audit?: AuditService; security?: SecurityEventService; fiscal?: FiscalService; accounts?: AccountService; journals?: ManualJournalService; receiptReferences?: ReceiptReferenceService; receipts?: ReceiptService; suppliers?: SupplierReferenceService; payments?: PaymentService; reports?: ReportService; salesInvoices?: SalesInvoiceService; purchaseInvoices?: PurchaseInvoiceService } = {}) {
+  const app = express();
+
+  app.disable('x-powered-by');
+  if (config.TRUST_PROXY) app.set('trust proxy', 1);
+  app.use(helmet());
+  app.use(cors({ origin: config.WEB_ORIGIN, credentials: true }));
+  app.use(express.json({ limit: '1mb' }));
+  app.use(requestLogger(config.LOG_REQUESTS ?? false));
+
+  const live = (_request: express.Request, response: express.Response) => {
+    response.json({ status: 'ok', service: 'mcap-finance-api' });
+  };
+  const ready = async (_request: express.Request, response: express.Response) => {
+    if (!services.readiness) {
+      response.json({ status: 'ok', service: 'mcap-finance-api' });
+      return;
+    }
+    try {
+      const checks = await services.readiness.check();
+      response.json({ status: 'ok', service: 'mcap-finance-api', checks });
+    } catch (error) {
+      logEvent('error', 'readiness_failed', { reason: error instanceof Error ? error.message : 'UNKNOWN' });
+      response.status(503).json({ status: 'error', service: 'mcap-finance-api', checks: { database: 'error' } });
+    }
+  };
+
+  app.get('/live', live);
+  app.get('/health', ready);
+  app.get('/ready', ready);
+
+  const windowMs = config.RATE_LIMIT_WINDOW_MS ?? 60_000;
+  app.use('/api/v1', createRateLimiter({ scope: 'api', windowMs, max: config.RATE_LIMIT_MAX ?? 300 }));
+  app.use('/api/v1/auth/csrf', createRateLimiter({ scope: 'csrf', windowMs, max: config.AUTH_RATE_LIMIT_MAX ?? 20 }));
+  app.use('/api/v1/auth/login', createRateLimiter({ scope: 'login', windowMs, max: config.AUTH_RATE_LIMIT_MAX ?? 20 }));
+  if (services.auth) app.use('/api/v1/auth', createAuthRouter(services.auth, config.SESSION_COOKIE_SECURE));
+  if (services.auth && services.users) app.use('/api/v1', createUserRouter(services.auth, services.users));
+  if (services.auth && services.companies) app.use('/api/v1', createCompanyRouter(services.auth, services.companies));
+  if (services.auth && services.printing) app.use('/api/v1', createPrintRouter(services.auth, services.printing));
+  if (services.auth && services.audit) app.use('/api/v1', createAuditRouter(services.auth, services.audit));
+  if (services.auth && services.security) app.use('/api/v1', createSecurityEventRouter(services.auth, services.security));
+  if (services.auth && services.fiscal) app.use('/api/v1', createFiscalRouter(services.auth, services.fiscal));
+  if (services.auth && services.accounts) app.use('/api/v1', createAccountRouter(services.auth, services.accounts));
+  if (services.auth && services.journals) app.use('/api/v1', createManualJournalRouter(services.auth, services.journals));
+  if (services.auth && services.receiptReferences) app.use('/api/v1', createReceiptReferenceRouter(services.auth, services.receiptReferences));
+  if (services.auth && services.receipts) app.use('/api/v1', createReceiptRouter(services.auth, services.receipts));
+  if (services.auth && services.suppliers) app.use('/api/v1', createSupplierRouter(services.auth, services.suppliers));
+  if (services.auth && services.payments) app.use('/api/v1', createPaymentRouter(services.auth, services.payments));
+  if (services.auth && services.salesInvoices) app.use('/api/v1', createSalesInvoiceRouter(services.auth, services.salesInvoices));
+  if (services.auth && services.purchaseInvoices) app.use('/api/v1', createPurchaseInvoiceRouter(services.auth, services.purchaseInvoices));
+  if (services.auth && services.reports) app.use('/api/v1', createReportRouter(services.auth, services.reports));
+
+  if (config.NODE_ENV === 'production') {
+    const webRoot = fileURLToPath(new URL('../../web/dist/', import.meta.url));
+    app.use(express.static(webRoot, {
+      index: false,
+      setHeaders: (response, filePath) => {
+        if (/[\\/]assets[\\/]/u.test(filePath)) {
+          response.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+      },
+    }));
+    app.use((request, response, next) => {
+      if (request.method !== 'GET' || request.path.startsWith('/api/') || !request.accepts('html')) {
+        next();
+        return;
+      }
+      response.setHeader('Cache-Control', 'no-store');
+      response.sendFile('index.html', { root: webRoot }, (error) => {
+        if (error) next(error);
+      });
+    });
+  }
+
+  app.use((_request, response) => {
+    response.status(404).json({
+      type: 'about:blank',
+      title: 'Not Found',
+      status: 404,
+      code: 'NOT_FOUND',
+    });
+  });
+
+  const errorHandler: ErrorRequestHandler = (error, _request, response, _next) => {
+    if (error instanceof AuthError) {
+      const status = error.reason === 'UNAUTHENTICATED' || error.reason === 'ACCOUNT_LOCKED' || error.reason === 'INVALID_CREDENTIALS' ? 401 : 403;
+      response.status(status).json({ type: 'about:blank', title: 'Authentication failed', status, code: error.reason });
+      return;
+    }
+    logEvent('error', 'request_failed', { requestId: response.locals.requestId, error: error instanceof Error ? error.name : 'UnknownError' });
+    response.status(500).json({
+      type: 'about:blank',
+      title: 'Internal Server Error',
+      status: 500,
+      code: 'INTERNAL_ERROR',
+      requestId: response.locals.requestId,
+    });
+  };
+  app.use(errorHandler);
+
+  return app;
+}

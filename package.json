@@ -1,0 +1,34 @@
+{
+  "name": "multi-company-accounting",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "npm@12.0.2",
+  "engines": { "node": ">=22" },
+  "workspaces": ["apps/*", "packages/*"],
+  "overrides": {
+    "nanoid": "^3.3.17"
+  },
+  "allowScripts": {
+    "@prisma/engines@7.9.1": true,
+    "argon2@0.45.1": true,
+    "esbuild@0.28.1": true,
+    "prisma@7.9.1": true
+  },
+  "scripts": {
+    "dev": "npm run dev --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "prisma:generate": "npm run prisma:generate -w @mcap/api",
+    "database:seed-reference": "node apps/api/dist/platform/seed-reference-data.js",
+    "company:provision": "node apps/api/dist/platform/provision-company.js",
+    "db:backup": "node scripts/database-backup.mjs",
+    "db:restore": "node scripts/database-restore.mjs",
+    "infra:test": "node --test scripts/tests/*.test.mjs",
+    "samples:pdf": "tsx scripts/generate-pdf-samples.ts",
+    "release:create": "node scripts/release/create-release.mjs",
+    "release:verify": "node scripts/release/verify-release.mjs",
+    "audit:production": "npm audit --omit=dev --omit=optional --audit-level=high",
+    "audit:critical": "npm audit --audit-level=critical"
+  }
+}

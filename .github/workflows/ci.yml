@@ -1,0 +1,201 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hosting-compatibility:
+    name: iFastNet compatibility (Node 22 / MariaDB 10.11)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      mariadb:
+        image: mariadb:10.11.11
+        env:
+          MYSQL_DATABASE: mcap_finance_test
+          MYSQL_USER: mcap_test
+          MYSQL_PASSWORD: test_database_password
+          MYSQL_ROOT_PASSWORD: test_root_password
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mariadb-admin ping -h 127.0.0.1 -umcap_test -ptest_database_password"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    env:
+      DATABASE_URL: mysql://mcap_test:test_database_password@127.0.0.1:3306/mcap_finance_test
+      SEED_ADMIN_PASSWORD: CI-Only-Admin-Password-2026!
+      RUN_DB_TESTS: 'true'
+      EXPECTED_DATABASE_VERSION_PREFIX: '10.11.11-MariaDB'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.2
+          cache: npm
+      - name: Pin the package manager
+        run: npm install --global npm@12.0.2
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+      - name: Verify iFastNet database engine family
+        run: npm run database:verify-engine -w @mcap/api
+      - name: Apply all migrations from an empty MariaDB database
+        run: npm exec -w @mcap/api -- prisma migrate deploy
+      - name: Seed deterministic integration fixtures
+        run: |
+          npm run prisma:seed -w @mcap/api
+          npm run prisma:seed:demo -w @mcap/api
+      - name: Typecheck on the production Node major
+        run: npm run typecheck
+      - name: Test API against MariaDB 10.11
+        run: npm run test:db -w @mcap/api
+      - name: Build on the production Node major
+        run: npm run build
+
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      mysql:
+        image: mysql:8.4.11
+        env:
+          MYSQL_DATABASE: mcap_finance_test
+          MYSQL_USER: mcap_test
+          MYSQL_PASSWORD: test_database_password
+          MYSQL_ROOT_PASSWORD: test_root_password
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -umcap_test -ptest_database_password"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    env:
+      DATABASE_URL: mysql://mcap_test:test_database_password@127.0.0.1:3306/mcap_finance_test
+      SEED_ADMIN_PASSWORD: CI-Only-Admin-Password-2026!
+      RUN_DB_TESTS: 'true'
+      EXPECTED_DATABASE_VERSION_PREFIX: '8.4.'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.19.0
+          cache: npm
+      - name: Pin the package manager
+        run: npm install --global npm@12.0.2
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Reject unapproved dependency install scripts
+        shell: bash
+        run: |
+          npm install-scripts ls --json | node -e '
+            let input = "";
+            process.stdin.on("data", (chunk) => input += chunk);
+            process.stdin.on("end", () => {
+              const report = JSON.parse(input);
+              const pending = Object.values(report).flatMap((value) => Array.isArray(value) ? value : []);
+              if (pending.length) {
+                console.error(`Unapproved install scripts: ${pending.join(", ")}`);
+                process.exit(1);
+              }
+            });
+          '
+      - name: Block critical build dependency vulnerabilities
+        run: npm run audit:critical
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+      - name: Verify MySQL 8.4 engine
+        run: npm run database:verify-engine -w @mcap/api
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Apply all migrations from an empty MySQL database
+        run: npm exec -w @mcap/api -- prisma migrate deploy
+      - name: Seed deterministic integration fixtures
+        run: |
+          npm run prisma:seed -w @mcap/api
+          npm run prisma:seed:demo -w @mcap/api
+      - name: Test infrastructure utilities
+        run: npm run infra:test
+      - name: Test API against MySQL 8.4
+        run: npm run test:db -w @mcap/api
+      - name: Test web application
+        run: npm run test -w @mcap/web
+      - name: Validate OpenAPI
+        run: npx --yes @redocly/cli@2.46.2 lint packages/contracts/openapi.yaml
+      - name: Build production assets
+        run: npm run build
+      - name: Remove build-only and optional dependencies
+        run: npm prune --omit=dev --omit=optional
+      - name: Block high production dependency vulnerabilities
+        run: npm run audit:production
+      - name: Smoke-test production runtime and graceful shutdown
+        env:
+          NODE_ENV: production
+          PORT: '3100'
+          WEB_ORIGIN: https://ci.mcap.example
+          SESSION_COOKIE_SECURE: 'true'
+          TRUST_PROXY: 'true'
+        run: |
+          node apps/api/dist/server.js > api-smoke.log 2>&1 &
+          api_pid=$!
+          trap 'kill -TERM "$api_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail http://127.0.0.1:3100/ready >/dev/null; then break; fi
+            if ! kill -0 "$api_pid" 2>/dev/null; then cat api-smoke.log; exit 1; fi
+            sleep 1
+          done
+          curl --silent --fail http://127.0.0.1:3100/live >/dev/null
+          curl --silent --fail http://127.0.0.1:3100/ready >/dev/null
+          curl --silent --fail http://127.0.0.1:3100/ | grep --fixed-strings '<div id="root"></div>'
+          kill -TERM "$api_pid"
+          wait "$api_pid"
+          trap - EXIT
+          grep 'api_shutdown_completed' api-smoke.log
+      - name: Validate atomic deployment scripts
+        run: |
+          bash -n deploy/scripts/install-release.sh deploy/scripts/rollback-release.sh \
+            deploy/scripts/install-cpanel-release.sh deploy/scripts/rollback-cpanel-release.sh
+          curl --fail --silent --show-error --location \
+            --output /tmp/shellcheck.tar.xz \
+            https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz
+          echo '8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  /tmp/shellcheck.tar.xz' \
+            | sha256sum --check
+          tar -xJf /tmp/shellcheck.tar.xz -C /tmp
+          /tmp/shellcheck-v0.11.0/shellcheck --shell=bash --severity=warning \
+            deploy/scripts/install-release.sh deploy/scripts/rollback-release.sh \
+            deploy/scripts/install-cpanel-release.sh deploy/scripts/rollback-cpanel-release.sh
+      - name: Create reproducible verified release
+        env:
+          RELEASE_COMMIT: ${{ github.sha }}
+          RELEASE_TARGET: linux-x64
+        run: |
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          node scripts/release/create-release.mjs --source . --output release-root
+          node scripts/release/verify-release.mjs --root release-root
+          tar --sort=name --mtime="@${SOURCE_DATE_EPOCH}" --owner=0 --group=0 \
+            --numeric-owner --format=gnu -cf - -C release-root . \
+            | gzip -n -9 > mcap-finance-linux-x64.tgz
+          sha256sum mcap-finance-linux-x64.tgz > mcap-finance-linux-x64.tgz.sha256
+          cp release-root/release-manifest.json mcap-finance-linux-x64.manifest.json
+          mkdir release-roundtrip
+          tar -xzf mcap-finance-linux-x64.tgz -C release-roundtrip
+          node release-roundtrip/scripts/release/verify-release.mjs --root release-roundtrip
+          sha256sum --check mcap-finance-linux-x64.tgz.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mcap-finance-linux-x64
+          path: |
+            mcap-finance-linux-x64.tgz
+            mcap-finance-linux-x64.tgz.sha256
+            mcap-finance-linux-x64.manifest.json
+            deploy/scripts/install-release.sh
+            deploy/scripts/rollback-release.sh
+            deploy/scripts/install-cpanel-release.sh
+            deploy/scripts/rollback-cpanel-release.sh
+          if-no-files-found: error
+          retention-days: 14

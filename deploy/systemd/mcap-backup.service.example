@@ -1,0 +1,18 @@
+[Unit]
+Description=MCAP Finance encrypted MySQL backup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=mcap
+Group=mcap
+WorkingDirectory=/opt/mcap/current
+EnvironmentFile=/etc/mcap/backup.env
+ExecStart=/usr/bin/npm run db:backup
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/backups/mcap

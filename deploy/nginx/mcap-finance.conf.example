@@ -1,0 +1,47 @@
+server {
+    listen 80;
+    server_name finance.example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name finance.example.com;
+    server_tokens off;
+
+    ssl_certificate /etc/letsencrypt/live/finance.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/finance.example.com/privkey.pem;
+
+    root /opt/mcap/current/apps/web/dist;
+    index index.html;
+    client_max_body_size 2m;
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Frame-Options DENY always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self'" always;
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-ID $request_id;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 60s;
+    }
+
+    location = /live { proxy_pass http://127.0.0.1:3000/live; }
+    location = /health { proxy_pass http://127.0.0.1:3000/health; }
+    location = /ready { proxy_pass http://127.0.0.1:3000/ready; }
+    location ^~ /assets/ {
+        try_files $uri =404;
+        expires 1y;
+        access_log off;
+    }
+    location / { try_files $uri $uri/ /index.html; }
+}
