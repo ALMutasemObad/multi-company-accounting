@@ -10,6 +10,7 @@ export const DEFAULT_RELEASE_FILES = [
   "apps/api/dist/server.js",
   "apps/api/dist/platform/provision-company.js",
   "apps/api/dist/platform/seed-reference-data.js",
+  "apps/api/prisma.config.ts",
   "apps/api/prisma/schema.prisma",
   "apps/web/dist/index.html",
   "deploy/nginx/mcap-finance.conf.example",

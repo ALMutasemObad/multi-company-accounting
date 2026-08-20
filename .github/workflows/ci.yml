@@ -185,6 +185,10 @@ jobs:
           mkdir release-roundtrip
           tar -xzf mcap-finance-linux-x64.tgz -C release-roundtrip
           node release-roundtrip/scripts/release/verify-release.mjs --root release-roundtrip
+          (
+            cd release-roundtrip/apps/api
+            npx --yes prisma@7.9.1 validate
+          )
           sha256sum --check mcap-finance-linux-x64.tgz.sha256
       - uses: actions/upload-artifact@v4
         with:

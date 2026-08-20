@@ -7,6 +7,7 @@ const RELEASE_PATHS = [
   ".env.production.example",
   "apps/api/dist",
   "apps/api/package.json",
+  "apps/api/prisma.config.ts",
   "apps/api/prisma/migrations",
   "apps/api/prisma/schema.prisma",
   "apps/web/dist",

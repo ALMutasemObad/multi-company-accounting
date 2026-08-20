@@ -38,6 +38,7 @@ Passenger log: logs/accounting-passenger.log
 ```bash
 export MCAP_DEPLOY_ROOT=/home/doralash/accounting-app
 export MCAP_NODE_BIN=/opt/alt/alt-nodejs22/root/usr/bin/node
+export MCAP_NPX_CLI=/opt/alt/alt-nodejs22/root/usr/lib/node_modules/npm/bin/npx-cli.js
 export MCAP_HEALTH_URL=https://accounting.doralashab.com/ready
 export MCAP_DEPLOY_CONFIRM=DEPLOY:<release-id>
 bash deploy/scripts/install-cpanel-release.sh \
@@ -55,7 +56,9 @@ bash deploy/scripts/install-cpanel-release.sh \
 
 ```bash
 cd /home/doralash/accounting-app/current
-npx --yes prisma@7.9.1 migrate deploy --schema apps/api/prisma/schema.prisma
+cd apps/api
+"$MCAP_NODE_BIN" "$MCAP_NPX_CLI" --yes prisma@7.9.1 migrate deploy
+cd ../..
 npm run database:seed-reference
 npm run company:provision
 ```
