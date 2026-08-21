@@ -3,6 +3,7 @@ import type { PrismaClient } from '@prisma/client';
 import { createDatabase } from '../src/database.js';
 import { CompanyProvisioningService } from '../src/platform/company-provisioning-service.js';
 import { permissionDefinitions } from '../src/platform/reference-data.js';
+import { DEFAULT_CHART_TEMPLATE_CODE, defaultChartDefinitions } from '../src/accounts/default-chart-template.js';
 
 const runDatabaseTests = process.env.RUN_DB_TESTS === 'true' && Boolean(process.env.DATABASE_URL);
 const suite = runDatabaseTests ? describe : describe.skip;
@@ -17,12 +18,16 @@ suite('multi-company provisioning integration', () => {
     if (organization) {
       const companyIds = organization.companies.map(({ id }) => id);
       const roles = await prisma.role.findMany({ where: { companyId: { in: companyIds } }, select: { id: true } });
+      await prisma.companyExchangeRate.deleteMany({ where: { companyId: { in: companyIds } } });
+      await prisma.companyCurrency.deleteMany({ where: { companyId: { in: companyIds } } });
       await prisma.auditLog.deleteMany({ where: { companyId: { in: companyIds } } });
       await prisma.securityEvent.deleteMany({ where: { companyId: { in: companyIds } } });
       await prisma.userCompanyRole.deleteMany({ where: { companyId: { in: companyIds } } });
       await prisma.rolePermission.deleteMany({ where: { roleId: { in: roles.map(({ id }) => id) } } });
       await prisma.role.deleteMany({ where: { companyId: { in: companyIds } } });
       await prisma.userCompany.deleteMany({ where: { companyId: { in: companyIds } } });
+      await prisma.account.updateMany({ where: { companyId: { in: companyIds } }, data: { parentAccountId: null } });
+      await prisma.account.deleteMany({ where: { companyId: { in: companyIds } } });
       await prisma.company.deleteMany({ where: { id: { in: companyIds } } });
       await prisma.organization.delete({ where: { id: organization.id } });
     }
@@ -54,6 +59,8 @@ suite('multi-company provisioning integration', () => {
     const replay = await service.provision({ ...base, companyCode: 'COMPANY-A' });
 
     expect(replay.company.id).toBe(first.company.id);
+    expect(first.defaultChart).toEqual({ templateCode: DEFAULT_CHART_TEMPLATE_CODE, version: 1, accountsCreated: defaultChartDefinitions.length });
+    expect(replay.defaultChart).toBeNull();
     expect(second.company.id).not.toBe(first.company.id);
     expect(second.administrator.id).toBe(first.administrator.id);
     expect(second.administrator.reusedIdentity).toBe(true);
@@ -64,6 +71,9 @@ suite('multi-company provisioning integration', () => {
       const role = await prisma.role.findUniqueOrThrow({ where: { companyId_code: { companyId, code: 'ADMINISTRATOR' } }, include: { _count: { select: { permissions: true } } } });
       expect(role._count.permissions).toBe(permissionDefinitions.length);
       expect(await prisma.userCompanyRole.count({ where: { userId, companyId, roleId: role.id } })).toBe(1);
+      const company = await prisma.company.findUniqueOrThrow({ where: { id: companyId } });
+      expect(await prisma.companyCurrency.count({ where: { companyId, currencyId: company.baseCurrencyId, isActive: true } })).toBe(1);
+      expect(await prisma.account.count({ where: { companyId, sourceTemplateCode: DEFAULT_CHART_TEMPLATE_CODE } })).toBe(defaultChartDefinitions.length);
     }
   });
 });

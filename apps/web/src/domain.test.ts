@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   allocationsTotal,
+  exchangeRateForCurrency,
   formatMoney,
   messageForError,
   statusLabels,
@@ -26,6 +27,13 @@ describe("واجهة سند الصرف", () => {
     expect(toMoney("1250.5")).toBe("1250.5000");
     expect(toRate("1")).toBe("1.00000000");
     expect(formatMoney("1250.5000")).toContain("١");
+  });
+
+  it("يقترح سعر العملة الأساسية وآخر سعر مسجل للعملة الأجنبية", () => {
+    expect(exchangeRateForCurrency({ id: "1", code: "SAR", nameAr: "ريال سعودي", decimals: 2, isBase: true })).toBe("1.00000000");
+    expect(exchangeRateForCurrency({ id: "2", code: "USD", nameAr: "دولار أمريكي", decimals: 2, latestExchangeRate: "3.75000000" })).toBe("3.75000000");
+    expect(exchangeRateForCurrency({ id: "3", code: "EUR", nameAr: "يورو", decimals: 2 })).toBe("");
+    expect(messageForError(undefined, "RATE_NOT_FOUND")).toContain("سعر صرف");
   });
 
   it("يجمع التوزيعات ويقبل سندًا صحيحًا", () => {

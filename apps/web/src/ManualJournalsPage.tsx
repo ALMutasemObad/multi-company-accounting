@@ -1,6 +1,8 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { api, downloadPdf, idempotencyKey } from "./api";
+import { exchangeRateForDocumentDate, missingDatedRateMessage } from "./currency-rates";
 import {
+  exchangeRateForCurrency,
   formatMoney,
   journalTotals,
   statusLabels,
@@ -40,7 +42,7 @@ const emptyReferences: References = {
   suppliers: [],
 };
 const today = () => new Date().toISOString().slice(0, 10);
-const line = (number: number, currencyId = ""): JournalLine => ({
+const line = (number: number, currencyId = "", exchangeRate = "1.00000000"): JournalLine => ({
   lineNumber: number,
   accountId: "",
   costCenterId: null,
@@ -48,15 +50,15 @@ const line = (number: number, currencyId = ""): JournalLine => ({
   supplierId: null,
   description: "",
   currencyId,
-  exchangeRate: "1",
+  exchangeRate,
   debitAmount: "",
   creditAmount: "",
 });
-const entry = (number: number, currencyId = ""): JournalEntry => ({
+const entry = (number: number, currencyId = "", exchangeRate = "1.00000000"): JournalEntry => ({
   entryNumber: number,
   entryDate: today(),
   description: "",
-  lines: [line(1, currencyId), line(2, currencyId)],
+  lines: [line(1, currencyId, exchangeRate), line(2, currencyId, exchangeRate)],
 });
 
 export function ManualJournalsPage({ notify }: { notify: Notice }) {
@@ -396,7 +398,9 @@ function JournalForm({
   onClose: () => void;
   onSaved: (value: ManualJournal) => void;
 }) {
-  const defaultCurrency = references.currencies[0]?.id ?? "";
+  const defaultCurrency = references.currencies.find((currency) => currency.isBase) ?? references.currencies[0];
+  const defaultCurrencyId = defaultCurrency?.id ?? "";
+  const defaultExchangeRate = exchangeRateForCurrency(defaultCurrency);
   const [periodId, setPeriodId] = useState(
     journal?.document.fiscalPeriodId ?? "",
   );
@@ -407,21 +411,21 @@ function JournalForm({
     journal?.document.description ?? "",
   );
   const [entries, setEntries] = useState<JournalEntry[]>(
-    journal?.entries ?? [entry(1, defaultCurrency)],
+    journal?.entries ?? [entry(1, defaultCurrencyId, defaultExchangeRate)],
   );
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   useEffect(() => {
-    if (!journal && defaultCurrency)
+    if (!journal && defaultCurrencyId)
       setEntries((items) =>
         items.map((item) => ({
           ...item,
           lines: item.lines.map((row) =>
-            row.currencyId ? row : { ...row, currencyId: defaultCurrency },
+            row.currencyId ? row : { ...row, currencyId: defaultCurrencyId, exchangeRate: defaultExchangeRate },
           ),
         })),
       );
-  }, [defaultCurrency, journal]);
+  }, [defaultCurrencyId, defaultExchangeRate, journal]);
   function updateEntry(index: number, patch: Partial<JournalEntry>) {
     setEntries((items) =>
       items.map((item, i) => (i === index ? { ...item, ...patch } : item)),
@@ -444,6 +448,35 @@ function JournalForm({
           : item,
       ),
     );
+  }
+  async function selectLineCurrency(entryIndex: number, lineIndex: number, currencyId: string) {
+    const selected = references.currencies.find((currency) => currency.id === currencyId);
+    const entryDate = entries[entryIndex]?.entryDate ?? documentDate;
+    updateLine(entryIndex, lineIndex, { currencyId });
+    try {
+      updateLine(entryIndex, lineIndex, { exchangeRate: await exchangeRateForDocumentDate(selected, entryDate) });
+      setError((current) => current === missingDatedRateMessage ? "" : current);
+    } catch {
+      updateLine(entryIndex, lineIndex, { exchangeRate: "" });
+      setError(missingDatedRateMessage);
+    }
+  }
+  async function changeEntryDate(entryIndex: number, entryDate: string) {
+    updateEntry(entryIndex, { entryDate });
+    const current = entries[entryIndex];
+    if (!current) return;
+    const resolved = await Promise.all(current.lines.map(async (row) => {
+      const currency = references.currencies.find((item) => item.id === row.currencyId);
+      try { return { exchangeRate: await exchangeRateForDocumentDate(currency, entryDate), missing: false }; }
+      catch { return { exchangeRate: "", missing: true }; }
+    }));
+    setEntries((items) => items.map((item, index) => index === entryIndex ? {
+      ...item,
+      entryDate,
+      lines: item.lines.map((row, lineIndex) => ({ ...row, exchangeRate: resolved[lineIndex]?.exchangeRate ?? row.exchangeRate })),
+    } : item));
+    if (resolved.some((value) => value.missing)) setError(missingDatedRateMessage);
+    else setError((current) => current === missingDatedRateMessage ? "" : current);
   }
   const totals = useMemo(() => journalTotals(entries), [entries]);
   async function submit(event: FormEvent) {
@@ -571,9 +604,7 @@ function JournalForm({
                   <input
                     type="date"
                     value={item.entryDate}
-                    onChange={(e) =>
-                      updateEntry(entryIndex, { entryDate: e.target.value })
-                    }
+                    onChange={(e) => void changeEntryDate(entryIndex, e.target.value)}
                   />
                 </label>
                 <label>
@@ -670,11 +701,7 @@ function JournalForm({
                       <select
                         aria-label="العملة"
                         value={row.currencyId}
-                        onChange={(e) =>
-                          updateLine(entryIndex, lineIndex, {
-                            currencyId: e.target.value,
-                          })
-                        }
+                        onChange={(e) => void selectLineCurrency(entryIndex, lineIndex, e.target.value)}
                         required
                       >
                         {references.currencies.map((x) => (
@@ -760,7 +787,7 @@ function JournalForm({
                   updateEntry(entryIndex, {
                     lines: [
                       ...item.lines,
-                      line(item.lines.length + 1, defaultCurrency),
+                      line(item.lines.length + 1, defaultCurrencyId, defaultExchangeRate),
                     ],
                   })
                 }
@@ -794,7 +821,7 @@ function JournalForm({
             onClick={() =>
               setEntries((items) => [
                 ...items,
-                entry(items.length + 1, defaultCurrency),
+                entry(items.length + 1, defaultCurrencyId, defaultExchangeRate),
               ])
             }
           >

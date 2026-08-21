@@ -1,7 +1,9 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiError, downloadPdf, idempotencyKey } from "./api";
+import { exchangeRateForDocumentDate, missingDatedRateMessage } from "./currency-rates";
 import {
   allocationsTotal,
+  exchangeRateForCurrency,
   formatMoney,
   statusLabels,
   toMoney,
@@ -293,6 +295,7 @@ function PaymentForm({
   const [exchangeRate, setExchangeRate] = useState(payment?.exchangeRate ?? "1.00000000");
   const [methodId, setMethodId] = useState(payment?.paymentMethodId ?? "");
   const [currencyId, setCurrencyId] = useState(payment?.currencyId ?? "");
+  const [documentDate, setDocumentDate] = useState(payment?.document.documentDate ?? new Date().toISOString().slice(0, 10));
   const [counterpartyName, setCounterpartyName] = useState(
     payment?.counterpartyNameSnapshot ?? "",
   );
@@ -305,9 +308,28 @@ function PaymentForm({
   const openInvoices = references.purchaseInvoices.filter((invoice) => invoice.supplierId === supplierId && invoice.currencyId === currencyId);
 
   useEffect(() => {
-    if (!currencyId && references.currencies[0])
+    if (!currencyId && references.currencies[0]) {
       setCurrencyId(references.currencies[0].id);
+      setExchangeRate(exchangeRateForCurrency(references.currencies[0]));
+    }
   }, [currencyId, references.currencies]);
+
+  async function selectCurrency(id: string, date = documentDate) {
+    const selected = references.currencies.find((item) => item.id === id);
+    setCurrencyId(id);
+    try {
+      setExchangeRate(await exchangeRateForDocumentDate(selected, date));
+      setErrors((current) => current.filter((message) => message !== missingDatedRateMessage));
+    } catch {
+      setExchangeRate("");
+      setErrors([missingDatedRateMessage]);
+    }
+  }
+
+  function changeDocumentDate(value: string) {
+    setDocumentDate(value);
+    if (currencyId) void selectCurrency(currencyId, value);
+  }
 
   function addAllocation() {
     setAllocations((current) => [
@@ -395,7 +417,7 @@ function PaymentForm({
             ))}
           </select>
         </label>
-        <label><span>تاريخ السند *</span><input name="documentDate" type="date" defaultValue={payment?.document.documentDate ?? new Date().toISOString().slice(0, 10)} required /></label>
+        <label><span>تاريخ السند *</span><input name="documentDate" type="date" value={documentDate} onChange={(event) => changeDocumentDate(event.target.value)} required /></label>
         <label className="full"><span>البيان *</span><input name="description" defaultValue={payment?.document.description} maxLength={500} required /></label>
 
         <fieldset className="full segmented-field">
@@ -435,7 +457,7 @@ function PaymentForm({
         )}
         <label><span>الصندوق أو البنك *</span><select name="cashBankAccountId" defaultValue={payment?.cashBankAccountId} required><option value="">اختر الحساب</option>{references.cashBanks.map((item) => <option key={item.id} value={item.id}>{item.code} — {item.nameAr} ({item.accountType === "BANK" ? "بنك" : "صندوق"})</option>)}</select></label>
         <label><span>طريقة الدفع *</span><select value={methodId} onChange={(event) => setMethodId(event.target.value)} required><option value="">اختر الطريقة</option>{references.methods.map((item) => <option key={item.id} value={item.id}>{item.nameAr}</option>)}</select></label>
-        <label><span>العملة *</span><select value={currencyId} onChange={(event) => setCurrencyId(event.target.value)} required><option value="">اختر العملة</option>{references.currencies.map((item) => <option key={item.id} value={item.id}>{item.code} — {item.nameAr}</option>)}</select></label>
+        <label><span>العملة *</span><select value={currencyId} onChange={(event) => void selectCurrency(event.target.value)} required><option value="">اختر العملة</option>{references.currencies.map((item) => <option key={item.id} value={item.id}>{item.code} — {item.nameAr}</option>)}</select></label>
         <label><span>سعر الصرف *</span><input value={exchangeRate} onChange={(event) => setExchangeRate(event.target.value)} inputMode="decimal" dir="ltr" placeholder="1.00000000" required /></label>
         <label><span>المبلغ *</span><input value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" dir="ltr" placeholder="0.0000" required /></label>
         <label><span>الرقم المرجعي {selectedMethod?.requiresReference && "*"}</span><input name="referenceNumber" defaultValue={payment?.referenceNumber ?? ""} maxLength={100} required={selectedMethod?.requiresReference} /></label>

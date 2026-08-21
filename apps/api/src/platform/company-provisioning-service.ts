@@ -1,6 +1,7 @@
 import { hash } from 'argon2';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { z } from 'zod';
+import { applyDefaultChartTemplate } from '../accounts/default-chart-template.js';
 import { accountTypeDefinitions, paymentMethodDefinitions, permissionDefinitions } from './reference-data.js';
 
 const tenantCode = z.string().trim().min(2).max(80).transform((value) => value.toUpperCase())
@@ -51,6 +52,11 @@ export class CompanyProvisioningService {
       const company = existingCompany
         ? await tx.company.update({ where: { id: existingCompany.id }, data: { name: input.companyName, timezone: input.timezone, isActive: true } })
         : await tx.company.create({ data: { organizationId: organization.id, baseCurrencyId: currency.id, code: input.companyCode, name: input.companyName, timezone: input.timezone } });
+      await tx.companyCurrency.upsert({
+        where: { companyId_currencyId: { companyId: company.id, currencyId: currency.id } },
+        update: { isActive: true },
+        create: { companyId: company.id, currencyId: currency.id },
+      });
 
       const existingUser = await tx.user.findUnique({ where: { emailNormalized: input.adminEmail } });
       if (existingUser && !existingUser.isActive) throw new CompanyProvisioningError('ADMIN_USER_DISABLED');
@@ -83,6 +89,7 @@ export class CompanyProvisioningService {
       for (const definition of accountTypeDefinitions) {
         await tx.accountType.upsert({ where: { code: definition.code }, update: definition, create: definition });
       }
+      const defaultChart = existingCompany ? null : await applyDefaultChartTemplate(tx, company.id);
       for (const method of paymentMethodDefinitions) {
         await tx.paymentMethod.upsert({
           where: { code: method.code },
@@ -98,7 +105,7 @@ export class CompanyProvisioningService {
           action: existingCompany ? 'COMPANY_PROVISIONING_CONFIRMED' : 'COMPANY_PROVISIONED',
           entityType: 'COMPANY',
           entityId: company.id.toString(),
-          details: { organizationCode: organization.code, companyCode: company.code, reusedAdminIdentity: Boolean(existingUser) },
+          details: { organizationCode: organization.code, companyCode: company.code, reusedAdminIdentity: Boolean(existingUser), ...(defaultChart ? { defaultChartTemplate: defaultChart.templateCode, defaultChartAccountsCreated: defaultChart.created } : {}) },
         },
       });
 
@@ -107,6 +114,7 @@ export class CompanyProvisioningService {
         company: { id: company.id.toString(), code: company.code, name: company.name, timezone: company.timezone, baseCurrencyCode: currency.code },
         administrator: { id: admin.id.toString(), email: admin.emailNormalized, reusedIdentity: Boolean(existingUser) },
         permissionsGranted: permissionDefinitions.length,
+        defaultChart: defaultChart ? { templateCode: defaultChart.templateCode, version: defaultChart.version, accountsCreated: defaultChart.created } : null,
       };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 5_000, timeout: 30_000 });
   }

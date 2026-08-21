@@ -31,6 +31,26 @@ export type Account = {
   allowsPosting: boolean;
   isControlAccount: boolean;
   isActive: boolean;
+  sourceTemplateCode: string | null;
+  sourceTemplateKey: string | null;
+};
+
+export type DefaultChartTemplateStatus = {
+  templateCode: string;
+  version: number;
+  nameAr: string;
+  total: number;
+  matched: number;
+  missing: number;
+  inactive: number;
+  conflicts: number;
+  canApply: boolean;
+};
+
+export type DefaultChartTemplateApplyResult = DefaultChartTemplateStatus & {
+  created: number;
+  linked: number;
+  existing: number;
 };
 
 export type AccountType = {
@@ -94,6 +114,26 @@ export type Currency = {
   code: string;
   nameAr: string;
   decimals: number;
+  isBase?: boolean;
+  latestExchangeRate?: string | null;
+  latestExchangeRateDate?: string | null;
+};
+
+export type CompanyCurrencySetting = Currency & {
+  isBase: boolean;
+  isEnabled: boolean;
+  latestExchangeRate: string | null;
+  latestExchangeRateDate: string | null;
+};
+
+export type CompanyExchangeRate = {
+  id: string;
+  currency: Pick<Currency, "id" | "code" | "nameAr">;
+  rateDate: string;
+  rate: string;
+  source: string | null;
+  updatedAt: string;
+  updatedBy: { id: string; displayName: string };
 };
 
 export type Address = {

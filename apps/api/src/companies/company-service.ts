@@ -1,5 +1,13 @@
-import type { PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import type { ActorContext } from '../users/user-service.js';
+
+export type CompanyCurrencyErrorReason = 'CURRENCY_NOT_FOUND' | 'CURRENCY_NOT_ENABLED' | 'BASE_CURRENCY_RATE' | 'RATE_NOT_FOUND';
+
+export class CompanyCurrencyError extends Error {
+  constructor(public readonly reason: CompanyCurrencyErrorReason) { super(reason); }
+}
+
+export type ExchangeRateInput = { currencyId: bigint; rateDate: string; rate: string; source?: string | null | undefined };
 
 export class CompanyService {
   constructor(private readonly prisma: PrismaClient) {}
@@ -25,5 +33,138 @@ export class CompanyService {
       return updated;
     });
     return company;
+  }
+
+  async listCurrencyCatalog(context: ActorContext) {
+    const company = await this.prisma.company.findUniqueOrThrow({ where: { id: context.companyId }, select: { baseCurrencyId: true } });
+    const currencies = await this.prisma.currency.findMany({
+      where: { isActive: true },
+      orderBy: { code: 'asc' },
+      include: {
+        companyCurrencies: {
+          where: { companyId: context.companyId },
+          include: { rates: { orderBy: { rateDate: 'desc' }, take: 1 } },
+        },
+      },
+    });
+    return currencies.map((currency) => {
+      const setting = currency.companyCurrencies[0];
+      const latest = setting?.rates[0];
+      const isBase = currency.id === company.baseCurrencyId;
+      return {
+        id: currency.id,
+        code: currency.code,
+        nameAr: currency.nameAr,
+        decimals: currency.decimals,
+        isBase,
+        isEnabled: isBase || Boolean(setting?.isActive),
+        latestExchangeRate: isBase ? new Prisma.Decimal(1) : latest?.rate ?? null,
+        latestExchangeRateDate: isBase ? null : latest?.rateDate ?? null,
+      };
+    });
+  }
+
+  async updateCompanyCurrencies(context: ActorContext, requestedCurrencyIds: bigint[]) {
+    const company = await this.prisma.company.findUniqueOrThrow({ where: { id: context.companyId }, select: { baseCurrencyId: true } });
+    const currencyIds = [...new Set([...requestedCurrencyIds, company.baseCurrencyId].map(String))].map((value) => BigInt(value));
+    const currencies = await this.prisma.currency.findMany({ where: { id: { in: currencyIds }, isActive: true }, select: { id: true, code: true } });
+    if (currencies.length !== currencyIds.length) throw new CompanyCurrencyError('CURRENCY_NOT_FOUND');
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.companyCurrency.updateMany({
+        where: { companyId: context.companyId, currencyId: { notIn: currencyIds }, isActive: true },
+        data: { isActive: false },
+      });
+      for (const currencyId of currencyIds) {
+        await tx.companyCurrency.upsert({
+          where: { companyId_currencyId: { companyId: context.companyId, currencyId } },
+          update: { isActive: true },
+          create: { companyId: context.companyId, currencyId },
+        });
+      }
+      await tx.auditLog.create({
+        data: {
+          companyId: context.companyId,
+          actorUserId: context.userId,
+          action: 'COMPANY_CURRENCIES_UPDATED',
+          entityType: 'COMPANY',
+          entityId: context.companyId.toString(),
+          details: { enabledCurrencyCodes: currencies.map(({ code }) => code).sort() },
+        },
+      });
+    });
+    return this.listCurrencyCatalog(context);
+  }
+
+  async listExchangeRates(context: ActorContext, filter: { currencyId?: bigint | undefined; dateFrom?: string | undefined; dateTo?: string | undefined; page: number; pageSize: number }) {
+    const where: Prisma.CompanyExchangeRateWhereInput = {
+      companyId: context.companyId,
+      ...(filter.currencyId ? { currencyId: filter.currencyId } : {}),
+      ...(filter.dateFrom || filter.dateTo ? { rateDate: { ...(filter.dateFrom ? { gte: this.date(filter.dateFrom) } : {}), ...(filter.dateTo ? { lte: this.date(filter.dateTo) } : {}) } } : {}),
+    };
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.companyExchangeRate.findMany({
+        where,
+        orderBy: [{ rateDate: 'desc' }, { id: 'desc' }],
+        skip: (filter.page - 1) * filter.pageSize,
+        take: filter.pageSize,
+        include: { companyCurrency: { include: { currency: true } }, updatedBy: { select: { id: true, displayName: true } } },
+      }),
+      this.prisma.companyExchangeRate.count({ where }),
+    ]);
+    return { data, total };
+  }
+
+  async upsertExchangeRate(context: ActorContext, input: ExchangeRateInput) {
+    const company = await this.prisma.company.findUniqueOrThrow({ where: { id: context.companyId }, select: { baseCurrencyId: true } });
+    if (input.currencyId === company.baseCurrencyId) throw new CompanyCurrencyError('BASE_CURRENCY_RATE');
+    const setting = await this.prisma.companyCurrency.findUnique({
+      where: { companyId_currencyId: { companyId: context.companyId, currencyId: input.currencyId } },
+      include: { currency: true },
+    });
+    if (!setting?.isActive || !setting.currency.isActive) throw new CompanyCurrencyError('CURRENCY_NOT_ENABLED');
+    const rateDate = this.date(input.rateDate);
+    const rate = new Prisma.Decimal(input.rate);
+
+    return this.prisma.$transaction(async (tx) => {
+      const previous = await tx.companyExchangeRate.findUnique({
+        where: { companyId_currencyId_rateDate: { companyId: context.companyId, currencyId: input.currencyId, rateDate } },
+        select: { rate: true, source: true },
+      });
+      const value = await tx.companyExchangeRate.upsert({
+        where: { companyId_currencyId_rateDate: { companyId: context.companyId, currencyId: input.currencyId, rateDate } },
+        update: { rate, source: input.source ?? null, updatedById: context.userId },
+        create: { companyId: context.companyId, currencyId: input.currencyId, rateDate, rate, source: input.source ?? null, updatedById: context.userId },
+        include: { companyCurrency: { include: { currency: true } }, updatedBy: { select: { id: true, displayName: true } } },
+      });
+      await tx.auditLog.create({
+        data: {
+          companyId: context.companyId,
+          actorUserId: context.userId,
+          action: 'EXCHANGE_RATE_UPSERTED',
+          entityType: 'COMPANY_EXCHANGE_RATE',
+          entityId: value.id.toString(),
+          details: { currencyCode: setting.currency.code, rateDate: input.rateDate, rate: rate.toFixed(8), source: input.source ?? null, previousRate: previous?.rate.toFixed(8) ?? null, previousSource: previous?.source ?? null },
+        },
+      });
+      return value;
+    });
+  }
+
+  async resolveExchangeRate(context: ActorContext, currencyId: bigint, rateDate: string) {
+    const company = await this.prisma.company.findUniqueOrThrow({ where: { id: context.companyId }, select: { baseCurrencyId: true } });
+    if (currencyId === company.baseCurrencyId) return { rate: new Prisma.Decimal(1), rateDate: null, source: 'BASE_CURRENCY' };
+    const setting = await this.prisma.companyCurrency.findUnique({ where: { companyId_currencyId: { companyId: context.companyId, currencyId } }, include: { currency: true } });
+    if (!setting?.isActive || !setting.currency.isActive) throw new CompanyCurrencyError('CURRENCY_NOT_ENABLED');
+    const value = await this.prisma.companyExchangeRate.findFirst({
+      where: { companyId: context.companyId, currencyId, rateDate: { lte: this.date(rateDate) } },
+      orderBy: { rateDate: 'desc' },
+    });
+    if (!value) throw new CompanyCurrencyError('RATE_NOT_FOUND');
+    return { rate: value.rate, rateDate: value.rateDate, source: value.source };
+  }
+
+  private date(value: string) {
+    return new Date(`${value}T00:00:00.000Z`);
   }
 }

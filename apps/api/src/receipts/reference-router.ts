@@ -276,12 +276,11 @@ export function createReceiptReferenceRouter(
     res.json(ReceiptReferenceService.paymentMethodJson(await service.deactivatePaymentMethod(context, id.parse(req.params.paymentMethodId), body.reason)));
   });
   router.get("/currencies", async (req, res) => {
-    await authorize(req, "cash_bank_accounts.view", false);
-    res.json({
-      data: (await service.listCurrencies()).map(
-        ReceiptReferenceService.currencyJson,
-      ),
-    });
+    const context = await authorize(req, "currencies.view", false);
+    const data = (await service.listCurrencies(context))
+      .map(ReceiptReferenceService.currencyJson)
+      .sort((left, right) => Number(right.isBase) - Number(left.isBase) || left.code.localeCompare(right.code));
+    res.json({ data });
   });
   const errors: ErrorRequestHandler = (error, _req, res, next) => {
     if (error instanceof ZodError) {

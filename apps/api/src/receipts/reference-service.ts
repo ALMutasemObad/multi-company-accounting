@@ -493,10 +493,15 @@ export class ReceiptReferenceService {
     });
   }
 
-  listCurrencies() {
-    return this.prisma.currency.findMany({
-      where: { isActive: true },
-      orderBy: { code: "asc" },
+  listCurrencies(context: ActorContext) {
+    return this.prisma.companyCurrency.findMany({
+      where: { companyId: context.companyId, isActive: true, currency: { isActive: true } },
+      orderBy: { currency: { code: "asc" } },
+      include: {
+        company: { select: { baseCurrencyId: true } },
+        currency: true,
+        rates: { orderBy: { rateDate: "desc" }, take: 1 },
+      },
     });
   }
 
@@ -557,12 +562,17 @@ export class ReceiptReferenceService {
   }
 
   static currencyJson(value: any) {
+    const currency = value.currency ?? value;
+    const isBase = value.company?.baseCurrencyId === currency.id;
+    const latest = value.rates?.[0];
     return {
-      id: value.id.toString(),
-      code: value.code,
-      nameAr: value.nameAr,
-      decimals: value.decimals,
-      isActive: value.isActive,
+      id: currency.id.toString(),
+      code: currency.code,
+      nameAr: currency.nameAr,
+      decimals: currency.decimals,
+      isBase,
+      latestExchangeRate: isBase ? "1.00000000" : latest?.rate?.toFixed(8) ?? null,
+      latestExchangeRateDate: isBase ? null : latest?.rateDate?.toISOString().slice(0, 10) ?? null,
     };
   }
   private async validPostingAccount(
