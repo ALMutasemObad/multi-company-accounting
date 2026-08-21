@@ -48,6 +48,7 @@ export default defineConfig({
       SESSION_COOKIE_SECURE: 'false',
       TRUST_PROXY: 'false',
       SELF_REGISTRATION_ENABLED: 'true',
+      PASSWORD_RESET_ENABLED: 'true',
       REGISTRATION_EMAIL_MODE: 'log',
       REGISTRATION_EMAIL_CAPTURE_PATH: capturePath,
       REGISTRATION_AUDIT_PEPPER: 'playwright-registration-audit-pepper-2026',
