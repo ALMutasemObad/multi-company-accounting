@@ -205,6 +205,7 @@ jobs:
           WEB_ORIGIN: https://ci.mcap.example
           SESSION_COOKIE_SECURE: 'true'
           TRUST_PROXY: 'true'
+          SELF_REGISTRATION_ENABLED: 'false'
         run: |
           node apps/api/dist/server.js > api-smoke.log 2>&1 &
           api_pid=$!
