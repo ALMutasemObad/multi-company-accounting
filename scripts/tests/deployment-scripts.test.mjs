@@ -35,6 +35,7 @@ test("cPanel installer migrates and seeds the candidate before activating it", a
   const activationIndex = source.indexOf('atomic_link "$release_dir" "$current_link"');
 
   assert.match(source, /MCAP_RUN_DATABASE_MIGRATIONS/u);
+  assert.match(source, /PATH="\$\(dirname -- "\$node_bin"\):\$\{PATH:-\/usr\/bin:\/bin\}"/u);
   assert.ok(migrationIndex > 0, "candidate migrations must be present");
   assert.ok(seedIndex > migrationIndex, "reference data must follow migrations");
   assert.ok(activationIndex > seedIndex, "activation must happen after migrations and reference data");
