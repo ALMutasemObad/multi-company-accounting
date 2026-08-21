@@ -9,6 +9,8 @@ export const contractPath = resolve(repositoryRoot, "packages/contracts/openapi.
 export const generatedPath = resolve(repositoryRoot, "apps/api/src/generated/openapi-request-guards.ts");
 export const guardedOperationIds = [
   "login",
+  "startPasswordReset",
+  "completePasswordReset",
   "startSelfRegistration",
   "resendSelfRegistrationVerification",
   "verifySelfRegistration",

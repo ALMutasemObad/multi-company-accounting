@@ -262,7 +262,6 @@ describe.runIf(enabled)(
         .set("X-CSRF-Token", csrf)
         .send({
           receivableAccountId: arId.toString(),
-          code: "IT-RCP-CUST",
           nameAr: "عميل اختبار القبض",
           taxNumber: "1234567890",
           addresses: [
@@ -276,6 +275,7 @@ describe.runIf(enabled)(
         })
         .expect(201);
       customerId = BigInt(customer.body.id);
+      expect(customer.body.code).toMatch(/^CUS-[0-9]{6,}$/);
       expect(customer.body.taxNumberMasked).toBe("****7890");
       const cashBank = await agent
         .post("/api/v1/cash-bank-accounts")
@@ -283,12 +283,12 @@ describe.runIf(enabled)(
         .send({
           ledgerAccountId: cashLedgerId.toString(),
           accountType: "CASH",
-          code: "IT-RCP-CASH",
           nameAr: "صندوق القبض",
           accountNumber: "99887766",
         })
         .expect(201);
       expect(cashBank.body.accountNumberMasked).toBe("****7766");
+      expect(cashBank.body.code).toMatch(/^CB-[0-9]{6,}$/);
       expect(cashBank.body).not.toHaveProperty("accountNumber");
       cashBankId = BigInt(cashBank.body.id);
       paymentMethodId = (
@@ -447,16 +447,58 @@ describe.runIf(enabled)(
         await prisma!.company.delete({ where: { id: foreign.id } });
       }
     });
+    it("generates immutable unique customer codes under concurrent creation", async () => {
+      const responses = await Promise.all(
+        Array.from({ length: 12 }, (_, index) =>
+          agent
+            .post("/api/v1/customers")
+            .set("X-CSRF-Token", csrf)
+            .send({
+              receivableAccountId: arId.toString(),
+              nameAr: `عميل تزامن ${index + 1}`,
+            }),
+        ),
+      );
+      expect(responses.every((response) => response.status === 201)).toBe(true);
+      const codes = responses.map((response) => response.body.code as string);
+      const ids = responses.map((response) => response.body.id as string);
+      expect(new Set(codes).size).toBe(codes.length);
+      expect(codes.every((code) => /^CUS-[0-9]{6,}$/.test(code))).toBe(true);
+
+      try {
+        await agent
+          .patch(`/api/v1/customers/${ids[0]}`)
+          .set("X-CSRF-Token", csrf)
+          .send({ code: "MANUAL-CODE" })
+          .expect(400);
+        const persisted = await agent
+          .get(`/api/v1/customers/${ids[0]}`)
+          .expect(200);
+        expect(persisted.body.code).toBe(codes[0]);
+      } finally {
+        await prisma!.auditLog.deleteMany({
+          where: { companyId, entityType: "CUSTOMER", entityId: { in: ids } },
+        });
+        await prisma!.customer.deleteMany({
+          where: { companyId, id: { in: ids.map(BigInt) } },
+        });
+      }
+    });
     it("manages company payment methods without allowing global reference edits", async () => {
-      await prisma!.paymentMethod.deleteMany({ where: { companyId, code: "IT_RCP_WIRE" } });
-      const created = await agent.post("/api/v1/payment-methods").set("X-CSRF-Token", csrf).send({ code: "IT_RCP_WIRE", nameAr: "تحويل اختبار", requiresReference: true }).expect(201);
-      expect(created.body.scope).toBe("COMPANY");
-      await agent.patch(`/api/v1/payment-methods/${created.body.id}`).set("X-CSRF-Token", csrf).send({ nameAr: "تحويل اختبار محدث" }).expect(200).then((result) => expect(result.body.nameAr).toContain("محدث"));
-      const global = await prisma!.paymentMethod.findUniqueOrThrow({ where: { code: "CASH" } });
-      await agent.patch(`/api/v1/payment-methods/${global.id}`).set("X-CSRF-Token", csrf).send({ nameAr: "ممنوع" }).expect(422);
-      await agent.post(`/api/v1/payment-methods/${created.body.id}/deactivate`).set("X-CSRF-Token", csrf).send({ reason: "تعطيل اختباري" }).expect(200).then((result) => expect(result.body.isActive).toBe(false));
-      const all = await agent.get("/api/v1/payment-methods?includeInactive=true").expect(200);
-      expect(all.body.data.some((method: any) => method.id === created.body.id && !method.isActive)).toBe(true);
+      const created = await agent.post("/api/v1/payment-methods").set("X-CSRF-Token", csrf).send({ nameAr: "تحويل اختبار", requiresReference: true }).expect(201);
+      try {
+        expect(created.body.scope).toBe("COMPANY");
+        expect(created.body.code).toMatch(new RegExp(`^PM-${companyId}-[0-9]{6,}$`));
+        await agent.patch(`/api/v1/payment-methods/${created.body.id}`).set("X-CSRF-Token", csrf).send({ nameAr: "تحويل اختبار محدث" }).expect(200).then((result) => expect(result.body.nameAr).toContain("محدث"));
+        const global = await prisma!.paymentMethod.findUniqueOrThrow({ where: { code: "CASH" } });
+        await agent.patch(`/api/v1/payment-methods/${global.id}`).set("X-CSRF-Token", csrf).send({ nameAr: "ممنوع" }).expect(422);
+        await agent.post(`/api/v1/payment-methods/${created.body.id}/deactivate`).set("X-CSRF-Token", csrf).send({ reason: "تعطيل اختباري" }).expect(200).then((result) => expect(result.body.isActive).toBe(false));
+        const all = await agent.get("/api/v1/payment-methods?includeInactive=true").expect(200);
+        expect(all.body.data.some((method: any) => method.id === created.body.id && !method.isActive)).toBe(true);
+      } finally {
+        await prisma!.auditLog.deleteMany({ where: { companyId, entityType: "PAYMENT_METHOD", entityId: created.body.id } });
+        await prisma!.paymentMethod.deleteMany({ where: { id: BigInt(created.body.id) } });
+      }
     });
     it("validates allocation totals, updates a draft and cancels it", async () => {
       const invalid = apiPayload("IT-RCP توزيع خاطئ");

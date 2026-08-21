@@ -19,7 +19,7 @@ last_updated: "2026-08-21"
 
 | Context | المسؤولية | ملكية الكتابة المستهدفة | ملاحظات |
 |---|---|---|---|
-| Identity & Access | الهوية والجلسات والأدوار والصلاحيات | `User`, `Session`, `UserCompany`, `Role`, `Permission`, `RolePermission`, `UserCompanyRole` | يقدم Actor/Application Context لبقية النظام |
+| Identity & Access | الهوية والجلسات والأدوار والصلاحيات واستعادة كلمة المرور | `User`, `Session`, `PasswordResetRequest`, `UserCompany`, `Role`, `Permission`, `RolePermission`, `UserCompanyRole` | يقدم Actor/Application Context لبقية النظام؛ بريد الاستعادة أثر Outbox |
 | Tenant & Company Configuration | المؤسسة والشركة والعملات والإعدادات | `Organization`, `Company`, `Currency`, `CompanyCurrency`, `CompanyExchangeRate` | فحص الاستخدام عبر Ports، لا عبر معرفة كل جداول المستندات |
 | Registration & Onboarding | دورة التسجيل والتحقق والتنسيق | `RegistrationRequest`, `RegistrationEvent` | Process Manager؛ لا يملك User/Company/Account |
 | Core Accounting | السنة والفترة والدليل والمستند والدفتر والترحيل | `FiscalYear`, `FiscalPeriod`, `DocumentSequence`, `AccountingDocument`, `JournalEntry`, `JournalLine`, `AccountType`, `Account`, `CostCenter` | المالك الوحيد للـPosting Engine |
@@ -31,7 +31,7 @@ last_updated: "2026-08-21"
 | Reporting | التقارير والقوائم وRead Models | لا يملك حقائق مالية تشغيلية | قراءة فقط، ويمكنه امتلاك projections مستقبلًا |
 | Audit | سجل الأعمال والامتثال | `AuditLog` | Append-only، وليس Event Bus |
 | Security Monitoring | أحداث المخاطر والإقرار | `SecurityEvent` | يمكنه إصدار تنبيه Integration بعد حفظ الحدث |
-| Application Infrastructure | Idempotency وOutbox والتشغيل | `IdempotencyRecord`, `OutboxEvent` | ليست Bounded Context أعمال؛ بدأ التنفيذ ببريد التسجيل عبر حدث versioned بلا أسرار |
+| Application Infrastructure | Idempotency وOutbox والتسلسلات التقنية والتشغيل | `IdempotencyRecord`, `OutboxEvent`, `MasterDataCodeSequence` | ليست Bounded Context أعمال؛ توفر حجز الرمز الذري للكيانات المرجعية ولا تملك تلك الكيانات |
 
 ## 4. اتجاهات الاعتماد المسموحة
 

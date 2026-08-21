@@ -31,4 +31,25 @@ describe('development registration mailer', () => {
       expiresAt: expiresAt.toISOString(),
     });
   });
+
+  it('captures a password-reset message without changing the verification contract', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'mcap-password-reset-mailer-'));
+    temporaryDirectories.push(directory);
+    const capturePath = join(directory, 'messages.jsonl');
+    const expiresAt = new Date('2026-08-22T01:00:00.000Z');
+
+    await new DevelopmentRegistrationMailer(capturePath).sendPasswordReset({
+      to: 'user@example.com',
+      locale: 'ar',
+      resetUrl: 'http://127.0.0.1:3200/#reset-password?token=test-token',
+      expiresAt,
+    });
+
+    expect(JSON.parse((await readFile(capturePath, 'utf8')).trim())).toEqual({
+      to: 'user@example.com',
+      locale: 'ar',
+      resetUrl: 'http://127.0.0.1:3200/#reset-password?token=test-token',
+      expiresAt: expiresAt.toISOString(),
+    });
+  });
 });

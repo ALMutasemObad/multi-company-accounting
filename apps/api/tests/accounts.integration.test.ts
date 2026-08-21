@@ -33,7 +33,31 @@ describe.runIf(enabled)('accounts and cost centers with MariaDB', () => {
   });
   afterAll(async () => { await prisma!.auditLog.deleteMany({ where: { companyId, entityType: { in: ['ACCOUNT', 'COST_CENTER'] } } }); await prisma!.account.updateMany({ where: { companyId, code: { startsWith: 'IT-' } }, data: { parentAccountId: null } }); await prisma!.account.deleteMany({ where: { companyId, code: { startsWith: 'IT-' } } }); await prisma!.costCenter.updateMany({ where: { companyId, code: { startsWith: 'IT-' } }, data: { parentId: null } }); await prisma!.costCenter.deleteMany({ where: { companyId, code: { startsWith: 'IT-' } } }); await prisma!.$disconnect(); });
   it('builds an account tree, prevents cycles and enforces posting eligibility', async () => { const type = (await agent.get('/api/v1/account-types').expect(200)).body.data[0]; const parent = await agent.post('/api/v1/accounts').set('X-CSRF-Token', csrf).send({ accountTypeId: type.id, code: 'IT-PARENT', nameAr: 'حساب تجميعي', allowsPosting: false }).expect(201); const child = await agent.post('/api/v1/accounts').set('X-CSRF-Token', csrf).send({ accountTypeId: type.id, parentAccountId: parent.body.id, code: 'IT-CHILD', nameAr: 'حساب ترحيل', allowsPosting: true }).expect(201); expect(child.body.level).toBe(2); await expect(service.assertPostingAllowed(companyId, BigInt(parent.body.id))).rejects.toMatchObject({ reason: 'POSTING_NOT_ALLOWED' } satisfies Partial<AccountError>); await service.assertPostingAllowed(companyId, BigInt(child.body.id)); await agent.patch(`/api/v1/accounts/${parent.body.id}`).set('X-CSRF-Token', csrf).send({ parentAccountId: child.body.id }).expect(422); await agent.post('/api/v1/accounts').set('X-CSRF-Token', csrf).send({ accountTypeId: type.id, parentAccountId: child.body.id, code: 'IT-BAD', nameAr: 'غير صالح', allowsPosting: true }).expect(422); await agent.post(`/api/v1/accounts/${child.body.id}/deactivate`).set('X-CSRF-Token', csrf).send({ reason: 'انتهاء الحاجة للاختبار' }).expect(200); await expect(service.assertPostingAllowed(companyId, BigInt(child.body.id))).rejects.toMatchObject({ reason: 'POSTING_NOT_ALLOWED' }); });
-  it('prevents cost-center cycles and handles concurrent duplicate codes', async () => { const root = await agent.post('/api/v1/cost-centers').set('X-CSRF-Token', csrf).send({ code: 'IT-CC-ROOT', nameAr: 'المركز الرئيسي' }).expect(201); const child = await agent.post('/api/v1/cost-centers').set('X-CSRF-Token', csrf).send({ parentId: root.body.id, code: 'IT-CC-CHILD', nameAr: 'المركز الفرعي' }).expect(201); await agent.patch(`/api/v1/cost-centers/${root.body.id}`).set('X-CSRF-Token', csrf).send({ parentId: child.body.id }).expect(422); const type = (await agent.get('/api/v1/account-types')).body.data[0]; const results = await Promise.all([1, 2].map(() => agent.post('/api/v1/accounts').set('X-CSRF-Token', csrf).send({ accountTypeId: type.id, code: 'IT-CONCURRENT', nameAr: 'تزامن', allowsPosting: true }))); expect(results.map((r) => r.status).sort()).toEqual([201, 409]); });
+  it('generates concurrent cost-center codes, prevents cycles and preserves manual account numbering', async () => {
+    const createdIds: string[] = [];
+    try {
+      const root = await agent.post('/api/v1/cost-centers').set('X-CSRF-Token', csrf).send({ nameAr: 'المركز الرئيسي' }).expect(201);
+      const child = await agent.post('/api/v1/cost-centers').set('X-CSRF-Token', csrf).send({ parentId: root.body.id, nameAr: 'المركز الفرعي' }).expect(201);
+      createdIds.push(root.body.id, child.body.id);
+      expect(root.body.code).toMatch(/^CC-[0-9]{6,}$/);
+      await agent.patch(`/api/v1/cost-centers/${root.body.id}`).set('X-CSRF-Token', csrf).send({ parentId: child.body.id }).expect(422);
+
+      const concurrent = await Promise.all(Array.from({ length: 12 }, (_, index) => agent.post('/api/v1/cost-centers').set('X-CSRF-Token', csrf).send({ nameAr: `مركز تزامن ${index + 1}` })));
+      expect(concurrent.every((response) => response.status === 201)).toBe(true);
+      createdIds.push(...concurrent.map((response) => response.body.id));
+      const codes = concurrent.map((response) => response.body.code as string);
+      expect(new Set(codes).size).toBe(codes.length);
+      expect(codes.every((code) => /^CC-[0-9]{6,}$/.test(code))).toBe(true);
+
+      const type = (await agent.get('/api/v1/account-types')).body.data[0];
+      const results = await Promise.all([1, 2].map(() => agent.post('/api/v1/accounts').set('X-CSRF-Token', csrf).send({ accountTypeId: type.id, code: 'IT-CONCURRENT', nameAr: 'تزامن', allowsPosting: true })));
+      expect(results.map((response) => response.status).sort()).toEqual([201, 409]);
+    } finally {
+      await prisma!.costCenter.updateMany({ where: { id: { in: createdIds.map(BigInt) } }, data: { parentId: null } });
+      await prisma!.auditLog.deleteMany({ where: { companyId, entityType: 'COST_CENTER', entityId: { in: createdIds } } });
+      await prisma!.costCenter.deleteMany({ where: { id: { in: createdIds.map(BigInt) } } });
+    }
+  });
   it('applies the default chart idempotently, preserves customizations and safely restores deleted template leaves', async () => {
     const originalIds = (await prisma!.account.findMany({ where: { companyId }, select: { id: true } })).map(({ id }) => id);
     try {

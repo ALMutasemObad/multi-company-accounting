@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { createApp } from './app.js';
 import { loadConfig } from './config.js';
-import { verify } from 'argon2';
+import { hash, verify } from 'argon2';
 import { AuthService } from './auth/auth-service.js';
 import { PrismaAuthStore } from './auth/prisma-auth-store.js';
 import { createDatabase } from './database.js';
@@ -26,9 +26,11 @@ import { logEvent } from './operations/logger.js';
 import { CompanyProvisioningService } from './platform/company-provisioning-service.js';
 import { RegistrationService } from './registration/registration-service.js';
 import { DevelopmentRegistrationMailer, ResendRegistrationMailer } from './registration/registration-mailer.js';
-import { PrismaOutboxAppender, REGISTRATION_VERIFICATION_REQUESTED } from './outbox/outbox.js';
+import { PASSWORD_RESET_REQUESTED, PrismaOutboxAppender, REGISTRATION_VERIFICATION_REQUESTED, type OutboxHandler } from './outbox/outbox.js';
 import { OutboxWorker } from './outbox/outbox-worker.js';
 import { RegistrationVerificationHandler } from './registration/registration-verification-handler.js';
+import { PasswordResetService } from './auth/password-reset-service.js';
+import { PasswordResetHandler } from './auth/password-reset-handler.js';
 
 const config = loadConfig();
 if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required to start the API');
@@ -56,8 +58,23 @@ const registrationVerificationHandler = registration
       auditPepper: registrationAuditPepper,
     })
   : undefined;
-const outboxWorker = registrationVerificationHandler
-  ? new OutboxWorker(database, new Map([[REGISTRATION_VERIFICATION_REQUESTED, registrationVerificationHandler.handle]]), {
+const passwordReset = config.PASSWORD_RESET_ENABLED
+  ? new PasswordResetService(database, { hash }, outboxAppender, {
+      tokenTtlMinutes: config.PASSWORD_RESET_TOKEN_TTL_MINUTES,
+    })
+  : undefined;
+const passwordResetHandler = passwordReset
+  ? new PasswordResetHandler(database, registrationMailer, {
+      tokenTtlMinutes: config.PASSWORD_RESET_TOKEN_TTL_MINUTES,
+      publicAppUrl: config.WEB_ORIGIN,
+      tokenSecret: registrationTokenSecret,
+    })
+  : undefined;
+const outboxHandlers = new Map<string, OutboxHandler>();
+if (registrationVerificationHandler) outboxHandlers.set(REGISTRATION_VERIFICATION_REQUESTED, registrationVerificationHandler.handle);
+if (passwordResetHandler) outboxHandlers.set(PASSWORD_RESET_REQUESTED, passwordResetHandler.handle);
+const outboxWorker = outboxHandlers.size
+  ? new OutboxWorker(database, outboxHandlers, {
       pollIntervalMs: config.OUTBOX_POLL_INTERVAL_MS,
       leaseMs: config.OUTBOX_LEASE_MS,
       batchSize: config.OUTBOX_BATCH_SIZE,
@@ -70,6 +87,7 @@ const app = createApp(config, {
   readiness: new DatabaseReadinessService(database, config.READINESS_TIMEOUT_MS),
   auth,
   ...(registration ? { registration } : {}),
+  ...(passwordReset ? { passwordReset } : {}),
   users: new UserService(database),
   companies: new CompanyService(database),
   printing: new PrintService(database),

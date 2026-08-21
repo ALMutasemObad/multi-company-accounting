@@ -33,7 +33,6 @@ const addressUpdate = address
 const customer = z
   .object({
     receivableAccountId: id,
-    code: z.string().trim().min(1).max(40),
     nameAr: z.string().trim().min(1).max(200),
     nameEn: nullable(z.string().max(200)).optional(),
     phone: nullable(z.string().max(40)).optional(),
@@ -51,7 +50,6 @@ const cash = z
   .object({
     ledgerAccountId: id,
     accountType: z.enum(["CASH", "BANK"]),
-    code: z.string().trim().min(1).max(40),
     nameAr: z.string().trim().min(1).max(160),
     nameEn: nullable(z.string().max(160)).optional(),
     bankName: nullable(z.string().max(160)).optional(),
@@ -60,7 +58,7 @@ const cash = z
   })
   .strict();
 const cashUpdate = cash.partial().refine((v) => Object.keys(v).length > 0);
-const paymentMethod = z.object({ code: z.string().trim().min(1).max(40), nameAr: z.string().trim().min(1).max(120), requiresReference: z.boolean().default(false) }).strict();
+const paymentMethod = z.object({ nameAr: z.string().trim().min(1).max(120), requiresReference: z.boolean().default(false) }).strict();
 const paymentMethodUpdate = paymentMethod.partial().refine((v) => Object.keys(v).length > 0);
 function sid(req: Request) {
   return Object.fromEntries(

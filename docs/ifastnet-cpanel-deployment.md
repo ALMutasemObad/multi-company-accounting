@@ -75,7 +75,9 @@ bash deploy/scripts/install-cpanel-release.sh \
 
 ## إعداد التطبيق وقاعدة البيانات
 
-أضف متغيرات الإنتاج من `.env.production.example` في Node.js Selector. يجب أن يكون `WEB_ORIGIN` هو رابط HTTPS نفسه، وتبقى `SESSION_COOKIE_SECURE` و`TRUST_PROXY` مفعّلتين. عند تفعيل التسجيل الذاتي أضف أسرار Resend و`REGISTRATION_AUDIT_PEPPER` من مدير الأسرار؛ وإلا اضبط `SELF_REGISTRATION_ENABLED=false` صراحةً. لا تحفظ كلمة مرور قاعدة البيانات أو كلمة مرور المدير أو مفاتيح البريد في Git أو داخل ملفات Artifact.
+أضف متغيرات الإنتاج من `.env.production.example` في Node.js Selector. يجب أن يكون `WEB_ORIGIN` هو رابط HTTPS نفسه، وتبقى `SESSION_COOKIE_SECURE` و`TRUST_PROXY` مفعّلتين. عند تفعيل التسجيل الذاتي أضف أسرار Resend و`REGISTRATION_AUDIT_PEPPER` و`REGISTRATION_TOKEN_SECRET`؛ وإذا بقيت استعادة كلمة المرور مفعلة فتبقى أسرار Resend ومفتاح الرمز مطلوبة حتى مع `SELF_REGISTRATION_ENABLED=false`. لا تحفظ كلمة مرور قاعدة البيانات أو كلمة مرور المدير أو مفاتيح البريد في Git أو داخل ملفات Artifact.
+
+بعد النشر تحقق من ظهور شاشة «نسيت كلمة المرور»، وراقب Outbox حسب `event_type='PasswordResetRequested'` وسجل الأمان حسب `event_type='PASSWORD_RESET_COMPLETED'`. لا تختبر الإنتاج بحساب حقيقي ذي جلسات لازمة، لأن نجاح الاستعادة يلغي جميع جلساته عمدًا.
 
 قبل تشغيل التطبيق لأول مرة فقط، طبّق الترحيلات بالإصدار المثبت من Prisma، ثم شغّل المرجعيات الإنتاجية وجهّز شركة العميل:
 

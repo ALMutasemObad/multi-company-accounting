@@ -1,4 +1,5 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
+import { reserveMasterDataCode } from "../platform/master-data-code-service.js";
 import type { ActorContext } from "../users/user-service.js";
 
 export type ReferenceErrorReason =
@@ -24,7 +25,6 @@ export type AddressInput = {
 };
 export type SupplierInput = {
   payableAccountId: bigint;
-  code: string;
   nameAr: string;
   nameEn?: string | null | undefined;
   phone?: string | null | undefined;
@@ -35,16 +35,15 @@ export type SupplierInput = {
 export type CashBankInput = {
   ledgerAccountId: bigint;
   accountType: "CASH" | "BANK";
-  code: string;
   nameAr: string;
   nameEn?: string | null | undefined;
   bankName?: string | null | undefined;
   accountNumber?: string | null | undefined;
   iban?: string | null | undefined;
 };
-type SupplierUpdate = { payableAccountId?: bigint | undefined; code?: string | undefined; nameAr?: string | undefined; nameEn?: string | null | undefined; phone?: string | null | undefined; email?: string | null | undefined; taxNumber?: string | null | undefined };
+type SupplierUpdate = { payableAccountId?: bigint | undefined; nameAr?: string | undefined; nameEn?: string | null | undefined; phone?: string | null | undefined; email?: string | null | undefined; taxNumber?: string | null | undefined };
 type AddressUpdate = { addressType?: AddressInput["addressType"] | undefined; line1?: string | undefined; line2?: string | null | undefined; city?: string | null | undefined; region?: string | null | undefined; postalCode?: string | null | undefined; countryCode?: string | null | undefined; isPrimary?: boolean | undefined };
-type CashBankUpdate = { ledgerAccountId?: bigint | undefined; accountType?: "CASH" | "BANK" | undefined; code?: string | undefined; nameAr?: string | undefined; nameEn?: string | null | undefined; bankName?: string | null | undefined; accountNumber?: string | null | undefined; iban?: string | null | undefined };
+type CashBankUpdate = { ledgerAccountId?: bigint | undefined; accountType?: "CASH" | "BANK" | undefined; nameAr?: string | undefined; nameEn?: string | null | undefined; bankName?: string | null | undefined; accountNumber?: string | null | undefined; iban?: string | null | undefined };
 const last4 = (value?: string | null) =>
   value ? value.replace(/\s/g, "").slice(-4) : null;
 const unique = (error: unknown) =>
@@ -103,11 +102,16 @@ export class SupplierReferenceService {
           context.companyId,
           input.payableAccountId,
         );
+        const code = await reserveMasterDataCode(
+          tx,
+          context.companyId,
+          "SUPPLIER",
+        );
         const value = await tx.supplier.create({
           data: {
             companyId: context.companyId,
             payableAccountId: input.payableAccountId,
-            code: input.code,
+            code,
             nameAr: input.nameAr,
             nameEn: input.nameEn ?? null,
             phone: input.phone ?? null,
@@ -163,7 +167,6 @@ export class SupplierReferenceService {
             ...(input.payableAccountId !== undefined
               ? { payableAccountId: input.payableAccountId }
               : {}),
-            ...(input.code !== undefined ? { code: input.code } : {}),
             ...(input.nameAr !== undefined ? { nameAr: input.nameAr } : {}),
             ...(input.nameEn !== undefined ? { nameEn: input.nameEn } : {}),
             ...(input.phone !== undefined ? { phone: input.phone } : {}),
@@ -335,12 +338,17 @@ export class SupplierReferenceService {
           input.ledgerAccountId,
         );
         this.validBank(input);
+        const code = await reserveMasterDataCode(
+          tx,
+          context.companyId,
+          "CASH_BANK_ACCOUNT",
+        );
         const value = await tx.cashBankAccount.create({
           data: {
             companyId: context.companyId,
             ledgerAccountId: input.ledgerAccountId,
             accountType: input.accountType,
-            code: input.code,
+            code,
             nameAr: input.nameAr,
             nameEn: input.nameEn ?? null,
             bankName: input.bankName ?? null,
@@ -389,7 +397,6 @@ export class SupplierReferenceService {
             ...(input.accountType !== undefined
               ? { accountType: input.accountType }
               : {}),
-            ...(input.code !== undefined ? { code: input.code } : {}),
             ...(input.nameAr !== undefined ? { nameAr: input.nameAr } : {}),
             ...(input.nameEn !== undefined ? { nameEn: input.nameEn } : {}),
             ...(input.bankName !== undefined

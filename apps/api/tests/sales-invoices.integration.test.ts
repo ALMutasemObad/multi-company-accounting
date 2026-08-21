@@ -158,9 +158,11 @@ describe.runIf(enabled)("sales invoices and receivables with MariaDB", () => {
     expect(updated.body.total).toBe("400.0000");
     await agent.post(`/api/v1/sales-invoices/${draft.body.id}/cancel`).set(headers).send({ version: 1, reason: "إلغاء مسودة اختبارية" }).expect(200);
 
-    const tax = await agent.post("/api/v1/tax-rates").set(headers).send({ code: "IT-SALES-RATE-5", nameAr: "ضريبة اختبارية 5%", rate: "5.0000", outputTaxAccountId: taxAccountId.toString() }).expect(201);
+    const tax = await agent.post("/api/v1/tax-rates").set(headers).send({ nameAr: "ضريبة اختبارية 5%", rate: "5.0000", outputTaxAccountId: taxAccountId.toString() }).expect(201);
+    expect(tax.body.code).toMatch(/^TAX-[0-9]{6,}$/);
     const changedTax = await agent.patch(`/api/v1/tax-rates/${tax.body.id}`).set(headers).send({ nameAr: "ضريبة اختبارية معدلة", isActive: false }).expect(200);
     expect(changedTax.body.isActive).toBe(false);
+    await prisma!.taxRate.delete({ where: { id: BigInt(tax.body.id) } });
 
     const reversible = await agent.post("/api/v1/sales-invoices").set(headers).send({ ...draftPayload, description: "فاتورة غير محصلة للعكس", documentDate: "2044-04-01", dueDate: "2044-04-30", lines: [{ ...draftPayload.lines[0], unitPrice: "450.0000", discountAmount: "50.0000" }] }).expect(201);
     await agent.post(`/api/v1/sales-invoices/${reversible.body.id}/post`).set(headers).set("Idempotency-Key", "it-post-reversible-sales-invoice").send({ version: 0 }).expect(200);

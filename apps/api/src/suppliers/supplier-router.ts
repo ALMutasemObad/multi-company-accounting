@@ -33,7 +33,6 @@ const addressUpdate = address
 const supplier = z
   .object({
     payableAccountId: id,
-    code: z.string().trim().min(1).max(40),
     nameAr: z.string().trim().min(1).max(200),
     nameEn: nullable(z.string().max(200)).optional(),
     phone: nullable(z.string().max(40)).optional(),

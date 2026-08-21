@@ -2,6 +2,8 @@ import { Prisma } from '@prisma/client';
 
 export const REGISTRATION_VERIFICATION_REQUESTED = 'RegistrationVerificationRequested';
 export const REGISTRATION_REQUEST_AGGREGATE = 'RegistrationRequest';
+export const PASSWORD_RESET_REQUESTED = 'PasswordResetRequested';
+export const PASSWORD_RESET_REQUEST_AGGREGATE = 'PasswordResetRequest';
 
 export type OutboxAppendInput = {
   eventType: string;

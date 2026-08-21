@@ -110,10 +110,11 @@ describe.runIf(enabled)('users and roles with MariaDB', () => {
     const companies = await admin.agent.get('/api/v1/auth/companies').expect(200);
     await admin.agent.put('/api/v1/auth/context').set('X-CSRF-Token', admin.csrfToken).send({ companyId: companies.body.data[0].id }).expect(204);
     const permissions = await admin.agent.get('/api/v1/permissions').expect(200);
-    const created = await admin.agent.post('/api/v1/roles').set('X-CSRF-Token', admin.csrfToken).send({ code: 'INTEGRATION_ROLE', nameAr: 'دور اختبار التكامل', permissionIds: [permissions.body.data[0].id] }).expect(201);
+    const created = await admin.agent.post('/api/v1/roles').set('X-CSRF-Token', admin.csrfToken).send({ nameAr: 'دور اختبار التكامل', permissionIds: [permissions.body.data[0].id] }).expect(201);
     const roleId = created.body.id as string;
     try {
       expect(created.body.permissionIds).toEqual([permissions.body.data[0].id]);
+      expect(created.body.code).toMatch(/^ROL-[0-9]{6,}$/);
       await admin.agent.put(`/api/v1/roles/${roleId}/permissions`).set('X-CSRF-Token', admin.csrfToken).send({ permissionIds: permissions.body.data.slice(0, 2).map((item: { id: string }) => item.id) }).expect(200);
       const systemRole = (await admin.agent.get('/api/v1/roles').expect(200)).body.data.find((role: { isSystemRole: boolean }) => role.isSystemRole);
       await admin.agent.patch(`/api/v1/roles/${systemRole.id}`).set('X-CSRF-Token', admin.csrfToken).send({ nameAr: 'غير مسموح' }).expect(422);

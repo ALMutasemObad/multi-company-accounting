@@ -6,6 +6,8 @@ import {
   companyUpdateRequestSchema,
   guardedOpenApiOperations,
   loginRequestSchema,
+  passwordResetCompleteRequestSchema,
+  passwordResetStartRequestSchema,
   registrationResendRequestSchema,
   registrationStartRequestSchema,
   registrationVerifyRequestSchema,
@@ -24,6 +26,8 @@ describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
     expect(guardedOpenApiOperations).toEqual([
       'login',
+      'startPasswordReset',
+      'completePasswordReset',
       'startSelfRegistration',
       'resendSelfRegistrationVerification',
       'verifySelfRegistration',
@@ -34,6 +38,18 @@ describe('generated OpenAPI request guards', () => {
       'replaceCompanyCurrencies',
       'upsertCompanyExchangeRate',
     ]);
+  });
+
+  it('enforces the password-reset boundary from OpenAPI', () => {
+    expect(passwordResetStartRequestSchema.parse({ email: ' owner@example.com ', locale: 'ar' }))
+      .toEqual({ email: 'owner@example.com', locale: 'ar' });
+    expect(passwordResetStartRequestSchema.safeParse({ email: 'owner@example.com', locale: 'fr' }).success).toBe(false);
+    expect(passwordResetStartRequestSchema.safeParse({ email: 'owner@example.com', locale: 'ar', extra: true }).success).toBe(false);
+
+    const token = 'a'.repeat(43);
+    expect(passwordResetCompleteRequestSchema.safeParse({ token, password: 'a secure new password' }).success).toBe(true);
+    expect(passwordResetCompleteRequestSchema.safeParse({ token: 'bad token', password: 'a secure new password' }).success).toBe(false);
+    expect(passwordResetCompleteRequestSchema.safeParse({ token, password: 'too short' }).success).toBe(false);
   });
 
   it('enforces the public registration boundary from OpenAPI', () => {

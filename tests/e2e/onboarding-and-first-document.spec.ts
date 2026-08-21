@@ -46,7 +46,17 @@ test('self-registers, switches locale, configures currency, and creates the firs
   const password = 'E2E-Only-Owner-Password-2026!';
   const companyName = `E2E Company ${runSuffix}`;
 
+  await page.goto('/#reset-password');
+  await page.locator('.auth-language select').selectOption('en');
+  await expect(page.getByRole('heading', { name: 'Forgot your password' })).toBeVisible();
+  await page.locator('.login-card [name="email"]').fill(`missing.${runSuffix}@mcap.local`);
+  await page.getByRole('button', { name: 'Send recovery link' }).click();
+  await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
+  await page.getByRole('button', { name: 'Back to sign in' }).click();
+  await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
+
   await page.goto('/#register');
+  await page.reload();
   await page.locator('.auth-language select').selectOption('en');
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');

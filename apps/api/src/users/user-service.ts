@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { hash } from 'argon2';
 import type { Prisma, PrismaClient } from '@prisma/client';
+import { reserveMasterDataCode } from '../platform/master-data-code-service.js';
 
 export class UserManagementError extends Error {
   constructor(public readonly reason: 'NOT_FOUND' | 'EMAIL_EXISTS' | 'SELF_ROLE_CHANGE' | 'SELF_DISABLE' | 'INVALID_ROLE' | 'ROLE_CODE_EXISTS' | 'INVALID_PERMISSION' | 'SYSTEM_ROLE_PROTECTED') { super(reason); }
@@ -102,11 +103,12 @@ export class UserService {
 
   listPermissions() { return this.prisma.permission.findMany({ orderBy: [{ module: 'asc' }, { code: 'asc' }] }); }
 
-  async createRole(context: ActorContext, input: { code: string; nameAr: string; nameEn?: string | null | undefined; permissionIds: bigint[] }) {
+  async createRole(context: ActorContext, input: { nameAr: string; nameEn?: string | null | undefined; permissionIds: bigint[] }) {
     await this.validatePermissions(input.permissionIds);
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const role = await tx.role.create({ data: { companyId: context.companyId, code: input.code.toUpperCase(), nameAr: input.nameAr, nameEn: input.nameEn ?? null } });
+        const code = await reserveMasterDataCode(tx, context.companyId, 'CUSTOM_ROLE');
+        const role = await tx.role.create({ data: { companyId: context.companyId, code, nameAr: input.nameAr, nameEn: input.nameEn ?? null } });
         if (input.permissionIds.length) await tx.rolePermission.createMany({ data: input.permissionIds.map((permissionId) => ({ roleId: role.id, permissionId })) });
         await tx.auditLog.create({ data: { companyId: context.companyId, actorUserId: context.userId, action: 'ROLE_CREATED', entityType: 'ROLE', entityId: role.id.toString(), details: { code: role.code, permissionIds: input.permissionIds.map(String) } } });
         return tx.role.findUniqueOrThrow({ where: { id: role.id }, include: { permissions: { include: { permission: true } }, _count: { select: { assignments: true } } } });

@@ -41,6 +41,8 @@ import { createRateLimiter } from './operations/rate-limit.js';
 import { logEvent, requestLogger } from './operations/logger.js';
 import type { RegistrationService } from './registration/registration-service.js';
 import { createRegistrationRouter } from './registration/registration-router.js';
+import type { PasswordResetService } from './auth/password-reset-service.js';
+import { createPasswordResetRouter } from './auth/password-reset-router.js';
 
 type ClientRequestProblem = {
   status: number;
@@ -81,7 +83,7 @@ function clientRequestProblem(error: unknown): ClientRequestProblem | undefined 
   return undefined;
 }
 
-export function createApp(config: AppConfig, services: { readiness?: ReadinessCheck; auth?: AuthService; registration?: RegistrationService; users?: UserService; companies?: CompanyService; printing?: PrintService; audit?: AuditService; security?: SecurityEventService; fiscal?: FiscalService; accounts?: AccountService; journals?: ManualJournalService; receiptReferences?: ReceiptReferenceService; receipts?: ReceiptService; suppliers?: SupplierReferenceService; payments?: PaymentService; reports?: ReportService; salesInvoices?: SalesInvoiceService; purchaseInvoices?: PurchaseInvoiceService } = {}) {
+export function createApp(config: AppConfig, services: { readiness?: ReadinessCheck; auth?: AuthService; registration?: RegistrationService; passwordReset?: PasswordResetService; users?: UserService; companies?: CompanyService; printing?: PrintService; audit?: AuditService; security?: SecurityEventService; fiscal?: FiscalService; accounts?: AccountService; journals?: ManualJournalService; receiptReferences?: ReceiptReferenceService; receipts?: ReceiptService; suppliers?: SupplierReferenceService; payments?: PaymentService; reports?: ReportService; salesInvoices?: SalesInvoiceService; purchaseInvoices?: PurchaseInvoiceService } = {}) {
   const app = express();
 
   app.disable('x-powered-by');
@@ -118,8 +120,10 @@ export function createApp(config: AppConfig, services: { readiness?: ReadinessCh
   app.use('/api/v1/auth/login', createRateLimiter({ scope: 'login', windowMs, max: config.AUTH_RATE_LIMIT_MAX ?? 20 }));
   const registrationLimiter = createRateLimiter({ scope: 'registration', windowMs, max: config.REGISTRATION_RATE_LIMIT_MAX ?? 5 });
   app.use('/api/v1/auth/register', (request, response, next) => request.method === 'GET' ? next() : registrationLimiter(request, response, next));
+  app.use('/api/v1/auth/password', createRateLimiter({ scope: 'password-reset', windowMs, max: config.PASSWORD_RESET_RATE_LIMIT_MAX ?? 5 }));
   if (services.auth) app.use('/api/v1/auth', createAuthRouter(services.auth, config.SESSION_COOKIE_SECURE));
   if (services.auth && services.registration) app.use('/api/v1/auth/register', createRegistrationRouter(services.auth, services.registration));
+  if (services.auth && services.passwordReset) app.use('/api/v1/auth/password', createPasswordResetRouter(services.auth, services.passwordReset));
   if (services.auth && services.users) app.use('/api/v1', createUserRouter(services.auth, services.users));
   if (services.auth && services.companies) app.use('/api/v1', createCompanyRouter(services.auth, services.companies));
   if (services.auth && services.printing) app.use('/api/v1', createPrintRouter(services.auth, services.printing));

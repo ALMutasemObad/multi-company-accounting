@@ -285,7 +285,6 @@ function CustomerForm({
     const value = (name: string) => String(data.get(name) ?? "").trim();
     const payload = {
       receivableAccountId: value("receivableAccountId"),
-      code: value("code"),
       nameAr: value("nameAr"),
       nameEn: value("nameEn") || null,
       phone: value("phone") || null,
@@ -340,10 +339,14 @@ function CustomerForm({
             ))}
           </select>
         </label>
-        <label>
-          <span>{t("pages.customers.045")}</span>
-          <input name="code" defaultValue={customer?.code} maxLength={40} required />
-        </label>
+        {customer ? (
+          <label>
+            <span>{t("pages.customers.045")}</span>
+            <input dir="ltr" value={customer.code} readOnly />
+          </label>
+        ) : (
+          <div className="inline-notice neutral full">{t("pages.customers.087")}</div>
+        )}
         <label>
           <span>{t("pages.customers.046")}</span>
           <input name="nameAr" defaultValue={customer?.nameAr} maxLength={200} required />

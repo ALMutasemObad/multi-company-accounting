@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.5.0
+  version: 1.6.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -286,6 +286,53 @@ paths:
       security:
       - SessionCookie: []
         CsrfToken: []
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+  /auth/password/forgot:
+    post:
+      tags: [Authentication]
+      summary: طلب رابط استعادة كلمة المرور
+      operationId: startPasswordReset
+      description: تعاد الاستجابة العامة نفسها سواء كان البريد موجودًا أو غير موجود لمنع تعداد الحسابات.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PasswordResetStartRequest' }
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      responses:
+        '202':
+          description: قُبل الطلب دون كشف وجود الحساب
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PasswordResetAcceptedResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+  /auth/password/reset:
+    post:
+      tags: [Authentication]
+      summary: تعيين كلمة مرور جديدة برمز أحادي الاستعمال
+      operationId: completePasswordReset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PasswordResetCompleteRequest' }
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      responses:
+        '204': { description: عُيّنت كلمة المرور وأُلغيت الجلسات السابقة }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
       parameters:
       - $ref: '#/components/parameters/RequestId'
   /auth/companies:
@@ -4200,7 +4247,7 @@ paths:
       operationId: updateTaxRate
       parameters:
       - { name: taxRateId, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
-      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TaxRateInput' } } } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TaxRateUpdate' } } } }
       responses:
         '200': { description: نجاح, content: { application/json: { schema: { $ref: '#/components/schemas/TaxRate' } } } }
         '400': { $ref: '#/components/responses/ValidationError' }
@@ -4246,7 +4293,7 @@ paths:
       operationId: updatePurchaseTaxRate
       parameters:
       - { name: taxRateId, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
-      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PurchaseTaxRateInput' } } } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PurchaseTaxRateUpdate' } } } }
       responses:
         '200': { description: نجاح, content: { application/json: { schema: { $ref: '#/components/schemas/PurchaseTaxRate' } } } }
         '400': { $ref: '#/components/responses/ValidationError' }
@@ -5891,6 +5938,26 @@ components:
           type: string
           minLength: 1
           maxLength: 1024
+    PasswordResetStartRequest:
+      type: object
+      additionalProperties: false
+      required: [email, locale]
+      properties:
+        email: { type: string, format: email, maxLength: 320, x-trim: true }
+        locale: { type: string, enum: [ar, en] }
+    PasswordResetCompleteRequest:
+      type: object
+      additionalProperties: false
+      required: [token, password]
+      properties:
+        token: { type: string, minLength: 32, maxLength: 200, pattern: '^[A-Za-z0-9_-]+$' }
+        password: { type: string, minLength: 12, maxLength: 1024 }
+    PasswordResetAcceptedResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { type: string, enum: [ACCEPTED] }
     RegistrationStartRequest:
       type: object
       additionalProperties: false
@@ -6221,6 +6288,8 @@ components:
           description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
         code:
           type: string
+          readOnly: true
+          description: رمز الدور النظامي أو رمز ثابت يولده النظام للدور المخصص.
         nameAr:
           type: string
         nameEn:
@@ -6245,9 +6314,8 @@ components:
     RoleCreateRequest:
       type: object
       additionalProperties: false
-      required: [code, nameAr, permissionIds]
+      required: [nameAr, permissionIds]
       properties:
-        code: { type: string, pattern: '^[A-Za-z][A-Za-z0-9_]{1,79}$' }
         nameAr: { type: string, minLength: 1, maxLength: 120 }
         nameEn: { type: [string, 'null'], maxLength: 120 }
         permissionIds:
@@ -6981,6 +7049,8 @@ components:
         code:
           type: string
           maxLength: 40
+          readOnly: true
+          description: رمز ثابت يولده النظام تلقائيًا.
         nameAr:
           type: string
           maxLength: 160
@@ -6994,7 +7064,6 @@ components:
       type: object
       additionalProperties: false
       required:
-      - code
       - nameAr
       properties:
         parentId:
@@ -7004,10 +7073,6 @@ components:
             example: '1001'
             description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
           - type: 'null'
-        code:
-          type: string
-          minLength: 1
-          maxLength: 40
         nameAr:
           type: string
           minLength: 1
@@ -7196,6 +7261,8 @@ components:
         code:
           type: string
           maxLength: 40
+          readOnly: true
+          description: رمز ثابت يولده النظام تلقائيًا عند إنشاء العميل.
         nameAr:
           type: string
           maxLength: 200
@@ -7227,7 +7294,6 @@ components:
       additionalProperties: false
       required:
       - receivableAccountId
-      - code
       - nameAr
       properties:
         receivableAccountId:
@@ -7235,10 +7301,6 @@ components:
           pattern: ^[1-9][0-9]*$
           example: '1001'
           description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
-        code:
-          type: string
-          minLength: 1
-          maxLength: 40
         nameAr:
           type: string
           minLength: 1
@@ -7277,10 +7339,6 @@ components:
           pattern: ^[1-9][0-9]*$
           example: '1001'
           description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
-        code:
-          type: string
-          minLength: 1
-          maxLength: 40
         nameAr:
           type: string
           minLength: 1
@@ -7328,6 +7386,8 @@ components:
         code:
           type: string
           maxLength: 40
+          readOnly: true
+          description: رمز ثابت يولده النظام تلقائيًا عند إنشاء المورد.
         nameAr:
           type: string
           maxLength: 200
@@ -7359,7 +7419,6 @@ components:
       additionalProperties: false
       required:
       - payableAccountId
-      - code
       - nameAr
       properties:
         payableAccountId:
@@ -7367,10 +7426,6 @@ components:
           pattern: ^[1-9][0-9]*$
           example: '1001'
           description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
-        code:
-          type: string
-          minLength: 1
-          maxLength: 40
         nameAr:
           type: string
           minLength: 1
@@ -7409,10 +7464,6 @@ components:
           pattern: ^[1-9][0-9]*$
           example: '1001'
           description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
-        code:
-          type: string
-          minLength: 1
-          maxLength: 40
         nameAr:
           type: string
           minLength: 1
@@ -7466,6 +7517,8 @@ components:
           $ref: '#/components/schemas/CashBankAccountType'
         code:
           type: string
+          readOnly: true
+          description: رمز ثابت يولده النظام تلقائيًا.
         nameAr:
           type: string
         nameEn:
@@ -7492,7 +7545,6 @@ components:
       required:
       - ledgerAccountId
       - accountType
-      - code
       - nameAr
       properties:
         ledgerAccountId:
@@ -7502,10 +7554,6 @@ components:
           description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
         accountType:
           $ref: '#/components/schemas/CashBankAccountType'
-        code:
-          type: string
-          minLength: 1
-          maxLength: 40
         nameAr:
           type: string
           minLength: 1
@@ -7540,10 +7588,6 @@ components:
           description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
         accountType:
           $ref: '#/components/schemas/CashBankAccountType'
-        code:
-          type: string
-          minLength: 1
-          maxLength: 40
         nameAr:
           type: string
           minLength: 1
@@ -7766,6 +7810,8 @@ components:
           description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
         code:
           type: string
+          readOnly: true
+          description: رمز نظامي للطرق العامة أو رمز ثابت مولد للطرق الخاصة بالشركة.
         nameAr:
           type: string
         requiresReference:
@@ -7781,14 +7827,9 @@ components:
       type: object
       additionalProperties: false
       required:
-      - code
       - nameAr
       - requiresReference
       properties:
-        code:
-          type: string
-          minLength: 1
-          maxLength: 40
         nameAr:
           type: string
           minLength: 1
@@ -7800,10 +7841,6 @@ components:
       additionalProperties: false
       minProperties: 1
       properties:
-        code:
-          type: string
-          minLength: 1
-          maxLength: 40
         nameAr:
           type: string
           minLength: 1
@@ -7954,36 +7991,58 @@ components:
         lines: { type: array, items: { type: object } }
     TaxRateInput:
       type: object
-      required: [code, nameAr, rate]
+      additionalProperties: false
+      required: [nameAr, rate]
       properties:
-        code: { type: string, minLength: 1, maxLength: 40 }
+        nameAr: { type: string, minLength: 1, maxLength: 120 }
+        rate: { type: string, pattern: '^(0|[1-9][0-9]{0,2})\.[0-9]{4}$' }
+        outputTaxAccountId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+    TaxRateUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
         nameAr: { type: string, minLength: 1, maxLength: 120 }
         rate: { type: string, pattern: '^(0|[1-9][0-9]{0,2})\.[0-9]{4}$' }
         outputTaxAccountId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
         isActive: { type: boolean }
     TaxRate:
-      allOf:
-      - $ref: '#/components/schemas/TaxRateInput'
-      - type: object
-        required: [id, isActive]
-        properties:
-          id: { type: string, pattern: '^[1-9][0-9]*$' }
+      type: object
+      required: [id, code, nameAr, rate, isActive]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        code: { type: string, maxLength: 40, readOnly: true }
+        nameAr: { type: string }
+        rate: { type: string }
+        outputTaxAccountId: { type: [string, 'null'] }
+        isActive: { type: boolean }
     PurchaseTaxRateInput:
       type: object
-      required: [code, nameAr, rate]
+      additionalProperties: false
+      required: [nameAr, rate]
       properties:
-        code: { type: string, minLength: 1, maxLength: 40 }
+        nameAr: { type: string, minLength: 1, maxLength: 120 }
+        rate: { type: string, pattern: '^(0|[1-9][0-9]{0,2})\.[0-9]{4}$' }
+        inputTaxAccountId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+    PurchaseTaxRateUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
         nameAr: { type: string, minLength: 1, maxLength: 120 }
         rate: { type: string, pattern: '^(0|[1-9][0-9]{0,2})\.[0-9]{4}$' }
         inputTaxAccountId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
         isActive: { type: boolean }
     PurchaseTaxRate:
-      allOf:
-      - $ref: '#/components/schemas/PurchaseTaxRateInput'
-      - type: object
-        required: [id, isActive]
-        properties:
-          id: { type: string, pattern: '^[1-9][0-9]*$' }
+      type: object
+      required: [id, code, nameAr, rate, isActive]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        code: { type: string, maxLength: 40, readOnly: true }
+        nameAr: { type: string }
+        rate: { type: string }
+        inputTaxAccountId: { type: [string, 'null'] }
+        isActive: { type: boolean }
     ReceivablesAgingReport:
       type: object
       required: [asOf, baseCurrency, data, totals]

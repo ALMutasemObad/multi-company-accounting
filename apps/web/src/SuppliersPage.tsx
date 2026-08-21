@@ -285,7 +285,6 @@ function SupplierForm({
     const value = (name: string) => String(data.get(name) ?? "").trim();
     const payload = {
       payableAccountId: value("payableAccountId"),
-      code: value("code"),
       nameAr: value("nameAr"),
       nameEn: value("nameEn") || null,
       phone: value("phone") || null,
@@ -340,10 +339,14 @@ function SupplierForm({
             ))}
           </select>
         </label>
-        <label>
-          <span>{t("pages.suppliers.045")}</span>
-          <input name="code" defaultValue={supplier?.code} maxLength={40} required />
-        </label>
+        {supplier ? (
+          <label>
+            <span>{t("pages.suppliers.045")}</span>
+            <input dir="ltr" value={supplier.code} readOnly />
+          </label>
+        ) : (
+          <div className="inline-notice neutral full">{t("pages.suppliers.070")}</div>
+        )}
         <label>
           <span>{t("pages.customers.046")}</span>
           <input name="nameAr" defaultValue={supplier?.nameAr} maxLength={200} required />

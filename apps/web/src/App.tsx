@@ -5,6 +5,7 @@ import { LanguageSwitcher, type TranslationKey, useI18n } from "./i18n";
 import type { Company, User } from "./types";
 import { Button, Icon, Spinner, Toast } from "./ui";
 import { RegistrationPage } from "./RegistrationPage";
+import { PasswordResetPage } from "./PasswordResetPage";
 
 const DashboardPage = lazy(() => import("./DashboardPage").then((module) => ({ default: module.DashboardPage })));
 const CustomersPage = lazy(() => import("./CustomersPage").then((module) => ({ default: module.CustomersPage })));
@@ -71,7 +72,7 @@ const viewTitleKey: Record<View, TranslationKey> = {
 export default function App() {
   const { dir, t } = useI18n();
   const brand = localizedBrand(t);
-  const [state, setState] = useState<"booting" | "login" | "register" | "company" | "ready">("booting");
+  const [state, setState] = useState<"booting" | "login" | "register" | "password-reset" | "company" | "ready">("booting");
   const [user, setUser] = useState<User | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [company, setCompany] = useState<Company | null>(null);
@@ -100,6 +101,11 @@ export default function App() {
 
   useEffect(() => {
     void (async () => {
+      if (location.hash.startsWith("#reset-password")) {
+        await beginLogin().catch(() => undefined);
+        setState("password-reset");
+        return;
+      }
       if (location.hash.startsWith("#register")) {
         await beginLogin().catch(() => undefined);
         setState("register");
@@ -150,6 +156,10 @@ export default function App() {
   if (state === "login")
     return (
       <LoginScreen
+        onForgotPassword={() => {
+          location.hash = "reset-password";
+          void beginLogin().finally(() => setState("password-reset"));
+        }}
         onRegister={() => {
           location.hash = "register";
           setState("register");
@@ -168,6 +178,17 @@ export default function App() {
   if (state === "register")
     return (
       <RegistrationPage
+        onBackToLogin={() => {
+          const url = new URL(location.href);
+          history.replaceState(null, "", `${url.pathname}${url.search}`);
+          void beginLogin().finally(() => setState("login"));
+        }}
+      />
+    );
+
+  if (state === "password-reset")
+    return (
+      <PasswordResetPage
         onBackToLogin={() => {
           const url = new URL(location.href);
           history.replaceState(null, "", `${url.pathname}${url.search}`);
@@ -265,7 +286,7 @@ export default function App() {
   );
 }
 
-function LoginScreen({ onLoggedIn, onRegister }: { onLoggedIn: (user: User) => Promise<void>; onRegister: () => void }) {
+function LoginScreen({ onLoggedIn, onRegister, onForgotPassword }: { onLoggedIn: (user: User) => Promise<void>; onRegister: () => void; onForgotPassword: () => void }) {
   const { dir, t } = useI18n();
   const brand = localizedBrand(t);
   const [error, setError] = useState("");
@@ -310,6 +331,7 @@ function LoginScreen({ onLoggedIn, onRegister }: { onLoggedIn: (user: User) => P
           {error && <div className="form-error" role="alert">{error}</div>}
           <label><span>{t("login.email")}</span><input name="email" type="email" dir="ltr" autoComplete="username" defaultValue="admin@mcap.local" required /></label>
           <label><span>{t("login.password")}</span><input name="password" type="password" dir="ltr" autoComplete="current-password" required /></label>
+          <button className="auth-text-link" type="button" onClick={onForgotPassword}>{t("login.forgotPassword")}</button>
           <Button type="submit" disabled={loading}>{loading ? t("login.checking") : t("login.submit")}</Button>
           <button className="auth-text-link" type="button" onClick={onRegister}>{t("login.createAccount")}</button>
           <small>{t("login.developmentPassword")}</small>

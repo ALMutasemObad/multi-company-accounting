@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { FiscalService } from "../fiscal/fiscal-service.js";
+import { reserveMasterDataCode } from "../platform/master-data-code-service.js";
 import type { ActorContext } from "../users/user-service.js";
 import { calculateInvoice, InvoiceCalculationError } from "./invoice-calculator.js";
 
@@ -418,16 +419,17 @@ export class SalesInvoiceService {
     return this.prisma.taxRate.findMany({ where: { companyId: context.companyId, ...(activeOnly ? { isActive: true } : {}) }, include: { outputTaxAccount: { select: { id: true, code: true, nameAr: true } } }, orderBy: [{ rate: "asc" }, { code: "asc" }] });
   }
 
-  async createTaxRate(context: ActorContext, input: { code: string; nameAr: string; rate: string; outputTaxAccountId?: bigint | null }) {
+  async createTaxRate(context: ActorContext, input: { nameAr: string; rate: string; outputTaxAccountId?: bigint | null }) {
     return this.prisma.$transaction(async (tx) => {
       await this.validateTaxAccount(tx, context.companyId, input.rate, input.outputTaxAccountId ?? null);
-      const value = await tx.taxRate.create({ data: { companyId: context.companyId, code: input.code, nameAr: input.nameAr, rate: decimal(input.rate), outputTaxAccountId: input.outputTaxAccountId ?? null }, include: { outputTaxAccount: { select: { id: true, code: true, nameAr: true } } } });
-      await this.audit(tx, context, "TAX_RATE_CREATED", value.id, { code: input.code, rate: input.rate }, "TAX_RATE");
+      const code = await reserveMasterDataCode(tx, context.companyId, "TAX_RATE");
+      const value = await tx.taxRate.create({ data: { companyId: context.companyId, code, nameAr: input.nameAr, rate: decimal(input.rate), outputTaxAccountId: input.outputTaxAccountId ?? null }, include: { outputTaxAccount: { select: { id: true, code: true, nameAr: true } } } });
+      await this.audit(tx, context, "TAX_RATE_CREATED", value.id, { code, rate: input.rate }, "TAX_RATE");
       return value;
     });
   }
 
-  async updateTaxRate(context: ActorContext, id: bigint, input: { code?: string; nameAr?: string; rate?: string; outputTaxAccountId?: bigint | null; isActive?: boolean }) {
+  async updateTaxRate(context: ActorContext, id: bigint, input: { nameAr?: string; rate?: string; outputTaxAccountId?: bigint | null; isActive?: boolean }) {
     return this.prisma.$transaction(async (tx) => {
       const current = await tx.taxRate.findFirst({ where: { id, companyId: context.companyId } });
       if (!current) throw new SalesInvoiceError("NOT_FOUND");

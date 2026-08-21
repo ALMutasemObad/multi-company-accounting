@@ -257,7 +257,6 @@ describe.runIf(enabled)(
         .set("X-CSRF-Token", csrf)
         .send({
           payableAccountId: apId.toString(),
-          code: "IT-PAY-CUST",
           nameAr: "Test text",
           taxNumber: "1234567890",
           addresses: [
@@ -271,6 +270,7 @@ describe.runIf(enabled)(
         })
         .expect(201);
       supplierId = BigInt(supplier.body.id);
+      expect(supplier.body.code).toMatch(/^SUP-[0-9]{6,}$/);
       expect(supplier.body.taxNumberMasked).toBe("****7890");
       cashBankId = (
         await prisma!.cashBankAccount.create({
@@ -438,6 +438,43 @@ describe.runIf(enabled)(
           .then((result) => expect(result.body.data).toHaveLength(0));
       } finally {
         await prisma!.company.delete({ where: { id: foreign.id } });
+      }
+    });
+    it("generates immutable unique supplier codes under concurrent creation", async () => {
+      const responses = await Promise.all(
+        Array.from({ length: 12 }, (_, index) =>
+          agent
+            .post("/api/v1/suppliers")
+            .set("X-CSRF-Token", csrf)
+            .send({
+              payableAccountId: apId.toString(),
+              nameAr: `Concurrent supplier ${index + 1}`,
+            }),
+        ),
+      );
+      expect(responses.every((response) => response.status === 201)).toBe(true);
+      const codes = responses.map((response) => response.body.code as string);
+      const ids = responses.map((response) => response.body.id as string);
+      expect(new Set(codes).size).toBe(codes.length);
+      expect(codes.every((code) => /^SUP-[0-9]{6,}$/.test(code))).toBe(true);
+
+      try {
+        await agent
+          .patch(`/api/v1/suppliers/${ids[0]}`)
+          .set("X-CSRF-Token", csrf)
+          .send({ code: "MANUAL-CODE" })
+          .expect(400);
+        const persisted = await agent
+          .get(`/api/v1/suppliers/${ids[0]}`)
+          .expect(200);
+        expect(persisted.body.code).toBe(codes[0]);
+      } finally {
+        await prisma!.auditLog.deleteMany({
+          where: { companyId, entityType: "SUPPLIER", entityId: { in: ids } },
+        });
+        await prisma!.supplier.deleteMany({
+          where: { companyId, id: { in: ids.map(BigInt) } },
+        });
       }
     });
     it("validates allocation totals, updates a draft and cancels it", async () => {

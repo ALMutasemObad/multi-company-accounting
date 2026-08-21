@@ -11,7 +11,7 @@ const updateSchema = z.object({ nameAr: z.string().trim().min(1).max(160).option
 const reasonSchema = z.object({ reason: z.string().trim().min(3).max(500) }).strict();
 const rolesSchema = z.object({ roleIds: z.array(z.string().regex(/^[1-9][0-9]*$/)).max(20).refine((ids) => new Set(ids).size === ids.length) }).strict();
 const permissionIdsSchema = z.array(z.string().regex(/^[1-9][0-9]*$/)).max(200).refine((ids) => new Set(ids).size === ids.length);
-const createRoleSchema = z.object({ code: z.string().trim().regex(/^[A-Za-z][A-Za-z0-9_]{1,79}$/), nameAr: z.string().trim().min(1).max(120), nameEn: z.string().trim().max(120).nullable().optional(), permissionIds: permissionIdsSchema.default([]) }).strict();
+const createRoleSchema = z.object({ nameAr: z.string().trim().min(1).max(120), nameEn: z.string().trim().max(120).nullable().optional(), permissionIds: permissionIdsSchema.default([]) }).strict();
 const updateRoleSchema = z.object({ nameAr: z.string().trim().min(1).max(120).optional(), nameEn: z.string().trim().max(120).nullable().optional() }).strict().refine((value) => Object.keys(value).length > 0);
 const rolePermissionsSchema = z.object({ permissionIds: permissionIdsSchema }).strict();
 

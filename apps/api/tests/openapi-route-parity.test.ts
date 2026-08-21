@@ -17,6 +17,7 @@ import { createSecurityEventRouter } from '../src/security/security-event-router
 import { createSupplierRouter } from '../src/suppliers/supplier-router.js';
 import { createUserRouter } from '../src/users/user-router.js';
 import { createRegistrationRouter } from '../src/registration/registration-router.js';
+import { createPasswordResetRouter } from '../src/auth/password-reset-router.js';
 
 type RouteLayer = {
   route?: {
@@ -28,6 +29,7 @@ type RouteLayer = {
 const stub = {} as never;
 const routers = [
   { prefix: '/auth', router: createAuthRouter(stub, false) },
+  { prefix: '/auth/password', router: createPasswordResetRouter(stub, stub) },
   { prefix: '/auth/register', router: createRegistrationRouter(stub, stub) },
   { prefix: '', router: createUserRouter(stub, stub) },
   { prefix: '', router: createCompanyRouter(stub, stub) },

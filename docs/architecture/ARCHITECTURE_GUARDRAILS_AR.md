@@ -6,6 +6,8 @@ last_updated: "2026-08-21"
 related:
   - "BOUNDED_CONTEXT_MAP_AR.md"
   - "ADR-003-domain-boundaries-and-eventing.md"
+  - "MASTER_DATA_CODE_POLICY_AR.md"
+  - "PASSWORD_RESET_SECURITY_POLICY_AR.md"
   - "CONCURRENCY_DEADLOCK_DEADLINE_POLICY_AR.md"
   - "../ARCHITECTURE_AUDIT_DDD_EVENT_DRIVEN_AR.md"
 ---
@@ -90,6 +92,7 @@ related:
 
 - `Money` والتقريب.
 - Document numbering/sequence reservation.
+- Master-data code reservation وفق [سياسة رموز البيانات الرئيسية](MASTER_DATA_CODE_POLICY_AR.md).
 - Idempotent command execution.
 - Fiscal-period validation.
 - Posting-account validation.
@@ -105,7 +108,7 @@ related:
 
 يجب اعتماد Transactional Outbox وفق ADR-003، بدءًا من `RegistrationVerificationRequested` لأن البريد الحالي غير durable بعد commit.
 
-حالة التنفيذ: اكتملت شريحة بريد التسجيل في `20260822100000_transactional_outbox` بعامل داخلي durable؛ تطبق القواعد نفسها على أي حدث لاحق.
+حالة التنفيذ: اكتملت شريحتا بريد التسجيل واستعادة كلمة المرور بعامل داخلي durable؛ تطبق القواعد نفسها على أي حدث لاحق.
 
 بعد ذلك تضاف أحداث الترحيل والعكس وإغلاق الفترة عندما يوجد مستهلك حقيقي أو Read Model واضح.
 
@@ -154,6 +157,7 @@ related:
 - كل schema change عبر Migration واختبارات قاعدة فارغة وترقية.
 - يجب تحديث Prisma وMigration والوثائق والعقد معًا حسب نطاق التغيير.
 - يمنع `db push`, `MAX()+1`، وraw SQL غير parameterized.
+- رموز البيانات الرئيسية المشمولة بالسياسة يولدها الخادم ذريًا، وتبقى ثابتة ولا تقبلها عقود الإنشاء أو التعديل.
 - يجب المحافظة على company isolation في كل query واختبار cross-company.
 - يجب ألا تعبر DTOs أو Prisma types حدود Context كعقد دائم؛ يستخدم عقد Application أو Event صريح.
 

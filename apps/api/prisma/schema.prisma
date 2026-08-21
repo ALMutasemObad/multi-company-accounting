@@ -106,6 +106,12 @@ enum RegistrationDeliveryStatus {
   FAILED
 }
 
+enum PasswordResetStatus {
+  PENDING
+  USED
+  REVOKED
+}
+
 enum OutboxStatus {
   PENDING
   PROCESSING
@@ -149,19 +155,19 @@ model Currency {
 }
 
 model Company {
-  id                               BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
-  organizationId                   BigInt                 @map("organization_id") @db.UnsignedBigInt
-  baseCurrencyId                   BigInt                 @map("base_currency_id") @db.UnsignedBigInt
-  code                             String                 @default(uuid()) @db.VarChar(80)
-  name                             String                 @db.VarChar(200)
-  timezone                         String                 @db.VarChar(64)
-  isActive                         Boolean                @default(true) @map("is_active")
-  manualJournalMakerCheckerEnabled Boolean                @default(true) @map("manual_journal_maker_checker_enabled")
-  createdAt                        DateTime               @default(now()) @map("created_at")
-  updatedAt                        DateTime               @updatedAt @map("updated_at")
-  organization                     Organization           @relation(fields: [organizationId], references: [id])
-  baseCurrency                     Currency               @relation("BaseCurrency", fields: [baseCurrencyId], references: [id])
-  ownedCurrencies                  Currency[]             @relation("OwnedCurrencies")
+  id                               BigInt                   @id @default(autoincrement()) @db.UnsignedBigInt
+  organizationId                   BigInt                   @map("organization_id") @db.UnsignedBigInt
+  baseCurrencyId                   BigInt                   @map("base_currency_id") @db.UnsignedBigInt
+  code                             String                   @default(uuid()) @db.VarChar(80)
+  name                             String                   @db.VarChar(200)
+  timezone                         String                   @db.VarChar(64)
+  isActive                         Boolean                  @default(true) @map("is_active")
+  manualJournalMakerCheckerEnabled Boolean                  @default(true) @map("manual_journal_maker_checker_enabled")
+  createdAt                        DateTime                 @default(now()) @map("created_at")
+  updatedAt                        DateTime                 @updatedAt @map("updated_at")
+  organization                     Organization             @relation(fields: [organizationId], references: [id])
+  baseCurrency                     Currency                 @relation("BaseCurrency", fields: [baseCurrencyId], references: [id])
+  ownedCurrencies                  Currency[]               @relation("OwnedCurrencies")
   assignments                      UserCompany[]
   sessions                         Session[]
   idempotency                      IdempotencyRecord[]
@@ -171,6 +177,7 @@ model Company {
   fiscalYears                      FiscalYear[]
   fiscalPeriods                    FiscalPeriod[]
   documentSequences                DocumentSequence[]
+  masterDataCodeSequences          MasterDataCodeSequence[]
   accountingDocuments              AccountingDocument[]
   journalEntries                   JournalEntry[]
   journalLines                     JournalLine[]
@@ -193,7 +200,7 @@ model Company {
   purchaseInvoiceLines             PurchaseInvoiceLine[]
   documentPrintArchives            DocumentPrintArchive[]
   companyCurrencies                CompanyCurrency[]
-  registrationRequests             RegistrationRequest[]  @relation("RegistrationCompany")
+  registrationRequests             RegistrationRequest[]    @relation("RegistrationCompany")
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -225,6 +232,7 @@ model User {
   printArchivesCreated       DocumentPrintArchive[] @relation("PrintArchiveCreatedBy")
   exchangeRatesUpdated       CompanyExchangeRate[]  @relation("ExchangeRateUpdatedBy")
   registrationRequests       RegistrationRequest[]  @relation("RegistrationUser")
+  passwordResetRequests      PasswordResetRequest[]
 
   @@map("users")
 }
@@ -287,27 +295,50 @@ model RegistrationEvent {
   @@map("registration_events")
 }
 
+model PasswordResetRequest {
+  id                 BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId           String                     @unique @default(uuid()) @map("public_id") @db.VarChar(80)
+  userId             BigInt                     @map("user_id") @db.UnsignedBigInt
+  locale             String                     @default("ar") @db.VarChar(10)
+  tokenHash          Bytes?                     @unique @map("token_hash") @db.Binary(32)
+  expiresAt          DateTime?                  @map("expires_at")
+  status             PasswordResetStatus        @default(PENDING)
+  deliveryStatus     RegistrationDeliveryStatus @default(PENDING) @map("delivery_status")
+  deliveryAttempts   Int                        @default(0) @map("delivery_attempts") @db.UnsignedSmallInt
+  lastErrorCode      String?                    @map("last_error_code") @db.VarChar(80)
+  requestedIpAddress String?                    @map("requested_ip_address") @db.VarChar(64)
+  requestedUserAgent String?                    @map("requested_user_agent") @db.VarChar(500)
+  usedAt             DateTime?                  @map("used_at")
+  createdAt          DateTime                   @default(now()) @map("created_at")
+  updatedAt          DateTime                   @updatedAt @map("updated_at")
+  user               User                       @relation(fields: [userId], references: [id])
+
+  @@index([userId, status, createdAt])
+  @@index([status, expiresAt])
+  @@map("password_reset_requests")
+}
+
 model OutboxEvent {
-  id             BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
-  eventId        String       @unique @default(uuid()) @map("event_id") @db.Char(36)
-  eventType      String       @map("event_type") @db.VarChar(100)
-  schemaVersion  Int          @default(1) @map("schema_version") @db.UnsignedSmallInt
-  aggregateType  String       @map("aggregate_type") @db.VarChar(80)
-  aggregateId    String       @map("aggregate_id") @db.VarChar(80)
-  companyId      BigInt?      @map("company_id") @db.UnsignedBigInt
-  payload        Json
-  occurredAt     DateTime     @default(now()) @map("occurred_at")
-  status         OutboxStatus @default(PENDING)
-  availableAt    DateTime     @default(now()) @map("available_at")
-  attemptCount   Int          @default(0) @map("attempt_count") @db.UnsignedSmallInt
-  maxAttempts    Int          @default(8) @map("max_attempts") @db.UnsignedSmallInt
-  lockedAt       DateTime?    @map("locked_at")
-  lockToken      String?      @map("lock_token") @db.Char(36)
-  lastErrorCode  String?      @map("last_error_code") @db.VarChar(80)
-  lastErrorAt    DateTime?    @map("last_error_at")
-  processedAt    DateTime?    @map("processed_at")
-  createdAt      DateTime     @default(now()) @map("created_at")
-  updatedAt      DateTime     @updatedAt @map("updated_at")
+  id            BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
+  eventId       String       @unique @default(uuid()) @map("event_id") @db.Char(36)
+  eventType     String       @map("event_type") @db.VarChar(100)
+  schemaVersion Int          @default(1) @map("schema_version") @db.UnsignedSmallInt
+  aggregateType String       @map("aggregate_type") @db.VarChar(80)
+  aggregateId   String       @map("aggregate_id") @db.VarChar(80)
+  companyId     BigInt?      @map("company_id") @db.UnsignedBigInt
+  payload       Json
+  occurredAt    DateTime     @default(now()) @map("occurred_at")
+  status        OutboxStatus @default(PENDING)
+  availableAt   DateTime     @default(now()) @map("available_at")
+  attemptCount  Int          @default(0) @map("attempt_count") @db.UnsignedSmallInt
+  maxAttempts   Int          @default(8) @map("max_attempts") @db.UnsignedSmallInt
+  lockedAt      DateTime?    @map("locked_at")
+  lockToken     String?      @map("lock_token") @db.Char(36)
+  lastErrorCode String?      @map("last_error_code") @db.VarChar(80)
+  lastErrorAt   DateTime?    @map("last_error_at")
+  processedAt   DateTime?    @map("processed_at")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
 
   @@index([status, availableAt, id])
   @@index([status, lockedAt])
@@ -499,6 +530,21 @@ model DocumentSequence {
   @@unique([companyId, documentType, prefix])
   @@index([companyId, fiscalYearId])
   @@map("document_sequences")
+}
+
+model MasterDataCodeSequence {
+  id         BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId  BigInt   @map("company_id") @db.UnsignedBigInt
+  entityType String   @map("entity_type") @db.VarChar(40)
+  prefix     String   @db.VarChar(32)
+  nextNumber BigInt   @default(1) @map("next_number") @db.UnsignedBigInt
+  padding    Int      @default(6) @db.UnsignedTinyInt
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  company    Company  @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, entityType])
+  @@map("master_data_code_sequences")
 }
 
 model AccountingDocument {

@@ -20,6 +20,7 @@ describe('production configuration', () => {
       SESSION_COOKIE_SECURE: 'true',
       TRUST_PROXY: 'true',
       SELF_REGISTRATION_ENABLED: 'false',
+      PASSWORD_RESET_ENABLED: 'false',
     });
     expect(config.SESSION_COOKIE_SECURE).toBe(true);
     expect(config.TRUST_PROXY).toBe(true);
@@ -60,6 +61,34 @@ describe('production configuration', () => {
     expect(config.REGISTRATION_EMAIL_MODE).toBe('resend');
   });
 
+  it('requires a real email provider and token secret when password reset is enabled', () => {
+    expect(() => loadConfig({
+      NODE_ENV: 'production',
+      DATABASE_URL: 'mysql://runtime:secret@db.internal/mcap',
+      WEB_ORIGIN: 'https://finance.example.com',
+      SESSION_COOKIE_SECURE: 'true',
+      TRUST_PROXY: 'true',
+      SELF_REGISTRATION_ENABLED: 'false',
+      PASSWORD_RESET_ENABLED: 'true',
+      REGISTRATION_EMAIL_MODE: 'log',
+    })).toThrow();
+
+    const config = loadConfig({
+      NODE_ENV: 'production',
+      DATABASE_URL: 'mysql://runtime:secret@db.internal/mcap',
+      WEB_ORIGIN: 'https://finance.example.com',
+      SESSION_COOKIE_SECURE: 'true',
+      TRUST_PROXY: 'true',
+      SELF_REGISTRATION_ENABLED: 'false',
+      PASSWORD_RESET_ENABLED: 'true',
+      REGISTRATION_EMAIL_MODE: 'resend',
+      REGISTRATION_EMAIL_FROM: 'accounts@example.com',
+      RESEND_API_KEY: 're_test_12345678901234567890',
+      REGISTRATION_TOKEN_SECRET: 'test-password-reset-token-secret-1234567890',
+    });
+    expect(config.PASSWORD_RESET_ENABLED).toBe(true);
+  });
+
   it('rejects an outbox lease that can expire before its handler deadline', () => {
     expect(() => loadConfig({
       NODE_ENV: 'test',
@@ -89,6 +118,7 @@ describe('production configuration', () => {
       SESSION_COOKIE_SECURE: 'true',
       TRUST_PROXY: 'true',
       SELF_REGISTRATION_ENABLED: 'false',
+      PASSWORD_RESET_ENABLED: 'false',
       REGISTRATION_EMAIL_CAPTURE_PATH: '/tmp/registration.jsonl',
     })).toThrow(/Registration email capture is forbidden in production/);
   });

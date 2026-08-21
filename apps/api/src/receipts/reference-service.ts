@@ -1,4 +1,5 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
+import { reserveMasterDataCode } from "../platform/master-data-code-service.js";
 import type { ActorContext } from "../users/user-service.js";
 
 export type ReferenceErrorReason =
@@ -25,7 +26,6 @@ export type AddressInput = {
 };
 export type CustomerInput = {
   receivableAccountId: bigint;
-  code: string;
   nameAr: string;
   nameEn?: string | null | undefined;
   phone?: string | null | undefined;
@@ -36,18 +36,17 @@ export type CustomerInput = {
 export type CashBankInput = {
   ledgerAccountId: bigint;
   accountType: "CASH" | "BANK";
-  code: string;
   nameAr: string;
   nameEn?: string | null | undefined;
   bankName?: string | null | undefined;
   accountNumber?: string | null | undefined;
   iban?: string | null | undefined;
 };
-type CustomerUpdate = { receivableAccountId?: bigint | undefined; code?: string | undefined; nameAr?: string | undefined; nameEn?: string | null | undefined; phone?: string | null | undefined; email?: string | null | undefined; taxNumber?: string | null | undefined };
+type CustomerUpdate = { receivableAccountId?: bigint | undefined; nameAr?: string | undefined; nameEn?: string | null | undefined; phone?: string | null | undefined; email?: string | null | undefined; taxNumber?: string | null | undefined };
 type AddressUpdate = { addressType?: AddressInput["addressType"] | undefined; line1?: string | undefined; line2?: string | null | undefined; city?: string | null | undefined; region?: string | null | undefined; postalCode?: string | null | undefined; countryCode?: string | null | undefined; isPrimary?: boolean | undefined };
-type CashBankUpdate = { ledgerAccountId?: bigint | undefined; accountType?: "CASH" | "BANK" | undefined; code?: string | undefined; nameAr?: string | undefined; nameEn?: string | null | undefined; bankName?: string | null | undefined; accountNumber?: string | null | undefined; iban?: string | null | undefined };
-type PaymentMethodInput = { code: string; nameAr: string; requiresReference: boolean };
-type PaymentMethodUpdate = { code?: string | undefined; nameAr?: string | undefined; requiresReference?: boolean | undefined };
+type CashBankUpdate = { ledgerAccountId?: bigint | undefined; accountType?: "CASH" | "BANK" | undefined; nameAr?: string | undefined; nameEn?: string | null | undefined; bankName?: string | null | undefined; accountNumber?: string | null | undefined; iban?: string | null | undefined };
+type PaymentMethodInput = { nameAr: string; requiresReference: boolean };
+type PaymentMethodUpdate = { nameAr?: string | undefined; requiresReference?: boolean | undefined };
 const last4 = (value?: string | null) =>
   value ? value.replace(/\s/g, "").slice(-4) : null;
 const unique = (error: unknown) =>
@@ -106,11 +105,16 @@ export class ReceiptReferenceService {
           context.companyId,
           input.receivableAccountId,
         );
+        const code = await reserveMasterDataCode(
+          tx,
+          context.companyId,
+          "CUSTOMER",
+        );
         const value = await tx.customer.create({
           data: {
             companyId: context.companyId,
             receivableAccountId: input.receivableAccountId,
-            code: input.code,
+            code,
             nameAr: input.nameAr,
             nameEn: input.nameEn ?? null,
             phone: input.phone ?? null,
@@ -166,7 +170,6 @@ export class ReceiptReferenceService {
             ...(input.receivableAccountId !== undefined
               ? { receivableAccountId: input.receivableAccountId }
               : {}),
-            ...(input.code !== undefined ? { code: input.code } : {}),
             ...(input.nameAr !== undefined ? { nameAr: input.nameAr } : {}),
             ...(input.nameEn !== undefined ? { nameEn: input.nameEn } : {}),
             ...(input.phone !== undefined ? { phone: input.phone } : {}),
@@ -340,12 +343,17 @@ export class ReceiptReferenceService {
           input.ledgerAccountId,
         );
         this.validBank(input);
+        const code = await reserveMasterDataCode(
+          tx,
+          context.companyId,
+          "CASH_BANK_ACCOUNT",
+        );
         const value = await tx.cashBankAccount.create({
           data: {
             companyId: context.companyId,
             ledgerAccountId: input.ledgerAccountId,
             accountType: input.accountType,
-            code: input.code,
+            code,
             nameAr: input.nameAr,
             nameEn: input.nameEn ?? null,
             bankName: input.bankName ?? null,
@@ -394,7 +402,6 @@ export class ReceiptReferenceService {
             ...(input.accountType !== undefined
               ? { accountType: input.accountType }
               : {}),
-            ...(input.code !== undefined ? { code: input.code } : {}),
             ...(input.nameAr !== undefined ? { nameAr: input.nameAr } : {}),
             ...(input.nameEn !== undefined ? { nameEn: input.nameEn } : {}),
             ...(input.bankName !== undefined
@@ -464,7 +471,8 @@ export class ReceiptReferenceService {
   async createPaymentMethod(context: ActorContext, input: PaymentMethodInput) {
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const value = await tx.paymentMethod.create({ data: { companyId: context.companyId, scope: "COMPANY", code: input.code, nameAr: input.nameAr, requiresReference: input.requiresReference } });
+        const code = await reserveMasterDataCode(tx, context.companyId, "PAYMENT_METHOD");
+        const value = await tx.paymentMethod.create({ data: { companyId: context.companyId, scope: "COMPANY", code, nameAr: input.nameAr, requiresReference: input.requiresReference } });
         await this.audit(tx, context, "PAYMENT_METHOD_CREATED", "PAYMENT_METHOD", value.id);
         return value;
       });
@@ -476,7 +484,7 @@ export class ReceiptReferenceService {
         const current = await tx.paymentMethod.findFirst({ where: { id, OR: [{ scope: "GLOBAL", companyId: null }, { scope: "COMPANY", companyId: context.companyId }] } });
         if (!current) throw new ReferenceError("NOT_FOUND");
         if (current.scope === "GLOBAL") throw new ReferenceError("READ_ONLY_REFERENCE");
-        const value = await tx.paymentMethod.update({ where: { id }, data: { ...(input.code !== undefined ? { code: input.code } : {}), ...(input.nameAr !== undefined ? { nameAr: input.nameAr } : {}), ...(input.requiresReference !== undefined ? { requiresReference: input.requiresReference } : {}) } });
+        const value = await tx.paymentMethod.update({ where: { id }, data: { ...(input.nameAr !== undefined ? { nameAr: input.nameAr } : {}), ...(input.requiresReference !== undefined ? { requiresReference: input.requiresReference } : {}) } });
         await this.audit(tx, context, "PAYMENT_METHOD_UPDATED", "PAYMENT_METHOD", id);
         return value;
       });

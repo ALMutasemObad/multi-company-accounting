@@ -5,8 +5,10 @@
 1. `docs/architecture/ARCHITECTURE_GUARDRAILS_AR.md`
 2. `docs/architecture/BOUNDED_CONTEXT_MAP_AR.md`
 3. `docs/architecture/ADR-003-domain-boundaries-and-eventing.md`
-4. `docs/architecture/CONCURRENCY_DEADLOCK_DEADLINE_POLICY_AR.md`
-5. `docs/architecture/CHANGE_REVIEW_CHECKLIST_AR.md`
+4. `docs/architecture/MASTER_DATA_CODE_POLICY_AR.md`
+5. `docs/architecture/CONCURRENCY_DEADLOCK_DEADLINE_POLICY_AR.md`
+6. `docs/architecture/PASSWORD_RESET_SECURITY_POLICY_AR.md`
+7. `docs/architecture/CHANGE_REVIEW_CHECKLIST_AR.md`
 
 قواعد لا يجوز تجاوزها بصمت:
 
@@ -22,6 +24,8 @@
 - Idempotency لا تستبدل locking أو optimistic version؛ هي تجعل Retry الآمن ممكنًا.
 - لا Float أو `Number` للحساب المالي النهائي؛ استخدم `Prisma.Decimal` و`ROUND_HALF_UP`.
 - حافظ على company isolation وCSRF/RBAC وIdempotency وOptimistic Version.
+- لا تطلب من المستخدم اختراع رمز كيان مرجعي إذا كان مشمولًا بسياسة الرموز؛ ولّد الرمز خادميًا وذريًا ولا تسمح بتعديله.
+- لا تكشف استجابة استعادة كلمة المرور وجود الحساب، ولا تخزن الرمز خامًا، وألغِ الجلسات السابقة بعد نجاح التغيير.
 - المخالفات الحالية انتقالية وليست نمطًا للنسخ. لا تزدها، وعند لمسها قللها أو وثق سبب التأجيل.
 
 إذا تعارضت المهمة مع هذه القواعد، توقف عن التنفيذ المعماري المخالف، ووضح التعارض واقترح ADR أو قرارًا صريحًا بدل الالتفاف عليه.

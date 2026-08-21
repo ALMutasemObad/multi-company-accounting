@@ -11,6 +11,8 @@ import {
 test("generated OpenAPI guards are committed and current", () => {
   assert.deepEqual(guardedOperationIds, [
     "login",
+    "startPasswordReset",
+    "completePasswordReset",
     "startSelfRegistration",
     "resendSelfRegistrationVerification",
     "verifySelfRegistration",
@@ -26,7 +28,10 @@ test("generated OpenAPI guards are committed and current", () => {
 
 test("guard generation reflects request constraints from the contract", () => {
   const source = readFileSync(contractPath, "utf8");
-  const changed = source.replace("          maxLength: 320\n        password:", "          maxLength: 319\n        password:");
+  const changed = source.replace(
+    /          maxLength: 320\r?\n        password:/u,
+    "          maxLength: 319\n        password:",
+  );
   assert.notEqual(changed, source);
   const generated = buildGeneratedSource(changed);
   assert.match(generated, /"email": z\.string\(\)\.email\(\)\.max\(319\)/u);

@@ -52,7 +52,7 @@ const query = z.object({
   search: z.string().trim().min(1).max(200).optional(),
   outstandingOnly: z.enum(["true", "false"]).transform((value) => value === "true").optional(),
 });
-const taxInput = z.object({ code: z.string().trim().min(1).max(40), nameAr: z.string().trim().min(1).max(120), rate, outputTaxAccountId: nullableId.optional() }).strict();
+const taxInput = z.object({ nameAr: z.string().trim().min(1).max(120), rate, outputTaxAccountId: nullableId.optional() }).strict();
 const taxUpdate = taxInput.partial().extend({ isActive: z.boolean().optional() }).strict();
 
 function sid(request: Request) {

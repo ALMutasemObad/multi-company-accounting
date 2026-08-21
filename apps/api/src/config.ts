@@ -24,6 +24,9 @@ const configSchema = z.object({
   RESEND_API_KEY: z.string().min(20).max(500).optional(),
   REGISTRATION_AUDIT_PEPPER: z.string().min(32).max(500).optional(),
   REGISTRATION_TOKEN_SECRET: z.string().min(32).max(500).optional(),
+  PASSWORD_RESET_ENABLED: booleanString.default(true),
+  PASSWORD_RESET_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(1_000).default(5),
+  PASSWORD_RESET_TOKEN_TTL_MINUTES: z.coerce.number().int().min(10).max(1_440).default(60),
   OUTBOX_POLL_INTERVAL_MS: z.coerce.number().int().min(50).max(60_000).default(1_000),
   OUTBOX_LEASE_MS: z.coerce.number().int().min(2_000).max(600_000).default(30_000),
   OUTBOX_BATCH_SIZE: z.coerce.number().int().min(1).max(100).default(10),
@@ -57,20 +60,21 @@ const configSchema = z.object({
   if (!config.WEB_ORIGIN.startsWith('https://')) {
     context.addIssue({ code: 'custom', path: ['WEB_ORIGIN'], message: 'WEB_ORIGIN must use HTTPS in production' });
   }
-  if (config.SELF_REGISTRATION_ENABLED && config.REGISTRATION_EMAIL_MODE !== 'resend') {
-    context.addIssue({ code: 'custom', path: ['REGISTRATION_EMAIL_MODE'], message: 'Production self-registration requires the resend delivery mode' });
+  const publicEmailDeliveryEnabled = config.SELF_REGISTRATION_ENABLED || config.PASSWORD_RESET_ENABLED;
+  if (publicEmailDeliveryEnabled && config.REGISTRATION_EMAIL_MODE !== 'resend') {
+    context.addIssue({ code: 'custom', path: ['REGISTRATION_EMAIL_MODE'], message: 'Production registration or password reset requires the resend delivery mode' });
   }
-  if (config.SELF_REGISTRATION_ENABLED && !config.REGISTRATION_EMAIL_FROM) {
-    context.addIssue({ code: 'custom', path: ['REGISTRATION_EMAIL_FROM'], message: 'REGISTRATION_EMAIL_FROM is required when production self-registration is enabled' });
+  if (publicEmailDeliveryEnabled && !config.REGISTRATION_EMAIL_FROM) {
+    context.addIssue({ code: 'custom', path: ['REGISTRATION_EMAIL_FROM'], message: 'REGISTRATION_EMAIL_FROM is required when public email delivery is enabled' });
   }
-  if (config.SELF_REGISTRATION_ENABLED && !config.RESEND_API_KEY) {
-    context.addIssue({ code: 'custom', path: ['RESEND_API_KEY'], message: 'RESEND_API_KEY is required when production self-registration is enabled' });
+  if (publicEmailDeliveryEnabled && !config.RESEND_API_KEY) {
+    context.addIssue({ code: 'custom', path: ['RESEND_API_KEY'], message: 'RESEND_API_KEY is required when public email delivery is enabled' });
   }
   if (config.SELF_REGISTRATION_ENABLED && !config.REGISTRATION_AUDIT_PEPPER) {
     context.addIssue({ code: 'custom', path: ['REGISTRATION_AUDIT_PEPPER'], message: 'REGISTRATION_AUDIT_PEPPER is required when production self-registration is enabled' });
   }
-  if (config.SELF_REGISTRATION_ENABLED && !config.REGISTRATION_TOKEN_SECRET) {
-    context.addIssue({ code: 'custom', path: ['REGISTRATION_TOKEN_SECRET'], message: 'REGISTRATION_TOKEN_SECRET is required when production self-registration is enabled' });
+  if (publicEmailDeliveryEnabled && !config.REGISTRATION_TOKEN_SECRET) {
+    context.addIssue({ code: 'custom', path: ['REGISTRATION_TOKEN_SECRET'], message: 'REGISTRATION_TOKEN_SECRET is required when registration or password reset is enabled' });
   }
 });
 
@@ -81,7 +85,7 @@ type LoadedAppConfig = z.infer<typeof configSchema>;
 export type AppConfig = Pick<LoadedAppConfig,
   'NODE_ENV' | 'PORT' | 'DATABASE_URL' | 'WEB_ORIGIN' | 'SESSION_COOKIE_SECURE' | 'PRE_AUTH_TTL_MINUTES' | 'SESSION_TTL_HOURS'
 > & Partial<Pick<LoadedAppConfig,
-  'SERVE_WEB_ASSETS' | 'TRUST_PROXY' | 'RATE_LIMIT_WINDOW_MS' | 'RATE_LIMIT_MAX' | 'AUTH_RATE_LIMIT_MAX' | 'SELF_REGISTRATION_ENABLED' | 'REGISTRATION_RATE_LIMIT_MAX' | 'REGISTRATION_TOKEN_TTL_HOURS' | 'REGISTRATION_EMAIL_MODE' | 'REGISTRATION_EMAIL_FROM' | 'REGISTRATION_EMAIL_CAPTURE_PATH' | 'RESEND_API_KEY' | 'REGISTRATION_AUDIT_PEPPER' | 'REGISTRATION_TOKEN_SECRET' | 'OUTBOX_POLL_INTERVAL_MS' | 'OUTBOX_LEASE_MS' | 'OUTBOX_BATCH_SIZE' | 'OUTBOX_MAX_ATTEMPTS' | 'OUTBOX_BASE_BACKOFF_MS' | 'OUTBOX_HANDLER_TIMEOUT_MS' | 'OUTBOX_RETENTION_DAYS' | 'READINESS_TIMEOUT_MS' | 'SHUTDOWN_TIMEOUT_MS' | 'LOG_REQUESTS'
+  'SERVE_WEB_ASSETS' | 'TRUST_PROXY' | 'RATE_LIMIT_WINDOW_MS' | 'RATE_LIMIT_MAX' | 'AUTH_RATE_LIMIT_MAX' | 'SELF_REGISTRATION_ENABLED' | 'REGISTRATION_RATE_LIMIT_MAX' | 'REGISTRATION_TOKEN_TTL_HOURS' | 'REGISTRATION_EMAIL_MODE' | 'REGISTRATION_EMAIL_FROM' | 'REGISTRATION_EMAIL_CAPTURE_PATH' | 'RESEND_API_KEY' | 'REGISTRATION_AUDIT_PEPPER' | 'REGISTRATION_TOKEN_SECRET' | 'PASSWORD_RESET_ENABLED' | 'PASSWORD_RESET_RATE_LIMIT_MAX' | 'PASSWORD_RESET_TOKEN_TTL_MINUTES' | 'OUTBOX_POLL_INTERVAL_MS' | 'OUTBOX_LEASE_MS' | 'OUTBOX_BATCH_SIZE' | 'OUTBOX_MAX_ATTEMPTS' | 'OUTBOX_BASE_BACKOFF_MS' | 'OUTBOX_HANDLER_TIMEOUT_MS' | 'OUTBOX_RETENTION_DAYS' | 'READINESS_TIMEOUT_MS' | 'SHUTDOWN_TIMEOUT_MS' | 'LOG_REQUESTS'
 >>;
 
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env): LoadedAppConfig {
