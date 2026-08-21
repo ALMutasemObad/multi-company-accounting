@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.4.0
+  version: 1.5.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -149,6 +149,103 @@ paths:
       security: []
       parameters:
       - $ref: '#/components/parameters/RequestId'
+  /auth/register/options:
+    get:
+      tags: [Authentication]
+      summary: الخيارات العامة المتاحة للتسجيل الذاتي
+      operationId: getSelfRegistrationOptions
+      security: []
+      responses:
+        '200':
+          description: العملات العامة والمناطق الزمنية وقوالب دليل الحسابات المتاحة
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RegistrationOptionsResponse' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /auth/register:
+    post:
+      tags: [Authentication]
+      summary: بدء تسجيل ذاتي لإنشاء مؤسسة وشركة ومديرها الأول
+      operationId: startSelfRegistration
+      description: تعاد الاستجابة العامة نفسها سواء كان البريد متاحاً أم مستخدماً، لمنع تعداد الحسابات. لا تُنشأ الشركة قبل التحقق من البريد.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegistrationStartRequest' }
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      responses:
+        '202':
+          description: قُبل الطلب؛ إذا كان صالحاً سيُرسل رابط التحقق
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RegistrationPendingResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /auth/register/resend:
+    post:
+      tags: [Authentication]
+      summary: إعادة إرسال رابط تحقق التسجيل
+      operationId: resendSelfRegistrationVerification
+      description: تستخدم استجابة عامة ثابتة ولا تكشف وجود طلب أو حساب للبريد.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegistrationResendRequest' }
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      responses:
+        '202':
+          description: قُبل طلب إعادة الإرسال
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RegistrationPendingResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /auth/register/verify:
+    post:
+      tags: [Authentication]
+      summary: التحقق من البريد وتجهيز المؤسسة والشركة والمدير الأول
+      operationId: verifySelfRegistration
+      description: عملية ذرّية وقابلة لإعادة المحاولة؛ لا تُترك شركة أو هوية جزئية عند الفشل.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegistrationVerifyRequest' }
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      responses:
+        '201':
+          description: اكتمل إنشاء مساحة الشركة
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RegistrationCompletedResponse' }
+        '202':
+          description: توجد محاولة تجهيز أخرى قيد التنفيذ؛ يمكن إعادة الطلب بأمان
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RegistrationInProgressResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503':
+          description: تعذر تجهيز الشركة مؤقتًا ويمكن إعادة رابط التحقق بأمان
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Problem' }
   /auth/login:
     post:
       tags:
@@ -191,39 +288,6 @@ paths:
         CsrfToken: []
       parameters:
       - $ref: '#/components/parameters/RequestId'
-  /auth/me:
-    get:
-      tags:
-      - Authentication
-      summary: بيانات المستخدم والجلسة الحالية
-      operationId: getCurrentUser
-      responses:
-        '200':
-          description: نجاح
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AuthSessionResponse'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '401':
-          $ref: '#/components/responses/Unauthenticated'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '422':
-          $ref: '#/components/responses/BusinessRuleViolation'
-        '429':
-          $ref: '#/components/responses/RateLimited'
-        '500':
-          $ref: '#/components/responses/InternalError'
-      security:
-      - SessionCookie: []
-      parameters:
-      - $ref: '#/components/parameters/RequestId'
   /auth/companies:
     get:
       tags:
@@ -259,18 +323,14 @@ paths:
       parameters:
       - $ref: '#/components/parameters/RequestId'
   /auth/context:
-    post:
+    put:
       tags:
       - Authentication
       summary: اختيار الشركة الحالية
       operationId: selectCompanyContext
       responses:
-        '200':
-          description: نجاح
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AuthSessionResponse'
+        '204':
+          description: تم اختيار الشركة الحالية بنجاح
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
@@ -981,63 +1041,6 @@ paths:
         CsrfToken: []
       parameters:
       - $ref: '#/components/parameters/RequestId'
-  /dashboard/summary:
-    get:
-      tags:
-      - Dashboard
-      summary: ملخص لوحة المتابعة للشركة الحالية
-      description: يعيد مؤشرات مشتقة فقط. كل مؤشر أو تنبيه يطبّق صلاحيات المستخدم؛ لا يكشف بيانات وحدة لا يملك المستخدم صلاحية
-        قراءتها.
-      operationId: getDashboardSummary
-      parameters:
-      - $ref: '#/components/parameters/RequestId'
-      - name: fiscalPeriodId
-        in: query
-        required: false
-        schema:
-          $ref: '#/components/schemas/Id'
-        description: الفترة المطلوبة؛ عند الإغفال تستخدم الفترة الحالية المفتوحة أو أحدث فترة.
-      - name: recentLimit
-        in: query
-        required: false
-        schema:
-          type: integer
-          minimum: 1
-          maximum: 20
-          default: 8
-      responses:
-        '200':
-          description: نجاح
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DashboardSummary'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '401':
-          $ref: '#/components/responses/Unauthenticated'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '422':
-          $ref: '#/components/responses/BusinessRuleViolation'
-        '429':
-          $ref: '#/components/responses/RateLimited'
-        '500':
-          $ref: '#/components/responses/InternalError'
-      x-permission: dashboard.view
-      x-field-permissions:
-        draftManualJournals: manual_journals.view
-        draftReceipts: receipts.view
-        draftPayments: payments.view
-        receiptsTodayAmount: receipts.view
-        paymentsTodayAmount: payments.view
-        trialBalanceBalanced: reports.trial_balance.view
-      security:
-      - SessionCookie: []
   /settings:
     get:
       tags:
@@ -1136,11 +1139,46 @@ paths:
       x-permission: currencies.view
       security:
       - SessionCookie: []
+    post:
+      tags:
+      - Companies
+      summary: إنشاء عملة مخصصة للشركة الحالية وتفعيلها
+      description: ينشئ سجل عملة معزولًا لا يظهر إلا للشركة الحالية، ولا يسمح بتكرار رمز ظاهر لها من الكتالوج العالمي أو الخاص.
+      operationId: createCompanyCurrency
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompanyCurrencyCreateRequest'
+      responses:
+        '201':
+          description: العملة المخصصة المنشأة والمفعلة
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanyCurrencySetting'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      x-permission: currencies.create
+      security:
+      - SessionCookie: []
+        CsrfToken: []
     put:
       tags:
       - Companies
       summary: استبدال العملات المفعلة للشركة الحالية
-      description: تظل العملة الأساسية مفعلة حتى عند عدم إرسال معرفها.
+      description: تظل العملة الأساسية مفعلة حتى عند عدم إرسال معرفها، ويرفض الطلب تعطيل عملة مستخدمة في مستندات الشركة.
       operationId: replaceCompanyCurrencies
       parameters:
       - $ref: '#/components/parameters/RequestId'
@@ -5848,11 +5886,95 @@ components:
         email:
           type: string
           format: email
-          maxLength: 254
+          maxLength: 320
         password:
           type: string
-          minLength: 8
-          maxLength: 200
+          minLength: 1
+          maxLength: 1024
+    RegistrationStartRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password, displayName, organizationName, companyName, timezone, baseCurrencyCode, locale, chartTemplateCode]
+      properties:
+        email: { type: string, format: email, maxLength: 320, x-trim: true }
+        password: { type: string, minLength: 12, maxLength: 1024 }
+        displayName: { type: string, minLength: 1, maxLength: 160, x-trim: true }
+        organizationName: { type: string, minLength: 1, maxLength: 200, x-trim: true }
+        companyName: { type: string, minLength: 1, maxLength: 200, x-trim: true }
+        timezone: { type: string, minLength: 1, maxLength: 64, x-trim: true }
+        baseCurrencyCode: { type: string, pattern: '^[A-Z]{3}$', x-trim: true }
+        locale: { type: string, enum: [ar, en] }
+        chartTemplateCode: { type: string, minLength: 1, maxLength: 80, x-trim: true }
+    RegistrationResendRequest:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email: { type: string, format: email, maxLength: 320, x-trim: true }
+    RegistrationVerifyRequest:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token: { type: string, minLength: 32, maxLength: 200, pattern: '^[A-Za-z0-9_-]+$' }
+    RegistrationPendingResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { type: string, enum: [PENDING_VERIFICATION] }
+    RegistrationCompletedResponse:
+      type: object
+      additionalProperties: false
+      required: [status, companyId, userId]
+      properties:
+        status: { type: string, enum: [COMPLETED] }
+        companyId: { type: string, pattern: '^[1-9][0-9]*$' }
+        userId: { type: string, pattern: '^[1-9][0-9]*$' }
+    RegistrationInProgressResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { type: string, enum: [IN_PROGRESS] }
+    RegistrationOptionsResponse:
+      type: object
+      additionalProperties: false
+      required: [currencies, locales, timezones, chartTemplates, passwordPolicy]
+      properties:
+        currencies:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, nameAr, decimals]
+            properties:
+              code: { type: string, pattern: '^[A-Z]{3}$' }
+              nameAr: { type: string }
+              decimals: { type: integer, minimum: 0, maximum: 6 }
+        locales:
+          type: array
+          items: { type: string, enum: [ar, en] }
+        timezones:
+          type: array
+          items: { type: string }
+        chartTemplates:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, nameAr, nameEn]
+            properties:
+              code: { type: string }
+              nameAr: { type: string }
+              nameEn: { type: string }
+        passwordPolicy:
+          type: object
+          additionalProperties: false
+          required: [minLength, maxLength]
+          properties:
+            minLength: { type: integer }
+            maxLength: { type: integer }
     SelectCompanyRequest:
       type: object
       additionalProperties: false
@@ -6279,10 +6401,12 @@ components:
       properties:
         name:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 200
         timezone:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 64
           example: Asia/Riyadh
@@ -6317,6 +6441,8 @@ components:
       properties:
         settings:
           type: array
+          minItems: 1
+          maxItems: 1
           items:
             type: object
             required:
@@ -7481,8 +7607,11 @@ components:
       - type: object
         required:
         - isEnabled
+        - isCustom
         properties:
           isEnabled:
+            type: boolean
+          isCustom:
             type: boolean
     CompanyCurrencyList:
       type: object
@@ -7502,9 +7631,31 @@ components:
         currencyIds:
           type: array
           maxItems: 50
-          uniqueItems: true
           items:
             $ref: '#/components/schemas/Id'
+    CompanyCurrencyCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - code
+      - nameAr
+      - decimals
+      properties:
+        code:
+          type: string
+          x-trim: true
+          minLength: 3
+          maxLength: 3
+          pattern: ^[A-Z]{3}$
+        nameAr:
+          type: string
+          x-trim: true
+          minLength: 2
+          maxLength: 100
+        decimals:
+          type: integer
+          minimum: 0
+          maximum: 8
     CompanyExchangeRate:
       type: object
       required:
@@ -7571,11 +7722,12 @@ components:
           format: date
         rate:
           type: string
-          pattern: ^(?:0|[1-9][0-9]{0,10})\.[0-9]{8}$
+          pattern: ^(?:0\.(?=[0-9]{0,7}[1-9])[0-9]{8}|[1-9][0-9]{0,10}\.[0-9]{8})$
         source:
           type:
           - string
           - 'null'
+          x-trim: true
           minLength: 1
           maxLength: 100
     ResolvedExchangeRate:
@@ -9257,140 +9409,6 @@ components:
         isPrimary:
           type: boolean
           default: false
-    DashboardMetricValue:
-      type: object
-      additionalProperties: false
-      required:
-      - value
-      - visible
-      properties:
-        value:
-          oneOf:
-          - type: string
-          - type: integer
-          - type: boolean
-          - type: 'null'
-          description: القيمة بعد تطبيق صلاحيات المستخدم.
-        visible:
-          type: boolean
-        requiredPermission:
-          type:
-          - string
-          - 'null'
-    DashboardAlert:
-      type: object
-      additionalProperties: false
-      required:
-      - code
-      - severity
-      - title
-      - message
-      properties:
-        code:
-          type: string
-          maxLength: 80
-        severity:
-          type: string
-          enum:
-          - INFO
-          - WARNING
-          - HIGH
-          - CRITICAL
-        title:
-          type: string
-          maxLength: 160
-        message:
-          type: string
-          maxLength: 500
-        targetRoute:
-          type:
-          - string
-          - 'null'
-          maxLength: 200
-    DashboardRecentDocument:
-      type: object
-      additionalProperties: false
-      required:
-      - id
-      - documentNumber
-      - documentType
-      - documentDate
-      - description
-      - status
-      properties:
-        id:
-          $ref: '#/components/schemas/Id'
-        documentNumber:
-          type: string
-        documentType:
-          $ref: '#/components/schemas/AccountingDocumentType'
-        documentDate:
-          type: string
-          format: date
-        description:
-          type: string
-        status:
-          $ref: '#/components/schemas/AccountingDocumentStatus'
-        amount:
-          oneOf:
-          - $ref: '#/components/schemas/Amount'
-          - type: 'null'
-        route:
-          type: string
-    DashboardSummary:
-      type: object
-      additionalProperties: false
-      required:
-      - generatedAt
-      - company
-      - fiscalPeriod
-      - metrics
-      - alerts
-      - recentDocuments
-      - permissionsApplied
-      properties:
-        generatedAt:
-          type: string
-          format: date-time
-        company:
-          $ref: '#/components/schemas/Company'
-        fiscalPeriod:
-          oneOf:
-          - $ref: '#/components/schemas/FiscalPeriod'
-          - type: 'null'
-        metrics:
-          type: object
-          additionalProperties: false
-          properties:
-            draftManualJournals:
-              $ref: '#/components/schemas/DashboardMetricValue'
-            draftReceipts:
-              $ref: '#/components/schemas/DashboardMetricValue'
-            draftPayments:
-              $ref: '#/components/schemas/DashboardMetricValue'
-            postedTodayCount:
-              $ref: '#/components/schemas/DashboardMetricValue'
-            receiptsTodayAmount:
-              $ref: '#/components/schemas/DashboardMetricValue'
-            paymentsTodayAmount:
-              $ref: '#/components/schemas/DashboardMetricValue'
-            trialBalanceBalanced:
-              $ref: '#/components/schemas/DashboardMetricValue'
-        alerts:
-          type: array
-          items:
-            $ref: '#/components/schemas/DashboardAlert'
-          maxItems: 50
-        recentDocuments:
-          type: array
-          items:
-            $ref: '#/components/schemas/DashboardRecentDocument'
-          maxItems: 20
-        permissionsApplied:
-          type: array
-          items:
-            type: string
-          uniqueItems: true
 x-api-decisions:
   companyContext: server-side session
   documentNumberReservation: on draft creation
@@ -9399,4 +9417,4 @@ x-api-decisions:
   idempotencyRetention: 24h configurable
   interactiveReportMaxRangeDays: 366
   moneyTransport: decimal strings
-  dashboardSummary: derived read model; field-level permission filtering; no source-of-truth table
+  operationalDashboard: derived read model; no source-of-truth table

@@ -38,7 +38,11 @@ suite('multi-company provisioning integration', () => {
   beforeAll(async () => {
     prisma = createDatabase(process.env.DATABASE_URL!);
     await cleanup();
-    await prisma.currency.upsert({ where: { code: 'SAR' }, update: { isActive: true }, create: { code: 'SAR', nameAr: 'ريال سعودي', decimals: 2 } });
+    await prisma.currency.upsert({
+      where: { scopeKey_code: { scopeKey: 'GLOBAL', code: 'SAR' } },
+      update: { isActive: true, scope: 'GLOBAL', ownerCompanyId: null },
+      create: { code: 'SAR', nameAr: 'ريال سعودي', decimals: 2, scope: 'GLOBAL', scopeKey: 'GLOBAL' },
+    });
   });
   afterAll(async () => { await cleanup(); await prisma.$disconnect(); });
 

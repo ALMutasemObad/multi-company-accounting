@@ -1,4 +1,6 @@
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { useEffect, useId, useRef, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { localizedBrand } from "./branding";
+import { useI18n } from "./i18n";
 
 export function Icon({
   name,
@@ -173,24 +175,50 @@ export function Button({
   children,
   variant = "primary",
   icon,
+  className = "",
+  type = "button",
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "secondary" | "danger" | "ghost";
   icon?: Parameters<typeof Icon>[0]["name"];
 }) {
   return (
-    <button className={`button ${variant}`} {...props}>
+    <button className={`button ${variant}${className ? ` ${className}` : ""}`} type={type} {...props}>
       {icon && <Icon name={icon} size={18} />}
       {children}
     </button>
   );
 }
 
-export function Spinner({ label = "جارٍ التحميل" }: { label?: string }) {
+export function PageHeader({
+  kicker,
+  title,
+  description,
+  actions,
+}: {
+  kicker: string;
+  title: string;
+  description: string;
+  actions?: ReactNode;
+}) {
+  return (
+    <header className="page-heading">
+      <div>
+        <span className="section-kicker">{kicker}</span>
+        <h1>{title}</h1>
+        <p>{description}</p>
+      </div>
+      {actions}
+    </header>
+  );
+}
+
+export function Spinner({ label }: { label?: string }) {
+  const { t } = useI18n();
   return (
     <div className="loading" role="status">
       <span className="spinner" />
-      <span>{label}</span>
+      <span>{label ?? t("common.loading")}</span>
     </div>
   );
 }
@@ -204,12 +232,57 @@ export function EmptyState({
   description: string;
   action?: ReactNode;
 }) {
+  const { t } = useI18n();
+  const brand = localizedBrand(t);
   return (
     <div className="empty-state">
-      <div className="empty-mark">ج</div>
+      <div className="empty-mark">{brand.mark}</div>
       <h3>{title}</h3>
       <p>{description}</p>
       {action}
+    </div>
+  );
+}
+
+export function ErrorState({
+  title,
+  message,
+  onRetry,
+  retryLabel,
+}: {
+  title?: string;
+  message: string;
+  onRetry?: () => void;
+  retryLabel?: string;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="error-panel" role="alert">
+      {title && <h3>{title}</h3>}
+      <p>{message}</p>
+      {onRetry && <Button variant="secondary" onClick={onRetry}>{retryLabel ?? t("common.retry")}</Button>}
+    </div>
+  );
+}
+
+export function TableRegion({
+  children,
+  className = "",
+  label,
+}: {
+  children: ReactNode;
+  className?: string;
+  label?: string;
+}) {
+  const { t } = useI18n();
+  return (
+    <div
+      className={`data-table-wrap${className ? ` ${className}` : ""}`}
+      role="region"
+      tabIndex={0}
+      aria-label={label ?? t("common.scrollableTable")}
+    >
+      {children}
     </div>
   );
 }
@@ -225,27 +298,28 @@ export function Pagination({
   total: number;
   onChange: (page: number) => void;
 }) {
+  const { formatNumber, t } = useI18n();
   if (!total) return null;
   return (
-    <div className="pagination" aria-label="التنقل بين الصفحات">
-      <span>{total.toLocaleString("ar-SA")} نتيجة</span>
+    <div className="pagination" aria-label={t("common.paginationNavigation")}>
+      <span>{t("common.results", { total: formatNumber(total) })}</span>
       <div>
         <Button
           variant="ghost"
           disabled={page <= 1}
           onClick={() => onChange(page - 1)}
         >
-          السابق
+          {t("common.previous")}
         </Button>
         <span className="page-number">
-          {page.toLocaleString("ar-SA")} / {Math.max(totalPages, 1).toLocaleString("ar-SA")}
+          {t("common.pagination", { page: formatNumber(page), totalPages: formatNumber(Math.max(totalPages, 1)) })}
         </span>
         <Button
           variant="ghost"
           disabled={page >= totalPages}
           onClick={() => onChange(page + 1)}
         >
-          التالي
+          {t("common.next")}
         </Button>
       </div>
     </div>
@@ -265,21 +339,72 @@ export function Modal({
   onClose: () => void;
   wide?: boolean;
 }) {
+  const { t } = useI18n();
+  const titleId = useId();
+  const descriptionId = useId();
+  const modalRef = useRef<HTMLElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    modalRef.current?.focus();
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab" || !modalRef.current) return;
+      const focusable = Array.from(modalRef.current.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )).filter((element) => !element.hidden && element.getAttribute("aria-hidden") !== "true");
+      if (!focusable.length) {
+        event.preventDefault();
+        modalRef.current.focus();
+        return;
+      }
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      activeElement?.focus();
+    };
+  }, []);
+
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onClose();
+    }}>
       <section
+        ref={modalRef}
         className={`modal ${wide ? "wide" : ""}`}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="modal-title"
-        onMouseDown={(event) => event.stopPropagation()}
+        aria-labelledby={titleId}
+        aria-describedby={description ? descriptionId : undefined}
+        tabIndex={-1}
       >
         <header className="modal-header">
           <div>
-            <h2 id="modal-title">{title}</h2>
-            {description && <p>{description}</p>}
+            <h2 id={titleId}>{title}</h2>
+            {description && <p id={descriptionId}>{description}</p>}
           </div>
-          <button className="icon-button" aria-label="إغلاق" onClick={onClose}>
+          <button className="icon-button" type="button" aria-label={t("common.close")} onClick={onClose}>
             <Icon name="close" />
           </button>
         </header>
@@ -298,11 +423,12 @@ export function Toast({
   tone: "success" | "error";
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className={`toast ${tone}`} role={tone === "error" ? "alert" : "status"}>
       <span>{tone === "success" ? "✓" : "!"}</span>
       <p>{message}</p>
-      <button aria-label="إغلاق التنبيه" onClick={onClose}>
+      <button aria-label={t("common.closeNotification")} onClick={onClose}>
         <Icon name="close" size={16} />
       </button>
     </div>

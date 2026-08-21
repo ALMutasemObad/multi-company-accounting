@@ -1,15 +1,27 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { api, ApiError, downloadPdf, idempotencyKey } from "./api";
-import { exchangeRateForDocumentDate, missingDatedRateMessage } from "./currency-rates";
+import {
+  localizedReferenceName,
+  activeIntlLocale,
+  translate as t } from "./i18n";
+import { FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState } from "react";
+import { api,
+  ApiError,
+  downloadPdf,
+  idempotencyKey } from "./api";
+import { exchangeRateForDocumentDate,
+  missingDatedRateMessage } from "./currency-rates";
 import {
   allocationsTotal,
   exchangeRateForCurrency,
   formatMoney,
-  statusLabels,
+  statusLabel,
   toMoney,
   toRate,
   validatePaymentDraft,
-} from "./domain";
+  } from "./domain";
 import type {
   Account,
   Allocation,
@@ -21,7 +33,7 @@ import type {
   PaymentMethod,
   PurchaseInvoice,
   Supplier,
-} from "./types";
+  } from "./types";
 import {
   Button,
   EmptyState,
@@ -29,6 +41,7 @@ import {
   Modal,
   Pagination,
   Spinner,
+  PageHeader,
 } from "./ui";
 
 type Notice = (message: string, tone?: "success" | "error") => void;
@@ -82,7 +95,7 @@ export function PaymentsPage({ notify }: { notify: Notice }) {
       setItems(result.data);
       setMeta(result.meta);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "تعذر تحميل سندات الصرف.");
+      setError(cause instanceof Error ? cause.message : t("pages.payments.001"));
     } finally {
       setLoading(false);
     }
@@ -114,7 +127,7 @@ export function PaymentsPage({ notify }: { notify: Notice }) {
         }),
       )
       .catch((cause) =>
-        notify(cause instanceof Error ? cause.message : "تعذر تحميل البيانات المرجعية.", "error"),
+        notify(cause instanceof Error ? cause.message : t("pages.manual-journals.002"), "error"),
       );
   }, [notify]);
 
@@ -122,7 +135,7 @@ export function PaymentsPage({ notify }: { notify: Notice }) {
     try {
       setSelected(await api<Payment>(`/payments/${id}`));
     } catch (cause) {
-      notify(cause instanceof Error ? cause.message : "تعذر عرض السند.", "error");
+      notify(cause instanceof Error ? cause.message : t("pages.payments.003"), "error");
     }
   }
 
@@ -130,21 +143,21 @@ export function PaymentsPage({ notify }: { notify: Notice }) {
     operation: "post" | "cancel" | "reverse",
     payment: Payment,
   ) {
-    const labels = { post: "ترحيل", cancel: "إلغاء", reverse: "عكس" };
-    if (!window.confirm(`تأكيد ${labels[operation]} السند ${payment.document.documentNumber}؟`))
+    const labels = { post: t("pages.manual-journals.004"), cancel: t("pages.accounts.065"), reverse: t("pages.manual-journals.006") };
+    if (!window.confirm(t("pages.payments.007", { value1: labels[operation], value2: payment.document.documentNumber })))
       return;
     const reason =
       operation === "post"
         ? ""
         : window.prompt(
             operation === "cancel"
-              ? "اكتب سبب الإلغاء (3 أحرف على الأقل):"
-              : "اكتب سبب العكس (3 أحرف على الأقل):",
+              ? t("pages.payments.008")
+              : t("pages.payments.009"),
           );
     if (operation !== "post" && (!reason || reason.trim().length < 3)) return;
     const reversalDate =
       operation === "reverse"
-        ? window.prompt("تاريخ العكس بصيغة YYYY-MM-DD:", new Date().toISOString().slice(0, 10))
+        ? window.prompt(t("pages.manual-journals.009"), new Date().toISOString().slice(0, 10))
         : "";
     if (operation === "reverse" && !reversalDate) return;
     try {
@@ -160,27 +173,18 @@ export function PaymentsPage({ notify }: { notify: Notice }) {
           ...(reversalDate ? { reversalDate } : {}),
         }),
       });
-      notify(`تم ${labels[operation]} السند بنجاح.`);
+      notify(t("pages.payments.011", { value1: labels[operation] }));
       setSelected(null);
       await load();
     } catch (cause) {
-      notify(cause instanceof Error ? cause.message : "تعذر تنفيذ الإجراء.", "error");
+      notify(cause instanceof Error ? cause.message : t("pages.fiscal.008"), "error");
       await openDetails(payment.id);
     }
   }
 
   return (
     <section className="workspace-page">
-      <header className="page-heading">
-        <div>
-          <span className="section-kicker">الخزينة والمدفوعات</span>
-          <h1>سندات الصرف</h1>
-          <p>إنشاء السندات ومتابعة حالتها وتوزيعها وترحيلها المحاسبي.</p>
-        </div>
-        <Button icon="plus" onClick={() => setForm("create")}>
-          سند صرف جديد
-        </Button>
-      </header>
+      <PageHeader kicker={t("pages.payments.013")} title={t("pages.payments.014")} description={t("pages.payments.015")} actions={<Button icon="plus" onClick={() => setForm("create")}>{t("pages.payments.016")}</Button>} />
 
       <div className="toolbar payment-filters">
         <form
@@ -193,52 +197,52 @@ export function PaymentsPage({ notify }: { notify: Notice }) {
         >
           <Icon name="search" size={18} />
           <input
-            aria-label="البحث في سندات الصرف"
+            aria-label={t("pages.payments.017")}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="رقم السند أو الوصف"
+            placeholder={t("pages.payments.018")}
           />
-          <button type="submit">بحث</button>
+          <button type="submit">{t("pages.accounts.026")}</button>
         </form>
-        <select aria-label="حالة السند" value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }}>
-          <option value="">كل الحالات</option>
-          <option value="DRAFT">مسودة</option>
-          <option value="POSTED">مرحّل</option>
-          <option value="CANCELLED">ملغي</option>
-          <option value="REVERSED">معكوس</option>
+        <select aria-label={t("pages.payments.020")} value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }}>
+          <option value="">{t("pages.accounts.027")}</option>
+          <option value="DRAFT">{t("pages.dashboard.044")}</option>
+          <option value="POSTED">{t("pages.dashboard.045")}</option>
+          <option value="CANCELLED">{t("pages.dashboard.046")}</option>
+          <option value="REVERSED">{t("pages.dashboard.047")}</option>
         </select>
-        <label className="date-filter"><span>من</span><input type="date" value={dateFrom} onChange={(event) => { setPage(1); setDateFrom(event.target.value); }} /></label>
-        <label className="date-filter"><span>إلى</span><input type="date" value={dateTo} onChange={(event) => { setPage(1); setDateTo(event.target.value); }} /></label>
+        <label className="date-filter"><span>{t("pages.dashboard.013")}</span><input type="date" value={dateFrom} onChange={(event) => { setPage(1); setDateFrom(event.target.value); }} /></label>
+        <label className="date-filter"><span>{t("pages.dashboard.014")}</span><input type="date" value={dateTo} onChange={(event) => { setPage(1); setDateTo(event.target.value); }} /></label>
       </div>
 
       {error ? (
         <div className="error-panel" role="alert">
           <p>{error}</p>
-          <Button variant="secondary" onClick={() => void load()}>إعادة المحاولة</Button>
+          <Button variant="secondary" onClick={() => void load()}>{t("pages.accounts.030")}</Button>
         </div>
       ) : loading ? (
-        <Spinner label="جارٍ تحميل سندات الصرف" />
+        <Spinner label={t("pages.payments.029")} />
       ) : items.length === 0 ? (
         <EmptyState
-          title="لا توجد سندات صرف"
-          description="أنشئ سندًا جديدًا لتسجيل دفعة لمورد أو صرف مباشر على حساب."
-          action={<Button icon="plus" onClick={() => setForm("create")}>إنشاء سند</Button>}
+          title={t("pages.payments.030")}
+          description={t("pages.payments.031")}
+          action={<Button icon="plus" onClick={() => setForm("create")}>{t("pages.payments.032")}</Button>}
         />
       ) : (
         <>
-          <div className="data-table-wrap">
+          <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}>
             <table className="data-table payments-table">
-              <thead><tr><th>رقم السند</th><th>التاريخ</th><th>الطرف</th><th>البيان</th><th>المبلغ</th><th>الحالة</th><th><span className="sr-only">إجراءات</span></th></tr></thead>
+              <thead><tr><th>{t("pages.payments.033")}</th><th>{t("pages.dashboard.037")}</th><th>{t("pages.dashboard.036")}</th><th>{t("pages.manual-journals.032")}</th><th>{t("pages.dashboard.039")}</th><th>{t("pages.accounts.043")}</th><th><span className="sr-only">{t("pages.customers.032")}</span></th></tr></thead>
               <tbody>
                 {items.map((payment) => (
                   <tr key={payment.id}>
                     <td><button className="text-link strong" dir="ltr" onClick={() => void openDetails(payment.id)}>{payment.document.documentNumber}</button></td>
-                    <td>{new Date(payment.document.documentDate).toLocaleDateString("ar-SA")}</td>
+                    <td>{new Date(payment.document.documentDate).toLocaleDateString(activeIntlLocale())}</td>
                     <td>{payment.counterpartyNameSnapshot}</td>
                     <td className="description-cell">{payment.document.description}</td>
                     <td className="money-cell">{formatMoney(payment.amount)}</td>
-                    <td><span className={`status-chip ${payment.document.status.toLowerCase()}`}>{statusLabels[payment.document.status]}</span></td>
-                    <td><Button variant="ghost" onClick={() => void openDetails(payment.id)}>عرض</Button></td>
+                    <td><span className={`status-chip ${payment.document.status.toLowerCase()}`}>{statusLabel(payment.document.status)}</span></td>
+                    <td><Button variant="ghost" onClick={() => void openDetails(payment.id)}>{t("pages.payments.040")}</Button></td>
                   </tr>
                 ))}
               </tbody>
@@ -256,7 +260,7 @@ export function PaymentsPage({ notify }: { notify: Notice }) {
           onSaved={async (payment) => {
             setForm(null);
             setSelected(payment);
-            notify(form === "create" ? "تم إنشاء مسودة سند الصرف." : "تم تحديث مسودة السند.");
+            notify(form === "create" ? t("pages.payments.041") : t("pages.payments.042"));
             await load();
           }}
         />
@@ -268,7 +272,7 @@ export function PaymentsPage({ notify }: { notify: Notice }) {
           onClose={() => setSelected(null)}
           onEdit={() => setForm("edit")}
           onCommand={(operation) => void command(operation, selected)}
-          onPrint={() => void downloadPdf(`/payments/${selected.id}/pdf`).catch((cause) => notify(cause instanceof Error ? cause.message : "تعذر تنزيل سند الصرف.", "error"))}
+          onPrint={() => void downloadPdf(`/payments/${selected.id}/pdf`).catch((cause) => notify(cause instanceof Error ? cause.message : t("pages.payments.043"), "error"))}
         />
       )}
     </section>
@@ -319,10 +323,10 @@ function PaymentForm({
     setCurrencyId(id);
     try {
       setExchangeRate(await exchangeRateForDocumentDate(selected, date));
-      setErrors((current) => current.filter((message) => message !== missingDatedRateMessage));
+      setErrors((current) => current.filter((message) => message !== missingDatedRateMessage()));
     } catch {
       setExchangeRate("");
-      setErrors([missingDatedRateMessage]);
+      setErrors([missingDatedRateMessage()]);
     }
   }
 
@@ -368,7 +372,7 @@ function PaymentForm({
       amount: toMoney(amount),
       referenceNumber: value("referenceNumber") || null,
       counterpartyName:
-        counterpartyName || selectedSupplier?.nameAr || "طرف صرف مباشر",
+        counterpartyName || localizedReferenceName(selectedSupplier) || t("pages.payments.044"),
       ...(value("counterpartyTaxNumber")
         ? { counterpartyTaxNumber: value("counterpartyTaxNumber") }
         : payment
@@ -389,7 +393,7 @@ function PaymentForm({
       );
       onSaved(result);
     } catch (cause) {
-      setErrors([cause instanceof ApiError ? cause.message : "تعذر حفظ سند الصرف."]);
+      setErrors([cause instanceof ApiError ? cause.message : t("pages.payments.045")]);
     } finally {
       setSaving(false);
     }
@@ -397,8 +401,8 @@ function PaymentForm({
 
   return (
     <Modal
-      title={payment ? `تعديل ${payment.document.documentNumber}` : "سند صرف جديد"}
-      description="سيُحجز رقم السند عند حفظ المسودة."
+      title={payment ? t("pages.payments.046", { value1: payment.document.documentNumber }) : t("pages.payments.047")}
+      description={t("pages.payments.048")}
       onClose={onClose}
       wide
     >
@@ -409,27 +413,27 @@ function PaymentForm({
           </div>
         )}
         <label>
-          <span>الفترة المالية *</span>
+          <span>{t("pages.payments.049")}</span>
           <select name="fiscalPeriodId" defaultValue={payment?.document.fiscalPeriodId} required>
-            <option value="">اختر الفترة</option>
+            <option value="">{t("pages.manual-journals.047")}</option>
             {references.periods.map((period) => (
-              <option key={period.id} value={period.id}>{period.name} — {period.startDate} إلى {period.endDate}</option>
+              <option key={period.id} value={period.id}>{period.name} — {period.startDate}{t("pages.payments.051")}{period.endDate}</option>
             ))}
           </select>
         </label>
-        <label><span>تاريخ السند *</span><input name="documentDate" type="date" value={documentDate} onChange={(event) => changeDocumentDate(event.target.value)} required /></label>
-        <label className="full"><span>البيان *</span><input name="description" defaultValue={payment?.document.description} maxLength={500} required /></label>
+        <label><span>{t("pages.payments.052")}</span><input name="documentDate" type="date" value={documentDate} onChange={(event) => changeDocumentDate(event.target.value)} required /></label>
+        <label className="full"><span>{t("pages.payments.053")}</span><input name="description" defaultValue={payment?.document.description} maxLength={500} required /></label>
 
         <fieldset className="full segmented-field">
-          <legend>الطرف المقابل *</legend>
+          <legend>{t("pages.payments.054")}</legend>
           <div className="segmented">
-            <button type="button" className={counterpartyType === "supplier" ? "selected" : ""} onClick={() => { setCounterpartyType("supplier"); setCounterAccountId(""); setCounterpartyName(""); }}>مورد</button>
-            <button type="button" className={counterpartyType === "account" ? "selected" : ""} onClick={() => { setCounterpartyType("account"); setSupplierId(""); setCounterpartyName(""); }}>حساب مباشر</button>
+            <button type="button" className={counterpartyType === "supplier" ? "selected" : ""} onClick={() => { setCounterpartyType("supplier"); setCounterAccountId(""); setCounterpartyName(""); }}>{t("pages.payments.055")}</button>
+            <button type="button" className={counterpartyType === "account" ? "selected" : ""} onClick={() => { setCounterpartyType("account"); setSupplierId(""); setCounterpartyName(""); }}>{t("pages.payments.056")}</button>
           </div>
         </fieldset>
         {counterpartyType === "supplier" ? (
           <label className="full">
-            <span>المورد *</span>
+            <span>{t("pages.payments.057")}</span>
             <select
               value={supplierId}
               onChange={(event) => {
@@ -438,61 +442,61 @@ function PaymentForm({
                   (item) => item.id === nextId,
                 );
                 setSupplierId(nextId);
-                setCounterpartyName(nextSupplier?.nameAr ?? "");
+                setCounterpartyName(localizedReferenceName(nextSupplier) ?? "");
               }}
               required
             >
-              <option value="">اختر المورد</option>
-              {references.suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.code} — {supplier.nameAr}</option>)}
+              <option value="">{t("pages.payments.058")}</option>
+              {references.suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.code} — {localizedReferenceName(supplier)}</option>)}
             </select>
           </label>
         ) : (
           <label className="full">
-            <span>الحساب المقابل *</span>
+            <span>{t("pages.payments.059")}</span>
             <select value={counterAccountId} onChange={(event) => setCounterAccountId(event.target.value)} required>
-              <option value="">اختر الحساب</option>
-              {references.accounts.map((account) => <option key={account.id} value={account.id}>{account.code} — {account.nameAr}</option>)}
+              <option value="">{t("pages.customers.044")}</option>
+              {references.accounts.map((account) => <option key={account.id} value={account.id}>{account.code} — {localizedReferenceName(account)}</option>)}
             </select>
           </label>
         )}
-        <label><span>الصندوق أو البنك *</span><select name="cashBankAccountId" defaultValue={payment?.cashBankAccountId} required><option value="">اختر الحساب</option>{references.cashBanks.map((item) => <option key={item.id} value={item.id}>{item.code} — {item.nameAr} ({item.accountType === "BANK" ? "بنك" : "صندوق"})</option>)}</select></label>
-        <label><span>طريقة الدفع *</span><select value={methodId} onChange={(event) => setMethodId(event.target.value)} required><option value="">اختر الطريقة</option>{references.methods.map((item) => <option key={item.id} value={item.id}>{item.nameAr}</option>)}</select></label>
-        <label><span>العملة *</span><select value={currencyId} onChange={(event) => void selectCurrency(event.target.value)} required><option value="">اختر العملة</option>{references.currencies.map((item) => <option key={item.id} value={item.id}>{item.code} — {item.nameAr}</option>)}</select></label>
-        <label><span>سعر الصرف *</span><input value={exchangeRate} onChange={(event) => setExchangeRate(event.target.value)} inputMode="decimal" dir="ltr" placeholder="1.00000000" required /></label>
-        <label><span>المبلغ *</span><input value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" dir="ltr" placeholder="0.0000" required /></label>
-        <label><span>الرقم المرجعي {selectedMethod?.requiresReference && "*"}</span><input name="referenceNumber" defaultValue={payment?.referenceNumber ?? ""} maxLength={100} required={selectedMethod?.requiresReference} /></label>
-        <label><span>اسم الطرف الظاهر *</span><input name="counterpartyName" value={counterpartyName} onChange={(event) => setCounterpartyName(event.target.value)} maxLength={200} required /></label>
-        <label><span>الرقم الضريبي للطرف</span><input name="counterpartyTaxNumber" dir="ltr" maxLength={64} placeholder={payment?.counterpartyTaxMasked ?? ""} /></label>
-        <label className="full"><span>عنوان الطرف</span><input name="counterpartyAddress" defaultValue={payment?.counterpartyAddressSnapshot ?? ""} maxLength={500} /></label>
-        <label className="full"><span>ملاحظات</span><textarea name="notes" defaultValue={payment?.notes ?? ""} maxLength={1000} rows={3} /></label>
+        <label><span>{t("pages.payments.061")}</span><select name="cashBankAccountId" defaultValue={payment?.cashBankAccountId} required><option value="">{t("pages.customers.044")}</option>{references.cashBanks.map((item) => <option key={item.id} value={item.id}>{item.code} — {localizedReferenceName(item)} ({item.accountType === "BANK" ? t("pages.payments.062") : t("pages.payments.063")})</option>)}</select></label>
+        <label><span>{t("pages.payments.064")}</span><select value={methodId} onChange={(event) => setMethodId(event.target.value)} required><option value="">{t("pages.payments.065")}</option>{references.methods.map((item) => <option key={item.id} value={item.id}>{localizedReferenceName(item)}</option>)}</select></label>
+        <label><span>{t("pages.payments.066")}</span><select value={currencyId} onChange={(event) => void selectCurrency(event.target.value)} required><option value="">{t("pages.payments.067")}</option>{references.currencies.map((item) => <option key={item.id} value={item.id}>{item.code} — {localizedReferenceName(item)}</option>)}</select></label>
+        <label><span>{t("pages.payments.068")}</span><input value={exchangeRate} onChange={(event) => setExchangeRate(event.target.value)} inputMode="decimal" dir="ltr" placeholder="1.00000000" required /></label>
+        <label><span>{t("pages.payments.069")}</span><input value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" dir="ltr" placeholder="0.0000" required /></label>
+        <label><span>{t("pages.payments.070")}{selectedMethod?.requiresReference && "*"}</span><input name="referenceNumber" defaultValue={payment?.referenceNumber ?? ""} maxLength={100} required={selectedMethod?.requiresReference} /></label>
+        <label><span>{t("pages.payments.071")}</span><input name="counterpartyName" value={counterpartyName} onChange={(event) => setCounterpartyName(event.target.value)} maxLength={200} required /></label>
+        <label><span>{t("pages.payments.072")}</span><input name="counterpartyTaxNumber" dir="ltr" maxLength={64} placeholder={payment?.counterpartyTaxMasked ?? ""} /></label>
+        <label className="full"><span>{t("pages.payments.073")}</span><input name="counterpartyAddress" defaultValue={payment?.counterpartyAddressSnapshot ?? ""} maxLength={500} /></label>
+        <label className="full"><span>{t("pages.payments.074")}</span><textarea name="notes" defaultValue={payment?.notes ?? ""} maxLength={1000} rows={3} /></label>
 
         <fieldset className="full allocations-field">
-          <legend>توزيع الدفعة على الالتزامات</legend>
+          <legend>{t("pages.payments.075")}</legend>
           <div className="allocation-heading">
-            <p>اختر فواتير المورد المفتوحة. يجب أن يساوي مجموع التوزيعات مبلغ السند.</p>
-            <Button type="button" variant="secondary" icon="plus" onClick={addAllocation}>إضافة توزيع</Button>
+            <p>{t("pages.payments.076")}</p>
+            <Button type="button" variant="secondary" icon="plus" onClick={addAllocation}>{t("pages.payments.077")}</Button>
           </div>
           {allocations.length === 0 ? (
-            <div className="compact-empty">السند غير موزع على التزام محدد.</div>
+            <div className="compact-empty">{t("pages.payments.078")}</div>
           ) : (
             <div className="allocation-list">
               {allocations.map((allocation, index) => (
                 <div className="allocation-row" key={allocation.id ?? index}>
-                  <label><span>فاتورة المورد</span><select value={allocation.targetJournalLineId} onChange={(event) => { const selectedInvoice = openInvoices.find((invoice) => invoice.apJournalLineId === event.target.value); setAllocations((current) => current.map((item, i) => i === index ? { ...item, targetJournalLineId: event.target.value, allocatedAmount: selectedInvoice ? selectedInvoice.outstandingAmount : item.allocatedAmount } : item)); }}><option value="">اختر الفاتورة المفتوحة</option>{openInvoices.map((invoice) => <option key={invoice.id} value={invoice.apJournalLineId ?? ""}>{invoice.document.documentNumber}{invoice.supplierInvoiceNumber ? ` — مرجع ${invoice.supplierInvoiceNumber}` : ""} — متبقٍ {formatMoney(invoice.outstandingAmount)}</option>)}</select></label>
-                  <label><span>المبلغ</span><input dir="ltr" inputMode="decimal" value={allocation.allocatedAmount} onChange={(event) => setAllocations((current) => current.map((item, i) => i === index ? { ...item, allocatedAmount: event.target.value } : item))} /></label>
-                  <button type="button" className="icon-button danger-text" aria-label="حذف التوزيع" onClick={() => setAllocations((current) => current.filter((_, i) => i !== index))}><Icon name="trash" size={18} /></button>
+                  <label><span>{t("pages.payments.079")}</span><select value={allocation.targetJournalLineId} onChange={(event) => { const selectedInvoice = openInvoices.find((invoice) => invoice.apJournalLineId === event.target.value); setAllocations((current) => current.map((item, i) => i === index ? { ...item, targetJournalLineId: event.target.value, allocatedAmount: selectedInvoice ? selectedInvoice.outstandingAmount : item.allocatedAmount } : item)); }}><option value="">{t("pages.payments.080")}</option>{openInvoices.map((invoice) => <option key={invoice.id} value={invoice.apJournalLineId ?? ""}>{invoice.document.documentNumber}{invoice.supplierInvoiceNumber ? t("pages.payments.081", { value1: invoice.supplierInvoiceNumber }) : ""}{t("pages.payments.082")}{formatMoney(invoice.outstandingAmount)}</option>)}</select></label>
+                  <label><span>{t("pages.dashboard.039")}</span><input dir="ltr" inputMode="decimal" value={allocation.allocatedAmount} onChange={(event) => setAllocations((current) => current.map((item, i) => i === index ? { ...item, allocatedAmount: event.target.value } : item))} /></label>
+                  <button type="button" className="icon-button danger-text" aria-label={t("pages.payments.083")} onClick={() => setAllocations((current) => current.filter((_, i) => i !== index))}><Icon name="trash" size={18} /></button>
                 </div>
               ))}
             </div>
           )}
           <div className={`allocation-total ${allocations.length && Math.abs(allocationTotal - Number(amount || 0)) > 0.00005 ? "mismatch" : ""}`}>
-            <span>مجموع التوزيعات</span>
+            <span>{t("pages.payments.084")}</span>
             <strong>{formatMoney(allocationTotal)}</strong>
           </div>
         </fieldset>
         <div className="modal-actions full">
-          <Button type="button" variant="secondary" onClick={onClose}>إلغاء</Button>
-          <Button type="submit" disabled={saving}>{saving ? "جارٍ الحفظ…" : "حفظ المسودة"}</Button>
+          <Button type="button" variant="secondary" onClick={onClose}>{t("pages.accounts.065")}</Button>
+          <Button type="submit" disabled={saving}>{saving ? t("pages.accounts.066") : t("pages.manual-journals.077")}</Button>
         </div>
       </form>
     </Modal>
@@ -522,41 +526,41 @@ function PaymentDetails({
     <Modal title={payment.document.documentNumber} description={payment.document.description} onClose={onClose} wide>
       <div className="detail-actions">
         {(payment.document.status === "POSTED" || payment.document.status === "REVERSED") && (
-          <Button variant="secondary" icon="print" onClick={onPrint}>طباعة PDF</Button>
+          <Button variant="secondary" icon="print" onClick={onPrint}>{t("pages.payments.087")}</Button>
         )}
         {payment.document.status === "DRAFT" && (
           <>
-            <Button variant="secondary" icon="edit" onClick={onEdit}>تعديل</Button>
-            <Button icon="check" onClick={() => onCommand("post")}>ترحيل</Button>
-            <Button variant="danger" icon="ban" onClick={() => onCommand("cancel")}>إلغاء</Button>
+            <Button variant="secondary" icon="edit" onClick={onEdit}>{t("pages.accounts.048")}</Button>
+            <Button icon="check" onClick={() => onCommand("post")}>{t("pages.manual-journals.004")}</Button>
+            <Button variant="danger" icon="ban" onClick={() => onCommand("cancel")}>{t("pages.accounts.065")}</Button>
           </>
         )}
         {payment.document.status === "POSTED" && (
-          <Button variant="danger" icon="reverse" onClick={() => onCommand("reverse")}>عكس السند</Button>
+          <Button variant="danger" icon="reverse" onClick={() => onCommand("reverse")}>{t("pages.payments.089")}</Button>
         )}
       </div>
       <div className="document-summary">
-        <div><span>الحالة</span><strong className={`status-chip ${payment.document.status.toLowerCase()}`}>{statusLabels[payment.document.status]}</strong></div>
-        <div><span>التاريخ</span><strong>{new Date(payment.document.documentDate).toLocaleDateString("ar-SA")}</strong></div>
-        <div><span>المبلغ</span><strong>{formatMoney(payment.amount)} {currency?.code}</strong></div>
+        <div><span>{t("pages.accounts.043")}</span><strong className={`status-chip ${payment.document.status.toLowerCase()}`}>{statusLabel(payment.document.status)}</strong></div>
+        <div><span>{t("pages.dashboard.037")}</span><strong>{new Date(payment.document.documentDate).toLocaleDateString(activeIntlLocale())}</strong></div>
+        <div><span>{t("pages.dashboard.039")}</span><strong>{formatMoney(payment.amount)} {currency?.code}</strong></div>
       </div>
       <dl className="detail-grid">
-        <div><dt>الطرف</dt><dd>{supplier?.nameAr ?? payment.counterpartyNameSnapshot}</dd></div>
-        <div><dt>الصندوق/البنك</dt><dd>{cash ? `${cash.code} — ${cash.nameAr}` : payment.cashBankAccountId}</dd></div>
-        <div><dt>طريقة الدفع</dt><dd>{method?.nameAr ?? payment.paymentMethodId}</dd></div>
-        <div><dt>المرجع</dt><dd>{payment.referenceNumber || "غير مسجل"}</dd></div>
-        <div><dt>سعر الصرف</dt><dd dir="ltr">{payment.exchangeRate}</dd></div>
-        <div><dt>مبلغ العملة الأساسية</dt><dd>{formatMoney(payment.baseAmount)}</dd></div>
-        {payment.notes && <div className="full"><dt>ملاحظات</dt><dd>{payment.notes}</dd></div>}
+        <div><dt>{t("pages.dashboard.036")}</dt><dd>{localizedReferenceName(supplier) || payment.counterpartyNameSnapshot}</dd></div>
+        <div><dt>{t("pages.payments.090")}</dt><dd>{cash ? `${cash.code} — ${localizedReferenceName(cash)}` : payment.cashBankAccountId}</dd></div>
+        <div><dt>{t("pages.payments.091")}</dt><dd>{localizedReferenceName(method) || payment.paymentMethodId}</dd></div>
+        <div><dt>{t("pages.payments.092")}</dt><dd>{payment.referenceNumber || t("pages.customers.064")}</dd></div>
+        <div><dt>{t("pages.manual-journals.067")}</dt><dd dir="ltr">{payment.exchangeRate}</dd></div>
+        <div><dt>{t("pages.payments.095")}</dt><dd>{formatMoney(payment.baseAmount)}</dd></div>
+        {payment.notes && <div className="full"><dt>{t("pages.payments.074")}</dt><dd>{payment.notes}</dd></div>}
       </dl>
-      <div className="subsection-heading"><div><h3>التوزيعات</h3><p>{payment.allocations.length} توزيع</p></div></div>
+      <div className="subsection-heading"><div><h3>{t("pages.payments.096")}</h3><p>{payment.allocations.length}{t("pages.payments.097")}</p></div></div>
       {payment.allocations.length === 0 ? (
-        <div className="compact-empty">لا توجد توزيعات مرتبطة بالسند.</div>
+        <div className="compact-empty">{t("pages.payments.098")}</div>
       ) : (
         <div className="allocation-detail-list">
           {payment.allocations.map((allocation) => (
             <div key={allocation.id ?? allocation.targetJournalLineId}>
-              <span>{references.purchaseInvoices.find((invoice) => invoice.apJournalLineId === allocation.targetJournalLineId)?.document.documentNumber ?? `سطر قيد #${allocation.targetJournalLineId}`}</span>
+              <span>{references.purchaseInvoices.find((invoice) => invoice.apJournalLineId === allocation.targetJournalLineId)?.document.documentNumber ?? t("pages.payments.099", { value1: allocation.targetJournalLineId })}</span>
               <strong>{formatMoney(allocation.allocatedAmount)}</strong>
             </div>
           ))}

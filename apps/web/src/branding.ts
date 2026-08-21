@@ -1,17 +1,21 @@
 /// <reference types="vite/client" />
 
-const configured = (value: string | undefined, fallback: string) => value?.trim() || fallback;
+type BrandKey = "branding.name" | "branding.shortName" | "branding.mark";
 
-export const productName = configured(
-  import.meta.env.VITE_APP_NAME,
-  "النظام المحاسبي متعدد الشركات",
-);
+const configured = (value: string | undefined) => value?.trim() || undefined;
 
-export const productShortName = configured(
-  import.meta.env.VITE_APP_SHORT_NAME,
-  "منصة المحاسبة",
-);
+const overrides = {
+  name: configured(import.meta.env.VITE_APP_NAME),
+  shortName: configured(import.meta.env.VITE_APP_SHORT_NAME),
+  mark: configured(import.meta.env.VITE_APP_MARK),
+};
 
-export const productMark = configured(import.meta.env.VITE_APP_MARK, "م").slice(0, 2);
+export function localizedBrand(t: (key: BrandKey) => string) {
+  return {
+    name: overrides.name ?? t("branding.name"),
+    shortName: overrides.shortName ?? t("branding.shortName"),
+    mark: (overrides.mark ?? t("branding.mark")).slice(0, 2),
+  };
+}
 
 export const storageKey = (name: string) => `mcap.${name}`;

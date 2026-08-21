@@ -1,15 +1,27 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { api, ApiError, downloadPdf, idempotencyKey } from "./api";
-import { exchangeRateForDocumentDate, missingDatedRateMessage } from "./currency-rates";
+import {
+  localizedReferenceName,
+  activeIntlLocale,
+  translate as t } from "./i18n";
+import { FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState } from "react";
+import { api,
+  ApiError,
+  downloadPdf,
+  idempotencyKey } from "./api";
+import { exchangeRateForDocumentDate,
+  missingDatedRateMessage } from "./currency-rates";
 import {
   allocationsTotal,
   exchangeRateForCurrency,
   formatMoney,
-  statusLabels,
+  statusLabel,
   toMoney,
   toRate,
   validateReceiptDraft,
-} from "./domain";
+  } from "./domain";
 import type {
   Account,
   Allocation,
@@ -21,7 +33,7 @@ import type {
   PaymentMethod,
   Customer,
   SalesInvoice,
-} from "./types";
+  } from "./types";
 import {
   Button,
   EmptyState,
@@ -29,6 +41,7 @@ import {
   Modal,
   Pagination,
   Spinner,
+  PageHeader,
 } from "./ui";
 
 type Notice = (message: string, tone?: "success" | "error") => void;
@@ -82,7 +95,7 @@ export function ReceiptsPage({ notify }: { notify: Notice }) {
       setItems(result.data);
       setMeta(result.meta);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "تعذر تحميل سندات القبض.");
+      setError(cause instanceof Error ? cause.message : t("pages.receipts.001"));
     } finally {
       setLoading(false);
     }
@@ -114,7 +127,7 @@ export function ReceiptsPage({ notify }: { notify: Notice }) {
         }),
       )
       .catch((cause) =>
-        notify(cause instanceof Error ? cause.message : "تعذر تحميل البيانات المرجعية.", "error"),
+        notify(cause instanceof Error ? cause.message : t("pages.manual-journals.002"), "error"),
       );
   }, [notify]);
 
@@ -122,7 +135,7 @@ export function ReceiptsPage({ notify }: { notify: Notice }) {
     try {
       setSelected(await api<Receipt>(`/receipts/${id}`));
     } catch (cause) {
-      notify(cause instanceof Error ? cause.message : "تعذر عرض السند.", "error");
+      notify(cause instanceof Error ? cause.message : t("pages.payments.003"), "error");
     }
   }
 
@@ -130,21 +143,21 @@ export function ReceiptsPage({ notify }: { notify: Notice }) {
     operation: "post" | "cancel" | "reverse",
     receipt: Receipt,
   ) {
-    const labels = { post: "ترحيل", cancel: "إلغاء", reverse: "عكس" };
-    if (!window.confirm(`تأكيد ${labels[operation]} السند ${receipt.document.documentNumber}؟`))
+    const labels = { post: t("pages.manual-journals.004"), cancel: t("pages.accounts.065"), reverse: t("pages.manual-journals.006") };
+    if (!window.confirm(t("pages.payments.007", { value1: labels[operation], value2: receipt.document.documentNumber })))
       return;
     const reason =
       operation === "post"
         ? ""
         : window.prompt(
             operation === "cancel"
-              ? "اكتب سبب الإلغاء (3 أحرف على الأقل):"
-              : "اكتب سبب العكس (3 أحرف على الأقل):",
+              ? t("pages.payments.008")
+              : t("pages.payments.009"),
           );
     if (operation !== "post" && (!reason || reason.trim().length < 3)) return;
     const reversalDate =
       operation === "reverse"
-        ? window.prompt("تاريخ العكس بصيغة YYYY-MM-DD:", new Date().toISOString().slice(0, 10))
+        ? window.prompt(t("pages.manual-journals.009"), new Date().toISOString().slice(0, 10))
         : "";
     if (operation === "reverse" && !reversalDate) return;
     try {
@@ -160,27 +173,18 @@ export function ReceiptsPage({ notify }: { notify: Notice }) {
           ...(reversalDate ? { reversalDate } : {}),
         }),
       });
-      notify(`تم ${labels[operation]} السند بنجاح.`);
+      notify(t("pages.payments.011", { value1: labels[operation] }));
       setSelected(null);
       await load();
     } catch (cause) {
-      notify(cause instanceof Error ? cause.message : "تعذر تنفيذ الإجراء.", "error");
+      notify(cause instanceof Error ? cause.message : t("pages.fiscal.008"), "error");
       await openDetails(receipt.id);
     }
   }
 
   return (
     <section className="workspace-page">
-      <header className="page-heading">
-        <div>
-          <span className="section-kicker">الخزينة والمقبوضات</span>
-          <h1>سندات القبض</h1>
-          <p>إنشاء السندات ومتابعة حالتها وتوزيعها وترحيلها المحاسبي.</p>
-        </div>
-        <Button icon="plus" onClick={() => setForm("create")}>
-          سند قبض جديد
-        </Button>
-      </header>
+      <PageHeader kicker={t("pages.receipts.013")} title={t("pages.receipts.014")} description={t("pages.payments.015")} actions={<Button icon="plus" onClick={() => setForm("create")}>{t("pages.receipts.016")}</Button>} />
 
       <div className="toolbar receipt-filters">
         <form
@@ -193,52 +197,52 @@ export function ReceiptsPage({ notify }: { notify: Notice }) {
         >
           <Icon name="search" size={18} />
           <input
-            aria-label="البحث في سندات القبض"
+            aria-label={t("pages.receipts.017")}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="رقم السند أو الوصف"
+            placeholder={t("pages.payments.018")}
           />
-          <button type="submit">بحث</button>
+          <button type="submit">{t("pages.accounts.026")}</button>
         </form>
-        <select aria-label="حالة السند" value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }}>
-          <option value="">كل الحالات</option>
-          <option value="DRAFT">مسودة</option>
-          <option value="POSTED">مرحّل</option>
-          <option value="CANCELLED">ملغي</option>
-          <option value="REVERSED">معكوس</option>
+        <select aria-label={t("pages.payments.020")} value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }}>
+          <option value="">{t("pages.accounts.027")}</option>
+          <option value="DRAFT">{t("pages.dashboard.044")}</option>
+          <option value="POSTED">{t("pages.dashboard.045")}</option>
+          <option value="CANCELLED">{t("pages.dashboard.046")}</option>
+          <option value="REVERSED">{t("pages.dashboard.047")}</option>
         </select>
-        <label className="date-filter"><span>من</span><input type="date" value={dateFrom} onChange={(event) => { setPage(1); setDateFrom(event.target.value); }} /></label>
-        <label className="date-filter"><span>إلى</span><input type="date" value={dateTo} onChange={(event) => { setPage(1); setDateTo(event.target.value); }} /></label>
+        <label className="date-filter"><span>{t("pages.dashboard.013")}</span><input type="date" value={dateFrom} onChange={(event) => { setPage(1); setDateFrom(event.target.value); }} /></label>
+        <label className="date-filter"><span>{t("pages.dashboard.014")}</span><input type="date" value={dateTo} onChange={(event) => { setPage(1); setDateTo(event.target.value); }} /></label>
       </div>
 
       {error ? (
         <div className="error-panel" role="alert">
           <p>{error}</p>
-          <Button variant="secondary" onClick={() => void load()}>إعادة المحاولة</Button>
+          <Button variant="secondary" onClick={() => void load()}>{t("pages.accounts.030")}</Button>
         </div>
       ) : loading ? (
-        <Spinner label="جارٍ تحميل سندات القبض" />
+        <Spinner label={t("pages.receipts.029")} />
       ) : items.length === 0 ? (
         <EmptyState
-          title="لا توجد سندات قبض"
-          description="أنشئ سندًا جديدًا لتسجيل تحصيل من عميل أو قبض مباشر على حساب."
-          action={<Button icon="plus" onClick={() => setForm("create")}>إنشاء سند</Button>}
+          title={t("pages.receipts.030")}
+          description={t("pages.receipts.031")}
+          action={<Button icon="plus" onClick={() => setForm("create")}>{t("pages.payments.032")}</Button>}
         />
       ) : (
         <>
-          <div className="data-table-wrap">
+          <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}>
             <table className="data-table receipts-table">
-              <thead><tr><th>رقم السند</th><th>التاريخ</th><th>الطرف</th><th>البيان</th><th>المبلغ</th><th>الحالة</th><th><span className="sr-only">إجراءات</span></th></tr></thead>
+              <thead><tr><th>{t("pages.payments.033")}</th><th>{t("pages.dashboard.037")}</th><th>{t("pages.dashboard.036")}</th><th>{t("pages.manual-journals.032")}</th><th>{t("pages.dashboard.039")}</th><th>{t("pages.accounts.043")}</th><th><span className="sr-only">{t("pages.customers.032")}</span></th></tr></thead>
               <tbody>
                 {items.map((receipt) => (
                   <tr key={receipt.id}>
                     <td><button className="text-link strong" dir="ltr" onClick={() => void openDetails(receipt.id)}>{receipt.document.documentNumber}</button></td>
-                    <td>{new Date(receipt.document.documentDate).toLocaleDateString("ar-SA")}</td>
+                    <td>{new Date(receipt.document.documentDate).toLocaleDateString(activeIntlLocale())}</td>
                     <td>{receipt.counterpartyNameSnapshot}</td>
                     <td className="description-cell">{receipt.document.description}</td>
                     <td className="money-cell">{formatMoney(receipt.amount)}</td>
-                    <td><span className={`status-chip ${receipt.document.status.toLowerCase()}`}>{statusLabels[receipt.document.status]}</span></td>
-                    <td><Button variant="ghost" onClick={() => void openDetails(receipt.id)}>عرض</Button></td>
+                    <td><span className={`status-chip ${receipt.document.status.toLowerCase()}`}>{statusLabel(receipt.document.status)}</span></td>
+                    <td><Button variant="ghost" onClick={() => void openDetails(receipt.id)}>{t("pages.payments.040")}</Button></td>
                   </tr>
                 ))}
               </tbody>
@@ -256,7 +260,7 @@ export function ReceiptsPage({ notify }: { notify: Notice }) {
           onSaved={async (receipt) => {
             setForm(null);
             setSelected(receipt);
-            notify(form === "create" ? "تم إنشاء مسودة سند القبض." : "تم تحديث مسودة السند.");
+            notify(form === "create" ? t("pages.receipts.041") : t("pages.payments.042"));
             await load();
           }}
         />
@@ -268,7 +272,7 @@ export function ReceiptsPage({ notify }: { notify: Notice }) {
           onClose={() => setSelected(null)}
           onEdit={() => setForm("edit")}
           onCommand={(operation) => void command(operation, selected)}
-          onPrint={() => void downloadPdf(`/receipts/${selected.id}/pdf`).catch((cause) => notify(cause instanceof Error ? cause.message : "تعذر تنزيل سند القبض.", "error"))}
+          onPrint={() => void downloadPdf(`/receipts/${selected.id}/pdf`).catch((cause) => notify(cause instanceof Error ? cause.message : t("pages.receipts.043"), "error"))}
         />
       )}
     </section>
@@ -324,10 +328,10 @@ function ReceiptForm({
     setCurrencyId(id);
     try {
       setExchangeRate(await exchangeRateForDocumentDate(selected, date));
-      setErrors((current) => current.filter((message) => message !== missingDatedRateMessage));
+      setErrors((current) => current.filter((message) => message !== missingDatedRateMessage()));
     } catch {
       setExchangeRate("");
-      setErrors([missingDatedRateMessage]);
+      setErrors([missingDatedRateMessage()]);
     }
   }
 
@@ -388,7 +392,7 @@ function ReceiptForm({
       amount: toMoney(amount),
       referenceNumber: value("referenceNumber") || null,
       counterpartyName:
-        counterpartyName || selectedCustomer?.nameAr || "طرف قبض مباشر",
+        counterpartyName || localizedReferenceName(selectedCustomer) || t("pages.receipts.044"),
       ...(value("counterpartyTaxNumber")
         ? { counterpartyTaxNumber: value("counterpartyTaxNumber") }
         : receipt
@@ -409,7 +413,7 @@ function ReceiptForm({
       );
       onSaved(result);
     } catch (cause) {
-      setErrors([cause instanceof ApiError ? cause.message : "تعذر حفظ سند القبض."]);
+      setErrors([cause instanceof ApiError ? cause.message : t("pages.receipts.045")]);
     } finally {
       setSaving(false);
     }
@@ -417,8 +421,8 @@ function ReceiptForm({
 
   return (
     <Modal
-      title={receipt ? `تعديل ${receipt.document.documentNumber}` : "سند قبض جديد"}
-      description="سيُحجز رقم السند عند حفظ المسودة."
+      title={receipt ? t("pages.payments.046", { value1: receipt.document.documentNumber }) : t("pages.receipts.047")}
+      description={t("pages.payments.048")}
       onClose={onClose}
       wide
     >
@@ -429,27 +433,27 @@ function ReceiptForm({
           </div>
         )}
         <label>
-          <span>الفترة المالية *</span>
+          <span>{t("pages.payments.049")}</span>
           <select name="fiscalPeriodId" defaultValue={receipt?.document.fiscalPeriodId} required>
-            <option value="">اختر الفترة</option>
+            <option value="">{t("pages.manual-journals.047")}</option>
             {references.periods.map((period) => (
-              <option key={period.id} value={period.id}>{period.name} — {period.startDate} إلى {period.endDate}</option>
+              <option key={period.id} value={period.id}>{period.name} — {period.startDate}{t("pages.payments.051")}{period.endDate}</option>
             ))}
           </select>
         </label>
-        <label><span>تاريخ السند *</span><input name="documentDate" type="date" value={documentDate} onChange={(event) => changeDocumentDate(event.target.value)} required /></label>
-        <label className="full"><span>البيان *</span><input name="description" defaultValue={receipt?.document.description} maxLength={500} required /></label>
+        <label><span>{t("pages.payments.052")}</span><input name="documentDate" type="date" value={documentDate} onChange={(event) => changeDocumentDate(event.target.value)} required /></label>
+        <label className="full"><span>{t("pages.payments.053")}</span><input name="description" defaultValue={receipt?.document.description} maxLength={500} required /></label>
 
         <fieldset className="full segmented-field">
-          <legend>الطرف المقابل *</legend>
+          <legend>{t("pages.payments.054")}</legend>
           <div className="segmented">
-            <button type="button" className={counterpartyType === "customer" ? "selected" : ""} onClick={() => { setCounterpartyType("customer"); setCounterAccountId(""); setCounterpartyName(""); }}>عميل</button>
-            <button type="button" className={counterpartyType === "account" ? "selected" : ""} onClick={() => { setCounterpartyType("account"); setCustomerId(""); setCounterpartyName(""); }}>حساب مباشر</button>
+            <button type="button" className={counterpartyType === "customer" ? "selected" : ""} onClick={() => { setCounterpartyType("customer"); setCounterAccountId(""); setCounterpartyName(""); }}>{t("pages.receipts.055")}</button>
+            <button type="button" className={counterpartyType === "account" ? "selected" : ""} onClick={() => { setCounterpartyType("account"); setCustomerId(""); setCounterpartyName(""); }}>{t("pages.payments.056")}</button>
           </div>
         </fieldset>
         {counterpartyType === "customer" ? (
           <label className="full">
-            <span>العميل *</span>
+            <span>{t("pages.receipts.057")}</span>
             <select
               value={customerId}
               onChange={(event) => {
@@ -458,61 +462,61 @@ function ReceiptForm({
                   (item) => item.id === nextId,
                 );
                 setCustomerId(nextId);
-                setCounterpartyName(nextCustomer?.nameAr ?? "");
+                setCounterpartyName(localizedReferenceName(nextCustomer) ?? "");
               }}
               required
             >
-              <option value="">اختر العميل</option>
-              {references.customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.code} — {customer.nameAr}</option>)}
+              <option value="">{t("pages.receipts.058")}</option>
+              {references.customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.code} — {localizedReferenceName(customer)}</option>)}
             </select>
           </label>
         ) : (
           <label className="full">
-            <span>الحساب المقابل *</span>
+            <span>{t("pages.payments.059")}</span>
             <select value={counterAccountId} onChange={(event) => setCounterAccountId(event.target.value)} required>
-              <option value="">اختر الحساب</option>
-              {references.accounts.map((account) => <option key={account.id} value={account.id}>{account.code} — {account.nameAr}</option>)}
+              <option value="">{t("pages.customers.044")}</option>
+              {references.accounts.map((account) => <option key={account.id} value={account.id}>{account.code} — {localizedReferenceName(account)}</option>)}
             </select>
           </label>
         )}
-        <label><span>الصندوق أو البنك *</span><select name="cashBankAccountId" defaultValue={receipt?.cashBankAccountId} required><option value="">اختر الحساب</option>{references.cashBanks.map((item) => <option key={item.id} value={item.id}>{item.code} — {item.nameAr} ({item.accountType === "BANK" ? "بنك" : "صندوق"})</option>)}</select></label>
-        <label><span>طريقة الدفع *</span><select value={methodId} onChange={(event) => setMethodId(event.target.value)} required><option value="">اختر الطريقة</option>{references.methods.map((item) => <option key={item.id} value={item.id}>{item.nameAr}</option>)}</select></label>
-        <label><span>العملة *</span><select value={currencyId} onChange={(event) => void selectCurrency(event.target.value)} required><option value="">اختر العملة</option>{references.currencies.map((item) => <option key={item.id} value={item.id}>{item.code} — {item.nameAr}</option>)}</select></label>
-        <label><span>سعر الصرف *</span><input value={exchangeRate} onChange={(event) => setExchangeRate(event.target.value)} inputMode="decimal" dir="ltr" placeholder="1.00000000" required /></label>
-        <label><span>المبلغ *</span><input value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" dir="ltr" placeholder="0.0000" required /></label>
-        <label><span>الرقم المرجعي {selectedMethod?.requiresReference && "*"}</span><input name="referenceNumber" defaultValue={receipt?.referenceNumber ?? ""} maxLength={100} required={selectedMethod?.requiresReference} /></label>
-        <label><span>اسم الطرف الظاهر *</span><input name="counterpartyName" value={counterpartyName} onChange={(event) => setCounterpartyName(event.target.value)} maxLength={200} required /></label>
-        <label><span>الرقم الضريبي للطرف</span><input name="counterpartyTaxNumber" dir="ltr" maxLength={64} placeholder={receipt?.counterpartyTaxMasked ?? ""} /></label>
-        <label className="full"><span>عنوان الطرف</span><input name="counterpartyAddress" defaultValue={receipt?.counterpartyAddressSnapshot ?? ""} maxLength={500} /></label>
-        <label className="full"><span>ملاحظات</span><textarea name="notes" defaultValue={receipt?.notes ?? ""} maxLength={1000} rows={3} /></label>
+        <label><span>{t("pages.payments.061")}</span><select name="cashBankAccountId" defaultValue={receipt?.cashBankAccountId} required><option value="">{t("pages.customers.044")}</option>{references.cashBanks.map((item) => <option key={item.id} value={item.id}>{item.code} — {localizedReferenceName(item)} ({item.accountType === "BANK" ? t("pages.payments.062") : t("pages.payments.063")})</option>)}</select></label>
+        <label><span>{t("pages.payments.064")}</span><select value={methodId} onChange={(event) => setMethodId(event.target.value)} required><option value="">{t("pages.payments.065")}</option>{references.methods.map((item) => <option key={item.id} value={item.id}>{localizedReferenceName(item)}</option>)}</select></label>
+        <label><span>{t("pages.payments.066")}</span><select value={currencyId} onChange={(event) => void selectCurrency(event.target.value)} required><option value="">{t("pages.payments.067")}</option>{references.currencies.map((item) => <option key={item.id} value={item.id}>{item.code} — {localizedReferenceName(item)}</option>)}</select></label>
+        <label><span>{t("pages.payments.068")}</span><input value={exchangeRate} onChange={(event) => setExchangeRate(event.target.value)} inputMode="decimal" dir="ltr" placeholder="1.00000000" required /></label>
+        <label><span>{t("pages.payments.069")}</span><input value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" dir="ltr" placeholder="0.0000" required /></label>
+        <label><span>{t("pages.payments.070")}{selectedMethod?.requiresReference && "*"}</span><input name="referenceNumber" defaultValue={receipt?.referenceNumber ?? ""} maxLength={100} required={selectedMethod?.requiresReference} /></label>
+        <label><span>{t("pages.payments.071")}</span><input name="counterpartyName" value={counterpartyName} onChange={(event) => setCounterpartyName(event.target.value)} maxLength={200} required /></label>
+        <label><span>{t("pages.payments.072")}</span><input name="counterpartyTaxNumber" dir="ltr" maxLength={64} placeholder={receipt?.counterpartyTaxMasked ?? ""} /></label>
+        <label className="full"><span>{t("pages.payments.073")}</span><input name="counterpartyAddress" defaultValue={receipt?.counterpartyAddressSnapshot ?? ""} maxLength={500} /></label>
+        <label className="full"><span>{t("pages.payments.074")}</span><textarea name="notes" defaultValue={receipt?.notes ?? ""} maxLength={1000} rows={3} /></label>
 
         <fieldset className="full allocations-field">
-          <legend>توزيع المقبوض على الفواتير</legend>
+          <legend>{t("pages.receipts.075")}</legend>
           <div className="allocation-heading">
-            <p>اختر فاتورة مفتوحة للعميل وبنفس عملة السند؛ يُقترح مبلغ التوزيع تلقائياً ويمكن تعديله.</p>
-            <Button type="button" variant="secondary" icon="plus" onClick={addAllocation}>إضافة توزيع</Button>
+            <p>{t("pages.receipts.076")}</p>
+            <Button type="button" variant="secondary" icon="plus" onClick={addAllocation}>{t("pages.payments.077")}</Button>
           </div>
           {allocations.length === 0 ? (
-            <div className="compact-empty">السند غير موزع على فاتورة محددة.</div>
+            <div className="compact-empty">{t("pages.receipts.078")}</div>
           ) : (
             <div className="allocation-list">
               {allocations.map((allocation, index) => (
                 <div className="allocation-row" key={allocation.id ?? index}>
-                  <label><span>الفاتورة المفتوحة</span><select value={allocation.targetJournalLineId} onChange={(event) => selectInvoice(index, event.target.value)} required><option value="">اختر الفاتورة</option>{allocation.targetJournalLineId && !eligibleInvoices.some((invoice) => invoice.arJournalLineId === allocation.targetJournalLineId) && <option value={allocation.targetJournalLineId}>التوزيع الحالي — سطر #{allocation.targetJournalLineId}</option>}{eligibleInvoices.filter((invoice) => !allocations.some((item, itemIndex) => itemIndex !== index && item.targetJournalLineId === invoice.arJournalLineId)).map((invoice) => <option key={invoice.id} value={invoice.arJournalLineId ?? ""}>{invoice.document.documentNumber} — مستحق {formatMoney(invoice.outstandingAmount)} — {invoice.dueDate}</option>)}</select></label>
-                  <label><span>المبلغ</span><input dir="ltr" inputMode="decimal" value={allocation.allocatedAmount} onChange={(event) => setAllocations((current) => current.map((item, i) => i === index ? { ...item, allocatedAmount: event.target.value } : item))} required /></label>
-                  <button type="button" className="icon-button danger-text" aria-label="حذف التوزيع" onClick={() => setAllocations((current) => current.filter((_, i) => i !== index))}><Icon name="trash" size={18} /></button>
+                  <label><span>{t("pages.receipts.079")}</span><select value={allocation.targetJournalLineId} onChange={(event) => selectInvoice(index, event.target.value)} required><option value="">{t("pages.purchase-invoices.069")}</option>{allocation.targetJournalLineId && !eligibleInvoices.some((invoice) => invoice.arJournalLineId === allocation.targetJournalLineId) && <option value={allocation.targetJournalLineId}>{t("pages.receipts.081")}{allocation.targetJournalLineId}</option>}{eligibleInvoices.filter((invoice) => !allocations.some((item, itemIndex) => itemIndex !== index && item.targetJournalLineId === invoice.arJournalLineId)).map((invoice) => <option key={invoice.id} value={invoice.arJournalLineId ?? ""}>{invoice.document.documentNumber}{t("pages.receipts.082")}{formatMoney(invoice.outstandingAmount)} — {invoice.dueDate}</option>)}</select></label>
+                  <label><span>{t("pages.dashboard.039")}</span><input dir="ltr" inputMode="decimal" value={allocation.allocatedAmount} onChange={(event) => setAllocations((current) => current.map((item, i) => i === index ? { ...item, allocatedAmount: event.target.value } : item))} required /></label>
+                  <button type="button" className="icon-button danger-text" aria-label={t("pages.payments.083")} onClick={() => setAllocations((current) => current.filter((_, i) => i !== index))}><Icon name="trash" size={18} /></button>
                 </div>
               ))}
             </div>
           )}
           <div className={`allocation-total ${allocations.length && Math.abs(allocationTotal - Number(amount || 0)) > 0.00005 ? "mismatch" : ""}`}>
-            <span>مجموع التوزيعات</span>
+            <span>{t("pages.payments.084")}</span>
             <strong>{formatMoney(allocationTotal)}</strong>
           </div>
         </fieldset>
         <div className="modal-actions full">
-          <Button type="button" variant="secondary" onClick={onClose}>إلغاء</Button>
-          <Button type="submit" disabled={saving}>{saving ? "جارٍ الحفظ…" : "حفظ المسودة"}</Button>
+          <Button type="button" variant="secondary" onClick={onClose}>{t("pages.accounts.065")}</Button>
+          <Button type="submit" disabled={saving}>{saving ? t("pages.accounts.066") : t("pages.manual-journals.077")}</Button>
         </div>
       </form>
     </Modal>
@@ -542,41 +546,41 @@ function ReceiptDetails({
     <Modal title={receipt.document.documentNumber} description={receipt.document.description} onClose={onClose} wide>
       <div className="detail-actions">
         {(receipt.document.status === "POSTED" || receipt.document.status === "REVERSED") && (
-          <Button variant="secondary" icon="print" onClick={onPrint}>طباعة PDF</Button>
+          <Button variant="secondary" icon="print" onClick={onPrint}>{t("pages.payments.087")}</Button>
         )}
         {receipt.document.status === "DRAFT" && (
           <>
-            <Button variant="secondary" icon="edit" onClick={onEdit}>تعديل</Button>
-            <Button icon="check" onClick={() => onCommand("post")}>ترحيل</Button>
-            <Button variant="danger" icon="ban" onClick={() => onCommand("cancel")}>إلغاء</Button>
+            <Button variant="secondary" icon="edit" onClick={onEdit}>{t("pages.accounts.048")}</Button>
+            <Button icon="check" onClick={() => onCommand("post")}>{t("pages.manual-journals.004")}</Button>
+            <Button variant="danger" icon="ban" onClick={() => onCommand("cancel")}>{t("pages.accounts.065")}</Button>
           </>
         )}
         {receipt.document.status === "POSTED" && (
-          <Button variant="danger" icon="reverse" onClick={() => onCommand("reverse")}>عكس السند</Button>
+          <Button variant="danger" icon="reverse" onClick={() => onCommand("reverse")}>{t("pages.payments.089")}</Button>
         )}
       </div>
       <div className="document-summary">
-        <div><span>الحالة</span><strong className={`status-chip ${receipt.document.status.toLowerCase()}`}>{statusLabels[receipt.document.status]}</strong></div>
-        <div><span>التاريخ</span><strong>{new Date(receipt.document.documentDate).toLocaleDateString("ar-SA")}</strong></div>
-        <div><span>المبلغ</span><strong>{formatMoney(receipt.amount)} {currency?.code}</strong></div>
+        <div><span>{t("pages.accounts.043")}</span><strong className={`status-chip ${receipt.document.status.toLowerCase()}`}>{statusLabel(receipt.document.status)}</strong></div>
+        <div><span>{t("pages.dashboard.037")}</span><strong>{new Date(receipt.document.documentDate).toLocaleDateString(activeIntlLocale())}</strong></div>
+        <div><span>{t("pages.dashboard.039")}</span><strong>{formatMoney(receipt.amount)} {currency?.code}</strong></div>
       </div>
       <dl className="detail-grid">
-        <div><dt>الطرف</dt><dd>{customer?.nameAr ?? receipt.counterpartyNameSnapshot}</dd></div>
-        <div><dt>الصندوق/البنك</dt><dd>{cash ? `${cash.code} — ${cash.nameAr}` : receipt.cashBankAccountId}</dd></div>
-        <div><dt>طريقة الدفع</dt><dd>{method?.nameAr ?? receipt.paymentMethodId}</dd></div>
-        <div><dt>المرجع</dt><dd>{receipt.referenceNumber || "غير مسجل"}</dd></div>
-        <div><dt>سعر الصرف</dt><dd dir="ltr">{receipt.exchangeRate}</dd></div>
-        <div><dt>مبلغ العملة الأساسية</dt><dd>{formatMoney(receipt.baseAmount)}</dd></div>
-        {receipt.notes && <div className="full"><dt>ملاحظات</dt><dd>{receipt.notes}</dd></div>}
+        <div><dt>{t("pages.dashboard.036")}</dt><dd>{localizedReferenceName(customer) || receipt.counterpartyNameSnapshot}</dd></div>
+        <div><dt>{t("pages.payments.090")}</dt><dd>{cash ? `${cash.code} — ${localizedReferenceName(cash)}` : receipt.cashBankAccountId}</dd></div>
+        <div><dt>{t("pages.payments.091")}</dt><dd>{localizedReferenceName(method) || receipt.paymentMethodId}</dd></div>
+        <div><dt>{t("pages.payments.092")}</dt><dd>{receipt.referenceNumber || t("pages.customers.064")}</dd></div>
+        <div><dt>{t("pages.manual-journals.067")}</dt><dd dir="ltr">{receipt.exchangeRate}</dd></div>
+        <div><dt>{t("pages.payments.095")}</dt><dd>{formatMoney(receipt.baseAmount)}</dd></div>
+        {receipt.notes && <div className="full"><dt>{t("pages.payments.074")}</dt><dd>{receipt.notes}</dd></div>}
       </dl>
-      <div className="subsection-heading"><div><h3>التوزيعات</h3><p>{receipt.allocations.length} توزيع</p></div></div>
+      <div className="subsection-heading"><div><h3>{t("pages.payments.096")}</h3><p>{receipt.allocations.length}{t("pages.payments.097")}</p></div></div>
       {receipt.allocations.length === 0 ? (
-        <div className="compact-empty">لا توجد توزيعات مرتبطة بالسند.</div>
+        <div className="compact-empty">{t("pages.payments.098")}</div>
       ) : (
         <div className="allocation-detail-list">
           {receipt.allocations.map((allocation) => (
             <div key={allocation.id ?? allocation.targetJournalLineId}>
-              <span>سطر قيد #{allocation.targetJournalLineId}</span>
+              <span>{t("pages.receipts.099")}{allocation.targetJournalLineId}</span>
               <strong>{formatMoney(allocation.allocatedAmount)}</strong>
             </div>
           ))}

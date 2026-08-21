@@ -1,6 +1,7 @@
 import { api } from "./api";
 import { exchangeRateForCurrency } from "./domain";
 import type { Currency } from "./types";
+import { translate } from "./i18n";
 
 export async function exchangeRateForDocumentDate(currency: Currency | undefined, documentDate: string) {
   const fallback = exchangeRateForCurrency(currency);
@@ -10,4 +11,4 @@ export async function exchangeRateForDocumentDate(currency: Currency | undefined
   return result.rate;
 }
 
-export const missingDatedRateMessage = "لا يوجد سعر صرف نافذ للعملة في تاريخ المستند؛ سجّل السعر من إعدادات الشركة أو أدخله يدويًا.";
+export const missingDatedRateMessage = () => translate("currency.missingDatedRate");

@@ -121,6 +121,7 @@ export type Currency = {
 
 export type CompanyCurrencySetting = Currency & {
   isBase: boolean;
+  isCustom: boolean;
   isEnabled: boolean;
   latestExchangeRate: string | null;
   latestExchangeRateDate: string | null;

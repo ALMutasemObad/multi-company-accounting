@@ -5,9 +5,9 @@ export async function seedReferenceData(prisma: PrismaClient) {
   return prisma.$transaction(async (tx) => {
     for (const definition of currencyDefinitions) {
       await tx.currency.upsert({
-        where: { code: definition.code },
-        update: { nameAr: definition.nameAr, decimals: definition.decimals, isActive: true },
-        create: definition,
+        where: { scopeKey_code: { scopeKey: 'GLOBAL', code: definition.code } },
+        update: { nameAr: definition.nameAr, decimals: definition.decimals, isActive: true, scope: 'GLOBAL', ownerCompanyId: null },
+        create: { ...definition, scope: 'GLOBAL', scopeKey: 'GLOBAL' },
       });
     }
 
@@ -30,12 +30,13 @@ export async function seedReferenceData(prisma: PrismaClient) {
       }
     }
     const permissionByCode = new Map((await tx.permission.findMany({
-      where: { code: { in: ['cash_bank_accounts.view', 'settings.manage', 'currencies.view', 'currencies.manage'] } },
+      where: { code: { in: ['cash_bank_accounts.view', 'settings.manage', 'currencies.view', 'currencies.manage', 'currencies.create'] } },
       select: { id: true, code: true },
     })).map((permission) => [permission.code, permission.id]));
     const inheritedPermissions = [
       { from: permissionByCode.get('cash_bank_accounts.view'), to: permissionByCode.get('currencies.view') },
       { from: permissionByCode.get('settings.manage'), to: permissionByCode.get('currencies.manage') },
+      { from: permissionByCode.get('currencies.manage'), to: permissionByCode.get('currencies.create') },
     ];
     for (const inheritance of inheritedPermissions) {
       if (!inheritance.from || !inheritance.to) continue;

@@ -70,6 +70,13 @@ describe('AuthService', () => {
     await expect(auth.login({ sid: preAuth.sid, email: user.emailNormalized, password: 'correct-password' })).rejects.toEqual(new AuthError('INVALID_CSRF'));
   });
 
+  it('validates the PRE_AUTH cookie and CSRF pair for anonymous state changes', async () => {
+    const { auth } = fixture();
+    const preAuth = await auth.issueCsrf();
+    await expect(auth.validatePreAuth({ sid: preAuth.sid, csrfToken: preAuth.csrfToken })).resolves.toBeUndefined();
+    await expect(auth.validatePreAuth({ sid: preAuth.sid, csrfToken: 'wrong' })).rejects.toEqual(new AuthError('INVALID_CSRF'));
+  });
+
   it('uses the same public error for an unknown email and a wrong password', async () => {
     const { auth, store } = fixture();
     for (const email of ['missing@example.com', user.emailNormalized]) {

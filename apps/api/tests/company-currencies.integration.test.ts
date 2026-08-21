@@ -21,18 +21,45 @@ describe.runIf(enabled)('company currencies and dated exchange rates with MariaD
   let csrf = '';
   let agent: ReturnType<typeof request.agent>;
   const foreignCompanyCode = 'IT-CURRENCY-ISOLATION';
+  const customCodes = ['ITX', 'RCX'];
 
   async function cleanup() {
     if (!prisma || !companyId || !usdId) return;
     const foreign = await prisma.company.findFirst({ where: { code: foreignCompanyCode } });
     const companyIds = [companyId, ...(foreign ? [foreign.id] : [])];
     await prisma.companyExchangeRate.deleteMany({ where: { companyId: { in: companyIds }, currencyId: usdId } });
-    await prisma.auditLog.deleteMany({ where: { companyId: { in: companyIds }, action: { in: ['COMPANY_CURRENCIES_UPDATED', 'EXCHANGE_RATE_UPSERTED'] } } });
+    const ownedCurrencies = await prisma.currency.findMany({ where: { ownerCompanyId: { in: companyIds }, code: { in: customCodes } }, select: { id: true } });
+    const ownedCurrencyIds = ownedCurrencies.map(({ id }) => id);
+    if (ownedCurrencyIds.length) {
+      await prisma.companyExchangeRate.deleteMany({ where: { currencyId: { in: ownedCurrencyIds } } });
+      await prisma.companyCurrency.deleteMany({ where: { currencyId: { in: ownedCurrencyIds } } });
+    }
+    await prisma.auditLog.deleteMany({ where: { companyId: { in: companyIds }, action: { in: ['COMPANY_CURRENCIES_UPDATED', 'COMPANY_CURRENCY_CREATED', 'EXCHANGE_RATE_UPSERTED'] } } });
     await prisma.companyCurrency.deleteMany({ where: { companyId: { in: companyIds }, currencyId: usdId } });
     if (foreign) {
       await prisma.companyCurrency.deleteMany({ where: { companyId: foreign.id } });
+      if (ownedCurrencyIds.length) await prisma.currency.deleteMany({ where: { id: { in: ownedCurrencyIds } } });
       await prisma.company.delete({ where: { id: foreign.id } });
+    } else if (ownedCurrencyIds.length) {
+      await prisma.currency.deleteMany({ where: { id: { in: ownedCurrencyIds } } });
     }
+  }
+
+  async function ensureForeignCompany() {
+    const current = await prisma!.company.findUniqueOrThrow({ where: { id: companyId } });
+    const foreign = await prisma!.company.upsert({
+      where: { organizationId_code: { organizationId: current.organizationId, code: foreignCompanyCode } },
+      update: { baseCurrencyId, name: 'شركة عزل العملات', timezone: 'Asia/Riyadh', isActive: true },
+      create: { code: foreignCompanyCode, organizationId: current.organizationId, baseCurrencyId, name: 'شركة عزل العملات', timezone: 'Asia/Riyadh' },
+    });
+    for (const currencyId of [baseCurrencyId, usdId]) {
+      await prisma!.companyCurrency.upsert({
+        where: { companyId_currencyId: { companyId: foreign.id, currencyId } },
+        update: { isActive: true },
+        create: { companyId: foreign.id, currencyId },
+      });
+    }
+    return foreign;
   }
 
   beforeAll(async () => {
@@ -42,9 +69,9 @@ describe.runIf(enabled)('company currencies and dated exchange rates with MariaD
     companyId = assignment.companyId;
     baseCurrencyId = assignment.company.baseCurrencyId;
     const usd = await prisma!.currency.upsert({
-      where: { code: 'USD' },
-      update: { nameAr: 'دولار أمريكي', decimals: 2, isActive: true },
-      create: { code: 'USD', nameAr: 'دولار أمريكي', decimals: 2 },
+      where: { scopeKey_code: { scopeKey: 'GLOBAL', code: 'USD' } },
+      update: { nameAr: 'دولار أمريكي', decimals: 2, isActive: true, scope: 'GLOBAL', ownerCompanyId: null },
+      create: { code: 'USD', nameAr: 'دولار أمريكي', decimals: 2, scope: 'GLOBAL', scopeKey: 'GLOBAL' },
     });
     usdId = usd.id;
     await cleanup();
@@ -96,12 +123,7 @@ describe.runIf(enabled)('company currencies and dated exchange rates with MariaD
   });
 
   it('isolates rates with the same currency and date between companies', async () => {
-    const current = await prisma!.company.findUniqueOrThrow({ where: { id: companyId } });
-    const foreign = await prisma!.company.create({ data: { code: foreignCompanyCode, organizationId: current.organizationId, baseCurrencyId, name: 'شركة عزل العملات', timezone: 'Asia/Riyadh' } });
-    await prisma!.companyCurrency.createMany({ data: [
-      { companyId: foreign.id, currencyId: baseCurrencyId },
-      { companyId: foreign.id, currencyId: usdId },
-    ] });
+    const foreign = await ensureForeignCompany();
     const service = new CompanyService(prisma!);
     await service.upsertExchangeRate({ userId, companyId: foreign.id }, { currencyId: usdId, rateDate: '2026-08-01', rate: '7.50000000', source: 'شركة أخرى' });
 
@@ -109,5 +131,50 @@ describe.runIf(enabled)('company currencies and dated exchange rates with MariaD
     const foreignRate = await service.resolveExchangeRate({ userId, companyId: foreign.id }, usdId, '2026-08-01');
     expect(currentRate.rate.toFixed(8)).toBe('3.75500000');
     expect(foreignRate.rate.toFixed(8)).toBe('7.50000000');
+  });
+
+  it('creates, audits and isolates company-owned currencies while handling duplicate races', async () => {
+    const foreign = await ensureForeignCompany();
+    const service = new CompanyService(prisma!);
+    const currentContext = { userId, companyId };
+    const foreignContext = { userId, companyId: foreign.id };
+
+    const created = await agent
+      .post('/api/v1/company-currencies')
+      .set('X-CSRF-Token', csrf)
+      .send({ code: 'ITX', nameAr: 'عملة الشركة الاختبارية', decimals: 3 })
+      .expect(201);
+    expect(created.body).toMatchObject({ code: 'ITX', decimals: 3, isCustom: true, isEnabled: true, isBase: false });
+    expect(await prisma!.auditLog.count({ where: { companyId, action: 'COMPANY_CURRENCY_CREATED', entityId: created.body.id } })).toBe(1);
+
+    await agent
+      .post('/api/v1/company-currencies')
+      .set('X-CSRF-Token', csrf)
+      .send({ code: 'ITX', nameAr: 'نسخة مكررة', decimals: 2 })
+      .expect(409);
+    await agent
+      .post('/api/v1/company-currencies')
+      .set('X-CSRF-Token', csrf)
+      .send({ code: 'USD', nameAr: 'نسخة خاصة من الدولار', decimals: 2 })
+      .expect(409);
+
+    const foreignBefore = await service.listCurrencyCatalog(foreignContext);
+    expect(foreignBefore.some(({ id }) => id.toString() === created.body.id)).toBe(false);
+    await expect(service.updateCompanyCurrencies(foreignContext, [BigInt(created.body.id)])).rejects.toMatchObject({ reason: 'CURRENCY_NOT_FOUND' });
+
+    const foreignCurrency = await service.createCompanyCurrency(foreignContext, { code: 'ITX', nameAr: 'عملة الشركة الأخرى', decimals: 2 });
+    expect(foreignCurrency.id.toString()).not.toBe(created.body.id);
+    const currentCatalog = await service.listCurrencyCatalog(currentContext);
+    const foreignCatalog = await service.listCurrencyCatalog(foreignContext);
+    expect(currentCatalog.some(({ id }) => id === foreignCurrency.id)).toBe(false);
+    expect(foreignCatalog.some(({ id }) => id.toString() === created.body.id)).toBe(false);
+
+    const race = await Promise.allSettled([
+      service.createCompanyCurrency(currentContext, { code: 'RCX', nameAr: 'عملة سباق أولى', decimals: 2 }),
+      service.createCompanyCurrency(currentContext, { code: 'RCX', nameAr: 'عملة سباق ثانية', decimals: 2 }),
+    ]);
+    expect(race.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+    const rejected = race.find(({ status }) => status === 'rejected');
+    expect(rejected).toMatchObject({ status: 'rejected', reason: { reason: 'CURRENCY_CODE_EXISTS' } });
   });
 });

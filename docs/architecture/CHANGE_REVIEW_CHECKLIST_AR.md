@@ -1,0 +1,81 @@
+---
+title: "Architecture Change Review Checklist"
+status: "mandatory"
+version: "1.0"
+last_updated: "2026-08-21"
+---
+
+# قائمة مراجعة التغيير المعماري
+
+تستخدم هذه القائمة لأي تغيير يمس مجال أعمال أو قاعدة بيانات أو ترحيلًا محاسبيًا أو حدثًا أو تكاملًا.
+
+## المجال والملكية
+
+- [ ] حُدد الـBounded Context المالك للتغيير.
+- [ ] لا ينشئ التغيير مالكي كتابة لنفس الجدول أو Aggregate.
+- [ ] لا توجد كتابة Prisma مباشرة في Model يملكه Context آخر.
+- [ ] أي قراءة عابرة للسياق تمر عبر Query/Application Port أو Read Model.
+- [ ] لا توجد dependency cycle جديدة.
+- [ ] حُدثت خريطة السياقات إذا تغيرت الملكية أو العلاقات.
+
+## Core Accounting
+
+- [ ] لا يوجد إنشاء جديد لـ`JournalEntry/JournalLine` خارج Core Accounting.
+- [ ] المصدر والقيد والحالة والتدقيق وIdempotency داخل معاملة واحدة.
+- [ ] POSTED ثابت، والعكس مستند جديد في فترة مفتوحة.
+- [ ] التوازن والفترة والحساب والعملة والتقريب مختبرة.
+- [ ] لا Float/`Number` في الحساب المالي النهائي.
+- [ ] لا Network I/O داخل transaction.
+
+## الأحداث
+
+- [ ] الحدث يمثل حقيقة حدثت بالفعل واسمه past tense.
+- [ ] الحدث ليس بديلًا عن invariant متزامنة.
+- [ ] Outbox row تكتب في معاملة المجال نفسها.
+- [ ] العقد يحتوي `eventId`, `eventType`, `schemaVersion`, `aggregateId`, `companyId`, و`occurredAt`.
+- [ ] Payload لا يحتوي أسرارًا أو Prisma record كاملًا.
+- [ ] Consumer idempotent ومختبر مع delivery مكرر.
+- [ ] الفشل وretry والتراكم قابل للرصد.
+- [ ] لا AuditLog/SecurityEvent كـOutbox.
+- [ ] أي Broker أو Queue خارجي مرتبط بـADR مقبول.
+
+## البيانات والعزل
+
+- [ ] كل Query تشغيلي مقيد بالشركة عند الحاجة.
+- [ ] العلاقات المركبة تمنع cross-company references.
+- [ ] التغيير عبر Migration وليس `db push`.
+- [ ] Migration مختبرة من قاعدة فارغة ومن الإصدار السابق.
+- [ ] لا raw SQL غير parameterized.
+- [ ] retention/cleanup محددان للجداول التقنية الجديدة.
+
+## التزامن والـDeadlocks والـDeadlines
+
+- [ ] حُددت الـinvariants التي قد تتعرض لسباق.
+- [ ] ترتيب الأقفال مطابق للسياسة وموحد في المسارات المتنافسة.
+- [ ] عدة معرفات من النوع نفسه تقفل بترتيب ثابت.
+- [ ] `version` أو conditional update مستخدم عند optimistic concurrency.
+- [ ] Retry مقتصر على transient database errors المصنفة مركزيًا.
+- [ ] `P2002` business conflict لا يعامل تلقائيًا كـdeadlock.
+- [ ] المعاملة كاملة قابلة للإعادة عبر Idempotency قبل تفعيل Retry.
+- [ ] Retry محدود مع backoff وjitter وضمن deadline واحد.
+- [ ] `maxWait` وtransaction timeout وrequest deadline محددة حسب فئة العملية.
+- [ ] لا انتظار أو Network I/O أو sleep داخل transaction.
+- [ ] اختبارات same-document وpost-vs-close والتسوية المتزامنة موجودة عند الصلة.
+- [ ] deadlock/retry/deadline metrics وسجلاتها لا تعرض بيانات حساسة.
+
+## العقود والأنواع
+
+- [ ] لا Prisma types كعقد دائم بين Contexts.
+- [ ] لا `any` جديد غير مبرر في الأموال أو الترحيل أو العقود.
+- [ ] OpenAPI وDTO وserializer متوافقة.
+- [ ] BigInt وDecimal يخرجان كنصوص canonical.
+
+## الاختبارات والتوثيق
+
+- [ ] Unit tests للسياسات والحسابات.
+- [ ] Integration tests للمعاملة وrollback وidempotency.
+- [ ] Negative وcross-company tests.
+- [ ] Event retry/duplicate tests عند وجود أحداث.
+- [ ] Typecheck وبناء واختبارات العقد ناجحة.
+- [ ] README وحالة التنفيذ والـADR والوثائق المرتبطة محدثة.
+- [ ] أي استثناء أو دين متبقٍ موثق بمالك وخطة إزالة.

@@ -2,6 +2,7 @@ import cors from 'cors';
 import express, { type ErrorRequestHandler } from 'express';
 import helmet from 'helmet';
 import { fileURLToPath } from 'node:url';
+import { ZodError } from 'zod';
 import type { AppConfig } from './config.js';
 import { AuthError, type AuthService } from './auth/auth-service.js';
 import { createAuthRouter } from './auth/auth-router.js';
@@ -38,16 +39,57 @@ import { createSecurityEventRouter } from './security/security-event-router.js';
 import type { ReadinessCheck } from './operations/readiness-service.js';
 import { createRateLimiter } from './operations/rate-limit.js';
 import { logEvent, requestLogger } from './operations/logger.js';
+import type { RegistrationService } from './registration/registration-service.js';
+import { createRegistrationRouter } from './registration/registration-router.js';
 
-export function createApp(config: AppConfig, services: { readiness?: ReadinessCheck; auth?: AuthService; users?: UserService; companies?: CompanyService; printing?: PrintService; audit?: AuditService; security?: SecurityEventService; fiscal?: FiscalService; accounts?: AccountService; journals?: ManualJournalService; receiptReferences?: ReceiptReferenceService; receipts?: ReceiptService; suppliers?: SupplierReferenceService; payments?: PaymentService; reports?: ReportService; salesInvoices?: SalesInvoiceService; purchaseInvoices?: PurchaseInvoiceService } = {}) {
+type ClientRequestProblem = {
+  status: number;
+  title: string;
+  messageAr: string;
+  reason: string;
+  fieldErrors?: Record<string, string[]>;
+};
+
+function clientRequestProblem(error: unknown): ClientRequestProblem | undefined {
+  if (error instanceof ZodError) {
+    const fieldErrors: Record<string, string[]> = {};
+    for (const issue of error.issues) {
+      const field = issue.path.map(String).join('.') || '$';
+      (fieldErrors[field] ??= []).push(issue.message);
+    }
+    return {
+      status: 400,
+      title: 'Validation failed',
+      messageAr: 'تحقق من الحقول المطلوبة وصيغ القيم.',
+      reason: 'SCHEMA_VALIDATION_FAILED',
+      fieldErrors,
+    };
+  }
+
+  const parserType = error instanceof Error && 'type' in error
+    ? (error as Error & { type?: unknown }).type
+    : undefined;
+  if (parserType === 'entity.parse.failed') {
+    return { status: 400, title: 'Invalid JSON', messageAr: 'يجب أن يكون جسم الطلب JSON صالحًا.', reason: 'INVALID_JSON' };
+  }
+  if (parserType === 'entity.too.large') {
+    return { status: 413, title: 'Payload Too Large', messageAr: 'يتجاوز جسم الطلب الحد الأقصى المسموح وهو 1 ميغابايت.', reason: 'PAYLOAD_TOO_LARGE' };
+  }
+  if (parserType === 'charset.unsupported' || parserType === 'encoding.unsupported') {
+    return { status: 415, title: 'Unsupported Media Type', messageAr: 'ترميز جسم الطلب غير مدعوم.', reason: 'UNSUPPORTED_BODY_ENCODING' };
+  }
+  return undefined;
+}
+
+export function createApp(config: AppConfig, services: { readiness?: ReadinessCheck; auth?: AuthService; registration?: RegistrationService; users?: UserService; companies?: CompanyService; printing?: PrintService; audit?: AuditService; security?: SecurityEventService; fiscal?: FiscalService; accounts?: AccountService; journals?: ManualJournalService; receiptReferences?: ReceiptReferenceService; receipts?: ReceiptService; suppliers?: SupplierReferenceService; payments?: PaymentService; reports?: ReportService; salesInvoices?: SalesInvoiceService; purchaseInvoices?: PurchaseInvoiceService } = {}) {
   const app = express();
 
   app.disable('x-powered-by');
   if (config.TRUST_PROXY) app.set('trust proxy', 1);
   app.use(helmet());
   app.use(cors({ origin: config.WEB_ORIGIN, credentials: true }));
-  app.use(express.json({ limit: '1mb' }));
   app.use(requestLogger(config.LOG_REQUESTS ?? false));
+  app.use(express.json({ limit: '1mb' }));
 
   const live = (_request: express.Request, response: express.Response) => {
     response.json({ status: 'ok', service: 'mcap-finance-api' });
@@ -74,7 +116,10 @@ export function createApp(config: AppConfig, services: { readiness?: ReadinessCh
   app.use('/api/v1', createRateLimiter({ scope: 'api', windowMs, max: config.RATE_LIMIT_MAX ?? 300 }));
   app.use('/api/v1/auth/csrf', createRateLimiter({ scope: 'csrf', windowMs, max: config.AUTH_RATE_LIMIT_MAX ?? 20 }));
   app.use('/api/v1/auth/login', createRateLimiter({ scope: 'login', windowMs, max: config.AUTH_RATE_LIMIT_MAX ?? 20 }));
+  const registrationLimiter = createRateLimiter({ scope: 'registration', windowMs, max: config.REGISTRATION_RATE_LIMIT_MAX ?? 5 });
+  app.use('/api/v1/auth/register', (request, response, next) => request.method === 'GET' ? next() : registrationLimiter(request, response, next));
   if (services.auth) app.use('/api/v1/auth', createAuthRouter(services.auth, config.SESSION_COOKIE_SECURE));
+  if (services.auth && services.registration) app.use('/api/v1/auth/register', createRegistrationRouter(services.auth, services.registration));
   if (services.auth && services.users) app.use('/api/v1', createUserRouter(services.auth, services.users));
   if (services.auth && services.companies) app.use('/api/v1', createCompanyRouter(services.auth, services.companies));
   if (services.auth && services.printing) app.use('/api/v1', createPrintRouter(services.auth, services.printing));
@@ -91,7 +136,7 @@ export function createApp(config: AppConfig, services: { readiness?: ReadinessCh
   if (services.auth && services.purchaseInvoices) app.use('/api/v1', createPurchaseInvoiceRouter(services.auth, services.purchaseInvoices));
   if (services.auth && services.reports) app.use('/api/v1', createReportRouter(services.auth, services.reports));
 
-  if (config.NODE_ENV === 'production') {
+  if (config.NODE_ENV === 'production' || config.SERVE_WEB_ASSETS) {
     const webRoot = fileURLToPath(new URL('../../web/dist/', import.meta.url));
     app.use(express.static(webRoot, {
       index: false,
@@ -123,6 +168,20 @@ export function createApp(config: AppConfig, services: { readiness?: ReadinessCh
   });
 
   const errorHandler: ErrorRequestHandler = (error, _request, response, _next) => {
+    const requestProblem = clientRequestProblem(error);
+    if (requestProblem) {
+      response.status(requestProblem.status).json({
+        type: 'about:blank',
+        title: requestProblem.title,
+        status: requestProblem.status,
+        code: 'VALIDATION_ERROR',
+        messageAr: requestProblem.messageAr,
+        requestId: response.locals.requestId,
+        fieldErrors: requestProblem.fieldErrors,
+        details: { reason: requestProblem.reason },
+      });
+      return;
+    }
     if (error instanceof AuthError) {
       const status = error.reason === 'UNAUTHENTICATED' || error.reason === 'ACCOUNT_LOCKED' || error.reason === 'INVALID_CREDENTIALS' ? 401 : 403;
       response.status(status).json({ type: 'about:blank', title: 'Authentication failed', status, code: error.reason });

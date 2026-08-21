@@ -1,10 +1,9 @@
 import { Router, type ErrorRequestHandler, type Request } from 'express';
 import { z } from 'zod';
+import { loginRequestSchema, selectCompanyRequestSchema } from '../generated/openapi-request-guards.js';
 import type { AuthService } from './auth-service.js';
 import { AuthError } from './auth-service.js';
 
-const loginSchema = z.object({ email: z.string().email().max(320), password: z.string().min(1).max(1024) }).strict();
-const contextSchema = z.object({ companyId: z.string().regex(/^[1-9][0-9]*$/) }).strict();
 const paginationSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
@@ -26,7 +25,7 @@ export function createAuthRouter(auth: AuthService, secureCookie: boolean) {
   });
 
   router.post('/login', async (request, response) => {
-    const body = loginSchema.parse(request.body);
+    const body = loginRequestSchema.parse(request.body);
     const result = await auth.login({
       sid: cookies(request.headers.cookie).sid,
       csrfToken: request.header('X-CSRF-Token') ?? undefined,
@@ -43,7 +42,7 @@ export function createAuthRouter(auth: AuthService, secureCookie: boolean) {
   });
 
   router.put('/context', async (request, response) => {
-    const body = contextSchema.parse(request.body);
+    const body = selectCompanyRequestSchema.parse(request.body);
     await auth.selectCompany({
       sid: cookies(request.headers.cookie).sid,
       csrfToken: request.header('X-CSRF-Token') ?? undefined,

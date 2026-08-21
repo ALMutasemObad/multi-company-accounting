@@ -1,6 +1,16 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
-import { api, ApiError } from "./api";
-import type { Account, Address, ListResponse, Supplier } from "./types";
+import {
+  localizedReferenceName,
+  translate as t } from "./i18n";
+import { FormEvent,
+  useCallback,
+  useEffect,
+  useState } from "react";
+import { api,
+  ApiError } from "./api";
+import type { Account,
+  Address,
+  ListResponse,
+  Supplier } from "./types";
 import {
   Button,
   EmptyState,
@@ -8,6 +18,7 @@ import {
   Modal,
   Pagination,
   Spinner,
+  PageHeader,
 } from "./ui";
 
 type Notice = (message: string, tone?: "success" | "error") => void;
@@ -44,7 +55,7 @@ export function SuppliersPage({ notify }: { notify: Notice }) {
         if (current) setSelected(current);
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "تعذر تحميل الموردين.");
+      setError(cause instanceof Error ? cause.message : t("pages.suppliers.001"));
     } finally {
       setLoading(false);
     }
@@ -68,14 +79,14 @@ export function SuppliersPage({ notify }: { notify: Notice }) {
     try {
       setSelected(await api<Supplier>(`/suppliers/${id}`));
     } catch (cause) {
-      notify(cause instanceof Error ? cause.message : "تعذر عرض المورد.", "error");
+      notify(cause instanceof Error ? cause.message : t("pages.suppliers.002"), "error");
     }
   }
 
   async function deactivate() {
-    if (!selected || !window.confirm(`تعطيل المورد «${selected.nameAr}»؟ لن يظهر ضمن الموردين النشطين.`))
+    if (!selected || !window.confirm(t("pages.suppliers.003", { value1: localizedReferenceName(selected) })))
       return;
-    const reason = window.prompt("اكتب سبب التعطيل (3 أحرف على الأقل):");
+    const reason = window.prompt(t("pages.customers.004"));
     if (!reason || reason.trim().length < 3) return;
     try {
       await api(`/suppliers/${selected.id}/deactivate`, {
@@ -83,39 +94,30 @@ export function SuppliersPage({ notify }: { notify: Notice }) {
         body: JSON.stringify({ reason: reason.trim() }),
       });
       setSelected(null);
-      notify("تم تعطيل المورد بنجاح.");
+      notify(t("pages.suppliers.005"));
       await load();
     } catch (cause) {
-      notify(cause instanceof Error ? cause.message : "تعذر تعطيل المورد.", "error");
+      notify(cause instanceof Error ? cause.message : t("pages.suppliers.006"), "error");
     }
   }
 
   async function removeAddress(address: Address) {
-    if (!selected || !window.confirm("حذف هذا العنوان نهائيًا؟")) return;
+    if (!selected || !window.confirm(t("pages.customers.007"))) return;
     try {
       await api<void>(
         `/suppliers/${selected.id}/addresses/${address.id}`,
         { method: "DELETE" },
       );
       await openDetails(selected.id);
-      notify("تم حذف العنوان.");
+      notify(t("pages.customers.008"));
     } catch (cause) {
-      notify(cause instanceof Error ? cause.message : "تعذر حذف العنوان.", "error");
+      notify(cause instanceof Error ? cause.message : t("pages.customers.009"), "error");
     }
   }
 
   return (
     <section className="workspace-page">
-      <header className="page-heading">
-        <div>
-          <span className="section-kicker">دليل الأطراف</span>
-          <h1>الموردون</h1>
-          <p>إدارة بيانات الموردين وحساباتهم الدائنة وعناوين الدفع.</p>
-        </div>
-        <Button icon="plus" onClick={() => setForm("create")}>
-          مورد جديد
-        </Button>
-      </header>
+      <PageHeader kicker={t("pages.customers.010")} title={t("pages.manual-journals.065")} description={t("pages.suppliers.012")} actions={<Button icon="plus" onClick={() => setForm("create")}>{t("pages.suppliers.013")}</Button>} />
 
       <div className="toolbar">
         <form
@@ -128,64 +130,60 @@ export function SuppliersPage({ notify }: { notify: Notice }) {
         >
           <Icon name="search" size={18} />
           <input
-            aria-label="البحث عن مورد"
+            aria-label={t("pages.suppliers.014")}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="ابحث بالرمز أو الاسم أو البريد"
+            placeholder={t("pages.customers.015")}
           />
-          <button type="submit">بحث</button>
+          <button type="submit">{t("pages.accounts.026")}</button>
         </form>
         <select
-          aria-label="حالة المورد"
+          aria-label={t("pages.suppliers.017")}
           value={active}
           onChange={(event) => {
             setPage(1);
             setActive(event.target.value);
           }}
         >
-          <option value="true">النشطون</option>
-          <option value="false">المعطّلون</option>
-          <option value="">الكل</option>
+          <option value="true">{t("pages.customers.018")}</option>
+          <option value="false">{t("pages.customers.019")}</option>
+          <option value="">{t("pages.customers.020")}</option>
         </select>
       </div>
 
       {error ? (
         <div className="error-panel" role="alert">
           <p>{error}</p>
-          <Button variant="secondary" onClick={() => void load()}>
-            إعادة المحاولة
-          </Button>
+          <Button variant="secondary" onClick={() => void load()}>{t("pages.customers.021")}</Button>
         </div>
       ) : loading ? (
-        <Spinner label="جارٍ تحميل الموردين" />
+        <Spinner label={t("pages.suppliers.022")} />
       ) : items.length === 0 ? (
         <EmptyState
-          title="لا يوجد موردون مطابقون"
+          title={t("pages.suppliers.023")}
           description={
             submittedSearch
-              ? "غيّر عبارة البحث أو عوامل التصفية."
-              : "أضف أول مورد لبدء تسجيل سندات الصرف."
+              ? t("pages.customers.024")
+              : t("pages.suppliers.025")
           }
           action={
             !submittedSearch && (
-              <Button icon="plus" onClick={() => setForm("create")}>
-                إضافة مورد
-              </Button>
+              <Button icon="plus" onClick={() => setForm("create")}>{t("pages.suppliers.026")}</Button>
             )
           }
         />
       ) : (
         <>
-          <div className="data-table-wrap">
+          <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}>
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>الرمز</th>
-                  <th>اسم المورد</th>
-                  <th>الاتصال</th>
-                  <th>الرقم الضريبي</th>
-                  <th>الحالة</th>
-                  <th><span className="sr-only">إجراءات</span></th>
+                  <th>{t("pages.accounts.059")}</th>
+                  <th>{t("pages.suppliers.028")}</th>
+                  <th>{t("pages.customers.029")}</th>
+                  <th>{t("pages.customers.030")}</th>
+                  <th>{t("pages.accounts.043")}</th>
+                  <th><span className="sr-only">{t("pages.customers.032")}</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -197,7 +195,7 @@ export function SuppliersPage({ notify }: { notify: Notice }) {
                         className="text-link strong"
                         onClick={() => void openDetails(supplier.id)}
                       >
-                        {supplier.nameAr}
+                        {localizedReferenceName(supplier)}
                       </button>
                       {supplier.nameEn && <small>{supplier.nameEn}</small>}
                     </td>
@@ -208,13 +206,11 @@ export function SuppliersPage({ notify }: { notify: Notice }) {
                     <td>{supplier.taxNumberMasked || "—"}</td>
                     <td>
                       <span className={`status-chip ${supplier.isActive ? "active" : "inactive"}`}>
-                        {supplier.isActive ? "نشط" : "معطّل"}
+                        {supplier.isActive ? t("pages.accounts.028") : t("pages.customers.034")}
                       </span>
                     </td>
                     <td>
-                      <Button variant="ghost" onClick={() => void openDetails(supplier.id)}>
-                        عرض
-                      </Button>
+                      <Button variant="ghost" onClick={() => void openDetails(supplier.id)}>{t("pages.customers.035")}</Button>
                     </td>
                   </tr>
                 ))}
@@ -233,7 +229,7 @@ export function SuppliersPage({ notify }: { notify: Notice }) {
           onSaved={async (supplier) => {
             setForm(null);
             setSelected(supplier);
-            notify(form === "create" ? "تم إنشاء المورد." : "تم تحديث المورد.");
+            notify(form === "create" ? t("pages.suppliers.036") : t("pages.suppliers.037"));
             await load();
           }}
         />
@@ -260,7 +256,7 @@ export function SuppliersPage({ notify }: { notify: Notice }) {
           onSaved={async () => {
             setAddressForm(null);
             await openDetails(selected.id);
-            notify("تم حفظ العنوان.");
+            notify(t("pages.customers.038"));
           }}
         />
       )}
@@ -319,76 +315,76 @@ function SupplierForm({
       );
       onSaved(result);
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : "تعذر حفظ المورد.");
+      setError(cause instanceof ApiError ? cause.message : t("pages.suppliers.039"));
     } finally {
       setSaving(false);
     }
   }
   return (
     <Modal
-      title={supplier ? "تعديل المورد" : "إضافة مورد جديد"}
-      description="الحقول المعلّمة مطلوبة لإتمام الحفظ."
+      title={supplier ? t("pages.suppliers.040") : t("pages.suppliers.041")}
+      description={t("pages.customers.042")}
       onClose={onClose}
       wide
     >
       <form className="form-grid" onSubmit={submit}>
-        {error && <div className="form-error full">{error}</div>}
+        {error && <div className="form-error full" role="alert">{error}</div>}
         <label>
-          <span>حساب الذمم الدائنة *</span>
+          <span>{t("pages.suppliers.043")}</span>
           <select name="payableAccountId" defaultValue={supplier?.payableAccountId} required>
-            <option value="">اختر الحساب</option>
+            <option value="">{t("pages.customers.044")}</option>
             {accounts.map((account) => (
               <option key={account.id} value={account.id}>
-                {account.code} — {account.nameAr}
+                {account.code} — {localizedReferenceName(account)}
               </option>
             ))}
           </select>
         </label>
         <label>
-          <span>رمز المورد *</span>
+          <span>{t("pages.suppliers.045")}</span>
           <input name="code" defaultValue={supplier?.code} maxLength={40} required />
         </label>
         <label>
-          <span>الاسم العربي *</span>
+          <span>{t("pages.customers.046")}</span>
           <input name="nameAr" defaultValue={supplier?.nameAr} maxLength={200} required />
         </label>
         <label>
-          <span>الاسم الإنجليزي</span>
+          <span>{t("pages.accounts.055")}</span>
           <input name="nameEn" dir="ltr" defaultValue={supplier?.nameEn ?? ""} maxLength={200} />
         </label>
         <label>
-          <span>رقم الهاتف</span>
+          <span>{t("pages.customers.048")}</span>
           <input name="phone" inputMode="tel" dir="ltr" defaultValue={supplier?.phone ?? ""} maxLength={40} />
         </label>
         <label>
-          <span>البريد الإلكتروني</span>
+          <span>{t("pages.admin.034")}</span>
           <input name="email" type="email" dir="ltr" defaultValue={supplier?.email ?? ""} maxLength={320} />
         </label>
         <label className="full">
-          <span>الرقم الضريبي {supplier && "(اتركه فارغًا للإبقاء على الحالي)"}</span>
+          <span>{t("pages.customers.050")}{supplier && t("pages.customers.051")}</span>
           <input name="taxNumber" dir="ltr" maxLength={64} placeholder={supplier?.taxNumberMasked ?? ""} />
         </label>
         {!supplier && (
           <fieldset className="full nested-fields">
-            <legend>عنوان الدفع الأولي (اختياري)</legend>
+            <legend>{t("pages.suppliers.052")}</legend>
             <label>
-              <span>العنوان</span>
+              <span>{t("pages.customers.053")}</span>
               <input name="addressLine1" maxLength={200} />
             </label>
             <label>
-              <span>المدينة</span>
+              <span>{t("pages.customers.054")}</span>
               <input name="city" maxLength={100} />
             </label>
             <label>
-              <span>رمز الدولة</span>
+              <span>{t("pages.customers.055")}</span>
               <input name="countryCode" dir="ltr" maxLength={2} placeholder="SA" />
             </label>
           </fieldset>
         )}
         <div className="modal-actions full">
-          <Button type="button" variant="secondary" onClick={onClose}>إلغاء</Button>
+          <Button type="button" variant="secondary" onClick={onClose}>{t("pages.accounts.065")}</Button>
           <Button type="submit" disabled={saving}>
-            {saving ? "جارٍ الحفظ…" : "حفظ المورد"}
+            {saving ? t("pages.accounts.066") : t("pages.suppliers.058")}
           </Button>
         </div>
       </form>
@@ -417,26 +413,26 @@ function SupplierDetails({
 }) {
   const account = accounts.find((item) => item.id === supplier.payableAccountId);
   return (
-    <Modal title={supplier.nameAr} description={`مورد رقم ${supplier.code}`} onClose={onClose} wide>
+    <Modal title={localizedReferenceName(supplier)} description={t("pages.suppliers.059", { value1: supplier.code })} onClose={onClose} wide>
       <div className="detail-actions">
-        <Button variant="secondary" icon="edit" onClick={onEdit}>تعديل</Button>
+        <Button variant="secondary" icon="edit" onClick={onEdit}>{t("pages.accounts.048")}</Button>
         {supplier.isActive && (
-          <Button variant="danger" icon="ban" onClick={onDeactivate}>تعطيل</Button>
+          <Button variant="danger" icon="ban" onClick={onDeactivate}>{t("pages.accounts.049")}</Button>
         )}
       </div>
       <dl className="detail-grid">
-        <div><dt>الحساب الدائن</dt><dd>{account ? `${account.code} — ${account.nameAr}` : supplier.payableAccountId}</dd></div>
-        <div><dt>الحالة</dt><dd>{supplier.isActive ? "نشط" : "معطّل"}</dd></div>
-        <div><dt>الهاتف</dt><dd>{supplier.phone || "غير مسجل"}</dd></div>
-        <div><dt>البريد</dt><dd>{supplier.email || "غير مسجل"}</dd></div>
-        <div><dt>الرقم الضريبي</dt><dd>{supplier.taxNumberMasked || "غير مسجل"}</dd></div>
+        <div><dt>{t("pages.suppliers.062")}</dt><dd>{account ? `${account.code} — ${localizedReferenceName(account)}` : supplier.payableAccountId}</dd></div>
+        <div><dt>{t("pages.accounts.043")}</dt><dd>{supplier.isActive ? t("pages.accounts.028") : t("pages.customers.034")}</dd></div>
+        <div><dt>{t("pages.customers.063")}</dt><dd>{supplier.phone || t("pages.customers.064")}</dd></div>
+        <div><dt>{t("pages.customers.065")}</dt><dd>{supplier.email || t("pages.customers.064")}</dd></div>
+        <div><dt>{t("pages.customers.030")}</dt><dd>{supplier.taxNumberMasked || t("pages.customers.064")}</dd></div>
       </dl>
       <div className="subsection-heading">
-        <div><h3>العناوين</h3><p>{supplier.addresses.length} عنوان مسجل</p></div>
-        <Button variant="secondary" icon="plus" onClick={onAddAddress}>إضافة عنوان</Button>
+        <div><h3>{t("pages.customers.066")}</h3><p>{supplier.addresses.length}{t("pages.customers.067")}</p></div>
+        <Button variant="secondary" icon="plus" onClick={onAddAddress}>{t("pages.customers.068")}</Button>
       </div>
       {supplier.addresses.length === 0 ? (
-        <div className="compact-empty">لا توجد عناوين مسجلة لهذا المورد.</div>
+        <div className="compact-empty">{t("pages.suppliers.069")}</div>
       ) : (
         <div className="address-list">
           {supplier.addresses.map((address) => (
@@ -444,12 +440,12 @@ function SupplierDetails({
               <Icon name="location" />
               <div>
                 <strong>{addressTypeLabel(address.addressType)}</strong>
-                {address.isPrimary && <span className="primary-tag">رئيسي</span>}
-                <p>{[address.line1, address.line2, address.city, address.region, address.postalCode, address.countryCode].filter(Boolean).join("، ")}</p>
+                {address.isPrimary && <span className="primary-tag">{t("pages.customers.070")}</span>}
+                <p>{[address.line1, address.line2, address.city, address.region, address.postalCode, address.countryCode].filter(Boolean).join(t("pages.customers.071"))}</p>
               </div>
               <div className="row-actions">
-                <button aria-label="تعديل العنوان" onClick={() => onEditAddress(address)}><Icon name="edit" size={17} /></button>
-                <button aria-label="حذف العنوان" className="danger-text" onClick={() => onDeleteAddress(address)}><Icon name="trash" size={17} /></button>
+                <button aria-label={t("pages.customers.072")} onClick={() => onEditAddress(address)}><Icon name="edit" size={17} /></button>
+                <button aria-label={t("pages.customers.073")} className="danger-text" onClick={() => onDeleteAddress(address)}><Icon name="trash" size={17} /></button>
               </div>
             </article>
           ))}
@@ -494,33 +490,33 @@ function AddressForm({
       );
       onSaved();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "تعذر حفظ العنوان.");
+      setError(cause instanceof Error ? cause.message : t("pages.customers.074"));
     } finally {
       setSaving(false);
     }
   }
   return (
-    <Modal title={address ? "تعديل العنوان" : "إضافة عنوان"} onClose={onClose}>
+    <Modal title={address ? t("pages.customers.072") : t("pages.customers.068")} onClose={onClose}>
       <form className="form-grid" onSubmit={submit}>
-        {error && <div className="form-error full">{error}</div>}
+        {error && <div className="form-error full" role="alert">{error}</div>}
         <label>
-          <span>نوع العنوان *</span>
+          <span>{t("pages.customers.075")}</span>
           <select name="addressType" defaultValue={address?.addressType ?? "PAYMENT"}>
-            <option value="PAYMENT">عنوان دفع</option>
-            <option value="LEGAL">عنوان قانوني</option>
-            <option value="OTHER">آخر</option>
+            <option value="PAYMENT">{t("pages.customers.085")}</option>
+            <option value="LEGAL">{t("pages.customers.077")}</option>
+            <option value="OTHER">{t("pages.customers.078")}</option>
           </select>
         </label>
-        <label><span>العنوان الأول *</span><input name="line1" defaultValue={address?.line1} maxLength={200} required /></label>
-        <label className="full"><span>العنوان الثاني</span><input name="line2" defaultValue={address?.line2 ?? ""} maxLength={200} /></label>
-        <label><span>المدينة</span><input name="city" defaultValue={address?.city ?? ""} maxLength={100} /></label>
-        <label><span>المنطقة</span><input name="region" defaultValue={address?.region ?? ""} maxLength={100} /></label>
-        <label><span>الرمز البريدي</span><input name="postalCode" dir="ltr" defaultValue={address?.postalCode ?? ""} maxLength={20} /></label>
-        <label><span>رمز الدولة</span><input name="countryCode" dir="ltr" defaultValue={address?.countryCode ?? ""} maxLength={2} /></label>
-        <label className="checkbox-field full"><input type="checkbox" name="isPrimary" defaultChecked={address?.isPrimary} /><span>تعيين كعنوان رئيسي</span></label>
+        <label><span>{t("pages.customers.079")}</span><input name="line1" defaultValue={address?.line1} maxLength={200} required /></label>
+        <label className="full"><span>{t("pages.customers.080")}</span><input name="line2" defaultValue={address?.line2 ?? ""} maxLength={200} /></label>
+        <label><span>{t("pages.customers.054")}</span><input name="city" defaultValue={address?.city ?? ""} maxLength={100} /></label>
+        <label><span>{t("pages.customers.081")}</span><input name="region" defaultValue={address?.region ?? ""} maxLength={100} /></label>
+        <label><span>{t("pages.customers.082")}</span><input name="postalCode" dir="ltr" defaultValue={address?.postalCode ?? ""} maxLength={20} /></label>
+        <label><span>{t("pages.customers.055")}</span><input name="countryCode" dir="ltr" defaultValue={address?.countryCode ?? ""} maxLength={2} /></label>
+        <label className="checkbox-field full"><input type="checkbox" name="isPrimary" defaultChecked={address?.isPrimary} /><span>{t("pages.customers.083")}</span></label>
         <div className="modal-actions full">
-          <Button type="button" variant="secondary" onClick={onClose}>إلغاء</Button>
-          <Button type="submit" disabled={saving}>{saving ? "جارٍ الحفظ…" : "حفظ العنوان"}</Button>
+          <Button type="button" variant="secondary" onClick={onClose}>{t("pages.accounts.065")}</Button>
+          <Button type="submit" disabled={saving}>{saving ? t("pages.accounts.066") : t("pages.customers.084")}</Button>
         </div>
       </form>
     </Modal>
@@ -528,4 +524,4 @@ function AddressForm({
 }
 
 const addressTypeLabel = (value: Address["addressType"]) =>
-  ({ LEGAL: "عنوان قانوني", BILLING: "عنوان فوترة", PAYMENT: "عنوان دفع", OTHER: "عنوان آخر" })[value];
+  ({ LEGAL: t("pages.customers.077"), BILLING: t("pages.customers.076"), PAYMENT: t("pages.customers.085"), OTHER: t("pages.customers.086") })[value];

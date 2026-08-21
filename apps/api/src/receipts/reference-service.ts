@@ -495,7 +495,14 @@ export class ReceiptReferenceService {
 
   listCurrencies(context: ActorContext) {
     return this.prisma.companyCurrency.findMany({
-      where: { companyId: context.companyId, isActive: true, currency: { isActive: true } },
+        where: {
+          companyId: context.companyId,
+          isActive: true,
+          currency: {
+            isActive: true,
+            OR: [{ scope: 'GLOBAL', ownerCompanyId: null }, { scope: 'COMPANY', ownerCompanyId: context.companyId }],
+          },
+        },
       orderBy: { currency: { code: "asc" } },
       include: {
         company: { select: { baseCurrencyId: true } },
