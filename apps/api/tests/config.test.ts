@@ -20,7 +20,6 @@ describe('production configuration', () => {
       SESSION_COOKIE_SECURE: 'true',
       TRUST_PROXY: 'true',
       SELF_REGISTRATION_ENABLED: 'false',
-      PASSWORD_RESET_ENABLED: 'false',
     });
     expect(config.SESSION_COOKIE_SECURE).toBe(true);
     expect(config.TRUST_PROXY).toBe(true);
@@ -28,6 +27,7 @@ describe('production configuration', () => {
     expect(config.RATE_LIMIT_MAX).toBe(300);
     expect(config.AUTH_RATE_LIMIT_MAX).toBe(20);
     expect(config.REGISTRATION_RATE_LIMIT_MAX).toBe(5);
+    expect(config.PASSWORD_RESET_ENABLED).toBe(false);
     expect(config.READINESS_TIMEOUT_MS).toBe(3_000);
     expect(config.OUTBOX_MAX_ATTEMPTS).toBe(8);
     expect(config.OUTBOX_LEASE_MS).toBe(30_000);
@@ -123,3 +123,4 @@ describe('production configuration', () => {
     })).toThrow(/Registration email capture is forbidden in production/);
   });
 });
+
