@@ -91,4 +91,3 @@ export type AppConfig = Pick<LoadedAppConfig,
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env): LoadedAppConfig {
   return configSchema.parse(environment);
 }
-
