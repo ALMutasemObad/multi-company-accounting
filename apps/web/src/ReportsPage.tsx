@@ -1,9 +1,32 @@
-import { Fragment, useCallback, useEffect, useState } from "react";
-import { api, downloadFile } from "./api";
+import {
+  activeIntlLocale,
+  localizedReferenceName,
+  translate as t } from "./i18n";
+import { Fragment,
+  useCallback,
+  useEffect,
+  useState } from "react";
+import { api,
+  downloadFile } from "./api";
 import { formatMoney } from "./domain";
-import { currentYearRange, monthLabel, trialBalanceCsv } from "./reporting";
-import type { Account, DashboardReport, FinancialPositionReport, IncomeStatementReport, JournalReport, LedgerReport, StatementRow, StatementSection, TrialBalanceReport } from "./types";
-import { Button, EmptyState, Pagination, Spinner } from "./ui";
+import { currentYearRange,
+  monthLabel,
+  trialBalanceCsv } from "./reporting";
+import type { Account,
+  DashboardReport,
+  FinancialPositionReport,
+  IncomeStatementReport,
+  JournalReport,
+  LedgerReport,
+  StatementRow,
+  StatementSection,
+  TrialBalanceReport } from "./types";
+import { Button,
+  EmptyState,
+  Pagination,
+  Spinner,
+  PageHeader,
+} from "./ui";
 
 type Tab = "cash" | "trial" | "journal" | "position" | "income";
 
@@ -60,7 +83,7 @@ export function ReportsPage() {
         if (applied.compareEnabled) { query.set("compareDateFrom", applied.compareDateFrom); query.set("compareDateTo", applied.compareDateTo); }
         setIncome(await api<IncomeStatementReport>(`/reports/income-statement?${query}`));
       }
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "تعذر تحميل التقرير."); }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : t("pages.reports.001")); }
     finally { setLoading(false); }
   }, [accounts, applied, journalPage, tab]);
   useEffect(() => { void load(); }, [load]);
@@ -74,7 +97,7 @@ export function ReportsPage() {
   async function openLedger(accountId: string) {
     setLedgerLoading(true); setError("");
     try { setLedger(await api<LedgerReport>(`/reports/ledger?${new URLSearchParams({ accountId, dateFrom: applied.dateFrom, dateTo: applied.dateTo, page: "1", pageSize: "100" })}`)); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "تعذر تحميل كشف الحساب."); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : t("pages.reports.002")); }
     finally { setLedgerLoading(false); }
   }
   async function exportReport(format: "csv" | "xlsx" | "pdf") {
@@ -102,86 +125,86 @@ export function ReportsPage() {
   const invalid = !dateFrom || !dateTo || dateFrom > dateTo || comparisonInvalid;
   const hasData = tab === "cash" ? cashFlow : tab === "trial" ? trial : tab === "journal" ? journal : tab === "position" ? position : income;
   return <section className="workspace-page reports-page">
-    <header className="page-heading"><div><span className="section-kicker">تحليل واتخاذ قرار</span><h1>التقارير المالية</h1><p>قوائم مالية مستمدة مباشرة من القيود المرحّلة، مع المقارنة والتفاصيل والتصدير.</p></div></header>
+    <PageHeader kicker={t("pages.reports.003")} title={t("pages.reports.004")} description={t("pages.reports.005")} />
     <div className="section-tabs report-tabs" role="tablist">
-      <button className={tab === "cash" ? "active" : ""} onClick={() => setTab("cash")}>التدفق النقدي</button>
-      <button className={tab === "trial" ? "active" : ""} onClick={() => setTab("trial")}>ميزان المراجعة</button>
-      <button className={tab === "journal" ? "active" : ""} onClick={() => setTab("journal")}>دفتر اليومية</button>
-      <button className={tab === "position" ? "active" : ""} onClick={() => setTab("position")}>المركز المالي</button>
-      <button className={tab === "income" ? "active" : ""} onClick={() => setTab("income")}>قائمة الدخل</button>
+      <button className={tab === "cash" ? "active" : ""} onClick={() => setTab("cash")}>{t("pages.reports.006")}</button>
+      <button className={tab === "trial" ? "active" : ""} onClick={() => setTab("trial")}>{t("pages.reports.007")}</button>
+      <button className={tab === "journal" ? "active" : ""} onClick={() => setTab("journal")}>{t("pages.reports.008")}</button>
+      <button className={tab === "position" ? "active" : ""} onClick={() => setTab("position")}>{t("pages.reports.009")}</button>
+      <button className={tab === "income" ? "active" : ""} onClick={() => setTab("income")}>{t("pages.reports.010")}</button>
     </div>
     <div className="report-toolbar">
-      {tab !== "position" && <label><span>من تاريخ</span><input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label>}
-      <label><span>{tab === "position" ? "كما في" : "إلى تاريخ"}</span><input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label>
-      {(tab === "position" || tab === "income") && <label className="check-field inline-check"><input type="checkbox" checked={compareEnabled} onChange={(event) => setCompareEnabled(event.target.checked)} /><span>مقارنة</span></label>}
-      {compareEnabled && tab === "income" && <label><span>بداية المقارنة</span><input type="date" value={compareDateFrom} onChange={(event) => setCompareDateFrom(event.target.value)} /></label>}
-      {compareEnabled && (tab === "position" || tab === "income") && <label><span>{tab === "position" ? "تاريخ المقارنة" : "نهاية المقارنة"}</span><input type="date" value={compareDateTo} onChange={(event) => setCompareDateTo(event.target.value)} /></label>}
-      {(tab === "position" || tab === "income") && <label className="check-field inline-check"><input type="checkbox" checked={includeZeroBalances} onChange={(event) => setIncludeZeroBalances(event.target.checked)} /><span>إظهار الأرصدة الصفرية</span></label>}
+      {tab !== "position" && <label><span>{t("pages.audit-logs.018")}</span><input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label>}
+      <label><span>{tab === "position" ? t("pages.purchase-invoices.112") : t("pages.audit-logs.019")}</span><input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label>
+      {(tab === "position" || tab === "income") && <label className="check-field inline-check"><input type="checkbox" checked={compareEnabled} onChange={(event) => setCompareEnabled(event.target.checked)} /><span>{t("pages.reports.014")}</span></label>}
+      {compareEnabled && tab === "income" && <label><span>{t("pages.reports.015")}</span><input type="date" value={compareDateFrom} onChange={(event) => setCompareDateFrom(event.target.value)} /></label>}
+      {compareEnabled && (tab === "position" || tab === "income") && <label><span>{tab === "position" ? t("pages.reports.016") : t("pages.reports.017")}</span><input type="date" value={compareDateTo} onChange={(event) => setCompareDateTo(event.target.value)} /></label>}
+      {(tab === "position" || tab === "income") && <label className="check-field inline-check"><input type="checkbox" checked={includeZeroBalances} onChange={(event) => setIncludeZeroBalances(event.target.checked)} /><span>{t("pages.reports.018")}</span></label>}
       {tab === "journal" && <>
-        <label><span>نوع المستند</span><select value={journalDocumentType} onChange={(event) => setJournalDocumentType(event.target.value)}><option value="">كل الأنواع</option><option value="MANUAL_JOURNAL">قيد يومية</option><option value="RECEIPT">سند قبض</option><option value="PAYMENT">سند صرف</option><option value="PERIOD_CLOSE">إقفال فترة</option></select></label>
-        <label><span>الحالة</span><select value={journalStatus} onChange={(event) => setJournalStatus(event.target.value)}><option value="">المرحّل والمعكوس</option><option value="POSTED">مرحّل</option><option value="REVERSED">معكوس</option></select></label>
-        <label><span>الحساب</span><select value={journalAccountId} onChange={(event) => setJournalAccountId(event.target.value)}><option value="">كل الحسابات</option>{accounts.filter((account) => account.allowsPosting).map((account) => <option key={account.id} value={account.id}>{account.code} - {account.nameAr}</option>)}</select></label>
-        <label><span>بحث</span><input value={journalSearch} onChange={(event) => setJournalSearch(event.target.value)} placeholder="رقم المستند أو البيان" /></label>
+        <label><span>{t("pages.purchase-invoices.023")}</span><select value={journalDocumentType} onChange={(event) => setJournalDocumentType(event.target.value)}><option value="">{t("pages.reports.020")}</option><option value="MANUAL_JOURNAL">{t("pages.reports.021")}</option><option value="RECEIPT">{t("pages.reports.022")}</option><option value="PAYMENT">{t("pages.reports.023")}</option><option value="PERIOD_CLOSE">{t("pages.reports.024")}</option></select></label>
+        <label><span>{t("pages.accounts.043")}</span><select value={journalStatus} onChange={(event) => setJournalStatus(event.target.value)}><option value="">{t("pages.reports.026")}</option><option value="POSTED">{t("pages.dashboard.045")}</option><option value="REVERSED">{t("pages.dashboard.047")}</option></select></label>
+        <label><span>{t("pages.accounts.039")}</span><select value={journalAccountId} onChange={(event) => setJournalAccountId(event.target.value)}><option value="">{t("pages.reports.030")}</option>{accounts.filter((account) => account.allowsPosting).map((account) => <option key={account.id} value={account.id}>{account.code} - {localizedReferenceName(account)}</option>)}</select></label>
+        <label><span>{t("pages.accounts.026")}</span><input value={journalSearch} onChange={(event) => setJournalSearch(event.target.value)} placeholder={t("pages.reports.032")} /></label>
       </>}
-      <Button disabled={invalid} onClick={applyFilters}>إعداد التقرير</Button>
+      <Button disabled={invalid} onClick={applyFilters}>{t("pages.purchase-invoices.114")}</Button>
     </div>
-    {loading && !hasData ? <Spinner label="جارٍ إعداد التقرير" /> : error && !hasData ? <div className="error-panel"><h3>تعذر إعداد التقرير</h3><p>{error}</p><Button onClick={() => void load()}>إعادة المحاولة</Button></div> : <>
+    {loading && !hasData ? <Spinner label={t("pages.reports.034")} /> : error && !hasData ? <div className="error-panel" role="alert"><h3>{t("pages.reports.035")}</h3><p>{error}</p><Button onClick={() => void load()}>{t("pages.accounts.030")}</Button></div> : <>
       {error && <div className="inline-notice">{error}</div>}
       {tab === "cash" && <CashFlowView report={cashFlow} />}
       {tab === "trial" && <TrialBalanceView report={trial} onDownload={downloadTrialCsv} />}
       {tab === "journal" && <JournalReportView report={journal} onExport={() => void exportJournal()} onPageChange={setJournalPage} />}
       {tab === "position" && position && <FinancialPositionView report={position} onLedger={(id) => void openLedger(id)} onExport={(format) => void exportReport(format)} />}
       {tab === "income" && income && <IncomeStatementView report={income} onLedger={(id) => void openLedger(id)} onExport={(format) => void exportReport(format)} />}
-      {ledgerLoading && <Spinner label="جارٍ تحميل كشف الحساب" />}
+      {ledgerLoading && <Spinner label={t("pages.reports.037")} />}
       {ledger && <LedgerView report={ledger} onClose={() => setLedger(null)} />}
     </>}
   </section>;
 }
 
 function CashFlowView({ report }: { report: DashboardReport | null }) {
-  return <article className="panel report-section"><header><div><h2>التدفق النقدي</h2><p>المقبوضات والمدفوعات وصافي الحركة حسب الشهر</p></div></header>
-    {report?.cashFlow.length ? <div className="data-table-wrap flat"><table className="data-table"><thead><tr><th>الشهر</th><th>المقبوضات</th><th>المدفوعات</th><th>الصافي</th></tr></thead><tbody>{report.cashFlow.map((row) => <tr key={row.month}><td>{monthLabel(row.month)}</td><td className="money-cell positive-text">{formatMoney(row.receipts)}</td><td className="money-cell negative-text">{formatMoney(row.payments)}</td><td className={`money-cell ${Number(row.net) >= 0 ? "positive-text" : "negative-text"}`}>{formatMoney(row.net)}</td></tr>)}</tbody></table></div> : <EmptyState title="لا توجد حركة نقدية" description="لا توجد سندات مرحّلة في الفترة المختارة." />}
+  return <article className="panel report-section"><header><div><h2>{t("pages.reports.006")}</h2><p>{t("pages.reports.038")}</p></div></header>
+    {report?.cashFlow.length ? <div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("pages.reports.039")}</th><th>{t("pages.dashboard.025")}</th><th>{t("pages.dashboard.026")}</th><th>{t("pages.reports.042")}</th></tr></thead><tbody>{report.cashFlow.map((row) => <tr key={row.month}><td>{monthLabel(row.month)}</td><td className="money-cell positive-text">{formatMoney(row.receipts)}</td><td className="money-cell negative-text">{formatMoney(row.payments)}</td><td className={`money-cell ${Number(row.net) >= 0 ? "positive-text" : "negative-text"}`}>{formatMoney(row.net)}</td></tr>)}</tbody></table></div> : <EmptyState title={t("pages.dashboard.023")} description={t("pages.reports.044")} />}
   </article>;
 }
 function TrialBalanceView({ report, onDownload }: { report: TrialBalanceReport | null; onDownload: () => void }) {
-  return <article className="panel report-section"><header><div><h2>ميزان المراجعة</h2><p>إجمالي الحركة المدينة والدائنة لكل حساب ضمن الفترة</p></div><Button variant="secondary" onClick={onDownload} disabled={!report?.data.length}>تنزيل CSV</Button></header>
-    {report?.data.length ? <div className="data-table-wrap flat"><table className="data-table"><thead><tr><th>رمز الحساب</th><th>اسم الحساب</th><th>التصنيف</th><th>مدين</th><th>دائن</th><th>الرصيد</th></tr></thead><tbody>{report.data.map((row) => <tr key={row.accountId}><td><span className="code-pill">{row.code}</span></td><td>{row.nameAr}</td><td>{classLabel(row.accountClass)}</td><td className="money-cell">{formatMoney(row.debit)}</td><td className="money-cell">{formatMoney(row.credit)}</td><td className="money-cell">{formatMoney(row.balance)}</td></tr>)}</tbody><tfoot><tr><th colSpan={3}>الإجمالي</th><th>{formatMoney(report.totals.debit)}</th><th>{formatMoney(report.totals.credit)}</th><th>{formatMoney(Number(report.totals.debit) - Number(report.totals.credit))}</th></tr></tfoot></table></div> : <EmptyState title="لا توجد قيود مرحّلة" description="سيظهر ميزان المراجعة بعد ترحيل أول قيد ضمن الفترة المختارة." />}
+  return <article className="panel report-section"><header><div><h2>{t("pages.reports.007")}</h2><p>{t("pages.reports.045")}</p></div><Button variant="secondary" onClick={onDownload} disabled={!report?.data.length}>{t("pages.reports.046")}</Button></header>
+    {report?.data.length ? <div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("pages.reports.047")}</th><th>{t("pages.reports.048")}</th><th>{t("pages.reports.049")}</th><th>{t("pages.manual-journals.060")}</th><th>{t("pages.manual-journals.061")}</th><th>{t("pages.reports.052")}</th></tr></thead><tbody>{report.data.map((row) => <tr key={row.accountId}><td><span className="code-pill">{row.code}</span></td><td>{localizedReferenceName(row)}</td><td>{classLabel(row.accountClass)}</td><td className="money-cell">{formatMoney(row.debit)}</td><td className="money-cell">{formatMoney(row.credit)}</td><td className="money-cell">{formatMoney(row.balance)}</td></tr>)}</tbody><tfoot><tr><th colSpan={3}>{t("pages.purchase-invoices.041")}</th><th>{formatMoney(report.totals.debit)}</th><th>{formatMoney(report.totals.credit)}</th><th>{formatMoney(Number(report.totals.debit) - Number(report.totals.credit))}</th></tr></tfoot></table></div> : <EmptyState title={t("pages.reports.054")} description={t("pages.reports.055")} />}
   </article>;
 }
 function JournalReportView({ report, onExport, onPageChange }: { report: JournalReport | null; onExport: () => void; onPageChange: (page: number) => void }) {
-  return <article className="panel report-section"><header><div><h2>دفتر اليومية</h2><p>القيود المرحّلة والمعكوسة مرتبة من الأحدث، مع إجماليات متوازنة لكل قيد.</p></div><Button variant="secondary" onClick={onExport} disabled={!report?.data.length}>تنزيل CSV</Button></header>
-    {report?.data.length ? <><div className="data-table-wrap flat"><table className="data-table journal-report-table"><thead><tr><th>التاريخ</th><th>المستند</th><th>النوع</th><th>البيان</th><th>الحالة</th><th>مدين</th><th>دائن</th><th>التوازن</th></tr></thead><tbody>{report.data.map((row) => <tr key={row.journalEntryId}><td>{row.entryDate}</td><td><span className="code-pill">{row.documentNumber}</span><small>القيد {row.entryNumber.toLocaleString("ar-SA")}</small></td><td>{documentTypeLabel(row.documentType)}</td><td>{row.description}</td><td><span className={`status-chip ${row.status.toLowerCase()}`}>{row.status === "POSTED" ? "مرحّل" : "معكوس"}</span></td><td className="money-cell">{formatMoney(row.debitTotal)}</td><td className="money-cell">{formatMoney(row.creditTotal)}</td><td><span className={`balance-indicator ${row.balanced ? "balanced" : "unbalanced"}`}>{row.balanced ? "متوازن" : "غير متوازن"}</span></td></tr>)}</tbody><tfoot><tr><th colSpan={5}>إجمالي النتائج المصفاة</th><th>{formatMoney(report.totals.debit)}</th><th>{formatMoney(report.totals.credit)}</th><th>{Number(report.totals.debit) === Number(report.totals.credit) ? "متوازن" : "يوجد فرق"}</th></tr></tfoot></table></div><Pagination {...report.meta} page={report.meta.page} onChange={onPageChange} /></> : <EmptyState title="لا توجد قيود مطابقة" description="غيّر الفترة أو المرشحات لعرض قيود دفتر اليومية." />}
+  return <article className="panel report-section"><header><div><h2>{t("pages.reports.008")}</h2><p>{t("pages.reports.056")}</p></div><Button variant="secondary" onClick={onExport} disabled={!report?.data.length}>{t("pages.reports.046")}</Button></header>
+    {report?.data.length ? <><div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table journal-report-table"><thead><tr><th>{t("pages.dashboard.037")}</th><th>{t("pages.purchase-invoices.037")}</th><th>{t("pages.accounts.040")}</th><th>{t("pages.manual-journals.032")}</th><th>{t("pages.accounts.043")}</th><th>{t("pages.manual-journals.060")}</th><th>{t("pages.manual-journals.061")}</th><th>{t("pages.reports.061")}</th></tr></thead><tbody>{report.data.map((row) => <tr key={row.journalEntryId}><td>{row.entryDate}</td><td><span className="code-pill">{row.documentNumber}</span><small>{t("pages.manual-journals.052")}{row.entryNumber.toLocaleString(activeIntlLocale())}</small></td><td>{documentTypeLabel(row.documentType)}</td><td>{row.description}</td><td><span className={`status-chip ${row.status.toLowerCase()}`}>{row.status === "POSTED" ? t("pages.dashboard.045") : t("pages.dashboard.047")}</span></td><td className="money-cell">{formatMoney(row.debitTotal)}</td><td className="money-cell">{formatMoney(row.creditTotal)}</td><td><span className={`balance-indicator ${row.balanced ? "balanced" : "unbalanced"}`}>{row.balanced ? t("pages.reports.063") : t("pages.reports.064")}</span></td></tr>)}</tbody><tfoot><tr><th colSpan={5}>{t("pages.reports.065")}</th><th>{formatMoney(report.totals.debit)}</th><th>{formatMoney(report.totals.credit)}</th><th>{Number(report.totals.debit) === Number(report.totals.credit) ? t("pages.reports.063") : t("pages.reports.066")}</th></tr></tfoot></table></div><Pagination {...report.meta} page={report.meta.page} onChange={onPageChange} /></> : <EmptyState title={t("pages.reports.067")} description={t("pages.reports.068")} />}
   </article>;
 }
 function FinancialPositionView({ report, onLedger, onExport }: { report: FinancialPositionReport; onLedger: (id: string) => void; onExport: (format: "csv" | "xlsx" | "pdf") => void }) {
   return <>
-    <div className="metric-grid statement-metrics"><Metric label="إجمالي الأصول" value={report.totals.assets} /><Metric label="إجمالي الالتزامات" value={report.totals.liabilities} /><Metric label="حقوق الملكية" value={report.totals.equity} /><Metric label="أرباح غير مقفلة" value={report.currentEarnings} /></div>
-    <article className="panel report-section"><header><div><h2>المركز المالي كما في {report.asOf}</h2><p className={report.reconciliation.balanced ? "positive-text" : "negative-text"}>{report.reconciliation.balanced ? "المعادلة المحاسبية متوازنة" : `يوجد فرق قدره ${formatMoney(report.reconciliation.difference)}`}</p></div><ExportActions onExport={onExport} /></header>
-      <StatementTable sections={[{ title: "الأصول", value: report.sections.assets }, { title: "الالتزامات", value: report.sections.liabilities }, { title: "حقوق الملكية", value: report.sections.equity }]} hasComparison={report.comparisonAsOf != null} onLedger={onLedger} />
+    <div className="metric-grid statement-metrics"><Metric label={t("pages.reports.069")} value={report.totals.assets} /><Metric label={t("pages.reports.070")} value={report.totals.liabilities} /><Metric label={t("pages.reports.071")} value={report.totals.equity} /><Metric label={t("pages.reports.072")} value={report.currentEarnings} /></div>
+    <article className="panel report-section"><header><div><h2>{t("pages.reports.073")}{report.asOf}</h2><p className={report.reconciliation.balanced ? "positive-text" : "negative-text"}>{report.reconciliation.balanced ? t("pages.reports.074") : t("pages.reports.075", { value1: formatMoney(report.reconciliation.difference) })}</p></div><ExportActions onExport={onExport} /></header>
+      <StatementTable sections={[{ title: t("pages.reports.076"), value: report.sections.assets }, { title: t("pages.reports.077"), value: report.sections.liabilities }, { title: t("pages.reports.071"), value: report.sections.equity }]} hasComparison={report.comparisonAsOf != null} onLedger={onLedger} />
     </article>
   </>;
 }
 function IncomeStatementView({ report, onLedger, onExport }: { report: IncomeStatementReport; onLedger: (id: string) => void; onExport: (format: "csv" | "xlsx" | "pdf") => void }) {
   return <>
-    <div className="metric-grid statement-metrics"><Metric label="الإيرادات" value={report.totals.revenues} /><Metric label="المصروفات" value={report.totals.expenses} /><Metric label="صافي الربح أو الخسارة" value={report.totals.netIncome} tone={Number(report.totals.netIncome) >= 0 ? "positive" : "negative"} /></div>
-    <article className="panel report-section"><header><div><h2>قائمة الدخل</h2><p>من {report.range.dateFrom} إلى {report.range.dateTo}</p></div><ExportActions onExport={onExport} /></header>
-      <StatementTable sections={[{ title: "الإيرادات", value: report.sections.revenues }, { title: "المصروفات", value: report.sections.expenses }]} hasComparison={report.comparisonRange != null} onLedger={onLedger} />
-      <div className={`statement-net ${Number(report.totals.netIncome) >= 0 ? "positive" : "negative"}`}><span>صافي الربح أو الخسارة</span><strong>{formatMoney(report.totals.netIncome)} {report.baseCurrency.code}</strong>{report.totals.comparisonNetIncome != null && <small>المقارنة: {formatMoney(report.totals.comparisonNetIncome)}</small>}</div>
+    <div className="metric-grid statement-metrics"><Metric label={t("pages.reports.078")} value={report.totals.revenues} /><Metric label={t("pages.reports.079")} value={report.totals.expenses} /><Metric label={t("pages.reports.080")} value={report.totals.netIncome} tone={Number(report.totals.netIncome) >= 0 ? "positive" : "negative"} /></div>
+    <article className="panel report-section"><header><div><h2>{t("pages.reports.010")}</h2><p>{t("pages.reports.081")}{report.range.dateFrom}{t("pages.payments.051")}{report.range.dateTo}</p></div><ExportActions onExport={onExport} /></header>
+      <StatementTable sections={[{ title: t("pages.reports.078"), value: report.sections.revenues }, { title: t("pages.reports.079"), value: report.sections.expenses }]} hasComparison={report.comparisonRange != null} onLedger={onLedger} />
+      <div className={`statement-net ${Number(report.totals.netIncome) >= 0 ? "positive" : "negative"}`}><span>{t("pages.reports.080")}</span><strong>{formatMoney(report.totals.netIncome)} {report.baseCurrency.code}</strong>{report.totals.comparisonNetIncome != null && <small>{t("pages.reports.083")}{formatMoney(report.totals.comparisonNetIncome)}</small>}</div>
     </article>
   </>;
 }
 function StatementTable({ sections, hasComparison, onLedger }: { sections: Array<{ title: string; value: StatementSection }>; hasComparison: boolean; onLedger: (id: string) => void }) {
-  return <div className="data-table-wrap flat"><table className="data-table statement-table"><thead><tr><th>الحساب</th><th>الرصيد الحالي</th>{hasComparison && <><th>رصيد المقارنة</th><th>التغير</th><th>التغير %</th></>}</tr></thead><tbody>{sections.map((section) => <Fragment key={section.title}><tr className="statement-section-row"><th colSpan={hasComparison ? 5 : 2}>{section.title}</th></tr>{renderRows(section.value.rows, hasComparison, onLedger)}<tr className="statement-total-row"><th>إجمالي {section.title}</th><th>{formatMoney(section.value.total)}</th>{hasComparison && <><th>{formatMoney(section.value.comparisonTotal ?? 0)}</th><th>{formatMoney(section.value.variance ?? 0)}</th><th>{section.value.variancePercent == null ? "—" : `${section.value.variancePercent}%`}</th></>}</tr></Fragment>)}</tbody></table></div>;
+  return <div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table statement-table"><thead><tr><th>{t("pages.accounts.039")}</th><th>{t("pages.reports.084")}</th>{hasComparison && <><th>{t("pages.reports.085")}</th><th>{t("pages.reports.086")}</th><th>{t("pages.reports.087")}</th></>}</tr></thead><tbody>{sections.map((section) => <Fragment key={section.title}><tr className="statement-section-row"><th colSpan={hasComparison ? 5 : 2}>{section.title}</th></tr>{renderRows(section.value.rows, hasComparison, onLedger)}<tr className="statement-total-row"><th>{t("pages.reports.088")}{section.title}</th><th>{formatMoney(section.value.total)}</th>{hasComparison && <><th>{formatMoney(section.value.comparisonTotal ?? 0)}</th><th>{formatMoney(section.value.variance ?? 0)}</th><th>{section.value.variancePercent == null ? "—" : `${section.value.variancePercent}%`}</th></>}</tr></Fragment>)}</tbody></table></div>;
 }
 function renderRows(rows: StatementRow[], hasComparison: boolean, onLedger: (id: string) => void, depth = 0): React.ReactNode[] {
-  return rows.flatMap((row) => [<tr key={row.accountId ?? row.code}><td style={{ paddingInlineStart: `${16 + depth * 24}px` }}>{row.accountId ? <button className="account-drilldown" onClick={() => onLedger(row.accountId!)}><span className="code-pill">{row.code}</span>{row.nameAr}</button> : <strong>{row.nameAr}</strong>}</td><td className="money-cell">{formatMoney(row.amount)}</td>{hasComparison && <><td className="money-cell">{formatMoney(row.comparisonAmount ?? 0)}</td><td className={`money-cell ${Number(row.variance ?? 0) >= 0 ? "positive-text" : "negative-text"}`}>{formatMoney(row.variance ?? 0)}</td><td className="money-cell">{row.variancePercent == null ? "—" : `${row.variancePercent}%`}</td></>}</tr>, ...renderRows(row.children, hasComparison, onLedger, depth + 1)]);
+  return rows.flatMap((row) => [<tr key={row.accountId ?? row.code}><td style={{ paddingInlineStart: `${16 + depth * 24}px` }}>{row.accountId ? <button className="account-drilldown" onClick={() => onLedger(row.accountId!)}><span className="code-pill">{row.code}</span>{localizedReferenceName(row)}</button> : <strong>{localizedReferenceName(row)}</strong>}</td><td className="money-cell">{formatMoney(row.amount)}</td>{hasComparison && <><td className="money-cell">{formatMoney(row.comparisonAmount ?? 0)}</td><td className={`money-cell ${Number(row.variance ?? 0) >= 0 ? "positive-text" : "negative-text"}`}>{formatMoney(row.variance ?? 0)}</td><td className="money-cell">{row.variancePercent == null ? "—" : `${row.variancePercent}%`}</td></>}</tr>, ...renderRows(row.children, hasComparison, onLedger, depth + 1)]);
 }
 function LedgerView({ report, onClose }: { report: LedgerReport; onClose: () => void }) {
-  return <article className="panel report-section ledger-panel"><header><div><h2>كشف حساب: {report.subject.nameAr}</h2><p>{report.subject.code} — من {report.range.dateFrom} إلى {report.range.dateTo}</p></div><Button variant="secondary" onClick={onClose}>إغلاق</Button></header><div className="data-table-wrap flat"><table className="data-table"><thead><tr><th>التاريخ</th><th>المستند</th><th>البيان</th><th>مدين</th><th>دائن</th><th>الرصيد المدين</th><th>الرصيد الدائن</th></tr></thead><tbody><tr className="statement-total-row"><td colSpan={3}>الرصيد الافتتاحي</td><td>{formatMoney(report.openingDebit)}</td><td>{formatMoney(report.openingCredit)}</td><td>{formatMoney(report.openingDebit)}</td><td>{formatMoney(report.openingCredit)}</td></tr>{report.data.map((row) => <tr key={row.id}><td>{row.date}</td><td><span className="code-pill">{row.documentNumber}</span></td><td>{row.description}</td><td className="money-cell">{formatMoney(row.debit)}</td><td className="money-cell">{formatMoney(row.credit)}</td><td className="money-cell">{formatMoney(row.runningDebit)}</td><td className="money-cell">{formatMoney(row.runningCredit)}</td></tr>)}</tbody><tfoot><tr><th colSpan={5}>الرصيد الختامي</th><th>{formatMoney(report.closingDebit)}</th><th>{formatMoney(report.closingCredit)}</th></tr></tfoot></table></div></article>;
+  return <article className="panel report-section ledger-panel"><header><div><h2>{t("pages.reports.089")}{localizedReferenceName(report.subject)}</h2><p>{report.subject.code}{t("pages.reports.090")}{report.range.dateFrom}{t("pages.payments.051")}{report.range.dateTo}</p></div><Button variant="secondary" onClick={onClose}>{t("pages.audit-logs.037")}</Button></header><div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("pages.dashboard.037")}</th><th>{t("pages.purchase-invoices.037")}</th><th>{t("pages.manual-journals.032")}</th><th>{t("pages.manual-journals.060")}</th><th>{t("pages.manual-journals.061")}</th><th>{t("pages.reports.092")}</th><th>{t("pages.reports.093")}</th></tr></thead><tbody><tr className="statement-total-row"><td colSpan={3}>{t("pages.reports.094")}</td><td>{formatMoney(report.openingDebit)}</td><td>{formatMoney(report.openingCredit)}</td><td>{formatMoney(report.openingDebit)}</td><td>{formatMoney(report.openingCredit)}</td></tr>{report.data.map((row) => <tr key={row.id}><td>{row.date}</td><td><span className="code-pill">{row.documentNumber}</span></td><td>{row.description}</td><td className="money-cell">{formatMoney(row.debit)}</td><td className="money-cell">{formatMoney(row.credit)}</td><td className="money-cell">{formatMoney(row.runningDebit)}</td><td className="money-cell">{formatMoney(row.runningCredit)}</td></tr>)}</tbody><tfoot><tr><th colSpan={5}>{t("pages.reports.095")}</th><th>{formatMoney(report.closingDebit)}</th><th>{formatMoney(report.closingCredit)}</th></tr></tfoot></table></div></article>;
 }
-function Metric({ label, value, tone = "" }: { label: string; value: string; tone?: string }) { return <article className={`metric-card ${tone}`}><span>{label}</span><strong>{formatMoney(value)}</strong><small>ريال سعودي</small></article>; }
+function Metric({ label, value, tone = "" }: { label: string; value: string; tone?: string }) { return <article className={`metric-card ${tone}`}><span>{label}</span><strong>{formatMoney(value)}</strong><small>{t("pages.reports.096")}</small></article>; }
 function ExportActions({ onExport }: { onExport: (format: "csv" | "xlsx" | "pdf") => void }) { return <div className="report-export-actions"><Button variant="secondary" onClick={() => onExport("csv")}>CSV</Button><Button variant="secondary" onClick={() => onExport("xlsx")}>Excel</Button><Button variant="secondary" onClick={() => onExport("pdf")}>PDF</Button></div>; }
-const classLabel = (value: string) => ({ ASSET: "أصول", LIABILITY: "التزامات", EQUITY: "حقوق ملكية", REVENUE: "إيرادات", EXPENSE: "مصروفات" }[value] ?? value);
-const documentTypeLabel = (value: string) => ({ MANUAL_JOURNAL: "قيد يومية", RECEIPT: "سند قبض", PAYMENT: "سند صرف", PERIOD_CLOSE: "إقفال فترة" }[value] ?? value);
+const classLabel = (value: string) => ({ ASSET: t("pages.reports.097"), LIABILITY: t("pages.reports.098"), EQUITY: t("pages.reports.099"), REVENUE: t("pages.reports.100"), EXPENSE: t("pages.reports.101") }[value] ?? value);
+const documentTypeLabel = (value: string) => ({ MANUAL_JOURNAL: t("pages.reports.021"), RECEIPT: t("pages.reports.022"), PAYMENT: t("pages.reports.023"), PERIOD_CLOSE: t("pages.reports.024") }[value] ?? value);
 const previousYear = (value: string) => `${Number(value.slice(0, 4)) - 1}${value.slice(4)}`;
 const rangeQuery = (value: { dateFrom: string; dateTo: string }) => new URLSearchParams({ dateFrom: value.dateFrom, dateTo: value.dateTo });

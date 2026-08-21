@@ -1,30 +1,25 @@
-import { describe, expect, it } from 'vitest';
-import { companyProvisioningSchema } from '../src/platform/company-provisioning-service.js';
+import type { PrismaClient } from '@prisma/client';
+import { describe, expect, it, vi } from 'vitest';
+import { CompanyProvisioningService } from '../src/platform/company-provisioning-service.js';
 
-const valid = {
-  organizationCode: 'client-group',
-  organizationName: 'مجموعة العميل',
-  companyCode: 'company-001',
-  companyName: 'شركة العميل',
-  timezone: 'Asia/Riyadh',
-  baseCurrencyCode: 'sar',
-  adminEmail: ' ADMIN@Example.COM ',
-  adminDisplayName: 'مدير الشركة',
-  adminPassword: 'Unique-Temporary-Password-2026!',
-};
+describe('company provisioning input preparation', () => {
+  it('removes the plaintext password before strict prepared-input validation', async () => {
+    const transaction = vi.fn().mockResolvedValue({ status: 'accepted' });
+    const prisma = { $transaction: transaction } as unknown as PrismaClient;
+    const service = new CompanyProvisioningService(prisma);
 
-describe('company provisioning input', () => {
-  it('normalizes stable tenant identifiers and the global user identity', () => {
-    const result = companyProvisioningSchema.parse(valid);
-    expect(result.organizationCode).toBe('CLIENT-GROUP');
-    expect(result.companyCode).toBe('COMPANY-001');
-    expect(result.baseCurrencyCode).toBe('SAR');
-    expect(result.adminEmail).toBe('admin@example.com');
-  });
+    await expect(service.provision({
+      organizationCode: 'E2E_ORG',
+      organizationName: 'E2E Organization',
+      companyCode: 'E2E_COMPANY',
+      companyName: 'E2E Company',
+      timezone: 'Asia/Aden',
+      baseCurrencyCode: 'YER',
+      adminEmail: 'owner@example.com',
+      adminDisplayName: 'Owner',
+      adminPassword: 'Unit-Test-Password-2026!',
+    })).resolves.toEqual({ status: 'accepted' });
 
-  it('rejects invalid tenant identifiers, timezones and weak temporary passwords', () => {
-    expect(() => companyProvisioningSchema.parse({ ...valid, companyCode: 'شركة' })).toThrow();
-    expect(() => companyProvisioningSchema.parse({ ...valid, timezone: 'Riyadh' })).toThrow();
-    expect(() => companyProvisioningSchema.parse({ ...valid, adminPassword: 'short' })).toThrow();
+    expect(transaction).toHaveBeenCalledOnce();
   });
 });

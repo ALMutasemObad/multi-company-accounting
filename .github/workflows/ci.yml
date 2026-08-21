@@ -15,7 +15,7 @@ jobs:
   hosting-compatibility:
     name: iFastNet compatibility (Node 22 / MariaDB 10.11)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     services:
       mariadb:
         image: mariadb:10.11.11
@@ -33,6 +33,10 @@ jobs:
       SEED_ADMIN_PASSWORD: CI-Only-Admin-Password-2026!
       RUN_DB_TESTS: 'true'
       EXPECTED_DATABASE_VERSION_PREFIX: '10.11.11-MariaDB'
+      CI_ROOT_DATABASE_PASSWORD: test_root_password
+      CI_DATABASE_USER: mcap_test
+      CI_RESTORE_DATABASE: mcap_finance_restore_test
+      BACKUP_ENCRYPTION_PASSPHRASE: CI-only-database-backup-passphrase-2026
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -45,24 +49,56 @@ jobs:
         run: npm ci
       - name: Generate Prisma client
         run: npm run prisma:generate
+      - name: Verify generated OpenAPI guards
+        run: npm run contracts:check
       - name: Verify iFastNet database engine family
         run: npm run database:verify-engine -w @mcap/api
       - name: Apply all migrations from an empty MariaDB database
-        run: npm exec -w @mcap/api -- prisma migrate deploy
+        run: |
+          npm exec -w @mcap/api -- prisma migrate deploy
+          npm exec -w @mcap/api -- prisma migrate status
       - name: Seed deterministic integration fixtures
         run: |
           npm run prisma:seed -w @mcap/api
           npm run prisma:seed:demo -w @mcap/api
       - name: Typecheck on the production Node major
-        run: npm run typecheck
+        run: |
+          npm run typecheck
+          npm run e2e:typecheck
+      - name: Reject hard-coded web interface text
+        run: npm run i18n:check
+      - name: Verify responsive and accessible web UI contracts
+        run: npm run ui:check
       - name: Test API against MariaDB 10.11
         run: npm run test:db -w @mcap/api
       - name: Build on the production Node major
         run: npm run build
+      - name: Install Chromium for the end-to-end release gate
+        run: node node_modules/@playwright/test/cli.js install --with-deps chromium
+      - name: Test onboarding and the first accounting document on MariaDB
+        run: npm run e2e
+      - name: Install the MariaDB backup client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes mariadb-client
+      - name: Prove encrypted backup and isolated restore on MariaDB
+        env:
+          MYSQL_BIN: mariadb
+          MYSQLDUMP_BIN: mariadb-dump
+        run: bash scripts/ci/database-roundtrip.sh
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-mariadb-failure
+          path: |
+            playwright-report/
+            test-results/playwright/
+          if-no-files-found: warn
+          retention-days: 7
 
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     services:
       mysql:
         image: mysql:8.4.11
@@ -80,6 +116,10 @@ jobs:
       SEED_ADMIN_PASSWORD: CI-Only-Admin-Password-2026!
       RUN_DB_TESTS: 'true'
       EXPECTED_DATABASE_VERSION_PREFIX: '8.4.'
+      CI_ROOT_DATABASE_PASSWORD: test_root_password
+      CI_DATABASE_USER: mcap_test
+      CI_RESTORE_DATABASE: mcap_finance_restore_test
+      BACKUP_ENCRYPTION_PASSPHRASE: CI-only-database-backup-passphrase-2026
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -109,12 +149,22 @@ jobs:
         run: npm run audit:critical
       - name: Generate Prisma client
         run: npm run prisma:generate
+      - name: Verify generated OpenAPI guards
+        run: npm run contracts:check
       - name: Verify MySQL 8.4 engine
         run: npm run database:verify-engine -w @mcap/api
       - name: Typecheck
-        run: npm run typecheck
+        run: |
+          npm run typecheck
+          npm run e2e:typecheck
+      - name: Reject hard-coded web interface text
+        run: npm run i18n:check
+      - name: Verify responsive and accessible web UI contracts
+        run: npm run ui:check
       - name: Apply all migrations from an empty MySQL database
-        run: npm exec -w @mcap/api -- prisma migrate deploy
+        run: |
+          npm exec -w @mcap/api -- prisma migrate deploy
+          npm exec -w @mcap/api -- prisma migrate status
       - name: Seed deterministic integration fixtures
         run: |
           npm run prisma:seed -w @mcap/api
@@ -129,6 +179,21 @@ jobs:
         run: npx --yes @redocly/cli@2.46.2 lint packages/contracts/openapi.yaml
       - name: Build production assets
         run: npm run build
+      - name: Install Chromium for the end-to-end release gate
+        run: node node_modules/@playwright/test/cli.js install --with-deps chromium
+      - name: Test onboarding and the first accounting document on MySQL
+        run: npm run e2e
+      - name: Prove encrypted backup and isolated restore on MySQL
+        run: bash scripts/ci/database-roundtrip.sh
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-mysql-failure
+          path: |
+            playwright-report/
+            test-results/playwright/
+          if-no-files-found: warn
+          retention-days: 7
       - name: Remove build-only and optional dependencies
         run: npm prune --omit=dev --omit=optional
       - name: Block high production dependency vulnerabilities
@@ -140,6 +205,7 @@ jobs:
           WEB_ORIGIN: https://ci.mcap.example
           SESSION_COOKIE_SECURE: 'true'
           TRUST_PROXY: 'true'
+          SELF_REGISTRATION_ENABLED: 'false'
         run: |
           node apps/api/dist/server.js > api-smoke.log 2>&1 &
           api_pid=$!
@@ -159,7 +225,9 @@ jobs:
       - name: Validate atomic deployment scripts
         run: |
           bash -n deploy/scripts/install-release.sh deploy/scripts/rollback-release.sh \
-            deploy/scripts/install-cpanel-release.sh deploy/scripts/rollback-cpanel-release.sh
+            deploy/scripts/install-cpanel-release.sh deploy/scripts/rollback-cpanel-release.sh \
+            deploy/scripts/deploy-cpanel-release.sh \
+            scripts/ci/database-roundtrip.sh scripts/tests/deployment-rollback.integration.sh
           curl --fail --silent --show-error --location \
             --output /tmp/shellcheck.tar.xz \
             https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz
@@ -168,7 +236,9 @@ jobs:
           tar -xJf /tmp/shellcheck.tar.xz -C /tmp
           /tmp/shellcheck-v0.11.0/shellcheck --shell=bash --severity=warning \
             deploy/scripts/install-release.sh deploy/scripts/rollback-release.sh \
-            deploy/scripts/install-cpanel-release.sh deploy/scripts/rollback-cpanel-release.sh
+            deploy/scripts/install-cpanel-release.sh deploy/scripts/rollback-cpanel-release.sh \
+            deploy/scripts/deploy-cpanel-release.sh
+          bash scripts/tests/deployment-rollback.integration.sh
       - name: Create reproducible verified release
         env:
           RELEASE_COMMIT: ${{ github.sha }}
@@ -201,5 +271,96 @@ jobs:
             deploy/scripts/rollback-release.sh
             deploy/scripts/install-cpanel-release.sh
             deploy/scripts/rollback-cpanel-release.sh
+            deploy/scripts/deploy-cpanel-release.sh
           if-no-files-found: error
           retention-days: 14
+
+  deploy-production:
+    name: Deploy production to iFastNet
+    needs: [hosting-compatibility, verify]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: https://accounting.doralashab.com
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    env:
+      CPANEL_SSH_HOST: sv13.byethost13.org
+      CPANEL_SSH_PORT: '1394'
+      CPANEL_SSH_USER: doralash
+      CPANEL_DEPLOY_ROOT: /home/doralash/accounting-app
+      CPANEL_BACKUP_DIRECTORY: /home/doralash/backups/mcap
+      CPANEL_PASSENGER_CONFIG_FILE: /home/doralash/accounting.doralashab.com/.htaccess
+      CPANEL_APP_URL: https://accounting.doralashab.com
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcap-finance-linux-x64
+          path: production-artifact
+      - name: Verify the release checksum from CI
+        working-directory: production-artifact
+        run: sha256sum --check mcap-finance-linux-x64.tgz.sha256
+      - name: Configure the pinned production SSH identity
+        env:
+          CPANEL_SSH_PRIVATE_KEY: ${{ secrets.CPANEL_SSH_PRIVATE_KEY }}
+        run: |
+          test -n "$CPANEL_SSH_PRIVATE_KEY"
+          install -m 0700 -d "$HOME/.ssh"
+          printf '%s\n' "$CPANEL_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+          chmod 0600 "$HOME/.ssh/id_ed25519"
+          install -m 0600 deploy/ssh/ifastnet_known_hosts "$HOME/.ssh/known_hosts"
+      - name: Upload the immutable production artifact
+        run: |
+          test "${#GITHUB_SHA}" -eq 40
+          remote_dir="$CPANEL_DEPLOY_ROOT/incoming/github-$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          ssh -i "$HOME/.ssh/id_ed25519" -p "$CPANEL_SSH_PORT" -o IdentitiesOnly=yes \
+            "$CPANEL_SSH_USER@$CPANEL_SSH_HOST" bash -s -- "$remote_dir" <<'REMOTE'
+          set -Eeuo pipefail
+          umask 077
+          remote_dir=$1
+          case "$remote_dir" in
+            /home/doralash/accounting-app/incoming/github-[0-9a-f]*) ;;
+            *) printf 'invalid remote artifact directory\n' >&2; exit 1 ;;
+          esac
+          test ! -e "$remote_dir"
+          mkdir -p -- "$(dirname -- "$remote_dir")"
+          mkdir -m 0700 -- "$remote_dir"
+          REMOTE
+          scp -i "$HOME/.ssh/id_ed25519" -P "$CPANEL_SSH_PORT" -o IdentitiesOnly=yes \
+            production-artifact/mcap-finance-linux-x64.tgz \
+            production-artifact/mcap-finance-linux-x64.tgz.sha256 \
+            production-artifact/deploy/scripts/install-cpanel-release.sh \
+            production-artifact/deploy/scripts/deploy-cpanel-release.sh \
+            "$CPANEL_SSH_USER@$CPANEL_SSH_HOST:$remote_dir/"
+      - name: Back up, migrate, and activate production atomically
+        env:
+          BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
+        run: |
+          test "${#BACKUP_ENCRYPTION_PASSPHRASE}" -ge 32
+          remote_dir="$CPANEL_DEPLOY_ROOT/incoming/github-$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          printf '%s\n' "$BACKUP_ENCRYPTION_PASSPHRASE" | \
+            ssh -i "$HOME/.ssh/id_ed25519" -p "$CPANEL_SSH_PORT" -o IdentitiesOnly=yes \
+              "$CPANEL_SSH_USER@$CPANEL_SSH_HOST" \
+              env \
+                MCAP_DEPLOY_ROOT="$CPANEL_DEPLOY_ROOT" \
+                MCAP_BACKUP_DIRECTORY="$CPANEL_BACKUP_DIRECTORY" \
+                MCAP_NODE_BIN=/opt/alt/alt-nodejs22/root/usr/bin/node \
+                MCAP_NPX_CLI=/opt/alt/alt-nodejs22/root/usr/lib/node_modules/npm/bin/npx-cli.js \
+                MCAP_MYSQL_BIN=/usr/bin/mysql \
+                MCAP_MYSQLDUMP_BIN=/usr/bin/mysqldump \
+                MCAP_HEALTH_URL="$CPANEL_APP_URL/ready" \
+                MCAP_APP_URL="$CPANEL_APP_URL" \
+                MCAP_PASSENGER_CONFIG_FILE="$CPANEL_PASSENGER_CONFIG_FILE" \
+                bash "$remote_dir/deploy-cpanel-release.sh" \
+                  "$remote_dir/mcap-finance-linux-x64.tgz" \
+                  "$remote_dir/mcap-finance-linux-x64.tgz.sha256"
+      - name: Verify the public production endpoints
+        run: |
+          curl --fail --silent --show-error --max-time 10 "$CPANEL_APP_URL/live"
+          curl --fail --silent --show-error --max-time 10 "$CPANEL_APP_URL/ready"

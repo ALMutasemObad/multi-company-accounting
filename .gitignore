@@ -16,3 +16,5 @@ mcap-finance-linux-x64.manifest.json
 .DS_Store
 .tools/
 tmp/
+playwright-report/
+test-results/

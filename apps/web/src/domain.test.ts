@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { setActiveLocale } from "./i18n/core";
 import {
   allocationsTotal,
   exchangeRateForCurrency,
   formatMoney,
   messageForError,
-  statusLabels,
+  statusLabel,
   toMoney,
   toRate,
   validatePaymentDraft,
@@ -16,11 +17,20 @@ import {
   validateTreasuryAccount,
 } from "./domain";
 
+afterEach(() => setActiveLocale("ar"));
+
 describe("واجهة سند الصرف", () => {
   it("يعرض حالات السند ورسائل الأعمال بالعربية", () => {
-    expect(statusLabels.POSTED).toBe("مرحّل");
+    expect(statusLabel("POSTED")).toBe("مرحّل");
     expect(messageForError(undefined, "OVER_ALLOCATION")).toContain("يتجاوز");
     expect(messageForError("FORBIDDEN")).toContain("الصلاحية");
+  });
+
+  it("يربط رموز حالات وأخطاء الأعمال بالقاموس الإنجليزي", () => {
+    setActiveLocale("en");
+    expect(statusLabel("POSTED")).toBe("Posted");
+    expect(messageForError(undefined, "OVER_ALLOCATION")).toContain("exceeds");
+    expect(messageForError("FORBIDDEN")).toContain("permission");
   });
 
   it("يضبط دقة المبالغ وأسعار الصرف", () => {

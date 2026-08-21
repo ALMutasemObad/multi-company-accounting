@@ -1,15 +1,26 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { api, downloadPdf, idempotencyKey } from "./api";
-import { exchangeRateForDocumentDate, missingDatedRateMessage } from "./currency-rates";
+import {
+  localizedReferenceName,
+  activeIntlLocale,
+  translate as t } from "./i18n";
+import { FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState } from "react";
+import { api,
+  downloadPdf,
+  idempotencyKey } from "./api";
+import { exchangeRateForDocumentDate,
+  missingDatedRateMessage } from "./currency-rates";
 import {
   exchangeRateForCurrency,
   formatMoney,
   journalTotals,
-  statusLabels,
+  statusLabel,
   toMoney,
   toRate,
   validateJournalDraft,
-} from "./domain";
+  } from "./domain";
 import type {
   Account,
   CostCenter,
@@ -21,8 +32,15 @@ import type {
   ListResponse,
   ManualJournal,
   Supplier,
-} from "./types";
-import { Button, EmptyState, Icon, Modal, Pagination, Spinner } from "./ui";
+  } from "./types";
+import { Button,
+  EmptyState,
+  Icon,
+  Modal,
+  Pagination,
+  Spinner,
+  PageHeader,
+} from "./ui";
 
 type Notice = (message: string, tone?: "success" | "error") => void;
 type References = {
@@ -99,7 +117,7 @@ export function ManualJournalsPage({ notify }: { notify: Notice }) {
       setMeta(result.meta);
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : "تعذر تحميل القيود اليومية.",
+        cause instanceof Error ? cause.message : t("pages.manual-journals.001"),
       );
     } finally {
       setLoading(false);
@@ -133,7 +151,7 @@ export function ManualJournalsPage({ notify }: { notify: Notice }) {
         notify(
           cause instanceof Error
             ? cause.message
-            : "تعذر تحميل البيانات المرجعية.",
+            : t("pages.manual-journals.002"),
           "error",
         ),
       );
@@ -143,7 +161,7 @@ export function ManualJournalsPage({ notify }: { notify: Notice }) {
       setSelected(await api<ManualJournal>(`/manual-journals/${id}`));
     } catch (cause) {
       notify(
-        cause instanceof Error ? cause.message : "تعذر عرض القيد.",
+        cause instanceof Error ? cause.message : t("pages.manual-journals.003"),
         "error",
       );
     }
@@ -152,21 +170,21 @@ export function ManualJournalsPage({ notify }: { notify: Notice }) {
     operation: "post" | "cancel" | "reverse",
     journal: ManualJournal,
   ) {
-    const label = { post: "ترحيل", cancel: "إلغاء", reverse: "عكس" }[operation];
+    const label = { post: t("pages.manual-journals.004"), cancel: t("pages.accounts.065"), reverse: t("pages.manual-journals.006") }[operation];
     if (
       !window.confirm(
-        `تأكيد ${label} القيد ${journal.document.documentNumber}؟`,
+        t("pages.manual-journals.007", { value1: label, value2: journal.document.documentNumber }),
       )
     )
       return;
     const reason =
       operation === "post"
         ? ""
-        : window.prompt(`سبب ${label} القيد (3 أحرف على الأقل):`);
+        : window.prompt(t("pages.manual-journals.008", { value1: label }));
     if (operation !== "post" && (!reason || reason.trim().length < 3)) return;
     const reversalDate =
       operation === "reverse"
-        ? window.prompt("تاريخ العكس بصيغة YYYY-MM-DD:", today())
+        ? window.prompt(t("pages.manual-journals.009"), today())
         : "";
     if (operation === "reverse" && !reversalDate) return;
     try {
@@ -182,12 +200,12 @@ export function ManualJournalsPage({ notify }: { notify: Notice }) {
           ...(reversalDate ? { reversalDate } : {}),
         }),
       });
-      notify(`تم ${label} القيد بنجاح.`);
+      notify(t("pages.manual-journals.010", { value1: label }));
       setSelected(null);
       await load();
     } catch (cause) {
       notify(
-        cause instanceof Error ? cause.message : "تعذر تنفيذ الإجراء.",
+        cause instanceof Error ? cause.message : t("pages.fiscal.008"),
         "error",
       );
       await details(journal.document.id);
@@ -195,19 +213,7 @@ export function ManualJournalsPage({ notify }: { notify: Notice }) {
   }
   return (
     <section className="workspace-page">
-      <header className="page-heading">
-        <div>
-          <span className="section-kicker">دفتر الأستاذ العام</span>
-          <h1>القيود اليومية</h1>
-          <p>
-            إنشاء القيود متعددة الأسطر ومراجعتها وترحيلها وإلغاؤها وعكس القيود
-            المرحلة.
-          </p>
-        </div>
-        <Button icon="plus" onClick={() => setForm("create")}>
-          قيد يومية جديد
-        </Button>
-      </header>
+      <PageHeader kicker={t("pages.manual-journals.012")} title={t("pages.manual-journals.013")} description={t("pages.manual-journals.014")} actions={<Button icon="plus" onClick={() => setForm("create")}>{t("pages.manual-journals.015")}</Button>} />
       <div className="toolbar journal-filters">
         <form
           className="search-box"
@@ -219,27 +225,29 @@ export function ManualJournalsPage({ notify }: { notify: Notice }) {
         >
           <Icon name="search" size={18} />
           <input
+            aria-label={t("pages.manual-journals.016")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="رقم القيد أو البيان"
+            placeholder={t("pages.manual-journals.016")}
           />
-          <button>بحث</button>
+          <button type="submit">{t("pages.accounts.026")}</button>
         </form>
         <select
+          aria-label={t("pages.accounts.027")}
           value={status}
           onChange={(e) => {
             setPage(1);
             setStatus(e.target.value);
           }}
         >
-          <option value="">كل الحالات</option>
-          <option value="DRAFT">مسودة</option>
-          <option value="POSTED">مرحّل</option>
-          <option value="CANCELLED">ملغي</option>
-          <option value="REVERSED">معكوس</option>
+          <option value="">{t("pages.accounts.027")}</option>
+          <option value="DRAFT">{t("pages.dashboard.044")}</option>
+          <option value="POSTED">{t("pages.dashboard.045")}</option>
+          <option value="CANCELLED">{t("pages.dashboard.046")}</option>
+          <option value="REVERSED">{t("pages.dashboard.047")}</option>
         </select>
         <label className="date-filter">
-          <span>من</span>
+          <span>{t("pages.dashboard.013")}</span>
           <input
             type="date"
             value={dateFrom}
@@ -250,7 +258,7 @@ export function ManualJournalsPage({ notify }: { notify: Notice }) {
           />
         </label>
         <label className="date-filter">
-          <span>إلى</span>
+          <span>{t("pages.dashboard.014")}</span>
           <input
             type="date"
             value={dateTo}
@@ -262,36 +270,32 @@ export function ManualJournalsPage({ notify }: { notify: Notice }) {
         </label>
       </div>
       {error ? (
-        <div className="error-panel">
+        <div className="error-panel" role="alert">
           <p>{error}</p>
-          <Button variant="secondary" onClick={() => void load()}>
-            إعادة المحاولة
-          </Button>
+          <Button variant="secondary" onClick={() => void load()}>{t("pages.customers.021")}</Button>
         </div>
       ) : loading ? (
-        <Spinner label="جارٍ تحميل القيود اليومية" />
+        <Spinner label={t("pages.manual-journals.026")} />
       ) : !items.length ? (
         <EmptyState
-          title="لا توجد قيود يومية"
-          description="أنشئ أول قيد متوازن لتسجيل الحركة المحاسبية."
+          title={t("pages.manual-journals.027")}
+          description={t("pages.manual-journals.028")}
           action={
-            <Button icon="plus" onClick={() => setForm("create")}>
-              إنشاء قيد
-            </Button>
+            <Button icon="plus" onClick={() => setForm("create")}>{t("pages.manual-journals.029")}</Button>
           }
         />
       ) : (
         <>
-          <div className="data-table-wrap">
+          <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}>
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>رقم المستند</th>
-                  <th>التاريخ</th>
-                  <th>البيان</th>
-                  <th>القيود</th>
-                  <th>المدين</th>
-                  <th>الحالة</th>
+                  <th>{t("pages.manual-journals.030")}</th>
+                  <th>{t("pages.dashboard.037")}</th>
+                  <th>{t("pages.manual-journals.032")}</th>
+                  <th>{t("pages.manual-journals.033")}</th>
+                  <th>{t("pages.manual-journals.034")}</th>
+                  <th>{t("pages.accounts.043")}</th>
                   <th></th>
                 </tr>
               </thead>
@@ -312,12 +316,12 @@ export function ManualJournalsPage({ notify }: { notify: Notice }) {
                       <td>
                         {new Date(
                           item.document.documentDate,
-                        ).toLocaleDateString("ar-SA")}
+                        ).toLocaleDateString(activeIntlLocale())}
                       </td>
                       <td className="description-cell">
                         {item.document.description}
                       </td>
-                      <td>{item.entries.length.toLocaleString("ar-SA")}</td>
+                      <td>{item.entries.length.toLocaleString(activeIntlLocale())}</td>
                       <td className="money-cell">
                         {formatMoney(totals.debit)}
                       </td>
@@ -325,16 +329,14 @@ export function ManualJournalsPage({ notify }: { notify: Notice }) {
                         <span
                           className={`status-chip ${item.document.status.toLowerCase()}`}
                         >
-                          {statusLabels[item.document.status]}
+                          {statusLabel(item.document.status)}
                         </span>
                       </td>
                       <td>
                         <Button
                           variant="ghost"
                           onClick={() => void details(item.document.id)}
-                        >
-                          عرض
-                        </Button>
+                        >{t("pages.customers.035")}</Button>
                       </td>
                     </tr>
                   );
@@ -355,8 +357,8 @@ export function ManualJournalsPage({ notify }: { notify: Notice }) {
             setSelected(journal);
             notify(
               form === "create"
-                ? "تم إنشاء مسودة القيد."
-                : "تم تحديث مسودة القيد.",
+                ? t("pages.manual-journals.037")
+                : t("pages.manual-journals.038"),
             );
             await load();
           }}
@@ -376,7 +378,7 @@ export function ManualJournalsPage({ notify }: { notify: Notice }) {
               notify(
                 cause instanceof Error
                   ? cause.message
-                  : "تعذر تنزيل القيد اليومي.",
+                  : t("pages.manual-journals.039"),
                 "error",
               ),
             )
@@ -455,10 +457,10 @@ function JournalForm({
     updateLine(entryIndex, lineIndex, { currencyId });
     try {
       updateLine(entryIndex, lineIndex, { exchangeRate: await exchangeRateForDocumentDate(selected, entryDate) });
-      setError((current) => current === missingDatedRateMessage ? "" : current);
+      setError((current) => current === missingDatedRateMessage() ? "" : current);
     } catch {
       updateLine(entryIndex, lineIndex, { exchangeRate: "" });
-      setError(missingDatedRateMessage);
+      setError(missingDatedRateMessage());
     }
   }
   async function changeEntryDate(entryIndex: number, entryDate: string) {
@@ -475,15 +477,15 @@ function JournalForm({
       entryDate,
       lines: item.lines.map((row, lineIndex) => ({ ...row, exchangeRate: resolved[lineIndex]?.exchangeRate ?? row.exchangeRate })),
     } : item));
-    if (resolved.some((value) => value.missing)) setError(missingDatedRateMessage);
-    else setError((current) => current === missingDatedRateMessage ? "" : current);
+    if (resolved.some((value) => value.missing)) setError(missingDatedRateMessage());
+    else setError((current) => current === missingDatedRateMessage() ? "" : current);
   }
   const totals = useMemo(() => journalTotals(entries), [entries]);
   async function submit(event: FormEvent) {
     event.preventDefault();
     const errors = validateJournalDraft(entries);
-    if (!periodId) errors.unshift("اختر الفترة المالية.");
-    if (!description.trim()) errors.unshift("أدخل بيان المستند.");
+    if (!periodId) errors.unshift(t("pages.manual-journals.040"));
+    if (!description.trim()) errors.unshift(t("pages.manual-journals.041"));
     if (errors.length) {
       setError(errors.join(" "));
       return;
@@ -525,7 +527,7 @@ function JournalForm({
       );
       onSaved(value);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "تعذر حفظ القيد.");
+      setError(cause instanceof Error ? cause.message : t("pages.manual-journals.042"));
     } finally {
       setSaving(false);
     }
@@ -534,33 +536,33 @@ function JournalForm({
     <Modal
       title={
         journal
-          ? `تعديل القيد ${journal.document.documentNumber}`
-          : "قيد يومية جديد"
+          ? t("pages.manual-journals.043", { value1: journal.document.documentNumber })
+          : t("pages.manual-journals.044")
       }
-      description="يجب أن يتوازن كل قيد بالعملة الأساسية. يمكن إضافة أكثر من قيد داخل المستند."
+      description={t("pages.manual-journals.045")}
       onClose={onClose}
       wide
     >
       <form className="journal-form" onSubmit={submit}>
-        {error && <div className="form-error">{error}</div>}
+        {error && <div className="form-error" role="alert">{error}</div>}
         <div className="form-grid">
           <label>
-            <span>الفترة المالية</span>
+            <span>{t("pages.manual-journals.046")}</span>
             <select
               value={periodId}
               onChange={(e) => setPeriodId(e.target.value)}
               required
             >
-              <option value="">اختر الفترة</option>
+              <option value="">{t("pages.manual-journals.047")}</option>
               {references.periods.map((x) => (
                 <option key={x.id} value={x.id}>
-                  {x.name} — {x.status === "REOPENED" ? "معاد فتحها" : "مفتوحة"}
+                  {x.name} — {x.status === "REOPENED" ? t("pages.fiscal.016") : t("pages.fiscal.015")}
                 </option>
               ))}
             </select>
           </label>
           <label>
-            <span>تاريخ المستند</span>
+            <span>{t("pages.manual-journals.050")}</span>
             <input
               type="date"
               value={documentDate}
@@ -569,7 +571,7 @@ function JournalForm({
             />
           </label>
           <label className="full">
-            <span>بيان المستند</span>
+            <span>{t("pages.manual-journals.051")}</span>
             <input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -582,7 +584,7 @@ function JournalForm({
           {entries.map((item, entryIndex) => (
             <section className="journal-entry-card" key={entryIndex}>
               <header>
-                <h3>القيد {entryIndex + 1}</h3>
+                <h3>{t("pages.manual-journals.052")}{entryIndex + 1}</h3>
                 {entries.length > 1 && (
                   <Button
                     type="button"
@@ -593,14 +595,12 @@ function JournalForm({
                         items.filter((_, i) => i !== entryIndex),
                       )
                     }
-                  >
-                    حذف القيد
-                  </Button>
+                  >{t("pages.manual-journals.053")}</Button>
                 )}
               </header>
               <div className="entry-meta">
                 <label>
-                  <span>تاريخ القيد</span>
+                  <span>{t("pages.manual-journals.054")}</span>
                   <input
                     type="date"
                     value={item.entryDate}
@@ -608,7 +608,7 @@ function JournalForm({
                   />
                 </label>
                 <label>
-                  <span>وصف القيد</span>
+                  <span>{t("pages.manual-journals.055")}</span>
                   <input
                     value={item.description}
                     onChange={(e) =>
@@ -620,19 +620,19 @@ function JournalForm({
               </div>
               <div className="journal-lines">
                 <div className="journal-line headings">
-                  <span>الحساب</span>
-                  <span>مركز التكلفة</span>
-                  <span>الطرف</span>
-                  <span>العملة / السعر</span>
-                  <span>مدين</span>
-                  <span>دائن</span>
-                  <span>البيان</span>
+                  <span>{t("pages.accounts.039")}</span>
+                  <span>{t("pages.manual-journals.057")}</span>
+                  <span>{t("pages.dashboard.036")}</span>
+                  <span>{t("pages.manual-journals.059")}</span>
+                  <span>{t("pages.manual-journals.060")}</span>
+                  <span>{t("pages.manual-journals.061")}</span>
+                  <span>{t("pages.manual-journals.032")}</span>
                   <span></span>
                 </div>
                 {item.lines.map((row, lineIndex) => (
                   <div className="journal-line" key={lineIndex}>
                     <select
-                      aria-label="الحساب"
+                      aria-label={t("pages.accounts.039")}
                       value={row.accountId}
                       onChange={(e) =>
                         updateLine(entryIndex, lineIndex, {
@@ -641,15 +641,15 @@ function JournalForm({
                       }
                       required
                     >
-                      <option value="">الحساب</option>
+                      <option value="">{t("pages.accounts.039")}</option>
                       {references.accounts.map((x) => (
                         <option key={x.id} value={x.id}>
-                          {x.code} — {x.nameAr}
+                          {x.code} — {localizedReferenceName(x)}
                         </option>
                       ))}
                     </select>
                     <select
-                      aria-label="مركز التكلفة"
+                      aria-label={t("pages.manual-journals.057")}
                       value={row.costCenterId ?? ""}
                       onChange={(e) =>
                         updateLine(entryIndex, lineIndex, {
@@ -657,15 +657,15 @@ function JournalForm({
                         })
                       }
                     >
-                      <option value="">بدون مركز</option>
+                      <option value="">{t("pages.manual-journals.062")}</option>
                       {references.costCenters.map((x) => (
                         <option key={x.id} value={x.id}>
-                          {x.code} — {x.nameAr}
+                          {x.code} — {localizedReferenceName(x)}
                         </option>
                       ))}
                     </select>
                     <select
-                      aria-label="الطرف"
+                      aria-label={t("pages.dashboard.036")}
                       value={
                         row.customerId
                           ? `c:${row.customerId}`
@@ -681,25 +681,25 @@ function JournalForm({
                         });
                       }}
                     >
-                      <option value="">بدون طرف</option>
-                      <optgroup label="العملاء">
+                      <option value="">{t("pages.manual-journals.063")}</option>
+                      <optgroup label={t("pages.customers.011")}>
                         {references.customers.map((x) => (
                           <option key={`c${x.id}`} value={`c:${x.id}`}>
-                            {x.nameAr}
+                            {localizedReferenceName(x)}
                           </option>
                         ))}
                       </optgroup>
-                      <optgroup label="الموردون">
+                      <optgroup label={t("pages.manual-journals.065")}>
                         {references.suppliers.map((x) => (
                           <option key={`s${x.id}`} value={`s:${x.id}`}>
-                            {x.nameAr}
+                            {localizedReferenceName(x)}
                           </option>
                         ))}
                       </optgroup>
                     </select>
                     <div className="currency-rate">
                       <select
-                        aria-label="العملة"
+                        aria-label={t("pages.manual-journals.066")}
                         value={row.currencyId}
                         onChange={(e) => void selectLineCurrency(entryIndex, lineIndex, e.target.value)}
                         required
@@ -711,7 +711,7 @@ function JournalForm({
                         ))}
                       </select>
                       <input
-                        aria-label="سعر الصرف"
+                        aria-label={t("pages.manual-journals.067")}
                         type="number"
                         min="0.00000001"
                         step="0.00000001"
@@ -724,7 +724,7 @@ function JournalForm({
                       />
                     </div>
                     <input
-                      aria-label="مدين"
+                      aria-label={t("pages.manual-journals.060")}
                       className="money-input"
                       type="number"
                       min="0"
@@ -740,7 +740,7 @@ function JournalForm({
                       }
                     />
                     <input
-                      aria-label="دائن"
+                      aria-label={t("pages.manual-journals.061")}
                       className="money-input"
                       type="number"
                       min="0"
@@ -756,7 +756,7 @@ function JournalForm({
                       }
                     />
                     <input
-                      aria-label="بيان السطر"
+                      aria-label={t("pages.manual-journals.068")}
                       value={row.description ?? ""}
                       onChange={(e) =>
                         updateLine(entryIndex, lineIndex, {
@@ -768,7 +768,7 @@ function JournalForm({
                       type="button"
                       variant="ghost"
                       icon="trash"
-                      aria-label="حذف السطر"
+                      aria-label={t("pages.manual-journals.069")}
                       disabled={item.lines.length <= 2}
                       onClick={() =>
                         updateEntry(entryIndex, {
@@ -791,23 +791,18 @@ function JournalForm({
                     ],
                   })
                 }
-              >
-                إضافة سطر
-              </Button>
+              >{t("pages.manual-journals.070")}</Button>
             </section>
           ))}
         </div>
         <div
           className={`journal-balance ${Math.abs(totals.debit - totals.credit) < 0.00005 ? "balanced" : "unbalanced"}`}
         >
-          <span>
-            إجمالي المدين <strong>{formatMoney(totals.debit)}</strong>
+          <span>{t("pages.manual-journals.071")}<strong>{formatMoney(totals.debit)}</strong>
           </span>
-          <span>
-            إجمالي الدائن <strong>{formatMoney(totals.credit)}</strong>
+          <span>{t("pages.manual-journals.072")}<strong>{formatMoney(totals.credit)}</strong>
           </span>
-          <span>
-            الفرق{" "}
+          <span>{t("pages.manual-journals.073")}{" "}
             <strong>
               {formatMoney(Math.abs(totals.debit - totals.credit))}
             </strong>
@@ -824,15 +819,11 @@ function JournalForm({
                 entry(items.length + 1, defaultCurrencyId, defaultExchangeRate),
               ])
             }
-          >
-            إضافة قيد
-          </Button>
+          >{t("pages.manual-journals.074")}</Button>
           <span className="form-spacer" />
-          <Button type="button" variant="ghost" onClick={onClose}>
-            إلغاء
-          </Button>
+          <Button type="button" variant="ghost" onClick={onClose}>{t("pages.manual-journals.075")}</Button>
           <Button type="submit" disabled={saving}>
-            {saving ? "جارٍ الحفظ…" : "حفظ المسودة"}
+            {saving ? t("pages.accounts.066") : t("pages.manual-journals.077")}
           </Button>
         </div>
       </form>
@@ -860,13 +851,11 @@ function JournalDetails({
   const printAction =
     journal.document.status === "POSTED" ||
     journal.document.status === "REVERSED" ? (
-      <Button variant="secondary" icon="print" onClick={onPrint}>
-        طباعة PDF
-      </Button>
+      <Button variant="secondary" icon="print" onClick={onPrint}>{t("pages.manual-journals.078")}</Button>
     ) : null;
   return (
     <Modal
-      title={`القيد ${journal.document.documentNumber}`}
+      title={t("pages.manual-journals.079", { value1: journal.document.documentNumber })}
       description={journal.document.description}
       onClose={onClose}
       wide
@@ -875,19 +864,13 @@ function JournalDetails({
         {printAction}
         {journal.document.status === "DRAFT" && (
           <>
-            <Button variant="secondary" icon="edit" onClick={onEdit}>
-              تعديل
-            </Button>
-            <Button icon="check" onClick={() => onCommand("post")}>
-              ترحيل
-            </Button>
+            <Button variant="secondary" icon="edit" onClick={onEdit}>{t("pages.manual-journals.080")}</Button>
+            <Button icon="check" onClick={() => onCommand("post")}>{t("pages.manual-journals.081")}</Button>
             <Button
               variant="danger"
               icon="ban"
               onClick={() => onCommand("cancel")}
-            >
-              إلغاء
-            </Button>
+            >{t("pages.manual-journals.075")}</Button>
           </>
         )}
         {journal.document.status === "POSTED" && (
@@ -895,36 +878,34 @@ function JournalDetails({
             variant="danger"
             icon="reverse"
             onClick={() => onCommand("reverse")}
-          >
-            عكس القيد
-          </Button>
+          >{t("pages.manual-journals.082")}</Button>
         )}
       </div>
       <dl className="detail-grid">
         <div>
-          <dt>الحالة</dt>
+          <dt>{t("pages.accounts.043")}</dt>
           <dd>
             <span
               className={`status-chip ${journal.document.status.toLowerCase()}`}
             >
-              {statusLabels[journal.document.status]}
+              {statusLabel(journal.document.status)}
             </span>
           </dd>
         </div>
         <div>
-          <dt>تاريخ المستند</dt>
+          <dt>{t("pages.manual-journals.050")}</dt>
           <dd>
             {new Date(journal.document.documentDate).toLocaleDateString(
-              "ar-SA",
+              activeIntlLocale(),
             )}
           </dd>
         </div>
         <div>
-          <dt>إجمالي المدين</dt>
+          <dt>{t("pages.manual-journals.083")}</dt>
           <dd>{formatMoney(totals.debit)}</dd>
         </div>
         <div>
-          <dt>إجمالي الدائن</dt>
+          <dt>{t("pages.manual-journals.084")}</dt>
           <dd>{formatMoney(totals.credit)}</dd>
         </div>
       </dl>
@@ -936,15 +917,15 @@ function JournalDetails({
           <h3>
             {item.entryNumber}. {item.description}
           </h3>
-          <div className="data-table-wrap">
+          <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}>
             <table className="data-table">
               <thead>
                 <tr>
                   <th>#</th>
-                  <th>الحساب</th>
-                  <th>البيان</th>
-                  <th>مدين</th>
-                  <th>دائن</th>
+                  <th>{t("pages.accounts.039")}</th>
+                  <th>{t("pages.manual-journals.032")}</th>
+                  <th>{t("pages.manual-journals.060")}</th>
+                  <th>{t("pages.manual-journals.061")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -953,7 +934,7 @@ function JournalDetails({
                     <td>{row.lineNumber}</td>
                     <td>
                       {account(row.accountId)?.code} —{" "}
-                      {account(row.accountId)?.nameAr ?? row.accountId}
+                      {localizedReferenceName(account(row.accountId)) || row.accountId}
                     </td>
                     <td>{row.description || "—"}</td>
                     <td className="money-cell">

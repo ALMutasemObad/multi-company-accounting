@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
+import type { AuthService } from '../src/auth/auth-service.js';
 
 const app = createApp({
   NODE_ENV: 'test',
@@ -48,5 +49,80 @@ describe('GET /health', () => {
     expect(response.body.code).toBe('RATE_LIMITED');
     expect(response.headers['retry-after']).toBeDefined();
     expect(response.headers['x-request-id']).toBeDefined();
+  });
+});
+
+describe('request validation boundary', () => {
+  const guarded = createApp({
+    NODE_ENV: 'test',
+    PORT: 3000,
+    WEB_ORIGIN: 'http://localhost:5173',
+    SESSION_COOKIE_SECURE: false,
+    PRE_AUTH_TTL_MINUTES: 10,
+    SESSION_TTL_HOURS: 12,
+  }, { auth: {} as AuthService });
+
+  it('returns a contract-shaped 400 for invalid public authentication input', async () => {
+    const response = await request(guarded)
+      .post('/api/v1/auth/login')
+      .send({ email: 'not-an-email', password: '' })
+      .expect(400);
+
+    expect(response.body).toMatchObject({
+      status: 400,
+      code: 'VALIDATION_ERROR',
+      messageAr: expect.any(String),
+      requestId: response.headers['x-request-id'],
+      details: { reason: 'SCHEMA_VALIDATION_FAILED' },
+    });
+    expect(response.body.fieldErrors).toMatchObject({ email: expect.any(Array), password: expect.any(Array) });
+  });
+
+  it('applies the generated company-context guard before calling authentication services', async () => {
+    const response = await request(guarded)
+      .put('/api/v1/auth/context')
+      .send({ companyId: '0' })
+      .expect(400);
+
+    expect(response.body).toMatchObject({
+      status: 400,
+      code: 'VALIDATION_ERROR',
+      requestId: response.headers['x-request-id'],
+      fieldErrors: { companyId: expect.any(Array) },
+      details: { reason: 'SCHEMA_VALIDATION_FAILED' },
+    });
+  });
+
+  it('rejects malformed JSON as a client error without exposing parser details', async () => {
+    const response = await request(guarded)
+      .post('/api/v1/auth/login')
+      .set('Content-Type', 'application/json')
+      .send('{"email":')
+      .expect(400);
+
+    expect(response.body).toEqual({
+      type: 'about:blank',
+      title: 'Invalid JSON',
+      status: 400,
+      code: 'VALIDATION_ERROR',
+      messageAr: 'يجب أن يكون جسم الطلب JSON صالحًا.',
+      requestId: response.headers['x-request-id'],
+      details: { reason: 'INVALID_JSON' },
+    });
+    expect(JSON.stringify(response.body)).not.toContain('SyntaxError');
+  });
+
+  it('rejects request bodies larger than the configured limit', async () => {
+    const response = await request(guarded)
+      .post('/api/v1/auth/login')
+      .send({ email: 'user@example.com', password: 'x'.repeat(1024 * 1024) })
+      .expect(413);
+
+    expect(response.body).toMatchObject({
+      status: 413,
+      code: 'VALIDATION_ERROR',
+      requestId: response.headers['x-request-id'],
+      details: { reason: 'PAYLOAD_TOO_LARGE' },
+    });
   });
 });

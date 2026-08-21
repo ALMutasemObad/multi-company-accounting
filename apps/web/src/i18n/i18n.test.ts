@@ -1,0 +1,47 @@
+import { afterEach, describe, expect, it } from "vitest";
+import { createTranslator, dictionaries, localizedReferenceName, resolveLocale, supportedLocales } from "./index";
+import { setActiveLocale } from "./core";
+
+afterEach(() => setActiveLocale("ar"));
+
+describe("translation dictionaries", () => {
+  it("keeps every locale aligned to the Arabic source keys", () => {
+    expect(supportedLocales).toContain("ar");
+    expect(supportedLocales).toContain("en");
+    const sourceKeys = Object.keys(dictionaries.ar).sort();
+    for (const locale of supportedLocales) expect(Object.keys(dictionaries[locale]).sort()).toEqual(sourceKeys);
+  });
+
+  it("keeps interpolation placeholders identical and rejects unfinished catalogue entries", () => {
+    const placeholders = (message: string) => [...message.matchAll(/\{([A-Za-z][A-Za-z0-9]*)\}/gu)].map((match) => match[1]).sort();
+    for (const key of Object.keys(dictionaries.ar) as Array<keyof typeof dictionaries.ar>) {
+      for (const locale of supportedLocales) {
+        const message = dictionaries[locale][key];
+        expect(message.trim(), `${locale}.${key} must not be empty`).not.toBe("");
+        expect(message, `${locale}.${key} contains a migration marker`).not.toMatch(/TODO|__MCAP_/u);
+        expect(placeholders(message), `${locale}.${key} placeholders`).toEqual(placeholders(dictionaries.ar[key]));
+      }
+    }
+  });
+
+  it("translates and interpolates values without hiding missing placeholders", () => {
+    expect(createTranslator("ar")("settings.pageOf", { page: 2, totalPages: 5 })).toBe("صفحة 2 من 5");
+    expect(createTranslator("en")("app.booting", { productName: "Jowar" })).toBe("Preparing Jowar");
+    expect(createTranslator("en")("app.booting")).toContain("{productName}");
+  });
+
+  it("preserves Arabic as the safe default for unknown or empty locale values", () => {
+    expect(resolveLocale("en")).toBe("en");
+    expect(resolveLocale("unknown-locale")).toBe("ar");
+    expect(resolveLocale(null)).toBe("ar");
+  });
+
+  it("uses localized reference names and falls back safely when English is unavailable", () => {
+    setActiveLocale("en");
+    expect(localizedReferenceName({ nameAr: "ريال يمني", nameEn: "Legacy English", names: { en: "Yemeni rial" } })).toBe("Yemeni rial");
+    expect(localizedReferenceName({ nameAr: "ريال يمني", nameEn: "Yemeni rial" })).toBe("Yemeni rial");
+    expect(localizedReferenceName({ nameAr: "عملة مخصصة" })).toBe("عملة مخصصة");
+    setActiveLocale("ar");
+    expect(localizedReferenceName({ nameAr: "ريال يمني", nameEn: "Yemeni rial" })).toBe("ريال يمني");
+  });
+});

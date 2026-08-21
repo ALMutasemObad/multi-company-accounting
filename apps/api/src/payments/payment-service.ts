@@ -626,7 +626,7 @@ export class PaymentService {
     if (method.requiresReference && !input.referenceNumber?.trim())
       throw new PaymentError("REFERENCE_REQUIRED");
     const currency = await tx.companyCurrency.findFirst({
-      where: { companyId, currencyId: input.currencyId, isActive: true, currency: { isActive: true } },
+      where: { companyId, currencyId: input.currencyId, isActive: true, currency: { isActive: true, OR: [{ scope: 'GLOBAL', ownerCompanyId: null }, { scope: 'COMPANY', ownerCompanyId: companyId }] } },
     });
     if (!currency) throw new PaymentError("INVALID_CURRENCY");
     const company = await tx.company.findUniqueOrThrow({

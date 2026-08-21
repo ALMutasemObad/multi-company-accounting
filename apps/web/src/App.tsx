@@ -1,8 +1,10 @@
 import { FormEvent, lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { api, ApiError, beginLogin, login, logout } from "./api";
-import { productMark, productName, productShortName, storageKey } from "./branding";
+import { localizedBrand, storageKey } from "./branding";
+import { LanguageSwitcher, type TranslationKey, useI18n } from "./i18n";
 import type { Company, User } from "./types";
 import { Button, Icon, Spinner, Toast } from "./ui";
+import { RegistrationPage } from "./RegistrationPage";
 
 const DashboardPage = lazy(() => import("./DashboardPage").then((module) => ({ default: module.DashboardPage })));
 const CustomersPage = lazy(() => import("./CustomersPage").then((module) => ({ default: module.CustomersPage })));
@@ -28,33 +30,58 @@ const viewFromHash = (): View => {
   return ["dashboard", "customers", "sales", "receipts", "suppliers", "purchases", "payments", "journals", "fiscal", "accounts", "treasury", "reports", "admin", "audit", "security", "settings"].includes(value) ? value as View : "dashboard";
 };
 
-const viewTitle: Record<View, string> = {
-  admin: "المستخدمون والصلاحيات",
-  audit: "سجل التدقيق",
-  security: "سجل الأمان",
-  settings: "إعدادات الشركة",
-  dashboard: "لوحة التحكم",
-  customers: "العملاء",
-  sales: "فواتير المبيعات والذمم",
-  receipts: "سندات القبض",
-  suppliers: "الموردون",
-  purchases: "فواتير المشتريات والذمم",
-  payments: "سندات الصرف",
-  journals: "القيود اليومية",
-  fiscal: "السنوات والفترات المالية",
-  accounts: "دليل الحسابات ومراكز التكلفة",
-  treasury: "إدارة الخزينة",
-  reports: "التقارير المالية",
+const navigationItems: Array<{ view: View; icon: Parameters<typeof Icon>[0]["name"]; label: TranslationKey }> = [
+  { view: "dashboard", icon: "dashboard", label: "nav.dashboard" },
+  { view: "customers", icon: "customers", label: "nav.customers" },
+  { view: "sales", icon: "document", label: "nav.sales" },
+  { view: "receipts", icon: "receipts", label: "nav.receipts" },
+  { view: "suppliers", icon: "suppliers", label: "nav.suppliers" },
+  { view: "purchases", icon: "document", label: "nav.purchases" },
+  { view: "payments", icon: "payments", label: "nav.payments" },
+  { view: "journals", icon: "journal", label: "nav.journals" },
+  { view: "fiscal", icon: "calendar", label: "nav.fiscal" },
+  { view: "accounts", icon: "accounts", label: "nav.accounts" },
+  { view: "treasury", icon: "treasury", label: "nav.treasury" },
+  { view: "reports", icon: "reports", label: "nav.reports" },
+  { view: "admin", icon: "users", label: "nav.admin" },
+  { view: "audit", icon: "audit", label: "nav.audit" },
+  { view: "security", icon: "audit", label: "nav.security" },
+  { view: "settings", icon: "settings", label: "nav.settings" },
+];
+
+const viewTitleKey: Record<View, TranslationKey> = {
+  admin: "nav.admin",
+  audit: "nav.audit",
+  security: "nav.security",
+  settings: "nav.settings",
+  dashboard: "nav.dashboard",
+  customers: "nav.customers",
+  sales: "view.sales",
+  receipts: "nav.receipts",
+  suppliers: "nav.suppliers",
+  purchases: "view.purchases",
+  payments: "nav.payments",
+  journals: "nav.journals",
+  fiscal: "view.fiscal",
+  accounts: "view.accounts",
+  treasury: "nav.treasury",
+  reports: "nav.reports",
 };
 
 export default function App() {
-  const [state, setState] = useState<"booting" | "login" | "company" | "ready">("booting");
+  const { dir, t } = useI18n();
+  const brand = localizedBrand(t);
+  const [state, setState] = useState<"booting" | "login" | "register" | "company" | "ready">("booting");
   const [user, setUser] = useState<User | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [company, setCompany] = useState<Company | null>(null);
   const [view, setView] = useState<View>(viewFromHash);
   const [mobileNav, setMobileNav] = useState(false);
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(null);
+
+  useEffect(() => {
+    document.title = brand.name;
+  }, [brand.name]);
 
   const notify = useCallback((message: string, tone: "success" | "error" = "success") => {
     setToast({ message, tone });
@@ -73,6 +100,11 @@ export default function App() {
 
   useEffect(() => {
     void (async () => {
+      if (location.hash.startsWith("#register")) {
+        await beginLogin().catch(() => undefined);
+        setState("register");
+        return;
+      }
       try {
         const result = await api<{ data: Company[] }>("/auth/companies");
         setCompanies(result.data);
@@ -88,7 +120,7 @@ export default function App() {
           setUser({
             id: "current",
             displayName:
-              sessionStorage.getItem(storageKey("userName")) ?? "المستخدم الحالي",
+              sessionStorage.getItem(storageKey("userName")) ?? "",
           });
         } catch {
           await beginLogin();
@@ -110,14 +142,18 @@ export default function App() {
   if (state === "booting")
     return (
       <main className="center-screen">
-        <div className="brand-mark large">{productMark}</div>
-        <Spinner label={`جارٍ تهيئة ${productName}`} />
+        <div className="brand-mark large">{brand.mark}</div>
+        <Spinner label={t("app.booting", { productName: brand.name })} />
       </main>
     );
 
   if (state === "login")
     return (
       <LoginScreen
+        onRegister={() => {
+          location.hash = "register";
+          setState("register");
+        }}
         onLoggedIn={async (loggedInUser) => {
           setUser(loggedInUser);
           sessionStorage.setItem(storageKey("userName"), loggedInUser.displayName);
@@ -129,97 +165,69 @@ export default function App() {
       />
     );
 
+  if (state === "register")
+    return (
+      <RegistrationPage
+        onBackToLogin={() => {
+          const url = new URL(location.href);
+          history.replaceState(null, "", `${url.pathname}${url.search}`);
+          void beginLogin().finally(() => setState("login"));
+        }}
+      />
+    );
+
   if (state === "company")
     return (
       <CompanyScreen
         companies={companies}
         onSelect={(selected) =>
           void chooseCompany(selected).catch((cause) =>
-            notify(cause instanceof Error ? cause.message : "تعذر اختيار الشركة.", "error"),
+            notify(cause instanceof Error ? cause.message : t("app.chooseCompanyError"), "error"),
           )
         }
       />
     );
 
   return (
-    <div className="app-shell" dir="rtl">
+    <div className="app-shell" dir={dir}>
+      <a className="skip-link" href="#main-content">{t("common.skipToContent")}</a>
       <aside className={`sidebar ${mobileNav ? "open" : ""}`}>
         <div className="brand">
-          <div className="brand-mark">{productMark}</div>
-          <div><strong>{productShortName}</strong><span>إدارة مالية موثوقة</span></div>
+          <div className="brand-mark">{brand.mark}</div>
+          <div><strong>{brand.shortName}</strong><span>{t("app.trustedFinance")}</span></div>
         </div>
-        <nav aria-label="التنقل الرئيسي">
-          <button className={view === "dashboard" ? "active" : ""} onClick={() => navigate("dashboard")}>
-            <Icon name="dashboard" /><span>لوحة التحكم</span>
-          </button>
-          <button className={view === "customers" ? "active" : ""} onClick={() => navigate("customers")}>
-            <Icon name="customers" /><span>العملاء</span>
-          </button>
-          <button className={view === "sales" ? "active" : ""} onClick={() => navigate("sales")}>
-            <Icon name="document" /><span>فواتير المبيعات</span>
-          </button>
-          <button className={view === "receipts" ? "active" : ""} onClick={() => navigate("receipts")}>
-            <Icon name="receipts" /><span>سندات القبض</span>
-          </button>
-          <button className={view === "suppliers" ? "active" : ""} onClick={() => navigate("suppliers")}>
-            <Icon name="suppliers" /><span>الموردون</span>
-          </button>
-          <button className={view === "purchases" ? "active" : ""} onClick={() => navigate("purchases")}>
-            <Icon name="document" /><span>فواتير المشتريات</span>
-          </button>
-          <button className={view === "payments" ? "active" : ""} onClick={() => navigate("payments")}>
-            <Icon name="payments" /><span>سندات الصرف</span>
-          </button>
-          <button className={view === "journals" ? "active" : ""} onClick={() => navigate("journals")}>
-            <Icon name="journal" /><span>القيود اليومية</span>
-          </button>
-          <button className={view === "fiscal" ? "active" : ""} onClick={() => navigate("fiscal")}>
-            <Icon name="calendar" /><span>الفترات المالية</span>
-          </button>
-          <button className={view === "accounts" ? "active" : ""} onClick={() => navigate("accounts")}>
-            <Icon name="accounts" /><span>دليل الحسابات</span>
-          </button>
-          <button className={view === "treasury" ? "active" : ""} onClick={() => navigate("treasury")}>
-            <Icon name="treasury" /><span>إدارة الخزينة</span>
-          </button>
-          <button className={view === "reports" ? "active" : ""} onClick={() => navigate("reports")}>
-            <Icon name="reports" /><span>التقارير المالية</span>
-          </button>
-          <button className={view === "admin" ? "active" : ""} onClick={() => navigate("admin")}>
-            <Icon name="users" /><span>المستخدمون والصلاحيات</span>
-          </button>
-          <button className={view === "audit" ? "active" : ""} onClick={() => navigate("audit")}>
-            <Icon name="audit" /><span>سجل التدقيق</span>
-          </button>
-          <button className={view === "security" ? "active" : ""} onClick={() => navigate("security")}>
-            <Icon name="audit" /><span>سجل الأمان</span>
-          </button>
-          <button className={view === "settings" ? "active" : ""} onClick={() => navigate("settings")}>
-            <Icon name="settings" /><span>إعدادات الشركة</span>
-          </button>
+        <nav aria-label={t("app.mainNavigation")}>
+          {navigationItems.map((item) => (
+            <button type="button" key={item.view} className={view === item.view ? "active" : ""} aria-current={view === item.view ? "page" : undefined} onClick={() => navigate(item.view)}>
+              <Icon name={item.icon} /><span>{t(item.label)}</span>
+            </button>
+          ))}
         </nav>
         <div className="sidebar-footer">
-          <div className="company-badge"><Icon name="building" /><div><span>الشركة الحالية</span><strong>{company?.name}</strong></div></div>
+          <div className="company-badge"><Icon name="building" /><div><span>{t("app.currentCompany")}</span><strong>{company?.name}</strong></div></div>
           <button
+            type="button"
             className="switch-company"
             onClick={() => setState("company")}
             disabled={companies.length < 2}
           >
-            تبديل الشركة
+            {t("app.switchCompany")}
           </button>
         </div>
       </aside>
-      {mobileNav && <button className="nav-scrim" aria-label="إغلاق القائمة" onClick={() => setMobileNav(false)} />}
+      {mobileNav && <button type="button" className="nav-scrim" aria-label={t("app.closeNavigation")} onClick={() => setMobileNav(false)} />}
       <div className="app-main">
         <header className="topbar">
-          <button className="menu-button" aria-label="فتح القائمة" onClick={() => setMobileNav(true)}><Icon name="menu" /></button>
-          <div className="topbar-title"><span>{viewTitle[view]}</span><small>{company?.name}</small></div>
+          <button type="button" className="menu-button" aria-label={t("app.openNavigation")} onClick={() => setMobileNav(true)}><Icon name="menu" /></button>
+          <div className="topbar-title"><span>{t(viewTitleKey[view])}</span><small>{company?.name}</small></div>
           <div className="user-menu">
-            <div className="avatar">{user?.displayName?.slice(0, 1) ?? "م"}</div>
-            <span>{user?.displayName}</span>
+            <div className="avatar">{user?.displayName?.slice(0, 1) || brand.mark.slice(0, 1)}</div>
+            <span>{user?.displayName || t("app.currentUser")}</span>
+            <LanguageSwitcher compact />
             <button
-              aria-label="تسجيل الخروج"
-              title="تسجيل الخروج"
+              type="button"
+              aria-label={t("app.logout")}
+              title={t("app.logout")}
               onClick={() =>
                 void logout().finally(() => {
                   sessionStorage.removeItem(storageKey("userName"));
@@ -231,8 +239,8 @@ export default function App() {
             </button>
           </div>
         </header>
-        <main className="content">
-          <Suspense fallback={<div className="loading"><Spinner /><span>جارٍ تحميل الوحدة…</span></div>}>
+        <main id="main-content" className="content" tabIndex={-1}>
+          <Suspense fallback={<div className="loading"><Spinner /><span>{t("app.loadingModule")}</span></div>}>
             {view === "dashboard" && <DashboardPage onNavigate={navigate} />}
             {view === "customers" && <CustomersPage notify={notify} />}
             {view === "sales" && <SalesInvoicesPage notify={notify} />}
@@ -257,7 +265,9 @@ export default function App() {
   );
 }
 
-function LoginScreen({ onLoggedIn }: { onLoggedIn: (user: User) => Promise<void> }) {
+function LoginScreen({ onLoggedIn, onRegister }: { onLoggedIn: (user: User) => Promise<void>; onRegister: () => void }) {
+  const { dir, t } = useI18n();
+  const brand = localizedBrand(t);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -271,36 +281,38 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (user: User) => Promise<void>
       );
     } catch (cause) {
       if (cause instanceof ApiError && cause.code === "INVALID_CREDENTIALS")
-        setError("البريد الإلكتروني أو كلمة المرور غير صحيحة.");
+        setError(t("login.invalidCredentials"));
       else if (cause instanceof ApiError && cause.code === "ACCOUNT_LOCKED")
-        setError("الحساب مقفل مؤقتًا بسبب محاولات دخول متكررة.");
-      else setError(cause instanceof Error ? cause.message : "تعذر تسجيل الدخول.");
+        setError(t("login.accountLocked"));
+      else setError(cause instanceof Error ? cause.message : t("login.error"));
     } finally {
       setLoading(false);
     }
   }
   return (
-    <main className="auth-layout" dir="rtl">
+    <main className="auth-layout" dir={dir}>
+      <div className="auth-language"><LanguageSwitcher /></div>
       <section className="auth-story">
-        <div className="auth-brand"><div className="brand-mark">{productMark}</div><span>{productName}</span></div>
+        <div className="auth-brand"><div className="brand-mark">{brand.mark}</div><span>{brand.name}</span></div>
         <div>
-          <span className="section-kicker light">مساحة عمل مالية متكاملة</span>
-          <h1>وضوح في الأرقام.<br />ثقة في القرار.</h1>
-          <p>أدر مورديك ومدفوعاتك ضمن دورة محاسبية آمنة، موثقة، ومعزولة لكل شركة.</p>
+          <span className="section-kicker light">{t("login.storyKicker")}</span>
+          <h1>{t("login.headlineFirst")}<br />{t("login.headlineSecond")}</h1>
+          <p>{t("login.storyDescription")}</p>
         </div>
-        <small>جميع العمليات الحساسة محمية بالصلاحيات وسجل التدقيق.</small>
+        <small>{t("login.safetyNote")}</small>
       </section>
       <section className="auth-panel">
         <form className="login-card" onSubmit={submit}>
-          <div className="mobile-auth-brand"><div className="brand-mark">{productMark}</div><strong>{productShortName}</strong></div>
-          <span className="section-kicker">مرحبًا بعودتك</span>
-          <h2>تسجيل الدخول</h2>
-          <p>أدخل بيانات حسابك للوصول إلى مساحة الشركة.</p>
+          <div className="mobile-auth-brand"><div className="brand-mark">{brand.mark}</div><strong>{brand.shortName}</strong></div>
+          <span className="section-kicker">{t("login.welcome")}</span>
+          <h2>{t("login.title")}</h2>
+          <p>{t("login.description")}</p>
           {error && <div className="form-error" role="alert">{error}</div>}
-          <label><span>البريد الإلكتروني</span><input name="email" type="email" dir="ltr" autoComplete="username" defaultValue="admin@mcap.local" required /></label>
-          <label><span>كلمة المرور</span><input name="password" type="password" dir="ltr" autoComplete="current-password" required /></label>
-          <Button type="submit" disabled={loading}>{loading ? "جارٍ التحقق…" : "دخول آمن"}</Button>
-          <small>تُحدد كلمة مرور حساب التطوير من إعداد <code>SEED_ADMIN_PASSWORD</code>.</small>
+          <label><span>{t("login.email")}</span><input name="email" type="email" dir="ltr" autoComplete="username" defaultValue="admin@mcap.local" required /></label>
+          <label><span>{t("login.password")}</span><input name="password" type="password" dir="ltr" autoComplete="current-password" required /></label>
+          <Button type="submit" disabled={loading}>{loading ? t("login.checking") : t("login.submit")}</Button>
+          <button className="auth-text-link" type="button" onClick={onRegister}>{t("login.createAccount")}</button>
+          <small>{t("login.developmentPassword")}</small>
         </form>
       </section>
     </main>
@@ -314,18 +326,21 @@ function CompanyScreen({
   companies: Company[];
   onSelect: (company: Company) => void;
 }) {
+  const { dir, t } = useI18n();
+  const brand = localizedBrand(t);
   return (
-    <main className="company-screen" dir="rtl">
-      <div className="brand"><div className="brand-mark">{productMark}</div><div><strong>{productShortName}</strong><span>اختر مساحة العمل</span></div></div>
+    <main className="company-screen" dir={dir}>
+      <div className="company-screen-language"><LanguageSwitcher /></div>
+      <div className="brand"><div className="brand-mark">{brand.mark}</div><div><strong>{brand.shortName}</strong><span>{t("companyPicker.workspace")}</span></div></div>
       <section>
-        <span className="section-kicker">الشركات المتاحة</span>
-        <h1>أي شركة تريد فتحها؟</h1>
-        <p>ستُعزل جميع البيانات والعمليات وفق الشركة المختارة.</p>
+        <span className="section-kicker">{t("companyPicker.available")}</span>
+        <h1>{t("companyPicker.title")}</h1>
+        <p>{t("companyPicker.description")}</p>
         <div className="company-grid">
           {companies.map((item) => (
-            <button key={item.id} onClick={() => onSelect(item)}>
+            <button type="button" key={item.id} onClick={() => onSelect(item)}>
               <Icon name="building" size={28} />
-              <div><strong>{item.name}</strong><span>فتح مساحة العمل</span></div>
+              <div><strong>{item.name}</strong><span>{t("companyPicker.open")}</span></div>
               <Icon name="back" />
             </button>
           ))}

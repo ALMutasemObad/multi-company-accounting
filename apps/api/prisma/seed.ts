@@ -13,12 +13,12 @@ const prisma = createDatabase(databaseUrl);
 try {
   for (const definition of currencyDefinitions) {
     await prisma.currency.upsert({
-      where: { code: definition.code },
-      update: { nameAr: definition.nameAr, decimals: definition.decimals, isActive: true },
-      create: definition,
+      where: { scopeKey_code: { scopeKey: 'GLOBAL', code: definition.code } },
+      update: { nameAr: definition.nameAr, decimals: definition.decimals, isActive: true, scope: 'GLOBAL', ownerCompanyId: null },
+      create: { ...definition, scope: 'GLOBAL', scopeKey: 'GLOBAL' },
     });
   }
-  const currency = await prisma.currency.findUniqueOrThrow({ where: { code: 'SAR' } });
+  const currency = await prisma.currency.findUniqueOrThrow({ where: { scopeKey_code: { scopeKey: 'GLOBAL', code: 'SAR' } } });
   const existingOrganization = await prisma.organization.findFirst({ where: { name: 'المؤسسة التجريبية' } });
   const organization = existingOrganization
     ? await prisma.organization.update({ where: { id: existingOrganization.id }, data: { code: 'MCAP-DEVELOPMENT' } })
@@ -60,6 +60,7 @@ try {
     ['settings.manage', 'settings', 'إدارة إعدادات الشركة'],
     ['currencies.view', 'currencies', 'عرض العملات المفعلة وأسعار الصرف'],
     ['currencies.manage', 'currencies', 'إدارة عملات الشركة وأسعار الصرف'],
+    ['currencies.create', 'currencies', 'إنشاء عملة مخصصة للشركة'],
     ['auth.sessions.view', 'auth', 'عرض جلسات المستخدم'],
     ['auth.sessions.revoke', 'auth', 'إلغاء جلسة مستخدم'],
     ['users.view', 'users', 'عرض المستخدمين'],

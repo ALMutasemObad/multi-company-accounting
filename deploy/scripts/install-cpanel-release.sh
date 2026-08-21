@@ -9,11 +9,13 @@ archive_input=${1:-}
 expected_sha=${2:-${MCAP_RELEASE_SHA256:-}}
 deploy_root=${MCAP_DEPLOY_ROOT:-}
 node_bin=${MCAP_NODE_BIN:-/opt/alt/alt-nodejs22/root/usr/bin/node}
+npx_cli=${MCAP_NPX_CLI:-/opt/alt/alt-nodejs22/root/usr/lib/node_modules/npm/bin/npx-cli.js}
 curl_bin=${MCAP_CURL_BIN:-/usr/bin/curl}
 health_url=${MCAP_HEALTH_URL:-}
 app_url=${MCAP_APP_URL:-}
 passenger_config_file=${MCAP_PASSENGER_CONFIG_FILE:-}
 health_attempts=${MCAP_HEALTH_ATTEMPTS:-30}
+run_database_migrations=${MCAP_RUN_DATABASE_MIGRATIONS:-false}
 
 [[ -n "$archive_input" ]] || fail "usage: install-cpanel-release.sh <archive.tgz> <trusted-sha256>"
 [[ "$deploy_root" == /* && "$deploy_root" != / ]] || fail "MCAP_DEPLOY_ROOT must be an explicit absolute non-root path"
@@ -24,8 +26,13 @@ app_url=${app_url%/}
 [[ -f "$passenger_config_file" && ! -L "$passenger_config_file" ]] || fail "Passenger configuration must be a regular non-symlink file"
 [[ "$expected_sha" =~ ^[0-9a-fA-F]{64}$ ]] || fail "a trusted SHA-256 value is required"
 [[ "$health_attempts" =~ ^[1-9][0-9]{0,2}$ ]] || fail "MCAP_HEALTH_ATTEMPTS must be between 1 and 999"
+[[ "$run_database_migrations" == true || "$run_database_migrations" == false ]] || fail "MCAP_RUN_DATABASE_MIGRATIONS must be true or false"
 [[ -x "$node_bin" ]] || fail "Node executable is unavailable: $node_bin"
 [[ -x "$curl_bin" ]] || fail "curl executable is unavailable: $curl_bin"
+if [[ "$run_database_migrations" == true ]]; then
+  [[ -f "$npx_cli" && ! -L "$npx_cli" ]] || fail "npm exec entrypoint is unavailable: $npx_cli"
+  [[ "${DATABASE_URL:-}" == mysql://* ]] || fail "DATABASE_URL must be a MySQL URL when migrations are enabled"
+fi
 
 archive=$(readlink -f -- "$archive_input") || fail "release archive does not exist"
 [[ -f "$archive" && ! -L "$archive_input" ]] || fail "release archive must be a regular non-symlink file"
@@ -64,6 +71,20 @@ release_id=$("$node_bin" -e '
 
 release_dir="$releases_dir/$release_id"
 [[ ! -e "$release_dir" && ! -L "$release_dir" ]] || fail "release already exists: $release_id"
+
+if [[ "$run_database_migrations" == true ]]; then
+  log "applying forward-compatible database migrations for $release_id"
+  (
+    cd "$incoming/apps/api"
+    "$node_bin" "$npx_cli" --yes prisma@7.9.1 migrate deploy
+  )
+  log "seeding production reference data for $release_id"
+  (
+    cd "$incoming"
+    "$node_bin" apps/api/dist/platform/seed-reference-data.js
+  )
+fi
+
 mv -- "$incoming" "$release_dir"
 incoming=""
 

@@ -23,6 +23,12 @@ import { SecurityEventService } from './security/security-event-service.js';
 import { DatabaseReadinessService } from './operations/readiness-service.js';
 import { closeGracefully } from './operations/graceful-shutdown.js';
 import { logEvent } from './operations/logger.js';
+import { CompanyProvisioningService } from './platform/company-provisioning-service.js';
+import { RegistrationService } from './registration/registration-service.js';
+import { DevelopmentRegistrationMailer, ResendRegistrationMailer } from './registration/registration-mailer.js';
+import { PrismaOutboxAppender, REGISTRATION_VERIFICATION_REQUESTED } from './outbox/outbox.js';
+import { OutboxWorker } from './outbox/outbox-worker.js';
+import { RegistrationVerificationHandler } from './registration/registration-verification-handler.js';
 
 const config = loadConfig();
 if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required to start the API');
@@ -31,10 +37,59 @@ const auth = new AuthService(new PrismaAuthStore(database), { verify }, {
   preAuthTtlMinutes: config.PRE_AUTH_TTL_MINUTES,
   sessionTtlHours: config.SESSION_TTL_HOURS,
 });
-const app = createApp(config, { readiness: new DatabaseReadinessService(database, config.READINESS_TIMEOUT_MS), auth, users: new UserService(database), companies: new CompanyService(database), printing: new PrintService(database), audit: new AuditService(database), security: new SecurityEventService(database), fiscal: new FiscalService(database), accounts: new AccountService(database), journals: new ManualJournalService(database), receiptReferences: new ReceiptReferenceService(database), receipts: new ReceiptService(database), suppliers: new SupplierReferenceService(database), payments: new PaymentService(database), reports: new ReportService(database), salesInvoices: new SalesInvoiceService(database), purchaseInvoices: new PurchaseInvoiceService(database) });
+const registrationMailer = config.REGISTRATION_EMAIL_MODE === 'resend'
+  ? new ResendRegistrationMailer(config.RESEND_API_KEY!, config.REGISTRATION_EMAIL_FROM!)
+  : new DevelopmentRegistrationMailer(config.REGISTRATION_EMAIL_CAPTURE_PATH);
+const registrationAuditPepper = config.REGISTRATION_AUDIT_PEPPER ?? 'development-only-registration-audit-pepper';
+const registrationTokenSecret = config.REGISTRATION_TOKEN_SECRET ?? 'development-only-registration-token-secret';
+const outboxAppender = new PrismaOutboxAppender(config.OUTBOX_MAX_ATTEMPTS);
+const registration = config.SELF_REGISTRATION_ENABLED
+  ? new RegistrationService(database, new CompanyProvisioningService(database), outboxAppender, {
+      auditPepper: registrationAuditPepper,
+    })
+  : undefined;
+const registrationVerificationHandler = registration
+  ? new RegistrationVerificationHandler(database, registrationMailer, {
+      tokenTtlHours: config.REGISTRATION_TOKEN_TTL_HOURS,
+      publicAppUrl: config.WEB_ORIGIN,
+      tokenSecret: registrationTokenSecret,
+      auditPepper: registrationAuditPepper,
+    })
+  : undefined;
+const outboxWorker = registrationVerificationHandler
+  ? new OutboxWorker(database, new Map([[REGISTRATION_VERIFICATION_REQUESTED, registrationVerificationHandler.handle]]), {
+      pollIntervalMs: config.OUTBOX_POLL_INTERVAL_MS,
+      leaseMs: config.OUTBOX_LEASE_MS,
+      batchSize: config.OUTBOX_BATCH_SIZE,
+      baseBackoffMs: config.OUTBOX_BASE_BACKOFF_MS,
+      handlerTimeoutMs: config.OUTBOX_HANDLER_TIMEOUT_MS,
+      retentionDays: config.OUTBOX_RETENTION_DAYS,
+    })
+  : undefined;
+const app = createApp(config, {
+  readiness: new DatabaseReadinessService(database, config.READINESS_TIMEOUT_MS),
+  auth,
+  ...(registration ? { registration } : {}),
+  users: new UserService(database),
+  companies: new CompanyService(database),
+  printing: new PrintService(database),
+  audit: new AuditService(database),
+  security: new SecurityEventService(database),
+  fiscal: new FiscalService(database),
+  accounts: new AccountService(database),
+  journals: new ManualJournalService(database),
+  receiptReferences: new ReceiptReferenceService(database),
+  receipts: new ReceiptService(database),
+  suppliers: new SupplierReferenceService(database),
+  payments: new PaymentService(database),
+  reports: new ReportService(database),
+  salesInvoices: new SalesInvoiceService(database),
+  purchaseInvoices: new PurchaseInvoiceService(database),
+});
 
 const server = app.listen(config.PORT, () => {
   logEvent('info', 'api_started', { port: config.PORT, environment: config.NODE_ENV });
+  outboxWorker?.start();
 });
 
 let shuttingDown = false;
@@ -43,7 +98,11 @@ const shutdown = async (signal: NodeJS.Signals) => {
   shuttingDown = true;
   logEvent('info', 'api_shutdown_started', { signal });
   try {
-    await closeGracefully(server, () => database.$disconnect(), config.SHUTDOWN_TIMEOUT_MS);
+    const workerStopped = outboxWorker?.stop() ?? Promise.resolve();
+    await closeGracefully(server, async () => {
+      await workerStopped;
+      await database.$disconnect();
+    }, config.SHUTDOWN_TIMEOUT_MS);
     logEvent('info', 'api_shutdown_completed');
   } catch (error) {
     process.exitCode = 1;

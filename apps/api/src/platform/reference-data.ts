@@ -11,6 +11,7 @@ export const permissionDefinitions = [
   ['settings.manage', 'settings', 'إدارة إعدادات الشركة'],
   ['currencies.view', 'currencies', 'عرض العملات المفعلة وأسعار الصرف'],
   ['currencies.manage', 'currencies', 'إدارة عملات الشركة وأسعار الصرف'],
+  ['currencies.create', 'currencies', 'إنشاء عملة مخصصة للشركة'],
   ['auth.sessions.view', 'auth', 'عرض جلسات المستخدم'],
   ['auth.sessions.revoke', 'auth', 'إلغاء جلسة مستخدم'],
   ['users.view', 'users', 'عرض المستخدمين'],
@@ -83,6 +84,7 @@ export const permissionDefinitions = [
 
 export const currencyDefinitions = [
   { code: 'SAR', nameAr: 'ريال سعودي', decimals: 2 },
+  { code: 'YER', nameAr: 'ريال يمني', decimals: 2 },
   { code: 'USD', nameAr: 'دولار أمريكي', decimals: 2 },
   { code: 'EUR', nameAr: 'يورو', decimals: 2 },
   { code: 'AED', nameAr: 'درهم إماراتي', decimals: 2 },

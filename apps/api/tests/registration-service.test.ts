@@ -1,0 +1,74 @@
+import { describe, expect, it, vi } from 'vitest';
+import type { PrismaClient } from '@prisma/client';
+import type { OutboxAppender } from '../src/outbox/outbox.js';
+import type { CompanyProvisioningService } from '../src/platform/company-provisioning-service.js';
+import { RegistrationService } from '../src/registration/registration-service.js';
+
+const input = {
+  email: ' owner@example.com ',
+  password: 'a sufficiently long password',
+  displayName: 'Owner',
+  organizationName: 'Owner Group',
+  companyName: 'Owner Company',
+  timezone: 'Asia/Aden',
+  baseCurrencyCode: 'YER',
+  locale: 'ar' as const,
+  chartTemplateCode: 'SMALL_BUSINESS_GENERAL',
+};
+
+function fixture(existingUser = false) {
+  const events: unknown[] = [];
+  const upsert = vi.fn().mockResolvedValue({ id: 9n, publicId: 'registration-public-id', deliveryGeneration: 4 });
+  const tx = {
+    currency: { findUnique: vi.fn().mockResolvedValue({ isActive: true }) },
+    user: { findUnique: vi.fn().mockResolvedValue(existingUser ? { id: 7n } : null) },
+    registrationRequest: { upsert },
+    registrationEvent: { create: vi.fn((event) => { events.push(event); return Promise.resolve(event); }) },
+  };
+  const prisma = {
+    registrationRequest: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    $transaction: vi.fn((callback: (client: typeof tx) => unknown) => callback(tx)),
+  } as unknown as PrismaClient;
+  const outbox: OutboxAppender = { append: vi.fn().mockResolvedValue({ eventId: 'event-id' }) };
+  const passwordHasher = vi.fn().mockResolvedValue('$argon2id$prepared-hash');
+  const service = new RegistrationService(prisma, {} as CompanyProvisioningService, outbox, {
+    auditPepper: 'unit-test-registration-audit-pepper-12345',
+    passwordHasher,
+    now: () => new Date('2026-08-22T01:00:00.000Z'),
+  });
+  return { service, events, upsert, passwordHasher, outbox };
+}
+
+describe('RegistrationService anonymous boundary', () => {
+  it('atomically appends a secret-free verification event beside prepared registration state', async () => {
+    const { service, upsert, outbox } = fixture();
+    await expect(service.start(input)).resolves.toEqual({ status: 'PENDING_VERIFICATION' });
+    expect(upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({
+        emailNormalized: 'owner@example.com',
+        passwordHash: '$argon2id$prepared-hash',
+        deliveryAttempts: 0,
+      }),
+    }));
+    expect(outbox.append).toHaveBeenCalledWith(expect.anything(), {
+      eventType: 'RegistrationVerificationRequested',
+      schemaVersion: 1,
+      aggregateType: 'RegistrationRequest',
+      aggregateId: 'registration-public-id',
+      payload: { deliveryGeneration: 4 },
+      occurredAt: new Date('2026-08-22T01:00:00.000Z'),
+    });
+    const envelope = vi.mocked(outbox.append).mock.calls[0]?.[1];
+    expect(JSON.stringify(envelope)).not.toContain('owner@example.com');
+    expect(JSON.stringify(envelope)).not.toContain('token');
+  });
+
+  it('does equal password work but returns the same response without an outbox event for an existing identity', async () => {
+    const { service, upsert, passwordHasher, outbox, events } = fixture(true);
+    await expect(service.start(input)).resolves.toEqual({ status: 'PENDING_VERIFICATION' });
+    expect(passwordHasher).toHaveBeenCalledWith(input.password);
+    expect(upsert).not.toHaveBeenCalled();
+    expect(outbox.append).not.toHaveBeenCalled();
+    expect(events).toEqual([expect.objectContaining({ data: expect.objectContaining({ eventType: 'REGISTRATION_EXISTING_IDENTITY_ATTEMPT', severity: 'WARNING' }) })]);
+  });
+});

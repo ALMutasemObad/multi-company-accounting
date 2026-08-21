@@ -13,7 +13,7 @@ const prisma = createDatabase(databaseUrl);
 const date = (value: string) => new Date(`${value}T00:00:00.000Z`);
 
 try {
-  const currency = await prisma.currency.findUniqueOrThrow({ where: { code: 'SAR' } });
+  const currency = await prisma.currency.findUniqueOrThrow({ where: { scopeKey_code: { scopeKey: 'GLOBAL', code: 'SAR' } } });
   const company = await prisma.company.findFirstOrThrow({ where: { organization: { name: 'المؤسسة التجريبية' } } });
   const admin = await prisma.user.findUniqueOrThrow({ where: { emailNormalized: 'admin@mcap.local' } });
   await prisma.company.update({

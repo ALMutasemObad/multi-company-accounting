@@ -3,8 +3,13 @@
   "private": true,
   "version": "0.1.0",
   "packageManager": "npm@12.0.2",
-  "engines": { "node": ">=22" },
-  "workspaces": ["apps/*", "packages/*"],
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "overrides": {
     "nanoid": "^3.3.17"
   },
@@ -25,10 +30,23 @@
     "db:backup": "node scripts/database-backup.mjs",
     "db:restore": "node scripts/database-restore.mjs",
     "infra:test": "node --test scripts/tests/*.test.mjs",
+    "contracts:generate": "node scripts/generate-openapi-guards.mjs",
+    "contracts:check": "node scripts/generate-openapi-guards.mjs --check",
+    "i18n:check": "node scripts/check-web-i18n.mjs",
+    "ui:check": "node scripts/check-web-ui.mjs",
+    "e2e": "playwright test",
+    "e2e:list": "playwright test --list",
+    "e2e:typecheck": "tsc -p tsconfig.e2e.json",
+    "visual-qa:api": "node scripts/visual-qa-server.mjs",
     "samples:pdf": "tsx scripts/generate-pdf-samples.ts",
     "release:create": "node scripts/release/create-release.mjs",
     "release:verify": "node scripts/release/verify-release.mjs",
     "audit:production": "npm audit --omit=dev --omit=optional --audit-level=high",
     "audit:critical": "npm audit --audit-level=critical"
+  },
+  "devDependencies": {
+    "@babel/parser": "7.29.7",
+    "@playwright/test": "1.62.1",
+    "yaml": "2.9.0"
   }
 }

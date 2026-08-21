@@ -1,20 +1,36 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { api, idempotencyKey } from "./api";
+import {
+  activeIntlLocale,
+  translate as t } from "./i18n";
+import { FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState } from "react";
+import { api,
+  idempotencyKey } from "./api";
 import { validateFiscalPeriods } from "./domain";
-import type { FiscalPeriod, FiscalYear, ListResponse } from "./types";
-import { Button, EmptyState, Modal, Pagination, Spinner } from "./ui";
+import type { FiscalPeriod,
+  FiscalYear,
+  ListResponse } from "./types";
+import { Button,
+  EmptyState,
+  Modal,
+  Pagination,
+  Spinner,
+  PageHeader,
+} from "./ui";
 
 type Notice = (message: string, tone?: "success" | "error") => void;
 type PeriodDraft = { periodNumber: number; name: string; startDate: string; endDate: string };
 const todayYear = new Date().getFullYear();
 const newYear = () => ({
-  name: `السنة المالية ${todayYear}`,
+  name: t("pages.fiscal.001", { value1: todayYear }),
   startDate: `${todayYear}-01-01`,
   endDate: `${todayYear}-12-31`,
   periods: Array.from({ length: 12 }, (_, index) => {
     const month = String(index + 1).padStart(2, "0");
     const end = new Date(Date.UTC(todayYear, index + 1, 0)).getUTCDate();
-    return { periodNumber: index + 1, name: `الفترة ${index + 1}`, startDate: `${todayYear}-${month}-01`, endDate: `${todayYear}-${month}-${end}` };
+    return { periodNumber: index + 1, name: t("pages.fiscal.002", { value1: index + 1 }), startDate: `${todayYear}-${month}-01`, endDate: `${todayYear}-${month}-${end}` };
   }),
 });
 
@@ -34,15 +50,15 @@ export function FiscalPage({ notify }: { notify: Notice }) {
     try {
       const result = await api<ListResponse<FiscalYear>>(`/fiscal-years?page=${page}&pageSize=10`);
       setYears(result.data); setMeta(result.meta);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "تعذر تحميل السنوات المالية."); }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : t("pages.fiscal.003")); }
     finally { setLoading(false); }
   }, [page]);
   useEffect(() => { void load(); }, [load]);
   const visible = useMemo(() => years.map((year) => ({ ...year, periods: status ? year.periods.filter((period) => period.status === status) : year.periods })).filter((year) => !status || year.periods.length), [years, status]);
 
   async function periodCommand(period: FiscalPeriod, operation: "close" | "reopen") {
-    if (operation === "close" && !window.confirm(`تأكيد إغلاق الفترة «${period.name}» بعد مراجعة جميع الأرصدة؟`)) return;
-    const reason = operation === "reopen" ? window.prompt("سبب إعادة فتح الفترة (10 أحرف على الأقل):") : "";
+    if (operation === "close" && !window.confirm(t("pages.fiscal.004", { value1: period.name }))) return;
+    const reason = operation === "reopen" ? window.prompt(t("pages.fiscal.005")) : "";
     if (operation === "reopen" && (!reason || reason.trim().length < 10)) return;
     try {
       await api(`/fiscal-periods/${period.id}/${operation}`, {
@@ -51,42 +67,39 @@ export function FiscalPage({ notify }: { notify: Notice }) {
           ? { version: period.version, reviewConfirmed: true, requirePeriodCloseDocument: false }
           : { version: period.version, reason: reason!.trim() }),
       });
-      notify(operation === "close" ? "تم إغلاق الفترة المالية بنجاح." : "تمت إعادة فتح الفترة المالية.");
+      notify(operation === "close" ? t("pages.fiscal.006") : t("pages.fiscal.007"));
       await load();
-    } catch (cause) { notify(cause instanceof Error ? cause.message : "تعذر تنفيذ الإجراء.", "error"); await load(); }
+    } catch (cause) { notify(cause instanceof Error ? cause.message : t("pages.fiscal.008"), "error"); await load(); }
   }
 
   return <section className="workspace-page">
-    <header className="page-heading"><div><span className="section-kicker">الإعداد المحاسبي</span><h1>السنوات والفترات المالية</h1><p>إدارة التقويم المالي، ومتابعة حالة الفترات، وإغلاقها وإعادة فتحها وفق ترتيبها الزمني.</p></div><Button icon="plus" onClick={() => setCreating(true)}>سنة مالية جديدة</Button></header>
-    <div className="toolbar fiscal-filters"><select aria-label="تصفية حالة الفترات" value={status} onChange={(event) => setStatus(event.target.value)}><option value="">كل حالات الفترات</option><option value="OPEN">مفتوحة</option><option value="REOPENED">معاد فتحها</option><option value="CLOSED">مغلقة</option></select></div>
-    {error ? <div className="error-panel"><p>{error}</p><Button variant="secondary" onClick={() => void load()}>إعادة المحاولة</Button></div>
-      : loading ? <Spinner label="جارٍ تحميل التقويم المالي" />
-      : visible.length === 0 ? <EmptyState title="لا توجد سنوات مالية" description="أنشئ سنة مالية وحدد فتراتها لتتمكن من تسجيل المستندات والقيود." action={<Button icon="plus" onClick={() => setCreating(true)}>إنشاء سنة مالية</Button>} />
+    <PageHeader kicker={t("pages.accounts.013")} title={t("pages.fiscal.010")} description={t("pages.fiscal.011")} actions={<Button icon="plus" onClick={() => setCreating(true)}>{t("pages.fiscal.012")}</Button>} />
+    <div className="toolbar fiscal-filters"><select aria-label={t("pages.fiscal.013")} value={status} onChange={(event) => setStatus(event.target.value)}><option value="">{t("pages.fiscal.014")}</option><option value="OPEN">{t("pages.fiscal.015")}</option><option value="REOPENED">{t("pages.fiscal.016")}</option><option value="CLOSED">{t("pages.fiscal.017")}</option></select></div>
+    {error ? <div className="error-panel" role="alert"><p>{error}</p><Button variant="secondary" onClick={() => void load()}>{t("pages.accounts.030")}</Button></div>
+      : loading ? <Spinner label={t("pages.fiscal.019")} />
+      : visible.length === 0 ? <EmptyState title={t("pages.fiscal.020")} description={t("pages.fiscal.021")} action={<Button icon="plus" onClick={() => setCreating(true)}>{t("pages.fiscal.022")}</Button>} />
       : <>{visible.map((year) => <article className="fiscal-year-card" key={year.id}>
-        <header><div><h2>{year.name}</h2><p>{new Date(year.startDate).toLocaleDateString("ar-SA")} — {new Date(year.endDate).toLocaleDateString("ar-SA")}</p></div><Button variant="ghost" icon="edit" onClick={() => setEditingYear(year)}>تعديل السنة</Button></header>
-        <div className="data-table-wrap"><table className="data-table"><thead><tr><th>الفترة</th><th>من</th><th>إلى</th><th>الحالة</th><th>الإجراءات</th></tr></thead><tbody>{year.periods.map((period) => <tr key={period.id}><td><strong>{period.periodNumber}. {period.name}</strong>{period.reopenReason && <small>سبب إعادة الفتح: {period.reopenReason}</small>}</td><td>{new Date(period.startDate).toLocaleDateString("ar-SA")}</td><td>{new Date(period.endDate).toLocaleDateString("ar-SA")}</td><td><span className={`status-chip ${period.status.toLowerCase()}`}>{period.status === "CLOSED" ? "مغلقة" : period.status === "REOPENED" ? "معاد فتحها" : "مفتوحة"}</span></td><td className="row-actions"><Button variant="ghost" icon="edit" onClick={() => setEditingPeriod(period)}>تعديل</Button>{period.status === "CLOSED" ? <Button variant="secondary" icon="reverse" onClick={() => void periodCommand(period, "reopen")}>إعادة فتح</Button> : <Button variant="secondary" icon="check" onClick={() => void periodCommand(period, "close")}>إغلاق</Button>}</td></tr>)}</tbody></table></div>
+        <header><div><h2>{year.name}</h2><p>{new Date(year.startDate).toLocaleDateString(activeIntlLocale())} — {new Date(year.endDate).toLocaleDateString(activeIntlLocale())}</p></div><Button variant="ghost" icon="edit" onClick={() => setEditingYear(year)}>{t("pages.fiscal.023")}</Button></header>
+        <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("pages.fiscal.024")}</th><th>{t("pages.dashboard.013")}</th><th>{t("pages.dashboard.014")}</th><th>{t("pages.accounts.043")}</th><th>{t("pages.fiscal.028")}</th></tr></thead><tbody>{year.periods.map((period) => <tr key={period.id}><td><strong>{period.periodNumber}. {period.name}</strong>{period.reopenReason && <small>{t("pages.fiscal.029")}{period.reopenReason}</small>}</td><td>{new Date(period.startDate).toLocaleDateString(activeIntlLocale())}</td><td>{new Date(period.endDate).toLocaleDateString(activeIntlLocale())}</td><td><span className={`status-chip ${period.status.toLowerCase()}`}>{period.status === "CLOSED" ? t("pages.fiscal.017") : period.status === "REOPENED" ? t("pages.fiscal.016") : t("pages.fiscal.015")}</span></td><td className="row-actions"><Button variant="ghost" icon="edit" onClick={() => setEditingPeriod(period)}>{t("pages.accounts.048")}</Button>{period.status === "CLOSED" ? <Button variant="secondary" icon="reverse" onClick={() => void periodCommand(period, "reopen")}>{t("pages.fiscal.031")}</Button> : <Button variant="secondary" icon="check" onClick={() => void periodCommand(period, "close")}>{t("pages.audit-logs.037")}</Button>}</td></tr>)}</tbody></table></div>
       </article>)}<Pagination {...meta} page={page} onChange={setPage} /></>}
-    {creating && <YearForm onClose={() => setCreating(false)} onSaved={async () => { setCreating(false); notify("تم إنشاء السنة المالية وفتراتها."); await load(); }} />}
-    {editingYear && <YearEdit year={editingYear} onClose={() => setEditingYear(null)} onSaved={async () => { setEditingYear(null); notify("تم تحديث السنة المالية."); await load(); }} />}
-    {editingPeriod && <PeriodEdit period={editingPeriod} onClose={() => setEditingPeriod(null)} onSaved={async () => { setEditingPeriod(null); notify("تم تحديث الفترة المالية."); await load(); }} />}
+    {creating && <YearForm onClose={() => setCreating(false)} onSaved={async () => { setCreating(false); notify(t("pages.fiscal.033")); await load(); }} />}
+    {editingYear && <YearEdit year={editingYear} onClose={() => setEditingYear(null)} onSaved={async () => { setEditingYear(null); notify(t("pages.fiscal.034")); await load(); }} />}
+    {editingPeriod && <PeriodEdit period={editingPeriod} onClose={() => setEditingPeriod(null)} onSaved={async () => { setEditingPeriod(null); notify(t("pages.fiscal.035")); await load(); }} />}
   </section>;
 }
-
 function YearForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const initial = newYear(); const [name, setName] = useState(initial.name); const [startDate, setStartDate] = useState(initial.startDate); const [endDate, setEndDate] = useState(initial.endDate); const [periods, setPeriods] = useState<PeriodDraft[]>(initial.periods); const [error, setError] = useState(""); const [saving, setSaving] = useState(false);
   function change(index: number, patch: Partial<PeriodDraft>) { setPeriods((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item)); }
-  async function submit(event: FormEvent) { event.preventDefault(); const errors = validateFiscalPeriods(startDate, endDate, periods); if (!name.trim()) errors.unshift("أدخل اسم السنة المالية."); if (errors.length) { setError(errors.join(" ")); return; } setSaving(true); setError(""); try { await api("/fiscal-years", { method: "POST", body: JSON.stringify({ name: name.trim(), startDate, endDate, periods }) }); onSaved(); } catch (cause) { setError(cause instanceof Error ? cause.message : "تعذر إنشاء السنة."); } finally { setSaving(false); } }
-  return <Modal title="سنة مالية جديدة" description="أدخل حدود السنة وفتراتها. تم تجهيز 12 فترة شهرية ويمكن تعديلها." onClose={onClose} wide><form className="document-form" onSubmit={submit}>{error && <div className="form-error">{error}</div>}<div className="form-grid"><label><span>اسم السنة</span><input value={name} onChange={(e) => setName(e.target.value)} required /></label><label><span>البداية</span><input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required /></label><label><span>النهاية</span><input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} required /></label></div><div className="subsection-heading"><h3>الفترات المالية</h3><Button type="button" variant="secondary" icon="plus" onClick={() => setPeriods((items) => [...items, { periodNumber: items.length + 1, name: `الفترة ${items.length + 1}`, startDate: "", endDate: "" }])}>إضافة فترة</Button></div><div className="period-editor">{periods.map((period, index) => <div key={index}><input aria-label="رقم الفترة" type="number" min="1" value={period.periodNumber} onChange={(e) => change(index, { periodNumber: Number(e.target.value) })} /><input aria-label="اسم الفترة" value={period.name} onChange={(e) => change(index, { name: e.target.value })} required /><input aria-label="بداية الفترة" type="date" value={period.startDate} onChange={(e) => change(index, { startDate: e.target.value })} required /><input aria-label="نهاية الفترة" type="date" value={period.endDate} onChange={(e) => change(index, { endDate: e.target.value })} required /><Button type="button" variant="ghost" icon="trash" aria-label="حذف الفترة" disabled={periods.length === 1} onClick={() => setPeriods((items) => items.filter((_, i) => i !== index))} /></div>)}</div><div className="form-actions"><Button type="button" variant="ghost" onClick={onClose}>إلغاء</Button><Button type="submit" disabled={saving}>{saving ? "جارٍ الحفظ…" : "إنشاء السنة"}</Button></div></form></Modal>;
+  async function submit(event: FormEvent) { event.preventDefault(); const errors = validateFiscalPeriods(startDate, endDate, periods); if (!name.trim()) errors.unshift(t("pages.fiscal.036")); if (errors.length) { setError(errors.join(" ")); return; } setSaving(true); setError(""); try { await api("/fiscal-years", { method: "POST", body: JSON.stringify({ name: name.trim(), startDate, endDate, periods }) }); onSaved(); } catch (cause) { setError(cause instanceof Error ? cause.message : t("pages.fiscal.037")); } finally { setSaving(false); } }
+  return <Modal title={t("pages.fiscal.012")} description={t("pages.fiscal.038")} onClose={onClose} wide><form className="document-form" onSubmit={submit}>{error && <div className="form-error" role="alert">{error}</div>}<div className="form-grid"><label><span>{t("pages.fiscal.039")}</span><input value={name} onChange={(e) => setName(e.target.value)} required /></label><label><span>{t("pages.fiscal.040")}</span><input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required /></label><label><span>{t("pages.fiscal.041")}</span><input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} required /></label></div><div className="subsection-heading"><h3>{t("pages.fiscal.042")}</h3><Button type="button" variant="secondary" icon="plus" onClick={() => setPeriods((items) => [...items, { periodNumber: items.length + 1, name: t("pages.fiscal.002", { value1: items.length + 1 }), startDate: "", endDate: "" }])}>{t("pages.fiscal.043")}</Button></div><div className="period-editor">{periods.map((period, index) => <div key={index}><input aria-label={t("pages.fiscal.044")} type="number" min="1" value={period.periodNumber} onChange={(e) => change(index, { periodNumber: Number(e.target.value) })} /><input aria-label={t("pages.fiscal.045")} value={period.name} onChange={(e) => change(index, { name: e.target.value })} required /><input aria-label={t("pages.fiscal.046")} type="date" value={period.startDate} onChange={(e) => change(index, { startDate: e.target.value })} required /><input aria-label={t("pages.fiscal.047")} type="date" value={period.endDate} onChange={(e) => change(index, { endDate: e.target.value })} required /><Button type="button" variant="ghost" icon="trash" aria-label={t("pages.fiscal.048")} disabled={periods.length === 1} onClick={() => setPeriods((items) => items.filter((_, i) => i !== index))} /></div>)}</div><div className="form-actions"><Button type="button" variant="ghost" onClick={onClose}>{t("pages.accounts.065")}</Button><Button type="submit" disabled={saving}>{saving ? t("pages.accounts.066") : t("pages.fiscal.051")}</Button></div></form></Modal>;
 }
-
 function YearEdit({ year, onClose, onSaved }: { year: FiscalYear; onClose: () => void; onSaved: () => void }) {
   const [name, setName] = useState(year.name); const [startDate, setStartDate] = useState(year.startDate); const [endDate, setEndDate] = useState(year.endDate); const [error, setError] = useState("");
-  async function submit(e: FormEvent) { e.preventDefault(); try { await api(`/fiscal-years/${year.id}`, { method: "PATCH", body: JSON.stringify({ name: name.trim(), startDate, endDate }) }); onSaved(); } catch (cause) { setError(cause instanceof Error ? cause.message : "تعذر التحديث."); } }
-  return <Modal title="تعديل السنة المالية" onClose={onClose}><form className="document-form" onSubmit={submit}>{error && <div className="form-error">{error}</div>}<label><span>الاسم</span><input value={name} onChange={(e) => setName(e.target.value)} required /></label><div className="form-grid"><label><span>البداية</span><input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} /></label><label><span>النهاية</span><input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></label></div><div className="form-actions"><Button type="button" variant="ghost" onClick={onClose}>إلغاء</Button><Button type="submit">حفظ</Button></div></form></Modal>;
+  async function submit(e: FormEvent) { e.preventDefault(); try { await api(`/fiscal-years/${year.id}`, { method: "PATCH", body: JSON.stringify({ name: name.trim(), startDate, endDate }) }); onSaved(); } catch (cause) { setError(cause instanceof Error ? cause.message : t("pages.fiscal.052")); } }
+  return <Modal title={t("pages.fiscal.053")} onClose={onClose}><form className="document-form" onSubmit={submit}>{error && <div className="form-error" role="alert">{error}</div>}<label><span>{t("pages.fiscal.054")}</span><input value={name} onChange={(e) => setName(e.target.value)} required /></label><div className="form-grid"><label><span>{t("pages.fiscal.040")}</span><input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} /></label><label><span>{t("pages.fiscal.041")}</span><input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></label></div><div className="form-actions"><Button type="button" variant="ghost" onClick={onClose}>{t("pages.accounts.065")}</Button><Button type="submit">{t("pages.accounts.067")}</Button></div></form></Modal>;
 }
-
 function PeriodEdit({ period, onClose, onSaved }: { period: FiscalPeriod; onClose: () => void; onSaved: () => void }) {
   const [name, setName] = useState(period.name); const [startDate, setStartDate] = useState(period.startDate); const [endDate, setEndDate] = useState(period.endDate); const [error, setError] = useState("");
-  async function submit(e: FormEvent) { e.preventDefault(); try { await api(`/fiscal-periods/${period.id}`, { method: "PATCH", body: JSON.stringify({ version: period.version, name: name.trim(), startDate, endDate }) }); onSaved(); } catch (cause) { setError(cause instanceof Error ? cause.message : "تعذر التحديث."); } }
-  return <Modal title="تعديل الفترة المالية" onClose={onClose}><form className="document-form" onSubmit={submit}>{error && <div className="form-error">{error}</div>}<label><span>الاسم</span><input value={name} onChange={(e) => setName(e.target.value)} required /></label><div className="form-grid"><label><span>البداية</span><input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} /></label><label><span>النهاية</span><input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></label></div><div className="form-actions"><Button type="button" variant="ghost" onClick={onClose}>إلغاء</Button><Button type="submit">حفظ</Button></div></form></Modal>;
+  async function submit(e: FormEvent) { e.preventDefault(); try { await api(`/fiscal-periods/${period.id}`, { method: "PATCH", body: JSON.stringify({ version: period.version, name: name.trim(), startDate, endDate }) }); onSaved(); } catch (cause) { setError(cause instanceof Error ? cause.message : t("pages.fiscal.052")); } }
+  return <Modal title={t("pages.fiscal.056")} onClose={onClose}><form className="document-form" onSubmit={submit}>{error && <div className="form-error" role="alert">{error}</div>}<label><span>{t("pages.fiscal.054")}</span><input value={name} onChange={(e) => setName(e.target.value)} required /></label><div className="form-grid"><label><span>{t("pages.fiscal.040")}</span><input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} /></label><label><span>{t("pages.fiscal.041")}</span><input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></label></div><div className="form-actions"><Button type="button" variant="ghost" onClick={onClose}>{t("pages.accounts.065")}</Button><Button type="submit">{t("pages.accounts.067")}</Button></div></form></Modal>;
 }

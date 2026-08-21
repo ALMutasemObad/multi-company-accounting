@@ -87,24 +87,55 @@ enum PaymentMethodScope {
   COMPANY
 }
 
+enum CurrencyScope {
+  GLOBAL
+  COMPANY
+}
+
+enum RegistrationStatus {
+  PENDING_EMAIL
+  EMAIL_VERIFIED
+  PROVISIONING
+  COMPLETED
+  REJECTED
+}
+
+enum RegistrationDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum OutboxStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
 model Organization {
-  id        BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
-  code      String    @unique @default(uuid()) @db.VarChar(80)
-  name      String    @db.VarChar(200)
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
-  companies Company[]
+  id                   BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
+  code                 String                @unique @default(uuid()) @db.VarChar(80)
+  name                 String                @db.VarChar(200)
+  createdAt            DateTime              @default(now()) @map("created_at")
+  updatedAt            DateTime              @updatedAt @map("updated_at")
+  companies            Company[]
+  registrationRequests RegistrationRequest[] @relation("RegistrationOrganization")
 
   @@map("organizations")
 }
 
 model Currency {
   id                BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
-  code              String            @unique @db.Char(3)
+  code              String            @db.Char(3)
   nameAr            String            @map("name_ar") @db.VarChar(100)
   decimals          Int               @default(2) @db.UnsignedTinyInt
   isActive          Boolean           @default(true) @map("is_active")
-  companies         Company[]
+  scope             CurrencyScope     @default(GLOBAL)
+  scopeKey          String            @default("GLOBAL") @map("scope_key") @db.VarChar(40)
+  ownerCompanyId    BigInt?           @map("owner_company_id") @db.UnsignedBigInt
+  ownerCompany      Company?          @relation("OwnedCurrencies", fields: [ownerCompanyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  baseCompanies     Company[]         @relation("BaseCurrency")
   journalLines      JournalLine[]
   receipts          Receipt[]
   payments          Payment[]
@@ -112,6 +143,8 @@ model Currency {
   purchaseInvoices  PurchaseInvoice[]
   companyCurrencies CompanyCurrency[]
 
+  @@unique([scopeKey, code])
+  @@index([ownerCompanyId, isActive])
   @@map("currencies")
 }
 
@@ -127,7 +160,8 @@ model Company {
   createdAt                        DateTime               @default(now()) @map("created_at")
   updatedAt                        DateTime               @updatedAt @map("updated_at")
   organization                     Organization           @relation(fields: [organizationId], references: [id])
-  baseCurrency                     Currency               @relation(fields: [baseCurrencyId], references: [id])
+  baseCurrency                     Currency               @relation("BaseCurrency", fields: [baseCurrencyId], references: [id])
+  ownedCurrencies                  Currency[]             @relation("OwnedCurrencies")
   assignments                      UserCompany[]
   sessions                         Session[]
   idempotency                      IdempotencyRecord[]
@@ -159,6 +193,7 @@ model Company {
   purchaseInvoiceLines             PurchaseInvoiceLine[]
   documentPrintArchives            DocumentPrintArchive[]
   companyCurrencies                CompanyCurrency[]
+  registrationRequests             RegistrationRequest[]  @relation("RegistrationCompany")
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -189,8 +224,96 @@ model User {
   documentsPosted            AccountingDocument[]   @relation("DocumentPostedBy")
   printArchivesCreated       DocumentPrintArchive[] @relation("PrintArchiveCreatedBy")
   exchangeRatesUpdated       CompanyExchangeRate[]  @relation("ExchangeRateUpdatedBy")
+  registrationRequests       RegistrationRequest[]  @relation("RegistrationUser")
 
   @@map("users")
+}
+
+model RegistrationRequest {
+  id                        BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId                  String                     @unique @default(uuid()) @map("public_id") @db.VarChar(80)
+  emailNormalized           String                     @unique @map("email_normalized") @db.VarChar(320)
+  passwordHash              String?                    @map("password_hash") @db.VarChar(255)
+  displayName               String                     @map("display_name") @db.VarChar(160)
+  organizationName          String                     @map("organization_name") @db.VarChar(200)
+  companyName               String                     @map("company_name") @db.VarChar(200)
+  timezone                  String                     @db.VarChar(64)
+  baseCurrencyCode          String                     @map("base_currency_code") @db.Char(3)
+  locale                    String                     @default("ar") @db.VarChar(10)
+  chartTemplateCode         String                     @default("SMALL_BUSINESS_GENERAL") @map("chart_template_code") @db.VarChar(80)
+  verificationTokenHash     Bytes                      @unique @map("verification_token_hash") @db.Binary(32)
+  verificationExpiresAt     DateTime                   @map("verification_expires_at")
+  status                    RegistrationStatus         @default(PENDING_EMAIL)
+  deliveryStatus            RegistrationDeliveryStatus @default(PENDING) @map("delivery_status")
+  deliveryAttempts          Int                        @default(0) @map("delivery_attempts") @db.UnsignedSmallInt
+  deliveryGeneration        Int                        @default(1) @map("delivery_generation") @db.UnsignedSmallInt
+  verifiedAt                DateTime?                  @map("verified_at")
+  provisioningStartedAt     DateTime?                  @map("provisioning_started_at")
+  completedAt               DateTime?                  @map("completed_at")
+  provisionedOrganizationId BigInt?                    @map("provisioned_organization_id") @db.UnsignedBigInt
+  provisionedCompanyId      BigInt?                    @map("provisioned_company_id") @db.UnsignedBigInt
+  provisionedUserId         BigInt?                    @map("provisioned_user_id") @db.UnsignedBigInt
+  lastErrorCode             String?                    @map("last_error_code") @db.VarChar(80)
+  initialIpAddress          String?                    @map("initial_ip_address") @db.VarChar(64)
+  initialUserAgent          String?                    @map("initial_user_agent") @db.VarChar(500)
+  createdAt                 DateTime                   @default(now()) @map("created_at")
+  updatedAt                 DateTime                   @updatedAt @map("updated_at")
+  provisionedOrganization   Organization?              @relation("RegistrationOrganization", fields: [provisionedOrganizationId], references: [id], onDelete: SetNull)
+  provisionedCompany        Company?                   @relation("RegistrationCompany", fields: [provisionedCompanyId], references: [id], onDelete: SetNull)
+  provisionedUser           User?                      @relation("RegistrationUser", fields: [provisionedUserId], references: [id], onDelete: SetNull)
+  events                    RegistrationEvent[]
+
+  @@index([status, verificationExpiresAt])
+  @@index([provisionedCompanyId])
+  @@index([provisionedUserId])
+  @@map("registration_requests")
+}
+
+model RegistrationEvent {
+  id                    BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
+  registrationRequestId BigInt?              @map("registration_request_id") @db.UnsignedBigInt
+  emailHash             Bytes                @map("email_hash") @db.Binary(32)
+  eventType             String               @map("event_type") @db.VarChar(80)
+  severity              SecuritySeverity
+  ipAddress             String?              @map("ip_address") @db.VarChar(64)
+  userAgent             String?              @map("user_agent") @db.VarChar(500)
+  details               Json?
+  createdAt             DateTime             @default(now()) @map("created_at")
+  registrationRequest   RegistrationRequest? @relation(fields: [registrationRequestId], references: [id], onDelete: Cascade)
+
+  @@index([registrationRequestId, createdAt])
+  @@index([emailHash, createdAt])
+  @@index([severity, createdAt])
+  @@map("registration_events")
+}
+
+model OutboxEvent {
+  id             BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
+  eventId        String       @unique @default(uuid()) @map("event_id") @db.Char(36)
+  eventType      String       @map("event_type") @db.VarChar(100)
+  schemaVersion  Int          @default(1) @map("schema_version") @db.UnsignedSmallInt
+  aggregateType  String       @map("aggregate_type") @db.VarChar(80)
+  aggregateId    String       @map("aggregate_id") @db.VarChar(80)
+  companyId      BigInt?      @map("company_id") @db.UnsignedBigInt
+  payload        Json
+  occurredAt     DateTime     @default(now()) @map("occurred_at")
+  status         OutboxStatus @default(PENDING)
+  availableAt    DateTime     @default(now()) @map("available_at")
+  attemptCount   Int          @default(0) @map("attempt_count") @db.UnsignedSmallInt
+  maxAttempts    Int          @default(8) @map("max_attempts") @db.UnsignedSmallInt
+  lockedAt       DateTime?    @map("locked_at")
+  lockToken      String?      @map("lock_token") @db.Char(36)
+  lastErrorCode  String?      @map("last_error_code") @db.VarChar(80)
+  lastErrorAt    DateTime?    @map("last_error_at")
+  processedAt    DateTime?    @map("processed_at")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  @@index([status, availableAt, id])
+  @@index([status, lockedAt])
+  @@index([aggregateType, aggregateId, createdAt])
+  @@index([processedAt])
+  @@map("outbox_events")
 }
 
 model CompanyCurrency {

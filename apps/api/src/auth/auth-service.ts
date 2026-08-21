@@ -57,6 +57,10 @@ export class AuthService {
     return { sid, csrfToken, expiresAt, user: { id: user.id.toString(), displayName: user.displayName } };
   }
 
+  async validatePreAuth(input: { sid?: string | undefined; csrfToken?: string | undefined }) {
+    await this.requireSession(input.sid, input.csrfToken, 'PRE_AUTH');
+  }
+
   async companies(input: { sid?: string | undefined }) {
     const session = await this.requireAuthenticated(input.sid);
     return this.store.listCompanies(session.userId!);

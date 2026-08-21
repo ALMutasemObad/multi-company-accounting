@@ -33,6 +33,25 @@ Passenger log: logs/accounting-passenger.log
 4. أنشئ قاعدة ومستخدمًا جديدين مخصصين للنظام. لا تعِد استخدام قواعد `doralash_books` أو `doralash_tarafu` أو مستخدميهما.
 5. لا تشغّل `prisma:seed` أو `prisma:seed:demo` في الإنتاج.
 
+## النشر التلقائي المعتمد
+
+تتضمن `.github/workflows/ci.yml` مهمة `Deploy production to iFastNet`. لا تبدأ هذه المهمة إلا عند الدفع إلى `main` وبعد نجاح بوابتي MariaDB 10.11 وMySQL 8.4 كاملتين. تنزّل Artifact الذي بُني داخل التشغيل نفسه، وتتحقق من SHA-256، وتتصل بمفتاح نشر مخصص وبصمة SSH مثبتة في `deploy/ssh/ifastnet_known_hosts`، ثم تنفذ بالترتيب:
+
+1. نسخة قاعدة بيانات مشفرة إلى `/home/doralash/backups/mcap`.
+2. `prisma migrate deploy` على الإصدار المرشح قبل تفعيله.
+3. Seed المرجعيات الإنتاجية المتكرر والآمن.
+4. التبديل الذري للرابط `current` وإيقاظ Passenger.
+5. فحص `/ready` وبصمة واجهة الإصدار الجديد، مع رجوع التطبيق تلقائيًا عند الفشل.
+
+يحتاج المستودع إلى سري GitHub من مستوى المستودع أو بيئة `production`:
+
+```text
+CPANEL_SSH_PRIVATE_KEY=<private half of the dedicated deployment key>
+BACKUP_ENCRYPTION_PASSPHRASE=<single-line random secret, at least 32 characters>
+```
+
+لا تستخدم مفتاح SSH شخصيًا، ولا تغيّر ملف `deploy/ssh/ifastnet_known_hosts` إلا بعد التحقق من بصمة الخادم عبر قناة موثوقة. قيمة تشفير النسخ مطلوبة للاستعادة؛ احتفظ بنسخة منها في مدير أسرار مستقل عن حساب الاستضافة. لا تصل أسرار الإنتاج إلى وظائف Pull Request، لأن مهمة النشر مقيدة صراحةً بحدث `push` على `main`.
+
 ## تثبيت الإصدار
 
 بعد رفع ملفات Artifact إلى مجلد خاص بالحساب، اضبط القيم الفعلية ثم شغّل المثبت من Terminal:
@@ -52,9 +71,11 @@ bash deploy/scripts/install-cpanel-release.sh \
 
 يتحقق المثبت من البصمة وManifest والمنصة، ويفك الإصدار إلى مجلد مستقل، ويبدّل رابط `current` ذريًا، ثم يلمس `tmp/restart.txt` وملف إعداد Passenger. لا يكتفي بفحص `/ready`؛ بل يقارن بصمة HTML المقدّم عبر النطاق مع `apps/web/dist/index.html` في الإصدار المتوقع حتى لا تعتبر عملية قديمة سليمة إصدارًا ناجحًا. عند فشل إصدار لاحق يعيد الإصدار السابق تلقائيًا. لا يحذف أي إصدار.
 
+المسار اليدوي أعلاه مخصص للطوارئ. الإصدارات الاعتيادية تنشرها مهمة CI تلقائيًا باستخدام `deploy/scripts/deploy-cpanel-release.sh`، وهي تضيف النسخ المشفر والترحيلات والـSeed قبل استدعاء المثبت الذري.
+
 ## إعداد التطبيق وقاعدة البيانات
 
-أضف متغيرات الإنتاج من `.env.production.example` في Node.js Selector. يجب أن يكون `WEB_ORIGIN` هو رابط HTTPS نفسه، وتبقى `SESSION_COOKIE_SECURE` و`TRUST_PROXY` مفعّلتين. لا تحفظ كلمة مرور قاعدة البيانات أو كلمة مرور المدير في Git أو داخل ملفات Artifact.
+أضف متغيرات الإنتاج من `.env.production.example` في Node.js Selector. يجب أن يكون `WEB_ORIGIN` هو رابط HTTPS نفسه، وتبقى `SESSION_COOKIE_SECURE` و`TRUST_PROXY` مفعّلتين. عند تفعيل التسجيل الذاتي أضف أسرار Resend و`REGISTRATION_AUDIT_PEPPER` من مدير الأسرار؛ وإلا اضبط `SELF_REGISTRATION_ENABLED=false` صراحةً. لا تحفظ كلمة مرور قاعدة البيانات أو كلمة مرور المدير أو مفاتيح البريد في Git أو داخل ملفات Artifact.
 
 قبل تشغيل التطبيق لأول مرة فقط، طبّق الترحيلات بالإصدار المثبت من Prisma، ثم شغّل المرجعيات الإنتاجية وجهّز شركة العميل:
 

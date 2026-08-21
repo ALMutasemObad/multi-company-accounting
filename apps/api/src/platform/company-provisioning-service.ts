@@ -22,9 +22,11 @@ export const companyProvisioningSchema = z.object({
 }).strict();
 
 export type CompanyProvisioningInput = z.input<typeof companyProvisioningSchema>;
+export const preparedCompanyProvisioningSchema = companyProvisioningSchema.omit({ adminPassword: true });
+export type PreparedCompanyProvisioningInput = z.input<typeof preparedCompanyProvisioningSchema>;
 
 export class CompanyProvisioningError extends Error {
-  constructor(public readonly reason: 'CURRENCY_NOT_FOUND' | 'COMPANY_CURRENCY_MISMATCH' | 'ADMIN_USER_DISABLED') { super(reason); }
+  constructor(public readonly reason: 'CURRENCY_NOT_FOUND' | 'COMPANY_CURRENCY_MISMATCH' | 'ADMIN_USER_DISABLED' | 'ADMIN_USER_EXISTS') { super(reason); }
 }
 
 export class CompanyProvisioningService {
@@ -32,10 +34,25 @@ export class CompanyProvisioningService {
 
   async provision(rawInput: CompanyProvisioningInput) {
     const input = companyProvisioningSchema.parse(rawInput);
-    const passwordHash = await hash(input.adminPassword);
+    const { adminPassword, ...preparedInput } = input;
+    const passwordHash = await hash(adminPassword);
+    const prepared = preparedCompanyProvisioningSchema.parse(preparedInput);
 
-    return this.prisma.$transaction(async (tx) => {
-      const currency = await tx.currency.findUnique({ where: { code: input.baseCurrencyCode } });
+    return this.prisma.$transaction(
+      (tx) => this.provisionPreparedInTransaction(tx, prepared, passwordHash),
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 5_000, timeout: 30_000 },
+    );
+  }
+
+  async provisionPreparedInTransaction(
+    tx: Prisma.TransactionClient,
+    rawInput: PreparedCompanyProvisioningInput,
+    passwordHash: string,
+    options: { requireNewAdminIdentity?: boolean } = {},
+  ) {
+      const input = preparedCompanyProvisioningSchema.parse(rawInput);
+      if (!passwordHash || passwordHash.length > 255) throw new TypeError('A valid prepared password hash is required');
+      const currency = await tx.currency.findUnique({ where: { scopeKey_code: { scopeKey: 'GLOBAL', code: input.baseCurrencyCode } } });
       if (!currency?.isActive) throw new CompanyProvisioningError('CURRENCY_NOT_FOUND');
 
       const organization = await tx.organization.upsert({
@@ -60,6 +77,7 @@ export class CompanyProvisioningService {
 
       const existingUser = await tx.user.findUnique({ where: { emailNormalized: input.adminEmail } });
       if (existingUser && !existingUser.isActive) throw new CompanyProvisioningError('ADMIN_USER_DISABLED');
+      if (existingUser && options.requireNewAdminIdentity) throw new CompanyProvisioningError('ADMIN_USER_EXISTS');
       const admin = existingUser ?? await tx.user.create({ data: { emailNormalized: input.adminEmail, displayName: input.adminDisplayName, passwordHash } });
       await tx.userCompany.upsert({
         where: { userId_companyId: { userId: admin.id, companyId: company.id } },
@@ -116,6 +134,16 @@ export class CompanyProvisioningService {
         permissionsGranted: permissionDefinitions.length,
         defaultChart: defaultChart ? { templateCode: defaultChart.templateCode, version: defaultChart.version, accountsCreated: defaultChart.created } : null,
       };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 5_000, timeout: 30_000 });
+  }
+
+  async provisionPrepared(
+    rawInput: PreparedCompanyProvisioningInput,
+    passwordHash: string,
+    options: { requireNewAdminIdentity?: boolean } = {},
+  ) {
+    return this.prisma.$transaction(
+      (tx) => this.provisionPreparedInTransaction(tx, rawInput, passwordHash, options),
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 5_000, timeout: 30_000 },
+    );
   }
 }
