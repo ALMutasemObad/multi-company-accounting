@@ -14,3 +14,13 @@ test("deployment installers do not require /dev/fd process substitution", async 
     assert.match(source, /tar -tzf "\$archive" \| while IFS= read -r entry/u);
   }
 });
+
+test("cPanel deployment scripts verify the active release and refresh stable Passenger configuration", async () => {
+  for (const script of ["install-cpanel-release.sh", "rollback-cpanel-release.sh"]) {
+    const source = await readFile(path.join(repositoryRoot, "deploy", "scripts", script), "utf8");
+    assert.match(source, /MCAP_PASSENGER_CONFIG_FILE/u);
+    assert.match(source, /mcap_release_probe/u);
+    assert.match(source, /active_release_matches/u);
+    assert.match(source, /touch -- "\$passenger_config_file"/u);
+  }
+});
