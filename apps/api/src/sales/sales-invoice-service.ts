@@ -532,7 +532,7 @@ export class SalesInvoiceService {
     if (!customer) throw new SalesInvoiceError("INVALID_CUSTOMER");
     await this.validAccount(tx, companyId, customer.receivableAccountId);
     const company = await tx.company.findUniqueOrThrow({ where: { id: companyId } });
-    const currency = await tx.currency.findFirst({ where: { id: input.currencyId, isActive: true } });
+    const currency = await tx.companyCurrency.findFirst({ where: { companyId, currencyId: input.currencyId, isActive: true, currency: { isActive: true } } });
     if (!currency || (input.currencyId === company.baseCurrencyId && !decimal(input.exchangeRate).equals(1))) throw new SalesInvoiceError("INVALID_CURRENCY");
     const accountIds = [...new Set(input.lines.map((line) => line.revenueAccountId.toString()))].map(BigInt);
     const accounts = await tx.account.findMany({ where: { companyId, id: { in: accountIds }, isActive: true, allowsPosting: true }, include: { accountType: true, _count: { select: { children: true } } } });

@@ -9,6 +9,8 @@ export const permissionDefinitions = [
   ['companies.view', 'companies', 'عرض بيانات الشركة'],
   ['companies.update', 'companies', 'تعديل بيانات الشركة'],
   ['settings.manage', 'settings', 'إدارة إعدادات الشركة'],
+  ['currencies.view', 'currencies', 'عرض العملات المفعلة وأسعار الصرف'],
+  ['currencies.manage', 'currencies', 'إدارة عملات الشركة وأسعار الصرف'],
   ['auth.sessions.view', 'auth', 'عرض جلسات المستخدم'],
   ['auth.sessions.revoke', 'auth', 'إلغاء جلسة مستخدم'],
   ['users.view', 'users', 'عرض المستخدمين'],
@@ -25,6 +27,8 @@ export const permissionDefinitions = [
   ['accounts.create', 'accounts', 'إنشاء حساب'],
   ['accounts.update', 'accounts', 'تعديل حساب'],
   ['accounts.deactivate', 'accounts', 'تعطيل حساب'],
+  ['accounts.delete', 'accounts', 'حذف حساب غير مستخدم'],
+  ['accounts.template.apply', 'accounts', 'تطبيق قالب دليل الحسابات'],
   ['cost_centers.manage', 'cost_centers', 'إدارة مراكز التكلفة'],
   ['manual_journals.view', 'manual_journals', 'عرض القيود اليدوية'],
   ['manual_journals.create', 'manual_journals', 'إنشاء القيود اليدوية'],
@@ -75,6 +79,19 @@ export const permissionDefinitions = [
   ['purchase_invoices.print', 'purchase_invoices', 'طباعة وأرشفة فواتير المشتريات والإشعارات المدينة'],
   ['input_tax_rates.manage', 'purchase_invoices', 'إدارة حساب ضريبة المدخلات'],
   ['reports.payables.view', 'reports', 'عرض أرصدة الموردين وأعمار الديون'],
+] as const;
+
+export const currencyDefinitions = [
+  { code: 'SAR', nameAr: 'ريال سعودي', decimals: 2 },
+  { code: 'USD', nameAr: 'دولار أمريكي', decimals: 2 },
+  { code: 'EUR', nameAr: 'يورو', decimals: 2 },
+  { code: 'AED', nameAr: 'درهم إماراتي', decimals: 2 },
+  { code: 'GBP', nameAr: 'جنيه إسترليني', decimals: 2 },
+  { code: 'KWD', nameAr: 'دينار كويتي', decimals: 3 },
+  { code: 'BHD', nameAr: 'دينار بحريني', decimals: 3 },
+  { code: 'OMR', nameAr: 'ريال عماني', decimals: 3 },
+  { code: 'QAR', nameAr: 'ريال قطري', decimals: 2 },
+  { code: 'EGP', nameAr: 'جنيه مصري', decimals: 2 },
 ] as const;
 
 export const accountTypeDefinitions = [

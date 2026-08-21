@@ -99,17 +99,18 @@ model Organization {
 }
 
 model Currency {
-  id               BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
-  code             String            @unique @db.Char(3)
-  nameAr           String            @map("name_ar") @db.VarChar(100)
-  decimals         Int               @default(2) @db.UnsignedTinyInt
-  isActive         Boolean           @default(true) @map("is_active")
-  companies        Company[]
-  journalLines     JournalLine[]
-  receipts         Receipt[]
-  payments         Payment[]
-  salesInvoices    SalesInvoice[]
-  purchaseInvoices PurchaseInvoice[]
+  id                BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  code              String            @unique @db.Char(3)
+  nameAr            String            @map("name_ar") @db.VarChar(100)
+  decimals          Int               @default(2) @db.UnsignedTinyInt
+  isActive          Boolean           @default(true) @map("is_active")
+  companies         Company[]
+  journalLines      JournalLine[]
+  receipts          Receipt[]
+  payments          Payment[]
+  salesInvoices     SalesInvoice[]
+  purchaseInvoices  PurchaseInvoice[]
+  companyCurrencies CompanyCurrency[]
 
   @@map("currencies")
 }
@@ -157,6 +158,7 @@ model Company {
   purchaseInvoices                 PurchaseInvoice[]
   purchaseInvoiceLines             PurchaseInvoiceLine[]
   documentPrintArchives            DocumentPrintArchive[]
+  companyCurrencies                CompanyCurrency[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -164,30 +166,65 @@ model Company {
 }
 
 model User {
-  id                   BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
-  emailNormalized      String                 @unique @map("email_normalized") @db.VarChar(320)
-  passwordHash         String                 @map("password_hash") @db.VarChar(255)
-  displayName          String                 @map("display_name") @db.VarChar(160)
-  nameEn               String?                @map("name_en") @db.VarChar(160)
-  isActive             Boolean                @default(true) @map("is_active")
-  failedLoginAttempts  Int                    @default(0) @map("failed_login_attempts") @db.UnsignedTinyInt
-  lockedUntil          DateTime?              @map("locked_until")
-  lastLoginAt          DateTime?              @map("last_login_at")
-  createdAt            DateTime               @default(now()) @map("created_at")
-  updatedAt            DateTime               @updatedAt @map("updated_at")
-  assignments          UserCompany[]
-  sessions             Session[]
-  idempotency          IdempotencyRecord[]
-  auditLogs            AuditLog[]
-  securityEvents       SecurityEvent[]       @relation("SecurityEventUser")
-  securityEventsAcknowledged SecurityEvent[] @relation("SecurityEventAcknowledgedBy")
-  periodsClosed        FiscalPeriod[]         @relation("PeriodClosedBy")
-  periodsReopened      FiscalPeriod[]         @relation("PeriodReopenedBy")
-  documentsCreated     AccountingDocument[]   @relation("DocumentCreatedBy")
-  documentsPosted      AccountingDocument[]   @relation("DocumentPostedBy")
-  printArchivesCreated DocumentPrintArchive[] @relation("PrintArchiveCreatedBy")
+  id                         BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
+  emailNormalized            String                 @unique @map("email_normalized") @db.VarChar(320)
+  passwordHash               String                 @map("password_hash") @db.VarChar(255)
+  displayName                String                 @map("display_name") @db.VarChar(160)
+  nameEn                     String?                @map("name_en") @db.VarChar(160)
+  isActive                   Boolean                @default(true) @map("is_active")
+  failedLoginAttempts        Int                    @default(0) @map("failed_login_attempts") @db.UnsignedTinyInt
+  lockedUntil                DateTime?              @map("locked_until")
+  lastLoginAt                DateTime?              @map("last_login_at")
+  createdAt                  DateTime               @default(now()) @map("created_at")
+  updatedAt                  DateTime               @updatedAt @map("updated_at")
+  assignments                UserCompany[]
+  sessions                   Session[]
+  idempotency                IdempotencyRecord[]
+  auditLogs                  AuditLog[]
+  securityEvents             SecurityEvent[]        @relation("SecurityEventUser")
+  securityEventsAcknowledged SecurityEvent[]        @relation("SecurityEventAcknowledgedBy")
+  periodsClosed              FiscalPeriod[]         @relation("PeriodClosedBy")
+  periodsReopened            FiscalPeriod[]         @relation("PeriodReopenedBy")
+  documentsCreated           AccountingDocument[]   @relation("DocumentCreatedBy")
+  documentsPosted            AccountingDocument[]   @relation("DocumentPostedBy")
+  printArchivesCreated       DocumentPrintArchive[] @relation("PrintArchiveCreatedBy")
+  exchangeRatesUpdated       CompanyExchangeRate[]  @relation("ExchangeRateUpdatedBy")
 
   @@map("users")
+}
+
+model CompanyCurrency {
+  companyId  BigInt                @map("company_id") @db.UnsignedBigInt
+  currencyId BigInt                @map("currency_id") @db.UnsignedBigInt
+  isActive   Boolean               @default(true) @map("is_active")
+  createdAt  DateTime              @default(now()) @map("created_at")
+  updatedAt  DateTime              @updatedAt @map("updated_at")
+  company    Company               @relation(fields: [companyId], references: [id])
+  currency   Currency              @relation(fields: [currencyId], references: [id])
+  rates      CompanyExchangeRate[]
+
+  @@id([companyId, currencyId])
+  @@index([currencyId])
+  @@map("company_currencies")
+}
+
+model CompanyExchangeRate {
+  id              BigInt          @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId       BigInt          @map("company_id") @db.UnsignedBigInt
+  currencyId      BigInt          @map("currency_id") @db.UnsignedBigInt
+  rateDate        DateTime        @map("rate_date") @db.Date
+  rate            Decimal         @db.Decimal(19, 8)
+  source          String?         @db.VarChar(100)
+  updatedById     BigInt          @map("updated_by_id") @db.UnsignedBigInt
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+  companyCurrency CompanyCurrency @relation(fields: [companyId, currencyId], references: [companyId, currencyId])
+  updatedBy       User            @relation("ExchangeRateUpdatedBy", fields: [updatedById], references: [id])
+
+  @@unique([companyId, currencyId, rateDate])
+  @@index([updatedById])
+  @@index([companyId, rateDate])
+  @@map("company_exchange_rates")
 }
 
 model UserCompany {
@@ -482,6 +519,8 @@ model Account {
   allowsPosting          Boolean               @map("allows_posting")
   isControlAccount       Boolean               @default(false) @map("is_control_account")
   isActive               Boolean               @default(true) @map("is_active")
+  sourceTemplateCode     String?               @map("source_template_code") @db.VarChar(80)
+  sourceTemplateKey      String?               @map("source_template_key") @db.VarChar(80)
   createdAt              DateTime              @default(now()) @map("created_at")
   updatedAt              DateTime              @updatedAt @map("updated_at")
   company                Company               @relation(fields: [companyId], references: [id])
@@ -500,6 +539,7 @@ model Account {
   purchaseInvoiceLines   PurchaseInvoiceLine[] @relation("PurchaseDebitAccount")
 
   @@unique([companyId, code])
+  @@unique([companyId, sourceTemplateCode, sourceTemplateKey])
   @@unique([id, companyId])
   @@index([parentAccountId, companyId])
   @@map("accounts")

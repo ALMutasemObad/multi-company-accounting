@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.2.0
+  version: 1.4.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -1112,6 +1112,193 @@ paths:
         CsrfToken: []
       parameters:
       - $ref: '#/components/parameters/RequestId'
+  /company-currencies:
+    get:
+      tags:
+      - Companies
+      summary: عرض كتالوج العملات وحالة تفعيلها للشركة الحالية
+      operationId: listCompanyCurrencies
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: كتالوج العملات
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanyCurrencyList'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      x-permission: currencies.view
+      security:
+      - SessionCookie: []
+    put:
+      tags:
+      - Companies
+      summary: استبدال العملات المفعلة للشركة الحالية
+      description: تظل العملة الأساسية مفعلة حتى عند عدم إرسال معرفها.
+      operationId: replaceCompanyCurrencies
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompanyCurrencyUpdateRequest'
+      responses:
+        '200':
+          description: كتالوج العملات بعد التحديث
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanyCurrencyList'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/BusinessRuleViolation'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      x-permission: currencies.manage
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+  /exchange-rates:
+    get:
+      tags:
+      - Companies
+      summary: عرض أسعار الصرف المؤرخة للشركة الحالية
+      operationId: listCompanyExchangeRates
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - name: currencyId
+        in: query
+        schema:
+          $ref: '#/components/schemas/Id'
+      - name: dateFrom
+        in: query
+        schema:
+          type: string
+          format: date
+      - name: dateTo
+        in: query
+        schema:
+          type: string
+          format: date
+      responses:
+        '200':
+          description: قائمة أسعار الصرف
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CompanyExchangeRate'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      x-permission: currencies.view
+      security:
+      - SessionCookie: []
+    put:
+      tags:
+      - Companies
+      summary: إنشاء أو تحديث سعر صرف لتاريخ محدد
+      operationId: upsertCompanyExchangeRate
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompanyExchangeRateUpsertRequest'
+      responses:
+        '200':
+          description: سعر الصرف المحفوظ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanyExchangeRate'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/BusinessRuleViolation'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      x-permission: currencies.manage
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+  /exchange-rates/resolve:
+    get:
+      tags:
+      - Companies
+      summary: حل سعر الصرف النافذ في تاريخ مستند
+      description: يعيد أحدث سعر في التاريخ المحدد أو قبله، وتعيد العملة الأساسية السعر 1.
+      operationId: resolveCompanyExchangeRate
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: currencyId
+        in: query
+        required: true
+        schema:
+          $ref: '#/components/schemas/Id'
+      - name: rateDate
+        in: query
+        required: true
+        schema:
+          type: string
+          format: date
+      responses:
+        '200':
+          description: سعر الصرف النافذ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolvedExchangeRate'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/BusinessRuleViolation'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      x-permission: currencies.view
+      security:
+      - SessionCookie: []
   /fiscal-years:
     get:
       tags:
@@ -1672,6 +1859,59 @@ paths:
         CsrfToken: []
       parameters:
       - $ref: '#/components/parameters/RequestId'
+  /accounts/default-template:
+    get:
+      tags:
+      - Accounts
+      summary: حالة قالب دليل الحسابات الافتراضي للشركة الحالية
+      operationId: getDefaultChartTemplateStatus
+      responses:
+        '200':
+          description: حالة القالب
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DefaultChartTemplateStatus'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      x-permission: accounts.view
+      security:
+      - SessionCookie: []
+  /accounts/default-template/apply:
+    post:
+      tags:
+      - Accounts
+      summary: إضافة الحسابات المفقودة من القالب الافتراضي دون استبدال التخصيصات
+      operationId: applyDefaultChartTemplate
+      responses:
+        '200':
+          description: نتيجة تطبيق القالب
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DefaultChartTemplateApplyResult'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/BusinessRuleViolation'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      x-permission: accounts.template.apply
+      security:
+      - SessionCookie: []
+        CsrfToken: []
   /accounts/{accountId}:
     get:
       tags:
@@ -1761,6 +2001,60 @@ paths:
             schema:
               $ref: '#/components/schemas/AccountUpdateRequest'
       x-permission: accounts.update
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+    delete:
+      tags:
+      - Accounts
+      summary: حذف حساب غير مستخدم ولا يملك فروعًا
+      operationId: deleteAccount
+      responses:
+        '200':
+          description: تم الحذف
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - id
+                - deleted
+                properties:
+                  id:
+                    type: string
+                    pattern: ^[1-9][0-9]*$
+                  deleted:
+                    type: boolean
+                    const: true
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/BusinessRuleViolation'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: accountId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReasonRequest'
+      x-permission: accounts.delete
       security:
       - SessionCookie: []
         CsrfToken: []
@@ -2827,7 +3121,7 @@ paths:
     get:
       tags:
       - Treasury
-      summary: عرض العملات النشطة
+      summary: عرض العملات المفعلة للشركة الحالية
       operationId: listCurrencies
       responses:
         '200':
@@ -2851,7 +3145,7 @@ paths:
           $ref: '#/components/responses/InternalError'
       parameters:
       - $ref: '#/components/parameters/RequestId'
-      x-permission: cash_bank_accounts.view
+      x-permission: currencies.view
       security:
       - SessionCookie: []
   /cash-bank-accounts:
@@ -6358,6 +6652,8 @@ components:
       - allowsPosting
       - isControlAccount
       - isActive
+      - sourceTemplateCode
+      - sourceTemplateKey
       properties:
         id:
           type: string
@@ -6397,6 +6693,16 @@ components:
           type: boolean
         isActive:
           type: boolean
+        sourceTemplateCode:
+          type:
+          - string
+          - 'null'
+          maxLength: 80
+        sourceTemplateKey:
+          type:
+          - string
+          - 'null'
+          maxLength: 80
     AccountCreateRequest:
       type: object
       additionalProperties: false
@@ -6453,6 +6759,10 @@ components:
             example: '1001'
             description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
           - type: 'null'
+        code:
+          type: string
+          minLength: 1
+          maxLength: 40
         nameAr:
           type: string
           minLength: 1
@@ -6466,6 +6776,62 @@ components:
           type: boolean
         isControlAccount:
           type: boolean
+    DefaultChartTemplateStatus:
+      type: object
+      required:
+      - templateCode
+      - version
+      - nameAr
+      - total
+      - matched
+      - missing
+      - inactive
+      - conflicts
+      - canApply
+      properties:
+        templateCode:
+          type: string
+          example: SMALL_BUSINESS_GENERAL
+        version:
+          type: integer
+          minimum: 1
+        nameAr:
+          type: string
+        total:
+          type: integer
+          minimum: 0
+        matched:
+          type: integer
+          minimum: 0
+        missing:
+          type: integer
+          minimum: 0
+        inactive:
+          type: integer
+          minimum: 0
+        conflicts:
+          type: integer
+          minimum: 0
+        canApply:
+          type: boolean
+    DefaultChartTemplateApplyResult:
+      allOf:
+      - $ref: '#/components/schemas/DefaultChartTemplateStatus'
+      - type: object
+        required:
+        - created
+        - linked
+        - existing
+        properties:
+          created:
+            type: integer
+            minimum: 0
+          linked:
+            type: integer
+            minimum: 0
+          existing:
+            type: integer
+            minimum: 0
     CostCenter:
       type: object
       required:
@@ -7081,7 +7447,9 @@ components:
       - code
       - nameAr
       - decimals
-      - isActive
+      - isBase
+      - latestExchangeRate
+      - latestExchangeRateDate
       properties:
         id:
           type: string
@@ -7095,8 +7463,140 @@ components:
           type: integer
           minimum: 0
           maximum: 8
-        isActive:
+        isBase:
           type: boolean
+        latestExchangeRate:
+          type:
+          - string
+          - 'null'
+          pattern: ^(?:0|[1-9][0-9]{0,10})\.[0-9]{8}$
+        latestExchangeRateDate:
+          type:
+          - string
+          - 'null'
+          format: date
+    CompanyCurrencySetting:
+      allOf:
+      - $ref: '#/components/schemas/Currency'
+      - type: object
+        required:
+        - isEnabled
+        properties:
+          isEnabled:
+            type: boolean
+    CompanyCurrencyList:
+      type: object
+      required:
+      - data
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/CompanyCurrencySetting'
+    CompanyCurrencyUpdateRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - currencyIds
+      properties:
+        currencyIds:
+          type: array
+          maxItems: 50
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/Id'
+    CompanyExchangeRate:
+      type: object
+      required:
+      - id
+      - currency
+      - rateDate
+      - rate
+      - source
+      - updatedAt
+      - updatedBy
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        currency:
+          type: object
+          required:
+          - id
+          - code
+          - nameAr
+          properties:
+            id:
+              $ref: '#/components/schemas/Id'
+            code:
+              type: string
+              pattern: ^[A-Z]{3}$
+            nameAr:
+              type: string
+        rateDate:
+          type: string
+          format: date
+        rate:
+          type: string
+          pattern: ^(?:0|[1-9][0-9]{0,10})\.[0-9]{8}$
+        source:
+          type:
+          - string
+          - 'null'
+          maxLength: 100
+        updatedAt:
+          type: string
+          format: date-time
+        updatedBy:
+          type: object
+          required:
+          - id
+          - displayName
+          properties:
+            id:
+              $ref: '#/components/schemas/Id'
+            displayName:
+              type: string
+    CompanyExchangeRateUpsertRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - currencyId
+      - rateDate
+      - rate
+      properties:
+        currencyId:
+          $ref: '#/components/schemas/Id'
+        rateDate:
+          type: string
+          format: date
+        rate:
+          type: string
+          pattern: ^(?:0|[1-9][0-9]{0,10})\.[0-9]{8}$
+        source:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+          maxLength: 100
+    ResolvedExchangeRate:
+      type: object
+      required:
+      - rate
+      - rateDate
+      - source
+      properties:
+        rate:
+          type: string
+          pattern: ^(?:0|[1-9][0-9]{0,10})\.[0-9]{8}$
+        rateDate:
+          type:
+          - string
+          - 'null'
+          format: date
+        source:
+          type:
+          - string
+          - 'null'
     PaymentMethod:
       type: object
       required:

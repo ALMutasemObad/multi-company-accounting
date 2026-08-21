@@ -1,4 +1,4 @@
-import type { Allocation, JournalEntry, Payment } from "./types";
+import type { Allocation, Currency, JournalEntry, Payment } from "./types";
 
 export const statusLabels: Record<Payment["document"]["status"], string> = {
   DRAFT: "مسودة",
@@ -28,6 +28,10 @@ export const errorLabels: Record<string, string> = {
   INVALID_PAYMENT_METHOD: "طريقة الدفع المحددة غير صالحة.",
   REFERENCE_REQUIRED: "الرقم المرجعي مطلوب لطريقة الدفع المحددة.",
   INVALID_CURRENCY: "العملة أو سعر الصرف غير صالح.",
+  CURRENCY_NOT_FOUND: "العملة المطلوبة غير موجودة أو غير نشطة.",
+  CURRENCY_NOT_ENABLED: "العملة غير مفعلة للشركة الحالية.",
+  BASE_CURRENCY_RATE: "لا يُسجل سعر صرف مستقل للعملة الأساسية.",
+  RATE_NOT_FOUND: "لا يوجد سعر صرف نافذ للعملة في التاريخ المحدد.",
   INVALID_AMOUNT: "يجب أن يكون المبلغ وسعر الصرف أكبر من صفر.",
   ALLOCATION_MISMATCH: "يجب أن يساوي مجموع التوزيعات مبلغ السند.",
   INVALID_ALLOCATION: "أحد التوزيعات لا يطابق الطرف أو العملة أو السطر المرحّل.",
@@ -57,6 +61,9 @@ export const errorLabels: Record<string, string> = {
   CYCLE_DETECTED: "لا يمكن نقل العنصر تحت أحد فروعه؛ سيؤدي ذلك إلى دورة شجرية.",
   LEVEL_EXCEEDED: "تجاوزت الشجرة الحد الأقصى المسموح للمستويات.",
   HAS_ACTIVE_CHILDREN: "لا يمكن تعطيل عنصر لديه فروع نشطة.",
+  HAS_CHILDREN: "احذف الحسابات الفرعية أولًا قبل حذف هذا الحساب.",
+  ACCOUNT_IN_USE: "لا يمكن حذف الحساب لأنه مستخدم في قيود أو مستندات أو إعدادات محاسبية. يمكنك تعطيله بدلًا من ذلك.",
+  TEMPLATE_CONFLICT: "تعذر تطبيق الدليل الافتراضي بسبب تعارض في رمز حساب أو بنية حساب أب. راجع الحسابات الحالية ثم أعد المحاولة.",
   POSTING_NOT_ALLOWED: "الحساب غير صالح للترحيل أو لديه حسابات فرعية.",
   INVALID_BANK_DETAILS: "اسم البنك مطلوب للحسابات البنكية، ولا يقبل للصندوق النقدي.",
   READ_ONLY_REFERENCE: "طريقة الدفع العامة مرجعية ولا يمكن تعديلها أو تعطيلها داخل الشركة.",
@@ -81,6 +88,12 @@ export function formatMoney(value: string | number) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 4,
   }).format(Number.isFinite(amount) ? amount : 0);
+}
+
+export function exchangeRateForCurrency(currency?: Currency) {
+  if (!currency) return "";
+  if (currency.isBase) return "1.00000000";
+  return currency.latestExchangeRate ?? "";
 }
 
 export function allocationsTotal(allocations: Allocation[]) {

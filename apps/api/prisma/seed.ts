@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { hash } from 'argon2';
 import { createDatabase } from '../src/database.js';
+import { currencyDefinitions } from '../src/platform/reference-data.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 const adminPassword = process.env.SEED_ADMIN_PASSWORD;
@@ -10,11 +11,14 @@ if (!adminPassword || adminPassword.length < 12) throw new Error('SEED_ADMIN_PAS
 const prisma = createDatabase(databaseUrl);
 
 try {
-  const currency = await prisma.currency.upsert({
-    where: { code: 'SAR' },
-    update: { nameAr: 'ريال سعودي', decimals: 2, isActive: true },
-    create: { code: 'SAR', nameAr: 'ريال سعودي', decimals: 2 },
-  });
+  for (const definition of currencyDefinitions) {
+    await prisma.currency.upsert({
+      where: { code: definition.code },
+      update: { nameAr: definition.nameAr, decimals: definition.decimals, isActive: true },
+      create: definition,
+    });
+  }
+  const currency = await prisma.currency.findUniqueOrThrow({ where: { code: 'SAR' } });
   const existingOrganization = await prisma.organization.findFirst({ where: { name: 'المؤسسة التجريبية' } });
   const organization = existingOrganization
     ? await prisma.organization.update({ where: { id: existingOrganization.id }, data: { code: 'MCAP-DEVELOPMENT' } })
@@ -23,6 +27,11 @@ try {
   const company = existingCompany
     ? await prisma.company.update({ where: { id: existingCompany.id }, data: { code: 'MCAP-DEMO' } })
     : await prisma.company.create({ data: { organizationId: organization.id, baseCurrencyId: currency.id, code: 'MCAP-DEMO', name: 'الشركة التجريبية', timezone: 'Asia/Riyadh' } });
+  await prisma.companyCurrency.upsert({
+    where: { companyId_currencyId: { companyId: company.id, currencyId: currency.id } },
+    update: { isActive: true },
+    create: { companyId: company.id, currencyId: currency.id },
+  });
   const user = await prisma.user.upsert({
     where: { emailNormalized: 'admin@mcap.local' },
     update: { passwordHash: await hash(adminPassword), displayName: 'مدير النظام', isActive: true },
@@ -49,6 +58,8 @@ try {
     ['companies.view', 'companies', 'عرض بيانات الشركة'],
     ['companies.update', 'companies', 'تعديل بيانات الشركة'],
     ['settings.manage', 'settings', 'إدارة إعدادات الشركة'],
+    ['currencies.view', 'currencies', 'عرض العملات المفعلة وأسعار الصرف'],
+    ['currencies.manage', 'currencies', 'إدارة عملات الشركة وأسعار الصرف'],
     ['auth.sessions.view', 'auth', 'عرض جلسات المستخدم'],
     ['auth.sessions.revoke', 'auth', 'إلغاء جلسة مستخدم'],
     ['users.view', 'users', 'عرض المستخدمين'],
@@ -65,6 +76,8 @@ try {
     ['accounts.create', 'accounts', 'إنشاء حساب'],
     ['accounts.update', 'accounts', 'تعديل حساب'],
     ['accounts.deactivate', 'accounts', 'تعطيل حساب'],
+    ['accounts.delete', 'accounts', 'حذف حساب غير مستخدم'],
+    ['accounts.template.apply', 'accounts', 'تطبيق قالب دليل الحسابات'],
     ['cost_centers.manage', 'cost_centers', 'إدارة مراكز التكلفة'],
     ['manual_journals.view', 'manual_journals', 'عرض القيود اليدوية'],
     ['manual_journals.create', 'manual_journals', 'إنشاء القيود اليدوية'],

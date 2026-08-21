@@ -460,12 +460,17 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", sans-serif; }
 .section-tabs { display: flex; gap: 4px; width: fit-content; margin-bottom: 14px; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: #f4f7f5; }
 .section-tabs button { padding: 9px 16px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font: inherit; font-size: .82rem; font-weight: 700; cursor: pointer; }
 .section-tabs button.active { background: #fff; color: var(--green-800); box-shadow: 0 2px 10px rgba(24,53,45,.09); }
+.chart-template-banner { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 14px; padding: 17px 20px; border: 1px solid #c9ddd4; border-radius: 15px; background: #f3faf7; }
+.chart-template-banner.complete { border-color: #dbe3df; background: #f8faf9; }
+.chart-template-banner strong { display: block; margin-bottom: 3px; color: var(--green-800); }
+.chart-template-banner p { margin: 0; color: var(--muted); font-size: .82rem; line-height: 1.7; }
 .accounting-filters, .treasury-filters { flex-wrap: wrap; }
 .accounting-filters .search-box, .treasury-filters .search-box { min-width: 280px; }
 .tree-label { display: flex; align-items: center; gap: 9px; min-width: 220px; }
 .tree-label .tree-branch { color: #90a39c; font-family: sans-serif; }
 .tree-label div { display: flex; align-items: baseline; gap: 9px; }
 .tree-label div span { color: var(--ink); }
+.tree-label .template-origin { display: inline-block; margin-inline-start: 7px; padding: 1px 6px; border-radius: 999px; background: #edf4f0; color: var(--green-700); font-size: .62rem; font-weight: 700; vertical-align: middle; }
 .inline-actions { display: flex; align-items: center; gap: 2px; white-space: nowrap; }
 .inline-actions .button { padding: 7px 8px; }
 .check-field { display: flex !important; align-items: center; grid-template-columns: auto 1fr; gap: 9px !important; }
@@ -666,6 +671,8 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", sans-serif; }
   .journal-balance { flex-direction: column; gap: 7px; }
   .section-tabs { width: 100%; }
   .section-tabs button { flex: 1; }
+  .chart-template-banner { align-items: stretch; flex-direction: column; }
+  .chart-template-banner .button { width: 100%; }
   .page-actions { width: 100%; }
   .invoice-line-editor { grid-template-columns: 32px repeat(2, minmax(0, 1fr)); }
   .invoice-line-editor .line-description { grid-column: 2 / -1; }
@@ -723,4 +730,26 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", sans-serif; }
 .permission-groups legend { padding: 0 8px; color: var(--green-700); font-weight: 700; }
 .settings-card { overflow: hidden; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); box-shadow: 0 8px 30px rgba(24,53,45,.05); }
 .setting-switch { padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: #f8faf8; }
+.settings-card > .form-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 0 28px 24px; }
+.currency-settings-card { margin-top: 20px; }
+.currency-settings-card .card-heading { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 20px 24px; border-bottom: 1px solid var(--line); }
+.currency-settings-card .card-heading h2 { margin-bottom: 4px; font-size: 1.05rem; }
+.currency-settings-card .card-heading p { margin: 0; color: var(--muted); font-size: .78rem; }
+.currency-selection-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 22px 24px; }
+.currency-option { display: flex; align-items: flex-start; gap: 11px; padding: 14px; border: 1px solid var(--line); border-radius: 13px; background: #fff; cursor: pointer; }
+.currency-option:has(input:checked) { border-color: #9cbbad; background: #f0f7f3; }
+.currency-option.base { border-color: #d5c18a; background: #fffaf0; cursor: default; }
+.currency-option input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--green-700); }
+.currency-option span { display: grid; gap: 2px; }
+.currency-option strong { color: var(--green-800); }
+.currency-option small { color: var(--muted); font-size: .72rem; }
+.exchange-rate-form { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)) auto; align-items: end; gap: 12px; padding: 22px 24px; }
+.exchange-rate-form label { min-width: 0; }
+.exchange-rate-form input, .exchange-rate-form select { width: 100%; }
+.currency-rates-table { margin: 0 24px 24px; box-shadow: none; }
+.currency-rates-table small { display: block; margin-top: 3px; color: var(--muted); }
+.currency-rate-pagination { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 0 24px 24px; color: var(--muted); font-size: .8rem; }
+.currency-empty { margin: 22px 24px; padding: 18px; border-radius: 12px; background: var(--surface-soft); color: var(--muted); text-align: center; }
 @media (max-width: 720px) { .permission-groups { grid-template-columns: 1fr; } }
+@media (max-width: 1000px) { .currency-selection-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .exchange-rate-form { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .currency-selection-grid, .exchange-rate-form { grid-template-columns: 1fr; } .currency-rates-table { margin-inline: 14px; } }

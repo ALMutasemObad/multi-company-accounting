@@ -603,8 +603,8 @@ export class ManualJournalService {
           }))
         )
           throw new JournalError("INVALID_COST_CENTER");
-        const currency = await tx.currency.findFirst({
-          where: { id: line.currencyId, isActive: true },
+        const currency = await tx.companyCurrency.findFirst({
+          where: { companyId, currencyId: line.currencyId, isActive: true, currency: { isActive: true } },
         });
         if (!currency) throw new JournalError("INVALID_CURRENCY");
         const company = await tx.company.findUniqueOrThrow({
@@ -675,8 +675,8 @@ export class ManualJournalService {
           }))
         )
           throw new JournalError("INVALID_COST_CENTER");
-        const currency = await tx.currency.findFirst({
-            where: { id: line.currencyId, isActive: true },
+        const currency = await tx.companyCurrency.findFirst({
+            where: { companyId, currencyId: line.currencyId, isActive: true, currency: { isActive: true } },
           });
         if (!currency || (line.currencyId === company.baseCurrencyId && !line.exchangeRate.equals(1))) throw new JournalError("INVALID_CURRENCY");
         if (
