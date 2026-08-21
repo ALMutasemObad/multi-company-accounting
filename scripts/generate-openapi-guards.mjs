@@ -159,10 +159,11 @@ function requestSchemas(document) {
 }
 
 export function buildGeneratedSource(source = readFileSync(contractPath, "utf8")) {
-  const document = assertObject(parse(source), "OpenAPI document");
+  const canonicalSource = source.replace(/\r\n?/gu, "\n");
+  const document = assertObject(parse(canonicalSource), "OpenAPI document");
   if (document.openapi !== "3.1.0") throw new Error(`Expected OpenAPI 3.1.0, received ${JSON.stringify(document.openapi)}`);
   const schemas = requestSchemas(document);
-  const hash = createHash("sha256").update(source).digest("hex");
+  const hash = createHash("sha256").update(canonicalSource).digest("hex");
   const declarations = schemas.map(({ name, expression }) => {
     const variable = `${lowerFirst(name)}Schema`;
     return `export const ${variable} = ${expression};\nexport type ${name} = z.infer<typeof ${variable}>;`;

@@ -31,3 +31,8 @@ test("guard generation reflects request constraints from the contract", () => {
   const generated = buildGeneratedSource(changed);
   assert.match(generated, /"email": z\.string\(\)\.email\(\)\.max\(319\)/u);
 });
+
+test("guard generation is stable across LF and CRLF checkouts", () => {
+  const source = readFileSync(contractPath, "utf8").replace(/\r\n?/gu, "\n");
+  assert.equal(buildGeneratedSource(source), buildGeneratedSource(source.replace(/\n/gu, "\r\n")));
+});
