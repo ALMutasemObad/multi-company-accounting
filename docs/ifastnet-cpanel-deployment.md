@@ -21,6 +21,8 @@ Node.js version: 22.23.2
 Passenger log: logs/accounting-passenger.log
 ```
 
+يجب أن يشير `PassengerAppRoot` في ملف إعداد النطاق إلى المسار المستقر `/home/doralash/accounting-app/current`، لا إلى مجلد إصدار داخل `releases`. يحافظ ذلك على التبديل الذري ويتيح للمُثبّت إيقاظ Passenger عبر لمس ملف الإعداد نفسه.
+
 يخدم Express ملفات React المبنية من `apps/web/dist` مباشرة، لذلك لا يحتاج هذا المسار إلى إعداد Nginx أو PM2. أما مسار VPS الموثق في `production-operations.md` فيبقى متاحًا لبيئة تملك صلاحيات root.
 
 ## بوابات ما قبل النشر
@@ -40,13 +42,15 @@ export MCAP_DEPLOY_ROOT=/home/doralash/accounting-app
 export MCAP_NODE_BIN=/opt/alt/alt-nodejs22/root/usr/bin/node
 export MCAP_NPX_CLI=/opt/alt/alt-nodejs22/root/usr/lib/node_modules/npm/bin/npx-cli.js
 export MCAP_HEALTH_URL=https://accounting.doralashab.com/ready
+export MCAP_APP_URL=https://accounting.doralashab.com
+export MCAP_PASSENGER_CONFIG_FILE=/home/doralash/accounting.doralashab.com/.htaccess
 export MCAP_DEPLOY_CONFIRM=DEPLOY:<release-id>
 bash deploy/scripts/install-cpanel-release.sh \
   mcap-finance-linux-x64.tgz \
   <trusted-sha256>
 ```
 
-يتحقق المثبت من البصمة وManifest والمنصة، ويفك الإصدار إلى مجلد مستقل، ويبدّل رابط `current` ذريًا، ثم يلمس `tmp/restart.txt` لإعادة تشغيل Passenger ويفحص `/ready`. عند فشل إصدار لاحق يعيد الإصدار السابق تلقائيًا. لا يحذف أي إصدار.
+يتحقق المثبت من البصمة وManifest والمنصة، ويفك الإصدار إلى مجلد مستقل، ويبدّل رابط `current` ذريًا، ثم يلمس `tmp/restart.txt` وملف إعداد Passenger. لا يكتفي بفحص `/ready`؛ بل يقارن بصمة HTML المقدّم عبر النطاق مع `apps/web/dist/index.html` في الإصدار المتوقع حتى لا تعتبر عملية قديمة سليمة إصدارًا ناجحًا. عند فشل إصدار لاحق يعيد الإصدار السابق تلقائيًا. لا يحذف أي إصدار.
 
 ## إعداد التطبيق وقاعدة البيانات
 
@@ -75,6 +79,8 @@ npm run company:provision
 export MCAP_DEPLOY_ROOT=/home/doralash/accounting-app
 export MCAP_NODE_BIN=/opt/alt/alt-nodejs22/root/usr/bin/node
 export MCAP_HEALTH_URL=https://accounting.doralashab.com/ready
+export MCAP_APP_URL=https://accounting.doralashab.com
+export MCAP_PASSENGER_CONFIG_FILE=/home/doralash/accounting.doralashab.com/.htaccess
 export MCAP_ROLLBACK_CONFIRM=ROLLBACK:<previous-release-id>
 bash deploy/scripts/rollback-cpanel-release.sh
 ```

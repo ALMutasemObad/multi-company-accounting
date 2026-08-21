@@ -11,11 +11,17 @@ deploy_root=${MCAP_DEPLOY_ROOT:-}
 node_bin=${MCAP_NODE_BIN:-/opt/alt/alt-nodejs22/root/usr/bin/node}
 curl_bin=${MCAP_CURL_BIN:-/usr/bin/curl}
 health_url=${MCAP_HEALTH_URL:-}
+app_url=${MCAP_APP_URL:-}
+passenger_config_file=${MCAP_PASSENGER_CONFIG_FILE:-}
 health_attempts=${MCAP_HEALTH_ATTEMPTS:-30}
 
 [[ -n "$archive_input" ]] || fail "usage: install-cpanel-release.sh <archive.tgz> <trusted-sha256>"
 [[ "$deploy_root" == /* && "$deploy_root" != / ]] || fail "MCAP_DEPLOY_ROOT must be an explicit absolute non-root path"
 [[ "$health_url" == https://* ]] || fail "MCAP_HEALTH_URL must be an HTTPS readiness URL"
+[[ "$app_url" == https://* && "$app_url" != *\?* && "$app_url" != *\#* ]] || fail "MCAP_APP_URL must be an HTTPS application URL without a query or fragment"
+app_url=${app_url%/}
+[[ "$passenger_config_file" == /* && "$passenger_config_file" != / ]] || fail "MCAP_PASSENGER_CONFIG_FILE must be an explicit absolute non-root path"
+[[ -f "$passenger_config_file" && ! -L "$passenger_config_file" ]] || fail "Passenger configuration must be a regular non-symlink file"
 [[ "$expected_sha" =~ ^[0-9a-fA-F]{64}$ ]] || fail "a trusted SHA-256 value is required"
 [[ "$health_attempts" =~ ^[1-9][0-9]{0,2}$ ]] || fail "MCAP_HEALTH_ATTEMPTS must be between 1 and 999"
 [[ -x "$node_bin" ]] || fail "Node executable is unavailable: $node_bin"
@@ -76,11 +82,23 @@ atomic_link() {
   mv -Tf -- "$temporary" "$link"
 }
 
-restart_passenger() { touch -- "$current_link/tmp/restart.txt"; }
+restart_passenger() {
+  touch -- "$current_link/tmp/restart.txt"
+  touch -- "$passenger_config_file"
+}
+active_release_matches() {
+  local expected_release=$1 expected_id=$2 expected_hash actual_hash
+  [[ -f "$expected_release/apps/web/dist/index.html" && ! -L "$expected_release/apps/web/dist/index.html" ]] || return 1
+  expected_hash=$(sha256sum -- "$expected_release/apps/web/dist/index.html" | awk '{print $1}')
+  actual_hash=$("$curl_bin" --silent --show-error --fail --max-time 5 \
+    "$app_url/?mcap_release_probe=$expected_id" | sha256sum | awk '{print $1}') || return 1
+  [[ "$actual_hash" == "$expected_hash" ]]
+}
 wait_until_ready() {
-  local attempt
+  local expected_release=$1 expected_id=$2 attempt
   for ((attempt = 1; attempt <= health_attempts; attempt += 1)); do
-    if "$curl_bin" --silent --show-error --fail --max-time 5 "$health_url" >/dev/null; then return 0; fi
+    if "$curl_bin" --silent --show-error --fail --max-time 5 "$health_url" >/dev/null \
+      && active_release_matches "$expected_release" "$expected_id"; then return 0; fi
     sleep 1
   done
   return 1
@@ -95,7 +113,7 @@ fi
 if [[ -n "$old_release" ]]; then atomic_link "$old_release" "$previous_link"; fi
 atomic_link "$release_dir" "$current_link"
 
-if restart_passenger && wait_until_ready; then
+if restart_passenger && wait_until_ready "$release_dir" "$release_id"; then
   log "release $release_id is active and ready"
   exit 0
 fi
@@ -104,7 +122,7 @@ log "release $release_id failed readiness checks"
 if [[ -n "$old_release" ]]; then
   atomic_link "$old_release" "$current_link"
   restart_passenger || fail "automatic rollback could not restart Passenger"
-  wait_until_ready || fail "automatic rollback completed but the previous release is not ready"
+  wait_until_ready "$old_release" "$(basename -- "$old_release")" || fail "automatic rollback completed but the previous release is not ready"
   log "rolled back automatically to $(basename -- "$old_release")"
 else
   log "no previous release was available for automatic rollback"
