@@ -364,4 +364,3 @@ jobs:
         run: |
           curl --fail --silent --show-error --max-time 10 "$CPANEL_APP_URL/live"
           curl --fail --silent --show-error --max-time 10 "$CPANEL_APP_URL/ready"
-
