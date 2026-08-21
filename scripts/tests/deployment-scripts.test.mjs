@@ -69,4 +69,3 @@ test("CI deploys main only after both database gates and uses pinned SSH identit
   assert.match(source, /sha256sum --check mcap-finance-linux-x64\.tgz\.sha256/u);
   assert.match(source, /SELF_REGISTRATION_ENABLED: 'false'/u);
 });
-
