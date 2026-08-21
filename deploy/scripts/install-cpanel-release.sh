@@ -76,7 +76,8 @@ if [[ "$run_database_migrations" == true ]]; then
   log "applying forward-compatible database migrations for $release_id"
   (
     cd "$incoming/apps/api"
-    "$node_bin" "$npx_cli" --yes prisma@7.9.1 migrate deploy
+    PATH="$(dirname -- "$node_bin"):${PATH:-/usr/bin:/bin}" \
+      "$node_bin" "$npx_cli" --yes prisma@7.9.1 migrate deploy
   )
   log "seeding production reference data for $release_id"
   (
