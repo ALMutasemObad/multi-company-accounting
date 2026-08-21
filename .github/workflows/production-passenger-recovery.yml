@@ -1,0 +1,186 @@
+name: production-passenger-recovery
+
+on:
+  push:
+    branches:
+      - ops/passenger-diagnostics
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-passenger-recovery
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    name: Restore Passenger environment and verify production
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+    env:
+      CPANEL_SSH_HOST: sv13.byethost13.org
+      CPANEL_SSH_PORT: '1394'
+      CPANEL_SSH_USER: doralash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure the pinned production SSH identity
+        env:
+          CPANEL_SSH_PRIVATE_KEY: ${{ secrets.CPANEL_SSH_PRIVATE_KEY }}
+        run: |
+          test -n "$CPANEL_SSH_PRIVATE_KEY"
+          install -m 0700 -d "$HOME/.ssh"
+          printf '%s\n' "$CPANEL_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+          chmod 0600 "$HOME/.ssh/id_ed25519"
+          install -m 0600 deploy/ssh/ifastnet_known_hosts "$HOME/.ssh/known_hosts"
+      - name: Install a protected Node environment wrapper
+        run: |
+          ssh -i "$HOME/.ssh/id_ed25519" -p "$CPANEL_SSH_PORT" -o IdentitiesOnly=yes \
+            "$CPANEL_SSH_USER@$CPANEL_SSH_HOST" bash -s <<'REMOTE'
+          set -Eeuo pipefail
+
+          fail() { printf 'mcap-passenger-recovery: %s\n' "$*" >&2; exit 1; }
+
+          expected_user=doralash
+          deploy_root=/home/doralash/accounting-app
+          passenger_config=/home/doralash/accounting.doralashab.com/.htaccess
+          shared_dir="$deploy_root/shared"
+          backup_dir="$deploy_root/recovery-backups"
+          environment_file="$shared_dir/passenger.env"
+          node_wrapper="$deploy_root/passenger-node-env"
+          live_url=https://accounting.doralashab.com/live
+          ready_url=https://accounting.doralashab.com/ready
+
+          [[ "$(id -un)" == "$expected_user" ]] || fail "unexpected remote user"
+          [[ -d "$deploy_root" && ! -L "$deploy_root" ]] || fail "deployment root is not the expected regular directory"
+          [[ "$(readlink -f -- "$deploy_root")" == "$deploy_root" ]] || fail "deployment root resolved outside the expected path"
+          [[ -f "$passenger_config" && ! -L "$passenger_config" ]] || fail "Passenger configuration is not a regular non-symlink file"
+          [[ "$(readlink -f -- "$passenger_config")" == "$passenger_config" ]] || fail "Passenger configuration resolved outside the expected path"
+
+          current_release=$(readlink -f -- "$deploy_root/current") || fail "current release link is unavailable"
+          case "$current_release" in
+            "$deploy_root/releases/"*) ;;
+            *) fail "current release resolved outside the release directory" ;;
+          esac
+          [[ -f "$current_release/apps/api/dist/config.js" ]] || fail "current release configuration module is missing"
+          [[ -d "$current_release/tmp" && ! -L "$current_release/tmp" ]] || fail "current release restart directory is invalid"
+
+          configured_node=$(awk '$1 == "PassengerNodejs" { value=$2; gsub(/^"|"$/, "", value); print value; count++ } END { if (count != 1) exit 42 }' "$passenger_config") \
+            || fail "PassengerNodejs must be configured exactly once"
+          if [[ "$configured_node" == "$node_wrapper" ]]; then
+            [[ -f "$node_wrapper" && ! -L "$node_wrapper" ]] || fail "existing Node wrapper path is unsafe"
+            original_node=$(sed -n 's/^exec "\([^"]*\)" --env-file=.*/\1/p' "$node_wrapper")
+          else
+            original_node=$configured_node
+          fi
+          [[ "$original_node" =~ ^/[A-Za-z0-9_./-]+$ && -x "$original_node" ]] || fail "configured Node executable is invalid"
+          [[ "$original_node" != "$node_wrapper" ]] || fail "Node wrapper recursion was detected"
+
+          if [[ -e "$shared_dir" || -L "$shared_dir" ]]; then
+            [[ -d "$shared_dir" && ! -L "$shared_dir" ]] || fail "shared path is not a regular directory"
+          else
+            mkdir -- "$shared_dir"
+          fi
+          chmod 0700 -- "$shared_dir"
+
+          if [[ -e "$backup_dir" || -L "$backup_dir" ]]; then
+            [[ -d "$backup_dir" && ! -L "$backup_dir" ]] || fail "backup path is not a regular directory"
+          else
+            mkdir -- "$backup_dir"
+          fi
+          chmod 0700 -- "$backup_dir"
+
+          timestamp=$(date -u +%Y%m%dT%H%M%SZ)
+          config_backup="$backup_dir/htaccess-before-env-wrapper-$timestamp"
+          [[ ! -e "$config_backup" && ! -L "$config_backup" ]] || fail "configuration backup target already exists"
+          cp -p -- "$passenger_config" "$config_backup"
+
+          umask 077
+          env_candidate=$(mktemp "$shared_dir/passenger.env.next.XXXXXX")
+          wrapper_candidate=$(mktemp "$deploy_root/passenger-node-env.next.XXXXXX")
+          config_candidate=$(mktemp "/home/doralash/accounting.doralashab.com/.htaccess.next.XXXXXX")
+          cleanup() {
+            rm -f -- "$env_candidate" "$wrapper_candidate" "$config_candidate"
+          }
+          trap cleanup EXIT
+
+          awk '
+            $1 == "SetEnv" {
+              key=$2
+              $1=""
+              $2=""
+              sub(/^[[:space:]]+/, "")
+              print key "=" $0
+            }
+          ' "$passenger_config" > "$env_candidate"
+
+          grep -q '^NODE_ENV=' "$env_candidate" || printf '%s\n' 'NODE_ENV=production' >> "$env_candidate"
+          grep -q '^PASSWORD_RESET_ENABLED=' "$env_candidate" || printf '%s\n' 'PASSWORD_RESET_ENABLED=false' >> "$env_candidate"
+
+          for required_key in DATABASE_URL WEB_ORIGIN SESSION_COOKIE_SECURE TRUST_PROXY NODE_ENV PASSWORD_RESET_ENABLED; do
+            [[ "$(grep -c "^${required_key}=" "$env_candidate")" == 1 ]] || fail "$required_key must occur exactly once in the protected environment file"
+          done
+          chmod 0600 -- "$env_candidate"
+
+          (
+            cd -- "$current_release"
+            "$original_node" --env-file="$env_candidate" --input-type=module -e '
+              const { loadConfig } = await import("./apps/api/dist/config.js");
+              const config = loadConfig();
+              if (config.NODE_ENV !== "production" || !config.DATABASE_URL || !config.SESSION_COOKIE_SECURE || !config.TRUST_PROXY || !config.WEB_ORIGIN.startsWith("https://")) {
+                throw new Error("protected production environment validation failed");
+              }
+              console.log("Protected production environment validated without revealing values.");
+            '
+          )
+
+          printf '#!/bin/sh\nexec "%s" --env-file="%s" "$@"\n' "$original_node" "$environment_file" > "$wrapper_candidate"
+          chmod 0700 -- "$wrapper_candidate"
+
+          passenger_node_count=$(awk '$1 == "PassengerNodejs" { count++ } END { print count + 0 }' "$passenger_config")
+          [[ "$passenger_node_count" == 1 ]] || fail "PassengerNodejs must occur exactly once"
+          awk -v wrapper="$node_wrapper" '
+            $1 == "PassengerNodejs" { print "PassengerNodejs \"" wrapper "\""; next }
+            { print }
+          ' "$passenger_config" > "$config_candidate"
+          chmod --reference="$passenger_config" -- "$config_candidate"
+
+          if [[ -e "$environment_file" || -L "$environment_file" ]]; then
+            [[ -f "$environment_file" && ! -L "$environment_file" ]] || fail "existing protected environment path is unsafe"
+            cp -p -- "$environment_file" "$backup_dir/passenger.env-before-$timestamp"
+          fi
+          if [[ -e "$node_wrapper" || -L "$node_wrapper" ]]; then
+            [[ -f "$node_wrapper" && ! -L "$node_wrapper" ]] || fail "existing Node wrapper path is unsafe"
+            cp -p -- "$node_wrapper" "$backup_dir/passenger-node-env-before-$timestamp"
+          fi
+
+          mv -- "$env_candidate" "$environment_file"
+          mv -- "$wrapper_candidate" "$node_wrapper"
+          mv -- "$config_candidate" "$passenger_config"
+          chmod 0600 -- "$environment_file"
+          chmod 0700 -- "$node_wrapper"
+          touch -- "$current_release/tmp/restart.txt" "$passenger_config"
+
+          healthy=false
+          for attempt in $(seq 1 30); do
+            live_status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 5 "$live_url" || true)
+            ready_status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 5 "$ready_url" || true)
+            printf 'health attempt %s/30: live=%s ready=%s\n' "$attempt" "${live_status:-000}" "${ready_status:-000}"
+            if [[ "$live_status" == 200 && "$ready_status" == 200 ]]; then
+              healthy=true
+              break
+            fi
+            sleep 2
+          done
+
+          if [[ "$healthy" != true ]]; then
+            cp -p -- "$config_backup" "$passenger_config"
+            touch -- "$current_release/tmp/restart.txt" "$passenger_config"
+            fail "health checks failed; the original Passenger configuration was restored from $config_backup"
+          fi
+
+          printf 'mcap-passenger-recovery: production is healthy on release %s; configuration backup: %s\n' \
+            "$(basename -- "$current_release")" "$config_backup"
+          REMOTE
+
