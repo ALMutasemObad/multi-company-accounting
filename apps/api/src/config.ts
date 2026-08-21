@@ -24,7 +24,7 @@ const configSchema = z.object({
   RESEND_API_KEY: z.string().min(20).max(500).optional(),
   REGISTRATION_AUDIT_PEPPER: z.string().min(32).max(500).optional(),
   REGISTRATION_TOKEN_SECRET: z.string().min(32).max(500).optional(),
-  PASSWORD_RESET_ENABLED: booleanString.default(true),
+  PASSWORD_RESET_ENABLED: booleanString.default(false),
   PASSWORD_RESET_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(1_000).default(5),
   PASSWORD_RESET_TOKEN_TTL_MINUTES: z.coerce.number().int().min(10).max(1_440).default(60),
   OUTBOX_POLL_INTERVAL_MS: z.coerce.number().int().min(50).max(60_000).default(1_000),

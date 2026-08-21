@@ -68,5 +68,4 @@ test("CI deploys main only after both database gates and uses pinned SSH identit
   assert.match(source, /deploy\/ssh\/ifastnet_known_hosts/u);
   assert.match(source, /sha256sum --check mcap-finance-linux-x64\.tgz\.sha256/u);
   assert.match(source, /SELF_REGISTRATION_ENABLED: 'false'/u);
-  assert.match(source, /PASSWORD_RESET_ENABLED: 'false'/u);
 });
