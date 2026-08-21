@@ -33,13 +33,13 @@ mkdir -p -- "$releases_dir"
 exec 9>"$releases_dir/.deploy.lock"
 flock -n 9 || fail "another deployment operation is running"
 
-while IFS= read -r entry; do
+tar -tzf "$archive" | while IFS= read -r entry; do
   clean=${entry#./}
   [[ -z "$clean" || "$clean" == . ]] && continue
   case "$clean" in
     /*|../*|*/../*|*/..) fail "archive contains an unsafe path: $entry" ;;
   esac
-done < <(tar -tzf "$archive")
+done
 
 incoming=$(mktemp -d "$releases_dir/.incoming.XXXXXXXX")
 cleanup() {
