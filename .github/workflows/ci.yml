@@ -206,7 +206,6 @@ jobs:
           SESSION_COOKIE_SECURE: 'true'
           TRUST_PROXY: 'true'
           SELF_REGISTRATION_ENABLED: 'false'
-          PASSWORD_RESET_ENABLED: 'false'
         run: |
           node apps/api/dist/server.js > api-smoke.log 2>&1 &
           api_pid=$!
@@ -365,3 +364,4 @@ jobs:
         run: |
           curl --fail --silent --show-error --max-time 10 "$CPANEL_APP_URL/live"
           curl --fail --silent --show-error --max-time 10 "$CPANEL_APP_URL/ready"
+
