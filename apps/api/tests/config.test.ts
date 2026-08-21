@@ -123,4 +123,3 @@ describe('production configuration', () => {
     })).toThrow(/Registration email capture is forbidden in production/);
   });
 });
-
