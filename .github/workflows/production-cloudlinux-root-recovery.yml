@@ -115,14 +115,19 @@ jobs:
           cp -p -- "$passenger_config" "$config_backup"
 
           registration_changed=true
+          set +e
           "$selector" set --json --interpreter nodejs --user doralash \
-            --app-root "$original_app_root" --new-app-root "$target_app_root" > "$selector_result"
+            --app-root "$original_app_root" --new-app-root "$target_app_root" > "$selector_result" 2>&1
+          selector_exit=$?
+          set -e
           node -e '
             const fs = require("node:fs");
             const payload = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            console.log(JSON.stringify({ result: payload.result, warning: payload.warning, context_keys: Object.keys(payload.context || {}) }));
             if (payload.result !== "success") throw new Error("CloudLinux app-root synchronization failed");
             console.log("CloudLinux application root synchronized.");
           ' "$selector_result"
+          [[ "$selector_exit" == 0 ]] || fail "CloudLinux app-root synchronization command failed"
 
           "$selector" get --json --interpreter nodejs --user doralash > "$selector_after"
           node -e '
