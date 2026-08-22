@@ -1,0 +1,170 @@
+name: production-cloudlinux-root-recovery
+
+on:
+  push:
+    branches:
+      - ops/cloudlinux-root-recovery
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-cloudlinux-root-recovery
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    name: Synchronize CloudLinux app root and restore production
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment:
+      name: production
+    env:
+      CPANEL_SSH_HOST: sv13.byethost13.org
+      CPANEL_SSH_PORT: '1394'
+      CPANEL_SSH_USER: doralash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure the pinned production SSH identity
+        env:
+          CPANEL_SSH_PRIVATE_KEY: ${{ secrets.CPANEL_SSH_PRIVATE_KEY }}
+        run: |
+          test -n "$CPANEL_SSH_PRIVATE_KEY"
+          install -m 0700 -d "$HOME/.ssh"
+          printf '%s\n' "$CPANEL_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+          chmod 0600 "$HOME/.ssh/id_ed25519"
+          install -m 0600 deploy/ssh/ifastnet_known_hosts "$HOME/.ssh/known_hosts"
+      - name: Synchronize the registered application root and restart
+        run: |
+          ssh -i "$HOME/.ssh/id_ed25519" -p "$CPANEL_SSH_PORT" -o IdentitiesOnly=yes \
+            "$CPANEL_SSH_USER@$CPANEL_SSH_HOST" bash -s <<'REMOTE'
+          set -Eeuo pipefail
+
+          fail() { printf 'mcap-cloudlinux-recovery: %s\n' "$*" >&2; exit 1; }
+
+          selector=/usr/sbin/cloudlinux-selector
+          deploy_root=/home/doralash/accounting-app
+          passenger_config=/home/doralash/accounting.doralashab.com/.htaccess
+          environment_file="$deploy_root/shared/passenger.env"
+          backup_dir="$deploy_root/recovery-backups"
+          original_app_root=accounting-app/releases/0.1.0-1340b574957e
+          live_url=https://accounting.doralashab.com/live
+          ready_url=https://accounting.doralashab.com/ready
+
+          [[ "$(id -un)" == doralash ]] || fail "unexpected remote user"
+          [[ -x "$selector" ]] || fail "CloudLinux Node.js Selector is unavailable"
+          [[ -d "$deploy_root" && ! -L "$deploy_root" && "$(readlink -f -- "$deploy_root")" == "$deploy_root" ]] \
+            || fail "deployment root is invalid"
+          [[ -f "$passenger_config" && ! -L "$passenger_config" && "$(readlink -f -- "$passenger_config")" == "$passenger_config" ]] \
+            || fail "Passenger configuration is invalid"
+          [[ -f "$environment_file" && ! -L "$environment_file" ]] || fail "protected environment file is unavailable"
+          [[ -d "$backup_dir" && ! -L "$backup_dir" ]] || fail "recovery backup directory is invalid"
+
+          current_release=$(readlink -f -- "$deploy_root/current") || fail "current release link is unavailable"
+          case "$current_release" in
+            "$deploy_root/releases/"*) ;;
+            *) fail "current release resolved outside the release directory" ;;
+          esac
+          target_app_root="accounting-app/releases/$(basename -- "$current_release")"
+          [[ "$current_release" == "/home/doralash/$target_app_root" ]] || fail "target app root does not match the current release"
+          [[ -f "$current_release/apps/api/dist/server.js" && ! -L "$current_release/apps/api/dist/server.js" ]] \
+            || fail "current server entrypoint is invalid"
+
+          umask 077
+          selector_before=$(mktemp /tmp/mcap-selector-before.XXXXXX)
+          selector_after=$(mktemp /tmp/mcap-selector-after.XXXXXX)
+          selector_result=$(mktemp /tmp/mcap-selector-result.XXXXXX)
+          selector_restart=$(mktemp /tmp/mcap-selector-restart.XXXXXX)
+          registration_changed=false
+          config_backup=
+          cleanup() {
+            status=$?
+            set +e
+            if [[ "$status" != 0 && "$registration_changed" == true ]]; then
+              "$selector" set --json --interpreter nodejs --user doralash \
+                --app-root "$target_app_root" --new-app-root "$original_app_root" > /dev/null 2>&1
+              "$selector" restart --json --interpreter nodejs --user doralash --app-root "$original_app_root" > /dev/null 2>&1
+              if [[ -n "$config_backup" && -f "$config_backup" ]]; then
+                cp -p -- "$config_backup" "$passenger_config"
+                touch -- "$current_release/tmp/restart.txt" "$passenger_config"
+              fi
+            fi
+            rm -f -- "$selector_before" "$selector_after" "$selector_result" "$selector_restart"
+            exit "$status"
+          }
+          trap cleanup EXIT
+
+          "$selector" get --json --interpreter nodejs --user doralash > "$selector_before"
+          node -e '
+            const fs = require("node:fs");
+            const payload = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            const expectedRoot = process.argv[2];
+            const apps = payload.available_versions?.["22.23.2"]?.users?.doralash?.applications || {};
+            const app = apps[expectedRoot];
+            if (payload.result !== "success" || !app || app.domain !== "accounting.doralashab.com" || app.startup_file !== "apps/api/dist/server.js") {
+              throw new Error("registered production application does not match the expected original root");
+            }
+            const required = ["DATABASE_URL", "WEB_ORIGIN", "SESSION_COOKIE_SECURE", "TRUST_PROXY"];
+            for (const name of required) if (!(name in (app.env_vars || {}))) throw new Error(`registered environment is missing ${name}`);
+            console.log("Original CloudLinux application registration validated without revealing values.");
+          ' "$selector_before" "$original_app_root"
+
+          timestamp=$(date -u +%Y%m%dT%H%M%SZ)
+          config_backup="$backup_dir/htaccess-before-cloudlinux-root-$timestamp"
+          [[ ! -e "$config_backup" && ! -L "$config_backup" ]] || fail "configuration backup target already exists"
+          cp -p -- "$passenger_config" "$config_backup"
+
+          registration_changed=true
+          "$selector" set --json --interpreter nodejs --user doralash \
+            --app-root "$original_app_root" --new-app-root "$target_app_root" > "$selector_result"
+          node -e '
+            const fs = require("node:fs");
+            const payload = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            if (payload.result !== "success") throw new Error("CloudLinux app-root synchronization failed");
+            console.log("CloudLinux application root synchronized.");
+          ' "$selector_result"
+
+          "$selector" get --json --interpreter nodejs --user doralash > "$selector_after"
+          node -e '
+            const fs = require("node:fs");
+            const payload = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            const expectedRoot = process.argv[2];
+            const apps = payload.available_versions?.["22.23.2"]?.users?.doralash?.applications || {};
+            const app = apps[expectedRoot];
+            if (payload.result !== "success" || !app || app.domain !== "accounting.doralashab.com" || app.startup_file !== "apps/api/dist/server.js") {
+              throw new Error("CloudLinux application registration did not move to the expected release");
+            }
+            const required = ["DATABASE_URL", "WEB_ORIGIN", "SESSION_COOKIE_SECURE", "TRUST_PROXY"];
+            for (const name of required) if (!(name in (app.env_vars || {}))) throw new Error(`registered environment is missing ${name}`);
+            console.log("Updated CloudLinux registration and environment keys validated.");
+          ' "$selector_after" "$target_app_root"
+
+          "$selector" restart --json --interpreter nodejs --user doralash --app-root "$target_app_root" > "$selector_restart"
+          node -e '
+            const fs = require("node:fs");
+            const payload = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            if (payload.result !== "success") throw new Error("CloudLinux application restart failed");
+            console.log("CloudLinux application restart completed.");
+          ' "$selector_restart"
+
+          healthy=false
+          for attempt in $(seq 1 20); do
+            live_status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --connect-timeout 2 --max-time 4 "$live_url" || true)
+            ready_status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --connect-timeout 2 --max-time 4 "$ready_url" || true)
+            printf 'health attempt %s/20: live=%s ready=%s\n' "$attempt" "${live_status:-000}" "${ready_status:-000}"
+            if [[ "$live_status" == 200 && "$ready_status" == 200 ]]; then
+              healthy=true
+              break
+            fi
+            sleep 2
+          done
+
+          if [[ "$healthy" != true ]]; then
+            fail "health checks failed; the original CloudLinux registration and Passenger configuration were restored"
+          fi
+
+          registration_changed=false
+          printf 'mcap-cloudlinux-recovery: production is healthy on release %s; configuration backup: %s\n' \
+            "$(basename -- "$current_release")" "$config_backup"
+          REMOTE
+
