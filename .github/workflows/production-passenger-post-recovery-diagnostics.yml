@@ -128,6 +128,11 @@ jobs:
           else
             printf '%s\n' 'CloudLinux Node.js Selector CLI is unavailable'
           fi
+          printf '%s\n' '=== available application control commands ==='
+          for control_command in cloudlinux-selector selectorctl passenger-config passenger-status uapi; do
+            control_path=$(command -v -- "$control_command" || true)
+            printf '%s=%s\n' "$control_command" "${control_path:-unavailable}"
+          done
           printf '%s\n' '=== Passenger configuration keys ==='
           awk '
             $1 == "SetEnv" { print "SetEnv " $2 " [redacted]"; next }
