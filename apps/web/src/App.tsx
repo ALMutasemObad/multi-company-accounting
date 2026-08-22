@@ -320,7 +320,6 @@ function LoginScreen({ onLoggedIn, onRegister, onForgotPassword }: { onLoggedIn:
           <h1>{t("login.headlineFirst")}<br />{t("login.headlineSecond")}</h1>
           <p>{t("login.storyDescription")}</p>
         </div>
-        <small>{t("login.safetyNote")}</small>
       </section>
       <section className="auth-panel">
         <form className="login-card" onSubmit={submit}>
@@ -329,12 +328,11 @@ function LoginScreen({ onLoggedIn, onRegister, onForgotPassword }: { onLoggedIn:
           <h2>{t("login.title")}</h2>
           <p>{t("login.description")}</p>
           {error && <div className="form-error" role="alert">{error}</div>}
-          <label><span>{t("login.email")}</span><input name="email" type="email" dir="ltr" autoComplete="username" defaultValue="admin@mcap.local" required /></label>
+          <label><span>{t("login.email")}</span><input name="email" type="email" dir="ltr" autoComplete="username" required /></label>
           <label><span>{t("login.password")}</span><input name="password" type="password" dir="ltr" autoComplete="current-password" required /></label>
           <button className="auth-text-link" type="button" onClick={onForgotPassword}>{t("login.forgotPassword")}</button>
           <Button type="submit" disabled={loading}>{loading ? t("login.checking") : t("login.submit")}</Button>
           <button className="auth-text-link" type="button" onClick={onRegister}>{t("login.createAccount")}</button>
-          <small>{t("login.developmentPassword")}</small>
         </form>
       </section>
     </main>

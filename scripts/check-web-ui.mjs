@@ -49,6 +49,10 @@ function visit(file, node, ancestors = []) {
     const classes = new Set(className.split(/\s+/).filter(Boolean));
     const insideForm = ancestors.some((item) => item.type === "JSXElement" && tagName(item.openingElement) === "form");
     const insideLabel = ancestors.some((item) => item.type === "JSXElement" && tagName(item.openingElement) === "label");
+    const insideLoginCard = ancestors.some((item) => {
+      if (item.type !== "JSXElement") return false;
+      return stringAttribute(item.openingElement, "className").split(/\s+/).includes("login-card");
+    });
 
     if ((tag === "button" || tag === "Button") && insideForm && !attribute(opening, "type")) {
       failures.push(`${lineLabel(file, opening)}: form buttons must declare type=\"button\" or type=\"submit\" explicitly`);
@@ -60,6 +64,10 @@ function visit(file, node, ancestors = []) {
       && !attribute(opening, "aria-label")
       && !attribute(opening, "aria-labelledby")) {
       failures.push(`${lineLabel(file, opening)}: form controls require an associated label or an accessible aria label`);
+    }
+
+    if (tag === "input" && insideLoginCard && stringAttribute(opening, "name") === "email" && attribute(opening, "defaultValue")) {
+      failures.push(`${lineLabel(file, opening)}: the sign-in identity must not be prefilled with a development or seeded account`);
     }
 
     if (classes.has("page-heading") && path.basename(file) !== "ui.tsx") {
@@ -93,6 +101,16 @@ function visit(file, node, ancestors = []) {
 
 for (const file of await sourceFiles(sourceDir)) {
   const source = await readFile(file, "utf8");
+  if (file.includes(`${path.sep}i18n${path.sep}locales${path.sep}`)) {
+    const forbiddenVisibleContent = [
+      [/\b(?:SEED|DATABASE|SMTP|JWT|VITE|REDIS|AWS)_[A-Z0-9_]+\b/u, "environment/configuration keys must not appear in user-facing copy"],
+      [/\b(?:localhost|127\.0\.0\.1)\b/u, "local development addresses must not appear in user-facing copy"],
+      [/(?:في معاملة واحدة|in one transaction)/iu, "implementation-level transaction details must not appear in user-facing copy"],
+    ];
+    for (const [pattern, message] of forbiddenVisibleContent) {
+      if (pattern.test(source)) failures.push(`${path.relative(process.cwd(), file)}: ${message}`);
+    }
+  }
   let ast;
   try {
     ast = parse(source, {
@@ -122,6 +140,17 @@ if (/\b(?:html|body)\s*\{[^}]*overflow-x\s*:\s*hidden/s.test(styles)) {
 }
 if (/\b100vw\b/.test(styles)) {
   failures.push("apps/web/src/styles.css: avoid 100vw because it can include the scrollbar width and overflow");
+}
+const responsiveCssContracts = [
+  [/\.search-box button\s*\{[^}]*white-space\s*:\s*nowrap/s, "search actions must remain on one line"],
+  [/\.section-tabs\s*\{[^}]*overflow-x\s*:\s*auto/s, "tab groups must contain narrow-view overflow"],
+  [/\.section-tabs button\s*\{[^}]*white-space\s*:\s*nowrap/s, "tab labels must remain intact"],
+  [/\.invoice-lines-field\s*\{[^}]*min-width\s*:\s*0/s, "invoice fieldsets must be allowed to shrink"],
+  [/\.invoice-line-editor\s*\{[^}]*max-width\s*:\s*100%/s, "invoice lines must stay within their modal"],
+  [/\.toolbar \.search-box\s*\{[^}]*flex\s*:\s*0 0 auto/s, "search boxes must not inherit a vertical flex basis on narrow screens"],
+];
+for (const [pattern, description] of responsiveCssContracts) {
+  if (!pattern.test(styles)) failures.push(`apps/web/src/styles.css: missing responsive contract: ${description}`);
 }
 if (pageHeaders !== 16) failures.push(`Expected 16 shared PageHeader usages; found ${pageHeaders}`);
 if (tableRegions !== 31) failures.push(`Expected 31 accessible table regions; found ${tableRegions}`);
