@@ -1,19 +1,12 @@
 import { Router, type ErrorRequestHandler, type Request } from 'express';
 import { z, ZodError } from 'zod';
 import type { AuthService } from '../auth/auth-service.js';
+import { openApiRequestBodySchemas as bodies } from '../generated/openapi-request-guards.js';
 import type { UserService } from './user-service.js';
 import { UserManagementError } from './user-service.js';
 
 const idSchema = z.string().regex(/^[1-9][0-9]*$/).transform(BigInt);
 const paginationSchema = z.object({ page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(25), search: z.string().max(200).optional(), status: z.enum(['ACTIVE', 'LOCKED', 'DISABLED']).optional() });
-const createSchema = z.object({ email: z.string().email().max(254), nameAr: z.string().trim().min(1).max(160), nameEn: z.string().max(160).nullable().optional(), temporaryPassword: z.string().min(12).nullable().optional() }).strict();
-const updateSchema = z.object({ nameAr: z.string().trim().min(1).max(160).optional(), nameEn: z.string().max(160).nullable().optional() }).strict().refine((value) => Object.keys(value).length > 0);
-const reasonSchema = z.object({ reason: z.string().trim().min(3).max(500) }).strict();
-const rolesSchema = z.object({ roleIds: z.array(z.string().regex(/^[1-9][0-9]*$/)).max(20).refine((ids) => new Set(ids).size === ids.length) }).strict();
-const permissionIdsSchema = z.array(z.string().regex(/^[1-9][0-9]*$/)).max(200).refine((ids) => new Set(ids).size === ids.length);
-const createRoleSchema = z.object({ nameAr: z.string().trim().min(1).max(120), nameEn: z.string().trim().max(120).nullable().optional(), permissionIds: permissionIdsSchema.default([]) }).strict();
-const updateRoleSchema = z.object({ nameAr: z.string().trim().min(1).max(120).optional(), nameEn: z.string().trim().max(120).nullable().optional() }).strict().refine((value) => Object.keys(value).length > 0);
-const rolePermissionsSchema = z.object({ permissionIds: permissionIdsSchema }).strict();
 
 function sid(request: Request) {
   const entries = (request.headers.cookie ?? '').split(';').map((part) => part.trim().split('=', 2)).filter(([key, value]) => key && value);
@@ -41,7 +34,7 @@ export function createUserRouter(auth: AuthService, users: UserService) {
   });
   router.post('/users', async (request, response) => {
     const context = await authorize(request, 'users.create', true);
-    response.status(201).json(serializeUser(await users.create(context, createSchema.parse(request.body))));
+    response.status(201).json(serializeUser(await users.create(context, bodies.createUser.parse(request.body))));
   });
   router.get('/users/:userId', async (request, response) => {
     const context = await authorize(request, 'users.view', false);
@@ -49,11 +42,11 @@ export function createUserRouter(auth: AuthService, users: UserService) {
   });
   router.patch('/users/:userId', async (request, response) => {
     const context = await authorize(request, 'users.update', true);
-    response.json(serializeUser(await users.update(context, idSchema.parse(request.params.userId), updateSchema.parse(request.body))));
+    response.json(serializeUser(await users.update(context, idSchema.parse(request.params.userId), bodies.updateUser.parse(request.body))));
   });
   router.post('/users/:userId/disable', async (request, response) => {
     const context = await authorize(request, 'users.disable', true);
-    response.json(serializeUser(await users.disable(context, idSchema.parse(request.params.userId), reasonSchema.parse(request.body).reason)));
+    response.json(serializeUser(await users.disable(context, idSchema.parse(request.params.userId), bodies.disableUser.parse(request.body).reason)));
   });
   router.get('/users/:userId/roles', async (request, response) => {
     const context = await authorize(request, 'roles.view', false);
@@ -62,8 +55,8 @@ export function createUserRouter(auth: AuthService, users: UserService) {
   });
   router.put('/users/:userId/roles', async (request, response) => {
     const context = await authorize(request, 'roles.manage', true);
-    const body = rolesSchema.parse(request.body);
-    const data = await users.replaceRoles(context, idSchema.parse(request.params.userId), body.roleIds.map(BigInt));
+    const body = bodies.replaceUserRoles.parse(request.body);
+    const data = await users.replaceRoles(context, idSchema.parse(request.params.userId), body.roleIds);
     response.json({ data: data.map((item) => ({ roleId: item.roleId.toString(), roleCode: item.role.code, isActive: item.role.isActive, assignedAt: item.createdAt.toISOString() })) });
   });
   router.get('/roles', async (request, response) => {
@@ -73,21 +66,21 @@ export function createUserRouter(auth: AuthService, users: UserService) {
   });
   router.post('/roles', async (request, response) => {
     const context = await authorize(request, 'roles.manage', true);
-    const body = createRoleSchema.parse(request.body);
-    response.status(201).json(serializeRole(await users.createRole(context, { ...body, permissionIds: body.permissionIds.map(BigInt) })));
+    const body = bodies.createRole.parse(request.body);
+    response.status(201).json(serializeRole(await users.createRole(context, body)));
   });
   router.patch('/roles/:roleId', async (request, response) => {
     const context = await authorize(request, 'roles.manage', true);
-    response.json(serializeRole(await users.updateRole(context, idSchema.parse(request.params.roleId), updateRoleSchema.parse(request.body))));
+    response.json(serializeRole(await users.updateRole(context, idSchema.parse(request.params.roleId), bodies.updateRole.parse(request.body))));
   });
   router.put('/roles/:roleId/permissions', async (request, response) => {
     const context = await authorize(request, 'roles.manage', true);
-    const body = rolePermissionsSchema.parse(request.body);
-    response.json(serializeRole(await users.replaceRolePermissions(context, idSchema.parse(request.params.roleId), body.permissionIds.map(BigInt))));
+    const body = bodies.replaceRolePermissions.parse(request.body);
+    response.json(serializeRole(await users.replaceRolePermissions(context, idSchema.parse(request.params.roleId), body.permissionIds)));
   });
   router.post('/roles/:roleId/deactivate', async (request, response) => {
     const context = await authorize(request, 'roles.manage', true);
-    response.json(serializeRole(await users.deactivateRole(context, idSchema.parse(request.params.roleId), reasonSchema.parse(request.body).reason)));
+    response.json(serializeRole(await users.deactivateRole(context, idSchema.parse(request.params.roleId), bodies.deactivateRole.parse(request.body).reason)));
   });
   router.get('/permissions', async (request, response) => {
     await authorize(request, 'roles.view', false);

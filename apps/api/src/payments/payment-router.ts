@@ -1,54 +1,13 @@
 import { Router, type ErrorRequestHandler, type Request } from "express";
 import { z, ZodError } from "zod";
 import type { AuthService } from "../auth/auth-service.js";
+import { openApiRequestBodySchemas as bodies } from "../generated/openapi-request-guards.js";
 import { PaymentError, PaymentService } from "./payment-service.js";
 const id = z
   .string()
   .regex(/^[1-9][0-9]*$/)
   .transform(BigInt);
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-const money = z.string().regex(/^(0|[1-9][0-9]{0,14})\.[0-9]{4}$/);
-const rate = z.string().regex(/^[0-9]{1,11}\.[0-9]{8}$/);
-const nullableId = z.union([id, z.null()]);
-const allocation = z
-  .object({ targetJournalLineId: id, allocatedAmount: money })
-  .strict();
-const fields = {
-  fiscalPeriodId: id,
-  documentDate: isoDate,
-  description: z.string().trim().min(1).max(500),
-  supplierId: nullableId.optional(),
-  counterAccountId: nullableId.optional(),
-  cashBankAccountId: id,
-  paymentMethodId: id,
-  currencyId: id,
-  exchangeRate: rate,
-  amount: money,
-  referenceNumber: z.string().trim().max(100).nullable().optional(),
-  counterpartyName: z.string().trim().min(1).max(200),
-  counterpartyTaxNumber: z.string().max(64).nullable().optional(),
-  counterpartyAddress: z.string().max(500).nullable().optional(),
-  notes: z.string().max(1000).nullable().optional(),
-  allocations: z.array(allocation).optional(),
-};
-const xor = (v: {
-  supplierId?: bigint | null | undefined;
-  counterAccountId?: bigint | null | undefined;
-}) => (v.supplierId == null) !== (v.counterAccountId == null);
-const paymentFields = z.object(fields).strict();
-const create = paymentFields.refine(xor, {
-  message: "Exactly one counterparty is required",
-});
-const update = paymentFields
-  .partial()
-  .extend({ version: z.number().int().min(0) })
-  .strict();
-const version = z.object({ version: z.number().int().min(0) }).strict();
-const cancel = version.extend({ reason: z.string().trim().min(3).max(500) });
-const reverse = version.extend({
-  reversalDate: isoDate,
-  reason: z.string().trim().min(3).max(500),
-});
 const query = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
@@ -100,7 +59,7 @@ export function createPaymentRouter(
       .status(201)
       .json(
         PaymentService.json(
-          await service.create(context, create.parse(req.body) as any),
+          await service.create(context, bodies.createPayment.parse(req.body)),
         ),
       );
   });
@@ -119,14 +78,14 @@ export function createPaymentRouter(
         await service.update(
           context,
           id.parse(req.params.paymentId),
-          update.parse(req.body) as any,
+          bodies.updatePayment.parse(req.body),
         ),
       ),
     );
   });
   router.post("/payments/:paymentId/post", async (req, res) => {
     const context = await authorize(req, "payments.post", true);
-    const body = version.parse(req.body);
+    const body = bodies.postPayment.parse(req.body);
     res.json(
       PaymentService.commandJson(
         await service.post(
@@ -140,7 +99,7 @@ export function createPaymentRouter(
   });
   router.post("/payments/:paymentId/cancel", async (req, res) => {
     const context = await authorize(req, "payments.cancel", true);
-    const body = cancel.parse(req.body);
+    const body = bodies.cancelPayment.parse(req.body);
     res.json(
       PaymentService.commandJson(
         await service.cancel(
@@ -159,7 +118,7 @@ export function createPaymentRouter(
         await service.reverse(
           context,
           id.parse(req.params.paymentId),
-          reverse.parse(req.body),
+          bodies.reversePayment.parse(req.body),
           idem(req),
         ),
       ),

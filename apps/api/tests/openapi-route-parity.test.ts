@@ -18,6 +18,8 @@ import { createSupplierRouter } from '../src/suppliers/supplier-router.js';
 import { createUserRouter } from '../src/users/user-router.js';
 import { createRegistrationRouter } from '../src/registration/registration-router.js';
 import { createPasswordResetRouter } from '../src/auth/password-reset-router.js';
+import { createTaxRouter } from '../src/tax/tax-router.js';
+import { createTreasuryRouter } from '../src/treasury/treasury-router.js';
 
 type RouteLayer = {
   route?: {
@@ -40,9 +42,11 @@ const routers = [
   { prefix: '', router: createAccountRouter(stub, stub) },
   { prefix: '', router: createManualJournalRouter(stub, stub) },
   { prefix: '', router: createReceiptReferenceRouter(stub, stub) },
+  { prefix: '', router: createTreasuryRouter(stub, stub) },
   { prefix: '', router: createReceiptRouter(stub, stub) },
   { prefix: '', router: createSupplierRouter(stub, stub) },
   { prefix: '', router: createPaymentRouter(stub, stub) },
+  { prefix: '', router: createTaxRouter(stub, stub) },
   { prefix: '', router: createSalesInvoiceRouter(stub, stub) },
   { prefix: '', router: createPurchaseInvoiceRouter(stub, stub) },
   { prefix: '', router: createReportRouter(stub, stub) },
@@ -54,7 +58,7 @@ function normalizePath(path: string) {
 }
 
 function implementationOperations() {
-  const operations = new Set(['GET /health']);
+  const operations = new Set(['GET /health', 'GET /metrics']);
   for (const { prefix, router } of routers) {
     for (const layer of (router as unknown as { stack: RouteLayer[] }).stack) {
       if (!layer.route) continue;

@@ -1,5 +1,8 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { Prisma, type PrismaClient } from '@prisma/client';
+import { lockFiscalPeriod } from '../core-accounting/posting-engine.js';
+import { IdempotentCommandExecutor } from '../platform/idempotent-command-executor.js';
+import { TransactionExecutor } from '../platform/transaction-executor.js';
 import type { ActorContext } from '../users/user-service.js';
 
 export class FiscalError extends Error {
@@ -9,7 +12,6 @@ export class FiscalError extends Error {
 export type PeriodInput = { periodNumber: number; name: string; startDate: string; endDate: string };
 const date = (value: string) => new Date(`${value}T00:00:00.000Z`);
 const prefix = (start: Date, end: Date) => `${start.toISOString().slice(0, 10).replaceAll('-', '')}-${end.toISOString().slice(0, 10).replaceAll('-', '')}-`;
-const digest = (value: string) => new Uint8Array(createHash('sha256').update(value).digest());
 
 function assertDateRange(start: Date, end: Date) {
   if (end < start) throw new FiscalError('DATE_RANGE_INVALID');
@@ -30,7 +32,13 @@ function validatePeriods(yearStart: Date, yearEnd: Date, periods: PeriodInput[])
 }
 
 export class FiscalService {
-  constructor(private readonly prisma: PrismaClient) {}
+  private readonly transactions: TransactionExecutor;
+  private readonly commands: IdempotentCommandExecutor;
+
+  constructor(private readonly prisma: PrismaClient) {
+    this.transactions = new TransactionExecutor(prisma);
+    this.commands = new IdempotentCommandExecutor(prisma, this.transactions);
+  }
 
   listYears(context: ActorContext, page: number, pageSize: number) {
     const where = { companyId: context.companyId };
@@ -158,34 +166,24 @@ export class FiscalService {
   }
 
   private async periodCommand(context: ActorContext, id: bigint, operation: string, key: string, fingerprintSource: string, execute: (tx: Prisma.TransactionClient, period: Awaited<ReturnType<Prisma.TransactionClient['fiscalPeriod']['findFirstOrThrow']>>) => Promise<any>) {
-    const keyHash = digest(key); const requestFingerprint = digest(fingerprintSource); const requestId = randomUUID();
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-      const existing = await tx.idempotencyRecord.findUnique({ where: { companyId_userId_operation_keyHash: { companyId: context.companyId, userId: context.userId, operation, keyHash } } });
-      if (existing) {
-        if (!Buffer.from(existing.requestFingerprint).equals(Buffer.from(requestFingerprint))) throw new FiscalError('IDEMPOTENCY_MISMATCH');
-        if (existing.status === 'COMPLETED') return existing.responseBody as any;
-        throw new FiscalError('IDEMPOTENCY_IN_PROGRESS');
-      }
+    const requestId = randomUUID();
+    return this.commands.execute({
+      context,
+      operation,
+      key,
+      fingerprint: fingerprintSource,
+      errors: {
+        mismatch: () => new FiscalError('IDEMPOTENCY_MISMATCH'),
+        inProgress: () => new FiscalError('IDEMPOTENCY_IN_PROGRESS'),
+      },
+    }, async (tx) => {
+      if (!await lockFiscalPeriod(tx, context.companyId, id)) throw new FiscalError('NOT_FOUND');
       const period = await tx.fiscalPeriod.findFirstOrThrow({ where: { id, companyId: context.companyId } }).catch(() => { throw new FiscalError('NOT_FOUND'); });
-      const idem = await tx.idempotencyRecord.create({ data: { companyId: context.companyId, userId: context.userId, operation, keyHash, requestFingerprint, status: 'IN_PROGRESS', expiresAt: new Date(Date.now() + 86_400_000) } });
       const updated = await execute(tx, period);
       await tx.auditLog.create({ data: { companyId: context.companyId, actorUserId: context.userId, action: operation, entityType: 'FISCAL_PERIOD', entityId: id.toString() } });
       const response = { period: FiscalService.serializePeriod(updated), requestId, reconciliation: { balanced: true, differences: [] } };
-      await tx.idempotencyRecord.update({ where: { id: idem.id }, data: { status: 'COMPLETED', responseStatus: 200, responseBody: response, completedAt: new Date() } });
       return response;
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-    } catch (error) {
-      if (!(error instanceof Prisma.PrismaClientKnownRequestError) || !['P2002', 'P2034'].includes(error.code)) throw error;
-      let existing = null;
-      for (let attempt = 1; attempt <= 10 && !existing; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, attempt * 10));
-        existing = await this.prisma.idempotencyRecord.findUnique({ where: { companyId_userId_operation_keyHash: { companyId: context.companyId, userId: context.userId, operation, keyHash } } });
-      }
-      if (!existing || !Buffer.from(existing.requestFingerprint).equals(Buffer.from(requestFingerprint))) throw new FiscalError('IDEMPOTENCY_MISMATCH');
-      if (existing.status !== 'COMPLETED') throw new FiscalError('IDEMPOTENCY_IN_PROGRESS');
-      return existing.responseBody as any;
-    }
+    });
   }
 
   async reserveDocumentNumber(context: ActorContext, fiscalYearId: bigint, documentType: string, padding = 6) {
@@ -203,23 +201,17 @@ export class FiscalService {
       if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') throw error;
       sequence = await this.prisma.documentSequence.findUniqueOrThrow({ where: { fiscalYearId_documentType: { fiscalYearId, documentType } } });
     }
-    for (let attempt = 1; attempt <= 5; attempt += 1) {
-      try {
-        return await this.prisma.$transaction(async (tx) => {
-          await tx.$executeRaw`UPDATE document_sequences SET next_number=LAST_INSERT_ID(next_number + 1), updated_at=CURRENT_TIMESTAMP(3) WHERE id=${sequence.id}`;
-          const rows = await tx.$queryRaw<Array<{ next_number: bigint }>>`SELECT LAST_INSERT_ID() AS next_number`;
-          const nextNumber = rows[0]?.next_number; if (!nextNumber) throw new FiscalError('NOT_FOUND');
-          const reserved = nextNumber - 1n;
-          return `${sequence.prefix}${reserved.toString().padStart(sequence.padding, '0')}`;
-        }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
-      } catch (error) {
-        const retryable = error instanceof Prisma.PrismaClientKnownRequestError
-          && (error.code === 'P2034' || (error.code === 'P2010' && String(error.meta?.code) === '1213'));
-        if (attempt === 5 || !retryable) throw error;
-        await new Promise((resolve) => setTimeout(resolve, attempt * 10));
-      }
-    }
-    throw new Error('Unreachable sequence reservation state');
+    return this.transactions.execute({
+      operation: 'RESERVE_DOCUMENT_NUMBER',
+      companyId: context.companyId,
+      isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+    }, async (tx) => {
+      await tx.$executeRaw`UPDATE document_sequences SET next_number=LAST_INSERT_ID(next_number + 1), updated_at=CURRENT_TIMESTAMP(3) WHERE id=${sequence.id}`;
+      const rows = await tx.$queryRaw<Array<{ next_number: bigint }>>`SELECT LAST_INSERT_ID() AS next_number`;
+      const nextNumber = rows[0]?.next_number; if (!nextNumber) throw new FiscalError('NOT_FOUND');
+      const reserved = nextNumber - 1n;
+      return `${sequence.prefix}${reserved.toString().padStart(sequence.padding, '0')}`;
+    });
   }
 
   static serializePeriod(period: any) {

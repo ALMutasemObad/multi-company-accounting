@@ -32,6 +32,13 @@ describe('production configuration', () => {
     expect(config.OUTBOX_MAX_ATTEMPTS).toBe(8);
     expect(config.OUTBOX_LEASE_MS).toBe(30_000);
     expect(config.OUTBOX_HANDLER_TIMEOUT_MS).toBe(8_000);
+    expect(config.HTTP_REQUEST_TIMEOUT_MS).toBe(70_000);
+    expect(config.HTTP_HEADERS_TIMEOUT_MS).toBe(10_000);
+    expect(config.HTTP_KEEP_ALIVE_TIMEOUT_MS).toBe(5_000);
+    expect(config.API_READ_DEADLINE_MS).toBe(10_000);
+    expect(config.API_WRITE_DEADLINE_MS).toBe(15_000);
+    expect(config.API_REGISTRATION_WRITE_DEADLINE_MS).toBe(65_000);
+    expect(config.METRICS_ENABLED).toBe(false);
   });
 
   it('requires a real email provider when production self-registration is enabled', () => {
@@ -103,6 +110,47 @@ describe('production configuration', () => {
       OUTBOX_HANDLER_TIMEOUT_MS: '9000',
       SHUTDOWN_TIMEOUT_MS: '10000',
     })).toThrow(/SHUTDOWN_TIMEOUT_MS/);
+  });
+
+  it('enforces the HTTP and application deadline hierarchy', () => {
+    expect(() => loadConfig({
+      NODE_ENV: 'test',
+      HTTP_REQUEST_TIMEOUT_MS: '20000',
+      API_REGISTRATION_WRITE_DEADLINE_MS: '20000',
+    })).toThrow(/HTTP_REQUEST_TIMEOUT_MS/);
+    expect(() => loadConfig({
+      NODE_ENV: 'test',
+      HTTP_REQUEST_TIMEOUT_MS: '70000',
+      HTTP_HEADERS_TIMEOUT_MS: '71000',
+    })).toThrow(/HTTP_HEADERS_TIMEOUT_MS/);
+    expect(() => loadConfig({
+      NODE_ENV: 'test',
+      API_READ_DEADLINE_MS: '20000',
+      API_WRITE_DEADLINE_MS: '10000',
+    })).toThrow(/API_WRITE_DEADLINE_MS/);
+  });
+
+  it('requires a bearer secret for production metric exposition', () => {
+    expect(() => loadConfig({
+      NODE_ENV: 'production',
+      DATABASE_URL: 'mysql://runtime:secret@db.internal/mcap',
+      WEB_ORIGIN: 'https://finance.example.com',
+      SESSION_COOKIE_SECURE: 'true',
+      TRUST_PROXY: 'true',
+      SELF_REGISTRATION_ENABLED: 'false',
+      METRICS_ENABLED: 'true',
+    })).toThrow(/METRICS_BEARER_TOKEN/);
+
+    expect(loadConfig({
+      NODE_ENV: 'production',
+      DATABASE_URL: 'mysql://runtime:secret@db.internal/mcap',
+      WEB_ORIGIN: 'https://finance.example.com',
+      SESSION_COOKIE_SECURE: 'true',
+      TRUST_PROXY: 'true',
+      SELF_REGISTRATION_ENABLED: 'false',
+      METRICS_ENABLED: 'true',
+      METRICS_BEARER_TOKEN: 'test-metrics-bearer-token-1234567890',
+    }).METRICS_ENABLED).toBe(true);
   });
 
   it('allows verification capture only outside production', () => {

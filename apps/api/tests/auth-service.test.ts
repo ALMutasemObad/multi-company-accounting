@@ -91,8 +91,8 @@ describe('AuthService', () => {
     store.companies = [{ id: 10n, name: 'الشركة التجريبية', timezone: 'Asia/Riyadh' }];
     const preAuth = await auth.issueCsrf();
     const login = await auth.login({ sid: preAuth.sid, csrfToken: preAuth.csrfToken, email: user.emailNormalized, password: 'correct-password' });
-    await expect(auth.selectCompany({ sid: login.sid, csrfToken: login.csrfToken, companyId: '11' })).rejects.toMatchObject({ reason: 'FORBIDDEN' });
-    await auth.selectCompany({ sid: login.sid, csrfToken: login.csrfToken, companyId: '10' });
+    await expect(auth.selectCompany({ sid: login.sid, csrfToken: login.csrfToken, companyId: 11n })).rejects.toMatchObject({ reason: 'FORBIDDEN' });
+    await auth.selectCompany({ sid: login.sid, csrfToken: login.csrfToken, companyId: 10n });
     expect(store.selectedCompanyId).toBe(10n);
   });
 });

@@ -1,8 +1,8 @@
 import { Router, type ErrorRequestHandler, type Request } from 'express';
 import type { AuthService } from './auth-service.js';
 import {
-  passwordResetCompleteRequestSchema,
-  passwordResetStartRequestSchema,
+  completePasswordResetRequestSchema,
+  startPasswordResetRequestSchema,
 } from '../generated/openapi-request-guards.js';
 import { PasswordResetError, type PasswordResetService } from './password-reset-service.js';
 
@@ -27,13 +27,13 @@ export function createPasswordResetRouter(auth: AuthService, service: PasswordRe
 
   router.post('/forgot', async (request, response) => {
     await requirePreAuth(auth, request);
-    const body = passwordResetStartRequestSchema.parse(request.body);
+    const body = startPasswordResetRequestSchema.parse(request.body);
     response.status(202).json(await service.requestReset(body, metadata(request)));
   });
 
   router.post('/reset', async (request, response) => {
     await requirePreAuth(auth, request);
-    const body = passwordResetCompleteRequestSchema.parse(request.body);
+    const body = completePasswordResetRequestSchema.parse(request.body);
     await service.resetPassword(body, metadata(request));
     response.status(204).end();
   });

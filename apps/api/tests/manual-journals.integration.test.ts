@@ -1,10 +1,13 @@
 import { hash, verify } from 'argon2';
+import { Prisma } from '@prisma/client';
+import { createHash } from 'node:crypto';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
 import { AuthService } from '../src/auth/auth-service.js';
 import { PrismaAuthStore } from '../src/auth/prisma-auth-store.js';
 import { createDatabase } from '../src/database.js';
+import { FiscalError, FiscalService } from '../src/fiscal/fiscal-service.js';
 import { ManualJournalService, type JournalCreateInput } from '../src/journals/manual-journal-service.js';
 
 const enabled = process.env.RUN_DB_TESTS === 'true';
@@ -163,4 +166,55 @@ describe.runIf(enabled)('manual journal lifecycle with MariaDB', () => {
     try { await admin.get(`/api/v1/manual-journals/${foreignDocument.id}`).expect(404); }
     finally { await prisma!.accountingDocument.delete({ where: { id: foreignDocument.id } }); await prisma!.fiscalPeriod.deleteMany({ where: { fiscalYearId: foreignYear.id } }); await prisma!.fiscalYear.delete({ where: { id: foreignYear.id } }); await prisma!.company.delete({ where: { id: foreignCompany.id } }); }
   });
+
+  it('serializes posting against period close with one shared period lock', async () => {
+    const fiscal = new FiscalService(prisma!);
+    const raceYear = await prisma!.fiscalYear.create({
+      data: {
+        companyId,
+        name: 'IT-JRN-1900-RACE',
+        startDate: new Date('1900-01-01'),
+        endDate: new Date('1900-12-31'),
+        periods: { create: [{ periodNumber: 1, name: '1900', startDate: new Date('1900-01-01'), endDate: new Date('1900-12-31') }] },
+      },
+      include: { periods: true },
+    });
+    const racePeriod = raceYear.periods[0]!;
+    const payload = servicePayload('IT-JRN ترحيل مقابل إغلاق');
+    payload.fiscalPeriodId = racePeriod.id;
+    payload.documentDate = '1900-03-15';
+    payload.entries = payload.entries.map((entry) => ({ ...entry, entryDate: '1900-03-15' }));
+    const journal = await service.create({ userId: makerId, companyId }, payload);
+    const postKey = 'post-vs-close-journal-2043';
+    const closeKey = 'post-vs-close-period-2043';
+    try {
+      const [postOutcome, closeOutcome] = await Promise.allSettled([
+        service.post({ userId: adminUserId, companyId }, journal.id, 0, postKey),
+        fiscal.closePeriod({ userId: adminUserId, companyId }, racePeriod.id, {
+          version: 0,
+          idempotencyKey: closeKey,
+          reviewConfirmed: true,
+        }),
+      ]);
+      expect(postOutcome.status).toBe('fulfilled');
+      if (closeOutcome.status === 'rejected') {
+        expect(closeOutcome.reason).toBeInstanceOf(FiscalError);
+        expect((closeOutcome.reason as FiscalError).reason).toBe('DRAFT_DOCUMENTS_EXIST');
+      }
+      const [finalDocument, finalPeriod] = await Promise.all([
+        prisma!.accountingDocument.findUniqueOrThrow({ where: { id: journal.id }, include: { journalEntries: { include: { lines: true } } } }),
+        prisma!.fiscalPeriod.findUniqueOrThrow({ where: { id: racePeriod.id } }),
+      ]);
+      expect(finalDocument.status).toBe('POSTED');
+      expect(finalDocument.journalEntries).toHaveLength(1);
+      const totals = finalDocument.journalEntries[0]!.lines.reduce((value, line) => ({ debit: value.debit.add(line.baseDebitAmount), credit: value.credit.add(line.baseCreditAmount) }), { debit: new Prisma.Decimal(0), credit: new Prisma.Decimal(0) });
+      expect(totals.debit.equals(totals.credit)).toBe(true);
+      expect(['OPEN', 'CLOSED']).toContain(finalPeriod.status);
+    } finally {
+      const hashKey = (value: string) => new Uint8Array(createHash('sha256').update(value).digest());
+      await prisma!.idempotencyRecord.deleteMany({ where: { companyId, userId: adminUserId, OR: [{ operation: 'POST_MANUAL_JOURNAL', keyHash: hashKey(postKey) }, { operation: 'CLOSE_PERIOD', keyHash: hashKey(closeKey) }] } });
+      await prisma!.auditLog.deleteMany({ where: { companyId, entityId: { in: [journal.id.toString(), racePeriod.id.toString()] } } });
+      await removeYear(raceYear.id);
+    }
+  }, 20_000);
 });

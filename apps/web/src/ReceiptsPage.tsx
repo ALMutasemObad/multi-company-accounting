@@ -24,7 +24,7 @@ import {
   } from "./domain";
 import type {
   Account,
-  Allocation,
+  ReceiptAllocation,
   CashBankAccount,
   Currency,
   FiscalPeriod,
@@ -303,7 +303,7 @@ function ReceiptForm({
   const [counterpartyName, setCounterpartyName] = useState(
     receipt?.counterpartyNameSnapshot ?? "",
   );
-  const [allocations, setAllocations] = useState<Allocation[]>(receipt?.allocations ?? []);
+  const [allocations, setAllocations] = useState<ReceiptAllocation[]>(receipt?.allocations ?? []);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const selectedCustomer = references.customers.find((item) => item.id === customerId);
@@ -311,7 +311,7 @@ function ReceiptForm({
   const allocationTotal = useMemo(() => allocationsTotal(allocations), [allocations]);
   const eligibleInvoices = useMemo(
     () => references.openInvoices.filter(
-      (invoice) => invoice.customerId === customerId && invoice.currencyId === currencyId && invoice.arJournalLineId,
+      (invoice) => invoice.customerId === customerId && invoice.currencyId === currencyId && invoice.receivableItemId,
     ),
     [currencyId, customerId, references.openInvoices],
   );
@@ -343,12 +343,12 @@ function ReceiptForm({
   function addAllocation() {
     setAllocations((current) => [
       ...current,
-      { targetJournalLineId: "", allocatedAmount: "" },
+      { receivableItemId: "", allocatedAmount: "" },
     ]);
   }
 
-  function selectInvoice(index: number, targetJournalLineId: string) {
-    const invoice = eligibleInvoices.find((item) => item.arJournalLineId === targetJournalLineId);
+  function selectInvoice(index: number, receivableItemId: string) {
+    const invoice = eligibleInvoices.find((item) => item.receivableItemId === receivableItemId);
     const otherTotal = allocations.reduce(
       (sum, item, itemIndex) => itemIndex === index ? sum : sum + Number(item.allocatedAmount || 0),
       0,
@@ -358,7 +358,7 @@ function ReceiptForm({
       ? Math.min(remainingReceipt, Number(invoice.outstandingAmount))
       : 0;
     setAllocations((current) => current.map((item, itemIndex) => itemIndex === index
-      ? { ...item, targetJournalLineId, allocatedAmount: targetJournalLineId ? toMoney(String(suggestedAmount)) : "" }
+      ? { ...item, receivableItemId, allocatedAmount: receivableItemId ? toMoney(String(suggestedAmount)) : "" }
       : item));
   }
 
@@ -401,7 +401,7 @@ function ReceiptForm({
       counterpartyAddress: value("counterpartyAddress") || null,
       notes: value("notes") || null,
       allocations: allocations.map((allocation) => ({
-        targetJournalLineId: allocation.targetJournalLineId,
+        receivableItemId: allocation.receivableItemId,
         allocatedAmount: toMoney(allocation.allocatedAmount),
       })),
       ...(receipt ? { version: receipt.document.version } : {}),
@@ -502,7 +502,7 @@ function ReceiptForm({
             <div className="allocation-list">
               {allocations.map((allocation, index) => (
                 <div className="allocation-row" key={allocation.id ?? index}>
-                  <label><span>{t("pages.receipts.079")}</span><select value={allocation.targetJournalLineId} onChange={(event) => selectInvoice(index, event.target.value)} required><option value="">{t("pages.purchase-invoices.069")}</option>{allocation.targetJournalLineId && !eligibleInvoices.some((invoice) => invoice.arJournalLineId === allocation.targetJournalLineId) && <option value={allocation.targetJournalLineId}>{t("pages.receipts.081")}{allocation.targetJournalLineId}</option>}{eligibleInvoices.filter((invoice) => !allocations.some((item, itemIndex) => itemIndex !== index && item.targetJournalLineId === invoice.arJournalLineId)).map((invoice) => <option key={invoice.id} value={invoice.arJournalLineId ?? ""}>{invoice.document.documentNumber}{t("pages.receipts.082")}{formatMoney(invoice.outstandingAmount)} — {invoice.dueDate}</option>)}</select></label>
+                  <label><span>{t("pages.receipts.079")}</span><select value={allocation.receivableItemId} onChange={(event) => selectInvoice(index, event.target.value)} required><option value="">{t("pages.purchase-invoices.069")}</option>{allocation.receivableItemId && !eligibleInvoices.some((invoice) => invoice.receivableItemId === allocation.receivableItemId) && <option value={allocation.receivableItemId}>{t("pages.receipts.081")}{allocation.receivableItemId}</option>}{eligibleInvoices.filter((invoice) => !allocations.some((item, itemIndex) => itemIndex !== index && item.receivableItemId === invoice.receivableItemId)).map((invoice) => <option key={invoice.id} value={invoice.receivableItemId ?? ""}>{invoice.document.documentNumber}{t("pages.receipts.082")}{formatMoney(invoice.outstandingAmount)} — {invoice.dueDate}</option>)}</select></label>
                   <label><span>{t("pages.dashboard.039")}</span><input dir="ltr" inputMode="decimal" value={allocation.allocatedAmount} onChange={(event) => setAllocations((current) => current.map((item, i) => i === index ? { ...item, allocatedAmount: event.target.value } : item))} required /></label>
                   <button type="button" className="icon-button danger-text" aria-label={t("pages.payments.083")} onClick={() => setAllocations((current) => current.filter((_, i) => i !== index))}><Icon name="trash" size={18} /></button>
                 </div>
@@ -579,8 +579,8 @@ function ReceiptDetails({
       ) : (
         <div className="allocation-detail-list">
           {receipt.allocations.map((allocation) => (
-            <div key={allocation.id ?? allocation.targetJournalLineId}>
-              <span>{t("pages.receipts.099")}{allocation.targetJournalLineId}</span>
+            <div key={allocation.id ?? allocation.receivableItemId}>
+              <span>{t("pages.receipts.099")}{allocation.receivableItemId}</span>
               <strong>{formatMoney(allocation.allocatedAmount)}</strong>
             </div>
           ))}

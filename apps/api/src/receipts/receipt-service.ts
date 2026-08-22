@@ -1,6 +1,18 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
+import {
+  PostingEngine,
+  type PostingFailureReason,
+} from "../core-accounting/posting-engine.js";
 import { FiscalService } from "../fiscal/fiscal-service.js";
+import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
+import { ReceivableItemService } from "../receivables/receivable-item-service.js";
+import {
+  TreasuryError,
+  TreasuryService,
+  type TreasuryInstrumentPort,
+  type TreasuryInstrumentQuote,
+} from "../treasury/treasury-service.js";
 import type { ActorContext } from "../users/user-service.js";
 import { archiveDocument } from "../printing/print-archive.js";
 
@@ -30,7 +42,7 @@ export class ReceiptError extends Error {
   }
 }
 export type AllocationInput = {
-  targetJournalLineId: bigint;
+  receivableItemId: bigint;
   allocatedAmount: string;
 };
 export type ReceiptInput = {
@@ -53,8 +65,6 @@ export type ReceiptInput = {
 };
 export type ReceiptUpdate = { version: number } & Partial<ReceiptInput>;
 const date = (v: string) => new Date(`${v}T00:00:00.000Z`);
-const digest = (v: string) =>
-  new Uint8Array(createHash("sha256").update(v).digest());
 const last4 = (v?: string | null) =>
   v ? v.replace(/\s/g, "").slice(-4) : null;
 const documentJson = (v: any) => ({
@@ -75,8 +85,14 @@ const documentJson = (v: any) => ({
 
 export class ReceiptService {
   private readonly fiscal: FiscalService;
-  constructor(private readonly prisma: PrismaClient) {
+  private readonly posting = new PostingEngine();
+  private readonly receivables = new ReceivableItemService();
+  private readonly treasury: TreasuryInstrumentPort;
+  private readonly commands: IdempotentCommandExecutor;
+  constructor(private readonly prisma: PrismaClient, treasury?: TreasuryInstrumentPort) {
     this.fiscal = new FiscalService(prisma);
+    this.treasury = treasury ?? new TreasuryService(prisma);
+    this.commands = new IdempotentCommandExecutor(prisma);
   }
   private include() {
     return {
@@ -234,7 +250,7 @@ export class ReceiptService {
           allocations:
             input.allocations ??
             current.allocations.map((a) => ({
-              targetJournalLineId: a.targetJournalLineId,
+              receivableItemId: a.receivableItemId,
               allocatedAmount: a.allocatedAmount.toFixed(4),
             })),
         };
@@ -283,33 +299,37 @@ export class ReceiptService {
       key,
       JSON.stringify({ id: id.toString(), version }),
       async (tx, receipt) => {
-        if (receipt.accountingDocument.status !== "DRAFT")
-          throw new ReceiptError("INVALID_STATE");
-        if (receipt.accountingDocument.version !== version)
-          throw new ReceiptError("VERSION_CONFLICT");
-        const period = await tx.fiscalPeriod.findFirst({
-          where: {
-            id: receipt.accountingDocument.fiscalPeriodId,
-            companyId: context.companyId,
-          },
-        });
-        if (!period || period.status === "CLOSED")
-          throw new ReceiptError("PERIOD_CLOSED");
         const prepared = await this.prepare(
           tx,
           context.companyId,
           this.inputFrom(receipt),
         );
-        await this.validateOutstanding(tx, context.companyId, receipt);
-        const entry = await tx.journalEntry.create({
-          data: {
-            companyId: context.companyId,
-            accountingDocumentId: receipt.accountingDocumentId,
-            entryNumber: 1,
-            entryDate: receipt.accountingDocument.documentDate,
-            description: receipt.accountingDocument.description,
-            lines: {
-              create: [
+        const zero = new Prisma.Decimal(0);
+        const result = await this.posting.postPlan(tx, {
+          companyId: context.companyId,
+          documentId: receipt.accountingDocumentId,
+          expectedVersion: version,
+          actorUserId: context.userId,
+          error: (reason) => this.postingError(reason),
+          beforeLedger: async (postingTx) => {
+            await this.receivables.applyReceipt(postingTx, {
+              companyId: context.companyId,
+              customerId: receipt.customerId,
+              currencyId: receipt.currencyId,
+              allocations: receipt.allocations,
+              errors: {
+                invalid: () => new ReceiptError("INVALID_ALLOCATION"),
+                overAllocation: () => new ReceiptError("OVER_ALLOCATION"),
+                conflict: () => new ReceiptError("VERSION_CONFLICT"),
+              },
+            });
+          },
+          entries: [
+            {
+              entryNumber: 1,
+              entryDate: receipt.accountingDocument.documentDate,
+              description: receipt.accountingDocument.description,
+              lines: [
                 {
                   lineNumber: 1,
                   accountId: prepared.cashBankLedgerAccountId,
@@ -317,9 +337,9 @@ export class ReceiptService {
                   currencyId: receipt.currencyId,
                   exchangeRate: receipt.exchangeRate,
                   debitAmount: receipt.amount,
-                  creditAmount: new Prisma.Decimal(0),
+                  creditAmount: zero,
                   baseDebitAmount: receipt.baseAmount,
-                  baseCreditAmount: new Prisma.Decimal(0),
+                  baseCreditAmount: zero,
                 },
                 {
                   lineNumber: 2,
@@ -328,36 +348,19 @@ export class ReceiptService {
                   description: receipt.accountingDocument.description,
                   currencyId: receipt.currencyId,
                   exchangeRate: receipt.exchangeRate,
-                  debitAmount: new Prisma.Decimal(0),
+                  debitAmount: zero,
                   creditAmount: receipt.amount,
-                  baseDebitAmount: new Prisma.Decimal(0),
+                  baseDebitAmount: zero,
                   baseCreditAmount: receipt.baseAmount,
                 },
               ],
             },
-          },
+          ],
         });
-        const changed = await tx.accountingDocument.updateMany({
-          where: {
-            id: receipt.accountingDocumentId,
-            companyId: context.companyId,
-            status: "DRAFT",
-            version,
-          },
-          data: {
-            status: "POSTED",
-            postedBy: context.userId,
-            postedAt: new Date(),
-            version: { increment: 1 },
-          },
-        });
-        if (changed.count !== 1) throw new ReceiptError("VERSION_CONFLICT");
         await archiveDocument(tx, context, receipt.accountingDocumentId);
         return {
-          document: await tx.accountingDocument.findUniqueOrThrow({
-            where: { id: receipt.accountingDocumentId },
-          }),
-          ids: [entry.id.toString()],
+          document: result.document,
+          ids: result.entries.map((entry) => entry.id.toString()),
         };
       },
     );
@@ -404,101 +407,40 @@ export class ReceiptService {
       key,
       JSON.stringify({ id: id.toString(), ...input }),
       async (tx, receipt) => {
-        const originalDocument = receipt.accountingDocument;
-        if (
-          originalDocument.status === "REVERSED" ||
-          originalDocument.reversedByDocumentId
-        )
-          throw new ReceiptError("ALREADY_REVERSED");
-        if (originalDocument.status !== "POSTED")
-          throw new ReceiptError("INVALID_STATE");
-        if (originalDocument.version !== input.version)
-          throw new ReceiptError("VERSION_CONFLICT");
-        const reversalDate = date(input.reversalDate);
-        const period = await tx.fiscalPeriod.findFirst({
-          where: {
-            companyId: context.companyId,
-            startDate: { lte: reversalDate },
-            endDate: { gte: reversalDate },
-            status: { not: "CLOSED" },
+        const result = await this.posting.reverse(tx, {
+          companyId: context.companyId,
+          documentId: receipt.accountingDocumentId,
+          expectedVersion: input.version,
+          actorUserId: context.userId,
+          reversalDate: date(input.reversalDate),
+          description: (original) =>
+            `عكس ${original.documentNumber}: ${input.reason}`,
+          reserveDocumentNumber: (sequenceTx, period) =>
+            this.reserveInTransaction(
+              sequenceTx,
+              context.companyId,
+              period.fiscalYearId,
+              "RECEIPT",
+            ),
+          beforeLedger: async (postingTx) => {
+            await this.receivables.reverseReceipt(postingTx, {
+              companyId: context.companyId,
+              customerId: receipt.customerId,
+              currencyId: receipt.currencyId,
+              allocations: receipt.allocations,
+              errors: {
+                invalid: () => new ReceiptError("INVALID_ALLOCATION"),
+                overAllocation: () => new ReceiptError("OVER_ALLOCATION"),
+                conflict: () => new ReceiptError("VERSION_CONFLICT"),
+              },
+            });
           },
+          error: (reason) => this.postingError(reason),
         });
-        if (!period) throw new ReceiptError("PERIOD_CLOSED");
-        const originalEntry = await tx.journalEntry.findFirstOrThrow({
-          where: {
-            accountingDocumentId: originalDocument.id,
-            companyId: context.companyId,
-          },
-          include: { lines: true },
-        });
-        const documentNumber = await this.reserveInTransaction(
-          tx,
-          context.companyId,
-          period.fiscalYearId,
-          "RECEIPT",
-        );
-        const reversal = await tx.accountingDocument.create({
-          data: {
-            companyId: context.companyId,
-            fiscalPeriodId: period.id,
-            documentType: "RECEIPT",
-            documentNumber,
-            documentDate: reversalDate,
-            description: `عكس ${originalDocument.documentNumber}: ${input.reason}`,
-            status: "POSTED",
-            createdBy: context.userId,
-            postedBy: context.userId,
-            postedAt: new Date(),
-            journalEntries: {
-              create: [
-                {
-                  entryNumber: 1,
-                  entryDate: reversalDate,
-                  description: `عكس: ${originalEntry.description}`,
-                  reversalOfJournalEntryId: originalEntry.id,
-                  lines: {
-                    create: originalEntry.lines.map((line) => ({
-                      lineNumber: line.lineNumber,
-                      accountId: line.accountId,
-                      costCenterId: line.costCenterId,
-                      customerId: line.customerId,
-                      supplierId: line.supplierId,
-                      description: line.description,
-                      currencyId: line.currencyId,
-                      exchangeRate: line.exchangeRate,
-                      debitAmount: line.creditAmount,
-                      creditAmount: line.debitAmount,
-                      baseDebitAmount: line.baseCreditAmount,
-                      baseCreditAmount: line.baseDebitAmount,
-                    })),
-                  },
-                },
-              ],
-            },
-          },
-          include: { journalEntries: true },
-        });
-        const changed = await tx.accountingDocument.updateMany({
-          where: {
-            id: originalDocument.id,
-            companyId: context.companyId,
-            status: "POSTED",
-            version: input.version,
-            reversedByDocumentId: null,
-          },
-          data: {
-            status: "REVERSED",
-            reversedByDocumentId: reversal.id,
-            version: { increment: 1 },
-          },
-        });
-        if (changed.count !== 1) throw new ReceiptError("VERSION_CONFLICT");
-        await archiveDocument(tx, context, reversal.id);
+        await archiveDocument(tx, context, result.reversalDocument.id);
         return {
-          document: await tx.accountingDocument.findUniqueOrThrow({
-            where: { id: originalDocument.id },
-          }),
-          ids: reversal.journalEntries.map((e) => e.id.toString()),
+          document: result.document,
+          ids: result.entries.map((entry) => entry.id.toString()),
         };
       },
     );
@@ -524,7 +466,7 @@ export class ReceiptService {
       notes: v.notes,
       allocations: v.allocations.map((a: any) => ({
         id: a.id.toString(),
-        targetJournalLineId: a.targetJournalLineId.toString(),
+        receivableItemId: a.receivableItemId.toString(),
         allocatedAmount: a.allocatedAmount.toFixed(4),
       })),
     };
@@ -592,24 +534,27 @@ export class ReceiptService {
       await this.validAccount(tx, companyId, input.counterAccountId!);
       counterLedgerAccountId = input.counterAccountId!;
     }
-    const cash = await tx.cashBankAccount.findFirst({
-      where: { id: input.cashBankAccountId, companyId, isActive: true },
-    });
-    if (!cash) throw new ReceiptError("INVALID_CASH_BANK_ACCOUNT");
-    await this.validAccount(tx, companyId, cash.ledgerAccountId);
-    const method = await tx.paymentMethod.findFirst({
-      where: {
-        id: input.paymentMethodId,
-        isActive: true,
-        OR: [
-          { scope: "GLOBAL", companyId: null },
-          { scope: "COMPANY", companyId },
-        ],
-      },
-    });
-    if (!method) throw new ReceiptError("INVALID_PAYMENT_METHOD");
-    if (method.requiresReference && !input.referenceNumber?.trim())
-      throw new ReceiptError("REFERENCE_REQUIRED");
+    let instrument: TreasuryInstrumentQuote;
+    try {
+      instrument = await this.treasury.resolveInstrument(tx, companyId, {
+        cashBankAccountId: input.cashBankAccountId,
+        paymentMethodId: input.paymentMethodId,
+        referenceNumber: input.referenceNumber,
+      });
+    } catch (error) {
+      if (error instanceof TreasuryError) {
+        if (error.reason === "INVALID_CASH_BANK_ACCOUNT") {
+          throw new ReceiptError("INVALID_CASH_BANK_ACCOUNT");
+        }
+        if (error.reason === "INVALID_PAYMENT_METHOD") {
+          throw new ReceiptError("INVALID_PAYMENT_METHOD");
+        }
+        if (error.reason === "REFERENCE_REQUIRED") {
+          throw new ReceiptError("REFERENCE_REQUIRED");
+        }
+      }
+      throw error;
+    }
     const currency = await tx.companyCurrency.findFirst({
       where: { companyId, currencyId: input.currencyId, isActive: true, currency: { isActive: true, OR: [{ scope: 'GLOBAL', ownerCompanyId: null }, { scope: 'COMPANY', ownerCompanyId: companyId }] } },
     });
@@ -621,7 +566,7 @@ export class ReceiptService {
       throw new ReceiptError("INVALID_CURRENCY");
     const allocations = input.allocations ?? [];
     if (
-      new Set(allocations.map((a) => a.targetJournalLineId.toString())).size !==
+      new Set(allocations.map((a) => a.receivableItemId.toString())).size !==
       allocations.length
     )
       throw new ReceiptError("INVALID_ALLOCATION");
@@ -633,22 +578,17 @@ export class ReceiptService {
       throw new ReceiptError("INVALID_ALLOCATION");
     if (allocations.length && !allocationSum.equals(amount))
       throw new ReceiptError("ALLOCATION_MISMATCH");
-    for (const allocation of allocations) {
-      const line = await tx.journalLine.findFirst({
-        where: {
-          id: allocation.targetJournalLineId,
-          companyId,
-          currencyId: input.currencyId,
-          journalEntry: { accountingDocument: { status: "POSTED" } },
-        },
-      });
-      if (
-        !line ||
-        line.debitAmount.lte(line.creditAmount) ||
-        (input.customerId != null && line.customerId !== input.customerId)
-      )
-        throw new ReceiptError("INVALID_ALLOCATION");
-    }
+    await this.receivables.validateDraftTargets(tx, {
+      companyId,
+      customerId: input.customerId ?? null,
+      currencyId: input.currencyId,
+      allocations,
+      errors: {
+        invalid: () => new ReceiptError("INVALID_ALLOCATION"),
+        overAllocation: () => new ReceiptError("OVER_ALLOCATION"),
+        conflict: () => new ReceiptError("VERSION_CONFLICT"),
+      },
+    });
     return {
       customerId: input.customerId ?? null,
       counterAccountId: input.counterAccountId ?? null,
@@ -666,12 +606,12 @@ export class ReceiptService {
       ...(allocations.length
         ? { allocations: {
             create: allocations.map((a) => ({
-              targetJournalLineId: a.targetJournalLineId,
+              receivableItemId: a.receivableItemId,
               allocatedAmount: new Prisma.Decimal(a.allocatedAmount),
             })),
           } }
         : {}),
-      cashBankLedgerAccountId: cash.ledgerAccountId,
+      cashBankLedgerAccountId: instrument.cashBankLedgerAccountId,
       counterLedgerAccountId,
     };
   }
@@ -694,36 +634,10 @@ export class ReceiptService {
       counterpartyAddress: v.counterpartyAddressSnapshot,
       notes: v.notes,
       allocations: v.allocations.map((a: any) => ({
-        targetJournalLineId: a.targetJournalLineId,
+        receivableItemId: a.receivableItemId,
         allocatedAmount: a.allocatedAmount.toFixed(4),
       })),
     };
-  }
-  private async validateOutstanding(
-    tx: Prisma.TransactionClient,
-    companyId: bigint,
-    receipt: any,
-  ) {
-    for (const allocation of receipt.allocations) {
-      const target = await tx.journalLine.findFirstOrThrow({
-        where: { id: allocation.targetJournalLineId, companyId },
-      });
-      const used = await tx.receiptAllocation.aggregate({
-        where: {
-          companyId,
-          targetJournalLineId: target.id,
-          receiptId: { not: receipt.id },
-          receipt: { accountingDocument: { status: "POSTED" } },
-        },
-        _sum: { allocatedAmount: true },
-      });
-      if (
-        new Prisma.Decimal(used._sum.allocatedAmount ?? 0)
-          .add(allocation.allocatedAmount)
-          .gt(target.debitAmount.sub(target.creditAmount))
-      )
-        throw new ReceiptError("OVER_ALLOCATION");
-    }
   }
   private async reserveInTransaction(
     tx: Prisma.TransactionClient,
@@ -776,97 +690,39 @@ export class ReceiptService {
       receipt: any,
     ) => Promise<{ document: any; ids: string[] }>,
   ) {
-    const keyHash = digest(key),
-      requestFingerprint = digest(fingerprint);
-    try {
-      return await this.prisma.$transaction(
-        async (tx) => {
-          const existing = await tx.idempotencyRecord.findUnique({
-            where: {
-              companyId_userId_operation_keyHash: {
-                companyId: context.companyId,
-                userId: context.userId,
-                operation,
-                keyHash,
-              },
-            },
-          });
-          if (existing) {
-            if (
-              !Buffer.from(existing.requestFingerprint).equals(
-                Buffer.from(requestFingerprint),
-              )
-            )
-              throw new ReceiptError("IDEMPOTENCY_MISMATCH");
-            if (existing.status === "COMPLETED")
-              return existing.responseBody as any;
-            throw new ReceiptError("IDEMPOTENCY_IN_PROGRESS");
-          }
-          const receipt = await tx.receipt.findFirst({
-            where: { id, companyId: context.companyId },
-            include: this.include(),
-          });
-          if (!receipt) throw new ReceiptError("NOT_FOUND");
-          const idem = await tx.idempotencyRecord.create({
-            data: {
-              companyId: context.companyId,
-              userId: context.userId,
-              operation,
-              keyHash,
-              requestFingerprint,
-              status: "IN_PROGRESS",
-              expiresAt: new Date(Date.now() + 86_400_000),
-            },
-          });
-          const result = await execute(tx, receipt);
-          await this.audit(tx, context, operation, id);
-          const response = {
-            document: documentJson(result.document),
-            generatedJournalEntryIds: result.ids,
-            requestId: randomUUID(),
-          };
-          await tx.idempotencyRecord.update({
-            where: { id: idem.id },
-            data: {
-              status: "COMPLETED",
-              responseStatus: 200,
-              responseBody: response,
-              completedAt: new Date(),
-            },
-          });
-          return response;
+    return this.commands.execute(
+      {
+        context,
+        operation,
+        key,
+        fingerprint,
+        errors: {
+          mismatch: () => new ReceiptError("IDEMPOTENCY_MISMATCH"),
+          inProgress: () => new ReceiptError("IDEMPOTENCY_IN_PROGRESS"),
         },
-        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-      );
-    } catch (error) {
-      if (
-        !(error instanceof Prisma.PrismaClientKnownRequestError) ||
-        !["P2002", "P2034"].includes(error.code)
-      )
-        throw error;
-      for (let i = 1; i <= 10; i++) {
-        await new Promise((r) => setTimeout(r, i * 10));
-        const existing = await this.prisma.idempotencyRecord.findUnique({
-          where: {
-            companyId_userId_operation_keyHash: {
-              companyId: context.companyId,
-              userId: context.userId,
-              operation,
-              keyHash,
-            },
-          },
+      },
+      async (tx) => {
+        const receipt = await tx.receipt.findFirst({
+          where: { id, companyId: context.companyId },
+          include: this.include(),
         });
-        if (!existing) continue;
-        if (
-          !Buffer.from(existing.requestFingerprint).equals(
-            Buffer.from(requestFingerprint),
-          )
-        )
-          throw new ReceiptError("IDEMPOTENCY_MISMATCH");
-        if (existing.status === "COMPLETED")
-          return existing.responseBody as any;
-      }
-      throw new ReceiptError("IDEMPOTENCY_IN_PROGRESS");
-    }
+        if (!receipt) throw new ReceiptError("NOT_FOUND");
+        const result = await execute(tx, receipt);
+        await this.audit(tx, context, operation, id);
+        return {
+          document: documentJson(result.document),
+          generatedJournalEntryIds: result.ids,
+          requestId: randomUUID(),
+        };
+      },
+    );
+  }
+
+  private postingError(reason: PostingFailureReason) {
+    if (reason === "INVALID_LINE" || reason === "UNBALANCED")
+      return new ReceiptError("INVALID_AMOUNT");
+    if (reason === "INVALID_COST_CENTER")
+      return new ReceiptError("INVALID_ACCOUNT");
+    return new ReceiptError(reason);
   }
 }

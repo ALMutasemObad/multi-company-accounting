@@ -331,50 +331,69 @@ try {
   await ensurePurchaseDocument({ documentType: 'PURCHASE_INVOICE', documentDate: '2026-08-12', dueDate: '2026-09-12', description: 'مستلزمات مكتبية - مسودة فاتورة مورد', supplierIndex: 0, supplierInvoiceNumber: 'OFFICE-DRAFT-12', quantity: '10', unitPrice: '430', debitAccountId: operationsExpense.id, costCenterId: administration.id, post: false });
   await ensurePurchaseDocument({ documentType: 'PURCHASE_DEBIT_NOTE', documentDate: '2026-08-05', dueDate: '2026-08-05', description: 'تخفيض اشتراك الخدمات السحابية - إشعار مدين تجريبي', supplierIndex: 1, sourceInvoiceId: purchaseInvoice1.id, quantity: '1', unitPrice: '1000', debitAccountId: operationsExpense.id, costCenterId: projects.id });
 
-  const createReceipt = async (input: { number: string; documentDate: string; amount: string; customerIndex: number; status?: 'DRAFT' | 'POSTED'; cashAccount?: typeof cashBox; counterAccountId?: bigint; targetJournalLineId?: bigint; description: string }) => {
+  const salesReceivableItem1 = await prisma.receivableItem.findUniqueOrThrow({ where: { salesInvoiceId: salesInvoice1.id } });
+  const purchasePayableItem1 = await prisma.payableItem.findUniqueOrThrow({ where: { purchaseInvoiceId: purchaseInvoice1.id } });
+
+  const createReceipt = async (input: { number: string; documentDate: string; amount: string; customerIndex: number; status?: 'DRAFT' | 'POSTED'; cashAccount?: typeof cashBox; counterAccountId?: bigint; receivableItemId?: bigint; description: string }) => {
     const existing = await prisma.accountingDocument.findUnique({ where: { companyId_documentType_documentNumber: { companyId: company.id, documentType: 'RECEIPT', documentNumber: input.number } } });
     if (existing) return existing;
     const customer = customers[input.customerIndex]!;
     const cashAccount = input.cashAccount ?? bankAccount;
     const period = periods[Number(input.documentDate.slice(5, 7)) - 1]!;
     const posted = input.status !== 'DRAFT';
-    return prisma.accountingDocument.create({ data: {
+    return prisma.$transaction(async (tx) => {
+      const document = await tx.accountingDocument.create({ data: {
       companyId: company.id, fiscalPeriodId: period.id, documentType: 'RECEIPT', documentNumber: input.number, documentDate: date(input.documentDate), description: input.description,
       status: posted ? 'POSTED' : 'DRAFT', createdBy: accountant.id, postedBy: posted ? admin.id : null, postedAt: posted ? postedAt : null,
-      receipt: { create: { customerId: customer.id, counterAccountId: null, cashBankAccountId: cashAccount.id, paymentMethodId: cashAccount.accountType === 'CASH' ? cashMethod.id : transferMethod.id, currencyId: currency.id, exchangeRate: '1', amount: input.amount, baseAmount: input.amount, referenceNumber: cashAccount.accountType === 'BANK' ? `TR-${input.number}` : null, counterpartyNameSnapshot: customer.nameAr, counterpartyTaxLast4: customer.taxNumberLast4, counterpartyAddressSnapshot: 'المملكة العربية السعودية', notes: 'بيانات تجريبية', ...(input.targetJournalLineId ? { allocations: { create: { targetJournalLineId: input.targetJournalLineId, allocatedAmount: input.amount } } } : {}) } },
+      receipt: { create: { customerId: customer.id, counterAccountId: null, cashBankAccountId: cashAccount.id, paymentMethodId: cashAccount.accountType === 'CASH' ? cashMethod.id : transferMethod.id, currencyId: currency.id, exchangeRate: '1', amount: input.amount, baseAmount: input.amount, referenceNumber: cashAccount.accountType === 'BANK' ? `TR-${input.number}` : null, counterpartyNameSnapshot: customer.nameAr, counterpartyTaxLast4: customer.taxNumberLast4, counterpartyAddressSnapshot: 'المملكة العربية السعودية', notes: 'بيانات تجريبية', ...(input.receivableItemId ? { allocations: { create: { receivableItemId: input.receivableItemId, allocatedAmount: input.amount } } } : {}) } },
       ...(posted ? { journalEntries: { create: { entryNumber: 1, entryDate: date(input.documentDate), description: input.description, lines: { create: [
         { lineNumber: 1, accountId: cashAccount.ledgerAccountId, description: input.description, currencyId: currency.id, exchangeRate: '1', debitAmount: input.amount, creditAmount: '0', baseDebitAmount: input.amount, baseCreditAmount: '0' },
         { lineNumber: 2, accountId: receivables.id, customerId: customer.id, description: input.description, currencyId: currency.id, exchangeRate: '1', debitAmount: '0', creditAmount: input.amount, baseDebitAmount: '0', baseCreditAmount: input.amount },
       ] } } } } : {}),
-    } });
+      } });
+      if (posted && input.receivableItemId) {
+        const item = await tx.receivableItem.findUniqueOrThrow({ where: { id: input.receivableItemId } });
+        const outstandingAmount = item.outstandingAmount.sub(input.amount);
+        await tx.receivableItem.update({ where: { id: item.id }, data: { outstandingAmount, status: outstandingAmount.equals(0) ? 'SETTLED' : 'PARTIAL', version: { increment: 1 } } });
+      }
+      return document;
+    });
   };
   await createReceipt({ number: 'RV-00001', documentDate: '2026-06-18', amount: '28000', customerIndex: 0, description: 'دفعة مشروع التحول الرقمي' });
   await createReceipt({ number: 'RV-00002', documentDate: '2026-07-12', amount: '18500', customerIndex: 1, cashAccount: cashBox, description: 'تحصيل خدمات استشارية' });
   await createReceipt({ number: 'RV-00003', documentDate: '2026-08-05', amount: '42000', customerIndex: 2, description: 'دفعة عقد الخدمات السنوي' });
   await createReceipt({ number: 'RV-00004', documentDate: '2026-08-11', amount: '9750', customerIndex: 0, status: 'DRAFT', description: 'دفعة تحت المراجعة' });
-  await createReceipt({ number: 'RV-00005', documentDate: '2026-05-15', amount: '8000', customerIndex: 0, targetJournalLineId: salesInvoice1.arJournalLineId!, description: 'تحصيل جزئي مرتبط بالفاتورة السنوية' });
+  await createReceipt({ number: 'RV-00005', documentDate: '2026-05-15', amount: '8000', customerIndex: 0, receivableItemId: salesReceivableItem1.id, description: 'تحصيل جزئي مرتبط بالفاتورة السنوية' });
 
-  const createPayment = async (input: { number: string; documentDate: string; amount: string; supplierIndex: number; expenseAccountId: bigint; costCenterId: bigint; status?: 'DRAFT' | 'POSTED'; targetJournalLineId?: bigint; description: string }) => {
+  const createPayment = async (input: { number: string; documentDate: string; amount: string; supplierIndex: number; expenseAccountId: bigint; costCenterId: bigint; status?: 'DRAFT' | 'POSTED'; payableItemId?: bigint; description: string }) => {
     const existing = await prisma.accountingDocument.findUnique({ where: { companyId_documentType_documentNumber: { companyId: company.id, documentType: 'PAYMENT', documentNumber: input.number } } });
     if (existing) return existing;
     const supplier = suppliers[input.supplierIndex]!;
     const period = periods[Number(input.documentDate.slice(5, 7)) - 1]!;
     const posted = input.status !== 'DRAFT';
-    return prisma.accountingDocument.create({ data: {
+    return prisma.$transaction(async (tx) => {
+      const document = await tx.accountingDocument.create({ data: {
       companyId: company.id, fiscalPeriodId: period.id, documentType: 'PAYMENT', documentNumber: input.number, documentDate: date(input.documentDate), description: input.description,
       status: posted ? 'POSTED' : 'DRAFT', createdBy: accountant.id, postedBy: posted ? admin.id : null, postedAt: posted ? postedAt : null,
-      payment: { create: { supplierId: supplier.id, counterAccountId: null, cashBankAccountId: bankAccount.id, paymentMethodId: transferMethod.id, currencyId: currency.id, exchangeRate: '1', amount: input.amount, baseAmount: input.amount, referenceNumber: `PAY-${input.number}`, counterpartyNameSnapshot: supplier.nameAr, counterpartyTaxLast4: supplier.taxNumberLast4, counterpartyAddressSnapshot: 'المملكة العربية السعودية', notes: 'بيانات تجريبية', ...(input.targetJournalLineId ? { allocations: { create: { targetJournalLineId: input.targetJournalLineId, allocatedAmount: input.amount } } } : {}) } },
+      payment: { create: { supplierId: supplier.id, counterAccountId: null, cashBankAccountId: bankAccount.id, paymentMethodId: transferMethod.id, currencyId: currency.id, exchangeRate: '1', amount: input.amount, baseAmount: input.amount, referenceNumber: `PAY-${input.number}`, counterpartyNameSnapshot: supplier.nameAr, counterpartyTaxLast4: supplier.taxNumberLast4, counterpartyAddressSnapshot: 'المملكة العربية السعودية', notes: 'بيانات تجريبية', ...(input.payableItemId ? { allocations: { create: { payableItemId: input.payableItemId, allocatedAmount: input.amount } } } : {}) } },
       ...(posted ? { journalEntries: { create: { entryNumber: 1, entryDate: date(input.documentDate), description: input.description, lines: { create: [
         { lineNumber: 1, accountId: payables.id, supplierId: supplier.id, costCenterId: input.costCenterId, description: input.description, currencyId: currency.id, exchangeRate: '1', debitAmount: input.amount, creditAmount: '0', baseDebitAmount: input.amount, baseCreditAmount: '0' },
         { lineNumber: 2, accountId: bank.id, description: input.description, currencyId: currency.id, exchangeRate: '1', debitAmount: '0', creditAmount: input.amount, baseDebitAmount: '0', baseCreditAmount: input.amount },
       ] } } } } : {}),
-    } });
+      } });
+      if (posted && input.payableItemId) {
+        const item = await tx.payableItem.findUniqueOrThrow({ where: { id: input.payableItemId } });
+        const outstandingAmount = item.outstandingAmount.sub(input.amount);
+        await tx.payableItem.update({ where: { id: item.id }, data: { outstandingAmount, status: outstandingAmount.equals(0) ? 'SETTLED' : 'PARTIAL', version: { increment: 1 } } });
+      }
+      return document;
+    });
   };
   await createPayment({ number: 'PV-00001', documentDate: '2026-06-25', amount: '12000', supplierIndex: 1, expenseAccountId: operationsExpense.id, costCenterId: projects.id, description: 'اشتراك خدمات سحابية' });
   await createPayment({ number: 'PV-00002', documentDate: '2026-07-01', amount: '22000', supplierIndex: 0, expenseAccountId: rentExpense.id, costCenterId: administration.id, description: 'إيجار المكتب للربع الثالث' });
   await createPayment({ number: 'PV-00003', documentDate: '2026-08-08', amount: '6750', supplierIndex: 2, expenseAccountId: operationsExpense.id, costCenterId: projects.id, description: 'أعمال صيانة وتجهيز' });
   await createPayment({ number: 'PV-00004', documentDate: '2026-08-11', amount: '4300', supplierIndex: 0, expenseAccountId: operationsExpense.id, costCenterId: administration.id, status: 'DRAFT', description: 'شراء مستلزمات مكتبية - مسودة' });
-  await createPayment({ number: 'PV-00005', documentDate: '2026-05-20', amount: '5000', supplierIndex: 1, expenseAccountId: operationsExpense.id, costCenterId: projects.id, targetJournalLineId: purchaseInvoice1.apJournalLineId!, description: 'سداد جزئي مرتبط بفاتورة الخدمات السحابية' });
+  await createPayment({ number: 'PV-00005', documentDate: '2026-05-20', amount: '5000', supplierIndex: 1, expenseAccountId: operationsExpense.id, costCenterId: projects.id, payableItemId: purchasePayableItem1.id, description: 'سداد جزئي مرتبط بفاتورة الخدمات السحابية' });
 
   const auditRows = [
     ['DEMO_DATA_SEEDED', 'Company', company.id.toString(), { note: 'تم تحميل البيانات التجريبية الأساسية' }],

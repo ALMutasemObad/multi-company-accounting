@@ -1,8 +1,8 @@
 ---
 title: "Bounded Context Map"
 status: "accepted target architecture"
-version: "1.0"
-last_updated: "2026-08-21"
+version: "1.1"
+last_updated: "2026-08-22"
 ---
 
 # خريطة الـBounded Contexts وملكية البيانات
@@ -23,10 +23,10 @@ last_updated: "2026-08-21"
 | Tenant & Company Configuration | المؤسسة والشركة والعملات والإعدادات | `Organization`, `Company`, `Currency`, `CompanyCurrency`, `CompanyExchangeRate` | فحص الاستخدام عبر Ports، لا عبر معرفة كل جداول المستندات |
 | Registration & Onboarding | دورة التسجيل والتحقق والتنسيق | `RegistrationRequest`, `RegistrationEvent` | Process Manager؛ لا يملك User/Company/Account |
 | Core Accounting | السنة والفترة والدليل والمستند والدفتر والترحيل | `FiscalYear`, `FiscalPeriod`, `DocumentSequence`, `AccountingDocument`, `JournalEntry`, `JournalLine`, `AccountType`, `Account`, `CostCenter` | المالك الوحيد للـPosting Engine |
-| Sales & Accounts Receivable | العميل والفاتورة والذمة والتحصيل المخصص | `Customer`, `CustomerAddress`, `SalesInvoice`, `SalesInvoiceLine`, receivable items وreceipt allocation policy | لا ينشئ Journal Lines مباشرة |
-| Purchases & Accounts Payable | المورد والفاتورة والذمة والسداد المخصص | `Supplier`, `SupplierAddress`, `PurchaseInvoice`, `PurchaseInvoiceLine`, payable items وpayment allocation policy | لا ينشئ Journal Lines مباشرة |
-| Treasury | النقد والبنوك وطرق الدفع وحركات القبض والصرف | `CashBankAccount`, `PaymentMethod`, `Receipt`, `Payment` | التنسيق مع AR/AP للتخصيص ومع Ledger للترحيل |
-| Tax Configuration | معدلات الضرائب وربط حساباتها | `TaxRate` | مصدر واحد للمبيعات والمشتريات |
+| Sales & Accounts Receivable | العميل والفاتورة والذمة وسياسة تسوية التحصيل | `Customer`, `CustomerAddress`, `SalesInvoice`, `SalesInvoiceLine`, `ReceivableItem` | يكشف `ReceivableSettlementPort` ولا ينشئ Journal Lines مباشرة |
+| Purchases & Accounts Payable | المورد والفاتورة والذمة وسياسة تسوية السداد | `Supplier`, `SupplierAddress`, `PurchaseInvoice`, `PurchaseInvoiceLine`, `PayableItem` | يكشف `PayableSettlementPort` ولا ينشئ Journal Lines مباشرة |
+| Treasury | النقد والبنوك وطرق الدفع وحركات القبض والصرف وتخصيصاتها | `CashBankAccount`, `PaymentMethod`, `Receipt`, `ReceiptAllocation`, `Payment`, `PaymentAllocation` | تستخدم التخصيصات هوية العنصر، والتنسيق مع AR/AP وLedger عبر Ports |
+| Tax | معدلات الضرائب وربط حساباتها والحساب والتقريب | `TaxRate` | يكشف `TaxQuotePort` للمبيعات والمشتريات ويملك النسخ المتفائلة |
 | Printing & Document Output | اللقطات التاريخية والتوليد | `DocumentPrintArchive` | يقرأ عبر Document Snapshot Port |
 | Reporting | التقارير والقوائم وRead Models | لا يملك حقائق مالية تشغيلية | قراءة فقط، ويمكنه امتلاك projections مستقبلًا |
 | Audit | سجل الأعمال والامتثال | `AuditLog` | Append-only، وليس Event Bus |
@@ -45,6 +45,7 @@ Sales/AR ─────────────> Core Accounting posting port
 Purchases/AP ─────────> Core Accounting posting port
 Treasury ─────────────> Core Accounting posting port
 Treasury ─────────────> AR/AP settlement ports
+Registration/Onboarding ──> Treasury setup port
 Sales/Purchases ──────> Tax Configuration query port
 All operational contexts ──> Audit append port
 
@@ -77,16 +78,14 @@ Printing  <────────── immutable document snapshot port
 
 يتم عبر Transactional Outbox وفق ADR-003.
 
-## 6. استثناءات انتقالية موجودة
+## 6. حالة النقل والاستثناءات الانتقالية
 
-الاستثناءات التالية موجودة حاليًا ولا تعد نمطًا مسموحًا للنسخ:
+اكتمل في 22 أغسطس 2026 نقل إنشاء وعكس `JournalEntry/JournalLine` إلى `PostingEngine`، واستبدلت عقود التخصيص `targetJournalLineId` بـ`ReceivableItemId/PayableItemId`، ونقل CRUD والحساب الضريبي إلى وحدة `Tax`، ونقل CRUD الصناديق وطرق الدفع وسياسة أداة الحركة إلى وحدة `Treasury`. يبقى رابط سطر الذمة على الفاتورة أثرًا داخليًا لـCore Accounting ولا يعبر عقدًا عامًا. التفاصيل في [عناصر الذمم وعقد التسوية](AR_AP_SETTLEMENT_ITEMS_AR.md) و[ملكية Tax](TAX_CONTEXT_OWNERSHIP_AR.md) و[ملكية Treasury](TREASURY_CONTEXT_OWNERSHIP_AR.md).
 
-- Sales/Purchases/Receipts/Payments/Manual Journals تنشئ Journal Entries مباشرة.
-- `ReceiptAllocation` و`PaymentAllocation` يعتمدان على `targetJournalLineId`.
+الاستثناءات التالية ما زالت موجودة ولا تعد نمطًا مسموحًا للنسخ:
+
 - `CompanyService` يفحص جداول عدة Contexts مباشرة عند تعطيل العملات.
-- Tax CRUD موزع بين Sales وPurchases.
-- Treasury CRUD مكرر داخل Reference/Supplier services.
-- Onboarding يكتب مباشرة في جداول IAM/Tenant/Accounting Setup.
+- Onboarding يكتب مباشرة في بعض جداول IAM/Tenant/Accounting Setup؛ أصبحت طرق الدفع تمر عبر Treasury setup port.
 
 أي Feature جديد يجب ألا يزيد هذه الاستثناءات. إزالتها تتم حسب أولويات الضوابط المعمارية.
 

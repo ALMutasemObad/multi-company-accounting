@@ -1,6 +1,7 @@
 import { Router, type ErrorRequestHandler, type Request } from "express";
 import { z, ZodError } from "zod";
 import type { AuthService } from "../auth/auth-service.js";
+import { openApiRequestBodySchemas as bodies } from "../generated/openapi-request-guards.js";
 import {
   JournalError,
   ManualJournalService,
@@ -10,53 +11,6 @@ const id = z
   .regex(/^[1-9][0-9]*$/)
   .transform(BigInt);
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-const money = z.string().regex(/^(0|[1-9][0-9]{0,14})\.[0-9]{4}$/);
-const rate = z.string().regex(/^[0-9]{1,11}\.[0-9]{8}$/);
-const line = z
-  .object({
-    lineNumber: z.number().int().min(1),
-    accountId: id,
-    costCenterId: z.union([id, z.null()]).optional(),
-    customerId: z.union([id, z.null()]).optional(),
-    supplierId: z.union([id, z.null()]).optional(),
-    description: z.string().max(500).nullable().optional(),
-    currencyId: id,
-    exchangeRate: rate,
-    debitAmount: money,
-    creditAmount: money,
-  })
-  .strict();
-const entry = z
-  .object({
-    entryNumber: z.number().int().min(1),
-    entryDate: isoDate,
-    description: z.string().trim().min(1).max(500),
-    lines: z.array(line).min(2),
-  })
-  .strict();
-const create = z
-  .object({
-    fiscalPeriodId: id,
-    documentDate: isoDate,
-    description: z.string().trim().min(1).max(500),
-    entries: z.array(entry).min(1),
-  })
-  .strict();
-const update = z
-  .object({
-    fiscalPeriodId: id.optional(),
-    documentDate: isoDate.optional(),
-    description: z.string().trim().min(1).max(500).optional(),
-    entries: z.array(entry).min(1).optional(),
-    version: z.number().int().min(0),
-  })
-  .strict();
-const version = z.object({ version: z.number().int().min(0) }).strict();
-const cancel = version.extend({ reason: z.string().trim().min(3).max(500) });
-const reverse = version.extend({
-  reversalDate: isoDate,
-  reason: z.string().trim().min(3).max(500),
-});
 const query = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
@@ -107,7 +61,7 @@ export function createManualJournalRouter(
       .status(201)
       .json(
         ManualJournalService.serialize(
-          await service.create(context, create.parse(req.body)),
+          await service.create(context, bodies.createManualJournal.parse(req.body)),
         ),
       );
   });
@@ -126,14 +80,14 @@ export function createManualJournalRouter(
         await service.update(
           context,
           id.parse(req.params.documentId),
-          update.parse(req.body),
+          bodies.updateManualJournal.parse(req.body),
         ),
       ),
     );
   });
   router.post("/manual-journals/:documentId/post", async (req, res) => {
     const context = await authorize(req, "manual_journals.post", true);
-    const body = version.parse(req.body);
+    const body = bodies.postManualJournal.parse(req.body);
     res.json(
       ManualJournalService.serializeCommand(
         await service.post(
@@ -147,7 +101,7 @@ export function createManualJournalRouter(
   });
   router.post("/manual-journals/:documentId/cancel", async (req, res) => {
     const context = await authorize(req, "manual_journals.cancel", true);
-    const body = cancel.parse(req.body);
+    const body = bodies.cancelManualJournal.parse(req.body);
     res.json(
       ManualJournalService.serializeCommand(
         await service.cancel(
@@ -166,7 +120,7 @@ export function createManualJournalRouter(
         await service.reverse(
           context,
           id.parse(req.params.documentId),
-          reverse.parse(req.body),
+          bodies.reverseManualJournal.parse(req.body),
           idem(req),
         ),
       ),

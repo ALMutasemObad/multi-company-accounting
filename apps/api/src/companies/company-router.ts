@@ -2,11 +2,11 @@ import { Router, type ErrorRequestHandler, type Request } from 'express';
 import { z, ZodError } from 'zod';
 import type { AuthService } from '../auth/auth-service.js';
 import {
-  companyCurrencyCreateRequestSchema,
-  companyCurrencyUpdateRequestSchema,
-  companyExchangeRateUpsertRequestSchema,
-  companyUpdateRequestSchema,
-  settingUpdateListSchema,
+  createCompanyCurrencyRequestSchema,
+  replaceCompanyCurrenciesRequestSchema,
+  upsertCompanyExchangeRateRequestSchema,
+  updateCurrentCompanyRequestSchema,
+  replaceCompanySettingsRequestSchema,
 } from '../generated/openapi-request-guards.js';
 import { CompanyCurrencyError, type CompanyService } from './company-service.js';
 
@@ -23,14 +23,14 @@ export function createCompanyRouter(auth: AuthService, companies: CompanyService
   const router = Router();
   const authorize = (request: Request, permission: string, requireCsrf: boolean) => auth.authorize({ sid: sid(request), csrfToken: request.header('X-CSRF-Token') ?? undefined, permission, requireCsrf });
   router.get('/companies/current', async (request, response) => { const context = await authorize(request, 'companies.view', false); response.json(serialize(await companies.get(context))); });
-  router.patch('/companies/current', async (request, response) => { const context = await authorize(request, 'companies.update', true); response.json(serialize(await companies.update(context, companyUpdateRequestSchema.parse(request.body)))); });
+  router.patch('/companies/current', async (request, response) => { const context = await authorize(request, 'companies.update', true); response.json(serialize(await companies.update(context, updateCurrentCompanyRequestSchema.parse(request.body)))); });
   router.get('/settings', async (request, response) => { const context = await authorize(request, 'settings.manage', false); response.json(settings(await companies.get(context))); });
-  router.put('/settings', async (request, response) => { const context = await authorize(request, 'settings.manage', true); const body = settingUpdateListSchema.parse(request.body); response.json(settings(await companies.updateMakerChecker(context, body.settings[0]!.value))); });
+  router.put('/settings', async (request, response) => { const context = await authorize(request, 'settings.manage', true); const body = replaceCompanySettingsRequestSchema.parse(request.body); response.json(settings(await companies.updateMakerChecker(context, body.settings[0]!.value))); });
   router.get('/company-currencies', async (request, response) => { const context = await authorize(request, 'currencies.view', false); response.json({ data: (await companies.listCurrencyCatalog(context)).map(currencySetting) }); });
-  router.post('/company-currencies', async (request, response) => { const context = await authorize(request, 'currencies.create', true); const body = companyCurrencyCreateRequestSchema.parse(request.body); response.status(201).json(currencySetting(await companies.createCompanyCurrency(context, body))); });
-  router.put('/company-currencies', async (request, response) => { const context = await authorize(request, 'currencies.manage', true); const body = companyCurrencyUpdateRequestSchema.parse(request.body); response.json({ data: (await companies.updateCompanyCurrencies(context, body.currencyIds.map(BigInt))).map(currencySetting) }); });
+  router.post('/company-currencies', async (request, response) => { const context = await authorize(request, 'currencies.create', true); const body = createCompanyCurrencyRequestSchema.parse(request.body); response.status(201).json(currencySetting(await companies.createCompanyCurrency(context, body))); });
+  router.put('/company-currencies', async (request, response) => { const context = await authorize(request, 'currencies.manage', true); const body = replaceCompanyCurrenciesRequestSchema.parse(request.body); response.json({ data: (await companies.updateCompanyCurrencies(context, body.currencyIds)).map(currencySetting) }); });
   router.get('/exchange-rates', async (request, response) => { const context = await authorize(request, 'currencies.view', false); const query = rateFilterSchema.parse(request.query); const result = await companies.listExchangeRates(context, query); response.json({ data: result.data.map(exchangeRate), meta: { page: query.page, pageSize: query.pageSize, total: result.total, totalPages: Math.ceil(result.total / query.pageSize) } }); });
-  router.put('/exchange-rates', async (request, response) => { const context = await authorize(request, 'currencies.manage', true); const body = companyExchangeRateUpsertRequestSchema.parse(request.body); response.json(exchangeRate(await companies.upsertExchangeRate(context, { ...body, currencyId: BigInt(body.currencyId) }))); });
+  router.put('/exchange-rates', async (request, response) => { const context = await authorize(request, 'currencies.manage', true); const body = upsertCompanyExchangeRateRequestSchema.parse(request.body); response.json(exchangeRate(await companies.upsertExchangeRate(context, body))); });
   router.get('/exchange-rates/resolve', async (request, response) => { const context = await authorize(request, 'currencies.view', false); const query = z.object({ currencyId: id, rateDate: date }).parse(request.query); const value = await companies.resolveExchangeRate(context, query.currencyId, query.rateDate); response.json({ rate: value.rate.toFixed(8), rateDate: value.rateDate?.toISOString().slice(0, 10) ?? null, source: value.source }); });
   const errors: ErrorRequestHandler = (error, _request, response, next) => { if (error instanceof ZodError) { response.status(400).json({ type: 'about:blank', title: 'Validation failed', status: 400, code: 'VALIDATION_ERROR', errors: error.issues }); return; } if (error instanceof CompanyCurrencyError) { const status = error.reason === 'CURRENCY_NOT_FOUND' ? 404 : error.reason === 'CURRENCY_CODE_EXISTS' ? 409 : 422; response.status(status).json({ type: 'about:blank', title: status === 409 ? 'Currency already exists' : 'Currency rule violation', status, code: status === 409 ? 'CONFLICT' : 'BUSINESS_RULE_VIOLATION', reason: error.reason }); return; } next(error); };
   router.use(errors);

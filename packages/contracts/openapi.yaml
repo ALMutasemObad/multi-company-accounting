@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.6.0
+  version: 1.12.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -17,7 +17,19 @@ info:
 
     - منشئ القيد اليدوي لا يرحله افتراضياً، ويمكن جعل ذلك إعداداً للشركات الصغيرة.
 
-    - واجهة التخصيصات مدعومة في API، ولو أُجلت واجهتها في الإصدار الأول.
+    - أوامر الترحيل والعكس وإغلاق الفترات تعلن أخطاء استنفاد إعادة المعاملة والمهلة المشتركة بصيغتي 503 و504 المعياريتين.
+
+    - تبدأ مهلة مطلقة واحدة عند HTTP وتنتقل إلى الأوامر والمعاملات؛ لا يعاد ضبطها عند Retry، ولا يرسل الخادم نجاحاً متأخراً.
+
+    - يعرض /metrics قياسات Prometheus تشغيلية منخفضة الكاردينالية عند تفعيله، ويحميه Bearer مستقل في الإنتاج.
+
+    - تخصيصات القبض والدفع تستخدم ReceivableItemId وPayableItemId المملوكين لـAR/AP؛ لا تعبر معرفات أسطر الأستاذ حدود المجالات.
+
+    - يملك Tax نسب الضرائب وحساباتها وسياسة التقريب؛ تحمل تعديلات النسب version متفائلًا لمنع فقد تحديثات المبيعات والمشتريات.
+
+    - يملك Treasury حسابات النقد والبنوك وطرق الدفع؛ تستهلك حركات القبض والصرف TreasuryInstrumentPort وتحمل تعديلات المراجع version متفائلًا.
+
+    - OpenAPI هو العقد التنفيذي الموحد لأجسام JSON؛ تولد منه حراس Zod وأنواع الطلب والاستجابة وبصمة تغطية حتمية، وتفحص الاستجابات في بيئات التطوير والاختبار.
 
     - مدة الاحتفاظ بمفتاح Idempotency هي 24 ساعة افتراضياً وقابلة للضبط.
 
@@ -46,6 +58,8 @@ servers:
 tags:
 - name: Health
   description: فحوص حياة الخدمة وجاهزية قاعدة البيانات.
+- name: Operations
+  description: مخرجات تشغيلية آمنة للمراقبة ولا تحتوي بيانات شركات أو حمولات مالية.
 - name: Authentication
   description: المصادقة والجلسات واختيار سياق الشركة.
 - name: Users
@@ -73,9 +87,11 @@ tags:
 - name: Payments
   description: سندات الصرف والتخصيصات والطباعة.
 - name: Sales Invoices
-  description: فواتير المبيعات والإشعارات الدائنة والضرائب.
+  description: فواتير المبيعات والإشعارات الدائنة.
 - name: Purchase Invoices
-  description: فواتير المشتريات والإشعارات المدينة وضرائب المدخلات.
+  description: فواتير المشتريات والإشعارات المدينة.
+- name: Taxes
+  description: نسب الضرائب وحسابات المخرجات والمدخلات وسياسة النسخ المتفائلة.
 - name: Reports
   description: التقارير المحاسبية والقوائم المالية والتصدير.
 - name: Logs
@@ -83,15 +99,51 @@ tags:
 security:
 - SessionCookie: []
 paths:
+  /metrics:
+    get:
+      tags:
+      - Operations
+      summary: قياسات Prometheus التشغيلية الآمنة
+      description: مسار اختياري على جذر الخدمة، يفعّل عبر METRICS_ENABLED. في الإنتاج يلزم رمز Bearer مستقل، ولا تتضمن التسميات companyId أو requestId أو مفاتيح Idempotency أو حمولات مالية.
+      operationId: getOperationalMetrics
+      servers:
+      - url: /
+      security:
+      - MetricsBearer: []
+      responses:
+        '200':
+          description: قياسات counters وgauges وhistograms بصيغة Prometheus text exposition
+          content:
+            text/plain:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          description: القياسات غير مفعلة في هذه البيئة
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
   /health:
     get:
       tags:
       - Health
       summary: فحص الخدمة والاتصال بقاعدة البيانات
       operationId: getHealth
+      servers:
+      - url: /
       responses:
         '200':
           description: نجاح
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: فشل فحص جاهزية اعتماد تشغيلي
           content:
             application/json:
               schema:
@@ -186,6 +238,8 @@ paths:
         '400': { $ref: '#/components/responses/ValidationError' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
         '500': { $ref: '#/components/responses/InternalError' }
   /auth/register/resend:
     post:
@@ -210,6 +264,8 @@ paths:
         '400': { $ref: '#/components/responses/ValidationError' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
         '500': { $ref: '#/components/responses/InternalError' }
   /auth/register/verify:
     post:
@@ -242,10 +298,11 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/InternalError' }
         '503':
-          description: تعذر تجهيز الشركة مؤقتًا ويمكن إعادة رابط التحقق بأمان
+          description: تعذر تجهيز الشركة مؤقتًا أو استُنفدت إعادة المعاملة، ويمكن إعادة رابط التحقق بأمان
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Problem' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
   /auth/login:
     post:
       tags:
@@ -1731,6 +1788,10 @@ paths:
           $ref: '#/components/responses/BusinessRuleViolation'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ConcurrencyRetryExhausted'
+        '504':
+          $ref: '#/components/responses/RequestDeadlineExceeded'
         '500':
           $ref: '#/components/responses/InternalError'
       parameters:
@@ -1784,6 +1845,10 @@ paths:
           $ref: '#/components/responses/BusinessRuleViolation'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ConcurrencyRetryExhausted'
+        '504':
+          $ref: '#/components/responses/RequestDeadlineExceeded'
         '500':
           $ref: '#/components/responses/InternalError'
       parameters:
@@ -3465,7 +3530,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ReasonRequest'
+              $ref: '#/components/schemas/TreasuryDeactivateRequest'
       x-permission: cash_bank_accounts.manage
       security:
       - SessionCookie: []
@@ -3604,7 +3669,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ReasonRequest'
+              $ref: '#/components/schemas/TreasuryDeactivateRequest'
       responses:
         '200':
           description: تم التعطيل
@@ -3620,6 +3685,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/BusinessRuleViolation'
       x-permission: cash_bank_accounts.manage
@@ -3715,6 +3782,10 @@ paths:
           $ref: '#/components/responses/BusinessRuleViolation'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ConcurrencyRetryExhausted'
+        '504':
+          $ref: '#/components/responses/RequestDeadlineExceeded'
         '500':
           $ref: '#/components/responses/InternalError'
       description: يحجز رقم المستند عند إنشاء المسودة؛ فجوات الأرقام مقبولة ومُدققة.
@@ -3849,6 +3920,10 @@ paths:
           $ref: '#/components/responses/BusinessRuleViolation'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ConcurrencyRetryExhausted'
+        '504':
+          $ref: '#/components/responses/RequestDeadlineExceeded'
         '500':
           $ref: '#/components/responses/InternalError'
       description: 'يطبق فصل المسؤوليات افتراضياً: منشئ القيد لا يرحله إلا إذا عطّل إعداد الشركة هذا الشرط.'
@@ -3953,6 +4028,10 @@ paths:
           $ref: '#/components/responses/BusinessRuleViolation'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ConcurrencyRetryExhausted'
+        '504':
+          $ref: '#/components/responses/RequestDeadlineExceeded'
         '500':
           $ref: '#/components/responses/InternalError'
       parameters:
@@ -4050,6 +4129,8 @@ paths:
       responses:
         '201': { description: تم الإنشاء, content: { application/json: { schema: { $ref: '#/components/schemas/SalesInvoice' } } } }
         '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
       x-permission: sales_invoices.create
       security: [{ SessionCookie: [], CsrfToken: [] }]
   /sales-invoices/{invoiceId}:
@@ -4081,10 +4162,12 @@ paths:
       operationId: postSalesInvoice
       parameters:
       - { name: invoiceId, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
-      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [version], properties: { version: { type: integer, minimum: 0 } } } } } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, required: [version], properties: { version: { type: integer, minimum: 0 } } } } } }
       responses:
-        '200': { description: تم الترحيل }
+        '200': { description: تم الترحيل, content: { application/json: { schema: { $ref: '#/components/schemas/DocumentCommandResult' } } } }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
       x-permission: sales_invoices.post
       security: [{ SessionCookie: [], CsrfToken: [] }]
   /sales-invoices/{invoiceId}/cancel:
@@ -4094,9 +4177,9 @@ paths:
       operationId: cancelSalesInvoice
       parameters:
       - { name: invoiceId, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
-      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [version, reason], properties: { version: { type: integer, minimum: 0 }, reason: { type: string, minLength: 3 } } } } } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, required: [version, reason], properties: { version: { type: integer, minimum: 0 }, reason: { type: string, x-trim: true, minLength: 3, maxLength: 500 } } } } } }
       responses:
-        '200': { description: تم الإلغاء }
+        '200': { description: تم الإلغاء, content: { application/json: { schema: { $ref: '#/components/schemas/DocumentCommandResult' } } } }
         '400': { $ref: '#/components/responses/ValidationError' }
       x-permission: sales_invoices.cancel
       security: [{ SessionCookie: [], CsrfToken: [] }]
@@ -4107,10 +4190,12 @@ paths:
       operationId: reverseSalesInvoice
       parameters:
       - { name: invoiceId, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
-      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [version, reversalDate, reason], properties: { version: { type: integer, minimum: 0 }, reversalDate: { type: string, format: date }, reason: { type: string, minLength: 3 } } } } } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, required: [version, reversalDate, reason], properties: { version: { type: integer, minimum: 0 }, reversalDate: { type: string, format: date }, reason: { type: string, x-trim: true, minLength: 3, maxLength: 500 } } } } } }
       responses:
-        '200': { description: تم العكس }
+        '200': { description: تم العكس, content: { application/json: { schema: { $ref: '#/components/schemas/DocumentCommandResult' } } } }
         '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
       x-permission: sales_invoices.reverse
       security: [{ SessionCookie: [], CsrfToken: [] }]
   /purchase-invoices:
@@ -4138,6 +4223,8 @@ paths:
       responses:
         '201': { description: تم الإنشاء, content: { application/json: { schema: { $ref: '#/components/schemas/PurchaseInvoice' } } } }
         '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
       x-permission: purchase_invoices.create
       security: [{ SessionCookie: [], CsrfToken: [] }]
   /purchase-invoices/{invoiceId}:
@@ -4169,10 +4256,12 @@ paths:
       operationId: postPurchaseInvoice
       parameters:
       - { name: invoiceId, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
-      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [version], properties: { version: { type: integer, minimum: 0 } } } } } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, required: [version], properties: { version: { type: integer, minimum: 0 } } } } } }
       responses:
-        '200': { description: تم الترحيل }
+        '200': { description: تم الترحيل, content: { application/json: { schema: { $ref: '#/components/schemas/DocumentCommandResult' } } } }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
       x-permission: purchase_invoices.post
       security: [{ SessionCookie: [], CsrfToken: [] }]
   /purchase-invoices/{invoiceId}/cancel:
@@ -4182,9 +4271,9 @@ paths:
       operationId: cancelPurchaseInvoice
       parameters:
       - { name: invoiceId, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
-      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [version, reason], properties: { version: { type: integer, minimum: 0 }, reason: { type: string, minLength: 3 } } } } } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, required: [version, reason], properties: { version: { type: integer, minimum: 0 }, reason: { type: string, x-trim: true, minLength: 3, maxLength: 500 } } } } } }
       responses:
-        '200': { description: تم الإلغاء }
+        '200': { description: تم الإلغاء, content: { application/json: { schema: { $ref: '#/components/schemas/DocumentCommandResult' } } } }
         '400': { $ref: '#/components/responses/ValidationError' }
       x-permission: purchase_invoices.cancel
       security: [{ SessionCookie: [], CsrfToken: [] }]
@@ -4195,10 +4284,12 @@ paths:
       operationId: reversePurchaseInvoice
       parameters:
       - { name: invoiceId, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
-      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [version, reversalDate, reason], properties: { version: { type: integer, minimum: 0 }, reversalDate: { type: string, format: date }, reason: { type: string, minLength: 3 } } } } } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, required: [version, reversalDate, reason], properties: { version: { type: integer, minimum: 0 }, reversalDate: { type: string, format: date }, reason: { type: string, x-trim: true, minLength: 3, maxLength: 500 } } } } } }
       responses:
-        '200': { description: تم العكس }
+        '200': { description: تم العكس, content: { application/json: { schema: { $ref: '#/components/schemas/DocumentCommandResult' } } } }
         '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
       x-permission: purchase_invoices.reverse
       security: [{ SessionCookie: [], CsrfToken: [] }]
   /purchase-invoices/{invoiceId}/pdf:
@@ -4222,7 +4313,7 @@ paths:
       security: [{ SessionCookie: [] }]
   /tax-rates:
     get:
-      tags: [Sales Invoices]
+      tags: [Taxes]
       summary: عرض نسب ضريبة المبيعات
       operationId: listTaxRates
       responses:
@@ -4231,18 +4322,19 @@ paths:
       x-permission: sales_invoices.view
       security: [{ SessionCookie: [] }]
     post:
-      tags: [Sales Invoices]
+      tags: [Taxes]
       summary: إنشاء نسبة ضريبة
       operationId: createTaxRate
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TaxRateInput' } } } }
       responses:
         '201': { description: تم الإنشاء, content: { application/json: { schema: { $ref: '#/components/schemas/TaxRate' } } } }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
       x-permission: tax_rates.manage
       security: [{ SessionCookie: [], CsrfToken: [] }]
   /tax-rates/{taxRateId}:
     patch:
-      tags: [Sales Invoices]
+      tags: [Taxes]
       summary: تعديل نسبة ضريبة
       operationId: updateTaxRate
       parameters:
@@ -4251,6 +4343,8 @@ paths:
       responses:
         '200': { description: نجاح, content: { application/json: { schema: { $ref: '#/components/schemas/TaxRate' } } } }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
       x-permission: tax_rates.manage
       security: [{ SessionCookie: [], CsrfToken: [] }]
   /reports/receivables-aging:
@@ -4268,7 +4362,7 @@ paths:
       security: [{ SessionCookie: [] }]
   /purchase-tax-rates:
     get:
-      tags: [Purchase Invoices]
+      tags: [Taxes]
       summary: عرض نسب ضريبة المشتريات وحسابات المدخلات
       operationId: listPurchaseTaxRates
       responses:
@@ -4277,18 +4371,19 @@ paths:
       x-permission: purchase_invoices.view
       security: [{ SessionCookie: [] }]
     post:
-      tags: [Purchase Invoices]
+      tags: [Taxes]
       summary: إنشاء نسبة ضريبة مدخلات
       operationId: createPurchaseTaxRate
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PurchaseTaxRateInput' } } } }
       responses:
         '201': { description: تم الإنشاء, content: { application/json: { schema: { $ref: '#/components/schemas/PurchaseTaxRate' } } } }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
       x-permission: input_tax_rates.manage
       security: [{ SessionCookie: [], CsrfToken: [] }]
   /purchase-tax-rates/{taxRateId}:
     patch:
-      tags: [Purchase Invoices]
+      tags: [Taxes]
       summary: تعديل حساب ضريبة المدخلات
       operationId: updatePurchaseTaxRate
       parameters:
@@ -4297,6 +4392,8 @@ paths:
       responses:
         '200': { description: نجاح, content: { application/json: { schema: { $ref: '#/components/schemas/PurchaseTaxRate' } } } }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
       x-permission: input_tax_rates.manage
       security: [{ SessionCookie: [], CsrfToken: [] }]
   /reports/payables-aging:
@@ -4401,6 +4498,10 @@ paths:
           $ref: '#/components/responses/BusinessRuleViolation'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ConcurrencyRetryExhausted'
+        '504':
+          $ref: '#/components/responses/RequestDeadlineExceeded'
         '500':
           $ref: '#/components/responses/InternalError'
       description: يحجز رقم المستند عند إنشاء المسودة، ويثبت اسم وعنوان الطرف في حقول Snapshot.
@@ -4535,6 +4636,10 @@ paths:
           $ref: '#/components/responses/BusinessRuleViolation'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ConcurrencyRetryExhausted'
+        '504':
+          $ref: '#/components/responses/RequestDeadlineExceeded'
         '500':
           $ref: '#/components/responses/InternalError'
       parameters:
@@ -4638,6 +4743,10 @@ paths:
           $ref: '#/components/responses/BusinessRuleViolation'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ConcurrencyRetryExhausted'
+        '504':
+          $ref: '#/components/responses/RequestDeadlineExceeded'
         '500':
           $ref: '#/components/responses/InternalError'
       parameters:
@@ -4804,6 +4913,10 @@ paths:
           $ref: '#/components/responses/BusinessRuleViolation'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ConcurrencyRetryExhausted'
+        '504':
+          $ref: '#/components/responses/RequestDeadlineExceeded'
         '500':
           $ref: '#/components/responses/InternalError'
       description: يحجز رقم المستند عند إنشاء المسودة، ويثبت اسم وعنوان الطرف في حقول Snapshot.
@@ -4938,6 +5051,10 @@ paths:
           $ref: '#/components/responses/BusinessRuleViolation'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ConcurrencyRetryExhausted'
+        '504':
+          $ref: '#/components/responses/RequestDeadlineExceeded'
         '500':
           $ref: '#/components/responses/InternalError'
       parameters:
@@ -5041,6 +5158,10 @@ paths:
           $ref: '#/components/responses/BusinessRuleViolation'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ConcurrencyRetryExhausted'
+        '504':
+          $ref: '#/components/responses/RequestDeadlineExceeded'
         '500':
           $ref: '#/components/responses/InternalError'
       parameters:
@@ -5731,6 +5852,11 @@ components:
       in: header
       name: X-CSRF-Token
       description: رمز Synchronizer مرتبط بالجلسة ومطلوب لكل طلب يغير الحالة.
+    MetricsBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: رمز مستقل وطويل من مدير الأسرار، مخصص حصراً لكاشط القياسات التشغيلية.
   parameters:
     Page:
       name: page
@@ -5822,6 +5948,18 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Problem'
+    ConcurrencyRetryExhausted:
+      description: استنفدت إعادة المحاولة المحدودة لتعارض قاعدة بيانات مؤقت
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    RequestDeadlineExceeded:
+      description: انتهت المهلة الموحدة للعملية قبل إمكان إكمالها بأمان
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Problem'
   schemas:
     Id:
       type: string
@@ -5838,7 +5976,7 @@ components:
       required:
       - page
       - pageSize
-      - totalItems
+      - total
       - totalPages
       properties:
         page:
@@ -5848,7 +5986,7 @@ components:
           type: integer
           minimum: 1
           maximum: 100
-        totalItems:
+        total:
           type: integer
           minimum: 0
         totalPages:
@@ -5858,20 +5996,13 @@ components:
       type: object
       required:
       - code
-      - messageAr
-      - requestId
+      description: غلاف خطأ متوافق؛ code ثابت، بينما تضيف الحدود الأحدث messageAr وrequestId وتبقى حقول title/status/reason/errors القديمة مقبولة حتى اكتمال توحيدها.
       properties:
         code:
           type: string
-          enum:
-          - VALIDATION_ERROR
-          - UNAUTHENTICATED
-          - FORBIDDEN
-          - NOT_FOUND
-          - CONFLICT
-          - BUSINESS_RULE_VIOLATION
-          - RATE_LIMITED
-          - INTERNAL_ERROR
+          minLength: 1
+          maxLength: 100
+          pattern: ^[A-Z][A-Z0-9_]*$
         messageAr:
           type: string
         requestId:
@@ -5891,26 +6022,20 @@ components:
       type: object
       required:
       - status
-      - database
-      - time
+      - service
       properties:
         status:
           type: string
           enum:
           - ok
-          - degraded
-        database:
+          - error
+        service:
           type: string
-          enum:
-          - up
-          - down
-        time:
-          type: string
-          format: date-time
-          example: '2026-07-30T06:00:00.000Z'
-        version:
-          type: string
-          example: 1.0.0
+          const: mcap-finance-api
+        checks:
+          type: object
+          additionalProperties:
+            type: string
     CsrfTokenResponse:
       type: object
       required:
@@ -6056,29 +6181,19 @@ components:
     CompanyAccess:
       type: object
       required:
-      - companyId
-      - code
-      - legalNameAr
-      - roles
-      - permissions
+      - id
+      - name
+      - timezone
       properties:
-        companyId:
+        id:
           type: string
           pattern: ^[1-9][0-9]*$
           example: '1001'
           description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
-        code:
+        name:
           type: string
-        legalNameAr:
+        timezone:
           type: string
-        roles:
-          type: array
-          items:
-            type: string
-        permissions:
-          type: array
-          items:
-            type: string
     CompanyAccessList:
       type: object
       required:
@@ -6092,50 +6207,28 @@ components:
       type: object
       required:
       - id
-      - email
-      - nameAr
-      - status
+      - displayName
       properties:
         id:
           type: string
           pattern: ^[1-9][0-9]*$
           example: '1001'
           description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
-        email:
+        displayName:
           type: string
-          format: email
-        nameAr:
-          type: string
-        nameEn:
-          type:
-          - string
-          - 'null'
-        status:
-          type: string
-          enum:
-          - ACTIVE
-          - LOCKED
-          - DISABLED
     AuthSessionResponse:
       type: object
       required:
       - user
       - csrfToken
-      - companies
+      - expiresAt
       properties:
         user:
           $ref: '#/components/schemas/AuthenticatedUser'
         csrfToken:
           type: string
-        selectedCompany:
-          oneOf:
-          - $ref: '#/components/schemas/CompanyAccess'
-          - type: 'null'
-        companies:
-          type: array
-          items:
-            $ref: '#/components/schemas/CompanyAccess'
-        sessionExpiresAt:
+          minLength: 32
+        expiresAt:
           type: string
           format: date-time
           example: '2026-07-30T06:00:00.000Z'
@@ -6147,6 +6240,7 @@ components:
       - lastActivityAt
       - expiresAt
       - current
+      - revoked
       properties:
         id:
           type: string
@@ -6172,6 +6266,8 @@ components:
             example: '2026-07-30T06:00:00.000Z'
           - type: 'null'
         current:
+          type: boolean
+        revoked:
           type: boolean
         ipMasked:
           type:
@@ -6242,6 +6338,7 @@ components:
           maxLength: 254
         nameAr:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 160
         nameEn:
@@ -6262,6 +6359,7 @@ components:
       properties:
         nameAr:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 160
         nameEn:
@@ -6314,12 +6412,13 @@ components:
     RoleCreateRequest:
       type: object
       additionalProperties: false
-      required: [nameAr, permissionIds]
+      required: [nameAr]
       properties:
-        nameAr: { type: string, minLength: 1, maxLength: 120 }
-        nameEn: { type: [string, 'null'], maxLength: 120 }
+        nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 120 }
+        nameEn: { type: [string, 'null'], x-trim: true, maxLength: 120 }
         permissionIds:
           type: array
+          default: []
           uniqueItems: true
           maxItems: 200
           items: { $ref: '#/components/schemas/Id' }
@@ -6328,8 +6427,8 @@ components:
       additionalProperties: false
       minProperties: 1
       properties:
-        nameAr: { type: string, minLength: 1, maxLength: 120 }
-        nameEn: { type: [string, 'null'], maxLength: 120 }
+        nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 120 }
+        nameEn: { type: [string, 'null'], x-trim: true, maxLength: 120 }
     RolePermissionsRequest:
       type: object
       additionalProperties: false
@@ -6660,6 +6759,7 @@ components:
           maximum: 255
         name:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 80
         startDate:
@@ -6681,6 +6781,7 @@ components:
       properties:
         name:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 80
         startDate:
@@ -6703,6 +6804,7 @@ components:
       properties:
         name:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 80
         startDate:
@@ -6721,6 +6823,7 @@ components:
       properties:
         name:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 80
         startDate:
@@ -6765,6 +6868,7 @@ components:
           example: 0
         reason:
           type: string
+          x-trim: true
           minLength: 10
           maxLength: 500
     FiscalPeriodCommandResult:
@@ -6920,16 +7024,19 @@ components:
           - type: 'null'
         code:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 40
         nameAr:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 180
         nameEn:
           type:
           - string
           - 'null'
+          x-trim: true
           maxLength: 180
         allowsPosting:
           type: boolean
@@ -6955,16 +7062,19 @@ components:
           - type: 'null'
         code:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 40
         nameAr:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 180
         nameEn:
           type:
           - string
           - 'null'
+          x-trim: true
           maxLength: 180
         allowsPosting:
           type: boolean
@@ -7060,6 +7170,9 @@ components:
           - 'null'
         isActive:
           type: boolean
+        version:
+          type: integer
+          minimum: 0
     CostCenterCreateRequest:
       type: object
       additionalProperties: false
@@ -7075,12 +7188,14 @@ components:
           - type: 'null'
         nameAr:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 160
         nameEn:
           type:
           - string
           - 'null'
+          x-trim: true
           maxLength: 160
     CostCenterUpdateRequest:
       type: object
@@ -7096,12 +7211,14 @@ components:
           - type: 'null'
         nameAr:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 160
         nameEn:
           type:
           - string
           - 'null'
+          x-trim: true
           maxLength: 160
     Address:
       type: object
@@ -7163,6 +7280,7 @@ components:
           - OTHER
         line1:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 200
         line2:
@@ -7208,6 +7326,7 @@ components:
           - OTHER
         line1:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 200
         line2:
@@ -7303,12 +7422,14 @@ components:
           description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
         nameAr:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 200
         nameEn:
           type:
           - string
           - 'null'
+          maxLength: 200
         phone:
           type:
           - string
@@ -7319,6 +7440,7 @@ components:
           - string
           - 'null'
           format: email
+          maxLength: 320
         taxNumber:
           type:
           - string
@@ -7341,12 +7463,14 @@ components:
           description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
         nameAr:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 200
         nameEn:
           type:
           - string
           - 'null'
+          maxLength: 200
         phone:
           type:
           - string
@@ -7357,6 +7481,7 @@ components:
           - string
           - 'null'
           format: email
+          maxLength: 320
         taxNumber:
           type:
           - string
@@ -7428,12 +7553,14 @@ components:
           description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
         nameAr:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 200
         nameEn:
           type:
           - string
           - 'null'
+          maxLength: 200
         phone:
           type:
           - string
@@ -7444,6 +7571,7 @@ components:
           - string
           - 'null'
           format: email
+          maxLength: 320
         taxNumber:
           type:
           - string
@@ -7466,12 +7594,14 @@ components:
           description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
         nameAr:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 200
         nameEn:
           type:
           - string
           - 'null'
+          maxLength: 200
         phone:
           type:
           - string
@@ -7482,6 +7612,7 @@ components:
           - string
           - 'null'
           format: email
+          maxLength: 320
         taxNumber:
           type:
           - string
@@ -7556,31 +7687,40 @@ components:
           $ref: '#/components/schemas/CashBankAccountType'
         nameAr:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 160
         nameEn:
           type:
           - string
           - 'null'
+          maxLength: 160
         bankName:
           type:
           - string
           - 'null'
+          maxLength: 160
         accountNumber:
           type:
           - string
           - 'null'
           writeOnly: true
+          maxLength: 100
         iban:
           type:
           - string
           - 'null'
           writeOnly: true
+          maxLength: 100
     CashBankAccountUpdateRequest:
       type: object
       additionalProperties: false
-      minProperties: 1
+      required:
+      - version
       properties:
+        version:
+          type: integer
+          minimum: 0
         ledgerAccountId:
           type: string
           pattern: ^[1-9][0-9]*$
@@ -7590,26 +7730,31 @@ components:
           $ref: '#/components/schemas/CashBankAccountType'
         nameAr:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 160
         nameEn:
           type:
           - string
           - 'null'
+          maxLength: 160
         bankName:
           type:
           - string
           - 'null'
+          maxLength: 160
         accountNumber:
           type:
           - string
           - 'null'
           writeOnly: true
+          maxLength: 100
         iban:
           type:
           - string
           - 'null'
           writeOnly: true
+          maxLength: 100
     Currency:
       type: object
       required:
@@ -7802,6 +7947,7 @@ components:
       - requiresReference
       - isActive
       - scope
+      - version
       properties:
         id:
           type: string
@@ -7823,6 +7969,9 @@ components:
           enum:
           - GLOBAL
           - COMPANY
+        version:
+          type: integer
+          minimum: 0
     PaymentMethodInput:
       type: object
       additionalProperties: false
@@ -7832,6 +7981,7 @@ components:
       properties:
         nameAr:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 120
         requiresReference:
@@ -7839,10 +7989,15 @@ components:
     PaymentMethodUpdate:
       type: object
       additionalProperties: false
-      minProperties: 1
+      required:
+      - version
       properties:
+        version:
+          type: integer
+          minimum: 0
         nameAr:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 120
         requiresReference:
@@ -7861,7 +8016,7 @@ components:
       additionalProperties: false
       required: [description, quantity, unitPrice, discountAmount, revenueAccountId]
       properties:
-        description: { type: string, minLength: 1, maxLength: 500 }
+        description: { type: string, x-trim: true, minLength: 1, maxLength: 500 }
         quantity: { type: string, pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
         unitPrice: { type: string, pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
         discountAmount: { type: string, pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
@@ -7877,16 +8032,17 @@ components:
         fiscalPeriodId: { type: string, pattern: '^[1-9][0-9]*$' }
         documentDate: { type: string, format: date }
         dueDate: { type: string, format: date }
-        description: { type: string, minLength: 1, maxLength: 500 }
+        description: { type: string, x-trim: true, minLength: 1, maxLength: 500 }
         customerId: { type: string, pattern: '^[1-9][0-9]*$' }
         sourceInvoiceId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
         currencyId: { type: string, pattern: '^[1-9][0-9]*$' }
         exchangeRate: { type: string, pattern: '^[0-9]{1,11}\.[0-9]{8}$' }
-        customerAddress: { type: [string, 'null'], maxLength: 500 }
-        notes: { type: [string, 'null'], maxLength: 1000 }
+        customerAddress: { type: [string, 'null'], x-trim: true, maxLength: 500 }
+        notes: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
         lines: { type: array, minItems: 1, maxItems: 200, items: { $ref: '#/components/schemas/SalesInvoiceLineInput' } }
     SalesInvoiceUpdateRequest:
       type: object
+      additionalProperties: false
       required: [version]
       properties:
         version: { type: integer, minimum: 0 }
@@ -7894,21 +8050,24 @@ components:
         fiscalPeriodId: { type: string, pattern: '^[1-9][0-9]*$' }
         documentDate: { type: string, format: date }
         dueDate: { type: string, format: date }
-        description: { type: string, minLength: 1, maxLength: 500 }
+        description: { type: string, x-trim: true, minLength: 1, maxLength: 500 }
         customerId: { type: string, pattern: '^[1-9][0-9]*$' }
         sourceInvoiceId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
         currencyId: { type: string, pattern: '^[1-9][0-9]*$' }
         exchangeRate: { type: string, pattern: '^[0-9]{1,11}\.[0-9]{8}$' }
+        customerAddress: { type: [string, 'null'], x-trim: true, maxLength: 500 }
+        notes: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
         lines: { type: array, minItems: 1, maxItems: 200, items: { $ref: '#/components/schemas/SalesInvoiceLineInput' } }
     SalesInvoice:
       type: object
-      required: [id, document, customerId, currencyId, dueDate, subtotal, discountTotal, taxTotal, total, baseTotal, paidAmount, creditedAmount, outstandingAmount, settlementStatus, lines]
+      required: [id, document, customerId, receivableItemId, settlementVersion, currencyId, dueDate, subtotal, discountTotal, taxTotal, total, baseTotal, paidAmount, creditedAmount, outstandingAmount, settlementStatus, lines]
       properties:
         id: { type: string, pattern: '^[1-9][0-9]*$' }
         document: { $ref: '#/components/schemas/AccountingDocumentHeader' }
         customerId: { type: string, pattern: '^[1-9][0-9]*$' }
         sourceInvoiceId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
-        arJournalLineId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+        receivableItemId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$', description: معرّف عنصر الذمة المدينة المملوك لـAR، ويظهر بعد ترحيل الفاتورة. }
+        settlementVersion: { type: [integer, 'null'], minimum: 0 }
         currencyId: { type: string, pattern: '^[1-9][0-9]*$' }
         dueDate: { type: string, format: date }
         subtotal: { type: string }
@@ -7926,7 +8085,7 @@ components:
       additionalProperties: false
       required: [description, quantity, unitPrice, discountAmount, debitAccountId]
       properties:
-        description: { type: string, minLength: 1, maxLength: 500 }
+        description: { type: string, x-trim: true, minLength: 1, maxLength: 500 }
         quantity: { type: string, pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
         unitPrice: { type: string, pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
         discountAmount: { type: string, pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
@@ -7942,17 +8101,18 @@ components:
         fiscalPeriodId: { type: string, pattern: '^[1-9][0-9]*$' }
         documentDate: { type: string, format: date }
         dueDate: { type: string, format: date }
-        description: { type: string, minLength: 1, maxLength: 500 }
+        description: { type: string, x-trim: true, minLength: 1, maxLength: 500 }
         supplierId: { type: string, pattern: '^[1-9][0-9]*$' }
-        supplierInvoiceNumber: { type: [string, 'null'], maxLength: 100 }
+        supplierInvoiceNumber: { type: [string, 'null'], x-trim: true, maxLength: 100 }
         sourceInvoiceId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
         currencyId: { type: string, pattern: '^[1-9][0-9]*$' }
         exchangeRate: { type: string, pattern: '^[0-9]{1,11}\.[0-9]{8}$' }
-        supplierAddress: { type: [string, 'null'], maxLength: 500 }
-        notes: { type: [string, 'null'], maxLength: 1000 }
+        supplierAddress: { type: [string, 'null'], x-trim: true, maxLength: 500 }
+        notes: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
         lines: { type: array, minItems: 1, maxItems: 200, items: { $ref: '#/components/schemas/PurchaseInvoiceLineInput' } }
     PurchaseInvoiceUpdateRequest:
       type: object
+      additionalProperties: false
       required: [version]
       properties:
         version: { type: integer, minimum: 0 }
@@ -7960,23 +8120,26 @@ components:
         fiscalPeriodId: { type: string, pattern: '^[1-9][0-9]*$' }
         documentDate: { type: string, format: date }
         dueDate: { type: string, format: date }
-        description: { type: string, minLength: 1, maxLength: 500 }
+        description: { type: string, x-trim: true, minLength: 1, maxLength: 500 }
         supplierId: { type: string, pattern: '^[1-9][0-9]*$' }
-        supplierInvoiceNumber: { type: [string, 'null'], maxLength: 100 }
+        supplierInvoiceNumber: { type: [string, 'null'], x-trim: true, maxLength: 100 }
         sourceInvoiceId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
         currencyId: { type: string, pattern: '^[1-9][0-9]*$' }
         exchangeRate: { type: string, pattern: '^[0-9]{1,11}\.[0-9]{8}$' }
+        supplierAddress: { type: [string, 'null'], x-trim: true, maxLength: 500 }
+        notes: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
         lines: { type: array, minItems: 1, maxItems: 200, items: { $ref: '#/components/schemas/PurchaseInvoiceLineInput' } }
     PurchaseInvoice:
       type: object
-      required: [id, document, supplierId, currencyId, dueDate, subtotal, discountTotal, taxTotal, total, baseTotal, paidAmount, debitedAmount, outstandingAmount, settlementStatus, lines]
+      required: [id, document, supplierId, payableItemId, settlementVersion, currencyId, dueDate, subtotal, discountTotal, taxTotal, total, baseTotal, paidAmount, debitedAmount, outstandingAmount, settlementStatus, lines]
       properties:
         id: { type: string, pattern: '^[1-9][0-9]*$' }
         document: { $ref: '#/components/schemas/AccountingDocumentHeader' }
         supplierId: { type: string, pattern: '^[1-9][0-9]*$' }
         supplierInvoiceNumber: { type: [string, 'null'], maxLength: 100 }
         sourceInvoiceId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
-        apJournalLineId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+        payableItemId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$', description: معرّف عنصر الذمة الدائنة المملوك لـAP، ويظهر بعد ترحيل الفاتورة. }
+        settlementVersion: { type: [integer, 'null'], minimum: 0 }
         currencyId: { type: string, pattern: '^[1-9][0-9]*$' }
         dueDate: { type: string, format: date }
         subtotal: { type: string }
@@ -7994,21 +8157,22 @@ components:
       additionalProperties: false
       required: [nameAr, rate]
       properties:
-        nameAr: { type: string, minLength: 1, maxLength: 120 }
+        nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 120 }
         rate: { type: string, pattern: '^(0|[1-9][0-9]{0,2})\.[0-9]{4}$' }
         outputTaxAccountId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
     TaxRateUpdate:
       type: object
       additionalProperties: false
-      minProperties: 1
+      required: [version]
       properties:
-        nameAr: { type: string, minLength: 1, maxLength: 120 }
+        version: { type: integer, minimum: 0 }
+        nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 120 }
         rate: { type: string, pattern: '^(0|[1-9][0-9]{0,2})\.[0-9]{4}$' }
         outputTaxAccountId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
         isActive: { type: boolean }
     TaxRate:
       type: object
-      required: [id, code, nameAr, rate, isActive]
+      required: [id, code, nameAr, rate, isActive, version]
       properties:
         id: { type: string, pattern: '^[1-9][0-9]*$' }
         code: { type: string, maxLength: 40, readOnly: true }
@@ -8016,26 +8180,28 @@ components:
         rate: { type: string }
         outputTaxAccountId: { type: [string, 'null'] }
         isActive: { type: boolean }
+        version: { type: integer, minimum: 0 }
     PurchaseTaxRateInput:
       type: object
       additionalProperties: false
       required: [nameAr, rate]
       properties:
-        nameAr: { type: string, minLength: 1, maxLength: 120 }
+        nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 120 }
         rate: { type: string, pattern: '^(0|[1-9][0-9]{0,2})\.[0-9]{4}$' }
         inputTaxAccountId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
     PurchaseTaxRateUpdate:
       type: object
       additionalProperties: false
-      minProperties: 1
+      required: [version]
       properties:
-        nameAr: { type: string, minLength: 1, maxLength: 120 }
+        version: { type: integer, minimum: 0 }
+        nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 120 }
         rate: { type: string, pattern: '^(0|[1-9][0-9]{0,2})\.[0-9]{4}$' }
         inputTaxAccountId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
         isActive: { type: boolean }
     PurchaseTaxRate:
       type: object
-      required: [id, code, nameAr, rate, isActive]
+      required: [id, code, nameAr, rate, isActive, version]
       properties:
         id: { type: string, pattern: '^[1-9][0-9]*$' }
         code: { type: string, maxLength: 40, readOnly: true }
@@ -8043,6 +8209,7 @@ components:
         rate: { type: string }
         inputTaxAccountId: { type: [string, 'null'] }
         isActive: { type: boolean }
+        version: { type: integer, minimum: 0 }
     ReceivablesAgingReport:
       type: object
       required: [asOf, baseCurrency, data, totals]
@@ -8257,6 +8424,7 @@ components:
           example: '2026-07-30'
         description:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 500
         lines:
@@ -8330,6 +8498,7 @@ components:
           example: '2026-07-30'
         description:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 500
         entries:
@@ -8354,6 +8523,7 @@ components:
           example: '2026-07-30'
         description:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 500
         entries:
@@ -8388,6 +8558,7 @@ components:
           example: 0
         reason:
           type: string
+          x-trim: true
           minLength: 3
           maxLength: 500
     ReverseDocumentRequest:
@@ -8408,6 +8579,7 @@ components:
           example: '2026-07-30'
         reason:
           type: string
+          x-trim: true
           minLength: 3
           maxLength: 500
     DocumentCommandResult:
@@ -8431,26 +8603,55 @@ components:
         idempotentReplay:
           type: boolean
           default: false
-    AllocationInput:
+    ReceiptAllocationInput:
       type: object
       additionalProperties: false
       required:
-      - targetJournalLineId
+      - receivableItemId
       - allocatedAmount
       properties:
-        targetJournalLineId:
+        receivableItemId:
           type: string
           pattern: ^[1-9][0-9]*$
           example: '1001'
-          description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
+          description: معرّف عنصر الذمة المدينة المملوك لـAR، وينقل كنص لتجنب فقدان الدقة.
         allocatedAmount:
           type: string
           pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
           example: '1250.0000'
           description: قيمة مالية عشرية DECIMAL(19,4) كنص.
-    Allocation:
+    ReceiptAllocation:
       allOf:
-      - $ref: '#/components/schemas/AllocationInput'
+      - $ref: '#/components/schemas/ReceiptAllocationInput'
+      - type: object
+        required:
+        - id
+        properties:
+          id:
+            type: string
+            pattern: ^[1-9][0-9]*$
+            example: '1001'
+            description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
+    PaymentAllocationInput:
+      type: object
+      additionalProperties: false
+      required:
+      - payableItemId
+      - allocatedAmount
+      properties:
+        payableItemId:
+          type: string
+          pattern: ^[1-9][0-9]*$
+          example: '1001'
+          description: معرّف عنصر الذمة الدائنة المملوك لـAP، وينقل كنص لتجنب فقدان الدقة.
+        allocatedAmount:
+          type: string
+          pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
+          example: '1250.0000'
+          description: قيمة مالية عشرية DECIMAL(19,4) كنص.
+    PaymentAllocation:
+      allOf:
+      - $ref: '#/components/schemas/PaymentAllocationInput'
       - type: object
         required:
         - id
@@ -8485,6 +8686,7 @@ components:
           example: '2026-07-30'
         description:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 500
         customerId:
@@ -8531,9 +8733,11 @@ components:
           type:
           - string
           - 'null'
+          x-trim: true
           maxLength: 100
         counterpartyName:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 200
         counterpartyTaxNumber:
@@ -8541,6 +8745,7 @@ components:
           - string
           - 'null'
           writeOnly: true
+          maxLength: 64
         counterpartyAddress:
           type:
           - string
@@ -8554,25 +8759,29 @@ components:
         allocations:
           type: array
           items:
-            $ref: '#/components/schemas/AllocationInput'
+            $ref: '#/components/schemas/ReceiptAllocationInput'
       description: يجب إرسال أحد customerId أو counterAccountId فقط.
       oneOf:
       - required:
         - customerId
+        properties:
+          counterAccountId: { type: 'null' }
         not:
           type: object
           properties:
-            counterAccountId: {}
-          required:
-          - counterAccountId
-      - required:
-        - counterAccountId
-        not:
-          type: object
-          properties:
-            customerId: {}
+            customerId: { type: 'null' }
           required:
           - customerId
+      - required:
+        - counterAccountId
+        properties:
+          customerId: { type: 'null' }
+        not:
+          type: object
+          properties:
+            counterAccountId: { type: 'null' }
+          required:
+          - counterAccountId
     ReceiptUpdateRequest:
       type: object
       additionalProperties: false
@@ -8590,6 +8799,7 @@ components:
           example: '2026-07-30'
         description:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 500
         customerId:
@@ -8636,9 +8846,11 @@ components:
           type:
           - string
           - 'null'
+          x-trim: true
           maxLength: 100
         counterpartyName:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 200
         counterpartyTaxNumber:
@@ -8646,6 +8858,7 @@ components:
           - string
           - 'null'
           writeOnly: true
+          maxLength: 64
         counterpartyAddress:
           type:
           - string
@@ -8659,7 +8872,7 @@ components:
         allocations:
           type: array
           items:
-            $ref: '#/components/schemas/AllocationInput'
+            $ref: '#/components/schemas/ReceiptAllocationInput'
         version:
           type: integer
           minimum: 0
@@ -8751,7 +8964,7 @@ components:
         allocations:
           type: array
           items:
-            $ref: '#/components/schemas/Allocation'
+            $ref: '#/components/schemas/ReceiptAllocation'
       description: يطبق XOR بين customerId وcounterAccountId.
     PaymentCreateRequest:
       type: object
@@ -8778,6 +8991,7 @@ components:
           example: '2026-07-30'
         description:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 500
         supplierId:
@@ -8825,9 +9039,11 @@ components:
           type:
           - string
           - 'null'
+          x-trim: true
           maxLength: 100
         counterpartyName:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 200
         counterpartyTaxNumber:
@@ -8835,6 +9051,7 @@ components:
           - string
           - 'null'
           writeOnly: true
+          maxLength: 64
         counterpartyAddress:
           type:
           - string
@@ -8848,25 +9065,29 @@ components:
         allocations:
           type: array
           items:
-            $ref: '#/components/schemas/AllocationInput'
+            $ref: '#/components/schemas/PaymentAllocationInput'
       description: يجب إرسال أحد supplierId أو counterAccountId فقط.
       oneOf:
       - required:
         - supplierId
+        properties:
+          counterAccountId: { type: 'null' }
         not:
           type: object
           properties:
-            counterAccountId: {}
-          required:
-          - counterAccountId
-      - required:
-        - counterAccountId
-        not:
-          type: object
-          properties:
-            supplierId: {}
+            supplierId: { type: 'null' }
           required:
           - supplierId
+      - required:
+        - counterAccountId
+        properties:
+          supplierId: { type: 'null' }
+        not:
+          type: object
+          properties:
+            counterAccountId: { type: 'null' }
+          required:
+          - counterAccountId
     PaymentUpdateRequest:
       type: object
       additionalProperties: false
@@ -8884,6 +9105,7 @@ components:
           example: '2026-07-30'
         description:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 500
         supplierId:
@@ -8930,9 +9152,11 @@ components:
           type:
           - string
           - 'null'
+          x-trim: true
           maxLength: 100
         counterpartyName:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 200
         counterpartyTaxNumber:
@@ -8940,6 +9164,7 @@ components:
           - string
           - 'null'
           writeOnly: true
+          maxLength: 64
         counterpartyAddress:
           type:
           - string
@@ -8953,7 +9178,7 @@ components:
         allocations:
           type: array
           items:
-            $ref: '#/components/schemas/AllocationInput'
+            $ref: '#/components/schemas/PaymentAllocationInput'
         version:
           type: integer
           minimum: 0
@@ -9045,7 +9270,7 @@ components:
         allocations:
           type: array
           items:
-            $ref: '#/components/schemas/Allocation'
+            $ref: '#/components/schemas/PaymentAllocation'
       description: يطبق XOR بين supplierId وcounterAccountId.
     JournalReportRow:
       type: object
@@ -9250,7 +9475,14 @@ components:
       required: [range, baseCurrency, metrics, cashFlow, recentActivity]
       properties:
         range: { $ref: '#/components/schemas/ReportRange' }
-        baseCurrency: { $ref: '#/components/schemas/Currency' }
+        baseCurrency:
+          type: object
+          required: [id, code, nameAr, decimals]
+          properties:
+            id: { $ref: '#/components/schemas/Id' }
+            code: { type: string, pattern: '^[A-Z]{3}$' }
+            nameAr: { type: string }
+            decimals: { type: integer, minimum: 0, maximum: 8 }
         metrics:
           type: object
           required: [receipts, payments, netCashFlow, activeSuppliers, activeCustomers, draftDocuments]
@@ -9380,6 +9612,22 @@ components:
       properties:
         reason:
           type: string
+          x-trim: true
+          minLength: 3
+          maxLength: 500
+    TreasuryDeactivateRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - version
+      - reason
+      properties:
+        version:
+          type: integer
+          minimum: 0
+        reason:
+          type: string
+          x-trim: true
           minLength: 3
           maxLength: 500
     CustomerAddressUpdateRequest:
@@ -9395,6 +9643,7 @@ components:
           - OTHER
         line1:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 200
         line2:
@@ -9438,6 +9687,7 @@ components:
           - OTHER
         line1:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 200
         line2:

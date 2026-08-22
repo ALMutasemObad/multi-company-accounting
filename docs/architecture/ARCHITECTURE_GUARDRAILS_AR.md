@@ -1,14 +1,16 @@
 ---
 title: "Architecture Guardrails"
 status: "mandatory"
-version: "1.0"
-last_updated: "2026-08-21"
+version: "1.1"
+last_updated: "2026-08-22"
 related:
   - "BOUNDED_CONTEXT_MAP_AR.md"
   - "ADR-003-domain-boundaries-and-eventing.md"
   - "MASTER_DATA_CODE_POLICY_AR.md"
   - "PASSWORD_RESET_SECURITY_POLICY_AR.md"
   - "CONCURRENCY_DEADLOCK_DEADLINE_POLICY_AR.md"
+  - "TAX_CONTEXT_OWNERSHIP_AR.md"
+  - "TREASURY_CONTEXT_OWNERSHIP_AR.md"
   - "../ARCHITECTURE_AUDIT_DDD_EVENT_DRIVEN_AR.md"
 ---
 
@@ -45,7 +47,7 @@ related:
 
 #### أ. مالك مركزي للترحيل المحاسبي
 
-يجب إنشاء `PostingEngine` داخل Core Accounting ليكون المالك الوحيد لإنشاء وعكس `JournalEntry` و`JournalLine` وتغيير حالة `AccountingDocument` المالية.
+`PostingEngine` داخل Core Accounting هو المالك الوحيد لإنشاء وعكس `JournalEntry` و`JournalLine` وتغيير حالة `AccountingDocument` المالية. اكتمل النقل، ويمنع الحارس المعماري عودة الكتابة المباشرة.
 
 الوحدات مثل Sales وPurchases وTreasury تبني `PostingPlan` فقط، ولا تحفظ القيود بنفسها.
 
@@ -68,23 +70,29 @@ related:
 
 #### ج. عدم استخدام معرفات Ledger كعقود بين المجالات
 
-يجب التخلص تدريجيًا من جعل `targetJournalLineId` هو هوية الذمة بين Treasury وAR/AP. الهدف هو `ReceivableItemId` و`PayableItemId` أو مفهوم مجال مكافئ، مع إبقاء Journal Line تفصيلًا داخليًا في Core Accounting.
+اكتمل التخلص من `targetJournalLineId` كهوية بين Treasury وAR/AP. العقد الإلزامي هو `ReceivableItemId` و`PayableItemId`، مع إبقاء Journal Line تفصيلًا داخليًا في Core Accounting وفق [وثيقة عناصر الذمم](AR_AP_SETTLEMENT_ITEMS_AR.md).
+
+يجب أن تحمل عناصر الذمم `companyId` والطرف والعملة والأصل والرصيد والحالة والنسخة، وأن تتغير عبر منافذ تسوية صغيرة داخل المعاملة المالية نفسها. يمنع اشتقاق قرار التخصيص الحالي من رصيد `JournalLine` أو كشف رابط السطر الداخلي في DTO عام.
 
 ### 3.2 أولوية P1 — إزالة التكرار وتوضيح الملكية
 
 #### أ. Treasury
 
-يجب أن يملك Treasury:
+اكتمل جعل Treasury المالك الوحيد لما يلي:
 
 - `CashBankAccount`.
 - `PaymentMethod`.
 - رؤوس `Receipt` و`Payment` وحركة النقد.
 
-يجب إزالة منطق Treasury المكرر من Customer/Supplier services تدريجيًا.
+أزيل CRUD المكرر من Customer/Supplier services، وتستهلك حركات القبض والصرف `TreasuryInstrumentPort` داخل معاملاتها. تحمل تعديلات وتعطيلات الصناديق وطرق الدفع نسخة متفائلة، وفق [وثيقة ملكية Treasury](TREASURY_CONTEXT_OWNERSHIP_AR.md).
+
+يمنع إنشاء قراءة أو كتابة مباشرة جديدة لـ`CashBankAccount/PaymentMethod` خارج الوحدة، باستثناء Seed/Migration setup غير التشغيلي الموثق.
 
 #### ب. Tax Configuration
 
-يجب وجود مالك واحد لـ`TaxRate` وسياسات حسابات ضريبة المدخلات والمخرجات. لا يجوز استمرار CRUD مستقل في Sales وPurchases لنفس الجدول دون واجهة مالك مركزية.
+اكتمل جعل وحدة `Tax` المالك الوحيد لـ`TaxRate` وسياسات حسابات ضريبة المدخلات والمخرجات والحاسبة الموحدة. تستخدم Sales وPurchases `TaxQuotePort` داخل معاملاتها ولا تنفذان Prisma CRUD على جدول الضرائب. كل PATCH لنسبة ضريبية يحمل نسخة متفائلة، وفق [وثيقة ملكية Tax](TAX_CONTEXT_OWNERSHIP_AR.md).
+
+يمنع إنشاء حاسبة ضريبية محلية أو تحديث نسبة بلا `companyId + version` أو تقريب إجمالي العملة الأساسية بطريقة لا تطابق تفاصيل Posting.
 
 #### ج. خدمات البنية المشتركة
 
@@ -156,6 +164,9 @@ related:
 
 - كل schema change عبر Migration واختبارات قاعدة فارغة وترقية.
 - يجب تحديث Prisma وMigration والوثائق والعقد معًا حسب نطاق التغيير.
+- OpenAPI هو مصدر الحقيقة لأجسام JSON العامة، ويجب استخدام الحراس والأنواع المولدة وفق [سياسة العقد التنفيذي](OPENAPI_EXECUTABLE_CONTRACTS_AR.md)؛ يمنع إنشاء مخطط Zod موازٍ لـ`request.body` داخل Router.
+- يمنع تعديل الملف المولد يدويًا أو دمج تغيير عقد مع فشل `contracts:check` أو Redocly أو بوابة اعتماد العمليات المولدة.
+- تبقى معرفات BIGINT نصوصًا في الاستجابة وتتحول إلى `bigint` عند حد الطلب المولد، وتبقى DECIMAL نصوصًا في النقل.
 - يمنع `db push`, `MAX()+1`، وraw SQL غير parameterized.
 - رموز البيانات الرئيسية المشمولة بالسياسة يولدها الخادم ذريًا، وتبقى ثابتة ولا تقبلها عقود الإنشاء أو التعديل.
 - يجب المحافظة على company isolation في كل query واختبار cross-company.

@@ -14,7 +14,8 @@ describe.runIf(enabled)('accounts and cost centers with MariaDB', () => {
   beforeAll(async () => {
     const user = await prisma!.user.findUniqueOrThrow({ where: { emailNormalized: 'admin@mcap.local' } });
     companyId = (await prisma!.userCompany.findFirstOrThrow({ where: { userId: user.id, isActive: true } })).companyId;
-    await prisma!.receiptAllocation.deleteMany({ where: { companyId, targetJournalLine: { account: { code: { startsWith: 'IT-' } } } } });
+    await prisma!.receiptAllocation.deleteMany({ where: { companyId, receivableItem: { salesInvoice: { arJournalLine: { account: { code: { startsWith: 'IT-' } } } } } } });
+    await prisma!.receivableItem.deleteMany({ where: { companyId, salesInvoice: { arJournalLine: { account: { code: { startsWith: 'IT-' } } } } } });
     await prisma!.salesInvoice.updateMany({ where: { companyId, arJournalLine: { account: { code: { startsWith: 'IT-' } } } }, data: { arJournalLineId: null } });
     await prisma!.journalLine.deleteMany({ where: { companyId, account: { code: { startsWith: 'IT-' } } } });
     await prisma!.account.updateMany({ where: { companyId, code: { startsWith: 'IT-' } }, data: { parentAccountId: null } });

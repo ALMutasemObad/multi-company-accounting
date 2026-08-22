@@ -31,10 +31,26 @@ import { OutboxWorker } from './outbox/outbox-worker.js';
 import { RegistrationVerificationHandler } from './registration/registration-verification-handler.js';
 import { PasswordResetService } from './auth/password-reset-service.js';
 import { PasswordResetHandler } from './auth/password-reset-handler.js';
+import { configureHttpServerTimeouts } from './operations/http-server.js';
+import { operationalMetrics } from './operations/metrics.js';
+import { TaxService } from './tax/tax-service.js';
+import { TreasuryService } from './treasury/treasury-service.js';
 
 const config = loadConfig();
 if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required to start the API');
+operationalMetrics.configure({
+  windowMs: config.ALERT_WINDOW_MS,
+  minimumTransactionSamples: config.ALERT_MIN_TRANSACTION_SAMPLES,
+  deadlockRatioThreshold: config.ALERT_DEADLOCK_RATIO_THRESHOLD,
+  retryExhaustedRatioThreshold: config.ALERT_RETRY_EXHAUSTED_RATIO_THRESHOLD,
+  requestDeadlineCountThreshold: config.ALERT_REQUEST_DEADLINE_COUNT_THRESHOLD,
+  outboxLagMsThreshold: config.ALERT_OUTBOX_LAG_MS_THRESHOLD,
+  outboxDeadLetterCountThreshold: config.ALERT_OUTBOX_DEAD_LETTER_COUNT_THRESHOLD,
+  cooldownMs: config.ALERT_COOLDOWN_MS,
+});
 const database = createDatabase(config.DATABASE_URL);
+const taxes = new TaxService(database);
+const treasury = new TreasuryService(database);
 const auth = new AuthService(new PrismaAuthStore(database), { verify }, {
   preAuthTtlMinutes: config.PRE_AUTH_TTL_MINUTES,
   sessionTtlHours: config.SESSION_TTL_HOURS,
@@ -81,10 +97,12 @@ const outboxWorker = outboxHandlers.size
       baseBackoffMs: config.OUTBOX_BASE_BACKOFF_MS,
       handlerTimeoutMs: config.OUTBOX_HANDLER_TIMEOUT_MS,
       retentionDays: config.OUTBOX_RETENTION_DAYS,
+      metrics: operationalMetrics,
     })
   : undefined;
 const app = createApp(config, {
   readiness: new DatabaseReadinessService(database, config.READINESS_TIMEOUT_MS),
+  metrics: operationalMetrics,
   auth,
   ...(registration ? { registration } : {}),
   ...(passwordReset ? { passwordReset } : {}),
@@ -97,17 +115,30 @@ const app = createApp(config, {
   accounts: new AccountService(database),
   journals: new ManualJournalService(database),
   receiptReferences: new ReceiptReferenceService(database),
-  receipts: new ReceiptService(database),
+  treasury,
+  receipts: new ReceiptService(database, treasury),
   suppliers: new SupplierReferenceService(database),
-  payments: new PaymentService(database),
+  payments: new PaymentService(database, treasury),
   reports: new ReportService(database),
-  salesInvoices: new SalesInvoiceService(database),
-  purchaseInvoices: new PurchaseInvoiceService(database),
+  taxes,
+  salesInvoices: new SalesInvoiceService(database, taxes),
+  purchaseInvoices: new PurchaseInvoiceService(database, taxes),
 });
 
 const server = app.listen(config.PORT, () => {
-  logEvent('info', 'api_started', { port: config.PORT, environment: config.NODE_ENV });
+  logEvent('info', 'api_started', {
+    port: config.PORT,
+    environment: config.NODE_ENV,
+    requestTimeoutMs: config.HTTP_REQUEST_TIMEOUT_MS,
+    headersTimeoutMs: config.HTTP_HEADERS_TIMEOUT_MS,
+    keepAliveTimeoutMs: config.HTTP_KEEP_ALIVE_TIMEOUT_MS,
+  });
   outboxWorker?.start();
+});
+configureHttpServerTimeouts(server, {
+  requestTimeoutMs: config.HTTP_REQUEST_TIMEOUT_MS,
+  headersTimeoutMs: config.HTTP_HEADERS_TIMEOUT_MS,
+  keepAliveTimeoutMs: config.HTTP_KEEP_ALIVE_TIMEOUT_MS,
 });
 
 let shuttingDown = false;

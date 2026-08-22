@@ -11,6 +11,7 @@ import {
   type PaymentInput,
 } from "../src/payments/payment-service.js";
 import { ReportService } from "../src/reports/report-service.js";
+import { TreasuryService } from "../src/treasury/treasury-service.js";
 
 const enabled = process.env.RUN_DB_TESTS === "true";
 const databaseUrl = process.env.DATABASE_URL ?? "";
@@ -31,7 +32,7 @@ describe.runIf(enabled)(
     let supplierId: bigint;
     let cashBankId: bigint;
     let paymentMethodId: bigint;
-    let targetLineId: bigint;
+    let payableItemId: bigint;
     let agent: ReturnType<typeof request.agent>;
     let csrf = "";
     let paymentService: PaymentService;
@@ -49,6 +50,15 @@ describe.runIf(enabled)(
           companyId,
           accountingDocument: { fiscalPeriod: { fiscalYearId: id } },
         },
+      });
+      await prisma!.payableItem.deleteMany({
+        where: { companyId, purchaseInvoice: { accountingDocument: { fiscalPeriod: { fiscalYearId: id } } } },
+      });
+      await prisma!.purchaseInvoiceLine.deleteMany({
+        where: { companyId, purchaseInvoice: { accountingDocument: { fiscalPeriod: { fiscalYearId: id } } } },
+      });
+      await prisma!.purchaseInvoice.deleteMany({
+        where: { companyId, accountingDocument: { fiscalPeriod: { fiscalYearId: id } } },
       });
       await prisma!.journalLine.deleteMany({
         where: {
@@ -108,7 +118,7 @@ describe.runIf(enabled)(
       counterpartyTaxNumber: "9876543210",
       allocations: [
         {
-          targetJournalLineId: targetLineId.toString(),
+          payableItemId: payableItemId.toString(),
           allocatedAmount: "200.0000",
         },
       ],
@@ -125,7 +135,7 @@ describe.runIf(enabled)(
       amount: "200.0000",
       counterpartyName: "Test text",
       allocations: [
-        { targetJournalLineId: targetLineId, allocatedAmount: "200.0000" },
+        { payableItemId, allocatedAmount: "200.0000" },
       ],
     });
     beforeAll(async () => {
@@ -218,7 +228,8 @@ describe.runIf(enabled)(
       });
       yearId = year.id;
       periodId = year.periods[0]!.id;
-      paymentService = new PaymentService(prisma!);
+      const treasury = new TreasuryService(prisma!);
+      paymentService = new PaymentService(prisma!, treasury);
       const references = new SupplierReferenceService(prisma!);
       const auth = new AuthService(
         new PrismaAuthStore(prisma!),
@@ -235,7 +246,7 @@ describe.runIf(enabled)(
           SESSION_TTL_HOURS: 12,
           DATABASE_URL: databaseUrl,
         },
-        { auth, suppliers: references, payments: paymentService, reports: new ReportService(prisma!) },
+        { auth, suppliers: references, treasury, payments: paymentService, reports: new ReportService(prisma!) },
       );
       agent = request.agent(app);
       csrf = (await agent.get("/api/v1/auth/csrf")).body.csrfToken;
@@ -292,7 +303,7 @@ describe.runIf(enabled)(
         data: {
           companyId,
           fiscalPeriodId: periodId,
-          documentType: "MANUAL_JOURNAL",
+          documentType: "PURCHASE_INVOICE",
           documentNumber: "IT-PAY-INVOICE",
           documentDate: new Date("2043-02-01"),
           description: "Test text",
@@ -300,6 +311,21 @@ describe.runIf(enabled)(
           createdBy: userId,
           postedBy: userId,
           postedAt: new Date(),
+          purchaseInvoice: {
+            create: {
+              supplierId,
+              currencyId,
+              exchangeRate: "1.00000000",
+              dueDate: new Date("2043-03-01"),
+              subtotal: "200.0000",
+              discountTotal: "0.0000",
+              taxableTotal: "200.0000",
+              taxTotal: "0.0000",
+              total: "200.0000",
+              baseTotal: "200.0000",
+              supplierNameSnapshot: "Test text",
+            },
+          },
           journalEntries: {
             create: [
               {
@@ -335,9 +361,24 @@ describe.runIf(enabled)(
             ],
           },
         },
-        include: { journalEntries: { include: { lines: true } } },
+        include: { purchaseInvoice: true, journalEntries: { include: { lines: true } } },
       });
-      targetLineId = invoice.journalEntries[0]!.lines[0]!.id;
+      const targetLineId = invoice.journalEntries[0]!.lines[0]!.id;
+      await prisma!.purchaseInvoice.update({
+        where: { id: invoice.purchaseInvoice!.id },
+        data: { apJournalLineId: targetLineId },
+      });
+      payableItemId = (await prisma!.payableItem.create({
+        data: {
+          companyId,
+          purchaseInvoiceId: invoice.purchaseInvoice!.id,
+          supplierId,
+          currencyId,
+          dueDate: new Date("2043-03-01"),
+          originalAmount: "200.0000",
+          outstandingAmount: "200.0000",
+        },
+      })).id;
     });
     afterAll(async () => {
       if (!prisma) return;
@@ -559,6 +600,10 @@ describe.runIf(enabled)(
         })
         .expect(200);
       expect(reversed.body.document.status).toBe("REVERSED");
+      const restoredItem = await prisma!.payableItem.findUniqueOrThrow({ where: { id: payableItemId } });
+      expect(restoredItem.outstandingAmount.toFixed(4)).toBe(restoredItem.originalAmount.toFixed(4));
+      expect(restoredItem.status).toBe("OPEN");
+      expect(restoredItem.version).toBe(2);
       const dashboard = await agent
         .get("/api/v1/reports/dashboard")
         .query({ dateFrom: "2043-01-01", dateTo: "2043-12-31" })

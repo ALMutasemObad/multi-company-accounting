@@ -14,6 +14,21 @@
 - تطبق حدود منفصلة على API وعلى مساري CSRF والدخول وعمليات التسجيل العامة واستعادة كلمة المرور؛ قراءة خيارات التسجيل لا تستهلك الحد المشدد.
 - يتعامل الخادم مع `SIGTERM` و`SIGINT` ويغلق HTTP وPrisma ضمن المهلة المحددة.
 
+## مهلات الطلب والقياسات
+
+يبدأ كل طلب بموعد مطلق واحد قبل تحليل JSON، وتستهلك الأوامر المالية وRetry والمعاملات من الموعد نفسه. القيم الافتراضية: قراءة 10 ثوانٍ، كتابة 15 ثانية، تسجيل 65 ثانية، وNode `requestTimeout` يساوي 70 ثانية مع `headersTimeout=10s` و`keepAliveTimeout=5s`. يرفض محمل الإعدادات أي ترتيب يعكس الهرم. اضبط Reverse Proxy على مهلة أكبر؛ مثال Nginx وإرشادات Passenger موثقان في [دليل المرونة التشغيلية](operational-resilience.md).
+
+عند انتهاء المهلة يعاد `504 REQUEST_DEADLINE_EXCEEDED` ولا يرسل نجاح متأخر. قد يكون Commit ذري اكتمل عند حافة المهلة، لذلك لا تفترض أن 504 يعني عدم وجود أثر؛ افحص حالة المستند وأعد الأمر بمفتاح `Idempotency-Key` نفسه. عند انقطاع العميل تتوقف المحاولات والخطوات التالية، ولا تُقطع معاملة قائمة بطريقة تترك أثرًا جزئيًا.
+
+فعّل مخرج Prometheus فقط مع سر مستقل من مدير الأسرار:
+
+```text
+METRICS_ENABLED=true
+METRICS_BEARER_TOKEN=<separate random secret, at least 32 characters>
+```
+
+يرفض الإنتاج التفعيل من دون الرمز. لا يحمل المخرج companyId أو requestId أو payload أو Idempotency key. راقب `mcap_operational_alert_active` مع counters وhistograms للـdeadlock وlock-wait وretry exhaustion وoptimistic conflicts وrequest deadlines وOutbox lag/retry/dead-letter. تضبط النوافذ والحدود بمتغيرات `ALERT_*` في نموذج البيئة، وتوجد إجراءات الاستجابة والمعايرة في الدليل المرتبط.
+
 ## التسجيل الذاتي
 
 طبّق الترحيلين `20260821220000_self_registration` و`20260822100000_transactional_outbox` وSeed المرجعيات قبل التفعيل، ثم اضبط القيم التالية من مدير الأسرار:

@@ -48,8 +48,8 @@ describe("واجهة سند الصرف", () => {
 
   it("يجمع التوزيعات ويقبل سندًا صحيحًا", () => {
     const allocations = [
-      { targetJournalLineId: "101", allocatedAmount: "50.0000" },
-      { targetJournalLineId: "102", allocatedAmount: "75.0000" },
+      { payableItemId: "101", allocatedAmount: "50.0000" },
+      { payableItemId: "102", allocatedAmount: "75.0000" },
     ];
     expect(allocationsTotal(allocations)).toBe(125);
     expect(
@@ -70,7 +70,7 @@ describe("واجهة سند الصرف", () => {
       amount: "100",
       exchangeRate: "1",
       allocations: [
-        { targetJournalLineId: "101", allocatedAmount: "90" },
+        { payableItemId: "101", allocatedAmount: "90" },
       ],
     });
     expect(errors).toHaveLength(2);

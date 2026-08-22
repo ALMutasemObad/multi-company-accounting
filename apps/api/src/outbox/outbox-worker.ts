@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { logEvent } from '../operations/logger.js';
+import { operationalMetrics, type OperationalMetricsSink } from '../operations/metrics.js';
 import { PermanentOutboxError, type OutboxEnvelope, type OutboxHandler } from './outbox.js';
 
 export type OutboxWorkerOptions = {
@@ -12,6 +13,7 @@ export type OutboxWorkerOptions = {
   retentionDays: number;
   now?: () => Date;
   random?: () => number;
+  metrics?: OperationalMetricsSink;
 };
 
 type ClaimedEvent = OutboxEnvelope & { lockToken: string };
@@ -36,6 +38,7 @@ function safeErrorCode(error: unknown) {
 export class OutboxWorker {
   private readonly now: () => Date;
   private readonly random: () => number;
+  private readonly metrics: OperationalMetricsSink;
   private running = false;
   private stopRequested = false;
   private loopPromise: Promise<void> | undefined;
@@ -52,6 +55,7 @@ export class OutboxWorker {
   ) {
     this.now = options.now ?? (() => new Date());
     this.random = options.random ?? Math.random;
+    this.metrics = options.metrics ?? operationalMetrics;
   }
 
   start() {
@@ -166,12 +170,14 @@ export class OutboxWorker {
       }),
     ]);
     const count = (status: 'PENDING' | 'PROCESSING' | 'FAILED') => groups.find((group) => group.status === status)?._count._all ?? 0;
-    logEvent('info', 'outbox_health_snapshot', {
+    const snapshot = {
       pending: count('PENDING'),
       processing: count('PROCESSING'),
       failed: count('FAILED'),
       oldestLagMs: oldest ? Math.max(0, this.now().getTime() - oldest.occurredAt.getTime()) : 0,
-    });
+    };
+    this.metrics.recordOutboxSnapshot(snapshot);
+    logEvent('info', 'outbox_health_snapshot', snapshot);
   }
 
   private async claimOne(excludedIds: readonly bigint[]): Promise<ClaimedEvent | null> {
@@ -257,6 +263,7 @@ export class OutboxWorker {
         attempt: event.attemptCount,
         lagMs: Math.max(0, completedAt.getTime() - event.occurredAt.getTime()),
       });
+      this.metrics.recordOutboxProcessed(event.eventType, Math.max(0, completedAt.getTime() - event.occurredAt.getTime()));
     } catch (error) {
       await this.finishFailure(event, error);
     } finally {
@@ -292,8 +299,10 @@ export class OutboxWorker {
       return;
     }
     if (terminal) {
+      this.metrics.recordOutboxDeadLetter(event.eventType);
       logEvent('error', 'outbox_event_dead_lettered', { eventId: event.eventId, eventType: event.eventType, attempt: event.attemptCount, errorCode });
     } else {
+      this.metrics.recordOutboxRetry(event.eventType);
       logEvent('info', 'outbox_event_retry_scheduled', { eventId: event.eventId, eventType: event.eventType, attempt: event.attemptCount, errorCode, retryAfterMs });
     }
   }

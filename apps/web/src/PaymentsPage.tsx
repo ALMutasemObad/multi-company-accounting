@@ -24,7 +24,7 @@ import {
   } from "./domain";
 import type {
   Account,
-  Allocation,
+  PaymentAllocation,
   CashBankAccount,
   Currency,
   FiscalPeriod,
@@ -303,7 +303,7 @@ function PaymentForm({
   const [counterpartyName, setCounterpartyName] = useState(
     payment?.counterpartyNameSnapshot ?? "",
   );
-  const [allocations, setAllocations] = useState<Allocation[]>(payment?.allocations ?? []);
+  const [allocations, setAllocations] = useState<PaymentAllocation[]>(payment?.allocations ?? []);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const selectedSupplier = references.suppliers.find((item) => item.id === supplierId);
@@ -338,7 +338,7 @@ function PaymentForm({
   function addAllocation() {
     setAllocations((current) => [
       ...current,
-      { targetJournalLineId: "", allocatedAmount: "" },
+      { payableItemId: "", allocatedAmount: "" },
     ]);
   }
 
@@ -381,7 +381,7 @@ function PaymentForm({
       counterpartyAddress: value("counterpartyAddress") || null,
       notes: value("notes") || null,
       allocations: allocations.map((allocation) => ({
-        targetJournalLineId: allocation.targetJournalLineId,
+        payableItemId: allocation.payableItemId,
         allocatedAmount: toMoney(allocation.allocatedAmount),
       })),
       ...(payment ? { version: payment.document.version } : {}),
@@ -482,7 +482,7 @@ function PaymentForm({
             <div className="allocation-list">
               {allocations.map((allocation, index) => (
                 <div className="allocation-row" key={allocation.id ?? index}>
-                  <label><span>{t("pages.payments.079")}</span><select value={allocation.targetJournalLineId} onChange={(event) => { const selectedInvoice = openInvoices.find((invoice) => invoice.apJournalLineId === event.target.value); setAllocations((current) => current.map((item, i) => i === index ? { ...item, targetJournalLineId: event.target.value, allocatedAmount: selectedInvoice ? selectedInvoice.outstandingAmount : item.allocatedAmount } : item)); }}><option value="">{t("pages.payments.080")}</option>{openInvoices.map((invoice) => <option key={invoice.id} value={invoice.apJournalLineId ?? ""}>{invoice.document.documentNumber}{invoice.supplierInvoiceNumber ? t("pages.payments.081", { value1: invoice.supplierInvoiceNumber }) : ""}{t("pages.payments.082")}{formatMoney(invoice.outstandingAmount)}</option>)}</select></label>
+                  <label><span>{t("pages.payments.079")}</span><select value={allocation.payableItemId} onChange={(event) => { const selectedInvoice = openInvoices.find((invoice) => invoice.payableItemId === event.target.value); setAllocations((current) => current.map((item, i) => i === index ? { ...item, payableItemId: event.target.value, allocatedAmount: selectedInvoice ? selectedInvoice.outstandingAmount : item.allocatedAmount } : item)); }}><option value="">{t("pages.payments.080")}</option>{openInvoices.map((invoice) => <option key={invoice.id} value={invoice.payableItemId ?? ""}>{invoice.document.documentNumber}{invoice.supplierInvoiceNumber ? t("pages.payments.081", { value1: invoice.supplierInvoiceNumber }) : ""}{t("pages.payments.082")}{formatMoney(invoice.outstandingAmount)}</option>)}</select></label>
                   <label><span>{t("pages.dashboard.039")}</span><input dir="ltr" inputMode="decimal" value={allocation.allocatedAmount} onChange={(event) => setAllocations((current) => current.map((item, i) => i === index ? { ...item, allocatedAmount: event.target.value } : item))} /></label>
                   <button type="button" className="icon-button danger-text" aria-label={t("pages.payments.083")} onClick={() => setAllocations((current) => current.filter((_, i) => i !== index))}><Icon name="trash" size={18} /></button>
                 </div>
@@ -559,8 +559,8 @@ function PaymentDetails({
       ) : (
         <div className="allocation-detail-list">
           {payment.allocations.map((allocation) => (
-            <div key={allocation.id ?? allocation.targetJournalLineId}>
-              <span>{references.purchaseInvoices.find((invoice) => invoice.apJournalLineId === allocation.targetJournalLineId)?.document.documentNumber ?? t("pages.payments.099", { value1: allocation.targetJournalLineId })}</span>
+            <div key={allocation.id ?? allocation.payableItemId}>
+              <span>{references.purchaseInvoices.find((invoice) => invoice.payableItemId === allocation.payableItemId)?.document.documentNumber ?? t("pages.payments.099", { value1: allocation.payableItemId })}</span>
               <strong>{formatMoney(allocation.allocatedAmount)}</strong>
             </div>
           ))}

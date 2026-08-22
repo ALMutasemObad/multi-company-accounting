@@ -103,10 +103,3 @@ export const accountTypeDefinitions = [
   { code: 'REVENUE', nameAr: 'الإيرادات', class: 'REVENUE', normalBalance: 'CREDIT', statementSection: 'INCOME_STATEMENT' },
   { code: 'EXPENSE', nameAr: 'المصروفات', class: 'EXPENSE', normalBalance: 'DEBIT', statementSection: 'INCOME_STATEMENT' },
 ] as const;
-
-export const paymentMethodDefinitions = [
-  { code: 'CASH', nameAr: 'نقدي', requiresReference: false },
-  { code: 'BANK_TRANSFER', nameAr: 'تحويل بنكي', requiresReference: true },
-  { code: 'CARD', nameAr: 'بطاقة', requiresReference: true },
-  { code: 'CHEQUE', nameAr: 'شيك', requiresReference: true },
-] as const;

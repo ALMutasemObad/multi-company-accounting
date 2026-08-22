@@ -8,7 +8,13 @@ import {
   type OutboxAppender,
 } from '../outbox/outbox.js';
 import { CompanyProvisioningError, type CompanyProvisioningService } from '../platform/company-provisioning-service.js';
+import {
+  TransactionDeadlineExceededError,
+  TransactionExecutor,
+  TransactionRetryExhaustedError,
+} from '../platform/transaction-executor.js';
 import { RegistrationEventRecorder, type RegistrationMetadata } from './registration-event-recorder.js';
+import { assertRequestActive, ClientDisconnectedError, sleepWithinRequest } from '../operations/request-context.js';
 
 export type { RegistrationMetadata } from './registration-event-recorder.js';
 
@@ -40,6 +46,7 @@ export class RegistrationService {
   private readonly passwordHasher: (password: string) => Promise<string>;
   private readonly retentionDays: number;
   private readonly events: RegistrationEventRecorder;
+  private readonly transactions: TransactionExecutor;
 
   constructor(
     private readonly prisma: PrismaClient,
@@ -51,6 +58,7 @@ export class RegistrationService {
     this.passwordHasher = optionsConfig.passwordHasher ?? hash;
     this.retentionDays = optionsConfig.retentionDays ?? 30;
     this.events = new RegistrationEventRecorder(optionsConfig.auditPepper ?? 'development-only-registration-audit-pepper');
+    this.transactions = new TransactionExecutor(prisma);
   }
 
   async options() {
@@ -85,7 +93,13 @@ export class RegistrationService {
     const verificationTokenHash = hashToken(createOpaqueToken());
     const expiresAt = this.now();
 
-    await this.retryTransaction(() => this.prisma.$transaction(async (tx) => {
+    await this.transactions.execute({
+      operation: 'START_REGISTRATION',
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      maxWaitMs: 5_000,
+      timeoutMs: 30_000,
+      deadlineMs: 40_000,
+    }, async (tx) => {
       const currency = await tx.currency.findUnique({ where: { scopeKey_code: { scopeKey: 'GLOBAL', code: baseCurrencyCode } }, select: { isActive: true } });
       if (!currency?.isActive) throw new RegistrationError('INVALID_OPTION');
       if (input.chartTemplateCode !== DEFAULT_CHART_TEMPLATE_CODE) throw new RegistrationError('INVALID_OPTION');
@@ -153,7 +167,7 @@ export class RegistrationService {
         occurredAt: this.now(),
       });
       return true;
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 5_000, timeout: 30_000 }));
+    });
 
     return { status: 'PENDING_VERIFICATION' as const };
   }
@@ -162,7 +176,13 @@ export class RegistrationService {
     const emailNormalized = email.trim().toLocaleLowerCase('en-US');
     const verificationTokenHash = hashToken(createOpaqueToken());
     const expiresAt = this.now();
-    await this.retryTransaction(() => this.prisma.$transaction(async (tx) => {
+    await this.transactions.execute({
+      operation: 'RESEND_REGISTRATION_VERIFICATION',
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      maxWaitMs: 5_000,
+      timeoutMs: 10_000,
+      deadlineMs: 20_000,
+    }, async (tx) => {
       const existing = await tx.registrationRequest.findUnique({ where: { emailNormalized } });
       if (!existing || !['PENDING_EMAIL', 'EMAIL_VERIFIED'].includes(existing.status)) {
         await this.recordEvent(tx, { emailNormalized, eventType: 'REGISTRATION_RESEND_IGNORED', severity: 'WARNING', metadata });
@@ -190,13 +210,19 @@ export class RegistrationService {
         occurredAt: this.now(),
       });
       return true;
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 5_000, timeout: 10_000 }));
+    });
     return { status: 'PENDING_VERIFICATION' as const };
   }
 
   async verify(token: string, metadata: RegistrationMetadata = {}) {
     const verificationTokenHash = hashToken(token);
-    const claim = await this.retryTransaction(() => this.prisma.$transaction(async (tx) => {
+    const claim = await this.transactions.execute({
+      operation: 'CLAIM_REGISTRATION_VERIFICATION',
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      maxWaitMs: 10_000,
+      timeoutMs: 10_000,
+      deadlineMs: 25_000,
+    }, async (tx) => {
       const request = await tx.registrationRequest.findUnique({ where: { verificationTokenHash } });
       if (!request) {
         await this.recordEvent(tx, { emailNormalized: `token:${token}`, eventType: 'REGISTRATION_TOKEN_REJECTED', severity: 'WARNING', metadata });
@@ -226,14 +252,20 @@ export class RegistrationService {
       if (!claimed.count) return { kind: 'in_progress' as const, requestId: request.id };
       await this.recordEvent(tx, { registrationRequestId: request.id, emailNormalized: request.emailNormalized, eventType: staleProvisioning ? 'REGISTRATION_PROVISIONING_RESUMED' : 'REGISTRATION_EMAIL_VERIFIED', metadata });
       return { kind: 'claimed' as const, requestId: request.id };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 10_000, timeout: 10_000 }));
+    });
 
     if (claim.kind === 'invalid') throw new RegistrationError('INVALID_OR_EXPIRED_TOKEN');
     if (claim.kind === 'completed') return { status: 'COMPLETED' as const, companyId: claim.companyId, userId: claim.userId };
     if (claim.kind === 'in_progress') return this.waitForCompletion(claim.requestId);
 
     try {
-      const outcome = await this.retryTransaction(() => this.prisma.$transaction(async (tx) => {
+      const outcome = await this.transactions.execute({
+        operation: 'PROVISION_REGISTRATION',
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        maxWaitMs: 10_000,
+        timeoutMs: 45_000,
+        deadlineMs: 60_000,
+      }, async (tx) => {
         const request = await tx.registrationRequest.findUniqueOrThrow({ where: { id: claim.requestId } });
         if (request.status !== 'PROVISIONING' || !request.passwordHash) throw new RegistrationError('REGISTRATION_CONFLICT');
         const result = await this.provisioning.provisionPreparedInTransaction(tx, {
@@ -272,23 +304,32 @@ export class RegistrationService {
           },
         });
         return { companyId: result.company.id, userId: result.administrator.id };
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 10_000, timeout: 45_000 }));
+      });
 
       return { status: 'COMPLETED' as const, companyId: outcome.companyId, userId: outcome.userId };
     } catch (error) {
+      if (error instanceof ClientDisconnectedError) throw error;
       if (error instanceof RegistrationError) {
+        assertRequestActive('RECORD_REGISTRATION_FAILURE');
         await this.recordProvisioningFailure(verificationTokenHash, 'REGISTRATION_CONFLICT', metadata);
+        throw error;
+      }
+      if (error instanceof TransactionRetryExhaustedError || error instanceof TransactionDeadlineExceededError) {
+        assertRequestActive('RECORD_REGISTRATION_FAILURE');
+        await this.recordProvisioningFailure(verificationTokenHash, 'PROVISIONING_FAILED', metadata);
         throw error;
       }
       const conflict = error instanceof CompanyProvisioningError && ['ADMIN_USER_EXISTS', 'ADMIN_USER_DISABLED'].includes(error.reason)
         || error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+      assertRequestActive('RECORD_REGISTRATION_FAILURE');
       await this.recordProvisioningFailure(verificationTokenHash, conflict ? 'REGISTRATION_CONFLICT' : 'PROVISIONING_FAILED', metadata);
       throw new RegistrationError(conflict ? 'REGISTRATION_CONFLICT' : 'PROVISIONING_FAILED');
     }
   }
 
   private async recordProvisioningFailure(tokenHash: Uint8Array<ArrayBuffer>, code: 'REGISTRATION_CONFLICT' | 'PROVISIONING_FAILED', metadata: RegistrationMetadata) {
-    await this.prisma.$transaction(async (tx) => {
+    assertRequestActive('RECORD_REGISTRATION_FAILURE');
+    await this.transactions.execute({ operation: 'RECORD_REGISTRATION_FAILURE' }, async (tx) => {
       const request = await tx.registrationRequest.findUnique({ where: { verificationTokenHash: tokenHash } });
       if (!request || request.status !== 'PROVISIONING') return;
       await tx.registrationRequest.update({ where: { id: request.id }, data: { status: code === 'REGISTRATION_CONFLICT' ? 'REJECTED' : 'EMAIL_VERIFIED', lastErrorCode: code } });
@@ -298,7 +339,8 @@ export class RegistrationService {
 
   private async waitForCompletion(requestId: bigint) {
     for (let attempt = 0; attempt < 10; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await sleepWithinRequest(200);
+      assertRequestActive('WAIT_FOR_REGISTRATION_COMPLETION');
       const request = await this.prisma.registrationRequest.findUnique({ where: { id: requestId }, select: { status: true, provisionedCompanyId: true, provisionedUserId: true } });
       if (request?.status === 'COMPLETED' && request.provisionedCompanyId && request.provisionedUserId) {
         return { status: 'COMPLETED' as const, companyId: request.provisionedCompanyId.toString(), userId: request.provisionedUserId.toString() };
@@ -306,18 +348,6 @@ export class RegistrationService {
       if (!request || request.status !== 'PROVISIONING') break;
     }
     return { status: 'IN_PROGRESS' as const };
-  }
-
-  private async retryTransaction<T>(operation: () => Promise<T>) {
-    for (let attempt = 0; ; attempt += 1) {
-      try {
-        return await operation();
-      } catch (error) {
-        const retryable = error instanceof Prisma.PrismaClientKnownRequestError
-          && (error.code === 'P2034' || (error.code === 'P2010' && String(error.meta?.code) === '1213'));
-        if (!retryable || attempt >= 2) throw error;
-      }
-    }
   }
 
   private recordEvent(tx: Prisma.TransactionClient, input: Parameters<RegistrationEventRecorder['record']>[1]) {

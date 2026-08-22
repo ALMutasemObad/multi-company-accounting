@@ -1,0 +1,2 @@
+ALTER TABLE `tax_rates`
+  ADD COLUMN `version` INT UNSIGNED NOT NULL DEFAULT 0 AFTER `is_active`;

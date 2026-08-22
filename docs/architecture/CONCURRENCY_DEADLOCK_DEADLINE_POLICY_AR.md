@@ -1,8 +1,8 @@
 ---
 title: "Concurrency, Deadlock and Deadline Policy"
 status: "mandatory"
-version: "1.0"
-last_updated: "2026-08-21"
+version: "1.2"
+last_updated: "2026-08-22"
 related:
   - "ARCHITECTURE_GUARDRAILS_AR.md"
   - "ADR-003-domain-boundaries-and-eventing.md"
@@ -33,40 +33,40 @@ related:
 - **Optimistic concurrency:** كشف التغيير المتزامن عبر `version` أو شرط update بدل قفل طويل.
 - **Pessimistic lock:** قفل صف صريح عند الحاجة إلى حماية قرار مبني على حالته الحالية.
 
-## 3. تقييم الوضع الحالي
+## 3. حالة التطبيق الحالية
 
-### نقاط قوة موجودة
+### منفذ في 22 أغسطس 2026
 
 - استخدام `version` في المستندات والفترات.
 - Idempotency دائم للعمليات الحساسة.
-- معاملات Serializable في عدة أوامر مالية.
+- `TransactionExecutor` مركزي يعيد المعاملة كاملة بحد أقصى ثلاث محاولات وfull-jitter exponential backoff ضمن deadline واحد.
+- تصنيف موحد لـ`P2034` وMySQL/MariaDB `1213/1205`، وفصل `P2002` بوصفه unique conflict غير قابل لإعادة المعاملة تلقائيًا.
+- `maxWait` و`timeout` صريحان للمعاملات المركزية، مع خطأين آمنين `503 CONCURRENCY_RETRY_EXHAUSTED` و`504 REQUEST_DEADLINE_EXCEEDED`.
+- `PostingEngine` مركزي يطبق ترتيب الأقفال: الفترة، المستند، أهداف التسوية تصاعديًا، ثم القيود؛ ويستخدم إغلاق الفترة قفل الفترة نفسه.
 - حجز ذري لأرقام المستندات باستخدام تحديث قاعدة البيانات.
-- Retry محدود لبعض deadlocks في المدفوعات وحجز التسلسل.
-- اختبارات تزامن للتسجيل وIdempotency وبعض حالات التكرار.
+- نقل حلقات retry في الخدمات المالية والتسجيل إلى Infrastructure واحدة.
+- اختبارات post-vs-close وreverse-vs-receipt/payment وتسويتين متزامنتين على Outstanding واحد.
+- سجلات منظمة للمدة والمحاولة والتصنيف وdeadlock/lock-wait/retry/exhaustion/deadline دون Payload مالي أو مفتاح Idempotency خام.
 - Timeouts واضحة للـreadiness والإغلاق والبريد والتسجيل/التجهيز.
 
-### فجوات يجب إصلاحها
+### فجوات متبقية
 
-- Retry classification والتنفيذ مكرران بين الخدمات.
-- بعض أوامر الترحيل عند `P2034` تنتظر ظهور Idempotency record مكتملة، لكنها لا تعيد تنفيذ المعاملة إذا كان الخطأ deadlock مستقلًا؛ قد تنتهي بـ`IDEMPOTENCY_IN_PROGRESS` رغم عدم وجود عملية ناجحة.
-- `P2002` يستخدم أحيانًا في مسار واحد مع `P2034` رغم أن unique conflict ليس deadlock؛ يجب تمييز سباق Idempotency عن تعارض أعمال آخر.
-- Backoff الحالي خطي وقصير ومن دون jitter، ما قد يعيد ضغط العمليات المتعارضة في اللحظة نفسها.
-- معظم المعاملات المالية لا تحدد `maxWait` و`timeout` صراحة.
 - لا يوجد end-to-end request deadline موحد أو ضبط صريح لـHTTP server timeouts.
-- لا توجد سياسة أقفال موحدة ومعلنة بين posting وperiod close وsettlements.
-- تغطية اختبارات التزامن غير مكتملة للترحيل مقابل الإغلاق، والتسويات المتزامنة، والعكس مقابل التسوية.
-- لا توجد metrics موحدة للـdeadlocks والـlock waits وretry exhaustion.
+- لا توجد بعد منصة Metrics وتنبيهات تشغيلية؛ المتاح حاليًا سجلات منظمة تحمل أسماء العدادات المطلوبة.
+- لم تنفذ اختبارات حمل أو معايرة baselines وIsolation Levels.
+- لم تطبق السياسة بعد على كل عامل خلفي أو قراءة طويلة خارج الأوامر الحساسة المركزية.
 
 أدلة الوضع الحالي:
 
-- `apps/api/src/payments/payment-service.ts:32-47`
-- `apps/api/src/fiscal/fiscal-service.ts:191-222`
-- `apps/api/src/journals/manual-journal-service.ts:808-834`
-- `apps/api/src/receipts/receipt-service.ts:841-872`
-- `apps/api/src/sales/sales-invoice-service.ts:637-647`
-- `apps/api/src/purchases/purchase-invoice-service.ts:643-653`
-- `apps/api/src/registration/registration-service.ts:96-270`
-- `apps/api/src/config.ts:24-25`
+- `apps/api/src/platform/transaction-executor.ts`
+- `apps/api/src/platform/idempotent-command-executor.ts`
+- `apps/api/src/core-accounting/posting-engine.ts`
+- `apps/api/src/fiscal/fiscal-service.ts`
+- `apps/api/tests/transaction-executor.test.ts`
+- `apps/api/tests/architecture-guardrails.test.ts`
+- `apps/api/tests/manual-journals.integration.test.ts`
+- `apps/api/tests/sales-invoices.integration.test.ts`
+- `apps/api/tests/purchase-invoices.integration.test.ts`
 
 ## 4. المبادئ الحاكمة
 
@@ -122,7 +122,7 @@ related:
 2. Company/Fiscal Period row عند ارتباط العملية بفترة.
 3. Source aggregate أو `AccountingDocument`.
 4. Document Sequence row عند حجز رقم داخل المعاملة.
-5. Receivable/Payable settlement targets بترتيب المعرف تصاعديًا.
+5. صفوف `ReceivableItem/PayableItem` بترتيب المعرف تصاعديًا.
 6. Accounts/Cost Centers/Currencies المطلوبة بترتيب ثابت عند الحاجة لقفلها.
 7. Journal/Balance rows بترتيب `(accountId, fiscalPeriodStart, fiscalPeriodId)` أو الترتيب المعتمد في Posting Engine.
 8. Audit وOutbox inserts في النهاية.
@@ -132,7 +132,7 @@ related:
 - عند قفل عدة معرفات من النوع نفسه، ترتب تصاعديًا قبل أي Query.
 - يمنع مسار آخر من استخدام ترتيب عكسي.
 - يجب أن يستخدم Period Close نفس قفل الفترة الذي يستخدمه Posting قبل فحص المستندات.
-- يجب أن يتنافس Reverse وSettlement على مورد مجال مشترك يمنع النتيجتين غير المتوافقتين.
+- يجب أن يتنافس Reverse وSettlement على عنصر الذمة نفسه؛ ينفذ قفل العنصر قبل أقفال `JournalLine`.
 - `findUnique` العادي لا يعتبر وعدًا بقفل صف؛ عند الحاجة إلى قفل صريح يستخدم Adapter موثق واختبارات على MySQL/MariaDB.
 
 قد يتغير الترتيب التفصيلي عند تنفيذ Posting Engine، لكن يجب أن يبقى ترتيبًا عالميًا واحدًا موثقًا ومختبرًا.
@@ -228,7 +228,7 @@ Reverse proxy deadline
 - `transaction_retry_exhausted_total`.
 - `optimistic_conflict_total`.
 - `request_deadline_exceeded_total`.
-- Outbox lag/retry/dead-letter مستقبلًا.
+- Outbox lag/retry/dead-letter.
 
 السجل يتضمن operation، company scope عند توفره، request/correlation reference، attempt، elapsed time، والتصنيف النهائي. لا يسجل Idempotency key الخام أو payload مالي حساس.
 
@@ -251,22 +251,22 @@ Reverse proxy deadline
 
 ### P0
 
-1. إنشاء classifier مركزي للأخطاء القابلة لإعادة المحاولة.
-2. إنشاء `TransactionExecutor` موحد بdeadline وbackoff+jitter.
-3. فصل سباق Idempotency `P2002` عن deadlock `P2034/1213`.
-4. توثيق وتنفيذ lock order داخل Posting Engine وPeriod Close.
-5. إضافة اختبارات post-vs-close وsettlement-vs-reverse وover-allocation المتزامن.
+1. [x] إنشاء classifier مركزي للأخطاء القابلة لإعادة المحاولة.
+2. [x] إنشاء `TransactionExecutor` موحد بdeadline وbackoff+jitter.
+3. [x] فصل سباق Idempotency `P2002` عن deadlock `P2034/1213`.
+4. [x] توثيق وتنفيذ lock order داخل Posting Engine وPeriod Close.
+5. [x] إضافة اختبارات post-vs-close وsettlement-vs-reverse وover-allocation المتزامن.
 
 ### P1
 
-1. تحديد transaction `maxWait/timeout` لكل فئة عملية.
-2. إضافة HTTP/request deadlines متوافقة مع Nginx.
-3. إضافة metrics وتنبيهات للـdeadlocks والـretry exhaustion.
-4. نقل حلقات retry المكررة إلى Infrastructure واحدة.
+1. [x] تحديد transaction `maxWait/timeout` لفئات الأوامر الحساسة المركزية.
+2. [x] إضافة HTTP/request deadlines متوافقة مع Nginx وPassenger، وتمرير `deadlineAt` و`AbortSignal` ومنع النجاح المتأخر.
+3. [x] ربط السجلات المنظمة بـPrometheus metrics وقواعد تنبيه قابلة للضبط للـdeadlocks والـretry exhaustion والـdeadlines وOutbox.
+4. [x] نقل حلقات retry المكررة إلى Infrastructure واحدة.
 
 ### P2
 
-1. اختبارات حمل ومعايرة baselines.
+1. اختبارات حمل ومعايرة baselines. أضيف Probe محدود من 16 معاملة على بوابتي المحركين؛ تبقى معايرة SLO/Baselines الإنتاجية مطلوبة.
 2. مراجعة Isolation Levels بأدلة القياس.
 3. تطبيق السياسة على Outbox workers والتقارير الخلفية.
 

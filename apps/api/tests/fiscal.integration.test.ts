@@ -25,6 +25,8 @@ describe.runIf(enabled)('fiscal periods and document sequences with MariaDB', ()
     await prisma!.paymentAllocation.deleteMany({ where: { companyId } });
     await prisma!.receipt.deleteMany({ where: { companyId } });
     await prisma!.payment.deleteMany({ where: { companyId } });
+    await prisma!.receivableItem.deleteMany({ where: { companyId } });
+    await prisma!.payableItem.deleteMany({ where: { companyId } });
     await prisma!.salesInvoice.updateMany({ where: { companyId }, data: { arJournalLineId: null } });
     await prisma!.purchaseInvoice.updateMany({ where: { companyId }, data: { apJournalLineId: null } });
     await prisma!.journalLine.deleteMany({ where: { companyId } });

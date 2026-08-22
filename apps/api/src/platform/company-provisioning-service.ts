@@ -2,7 +2,8 @@ import { hash } from 'argon2';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { applyDefaultChartTemplate } from '../accounts/default-chart-template.js';
-import { accountTypeDefinitions, paymentMethodDefinitions, permissionDefinitions } from './reference-data.js';
+import { upsertGlobalPaymentMethods } from '../treasury/treasury-service.js';
+import { accountTypeDefinitions, permissionDefinitions } from './reference-data.js';
 
 const tenantCode = z.string().trim().min(2).max(80).transform((value) => value.toUpperCase())
   .refine((value) => /^[A-Z][A-Z0-9_-]+$/.test(value), 'Use uppercase Latin letters, numbers, underscores or hyphens');
@@ -108,13 +109,7 @@ export class CompanyProvisioningService {
         await tx.accountType.upsert({ where: { code: definition.code }, update: definition, create: definition });
       }
       const defaultChart = existingCompany ? null : await applyDefaultChartTemplate(tx, company.id);
-      for (const method of paymentMethodDefinitions) {
-        await tx.paymentMethod.upsert({
-          where: { code: method.code },
-          update: { ...method, isActive: true, scope: 'GLOBAL', companyId: null },
-          create: { ...method, scope: 'GLOBAL' },
-        });
-      }
+      await upsertGlobalPaymentMethods(tx);
 
       await tx.auditLog.create({
         data: {

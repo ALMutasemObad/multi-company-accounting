@@ -1,6 +1,7 @@
 import cors from 'cors';
 import express, { type ErrorRequestHandler } from 'express';
 import helmet from 'helmet';
+import { timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { ZodError } from 'zod';
 import type { AppConfig } from './config.js';
@@ -39,10 +40,28 @@ import { createSecurityEventRouter } from './security/security-event-router.js';
 import type { ReadinessCheck } from './operations/readiness-service.js';
 import { createRateLimiter } from './operations/rate-limit.js';
 import { logEvent, requestLogger } from './operations/logger.js';
+import { operationalMetrics, type OperationalMetrics } from './operations/metrics.js';
+import {
+  ClientDisconnectedError,
+  requestContextMiddleware,
+  RequestDeadlineExceededError,
+} from './operations/request-context.js';
+import {
+  TransactionDeadlineExceededError,
+  TransactionRetryExhaustedError,
+} from './platform/transaction-executor.js';
 import type { RegistrationService } from './registration/registration-service.js';
 import { createRegistrationRouter } from './registration/registration-router.js';
 import type { PasswordResetService } from './auth/password-reset-service.js';
 import { createPasswordResetRouter } from './auth/password-reset-router.js';
+import type { TaxService } from './tax/tax-service.js';
+import { createTaxRouter } from './tax/tax-router.js';
+import type { TreasuryService } from './treasury/treasury-service.js';
+import { createTreasuryRouter } from './treasury/treasury-router.js';
+import {
+  createOpenApiResponseValidator,
+  OpenApiResponseContractError,
+} from './platform/openapi-response-validator.js';
 
 type ClientRequestProblem = {
   status: number;
@@ -83,15 +102,47 @@ function clientRequestProblem(error: unknown): ClientRequestProblem | undefined 
   return undefined;
 }
 
-export function createApp(config: AppConfig, services: { readiness?: ReadinessCheck; auth?: AuthService; registration?: RegistrationService; passwordReset?: PasswordResetService; users?: UserService; companies?: CompanyService; printing?: PrintService; audit?: AuditService; security?: SecurityEventService; fiscal?: FiscalService; accounts?: AccountService; journals?: ManualJournalService; receiptReferences?: ReceiptReferenceService; receipts?: ReceiptService; suppliers?: SupplierReferenceService; payments?: PaymentService; reports?: ReportService; salesInvoices?: SalesInvoiceService; purchaseInvoices?: PurchaseInvoiceService } = {}) {
+export function createApp(config: AppConfig, services: { readiness?: ReadinessCheck; metrics?: OperationalMetrics; auth?: AuthService; registration?: RegistrationService; passwordReset?: PasswordResetService; users?: UserService; companies?: CompanyService; printing?: PrintService; audit?: AuditService; security?: SecurityEventService; fiscal?: FiscalService; accounts?: AccountService; journals?: ManualJournalService; receiptReferences?: ReceiptReferenceService; treasury?: TreasuryService; receipts?: ReceiptService; suppliers?: SupplierReferenceService; payments?: PaymentService; reports?: ReportService; taxes?: TaxService; salesInvoices?: SalesInvoiceService; purchaseInvoices?: PurchaseInvoiceService } = {}) {
   const app = express();
+  const metrics = services.metrics ?? operationalMetrics;
 
   app.disable('x-powered-by');
   if (config.TRUST_PROXY) app.set('trust proxy', 1);
   app.use(helmet());
   app.use(cors({ origin: config.WEB_ORIGIN, credentials: true }));
   app.use(requestLogger(config.LOG_REQUESTS ?? false));
+  app.use(requestContextMiddleware({
+    readDeadlineMs: config.API_READ_DEADLINE_MS ?? 10_000,
+    writeDeadlineMs: config.API_WRITE_DEADLINE_MS ?? 15_000,
+    registrationWriteDeadlineMs: config.API_REGISTRATION_WRITE_DEADLINE_MS ?? 65_000,
+    metrics,
+  }));
   app.use(express.json({ limit: '1mb' }));
+  if (config.NODE_ENV !== 'production') app.use(createOpenApiResponseValidator());
+
+  if (config.METRICS_ENABLED) {
+    app.get('/metrics', (request, response) => {
+      const expected = config.METRICS_BEARER_TOKEN;
+      const supplied = request.header('Authorization')?.match(/^Bearer (.+)$/u)?.[1];
+      const authorized = expected
+        ? supplied !== undefined && Buffer.byteLength(supplied) === Buffer.byteLength(expected)
+          && timingSafeEqual(Buffer.from(supplied), Buffer.from(expected))
+        : config.NODE_ENV !== 'production';
+      if (!authorized) {
+        response.setHeader('WWW-Authenticate', 'Bearer');
+        response.status(401).json({
+          type: 'about:blank',
+          title: 'Unauthorized',
+          status: 401,
+          code: 'UNAUTHENTICATED',
+          messageAr: 'يلزم رمز تشغيل صالح للوصول إلى القياسات.',
+          requestId: response.locals.requestId,
+        });
+        return;
+      }
+      response.type('text/plain; version=0.0.4; charset=utf-8').send(metrics.renderPrometheus());
+    });
+  }
 
   const live = (_request: express.Request, response: express.Response) => {
     response.json({ status: 'ok', service: 'mcap-finance-api' });
@@ -133,9 +184,11 @@ export function createApp(config: AppConfig, services: { readiness?: ReadinessCh
   if (services.auth && services.accounts) app.use('/api/v1', createAccountRouter(services.auth, services.accounts));
   if (services.auth && services.journals) app.use('/api/v1', createManualJournalRouter(services.auth, services.journals));
   if (services.auth && services.receiptReferences) app.use('/api/v1', createReceiptReferenceRouter(services.auth, services.receiptReferences));
+  if (services.auth && services.treasury) app.use('/api/v1', createTreasuryRouter(services.auth, services.treasury));
   if (services.auth && services.receipts) app.use('/api/v1', createReceiptRouter(services.auth, services.receipts));
   if (services.auth && services.suppliers) app.use('/api/v1', createSupplierRouter(services.auth, services.suppliers));
   if (services.auth && services.payments) app.use('/api/v1', createPaymentRouter(services.auth, services.payments));
+  if (services.auth && services.taxes) app.use('/api/v1', createTaxRouter(services.auth, services.taxes));
   if (services.auth && services.salesInvoices) app.use('/api/v1', createSalesInvoiceRouter(services.auth, services.salesInvoices));
   if (services.auth && services.purchaseInvoices) app.use('/api/v1', createPurchaseInvoiceRouter(services.auth, services.purchaseInvoices));
   if (services.auth && services.reports) app.use('/api/v1', createReportRouter(services.auth, services.reports));
@@ -168,10 +221,14 @@ export function createApp(config: AppConfig, services: { readiness?: ReadinessCh
       title: 'Not Found',
       status: 404,
       code: 'NOT_FOUND',
+      messageAr: 'المسار المطلوب غير موجود.',
+      requestId: response.locals.requestId,
     });
   });
 
   const errorHandler: ErrorRequestHandler = (error, _request, response, _next) => {
+    if (response.writableEnded || response.destroyed) return;
+    if (error instanceof ClientDisconnectedError) return;
     const requestProblem = clientRequestProblem(error);
     if (requestProblem) {
       response.status(requestProblem.status).json({
@@ -191,7 +248,50 @@ export function createApp(config: AppConfig, services: { readiness?: ReadinessCh
       response.status(status).json({ type: 'about:blank', title: 'Authentication failed', status, code: error.reason });
       return;
     }
-    logEvent('error', 'request_failed', { requestId: response.locals.requestId, error: error instanceof Error ? error.name : 'UnknownError' });
+    if (error instanceof TransactionRetryExhaustedError) {
+      response.status(503).json({
+        type: 'about:blank',
+        title: 'Transaction retry exhausted',
+        status: 503,
+        code: error.code,
+        messageAr: 'تعذر إكمال العملية بسبب تعارض متزامن مؤقت. أعد المحاولة.',
+        requestId: response.locals.requestId,
+      });
+      return;
+    }
+    if (error instanceof RequestDeadlineExceededError || error instanceof TransactionDeadlineExceededError) {
+      response.status(504).json({
+        type: 'about:blank',
+        title: 'Request deadline exceeded',
+        status: 504,
+        code: error.code,
+        messageAr: 'تجاوزت العملية المهلة الآمنة. تحقق من حالتها وأعد المحاولة بمفتاح Idempotency نفسه عند توفره.',
+        requestId: response.locals.requestId,
+      });
+      return;
+    }
+    logEvent('error', 'request_failed', {
+      requestId: response.locals.requestId,
+      error: error instanceof Error ? error.name : 'UnknownError',
+      ...(typeof error === 'object' && error !== null && 'code' in error
+        ? { errorCode: String(error.code) }
+        : {}),
+      ...(typeof error === 'object' && error !== null && 'meta' in error && typeof error.meta === 'object' && error.meta !== null && 'code' in error.meta
+        ? { databaseCode: String(error.meta.code) }
+        : {}),
+      ...(error instanceof OpenApiResponseContractError
+        ? {
+            operationId: error.operationId,
+            responseStatus: error.status,
+            contractReason: error.reason,
+            contractIssues: error.issues?.slice(0, 20).map((issue) => ({
+              code: issue.code,
+              path: issue.path.map(String).join('.'),
+              message: issue.message,
+            })),
+          }
+        : {}),
+    });
     response.status(500).json({
       type: 'about:blank',
       title: 'Internal Server Error',

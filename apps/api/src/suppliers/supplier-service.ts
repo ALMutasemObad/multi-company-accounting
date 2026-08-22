@@ -5,9 +5,7 @@ import type { ActorContext } from "../users/user-service.js";
 export type ReferenceErrorReason =
   | "NOT_FOUND"
   | "CODE_EXISTS"
-  | "INVALID_ACCOUNT"
-  | "INVALID_BANK_DETAILS"
-  | "HAS_ACTIVE_USAGE";
+  | "INVALID_ACCOUNT";
 export class ReferenceError extends Error {
   constructor(public readonly reason: ReferenceErrorReason) {
     super(reason);
@@ -32,18 +30,8 @@ export type SupplierInput = {
   taxNumber?: string | null | undefined;
   addresses?: AddressInput[] | undefined;
 };
-export type CashBankInput = {
-  ledgerAccountId: bigint;
-  accountType: "CASH" | "BANK";
-  nameAr: string;
-  nameEn?: string | null | undefined;
-  bankName?: string | null | undefined;
-  accountNumber?: string | null | undefined;
-  iban?: string | null | undefined;
-};
 type SupplierUpdate = { payableAccountId?: bigint | undefined; nameAr?: string | undefined; nameEn?: string | null | undefined; phone?: string | null | undefined; email?: string | null | undefined; taxNumber?: string | null | undefined };
 type AddressUpdate = { addressType?: AddressInput["addressType"] | undefined; line1?: string | undefined; line2?: string | null | undefined; city?: string | null | undefined; region?: string | null | undefined; postalCode?: string | null | undefined; countryCode?: string | null | undefined; isPrimary?: boolean | undefined };
-type CashBankUpdate = { ledgerAccountId?: bigint | undefined; accountType?: "CASH" | "BANK" | undefined; nameAr?: string | undefined; nameEn?: string | null | undefined; bankName?: string | null | undefined; accountNumber?: string | null | undefined; iban?: string | null | undefined };
 const last4 = (value?: string | null) =>
   value ? value.replace(/\s/g, "").slice(-4) : null;
 const unique = (error: unknown) =>
@@ -290,180 +278,6 @@ export class SupplierReferenceService {
     });
   }
 
-  listCashBankAccounts(
-    context: ActorContext,
-    input: {
-      page: number;
-      pageSize: number;
-      search?: string | undefined;
-      type?: "CASH" | "BANK" | undefined;
-    },
-  ) {
-    const where: Prisma.CashBankAccountWhereInput = {
-      companyId: context.companyId,
-      ...(input.type ? { accountType: input.type } : {}),
-      ...(input.search
-        ? {
-            OR: [
-              { code: { contains: input.search } },
-              { nameAr: { contains: input.search } },
-              { bankName: { contains: input.search } },
-            ],
-          }
-        : {}),
-    };
-    return this.prisma.$transaction(async (tx) => ({
-      data: await tx.cashBankAccount.findMany({
-        where,
-        orderBy: { code: "asc" },
-        skip: (input.page - 1) * input.pageSize,
-        take: input.pageSize,
-      }),
-      total: await tx.cashBankAccount.count({ where }),
-    }));
-  }
-  async getCashBankAccount(context: ActorContext, id: bigint) {
-    const value = await this.prisma.cashBankAccount.findFirst({
-      where: { id, companyId: context.companyId },
-    });
-    if (!value) throw new ReferenceError("NOT_FOUND");
-    return value;
-  }
-  async createCashBankAccount(context: ActorContext, input: CashBankInput) {
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        await this.validPostingAccount(
-          tx,
-          context.companyId,
-          input.ledgerAccountId,
-        );
-        this.validBank(input);
-        const code = await reserveMasterDataCode(
-          tx,
-          context.companyId,
-          "CASH_BANK_ACCOUNT",
-        );
-        const value = await tx.cashBankAccount.create({
-          data: {
-            companyId: context.companyId,
-            ledgerAccountId: input.ledgerAccountId,
-            accountType: input.accountType,
-            code,
-            nameAr: input.nameAr,
-            nameEn: input.nameEn ?? null,
-            bankName: input.bankName ?? null,
-            accountNumberLast4: last4(input.accountNumber),
-            ibanLast4: last4(input.iban),
-          },
-        });
-        await this.audit(
-          tx,
-          context,
-          "CASH_BANK_ACCOUNT_CREATED",
-          "CASH_BANK_ACCOUNT",
-          value.id,
-        );
-        return value;
-      });
-    } catch (error) {
-      if (unique(error)) throw new ReferenceError("CODE_EXISTS");
-      throw error;
-    }
-  }
-  async updateCashBankAccount(
-    context: ActorContext,
-    id: bigint,
-    input: CashBankUpdate,
-  ) {
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        const current = await tx.cashBankAccount.findFirst({
-          where: { id, companyId: context.companyId },
-        });
-        if (!current) throw new ReferenceError("NOT_FOUND");
-        if (input.ledgerAccountId !== undefined)
-          await this.validPostingAccount(
-            tx,
-            context.companyId,
-            input.ledgerAccountId,
-          );
-        this.validBank({ accountType: input.accountType ?? current.accountType, bankName: input.bankName === undefined ? current.bankName : input.bankName });
-        const value = await tx.cashBankAccount.update({
-          where: { id },
-          data: {
-            ...(input.ledgerAccountId !== undefined
-              ? { ledgerAccountId: input.ledgerAccountId }
-              : {}),
-            ...(input.accountType !== undefined
-              ? { accountType: input.accountType }
-              : {}),
-            ...(input.nameAr !== undefined ? { nameAr: input.nameAr } : {}),
-            ...(input.nameEn !== undefined ? { nameEn: input.nameEn } : {}),
-            ...(input.bankName !== undefined
-              ? { bankName: input.bankName }
-              : {}),
-            ...(input.accountNumber !== undefined
-              ? { accountNumberLast4: last4(input.accountNumber) }
-              : {}),
-            ...(input.iban !== undefined
-              ? { ibanLast4: last4(input.iban) }
-              : {}),
-          },
-        });
-        await this.audit(
-          tx,
-          context,
-          "CASH_BANK_ACCOUNT_UPDATED",
-          "CASH_BANK_ACCOUNT",
-          id,
-        );
-        return value;
-      });
-    } catch (error) {
-      if (unique(error)) throw new ReferenceError("CODE_EXISTS");
-      throw error;
-    }
-  }
-  async deactivateCashBankAccount(
-    context: ActorContext,
-    id: bigint,
-    reason: string,
-  ) {
-    return this.prisma.$transaction(async (tx) => {
-      if (
-        !(await tx.cashBankAccount.findFirst({
-          where: { id, companyId: context.companyId },
-        }))
-      )
-        throw new ReferenceError("NOT_FOUND");
-      const value = await tx.cashBankAccount.update({
-        where: { id },
-        data: { isActive: false },
-      });
-      await this.audit(
-        tx,
-        context,
-        "CASH_BANK_ACCOUNT_DEACTIVATED",
-        "CASH_BANK_ACCOUNT",
-        id,
-        { reason },
-      );
-      return value;
-    });
-  }
-  listPaymentMethods(context: ActorContext) {
-    return this.prisma.paymentMethod.findMany({
-      where: {
-        isActive: true,
-        OR: [
-          { scope: "GLOBAL", companyId: null },
-          { scope: "COMPANY", companyId: context.companyId },
-        ],
-      },
-      orderBy: { code: "asc" },
-    });
-  }
-
   static supplierJson(value: any) {
     return {
       id: value.id.toString(),
@@ -493,32 +307,6 @@ export class SupplierReferenceService {
       isPrimary: value.isPrimary,
     };
   }
-  static cashBankJson(value: any) {
-    return {
-      id: value.id.toString(),
-      ledgerAccountId: value.ledgerAccountId.toString(),
-      accountType: value.accountType,
-      code: value.code,
-      nameAr: value.nameAr,
-      nameEn: value.nameEn,
-      bankName: value.bankName,
-      accountNumberMasked: value.accountNumberLast4
-        ? `****${value.accountNumberLast4}`
-        : null,
-      ibanMasked: value.ibanLast4 ? `****${value.ibanLast4}` : null,
-      isActive: value.isActive,
-    };
-  }
-  static paymentMethodJson(value: any) {
-    return {
-      id: value.id.toString(),
-      code: value.code,
-      nameAr: value.nameAr,
-      requiresReference: value.requiresReference,
-      isActive: value.isActive,
-      scope: value.scope,
-    };
-  }
   private async validPostingAccount(
     tx: Prisma.TransactionClient,
     companyId: bigint,
@@ -536,10 +324,6 @@ export class SupplierReferenceService {
     )
       throw new ReferenceError("INVALID_ACCOUNT");
     return account;
-  }
-  private validBank(input: Pick<CashBankInput, "accountType" | "bankName">) {
-    if (input.accountType === "BANK" && !input.bankName?.trim())
-      throw new ReferenceError("INVALID_BANK_DETAILS");
   }
   private addressData(input: AddressUpdate) {
     return {

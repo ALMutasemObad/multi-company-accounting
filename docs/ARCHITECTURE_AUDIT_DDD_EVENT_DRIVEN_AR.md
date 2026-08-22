@@ -31,6 +31,8 @@ confidence: "high for static architecture findings"
 
 > ملاحظة للمراجع: كانت توجد تغييرات غير ملتزمة مسبقًا في الـworking tree عند إجراء التدقيق. لذلك يعكس التقرير الحالة الحالية التي تمت معاينتها، وليس بالضرورة آخر commit في Git.
 
+> **ملحق حالة المعالجة — 22 أغسطس 2026:** هذا التقرير يحفظ صورة 21 أغسطس التاريخية. عولجت لاحقًا ملاحظتا ملكية Ledger وهوية التسوية: أصبح `PostingEngine` مالك الترحيل والعكس، وأضيف `ReceivableItem/PayableItem` واستبدلت حقول `targetJournalLineId` في Prisma وOpenAPI والخدمات والواجهة. راجع [وثيقة عناصر الذمم](architecture/AR_AP_SETTLEMENT_ITEMS_AR.md) للحالة المنفذة وخطة الترحيل؛ تبقى بقية الملاحظات كما هي ما لم يذكر مصدر حاكم أحدث خلاف ذلك.
+
 ## أسئلة مقترحة للمراجع أو نموذج الذكاء الاصطناعي الآخر
 
 1. هل تصنيف الـBounded Contexts المقترح يعكس لغة الأعمال الفعلية للنظام؟
@@ -226,17 +228,18 @@ Audit/Security <──── all contexts
 
 ## 5.5 Treasury موزع ومكرر — Medium/High
 
-إدارة `CashBankAccount` و`PaymentMethod` موجودة في:
+الحالة عند التدقيق الأصلي: كانت إدارة `CashBankAccount` و`PaymentMethod` موجودة في:
 
 - `project/apps/api/src/receipts/reference-service.ts:293-495`
 - `project/apps/api/src/suppliers/supplier-service.ts:290-455`
 
 المسارات الفعلية تستخدم خدمة `receipts/reference-service`، بينما التنفيذ الآخر يبدو تكرارًا غير مستعمل في التركيب الحالي.
 
-التوصية:
+أغلقت التوصية في 22 أغسطس 2026:
 
-- إنشاء وحدة Treasury مالكة للصناديق والبنوك وطرق الدفع.
-- إزالة المعرفة بهذه الكيانات من Customer/Supplier reference services عند مرحلة إعادة الهيكلة.
+- أصبحت `TreasuryService` و`treasury-router` المالكين الوحيدين للـCRUD مع المسارات العامة نفسها.
+- أزيلت المعرفة بهذه الكيانات من Customer/Supplier reference services، وتستهلك Receipt/Payment `TreasuryInstrumentPort` بدل Prisma المباشر.
+- أضيفت نسخة متفائلة واختبارات تعارض وعزل وترقية على MariaDB وMySQL؛ التفاصيل في [ملكية Treasury](architecture/TREASURY_CONTEXT_OWNERSHIP_AR.md).
 
 ## 5.6 Onboarding يعبر عدة Contexts — Medium
 
@@ -496,6 +499,12 @@ Audit/Security <──── all contexts
 3. إدخال Transactional Outbox بدءًا ببريد التسجيل، ثم أحداث المستندات المالية والفترات.
 
 يجب أن تستخدم الأحداث للأعمال اللاحقة للـcommit، لا لاستبدال المعاملة المحاسبية الأساسية.
+
+## ملحق تنفيذ ملكية Tax — 22 أغسطس 2026
+
+أغلق الدين الموصوف في هذا التقرير حول تعدد مالكي `TaxRate`: أصبحت وحدة `Tax` المالك الوحيد للـCRUD وسياسة الحساب والحسابات، وتستهلك Sales/Purchases `TaxQuotePort` متزامنًا. أزيلت الحاسبتان المكررتان، وأضيفت نسخة متفائلة واختبارات تعارض وعزل ومحركين.
+
+وأغلق أيضًا دين Treasury CRUD الانتقالي: أصبحت وحدة `Treasury` المالك الوحيد للصناديق وطرق الدفع وسياسة أداة الحركة، وتستهلك Receipt/Payment `TreasuryInstrumentPort`. أزيل التكرار من خدمتي العملاء والموردين، وأضيفت نسخ متفائلة واختبارات تعارض وعزل وترقية على المحركين.
 
 # 14. فهرس الأدلة الأساسي
 

@@ -1,8 +1,8 @@
 import { Router, type ErrorRequestHandler, type Request } from 'express';
 import {
-  registrationResendRequestSchema,
-  registrationStartRequestSchema,
-  registrationVerifyRequestSchema,
+  resendSelfRegistrationVerificationRequestSchema,
+  startSelfRegistrationRequestSchema,
+  verifySelfRegistrationRequestSchema,
 } from '../generated/openapi-request-guards.js';
 import type { AuthService } from '../auth/auth-service.js';
 import { RegistrationError, type RegistrationService } from './registration-service.js';
@@ -32,19 +32,19 @@ export function createRegistrationRouter(auth: AuthService, registration: Regist
 
   router.post('/', async (request, response) => {
     await requirePreAuth(auth, request);
-    const body = registrationStartRequestSchema.parse(request.body);
+    const body = startSelfRegistrationRequestSchema.parse(request.body);
     response.status(202).json(await registration.start(body, metadata(request)));
   });
 
   router.post('/resend', async (request, response) => {
     await requirePreAuth(auth, request);
-    const body = registrationResendRequestSchema.parse(request.body);
+    const body = resendSelfRegistrationVerificationRequestSchema.parse(request.body);
     response.status(202).json(await registration.resend(body.email, metadata(request)));
   });
 
   router.post('/verify', async (request, response) => {
     await requirePreAuth(auth, request);
-    const body = registrationVerifyRequestSchema.parse(request.body);
+    const body = verifySelfRegistrationRequestSchema.parse(request.body);
     const result = await registration.verify(body.token, metadata(request));
     response.status(result.status === 'COMPLETED' ? 201 : 202).json(result);
   });

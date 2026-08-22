@@ -69,10 +69,11 @@ related:
 | مخطط البيانات | `apps/api/prisma/schema.prisma` — `MasterDataCodeSequence` |
 | الترحيل | `20260822150000_auto_master_data_codes` ثم `20260822210000_expand_auto_codes_and_password_reset` |
 | الحجز الذري | `apps/api/src/platform/master-data-code-service.ts` |
-| العملاء والخزينة | `apps/api/src/receipts/reference-service.ts` و`reference-router.ts` |
+| العملاء | `apps/api/src/receipts/reference-service.ts` و`reference-router.ts` |
+| الخزينة وطرق الدفع | `apps/api/src/treasury/treasury-service.ts` و`treasury-router.ts` |
 | الموردون | `apps/api/src/suppliers/supplier-service.ts` و`supplier-router.ts` |
 | الحسابات ومراكز التكلفة | `apps/api/src/accounts/account-service.ts` و`account-router.ts` |
-| الضرائب | `apps/api/src/sales/sales-invoice-service.ts` و`apps/api/src/purchases/purchase-invoice-service.ts` |
+| الضرائب | `apps/api/src/tax/tax-service.ts` و`tax-router.ts` |
 | الأدوار المخصصة | `apps/api/src/users/user-service.ts` و`user-router.ts` |
 | العقد | `packages/contracts/openapi.yaml`؛ `code` في الاستجابة `readOnly` |
 | الاختبارات | `master-data-code-service.test.ts` واختبارات تكامل الحسابات والخزينة والمبيعات والمشتريات والمستخدمين |

@@ -37,12 +37,40 @@ const configSchema = z.object({
   READINESS_TIMEOUT_MS: z.coerce.number().int().min(250).max(30_000).default(3_000),
   SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(60_000).default(10_000),
   LOG_REQUESTS: booleanString.default(true),
+  HTTP_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(300_000).default(70_000),
+  HTTP_HEADERS_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(60_000).default(10_000),
+  HTTP_KEEP_ALIVE_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(60_000).default(5_000),
+  API_READ_DEADLINE_MS: z.coerce.number().int().min(250).max(120_000).default(10_000),
+  API_WRITE_DEADLINE_MS: z.coerce.number().int().min(250).max(120_000).default(15_000),
+  API_REGISTRATION_WRITE_DEADLINE_MS: z.coerce.number().int().min(1_000).max(120_000).default(65_000),
+  METRICS_ENABLED: booleanString.default(false),
+  METRICS_BEARER_TOKEN: z.string().trim().min(32).max(500).optional(),
+  ALERT_WINDOW_MS: z.coerce.number().int().min(10_000).max(3_600_000).default(300_000),
+  ALERT_MIN_TRANSACTION_SAMPLES: z.coerce.number().int().min(1).max(100_000).default(20),
+  ALERT_DEADLOCK_RATIO_THRESHOLD: z.coerce.number().min(0.0001).max(1).default(0.05),
+  ALERT_RETRY_EXHAUSTED_RATIO_THRESHOLD: z.coerce.number().min(0.0001).max(1).default(0.02),
+  ALERT_REQUEST_DEADLINE_COUNT_THRESHOLD: z.coerce.number().int().min(1).max(100_000).default(5),
+  ALERT_OUTBOX_LAG_MS_THRESHOLD: z.coerce.number().int().min(1_000).max(86_400_000).default(60_000),
+  ALERT_OUTBOX_DEAD_LETTER_COUNT_THRESHOLD: z.coerce.number().int().min(1).max(100_000).default(1),
+  ALERT_COOLDOWN_MS: z.coerce.number().int().min(10_000).max(3_600_000).default(300_000),
 }).superRefine((config, context) => {
   if (config.OUTBOX_LEASE_MS <= config.OUTBOX_HANDLER_TIMEOUT_MS + 1_000) {
     context.addIssue({ code: 'custom', path: ['OUTBOX_LEASE_MS'], message: 'OUTBOX_LEASE_MS must exceed OUTBOX_HANDLER_TIMEOUT_MS by more than one second' });
   }
   if (config.SHUTDOWN_TIMEOUT_MS <= config.OUTBOX_HANDLER_TIMEOUT_MS + 1_000) {
     context.addIssue({ code: 'custom', path: ['SHUTDOWN_TIMEOUT_MS'], message: 'SHUTDOWN_TIMEOUT_MS must exceed OUTBOX_HANDLER_TIMEOUT_MS by more than one second' });
+  }
+  if (config.HTTP_HEADERS_TIMEOUT_MS > config.HTTP_REQUEST_TIMEOUT_MS) {
+    context.addIssue({ code: 'custom', path: ['HTTP_HEADERS_TIMEOUT_MS'], message: 'HTTP_HEADERS_TIMEOUT_MS must not exceed HTTP_REQUEST_TIMEOUT_MS' });
+  }
+  if (config.API_WRITE_DEADLINE_MS < config.API_READ_DEADLINE_MS) {
+    context.addIssue({ code: 'custom', path: ['API_WRITE_DEADLINE_MS'], message: 'API_WRITE_DEADLINE_MS must not be shorter than API_READ_DEADLINE_MS' });
+  }
+  if (config.API_REGISTRATION_WRITE_DEADLINE_MS < config.API_WRITE_DEADLINE_MS) {
+    context.addIssue({ code: 'custom', path: ['API_REGISTRATION_WRITE_DEADLINE_MS'], message: 'API_REGISTRATION_WRITE_DEADLINE_MS must not be shorter than API_WRITE_DEADLINE_MS' });
+  }
+  if (config.HTTP_REQUEST_TIMEOUT_MS <= config.API_REGISTRATION_WRITE_DEADLINE_MS + 1_000) {
+    context.addIssue({ code: 'custom', path: ['HTTP_REQUEST_TIMEOUT_MS'], message: 'HTTP_REQUEST_TIMEOUT_MS must leave more than one second beyond the longest application deadline' });
   }
   if (config.NODE_ENV !== 'production') return;
   if (config.REGISTRATION_EMAIL_CAPTURE_PATH) {
@@ -59,6 +87,9 @@ const configSchema = z.object({
   }
   if (!config.WEB_ORIGIN.startsWith('https://')) {
     context.addIssue({ code: 'custom', path: ['WEB_ORIGIN'], message: 'WEB_ORIGIN must use HTTPS in production' });
+  }
+  if (config.METRICS_ENABLED && !config.METRICS_BEARER_TOKEN) {
+    context.addIssue({ code: 'custom', path: ['METRICS_BEARER_TOKEN'], message: 'A metrics bearer token is required when the production metrics endpoint is enabled' });
   }
   const publicEmailDeliveryEnabled = config.SELF_REGISTRATION_ENABLED || config.PASSWORD_RESET_ENABLED;
   if (publicEmailDeliveryEnabled && config.REGISTRATION_EMAIL_MODE !== 'resend') {
@@ -85,7 +116,7 @@ type LoadedAppConfig = z.infer<typeof configSchema>;
 export type AppConfig = Pick<LoadedAppConfig,
   'NODE_ENV' | 'PORT' | 'DATABASE_URL' | 'WEB_ORIGIN' | 'SESSION_COOKIE_SECURE' | 'PRE_AUTH_TTL_MINUTES' | 'SESSION_TTL_HOURS'
 > & Partial<Pick<LoadedAppConfig,
-  'SERVE_WEB_ASSETS' | 'TRUST_PROXY' | 'RATE_LIMIT_WINDOW_MS' | 'RATE_LIMIT_MAX' | 'AUTH_RATE_LIMIT_MAX' | 'SELF_REGISTRATION_ENABLED' | 'REGISTRATION_RATE_LIMIT_MAX' | 'REGISTRATION_TOKEN_TTL_HOURS' | 'REGISTRATION_EMAIL_MODE' | 'REGISTRATION_EMAIL_FROM' | 'REGISTRATION_EMAIL_CAPTURE_PATH' | 'RESEND_API_KEY' | 'REGISTRATION_AUDIT_PEPPER' | 'REGISTRATION_TOKEN_SECRET' | 'PASSWORD_RESET_ENABLED' | 'PASSWORD_RESET_RATE_LIMIT_MAX' | 'PASSWORD_RESET_TOKEN_TTL_MINUTES' | 'OUTBOX_POLL_INTERVAL_MS' | 'OUTBOX_LEASE_MS' | 'OUTBOX_BATCH_SIZE' | 'OUTBOX_MAX_ATTEMPTS' | 'OUTBOX_BASE_BACKOFF_MS' | 'OUTBOX_HANDLER_TIMEOUT_MS' | 'OUTBOX_RETENTION_DAYS' | 'READINESS_TIMEOUT_MS' | 'SHUTDOWN_TIMEOUT_MS' | 'LOG_REQUESTS'
+  'SERVE_WEB_ASSETS' | 'TRUST_PROXY' | 'RATE_LIMIT_WINDOW_MS' | 'RATE_LIMIT_MAX' | 'AUTH_RATE_LIMIT_MAX' | 'SELF_REGISTRATION_ENABLED' | 'REGISTRATION_RATE_LIMIT_MAX' | 'REGISTRATION_TOKEN_TTL_HOURS' | 'REGISTRATION_EMAIL_MODE' | 'REGISTRATION_EMAIL_FROM' | 'REGISTRATION_EMAIL_CAPTURE_PATH' | 'RESEND_API_KEY' | 'REGISTRATION_AUDIT_PEPPER' | 'REGISTRATION_TOKEN_SECRET' | 'PASSWORD_RESET_ENABLED' | 'PASSWORD_RESET_RATE_LIMIT_MAX' | 'PASSWORD_RESET_TOKEN_TTL_MINUTES' | 'OUTBOX_POLL_INTERVAL_MS' | 'OUTBOX_LEASE_MS' | 'OUTBOX_BATCH_SIZE' | 'OUTBOX_MAX_ATTEMPTS' | 'OUTBOX_BASE_BACKOFF_MS' | 'OUTBOX_HANDLER_TIMEOUT_MS' | 'OUTBOX_RETENTION_DAYS' | 'READINESS_TIMEOUT_MS' | 'SHUTDOWN_TIMEOUT_MS' | 'LOG_REQUESTS' | 'HTTP_REQUEST_TIMEOUT_MS' | 'HTTP_HEADERS_TIMEOUT_MS' | 'HTTP_KEEP_ALIVE_TIMEOUT_MS' | 'API_READ_DEADLINE_MS' | 'API_WRITE_DEADLINE_MS' | 'API_REGISTRATION_WRITE_DEADLINE_MS' | 'METRICS_ENABLED' | 'METRICS_BEARER_TOKEN' | 'ALERT_WINDOW_MS' | 'ALERT_MIN_TRANSACTION_SAMPLES' | 'ALERT_DEADLOCK_RATIO_THRESHOLD' | 'ALERT_RETRY_EXHAUSTED_RATIO_THRESHOLD' | 'ALERT_REQUEST_DEADLINE_COUNT_THRESHOLD' | 'ALERT_OUTBOX_LAG_MS_THRESHOLD' | 'ALERT_OUTBOX_DEAD_LETTER_COUNT_THRESHOLD' | 'ALERT_COOLDOWN_MS'
 >>;
 
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env): LoadedAppConfig {

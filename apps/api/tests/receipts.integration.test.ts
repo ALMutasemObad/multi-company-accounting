@@ -11,6 +11,7 @@ import {
   type ReceiptInput,
 } from "../src/receipts/receipt-service.js";
 import { PrintService } from "../src/printing/print-service.js";
+import { TreasuryService } from "../src/treasury/treasury-service.js";
 
 const enabled = process.env.RUN_DB_TESTS === "true";
 const databaseUrl = process.env.DATABASE_URL ?? "";
@@ -31,7 +32,7 @@ describe.runIf(enabled)(
     let customerId: bigint;
     let cashBankId: bigint;
     let paymentMethodId: bigint;
-    let targetLineId: bigint;
+    let receivableItemId: bigint;
     let agent: ReturnType<typeof request.agent>;
     let csrf = "";
     let receiptService: ReceiptService;
@@ -49,6 +50,15 @@ describe.runIf(enabled)(
           companyId,
           accountingDocument: { fiscalPeriod: { fiscalYearId: id } },
         },
+      });
+      await prisma!.receivableItem.deleteMany({
+        where: { companyId, salesInvoice: { accountingDocument: { fiscalPeriod: { fiscalYearId: id } } } },
+      });
+      await prisma!.salesInvoiceLine.deleteMany({
+        where: { companyId, salesInvoice: { accountingDocument: { fiscalPeriod: { fiscalYearId: id } } } },
+      });
+      await prisma!.salesInvoice.deleteMany({
+        where: { companyId, accountingDocument: { fiscalPeriod: { fiscalYearId: id } } },
       });
       await prisma!.journalLine.deleteMany({
         where: {
@@ -107,7 +117,7 @@ describe.runIf(enabled)(
       counterpartyName: "عميل اختبار القبض",
       allocations: [
         {
-          targetJournalLineId: targetLineId.toString(),
+          receivableItemId: receivableItemId.toString(),
           allocatedAmount: "200.0000",
         },
       ],
@@ -124,7 +134,7 @@ describe.runIf(enabled)(
       amount: "200.0000",
       counterpartyName: "عميل اختبار القبض",
       allocations: [
-        { targetJournalLineId: targetLineId, allocatedAmount: "200.0000" },
+        { receivableItemId, allocatedAmount: "200.0000" },
       ],
     });
     beforeAll(async () => {
@@ -223,7 +233,8 @@ describe.runIf(enabled)(
       });
       yearId = year.id;
       periodId = year.periods[0]!.id;
-      receiptService = new ReceiptService(prisma!);
+      const treasury = new TreasuryService(prisma!);
+      receiptService = new ReceiptService(prisma!, treasury);
       const references = new ReceiptReferenceService(prisma!);
       const auth = new AuthService(
         new PrismaAuthStore(prisma!),
@@ -240,7 +251,7 @@ describe.runIf(enabled)(
           SESSION_TTL_HOURS: 12,
           DATABASE_URL: databaseUrl,
         },
-        { auth, receiptReferences: references, receipts: receiptService, printing: new PrintService(prisma!) },
+        { auth, receiptReferences: references, treasury, receipts: receiptService, printing: new PrintService(prisma!) },
       );
       agent = request.agent(app);
       csrf = (await agent.get("/api/v1/auth/csrf")).body.csrfToken;
@@ -300,7 +311,7 @@ describe.runIf(enabled)(
         data: {
           companyId,
           fiscalPeriodId: periodId,
-          documentType: "MANUAL_JOURNAL",
+          documentType: "SALES_INVOICE",
           documentNumber: "IT-RCP-INVOICE",
           documentDate: new Date("2043-02-01"),
           description: "فاتورة مستهدفة",
@@ -308,6 +319,21 @@ describe.runIf(enabled)(
           createdBy: userId,
           postedBy: userId,
           postedAt: new Date(),
+          salesInvoice: {
+            create: {
+              customerId,
+              currencyId,
+              exchangeRate: "1.00000000",
+              dueDate: new Date("2043-03-01"),
+              subtotal: "200.0000",
+              discountTotal: "0.0000",
+              taxableTotal: "200.0000",
+              taxTotal: "0.0000",
+              total: "200.0000",
+              baseTotal: "200.0000",
+              customerNameSnapshot: "عميل اختبار القبض",
+            },
+          },
           journalEntries: {
             create: [
               {
@@ -343,9 +369,24 @@ describe.runIf(enabled)(
             ],
           },
         },
-        include: { journalEntries: { include: { lines: true } } },
+        include: { salesInvoice: true, journalEntries: { include: { lines: true } } },
       });
-      targetLineId = invoice.journalEntries[0]!.lines[0]!.id;
+      const targetLineId = invoice.journalEntries[0]!.lines[0]!.id;
+      await prisma!.salesInvoice.update({
+        where: { id: invoice.salesInvoice!.id },
+        data: { arJournalLineId: targetLineId },
+      });
+      receivableItemId = (await prisma!.receivableItem.create({
+        data: {
+          companyId,
+          salesInvoiceId: invoice.salesInvoice!.id,
+          customerId,
+          currencyId,
+          dueDate: new Date("2043-03-01"),
+          originalAmount: "200.0000",
+          outstandingAmount: "200.0000",
+        },
+      })).id;
     });
     afterAll(async () => {
       if (!prisma) return;
@@ -488,11 +529,17 @@ describe.runIf(enabled)(
       const created = await agent.post("/api/v1/payment-methods").set("X-CSRF-Token", csrf).send({ nameAr: "تحويل اختبار", requiresReference: true }).expect(201);
       try {
         expect(created.body.scope).toBe("COMPANY");
+        expect(created.body.version).toBe(0);
         expect(created.body.code).toMatch(new RegExp(`^PM-${companyId}-[0-9]{6,}$`));
-        await agent.patch(`/api/v1/payment-methods/${created.body.id}`).set("X-CSRF-Token", csrf).send({ nameAr: "تحويل اختبار محدث" }).expect(200).then((result) => expect(result.body.nameAr).toContain("محدث"));
+        const updated = await agent.patch(`/api/v1/payment-methods/${created.body.id}`).set("X-CSRF-Token", csrf).send({ version: 0, nameAr: "تحويل اختبار محدث" }).expect(200);
+        expect(updated.body.nameAr).toContain("محدث");
+        expect(updated.body.version).toBe(1);
         const global = await prisma!.paymentMethod.findUniqueOrThrow({ where: { code: "CASH" } });
-        await agent.patch(`/api/v1/payment-methods/${global.id}`).set("X-CSRF-Token", csrf).send({ nameAr: "ممنوع" }).expect(422);
-        await agent.post(`/api/v1/payment-methods/${created.body.id}/deactivate`).set("X-CSRF-Token", csrf).send({ reason: "تعطيل اختباري" }).expect(200).then((result) => expect(result.body.isActive).toBe(false));
+        await agent.patch(`/api/v1/payment-methods/${global.id}`).set("X-CSRF-Token", csrf).send({ version: global.version, nameAr: "ممنوع" }).expect(422);
+        await agent.post(`/api/v1/payment-methods/${created.body.id}/deactivate`).set("X-CSRF-Token", csrf).send({ version: 1, reason: "تعطيل اختباري" }).expect(200).then((result) => {
+          expect(result.body.isActive).toBe(false);
+          expect(result.body.version).toBe(2);
+        });
         const all = await agent.get("/api/v1/payment-methods?includeInactive=true").expect(200);
         expect(all.body.data.some((method: any) => method.id === created.body.id && !method.isActive)).toBe(true);
       } finally {
@@ -598,6 +645,10 @@ describe.runIf(enabled)(
         });
       expect(reversed.status, JSON.stringify(reversed.body)).toBe(200);
       expect(reversed.body.document.status).toBe("REVERSED");
+      const restoredItem = await prisma!.receivableItem.findUniqueOrThrow({ where: { id: receivableItemId } });
+      expect(restoredItem.outstandingAmount.toFixed(4)).toBe(restoredItem.originalAmount.toFixed(4));
+      expect(restoredItem.status).toBe("OPEN");
+      expect(restoredItem.version).toBe(2);
       const concurrent = await Promise.all(
         Array.from({ length: 5 }, (_, i) =>
           receiptService.create(

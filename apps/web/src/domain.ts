@@ -1,4 +1,4 @@
-import type { Allocation, Currency, JournalEntry, Payment } from "./types";
+import type { Currency, JournalEntry, Payment, PaymentAllocation, ReceiptAllocation } from "./types";
 import { activeIntlLocale, dictionaries, translate, type TranslationKey } from "./i18n";
 
 export function messageForError(code?: string, reason?: string) {
@@ -27,7 +27,7 @@ export function exchangeRateForCurrency(currency?: Currency) {
   return currency.latestExchangeRate ?? "";
 }
 
-export function allocationsTotal(allocations: Allocation[]) {
+export function allocationsTotal(allocations: Array<{ allocatedAmount: string }>) {
   return allocations.reduce(
     (sum, allocation) => sum + Number(allocation.allocatedAmount || 0),
     0,
@@ -39,7 +39,7 @@ export function validatePaymentDraft(input: {
   counterAccountId: string;
   amount: string;
   exchangeRate: string;
-  allocations: Allocation[];
+  allocations: PaymentAllocation[];
 }) {
   const errors: string[] = [];
   if (Boolean(input.supplierId) === Boolean(input.counterAccountId))
@@ -55,7 +55,7 @@ export function validatePaymentDraft(input: {
   if (
     input.allocations.some(
       (allocation) =>
-        !allocation.targetJournalLineId ||
+        !allocation.payableItemId ||
         Number(allocation.allocatedAmount) <= 0,
     )
   )
@@ -68,17 +68,27 @@ export function validateReceiptDraft(input: {
   counterAccountId: string;
   amount: string;
   exchangeRate: string;
-  allocations: Allocation[];
+  allocations: ReceiptAllocation[];
 }) {
-  const errors = validatePaymentDraft({
-    supplierId: input.customerId,
-    counterAccountId: input.counterAccountId,
-    amount: input.amount,
-    exchangeRate: input.exchangeRate,
-    allocations: input.allocations,
-  });
+  const errors: string[] = [];
   if (Boolean(input.customerId) === Boolean(input.counterAccountId))
-    errors[0] = translate("validation.receipt.counterparty");
+    errors.push(translate("validation.receipt.counterparty"));
+  if (Number(input.amount) <= 0) errors.push(translate("validation.payment.amount"));
+  if (Number(input.exchangeRate) <= 0)
+    errors.push(translate("validation.payment.rate"));
+  if (
+    input.allocations.length > 0 &&
+    Math.abs(allocationsTotal(input.allocations) - Number(input.amount)) > 0.00005
+  )
+    errors.push(translate("validation.payment.allocationsTotal"));
+  if (
+    input.allocations.some(
+      (allocation) =>
+        !allocation.receivableItemId ||
+        Number(allocation.allocatedAmount) <= 0,
+    )
+  )
+    errors.push(translate("validation.payment.allocationLine"));
   return errors;
 }
 

@@ -52,6 +52,13 @@ enum AccountingDocumentStatus {
   CANCELLED
 }
 
+enum SettlementItemStatus {
+  OPEN
+  PARTIAL
+  SETTLED
+  REVERSED
+}
+
 enum AccountClass {
   ASSET
   LIABILITY
@@ -147,6 +154,8 @@ model Currency {
   payments          Payment[]
   salesInvoices     SalesInvoice[]
   purchaseInvoices  PurchaseInvoice[]
+  receivableItems   ReceivableItem[]
+  payableItems      PayableItem[]
   companyCurrencies CompanyCurrency[]
 
   @@unique([scopeKey, code])
@@ -189,10 +198,12 @@ model Company {
   paymentMethods                   PaymentMethod[]
   receipts                         Receipt[]
   receiptAllocations               ReceiptAllocation[]
+  receivableItems                  ReceivableItem[]
   suppliers                        Supplier[]
   supplierAddresses                SupplierAddress[]
   payments                         Payment[]
   paymentAllocations               PaymentAllocation[]
+  payableItems                     PayableItem[]
   taxRates                         TaxRate[]
   salesInvoices                    SalesInvoice[]
   salesInvoiceLines                SalesInvoiceLine[]
@@ -629,32 +640,30 @@ model JournalEntry {
 }
 
 model JournalLine {
-  id                 BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
-  companyId          BigInt              @map("company_id") @db.UnsignedBigInt
-  journalEntryId     BigInt              @map("journal_entry_id") @db.UnsignedBigInt
-  lineNumber         Int                 @map("line_number") @db.UnsignedSmallInt
-  accountId          BigInt              @map("account_id") @db.UnsignedBigInt
-  costCenterId       BigInt?             @map("cost_center_id") @db.UnsignedBigInt
-  customerId         BigInt?             @map("customer_id") @db.UnsignedBigInt
-  supplierId         BigInt?             @map("supplier_id") @db.UnsignedBigInt
-  description        String?             @db.VarChar(500)
-  currencyId         BigInt              @map("currency_id") @db.UnsignedBigInt
-  exchangeRate       Decimal             @default(1) @map("exchange_rate") @db.Decimal(19, 8)
-  debitAmount        Decimal             @map("debit_amount") @db.Decimal(19, 4)
-  creditAmount       Decimal             @map("credit_amount") @db.Decimal(19, 4)
-  baseDebitAmount    Decimal             @map("base_debit_amount") @db.Decimal(19, 4)
-  baseCreditAmount   Decimal             @map("base_credit_amount") @db.Decimal(19, 4)
-  company            Company             @relation(fields: [companyId], references: [id])
-  journalEntry       JournalEntry        @relation(fields: [journalEntryId, companyId], references: [id, companyId])
-  currency           Currency            @relation(fields: [currencyId], references: [id])
-  account            Account             @relation(fields: [accountId, companyId], references: [id, companyId])
-  costCenter         CostCenter?         @relation(fields: [costCenterId, companyId], references: [id, companyId])
-  customer           Customer?           @relation(fields: [customerId, companyId], references: [id, companyId])
-  supplier           Supplier?           @relation(fields: [supplierId, companyId], references: [id, companyId])
-  receiptAllocations ReceiptAllocation[]
-  paymentAllocations PaymentAllocation[]
-  invoiceArLine      SalesInvoice?       @relation("SalesInvoiceArLine")
-  purchaseApLine     PurchaseInvoice?    @relation("PurchaseInvoiceApLine")
+  id               BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId        BigInt           @map("company_id") @db.UnsignedBigInt
+  journalEntryId   BigInt           @map("journal_entry_id") @db.UnsignedBigInt
+  lineNumber       Int              @map("line_number") @db.UnsignedSmallInt
+  accountId        BigInt           @map("account_id") @db.UnsignedBigInt
+  costCenterId     BigInt?          @map("cost_center_id") @db.UnsignedBigInt
+  customerId       BigInt?          @map("customer_id") @db.UnsignedBigInt
+  supplierId       BigInt?          @map("supplier_id") @db.UnsignedBigInt
+  description      String?          @db.VarChar(500)
+  currencyId       BigInt           @map("currency_id") @db.UnsignedBigInt
+  exchangeRate     Decimal          @default(1) @map("exchange_rate") @db.Decimal(19, 8)
+  debitAmount      Decimal          @map("debit_amount") @db.Decimal(19, 4)
+  creditAmount     Decimal          @map("credit_amount") @db.Decimal(19, 4)
+  baseDebitAmount  Decimal          @map("base_debit_amount") @db.Decimal(19, 4)
+  baseCreditAmount Decimal          @map("base_credit_amount") @db.Decimal(19, 4)
+  company          Company          @relation(fields: [companyId], references: [id])
+  journalEntry     JournalEntry     @relation(fields: [journalEntryId, companyId], references: [id, companyId])
+  currency         Currency         @relation(fields: [currencyId], references: [id])
+  account          Account          @relation(fields: [accountId, companyId], references: [id, companyId])
+  costCenter       CostCenter?      @relation(fields: [costCenterId, companyId], references: [id, companyId])
+  customer         Customer?        @relation(fields: [customerId, companyId], references: [id, companyId])
+  supplier         Supplier?        @relation(fields: [supplierId, companyId], references: [id, companyId])
+  invoiceArLine    SalesInvoice?    @relation("SalesInvoiceArLine")
+  purchaseApLine   PurchaseInvoice? @relation("PurchaseInvoiceApLine")
 
   @@unique([journalEntryId, lineNumber])
   @@unique([id, companyId])
@@ -756,6 +765,7 @@ model Customer {
   journalLines        JournalLine[]
   receipts            Receipt[]
   salesInvoices       SalesInvoice[]
+  receivableItems     ReceivableItem[]
 
   @@unique([companyId, code])
   @@unique([id, companyId])
@@ -795,6 +805,7 @@ model CashBankAccount {
   accountNumberLast4 String?             @map("account_number_last4") @db.VarChar(4)
   ibanLast4          String?             @map("iban_last4") @db.VarChar(4)
   isActive           Boolean             @default(true) @map("is_active")
+  version            Int                 @default(0) @db.UnsignedInt
   createdAt          DateTime            @default(now()) @map("created_at")
   updatedAt          DateTime            @updatedAt @map("updated_at")
   company            Company             @relation(fields: [companyId], references: [id])
@@ -814,6 +825,7 @@ model PaymentMethod {
   nameAr            String             @map("name_ar") @db.VarChar(120)
   requiresReference Boolean            @default(false) @map("requires_reference")
   isActive          Boolean            @default(true) @map("is_active")
+  version           Int                @default(0) @db.UnsignedInt
   scope             PaymentMethodScope @default(GLOBAL)
   company           Company?           @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   receipts          Receipt[]
@@ -856,17 +868,17 @@ model Receipt {
 }
 
 model ReceiptAllocation {
-  id                  BigInt      @id @default(autoincrement()) @db.UnsignedBigInt
-  companyId           BigInt      @map("company_id") @db.UnsignedBigInt
-  receiptId           BigInt      @map("receipt_id") @db.UnsignedBigInt
-  targetJournalLineId BigInt      @map("target_journal_line_id") @db.UnsignedBigInt
-  allocatedAmount     Decimal     @map("allocated_amount") @db.Decimal(19, 4)
-  company             Company     @relation(fields: [companyId], references: [id])
-  receipt             Receipt     @relation(fields: [receiptId, companyId], references: [id, companyId])
-  targetJournalLine   JournalLine @relation(fields: [targetJournalLineId, companyId], references: [id, companyId])
+  id               BigInt         @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId        BigInt         @map("company_id") @db.UnsignedBigInt
+  receiptId        BigInt         @map("receipt_id") @db.UnsignedBigInt
+  receivableItemId BigInt         @map("receivable_item_id") @db.UnsignedBigInt
+  allocatedAmount  Decimal        @map("allocated_amount") @db.Decimal(19, 4)
+  company          Company        @relation(fields: [companyId], references: [id])
+  receipt          Receipt        @relation(fields: [receiptId, companyId], references: [id, companyId])
+  receivableItem   ReceivableItem @relation(fields: [receivableItemId, companyId], references: [id, companyId])
 
-  @@unique([receiptId, targetJournalLineId])
-  @@index([companyId, targetJournalLineId])
+  @@unique([receiptId, receivableItemId])
+  @@index([companyId, receivableItemId])
   @@map("receipt_allocations")
 }
 
@@ -879,6 +891,7 @@ model TaxRate {
   nameAr               String                @map("name_ar") @db.VarChar(120)
   rate                 Decimal               @db.Decimal(9, 4)
   isActive             Boolean               @default(true) @map("is_active")
+  version              Int                   @default(0) @db.UnsignedInt
   createdAt            DateTime              @default(now()) @map("created_at")
   updatedAt            DateTime              @updatedAt @map("updated_at")
   company              Company               @relation(fields: [companyId], references: [id])
@@ -919,6 +932,7 @@ model SalesInvoice {
   sourceInvoice           SalesInvoice?      @relation("SalesCreditNotes", fields: [sourceInvoiceId, companyId], references: [id, companyId])
   creditNotes             SalesInvoice[]     @relation("SalesCreditNotes")
   arJournalLine           JournalLine?       @relation("SalesInvoiceArLine", fields: [arJournalLineId, companyId], references: [id, companyId])
+  receivableItem          ReceivableItem?
   currency                Currency           @relation(fields: [currencyId], references: [id])
   lines                   SalesInvoiceLine[]
 
@@ -928,6 +942,31 @@ model SalesInvoice {
   @@index([companyId, customerId, dueDate])
   @@index([sourceInvoiceId, companyId])
   @@map("sales_invoices")
+}
+
+model ReceivableItem {
+  id                 BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId          BigInt               @map("company_id") @db.UnsignedBigInt
+  salesInvoiceId     BigInt               @unique @map("sales_invoice_id") @db.UnsignedBigInt
+  customerId         BigInt               @map("customer_id") @db.UnsignedBigInt
+  currencyId         BigInt               @map("currency_id") @db.UnsignedBigInt
+  dueDate            DateTime             @map("due_date") @db.Date
+  originalAmount     Decimal              @map("original_amount") @db.Decimal(19, 4)
+  outstandingAmount  Decimal              @map("outstanding_amount") @db.Decimal(19, 4)
+  status             SettlementItemStatus @default(OPEN)
+  version            Int                  @default(0) @db.UnsignedInt
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @updatedAt @map("updated_at")
+  company            Company              @relation(fields: [companyId], references: [id])
+  salesInvoice       SalesInvoice         @relation(fields: [salesInvoiceId, companyId], references: [id, companyId])
+  customer           Customer             @relation(fields: [customerId, companyId], references: [id, companyId])
+  currency           Currency             @relation(fields: [currencyId], references: [id])
+  receiptAllocations ReceiptAllocation[]
+
+  @@unique([id, companyId])
+  @@unique([salesInvoiceId, companyId])
+  @@index([companyId, customerId, status, dueDate])
+  @@map("receivable_items")
 }
 
 model SalesInvoiceLine {
@@ -977,6 +1016,7 @@ model Supplier {
   journalLines     JournalLine[]
   payments         Payment[]
   purchaseInvoices PurchaseInvoice[]
+  payableItems     PayableItem[]
 
   @@unique([companyId, code])
   @@unique([id, companyId])
@@ -1011,6 +1051,7 @@ model PurchaseInvoice {
   sourceInvoice           PurchaseInvoice?      @relation("PurchaseDebitNotes", fields: [sourceInvoiceId, companyId], references: [id, companyId])
   debitNotes              PurchaseInvoice[]     @relation("PurchaseDebitNotes")
   apJournalLine           JournalLine?          @relation("PurchaseInvoiceApLine", fields: [apJournalLineId, companyId], references: [id, companyId])
+  payableItem             PayableItem?
   currency                Currency              @relation(fields: [currencyId], references: [id])
   lines                   PurchaseInvoiceLine[]
 
@@ -1021,6 +1062,31 @@ model PurchaseInvoice {
   @@index([sourceInvoiceId, companyId])
   @@index([companyId, supplierInvoiceNumber])
   @@map("purchase_invoices")
+}
+
+model PayableItem {
+  id                 BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId          BigInt               @map("company_id") @db.UnsignedBigInt
+  purchaseInvoiceId  BigInt               @unique @map("purchase_invoice_id") @db.UnsignedBigInt
+  supplierId         BigInt               @map("supplier_id") @db.UnsignedBigInt
+  currencyId         BigInt               @map("currency_id") @db.UnsignedBigInt
+  dueDate            DateTime             @map("due_date") @db.Date
+  originalAmount     Decimal              @map("original_amount") @db.Decimal(19, 4)
+  outstandingAmount  Decimal              @map("outstanding_amount") @db.Decimal(19, 4)
+  status             SettlementItemStatus @default(OPEN)
+  version            Int                  @default(0) @db.UnsignedInt
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @updatedAt @map("updated_at")
+  company            Company              @relation(fields: [companyId], references: [id])
+  purchaseInvoice    PurchaseInvoice      @relation(fields: [purchaseInvoiceId, companyId], references: [id, companyId])
+  supplier           Supplier             @relation(fields: [supplierId, companyId], references: [id, companyId])
+  currency           Currency             @relation(fields: [currencyId], references: [id])
+  paymentAllocations PaymentAllocation[]
+
+  @@unique([id, companyId])
+  @@unique([purchaseInvoiceId, companyId])
+  @@index([companyId, supplierId, status, dueDate])
+  @@map("payable_items")
 }
 
 model PurchaseInvoiceLine {
@@ -1104,17 +1170,17 @@ model Payment {
 }
 
 model PaymentAllocation {
-  id                  BigInt      @id @default(autoincrement()) @db.UnsignedBigInt
-  companyId           BigInt      @map("company_id") @db.UnsignedBigInt
-  paymentId           BigInt      @map("payment_id") @db.UnsignedBigInt
-  targetJournalLineId BigInt      @map("target_journal_line_id") @db.UnsignedBigInt
-  allocatedAmount     Decimal     @map("allocated_amount") @db.Decimal(19, 4)
-  company             Company     @relation(fields: [companyId], references: [id])
-  payment             Payment     @relation(fields: [paymentId, companyId], references: [id, companyId])
-  targetJournalLine   JournalLine @relation(fields: [targetJournalLineId, companyId], references: [id, companyId])
+  id              BigInt      @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId       BigInt      @map("company_id") @db.UnsignedBigInt
+  paymentId       BigInt      @map("payment_id") @db.UnsignedBigInt
+  payableItemId   BigInt      @map("payable_item_id") @db.UnsignedBigInt
+  allocatedAmount Decimal     @map("allocated_amount") @db.Decimal(19, 4)
+  company         Company     @relation(fields: [companyId], references: [id])
+  payment         Payment     @relation(fields: [paymentId, companyId], references: [id, companyId])
+  payableItem     PayableItem @relation(fields: [payableItemId, companyId], references: [id, companyId])
 
-  @@unique([paymentId, targetJournalLineId])
-  @@index([companyId, targetJournalLineId])
+  @@unique([paymentId, payableItemId])
+  @@index([companyId, payableItemId])
   @@map("payment_allocations")
 }
 

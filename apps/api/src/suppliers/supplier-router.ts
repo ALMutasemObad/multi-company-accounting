@@ -1,6 +1,7 @@
 import { Router, type ErrorRequestHandler, type Request } from "express";
 import { z, ZodError } from "zod";
 import type { AuthService } from "../auth/auth-service.js";
+import { openApiRequestBodySchemas as bodies } from "../generated/openapi-request-guards.js";
 import {
   SupplierReferenceService,
   ReferenceError,
@@ -9,43 +10,11 @@ const id = z
   .string()
   .regex(/^[1-9][0-9]*$/)
   .transform(BigInt);
-const nullable = <T extends z.ZodTypeAny>(v: T) => z.union([v, z.null()]);
 const page = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
   search: z.string().trim().min(1).optional(),
 });
-const address = z
-  .object({
-    addressType: z.enum(["LEGAL", "PAYMENT", "OTHER"]),
-    line1: z.string().trim().min(1).max(200),
-    line2: nullable(z.string().max(200)).optional(),
-    city: nullable(z.string().max(100)).optional(),
-    region: nullable(z.string().max(100)).optional(),
-    postalCode: nullable(z.string().max(20)).optional(),
-    countryCode: nullable(z.string().regex(/^[A-Z]{2}$/)).optional(),
-    isPrimary: z.boolean().default(false),
-  })
-  .strict();
-const addressUpdate = address
-  .partial()
-  .refine((v) => Object.keys(v).length > 0);
-const supplier = z
-  .object({
-    payableAccountId: id,
-    nameAr: z.string().trim().min(1).max(200),
-    nameEn: nullable(z.string().max(200)).optional(),
-    phone: nullable(z.string().max(40)).optional(),
-    email: nullable(z.string().email().max(320)).optional(),
-    taxNumber: nullable(z.string().max(64)).optional(),
-    addresses: z.array(address).optional(),
-  })
-  .strict();
-const supplierUpdate = supplier
-  .omit({ addresses: true })
-  .partial()
-  .refine((v) => Object.keys(v).length > 0);
-const reason = z.object({ reason: z.string().trim().min(3).max(500) }).strict();
 function sid(req: Request) {
   return Object.fromEntries(
     (req.headers.cookie ?? "")
@@ -93,7 +62,7 @@ export function createSupplierRouter(
       .status(201)
       .json(
         SupplierReferenceService.supplierJson(
-          await service.createSupplier(context, supplier.parse(req.body)),
+          await service.createSupplier(context, bodies.createSupplier.parse(req.body)),
         ),
       );
   });
@@ -112,14 +81,14 @@ export function createSupplierRouter(
         await service.updateSupplier(
           context,
           id.parse(req.params.supplierId),
-          supplierUpdate.parse(req.body),
+          bodies.updateSupplier.parse(req.body),
         ),
       ),
     );
   });
   router.post("/suppliers/:supplierId/deactivate", async (req, res) => {
     const context = await authorize(req, "suppliers.manage", true);
-    const body = reason.parse(req.body);
+    const body = bodies.deactivateSupplier.parse(req.body);
     res.json(
       SupplierReferenceService.supplierJson(
         await service.deactivateSupplier(
@@ -139,7 +108,7 @@ export function createSupplierRouter(
           await service.createAddress(
             context,
             id.parse(req.params.supplierId),
-            address.parse(req.body),
+            bodies.createSupplierAddress.parse(req.body),
           ),
         ),
       );
@@ -154,7 +123,7 @@ export function createSupplierRouter(
             context,
             id.parse(req.params.supplierId),
             id.parse(req.params.addressId),
-            addressUpdate.parse(req.body),
+            bodies.updateSupplierAddress.parse(req.body),
           ),
         ),
       );

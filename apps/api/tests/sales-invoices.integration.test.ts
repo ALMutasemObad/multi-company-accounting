@@ -7,6 +7,8 @@ import { PrismaAuthStore } from "../src/auth/prisma-auth-store.js";
 import { createDatabase } from "../src/database.js";
 import { ReceiptService } from "../src/receipts/receipt-service.js";
 import { SalesInvoiceService } from "../src/sales/sales-invoice-service.js";
+import { TaxService } from "../src/tax/tax-service.js";
+import { TreasuryService } from "../src/treasury/treasury-service.js";
 
 const enabled = process.env.RUN_DB_TESTS === "true";
 const databaseUrl = process.env.DATABASE_URL ?? "";
@@ -34,6 +36,7 @@ describe.runIf(enabled)("sales invoices and receivables with MariaDB", () => {
     const invoiceWhere = { companyId, accountingDocument: { fiscalPeriod: { fiscalYearId: id } } };
     await prisma!.receiptAllocation.deleteMany({ where: { companyId, receipt: { accountingDocument: { fiscalPeriod: { fiscalYearId: id } } } } });
     await prisma!.receipt.deleteMany({ where: { companyId, accountingDocument: { fiscalPeriod: { fiscalYearId: id } } } });
+    await prisma!.receivableItem.deleteMany({ where: { companyId, salesInvoice: { accountingDocument: { fiscalPeriod: { fiscalYearId: id } } } } });
     await prisma!.salesInvoice.updateMany({ where: { companyId, accountingDocument: { fiscalPeriod: { fiscalYearId: id } } }, data: { arJournalLineId: null } });
     await prisma!.journalLine.deleteMany({ where: { companyId, journalEntry: { accountingDocument: { fiscalPeriod: { fiscalYearId: id } } } } });
     await prisma!.journalEntry.updateMany({ where: { companyId, accountingDocument: { fiscalPeriod: { fiscalYearId: id } } }, data: { reversalOfJournalEntryId: null } });
@@ -77,7 +80,9 @@ describe.runIf(enabled)("sales invoices and receivables with MariaDB", () => {
     periodId = year.periods[0]!.id;
 
     const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, { preAuthTtlMinutes: 10, sessionTtlHours: 12 });
-    app = createApp({ NODE_ENV: "test", PORT: 3000, WEB_ORIGIN: "http://localhost:5173", SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: databaseUrl }, { auth, salesInvoices: new SalesInvoiceService(prisma!), receipts: new ReceiptService(prisma!) });
+    const taxes = new TaxService(prisma!);
+    const treasury = new TreasuryService(prisma!);
+    app = createApp({ NODE_ENV: "test", PORT: 3000, WEB_ORIGIN: "http://localhost:5173", SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: databaseUrl }, { auth, taxes, salesInvoices: new SalesInvoiceService(prisma!, taxes), receipts: new ReceiptService(prisma!, treasury) });
   });
 
   afterAll(async () => {
@@ -85,8 +90,8 @@ describe.runIf(enabled)("sales invoices and receivables with MariaDB", () => {
     await prisma.idempotencyRecord.deleteMany({ where: { companyId, operation: { in: ["POST_SALES_INVOICE", "REVERSE_SALES_INVOICE", "POST_RECEIPT"] } } });
     await prisma.auditLog.deleteMany({ where: { companyId, entityType: { in: ["SALES_INVOICE", "TAX_RATE", "RECEIPT"] } } });
     if (yearId) await removeYear(yearId);
+    if (taxAccountId) await prisma.taxRate.deleteMany({ where: { companyId, outputTaxAccountId: taxAccountId } });
     await prisma.taxRate.deleteMany({ where: { companyId, code: { startsWith: "IT-SALES-RATE-" } } });
-    if (taxRateId) await prisma.taxRate.deleteMany({ where: { id: taxRateId } });
     if (customerId) {
       await prisma.customerAddress.deleteMany({ where: { companyId, customerId } });
       await prisma.customer.deleteMany({ where: { id: customerId } });
@@ -117,12 +122,13 @@ describe.runIf(enabled)("sales invoices and receivables with MariaDB", () => {
 
     const posted = await agent.post(`/api/v1/sales-invoices/${invoice.body.id}/post`).set(headers).set("Idempotency-Key", "it-post-sales-invoice").send({ version: 0 }).expect(200);
     const detail = await agent.get(`/api/v1/sales-invoices/${invoice.body.id}`).expect(200);
-    expect(detail.body.arJournalLineId).toMatch(/^[1-9][0-9]*$/);
+    expect(detail.body.receivableItemId).toMatch(/^[1-9][0-9]*$/);
+    expect(detail.body.settlementVersion).toBe(0);
     const entry = await prisma!.journalEntry.findUniqueOrThrow({ where: { id: BigInt(posted.body.generatedJournalEntryIds[0]) }, include: { lines: true } });
     expect(entry.lines.reduce((sum, line) => sum + Number(line.baseDebitAmount), 0)).toBe(2685);
     expect(entry.lines.reduce((sum, line) => sum + Number(line.baseCreditAmount), 0)).toBe(2685);
 
-    const receipt = await agent.post("/api/v1/receipts").set(headers).send({ fiscalPeriodId: periodId.toString(), documentDate: "2044-02-01", description: "تحصيل جزئي للفاتورة", customerId: customerId.toString(), counterAccountId: null, cashBankAccountId: cashBankId.toString(), paymentMethodId: paymentMethodId.toString(), currencyId: currencyId.toString(), exchangeRate: "1.00000000", amount: "1000.0000", referenceNumber: null, counterpartyName: "عميل دورة المبيعات", allocations: [{ targetJournalLineId: detail.body.arJournalLineId, allocatedAmount: "1000.0000" }] }).expect(201);
+    const receipt = await agent.post("/api/v1/receipts").set(headers).send({ fiscalPeriodId: periodId.toString(), documentDate: "2044-02-01", description: "تحصيل جزئي للفاتورة", customerId: customerId.toString(), counterAccountId: null, cashBankAccountId: cashBankId.toString(), paymentMethodId: paymentMethodId.toString(), currencyId: currencyId.toString(), exchangeRate: "1.00000000", amount: "1000.0000", referenceNumber: null, counterpartyName: "عميل دورة المبيعات", allocations: [{ receivableItemId: detail.body.receivableItemId, allocatedAmount: "1000.0000" }] }).expect(201);
     await agent.post(`/api/v1/receipts/${receipt.body.id}/post`).set(headers).set("Idempotency-Key", "it-post-sales-receipt").send({ version: 0 }).expect(200);
 
     const credit = await agent.post("/api/v1/sales-invoices").set(headers).send({ documentType: "SALES_CREDIT_NOTE", fiscalPeriodId: periodId.toString(), documentDate: "2044-02-05", dueDate: "2044-02-05", description: "إشعار دائن جزئي", customerId: customerId.toString(), sourceInvoiceId: invoice.body.id, currencyId: currencyId.toString(), exchangeRate: "1.00000000", lines: [{ description: "تخفيض خدمة", quantity: "1.0000", unitPrice: "100.0000", discountAmount: "0.0000", revenueAccountId: revenueId.toString(), taxRateId: taxRateId.toString() }] }).expect(201);
@@ -134,12 +140,22 @@ describe.runIf(enabled)("sales invoices and receivables with MariaDB", () => {
     expect(settled.body.creditedAmount).toBe("115.0000");
     expect(settled.body.outstandingAmount).toBe("1570.0000");
     expect(settled.body.settlementStatus).toBe("PARTIAL");
+    expect(settled.body.settlementVersion).toBe(2);
+    const materializedItem = await prisma!.receivableItem.findUniqueOrThrow({ where: { id: BigInt(detail.body.receivableItemId) } });
+    expect(materializedItem.outstandingAmount.toFixed(4)).toBe("1570.0000");
+    expect(materializedItem.status).toBe("PARTIAL");
+    expect(materializedItem.version).toBe(2);
 
     const aging = await agent.get("/api/v1/reports/receivables-aging").query({ asOf: "2044-02-20", customerId: customerId.toString() }).expect(200);
     expect(aging.body.baseCurrency.id).toBe(currencyId.toString());
     expect(aging.body.totals.days1To30).toBe("1570.0000");
     expect(aging.body.totals.total).toBe("1570.0000");
     await agent.post(`/api/v1/sales-invoices/${invoice.body.id}/reverse`).set(headers).set("Idempotency-Key", "it-reverse-settled-sales-invoice").send({ version: 1, reversalDate: "2044-02-20", reason: "يجب منع عكس فاتورة محصلة" }).expect(422);
+    await agent.post(`/api/v1/sales-invoices/${credit.body.id}/reverse`).set(headers).set("Idempotency-Key", "it-reverse-sales-credit").send({ version: 1, reversalDate: "2044-02-21", reason: "عكس الإشعار الدائن لاستعادة رصيد الذمة" }).expect(200);
+    const restored = await prisma!.receivableItem.findUniqueOrThrow({ where: { id: BigInt(detail.body.receivableItemId) } });
+    expect(restored.outstandingAmount.toFixed(4)).toBe("1685.0000");
+    expect(restored.status).toBe("PARTIAL");
+    expect(restored.version).toBe(3);
   }, 20_000);
 
   it("updates and cancels drafts, manages tax rates, and reverses an unsettled invoice", async () => {
@@ -160,8 +176,16 @@ describe.runIf(enabled)("sales invoices and receivables with MariaDB", () => {
 
     const tax = await agent.post("/api/v1/tax-rates").set(headers).send({ nameAr: "ضريبة اختبارية 5%", rate: "5.0000", outputTaxAccountId: taxAccountId.toString() }).expect(201);
     expect(tax.body.code).toMatch(/^TAX-[0-9]{6,}$/);
-    const changedTax = await agent.patch(`/api/v1/tax-rates/${tax.body.id}`).set(headers).send({ nameAr: "ضريبة اختبارية معدلة", isActive: false }).expect(200);
+    expect(tax.body.version).toBe(0);
+    const concurrentTaxUpdates = await Promise.all([
+      agent.patch(`/api/v1/tax-rates/${tax.body.id}`).set(headers).send({ version: tax.body.version, nameAr: "ضريبة اختبارية معدلة أ", isActive: false }),
+      agent.patch(`/api/v1/tax-rates/${tax.body.id}`).set(headers).send({ version: tax.body.version, nameAr: "ضريبة اختبارية معدلة ب", isActive: false }),
+    ]);
+    expect(concurrentTaxUpdates.map((response) => response.status).sort()).toEqual([200, 409]);
+    const changedTax = concurrentTaxUpdates.find((response) => response.status === 200)!;
     expect(changedTax.body.isActive).toBe(false);
+    expect(changedTax.body.version).toBe(1);
+    await agent.post("/api/v1/tax-rates").set(headers).send({ nameAr: "حساب ضريبي غير صالح", rate: "5.0000", outputTaxAccountId: arId.toString() }).expect(422);
     await prisma!.taxRate.delete({ where: { id: BigInt(tax.body.id) } });
 
     const reversible = await agent.post("/api/v1/sales-invoices").set(headers).send({ ...draftPayload, description: "فاتورة غير محصلة للعكس", documentDate: "2044-04-01", dueDate: "2044-04-30", lines: [{ ...draftPayload.lines[0], unitPrice: "450.0000", discountAmount: "50.0000" }] }).expect(201);
@@ -171,5 +195,83 @@ describe.runIf(enabled)("sales invoices and receivables with MariaDB", () => {
     const reversalEntry = await prisma!.journalEntry.findUniqueOrThrow({ where: { id: BigInt(reversed.body.generatedJournalEntryIds[0]) }, include: { lines: true } });
     expect(reversalEntry.lines.reduce((sum, line) => sum + Number(line.baseDebitAmount), 0)).toBe(400);
     expect(reversalEntry.lines.reduce((sum, line) => sum + Number(line.baseCreditAmount), 0)).toBe(400);
+    const reversedItem = await prisma!.receivableItem.findUniqueOrThrow({ where: { salesInvoiceId: BigInt(reversible.body.id) } });
+    expect(reversedItem.outstandingAmount.toFixed(4)).toBe("0.0000");
+    expect(reversedItem.status).toBe("REVERSED");
+    expect(reversedItem.version).toBe(1);
   }, 20_000);
+
+  it("serializes concurrent receipt allocations and invoice reversal on the receivable line", async () => {
+    const agent = request.agent(app);
+    const csrf = await agent.get("/api/v1/auth/csrf").expect(200);
+    const login = await agent.post("/api/v1/auth/login").set("X-CSRF-Token", csrf.body.csrfToken).send({ email: "admin@mcap.local", password }).expect(200);
+    const companies = await agent.get("/api/v1/auth/companies").expect(200);
+    await agent.put("/api/v1/auth/context").set("X-CSRF-Token", login.body.csrfToken).send({ companyId: companies.body.data[0].id }).expect(204);
+    const headers = { "X-CSRF-Token": login.body.csrfToken };
+    const invoicePayload = (description: string, documentDate: string, amount: string) => ({
+      documentType: "SALES_INVOICE",
+      fiscalPeriodId: periodId.toString(),
+      documentDate,
+      dueDate: documentDate,
+      description,
+      customerId: customerId.toString(),
+      currencyId: currencyId.toString(),
+      exchangeRate: "1.00000000",
+      lines: [{ description, quantity: "1.0000", unitPrice: amount, discountAmount: "0.0000", revenueAccountId: revenueId.toString(), taxRateId: null }],
+    });
+    const receiptPayload = (description: string, documentDate: string, amount: string, receivableItemId: string) => ({
+      fiscalPeriodId: periodId.toString(),
+      documentDate,
+      description,
+      customerId: customerId.toString(),
+      counterAccountId: null,
+      cashBankAccountId: cashBankId.toString(),
+      paymentMethodId: paymentMethodId.toString(),
+      currencyId: currencyId.toString(),
+      exchangeRate: "1.00000000",
+      amount,
+      referenceNumber: null,
+      counterpartyName: "عميل اختبار التزامن",
+      allocations: [{ receivableItemId, allocatedAmount: amount }],
+    });
+
+    const allocationInvoice = await agent.post("/api/v1/sales-invoices").set(headers).send(invoicePayload("فاتورة اختبار تجاوز التحصيل", "2044-05-01", "100.0000")).expect(201);
+    await agent.post(`/api/v1/sales-invoices/${allocationInvoice.body.id}/post`).set(headers).set("Idempotency-Key", "it-post-allocation-race-invoice").send({ version: 0 }).expect(200);
+    const allocationDetail = await agent.get(`/api/v1/sales-invoices/${allocationInvoice.body.id}`).expect(200);
+    const firstReceipt = await agent.post("/api/v1/receipts").set(headers).send(receiptPayload("تحصيل متزامن أول", "2044-05-02", "70.0000", allocationDetail.body.receivableItemId)).expect(201);
+    const secondReceipt = await agent.post("/api/v1/receipts").set(headers).send(receiptPayload("تحصيل متزامن ثان", "2044-05-02", "70.0000", allocationDetail.body.receivableItemId)).expect(201);
+    const allocationResponses = await Promise.all([
+      agent.post(`/api/v1/receipts/${firstReceipt.body.id}/post`).set(headers).set("Idempotency-Key", "it-post-allocation-race-receipt-1").send({ version: 0 }),
+      agent.post(`/api/v1/receipts/${secondReceipt.body.id}/post`).set(headers).set("Idempotency-Key", "it-post-allocation-race-receipt-2").send({ version: 0 }),
+    ]);
+    expect(allocationResponses.map((response) => response.status).sort()).toEqual([200, 422]);
+    const allocated = await prisma!.receiptAllocation.aggregate({
+      where: { companyId, receivableItemId: BigInt(allocationDetail.body.receivableItemId), receipt: { accountingDocument: { status: "POSTED" } } },
+      _sum: { allocatedAmount: true },
+    });
+    expect(allocated._sum.allocatedAmount?.toFixed(4)).toBe("70.0000");
+    const partiallySettledItem = await prisma!.receivableItem.findUniqueOrThrow({ where: { id: BigInt(allocationDetail.body.receivableItemId) } });
+    expect(partiallySettledItem.outstandingAmount.toFixed(4)).toBe("30.0000");
+    expect(partiallySettledItem.status).toBe("PARTIAL");
+    expect(partiallySettledItem.version).toBe(1);
+
+    const reversalInvoice = await agent.post("/api/v1/sales-invoices").set(headers).send(invoicePayload("فاتورة اختبار العكس مقابل التحصيل", "2044-06-01", "90.0000")).expect(201);
+    await agent.post(`/api/v1/sales-invoices/${reversalInvoice.body.id}/post`).set(headers).set("Idempotency-Key", "it-post-reversal-race-invoice").send({ version: 0 }).expect(200);
+    const reversalDetail = await agent.get(`/api/v1/sales-invoices/${reversalInvoice.body.id}`).expect(200);
+    const racingReceipt = await agent.post("/api/v1/receipts").set(headers).send(receiptPayload("تحصيل ينافس العكس", "2044-06-02", "90.0000", reversalDetail.body.receivableItemId)).expect(201);
+    const [reverseResponse, receiptResponse] = await Promise.all([
+      agent.post(`/api/v1/sales-invoices/${reversalInvoice.body.id}/reverse`).set(headers).set("Idempotency-Key", "it-reverse-race-sales-invoice").send({ version: 1, reversalDate: "2044-06-03", reason: "اختبار عكس متزامن مع التحصيل" }),
+      agent.post(`/api/v1/receipts/${racingReceipt.body.id}/post`).set(headers).set("Idempotency-Key", "it-post-reversal-race-receipt").send({ version: 0 }),
+    ]);
+    expect([reverseResponse.status, receiptResponse.status].sort()).toEqual([200, 422]);
+    const finalInvoice = await prisma!.salesInvoice.findUniqueOrThrow({ where: { id: BigInt(reversalInvoice.body.id) }, include: { accountingDocument: true } });
+    const finalReceipt = await prisma!.receipt.findUniqueOrThrow({ where: { id: BigInt(racingReceipt.body.id) }, include: { accountingDocument: true } });
+    expect(finalInvoice.accountingDocument.status === "REVERSED" && finalReceipt.accountingDocument.status === "POSTED").toBe(false);
+    const finalItem = await prisma!.receivableItem.findUniqueOrThrow({ where: { id: BigInt(reversalDetail.body.receivableItemId) } });
+    expect({ status: finalItem.status, outstanding: finalItem.outstandingAmount.toFixed(4) }).toEqual(
+      finalInvoice.accountingDocument.status === "REVERSED"
+        ? { status: "REVERSED", outstanding: "0.0000" }
+        : { status: "SETTLED", outstanding: "0.0000" },
+    );
+  }, 30_000);
 });

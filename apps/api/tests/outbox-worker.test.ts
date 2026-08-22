@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { PrismaClient } from '@prisma/client';
 import { OutboxWorker, outboxBackoffMs } from '../src/outbox/outbox-worker.js';
+import { OperationalMetrics } from '../src/operations/metrics.js';
 
 describe('outbox retry policy', () => {
   it('uses bounded exponential full jitter', () => {
@@ -12,6 +13,7 @@ describe('outbox retry policy', () => {
   });
 
   it('wakes a sleeping worker and stops it cleanly', async () => {
+    const metrics = new OperationalMetrics();
     const outboxEvent = {
       findFirst: vi.fn().mockResolvedValue(null),
       findMany: vi.fn().mockResolvedValue([]),
@@ -24,9 +26,12 @@ describe('outbox retry policy', () => {
       baseBackoffMs: 1_000,
       handlerTimeoutMs: 8_000,
       retentionDays: 30,
+      metrics,
     });
     worker.start();
     await vi.waitFor(() => expect(outboxEvent.groupBy).toHaveBeenCalledOnce());
+    expect(metrics.renderPrometheus()).toContain('mcap_outbox_events{status="PENDING"} 0');
+    expect(metrics.renderPrometheus()).toContain('mcap_outbox_oldest_lag_seconds 0');
     await expect(worker.stop()).resolves.toBeUndefined();
   });
 });

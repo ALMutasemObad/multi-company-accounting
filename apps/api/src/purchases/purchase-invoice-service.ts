@@ -1,10 +1,18 @@
 ﻿import { createHash, randomUUID } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
+import {
+  lockAccountingDocument,
+  PostingEngine,
+  type PostingFailureReason,
+  type PostingLinePlan,
+} from "../core-accounting/posting-engine.js";
 import { FiscalService } from "../fiscal/fiscal-service.js";
-import { reserveMasterDataCode } from "../platform/master-data-code-service.js";
+import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
+import { PayableItemService } from "../payables/payable-item-service.js";
 import { archiveDocument } from "../printing/print-archive.js";
+import { calculateTaxDocument, TaxCalculationError } from "../tax/tax-calculator.js";
+import { TaxError, TaxService, type TaxQuotePort } from "../tax/tax-service.js";
 import type { ActorContext } from "../users/user-service.js";
-import { calculatePurchaseInvoice, PurchaseCalculationError } from "./purchase-invoice-calculator.js";
 
 export type PurchaseInvoiceErrorReason =
   | "NOT_FOUND"
@@ -65,7 +73,6 @@ const asDate = (value: string) => new Date(`${value}T00:00:00.000Z`);
 const day = (value: Date) => value.toISOString().slice(0, 10);
 const decimal = (value: Prisma.Decimal.Value) => new Prisma.Decimal(value);
 const money = (value: Prisma.Decimal.Value) => decimal(value).toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP);
-const digest = (value: string) => new Uint8Array(createHash("sha256").update(value).digest());
 
 const documentJson = (value: any) => ({
   id: value.id.toString(),
@@ -85,9 +92,15 @@ const documentJson = (value: any) => ({
 
 export class PurchaseInvoiceService {
   private readonly fiscal: FiscalService;
+  private readonly posting = new PostingEngine();
+  private readonly payables = new PayableItemService();
+  private readonly taxes: TaxQuotePort;
+  private readonly commands: IdempotentCommandExecutor;
 
-  constructor(private readonly prisma: PrismaClient) {
+  constructor(private readonly prisma: PrismaClient, taxes?: TaxQuotePort) {
     this.fiscal = new FiscalService(prisma);
+    this.taxes = taxes ?? new TaxService(prisma);
+    this.commands = new IdempotentCommandExecutor(prisma);
   }
 
   private include() {
@@ -105,7 +118,7 @@ export class PurchaseInvoiceService {
           taxRate: { select: { id: true, code: true, nameAr: true, rate: true } },
         },
       },
-      apJournalLine: {
+      payableItem: {
         include: {
           paymentAllocations: {
             include: { payment: { include: { accountingDocument: true } } },
@@ -274,17 +287,12 @@ export class PurchaseInvoiceService {
 
   post(context: ActorContext, id: bigint, version: number, key: string) {
     return this.command(context, id, "POST_PURCHASE_INVOICE", key, JSON.stringify({ id: id.toString(), version }), async (tx, invoice) => {
-      if (invoice.accountingDocument.status !== "DRAFT") throw new PurchaseInvoiceError("INVALID_STATE");
-      if (invoice.accountingDocument.version !== version) throw new PurchaseInvoiceError("VERSION_CONFLICT");
-      const period = await tx.fiscalPeriod.findFirst({ where: { id: invoice.accountingDocument.fiscalPeriodId, companyId: context.companyId } });
-      if (!period || period.status === "CLOSED") throw new PurchaseInvoiceError("PERIOD_CLOSED");
       const input = this.inputFrom(invoice);
       const prepared = await this.prepare(tx, context.companyId, input, invoice.id);
-      if (input.documentType === "PURCHASE_DEBIT_NOTE") await this.validateDebitLimit(tx, context.companyId, input.sourceInvoiceId!, prepared.calculation.total, invoice.id);
 
       const isDebitNote = input.documentType === "PURCHASE_DEBIT_NOTE";
       const zero = decimal(0);
-      const detailLines: any[] = [];
+      const detailLines: PostingLinePlan[] = [];
       let lineNumber = 2;
       for (const line of prepared.calculation.lines) {
         const baseNet = money(line.netAmount.mul(invoice.exchangeRate));
@@ -318,14 +326,56 @@ export class PurchaseInvoiceService {
         }
       }
       const baseTotal = detailLines.reduce((sum, line) => sum.add(isDebitNote ? line.baseCreditAmount as Prisma.Decimal : line.baseDebitAmount as Prisma.Decimal), zero);
-      const entry = await tx.journalEntry.create({
-        data: {
-          companyId: context.companyId,
-          accountingDocumentId: invoice.accountingDocumentId,
+      const result = await this.posting.postPlan(tx, {
+        companyId: context.companyId,
+        documentId: invoice.accountingDocumentId,
+        expectedVersion: version,
+        actorUserId: context.userId,
+        error: (reason) => this.postingError(reason),
+        beforeLedger: async (postingTx) => {
+          if (input.documentType !== "PURCHASE_DEBIT_NOTE") return;
+          const source = await postingTx.purchaseInvoice.findFirst({
+            where: { id: input.sourceInvoiceId!, companyId: context.companyId },
+            select: { accountingDocumentId: true },
+          });
+          if (!source) throw new PurchaseInvoiceError("INVALID_SOURCE_INVOICE");
+          await lockAccountingDocument(
+            postingTx,
+            context.companyId,
+            source.accountingDocumentId,
+          );
+          await this.payables.applyDebit(postingTx, {
+            companyId: context.companyId,
+            sourceInvoiceId: input.sourceInvoiceId!,
+            amount: prepared.calculation.total,
+            invalid: () => new PurchaseInvoiceError("INVALID_SOURCE_INVOICE"),
+            overAllocation: () => new PurchaseInvoiceError("DEBIT_EXCEEDS_INVOICE"),
+            conflict: () => new PurchaseInvoiceError("VERSION_CONFLICT"),
+          });
+        },
+        afterEntries: async (postingTx, entries) => {
+          const apLine = entries[0]?.lines.find((line) => line.lineNumber === 1);
+          if (!apLine) throw new PurchaseInvoiceError("INVALID_LINE");
+          await postingTx.purchaseInvoice.update({
+            where: { id },
+            data: { apJournalLineId: apLine.id, baseTotal },
+          });
+          if (!isDebitNote) {
+            await this.payables.createForInvoice(postingTx, {
+              companyId: context.companyId,
+              purchaseInvoiceId: invoice.id,
+              supplierId: invoice.supplierId,
+              currencyId: invoice.currencyId,
+              dueDate: invoice.dueDate,
+              originalAmount: invoice.total,
+            });
+          }
+        },
+        entries: [{
           entryNumber: 1,
           entryDate: invoice.accountingDocument.documentDate,
           description: invoice.accountingDocument.description,
-          lines: { create: [{
+          lines: [{
             lineNumber: 1,
             accountId: prepared.supplier.payableAccountId,
             supplierId: invoice.supplierId,
@@ -336,19 +386,11 @@ export class PurchaseInvoiceService {
             creditAmount: isDebitNote ? zero : invoice.total,
             baseDebitAmount: isDebitNote ? baseTotal : zero,
             baseCreditAmount: isDebitNote ? zero : baseTotal,
-          }, ...detailLines] },
-        },
-        include: { lines: true },
+          }, ...detailLines],
+        }],
       });
-      const apLine = entry.lines.find((line) => line.lineNumber === 1)!;
-      await tx.purchaseInvoice.update({ where: { id }, data: { apJournalLineId: apLine.id, baseTotal } });
-      const changed = await tx.accountingDocument.updateMany({
-        where: { id: invoice.accountingDocumentId, companyId: context.companyId, status: "DRAFT", version },
-        data: { status: "POSTED", postedBy: context.userId, postedAt: new Date(), version: { increment: 1 } },
-      });
-      if (changed.count !== 1) throw new PurchaseInvoiceError("VERSION_CONFLICT");
       await archiveDocument(tx, context, invoice.accountingDocumentId);
-      return { document: await tx.accountingDocument.findUniqueOrThrow({ where: { id: invoice.accountingDocumentId } }), ids: [entry.id.toString()] };
+      return { document: result.document, ids: result.entries.map((entry) => entry.id.toString()) };
     });
   }
 
@@ -366,84 +408,46 @@ export class PurchaseInvoiceService {
 
   reverse(context: ActorContext, id: bigint, input: { version: number; reversalDate: string; reason: string }, key: string) {
     return this.command(context, id, "REVERSE_PURCHASE_INVOICE", key, JSON.stringify({ id: id.toString(), ...input }), async (tx, invoice) => {
-      const original = invoice.accountingDocument;
-      if (original.status === "REVERSED" || original.reversedByDocumentId) throw new PurchaseInvoiceError("ALREADY_REVERSED");
-      if (original.status !== "POSTED") throw new PurchaseInvoiceError("INVALID_STATE");
-      if (original.version !== input.version) throw new PurchaseInvoiceError("VERSION_CONFLICT");
-      if (original.documentType === "PURCHASE_INVOICE" && invoice.apJournalLineId) {
-        const settlements = await tx.paymentAllocation.count({ where: { companyId: context.companyId, targetJournalLineId: invoice.apJournalLineId, payment: { accountingDocument: { status: "POSTED" } } } });
-        const debitNotes = await tx.purchaseInvoice.count({ where: { companyId: context.companyId, sourceInvoiceId: invoice.id, accountingDocument: { documentType: "PURCHASE_DEBIT_NOTE", status: "POSTED" } } });
-        if (settlements || debitNotes) throw new PurchaseInvoiceError("HAS_SETTLEMENTS");
-      }
-      const reversalDate = asDate(input.reversalDate);
-      const period = await tx.fiscalPeriod.findFirst({ where: { companyId: context.companyId, startDate: { lte: reversalDate }, endDate: { gte: reversalDate }, status: { not: "CLOSED" } } });
-      if (!period) throw new PurchaseInvoiceError("PERIOD_CLOSED");
-      const originalEntry = await tx.journalEntry.findFirstOrThrow({ where: { accountingDocumentId: original.id, companyId: context.companyId }, include: { lines: true } });
-      const documentNumber = await this.reserveInTransaction(tx, context.companyId, period.fiscalYearId, original.documentType);
-      const reversal = await tx.accountingDocument.create({
-        data: {
-          companyId: context.companyId,
-          fiscalPeriodId: period.id,
-          documentType: original.documentType,
-          documentNumber,
-          documentDate: reversalDate,
-          description: `عكس ${original.documentNumber}: ${input.reason}`,
-          status: "POSTED",
-          createdBy: context.userId,
-          postedBy: context.userId,
-          postedAt: new Date(),
-          journalEntries: { create: [{
-            entryNumber: 1,
-            entryDate: reversalDate,
-            description: `عكس: ${originalEntry.description}`,
-            reversalOfJournalEntryId: originalEntry.id,
-            lines: { create: originalEntry.lines.map((line) => ({
-              lineNumber: line.lineNumber,
-              accountId: line.accountId,
-              costCenterId: line.costCenterId,
-              supplierId: line.supplierId,
-              description: line.description,
-              currencyId: line.currencyId,
-              exchangeRate: line.exchangeRate,
-              debitAmount: line.creditAmount,
-              creditAmount: line.debitAmount,
-              baseDebitAmount: line.baseCreditAmount,
-              baseCreditAmount: line.baseDebitAmount,
-            })) },
-          }] },
+      const result = await this.posting.reverse(tx, {
+        companyId: context.companyId,
+        documentId: invoice.accountingDocumentId,
+        expectedVersion: input.version,
+        actorUserId: context.userId,
+        reversalDate: asDate(input.reversalDate),
+        description: (original) => `عكس ${original.documentNumber}: ${input.reason}`,
+        reserveDocumentNumber: (sequenceTx, period, documentType) =>
+          this.reserveInTransaction(
+            sequenceTx,
+            context.companyId,
+            period.fiscalYearId,
+            documentType,
+          ),
+        beforeLedger: async (postingTx, original) => {
+          if (original.documentType === "PURCHASE_INVOICE") {
+            await this.payables.reverseInvoice(postingTx, {
+              companyId: context.companyId,
+              purchaseInvoiceId: invoice.id,
+              invalid: () => new PurchaseInvoiceError("INVALID_SOURCE_INVOICE"),
+              hasSettlements: () => new PurchaseInvoiceError("HAS_SETTLEMENTS"),
+              conflict: () => new PurchaseInvoiceError("VERSION_CONFLICT"),
+            });
+            return;
+          }
+          if (original.documentType === "PURCHASE_DEBIT_NOTE") {
+            if (!invoice.sourceInvoiceId)
+              throw new PurchaseInvoiceError("INVALID_SOURCE_INVOICE");
+            await this.payables.reverseDebit(postingTx, {
+              companyId: context.companyId,
+              sourceInvoiceId: invoice.sourceInvoiceId,
+              amount: invoice.total,
+              invalid: () => new PurchaseInvoiceError("INVALID_SOURCE_INVOICE"),
+              conflict: () => new PurchaseInvoiceError("VERSION_CONFLICT"),
+            });
+          }
         },
-        include: { journalEntries: true },
+        error: (reason) => this.postingError(reason),
       });
-      const changed = await tx.accountingDocument.updateMany({ where: { id: original.id, companyId: context.companyId, status: "POSTED", version: input.version, reversedByDocumentId: null }, data: { status: "REVERSED", reversedByDocumentId: reversal.id, version: { increment: 1 } } });
-      if (changed.count !== 1) throw new PurchaseInvoiceError("VERSION_CONFLICT");
-      return { document: await tx.accountingDocument.findUniqueOrThrow({ where: { id: original.id } }), ids: reversal.journalEntries.map((entry) => entry.id.toString()) };
-    });
-  }
-
-  async listTaxRates(context: ActorContext, activeOnly = false) {
-    return this.prisma.taxRate.findMany({ where: { companyId: context.companyId, ...(activeOnly ? { isActive: true } : {}) }, include: { inputTaxAccount: { select: { id: true, code: true, nameAr: true } } }, orderBy: [{ rate: "asc" }, { code: "asc" }] });
-  }
-
-  async createTaxRate(context: ActorContext, input: { nameAr: string; rate: string; inputTaxAccountId?: bigint | null }) {
-    return this.prisma.$transaction(async (tx) => {
-      await this.validateTaxAccount(tx, context.companyId, input.rate, input.inputTaxAccountId ?? null);
-      const code = await reserveMasterDataCode(tx, context.companyId, "TAX_RATE");
-      const value = await tx.taxRate.create({ data: { companyId: context.companyId, code, nameAr: input.nameAr, rate: decimal(input.rate), inputTaxAccountId: input.inputTaxAccountId ?? null }, include: { inputTaxAccount: { select: { id: true, code: true, nameAr: true } } } });
-      await this.audit(tx, context, "TAX_RATE_CREATED", value.id, { code, rate: input.rate }, "TAX_RATE");
-      return value;
-    });
-  }
-
-  async updateTaxRate(context: ActorContext, id: bigint, input: { nameAr?: string; rate?: string; inputTaxAccountId?: bigint | null; isActive?: boolean }) {
-    return this.prisma.$transaction(async (tx) => {
-      const current = await tx.taxRate.findFirst({ where: { id, companyId: context.companyId } });
-      if (!current) throw new PurchaseInvoiceError("NOT_FOUND");
-      const rate = input.rate ?? current.rate.toFixed(4);
-      const accountId = input.inputTaxAccountId === undefined ? current.inputTaxAccountId : input.inputTaxAccountId;
-      await this.validateTaxAccount(tx, context.companyId, rate, accountId);
-      const value = await tx.taxRate.update({ where: { id }, data: { ...input, ...(input.rate ? { rate: decimal(input.rate) } : {}) }, include: { inputTaxAccount: { select: { id: true, code: true, nameAr: true } } } });
-      await this.audit(tx, context, "TAX_RATE_UPDATED", id, undefined, "TAX_RATE");
-      return value;
+      return { document: result.document, ids: result.entries.map((entry) => entry.id.toString()) };
     });
   }
 
@@ -484,9 +488,9 @@ export class PurchaseInvoiceService {
   }
 
   static json(value: any) {
-    const paid = value.apJournalLine ? value.apJournalLine.paymentAllocations.filter((allocation: any) => allocation.payment.accountingDocument.status === "POSTED").reduce((sum: Prisma.Decimal, allocation: any) => sum.add(allocation.allocatedAmount), decimal(0)) : decimal(0);
+    const paid = value.payableItem ? value.payableItem.paymentAllocations.filter((allocation: any) => allocation.payment.accountingDocument.status === "POSTED").reduce((sum: Prisma.Decimal, allocation: any) => sum.add(allocation.allocatedAmount), decimal(0)) : decimal(0);
     const debited = value.debitNotes?.filter((note: any) => note.accountingDocument.status === "POSTED").reduce((sum: Prisma.Decimal, note: any) => sum.add(note.total), decimal(0)) ?? decimal(0);
-    const outstanding = value.accountingDocument.documentType === "PURCHASE_INVOICE" ? value.total.sub(paid).sub(debited) : decimal(0);
+    const outstanding = value.accountingDocument.documentType === "PURCHASE_INVOICE" ? value.payableItem?.outstandingAmount ?? value.total.sub(paid).sub(debited) : decimal(0);
     return {
       id: value.id.toString(),
       document: documentJson(value.accountingDocument),
@@ -495,7 +499,8 @@ export class PurchaseInvoiceService {
       supplier: value.supplier ? { ...value.supplier, id: value.supplier.id.toString() } : undefined,
       sourceInvoiceId: value.sourceInvoiceId?.toString() ?? null,
       sourceInvoiceNumber: value.sourceInvoice?.accountingDocument.documentNumber ?? null,
-      apJournalLineId: value.apJournalLineId?.toString() ?? null,
+      payableItemId: value.payableItem?.id.toString() ?? null,
+      settlementVersion: value.payableItem?.version ?? null,
       currencyId: value.currencyId.toString(),
       currency: value.currency ? { ...value.currency, id: value.currency.id.toString() } : undefined,
       exchangeRate: value.exchangeRate.toFixed(8),
@@ -522,12 +527,9 @@ export class PurchaseInvoiceService {
     return { document: typeof value.document.id === "string" ? value.document : documentJson(value.document), generatedJournalEntryIds: value.generatedJournalEntryIds ?? value.ids ?? [], requestId: value.requestId };
   }
 
-  static taxRateJson(value: any) {
-    return { id: value.id.toString(), code: value.code, nameAr: value.nameAr, rate: value.rate.toFixed(4), inputTaxAccountId: value.inputTaxAccountId?.toString() ?? null, inputTaxAccount: value.inputTaxAccount ? { ...value.inputTaxAccount, id: value.inputTaxAccount.id.toString() } : null, isActive: value.isActive };
-  }
-
   private outstanding(invoice: any, asOf?: Date) {
-    const paid = invoice.apJournalLine?.paymentAllocations.filter((allocation: any) => allocation.payment.accountingDocument.status === "POSTED" && (!asOf || allocation.payment.accountingDocument.documentDate <= asOf)).reduce((sum: Prisma.Decimal, allocation: any) => sum.add(allocation.allocatedAmount), decimal(0)) ?? decimal(0);
+    if (!asOf && invoice.payableItem) return invoice.payableItem.outstandingAmount;
+    const paid = invoice.payableItem?.paymentAllocations.filter((allocation: any) => allocation.payment.accountingDocument.status === "POSTED" && (!asOf || allocation.payment.accountingDocument.documentDate <= asOf)).reduce((sum: Prisma.Decimal, allocation: any) => sum.add(allocation.allocatedAmount), decimal(0)) ?? decimal(0);
     const debited = invoice.debitNotes?.filter((note: any) => note.accountingDocument.status === "POSTED" && (!asOf || note.accountingDocument.documentDate <= asOf)).reduce((sum: Prisma.Decimal, note: any) => sum.add(note.total), decimal(0)) ?? decimal(0);
     return invoice.total.sub(paid).sub(debited);
   }
@@ -548,15 +550,36 @@ export class PurchaseInvoiceService {
     const costCenterIds = [...new Set(input.lines.flatMap((line) => line.costCenterId ? [line.costCenterId.toString()] : []))].map(BigInt);
     if (costCenterIds.length && await tx.costCenter.count({ where: { companyId, id: { in: costCenterIds }, isActive: true } }) !== costCenterIds.length) throw new PurchaseInvoiceError("INVALID_COST_CENTER");
     const taxIds = [...new Set(input.lines.flatMap((line) => line.taxRateId ? [line.taxRateId.toString()] : []))].map(BigInt);
-    const taxRates = await tx.taxRate.findMany({ where: { companyId, id: { in: taxIds }, isActive: true } });
-    if (taxRates.length !== taxIds.length) throw new PurchaseInvoiceError("INVALID_TAX_RATE");
-    const taxMap = new Map(taxRates.map((rate) => [rate.id.toString(), rate]));
-    for (const tax of taxRates) await this.validateTaxAccount(tx, companyId, tax.rate.toFixed(4), tax.inputTaxAccountId);
+    let taxQuotes;
+    try {
+      taxQuotes = await this.taxes.resolveQuotes(tx, companyId, "INPUT", taxIds);
+    } catch (error) {
+      if (error instanceof TaxError) throw new PurchaseInvoiceError("INVALID_TAX_RATE");
+      throw error;
+    }
     let calculation;
     try {
-      calculation = calculatePurchaseInvoice(input.lines.map((line) => ({ ...line, taxRate: line.taxRateId ? taxMap.get(line.taxRateId.toString())!.rate.toFixed(4) : "0.0000" })), input.exchangeRate);
+      const taxCalculation = calculateTaxDocument(input.lines.map((line) => ({
+        description: line.description,
+        accountId: line.debitAccountId,
+        costCenterId: line.costCenterId ?? null,
+        taxRateId: line.taxRateId ?? null,
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        discountAmount: line.discountAmount,
+        taxRate: line.taxRateId
+          ? taxQuotes.get(line.taxRateId.toString())!.rate.toFixed(4)
+          : "0.0000",
+      })), input.exchangeRate);
+      calculation = {
+        ...taxCalculation,
+        lines: taxCalculation.lines.map(({ accountId, ...line }) => ({
+          ...line,
+          debitAccountId: accountId,
+        })),
+      };
     } catch (error) {
-      if (error instanceof PurchaseCalculationError) throw new PurchaseInvoiceError(error.reason);
+      if (error instanceof TaxCalculationError) throw new PurchaseInvoiceError(error.reason);
       throw error;
     }
     if (input.documentType === "PURCHASE_DEBIT_NOTE") {
@@ -566,7 +589,13 @@ export class PurchaseInvoiceService {
     }
     const preferredAddress = supplier.addresses.find((address) => address.addressType === "BILLING") ?? supplier.addresses[0];
     const supplierAddress = input.supplierAddress ?? (preferredAddress ? [preferredAddress.line1, preferredAddress.line2, preferredAddress.city, preferredAddress.region, preferredAddress.postalCode].filter(Boolean).join("، ") : null);
-    return { supplier, supplierAddress, calculation, taxAccounts: new Map(taxRates.filter((rate) => rate.inputTaxAccountId).map((rate) => [rate.id.toString(), rate.inputTaxAccountId!])) };
+    return {
+      supplier,
+      supplierAddress,
+      calculation,
+      taxAccounts: new Map([...taxQuotes].flatMap(([id, quote]) =>
+        quote.accountId ? [[id, quote.accountId] as const] : [])),
+    };
   }
 
   private inputFrom(value: any): PurchaseInvoiceInput {
@@ -574,20 +603,11 @@ export class PurchaseInvoiceService {
   }
 
   private async validateDebitLimit(tx: Prisma.TransactionClient, companyId: bigint, sourceInvoiceId: bigint, amount: Prisma.Decimal, currentId?: bigint) {
-    const source = await tx.purchaseInvoice.findFirst({ where: { id: sourceInvoiceId, companyId }, include: { accountingDocument: true } });
+    const source = await tx.purchaseInvoice.findFirst({ where: { id: sourceInvoiceId, companyId }, include: { accountingDocument: true, payableItem: true } });
     if (!source || source.accountingDocument.documentType !== "PURCHASE_INVOICE" || source.accountingDocument.status !== "POSTED") throw new PurchaseInvoiceError("INVALID_SOURCE_INVOICE");
-    const used = await tx.purchaseInvoice.aggregate({ where: { companyId, sourceInvoiceId, ...(currentId ? { id: { not: currentId } } : {}), accountingDocument: { documentType: "PURCHASE_DEBIT_NOTE", status: { in: ["DRAFT", "POSTED"] } } }, _sum: { total: true } });
-    if (decimal(used._sum.total ?? 0).add(amount).gt(source.total)) throw new PurchaseInvoiceError("DEBIT_EXCEEDS_INVOICE");
-  }
-
-  private async validateTaxAccount(tx: Prisma.TransactionClient, companyId: bigint, rate: string, accountId: bigint | null) {
-    const value = decimal(rate);
-    if (value.lt(0) || value.gt(100)) throw new PurchaseInvoiceError("INVALID_TAX_RATE");
-    if (value.gt(0)) {
-      if (!accountId) throw new PurchaseInvoiceError("INVALID_TAX_RATE");
-      const account = await this.validAccount(tx, companyId, accountId);
-      if (account.accountType.class !== "ASSET") throw new PurchaseInvoiceError("INVALID_TAX_RATE");
-    }
+    if (!source.payableItem) throw new PurchaseInvoiceError("INVALID_SOURCE_INVOICE");
+    const reserved = await tx.purchaseInvoice.aggregate({ where: { companyId, sourceInvoiceId, ...(currentId ? { id: { not: currentId } } : {}), accountingDocument: { documentType: "PURCHASE_DEBIT_NOTE", status: "DRAFT" } }, _sum: { total: true } });
+    if (decimal(reserved._sum.total ?? 0).add(amount).gt(source.payableItem.outstandingAmount)) throw new PurchaseInvoiceError("DEBIT_EXCEEDS_INVOICE");
   }
 
   private async validAccount(tx: Prisma.TransactionClient, companyId: bigint, id: bigint) {
@@ -624,34 +644,26 @@ export class PurchaseInvoiceService {
   }
 
   private async command(context: ActorContext, id: bigint, operation: string, key: string, fingerprint: string, execute: (tx: Prisma.TransactionClient, invoice: any) => Promise<{ document: any; ids: string[] }>) {
-    const keyHash = digest(key), requestFingerprint = digest(fingerprint);
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        const existing = await tx.idempotencyRecord.findUnique({ where: { companyId_userId_operation_keyHash: { companyId: context.companyId, userId: context.userId, operation, keyHash } } });
-        if (existing) {
-          if (!Buffer.from(existing.requestFingerprint).equals(Buffer.from(requestFingerprint))) throw new PurchaseInvoiceError("IDEMPOTENCY_MISMATCH");
-          if (existing.status === "COMPLETED") return existing.responseBody as any;
-          throw new PurchaseInvoiceError("IDEMPOTENCY_IN_PROGRESS");
-        }
+    return this.commands.execute({
+      context,
+      operation,
+      key,
+      fingerprint,
+      errors: {
+        mismatch: () => new PurchaseInvoiceError("IDEMPOTENCY_MISMATCH"),
+        inProgress: () => new PurchaseInvoiceError("IDEMPOTENCY_IN_PROGRESS"),
+      },
+    }, async (tx) => {
         const invoice = await tx.purchaseInvoice.findFirst({ where: { id, companyId: context.companyId }, include: { accountingDocument: true, lines: { orderBy: { lineNumber: "asc" } } } });
         if (!invoice) throw new PurchaseInvoiceError("NOT_FOUND");
-        const record = await tx.idempotencyRecord.create({ data: { companyId: context.companyId, userId: context.userId, operation, keyHash, requestFingerprint, status: "IN_PROGRESS", expiresAt: new Date(Date.now() + 86_400_000) } });
         const result = await execute(tx, invoice);
         await this.audit(tx, context, operation, id);
-        const response = { document: documentJson(result.document), generatedJournalEntryIds: result.ids, requestId: randomUUID() };
-        await tx.idempotencyRecord.update({ where: { id: record.id }, data: { status: "COMPLETED", responseStatus: 200, responseBody: response, completedAt: new Date() } });
-        return response;
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-    } catch (error) {
-      if (!(error instanceof Prisma.PrismaClientKnownRequestError) || !["P2002", "P2034"].includes(error.code)) throw error;
-      for (let attempt = 1; attempt <= 10; attempt++) {
-        await new Promise((resolve) => setTimeout(resolve, attempt * 10));
-        const existing = await this.prisma.idempotencyRecord.findUnique({ where: { companyId_userId_operation_keyHash: { companyId: context.companyId, userId: context.userId, operation, keyHash } } });
-        if (!existing) continue;
-        if (!Buffer.from(existing.requestFingerprint).equals(Buffer.from(requestFingerprint))) throw new PurchaseInvoiceError("IDEMPOTENCY_MISMATCH");
-        if (existing.status === "COMPLETED") return existing.responseBody as any;
-      }
-      throw new PurchaseInvoiceError("IDEMPOTENCY_IN_PROGRESS");
-    }
+        return { document: documentJson(result.document), generatedJournalEntryIds: result.ids, requestId: randomUUID() };
+    });
+  }
+
+  private postingError(reason: PostingFailureReason) {
+    if (reason === "UNBALANCED") return new PurchaseInvoiceError("INVALID_TOTAL");
+    return new PurchaseInvoiceError(reason);
   }
 }

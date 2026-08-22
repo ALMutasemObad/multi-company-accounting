@@ -1,13 +1,15 @@
 ---
 title: "ADR-003 — Domain Boundaries and Transactional Eventing"
 status: "accepted"
-version: "1.0"
+version: "1.1"
 date: "2026-08-21"
 supersedes: []
 related:
   - "ARCHITECTURE_GUARDRAILS_AR.md"
   - "BOUNDED_CONTEXT_MAP_AR.md"
   - "CONCURRENCY_DEADLOCK_DEADLINE_POLICY_AR.md"
+  - "AR_AP_SETTLEMENT_ITEMS_AR.md"
+  - "TREASURY_CONTEXT_OWNERSHIP_AR.md"
 ---
 
 # ADR-003: حدود المجالات والأحداث الموثوقة داخل الـModular Monolith
@@ -29,7 +31,7 @@ ADR-001 منع Queue أو Microservice دون ADR، ورفض Eventual Consistenc
 ### 2. ملكية دفتر الأستاذ
 
 - Core Accounting هو المالك الوحيد لـ`AccountingDocument`, `JournalEntry`, و`JournalLine` من ناحية الترحيل والعكس.
-- ينشأ `PostingEngine` مركزي تدريجيًا.
+- `PostingEngine` المركزي هو منفذ الترحيل والعكس الوحيد للمستندات المالية، بينما تبقى كتابة مسودة القيد داخل Core Accounting.
 - Context المصدر يبني Posting Plan، بينما Ledger يتحقق ويحفظ الأثر.
 - الترحيل والعكس والتسوية المالية الأساسية تبقى داخل معاملة ACID واحدة.
 
@@ -38,6 +40,12 @@ ADR-001 منع Queue أو Microservice دون ADR، ورفض Eventual Consistenc
 - invariant مطلوب قبل commit: استدعاء متزامن عبر Port.
 - side effect بعد commit: Domain/Integration Event عبر Transactional Outbox.
 - لا HTTP داخلي بين وحدات المونوليث.
+
+عقد Treasury مع AR/AP يستخدم `ReceivableItemId/PayableItemId` عبر منافذ تسوية متزامنة داخل المعاملة. لا تعبر هوية `JournalLine` هذا الحد.
+
+تعتمد Sales وPurchases على `TaxQuotePort` متزامن داخل المعاملة للحصول على النسبة والحساب المناسبين؛ وحدة `Tax` وحدها تكتب `TaxRate`، بينما تحفظ الفاتورة لقطة النسبة والمبلغ.
+
+تستهلك خدمتا Receipt وPayment داخل Treasury `TreasuryInstrumentPort` متزامنًا للتحقق من صندوق/بنك الشركة وطريقة الدفع والمرجع الإلزامي. وحدة Treasury وحدها تكتب `CashBankAccount/PaymentMethod`، بينما يمر تجهيز الطرق العامة عبر Setup port مملوك لها.
 
 ### 4. Transactional Outbox
 
@@ -106,16 +114,19 @@ commit
 - إضافة Outbox worker ومراقبة retries والتراكم.
 - ضرورة idempotency في المستهلكين.
 - إعادة هيكلة تدريجية لخدمات مالية كبيرة.
-- فترة انتقالية يتعايش فيها المسار القديم مع Ports جديدة.
+- ضرورة إبقاء الحارس المعماري محدثًا حتى لا تعود الكتابات العابرة للسياقات بعد اكتمال الترحيل.
 
 ## خطة التطبيق
 
-1. منع المخالفات الجديدة وتثبيت Context Map.
-2. استخراج Posting Engine وPosting Plans تدريجيًا.
-3. إضافة Outbox migration وworker مع بريد التسجيل.
-4. إضافة event contracts واختبارات retry/idempotency.
-5. نقل أحداث المستندات والفترات عند وجود مستهلكين.
-6. تقييم Broker فقط عبر قياسات وADR جديد.
+1. [x] منع المخالفات الجديدة وتثبيت Context Map.
+2. [x] استخراج Posting Engine وPosting Plans لكل المسارات المالية الحالية.
+3. [x] إضافة Outbox migration وworker مع بريد التسجيل.
+4. [x] إضافة event contracts واختبارات retry/idempotency.
+5. [x] فصل هوية تسويات Treasury عن Ledger بعناصر ذمم مملوكة لـAR/AP.
+6. [x] حسم ملكية Tax والحاسبة والنسخ المتفائلة عبر منفذ واحد.
+7. [x] حسم ملكية Treasury ومرجعيات أدوات النقد والنسخ المتفائلة عبر منفذ واحد.
+8. [ ] نقل أحداث المستندات والفترات عند وجود مستهلكين.
+9. [ ] تقييم Broker فقط عبر قياسات وADR جديد.
 
 ## مؤشرات نجاح القرار
 
@@ -136,3 +147,33 @@ commit
 - يغطي الاختبار الالتزام قبل البريد، والتسليم المكرر، وانتهاء lease، وتوقف المزود والتعافي، وdead letter والاحتفاظ.
 
 لا يغير هذا التنفيذ قرار بقاء Ledger strongly consistent، ولا يضيف Broker أو خدمة مستقلة.
+
+نُفذت في 22 أغسطس 2026 شريحة ملكية دفتر الأستاذ:
+
+- أضيف `PostingEngine` داخل Core Accounting، ونُقلت إليه عمليات ترحيل وعكس القيود اليدوية وسندات القبض والصرف وفواتير المبيعات والمشتريات وإشعاراتها.
+- تبني سياقات المصدر Posting Plans فقط؛ إنشاء `JournalEntry` و`JournalLine` المرحلين وتغيير حالات `POSTED/REVERSED` يجريان داخل المحرك.
+- أضيف حارس معماري يمنع عودة الكتابة المباشرة إلى Ledger من خدمات AR/AP/Receipts/Payments.
+- تشترك عمليات الترحيل وإغلاق الفترة في قفل صف الفترة، وتشترك التسويات وعكس الفاتورة في أقفال `ReceivableItem/PayableItem` المرتبة تصاعديًا قبل أقفال Ledger.
+
+نُفذت في 22 أغسطس 2026 شريحة عناصر الذمم:
+
+- أضيف `ReceivableItem` و`PayableItem` بأرصدة مادية وحالة ونسخة وعزل شركة.
+- أصبحت تخصيصات القبض والدفع تشير إلى العنصر، وتنفذ Treasury التغيير عبر منفذ AR/AP صغير داخل معاملة `PostingEngine`.
+- غطى الترحيل backfill والتخصيصات التاريخية وحواجز الفشل الآمن، ونجح من قاعدة فارغة ومن مخطط سابق ببيانات على MariaDB 10.4.32 وMySQL 8.4.11.
+- تغطي الاختبارات عكس القبض والدفع والإشعارات، over-allocation، وسباق reverse-vs-settlement.
+
+لا يوجد Broker أو اتساق نهائي لدفتر الأستاذ في هذه الشرائح.
+
+نُفذت في 22 أغسطس 2026 شريحة ملكية Tax:
+
+- أصبحت `TaxService` المالك الوحيد لـ`TaxRate` ومساري HTTP الحاليين، وأزيل CRUD من Sales/Purchases.
+- توحد حساب الخصم والضريبة والعملة الأساسية في `calculateTaxDocument` مع تطابق تقريب تفاصيل Posting.
+- أضيفت `version` متفائلة، ويمر تعارض قاعدة البيانات عبر `TransactionExecutor` قبل إرجاع `VERSION_CONFLICT` للنسخة القديمة.
+- نجح الترحيل التوسعي من الصفر وكترقية بصفوف تاريخية، ونجحت حزمة 168 اختبار API على MariaDB 10.4.32 وMySQL 8.4.11.
+
+نُفذت في 22 أغسطس 2026 شريحة ملكية Treasury:
+
+- أصبحت `TreasuryService` المالك الوحيد لـ`CashBankAccount/PaymentMethod` ومساراتهما الحالية، وأزيل CRUD من Customer/Supplier reference services.
+- تستهلك Receipt وPayment `TreasuryInstrumentPort` داخل المعاملة بدل Prisma reads المكررة، من دون دمج قواعد AR وAP.
+- أضيفت `version` متفائلة للتعديل والتعطيل، وتمر الأخطاء العابرة عبر `TransactionExecutor` بينما تعاد النسخة القديمة كـ409.
+- نجح الترحيل التوسعي من الصفر وكترقية بمرجعيات تاريخية، ونجحت حزمة 178 اختبار API على MariaDB 10.4.32 وMySQL 8.4.11.

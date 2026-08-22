@@ -66,10 +66,10 @@ export class AuthService {
     return this.store.listCompanies(session.userId!);
   }
 
-  async selectCompany(input: { sid?: string | undefined; csrfToken?: string | undefined; companyId: string; metadata?: ClientMetadata }) {
+  async selectCompany(input: { sid?: string | undefined; csrfToken?: string | undefined; companyId: bigint; metadata?: ClientMetadata }) {
     const session = await this.requireSession(input.sid, input.csrfToken, 'AUTHENTICATED');
-    if (!/^[1-9][0-9]*$/.test(input.companyId)) throw new AuthError('FORBIDDEN');
-    const selected = await this.store.selectCompany({ sessionId: session.id, userId: session.userId!, companyId: BigInt(input.companyId), metadata: input.metadata });
+    if (input.companyId <= 0n) throw new AuthError('FORBIDDEN');
+    const selected = await this.store.selectCompany({ sessionId: session.id, userId: session.userId!, companyId: input.companyId, metadata: input.metadata });
     if (!selected) throw new AuthError('FORBIDDEN');
   }
 

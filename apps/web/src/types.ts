@@ -98,6 +98,7 @@ export type CashBankAccount = {
   accountNumberMasked: string | null;
   ibanMasked: string | null;
   isActive: boolean;
+  version: number;
 };
 
 export type PaymentMethod = {
@@ -107,6 +108,7 @@ export type PaymentMethod = {
   requiresReference: boolean;
   isActive: boolean;
   scope: "GLOBAL" | "COMPANY";
+  version: number;
 };
 
 export type Currency = {
@@ -175,9 +177,15 @@ export type Customer = {
   addresses: Address[];
 };
 
-export type Allocation = {
+export type ReceiptAllocation = {
   id?: string;
-  targetJournalLineId: string;
+  receivableItemId: string;
+  allocatedAmount: string;
+};
+
+export type PaymentAllocation = {
+  id?: string;
+  payableItemId: string;
   allocatedAmount: string;
 };
 
@@ -237,7 +245,7 @@ export type Payment = {
   counterpartyTaxMasked: string | null;
   counterpartyAddressSnapshot: string | null;
   notes: string | null;
-  allocations: Allocation[];
+  allocations: PaymentAllocation[];
 };
 
 export type Receipt = {
@@ -256,7 +264,7 @@ export type Receipt = {
   counterpartyTaxMasked: string | null;
   counterpartyAddressSnapshot: string | null;
   notes: string | null;
-  allocations: Allocation[];
+  allocations: ReceiptAllocation[];
 };
 
 export type TaxRate = {
@@ -269,6 +277,7 @@ export type TaxRate = {
   inputTaxAccountId?: string | null;
   inputTaxAccount?: { id: string; code: string; nameAr: string } | null;
   isActive: boolean;
+  version: number;
 };
 
 export type SalesInvoiceLine = {
@@ -297,7 +306,8 @@ export type SalesInvoice = {
   customer?: { id: string; code: string; nameAr: string };
   sourceInvoiceId: string | null;
   sourceInvoiceNumber: string | null;
-  arJournalLineId: string | null;
+  receivableItemId: string | null;
+  settlementVersion: number | null;
   currencyId: string;
   currency?: { id: string; code: string; nameAr: string };
   exchangeRate: string;
@@ -355,7 +365,7 @@ export type PurchaseInvoice = {
   supplier?: { id: string; code: string; nameAr: string };
   supplierInvoiceNumber: string | null;
   sourceInvoiceId: string | null; sourceInvoiceNumber: string | null;
-  apJournalLineId: string | null; currencyId: string;
+  payableItemId: string | null; settlementVersion: number | null; currencyId: string;
   currency?: { id: string; code: string; nameAr: string };
   exchangeRate: string; dueDate: string; subtotal: string; discountTotal: string;
   taxableTotal: string; taxTotal: string; total: string; baseTotal: string;

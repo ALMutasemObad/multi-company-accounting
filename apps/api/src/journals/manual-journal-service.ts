@@ -1,5 +1,10 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
+import {
+  PostingEngine,
+  type PostingFailureReason,
+} from "../core-accounting/posting-engine.js";
+import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
 import type { ActorContext } from "../users/user-service.js";
 import { archiveDocument } from "../printing/print-archive.js";
 import { FiscalService } from "../fiscal/fiscal-service.js";
@@ -57,8 +62,6 @@ export type JournalUpdateInput = {
   entries?: JournalEntryInput[] | undefined;
 };
 const date = (value: string) => new Date(`${value}T00:00:00.000Z`);
-const digest = (value: string) =>
-  new Uint8Array(createHash("sha256").update(value).digest());
 const serializeDocument = (v: any) => ({
   id: v.id.toString(),
   documentType: v.documentType,
@@ -77,8 +80,11 @@ const serializeDocument = (v: any) => ({
 
 export class ManualJournalService {
   private readonly fiscal: FiscalService;
+  private readonly posting = new PostingEngine();
+  private readonly commands: IdempotentCommandExecutor;
   constructor(private readonly prisma: PrismaClient) {
     this.fiscal = new FiscalService(prisma);
+    this.commands = new IdempotentCommandExecutor(prisma);
   }
 
   async list(
@@ -277,66 +283,29 @@ export class ManualJournalService {
       "POST_MANUAL_JOURNAL",
       key,
       JSON.stringify({ id: id.toString(), version }),
-      async (tx, document) => {
-        if (document.status !== "DRAFT")
-          throw new JournalError("INVALID_STATE");
-        if (document.version !== version)
-          throw new JournalError("VERSION_CONFLICT");
-        const company = await tx.company.findUniqueOrThrow({
-          where: { id: context.companyId },
-        });
-        if (
-          company.manualJournalMakerCheckerEnabled &&
-          document.createdBy === context.userId
-        )
-          throw new JournalError("MAKER_CHECKER_VIOLATION");
-        const period = await tx.fiscalPeriod.findFirst({
-          where: { id: document.fiscalPeriodId, companyId: context.companyId },
-        });
-        if (!period || period.status === "CLOSED")
-          throw new JournalError("PERIOD_CLOSED");
-        const full = await tx.accountingDocument.findUniqueOrThrow({
-          where: { id },
-          include: this.include(),
-        });
-        this.assertDates(
-          period,
-          full.documentDate.toISOString().slice(0, 10),
-          full.journalEntries.map((entry) => ({
-            entryNumber: entry.entryNumber,
-            entryDate: entry.entryDate.toISOString().slice(0, 10),
-            description: entry.description,
-            lines: entry.lines.map((line) => ({
-              lineNumber: line.lineNumber,
-              accountId: line.accountId,
-              costCenterId: line.costCenterId,
-              customerId: line.customerId,
-              supplierId: line.supplierId,
-              description: line.description,
-              currencyId: line.currencyId,
-              exchangeRate: line.exchangeRate.toFixed(8),
-              debitAmount: line.debitAmount.toFixed(4),
-              creditAmount: line.creditAmount.toFixed(4),
-            })),
-          })),
-        );
-        await this.validatePersisted(tx, context.companyId, full);
-        const changed = await tx.accountingDocument.updateMany({
-          where: { id, companyId: context.companyId, status: "DRAFT", version },
-          data: {
-            status: "POSTED",
-            postedBy: context.userId,
-            postedAt: new Date(),
-            version: { increment: 1 },
+      async (tx) => {
+        const result = await this.posting.postExisting(tx, {
+          companyId: context.companyId,
+          documentId: id,
+          expectedVersion: version,
+          actorUserId: context.userId,
+          error: (reason) => this.postingError(reason),
+          beforeLedger: async (postingTx, document) => {
+            const company = await postingTx.company.findUniqueOrThrow({
+              where: { id: context.companyId },
+            });
+            if (
+              company.manualJournalMakerCheckerEnabled &&
+              document.createdBy === context.userId
+            ) {
+              throw new JournalError("MAKER_CHECKER_VIOLATION");
+            }
           },
         });
-        if (changed.count !== 1) throw new JournalError("VERSION_CONFLICT");
         await archiveDocument(tx, context, id);
         return {
-          document: await tx.accountingDocument.findUniqueOrThrow({
-            where: { id },
-          }),
-          generatedJournalEntryIds: full.journalEntries.map((entry) =>
+          document: result.document,
+          generatedJournalEntryIds: result.entries.map((entry) =>
             entry.id.toString(),
           ),
         };
@@ -393,93 +362,28 @@ export class ManualJournalService {
       "REVERSE_MANUAL_JOURNAL",
       key,
       JSON.stringify({ id: id.toString(), ...input }),
-      async (tx, document) => {
-        if (document.status === "REVERSED" || document.reversedByDocumentId)
-          throw new JournalError("ALREADY_REVERSED");
-        if (document.status !== "POSTED")
-          throw new JournalError("INVALID_STATE");
-        if (document.version !== input.version)
-          throw new JournalError("VERSION_CONFLICT");
-        const reversalDate = date(input.reversalDate);
-        const period = await tx.fiscalPeriod.findFirst({
-          where: {
-            companyId: context.companyId,
-            startDate: { lte: reversalDate },
-            endDate: { gte: reversalDate },
-            status: { not: "CLOSED" },
-          },
+      async (tx) => {
+        const result = await this.posting.reverse(tx, {
+          companyId: context.companyId,
+          documentId: id,
+          expectedVersion: input.version,
+          actorUserId: context.userId,
+          reversalDate: date(input.reversalDate),
+          description: (original) =>
+            `عكس ${original.documentNumber}: ${input.reason}`,
+          reserveDocumentNumber: (sequenceTx, period) =>
+            this.reserveInTransaction(
+              sequenceTx,
+              context.companyId,
+              period.fiscalYearId,
+              "MANUAL_JOURNAL",
+            ),
+          error: (reason) => this.postingError(reason),
         });
-        if (!period) throw new JournalError("PERIOD_CLOSED");
-        const original = await tx.accountingDocument.findUniqueOrThrow({
-          where: { id },
-          include: this.include(),
-        });
-        const documentNumber = await this.reserveInTransaction(
-          tx,
-          context.companyId,
-          period.fiscalYearId,
-          "MANUAL_JOURNAL",
-        );
-        const reversal = await tx.accountingDocument.create({
-          data: {
-            companyId: context.companyId,
-            fiscalPeriodId: period.id,
-            documentType: "MANUAL_JOURNAL",
-            documentNumber,
-            documentDate: reversalDate,
-            description: `عكس ${original.documentNumber}: ${input.reason}`,
-            status: "POSTED",
-            createdBy: context.userId,
-            postedBy: context.userId,
-            postedAt: new Date(),
-            journalEntries: {
-              create: original.journalEntries.map((entry) => ({
-                entryNumber: entry.entryNumber,
-                entryDate: reversalDate,
-                description: `عكس: ${entry.description}`,
-                reversalOfJournalEntryId: entry.id,
-                lines: {
-                  create: entry.lines.map((line) => ({
-                    lineNumber: line.lineNumber,
-                    accountId: line.accountId,
-                    costCenterId: line.costCenterId,
-                    customerId: line.customerId,
-                    supplierId: line.supplierId,
-                    description: line.description,
-                    currencyId: line.currencyId,
-                    exchangeRate: line.exchangeRate,
-                    debitAmount: line.creditAmount,
-                    creditAmount: line.debitAmount,
-                    baseDebitAmount: line.baseCreditAmount,
-                    baseCreditAmount: line.baseDebitAmount,
-                  })),
-                },
-              })),
-            },
-          },
-          include: this.include(),
-        });
-        const changed = await tx.accountingDocument.updateMany({
-          where: {
-            id,
-            companyId: context.companyId,
-            status: "POSTED",
-            version: input.version,
-            reversedByDocumentId: null,
-          },
-          data: {
-            status: "REVERSED",
-            reversedByDocumentId: reversal.id,
-            version: { increment: 1 },
-          },
-        });
-        if (changed.count !== 1) throw new JournalError("VERSION_CONFLICT");
-        await archiveDocument(tx, context, reversal.id);
+        await archiveDocument(tx, context, result.reversalDocument.id);
         return {
-          document: await tx.accountingDocument.findUniqueOrThrow({
-            where: { id },
-          }),
-          generatedJournalEntryIds: reversal.journalEntries.map((entry) =>
+          document: result.document,
+          generatedJournalEntryIds: result.entries.map((entry) =>
             entry.id.toString(),
           ),
         };
@@ -636,59 +540,6 @@ export class ManualJournalService {
     }
     return output;
   }
-  private async validatePersisted(
-    tx: Prisma.TransactionClient,
-    companyId: bigint,
-    document: any,
-  ) {
-    if (!document.journalEntries.length) throw new JournalError("INVALID_LINE");
-    const company = await tx.company.findUniqueOrThrow({ where: { id: companyId } });
-    for (const entry of document.journalEntries) {
-      if (entry.lines.length < 2) throw new JournalError("INVALID_LINE");
-      let debit = new Prisma.Decimal(0);
-      let credit = new Prisma.Decimal(0);
-      for (const line of entry.lines) {
-        const hasDebit = line.debitAmount.gt(0);
-        const hasCredit = line.creditAmount.gt(0);
-        if (
-          hasDebit === hasCredit ||
-          line.debitAmount.lt(0) ||
-          line.creditAmount.lt(0) ||
-          line.exchangeRate.lte(0) ||
-          (line.customerId != null && line.supplierId != null)
-        ) throw new JournalError("INVALID_LINE");
-        const account = await tx.account.findFirst({
-          where: { id: line.accountId, companyId },
-          include: { _count: { select: { children: true } } },
-        });
-        if (
-          !account ||
-          !account.isActive ||
-          !account.allowsPosting ||
-          account._count.children > 0
-        )
-          throw new JournalError("INVALID_ACCOUNT");
-        if (
-          line.costCenterId &&
-          !(await tx.costCenter.findFirst({
-            where: { id: line.costCenterId, companyId, isActive: true },
-          }))
-        )
-          throw new JournalError("INVALID_COST_CENTER");
-        const currency = await tx.companyCurrency.findFirst({
-            where: { companyId, currencyId: line.currencyId, isActive: true, currency: { isActive: true, OR: [{ scope: 'GLOBAL', ownerCompanyId: null }, { scope: 'COMPANY', ownerCompanyId: companyId }] } },
-          });
-        if (!currency || (line.currencyId === company.baseCurrencyId && !line.exchangeRate.equals(1))) throw new JournalError("INVALID_CURRENCY");
-        if (
-          !line.baseDebitAmount.equals(line.debitAmount.mul(line.exchangeRate).toDecimalPlaces(4)) ||
-          !line.baseCreditAmount.equals(line.creditAmount.mul(line.exchangeRate).toDecimalPlaces(4))
-        ) throw new JournalError("INVALID_LINE");
-        debit = debit.add(line.baseDebitAmount);
-        credit = credit.add(line.baseCreditAmount);
-      }
-      if (!debit.equals(credit)) throw new JournalError("UNBALANCED");
-    }
-  }
   private async reserveInTransaction(
     tx: Prisma.TransactionClient,
     companyId: bigint,
@@ -740,100 +591,38 @@ export class ManualJournalService {
       document: any,
     ) => Promise<{ document: any; generatedJournalEntryIds: string[] }>,
   ) {
-    const keyHash = digest(key);
-    const requestFingerprint = digest(fingerprint);
-    try {
-      return await this.prisma.$transaction(
-        async (tx) => {
-          const existing = await tx.idempotencyRecord.findUnique({
-            where: {
-              companyId_userId_operation_keyHash: {
-                companyId: context.companyId,
-                userId: context.userId,
-                operation,
-                keyHash,
-              },
-            },
-          });
-          if (existing) {
-            if (
-              !Buffer.from(existing.requestFingerprint).equals(
-                Buffer.from(requestFingerprint),
-              )
-            )
-              throw new JournalError("IDEMPOTENCY_MISMATCH");
-            if (existing.status === "COMPLETED")
-              return existing.responseBody as any;
-            throw new JournalError("IDEMPOTENCY_IN_PROGRESS");
-          }
-          const document = await tx.accountingDocument.findFirst({
-            where: {
-              id,
-              companyId: context.companyId,
-              documentType: "MANUAL_JOURNAL",
-            },
-          });
-          if (!document) throw new JournalError("NOT_FOUND");
-          const idem = await tx.idempotencyRecord.create({
-            data: {
-              companyId: context.companyId,
-              userId: context.userId,
-              operation,
-              keyHash,
-              requestFingerprint,
-              status: "IN_PROGRESS",
-              expiresAt: new Date(Date.now() + 86_400_000),
-            },
-          });
-          const result = await execute(tx, document);
-          await this.audit(tx, context, operation, id);
-          const response = {
-            document: serializeDocument(result.document),
-            generatedJournalEntryIds: result.generatedJournalEntryIds,
-            requestId: randomUUID(),
-          };
-          await tx.idempotencyRecord.update({
-            where: { id: idem.id },
-            data: {
-              status: "COMPLETED",
-              responseStatus: 200,
-              responseBody: response,
-              completedAt: new Date(),
-            },
-          });
-          return response;
+    return this.commands.execute(
+      {
+        context,
+        operation,
+        key,
+        fingerprint,
+        errors: {
+          mismatch: () => new JournalError("IDEMPOTENCY_MISMATCH"),
+          inProgress: () => new JournalError("IDEMPOTENCY_IN_PROGRESS"),
         },
-        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-      );
-    } catch (error) {
-      if (
-        !(error instanceof Prisma.PrismaClientKnownRequestError) ||
-        !["P2002", "P2034"].includes(error.code)
-      )
-        throw error;
-      for (let attempt = 1; attempt <= 10; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, attempt * 10));
-        const existing = await this.prisma.idempotencyRecord.findUnique({
+      },
+      async (tx) => {
+        const document = await tx.accountingDocument.findFirst({
           where: {
-            companyId_userId_operation_keyHash: {
-              companyId: context.companyId,
-              userId: context.userId,
-              operation,
-              keyHash,
-            },
+            id,
+            companyId: context.companyId,
+            documentType: "MANUAL_JOURNAL",
           },
         });
-        if (!existing) continue;
-        if (
-          !Buffer.from(existing.requestFingerprint).equals(
-            Buffer.from(requestFingerprint),
-          )
-        )
-          throw new JournalError("IDEMPOTENCY_MISMATCH");
-        if (existing.status === "COMPLETED")
-          return existing.responseBody as any;
-      }
-      throw new JournalError("IDEMPOTENCY_IN_PROGRESS");
-    }
+        if (!document) throw new JournalError("NOT_FOUND");
+        const result = await execute(tx, document);
+        await this.audit(tx, context, operation, id);
+        return {
+          document: serializeDocument(result.document),
+          generatedJournalEntryIds: result.generatedJournalEntryIds,
+          requestId: randomUUID(),
+        };
+      },
+    );
+  }
+
+  private postingError(reason: PostingFailureReason) {
+    return new JournalError(reason);
   }
 }

@@ -1,5 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
-import { accountTypeDefinitions, currencyDefinitions, paymentMethodDefinitions, permissionDefinitions } from './reference-data.js';
+import { paymentMethodDefinitions } from '../treasury/treasury-reference-data.js';
+import { upsertGlobalPaymentMethods } from '../treasury/treasury-service.js';
+import { accountTypeDefinitions, currencyDefinitions, permissionDefinitions } from './reference-data.js';
 
 export async function seedReferenceData(prisma: PrismaClient) {
   return prisma.$transaction(async (tx) => {
@@ -56,13 +58,7 @@ export async function seedReferenceData(prisma: PrismaClient) {
         create: definition,
       });
     }
-    for (const method of paymentMethodDefinitions) {
-      await tx.paymentMethod.upsert({
-        where: { code: method.code },
-        update: { ...method, isActive: true, scope: 'GLOBAL', companyId: null },
-        create: { ...method, scope: 'GLOBAL' },
-      });
-    }
+    await upsertGlobalPaymentMethods(tx);
 
     return {
       currencies: currencyDefinitions.map(({ code }) => code),

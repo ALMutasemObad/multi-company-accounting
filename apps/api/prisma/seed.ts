@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { hash } from 'argon2';
 import { createDatabase } from '../src/database.js';
 import { currencyDefinitions } from '../src/platform/reference-data.js';
+import { paymentMethodDefinitions } from '../src/treasury/treasury-reference-data.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 const adminPassword = process.env.SEED_ADMIN_PASSWORD;
@@ -157,13 +158,7 @@ try {
   for (const accountType of accountTypes) {
     await prisma.accountType.upsert({ where: { code: accountType.code }, update: accountType, create: accountType });
   }
-  const paymentMethods = [
-    { code: 'CASH', nameAr: 'نقدي', requiresReference: false },
-    { code: 'BANK_TRANSFER', nameAr: 'تحويل بنكي', requiresReference: true },
-    { code: 'CARD', nameAr: 'بطاقة', requiresReference: true },
-    { code: 'CHEQUE', nameAr: 'شيك', requiresReference: true },
-  ] as const;
-  for (const method of paymentMethods) {
+  for (const method of paymentMethodDefinitions) {
     await prisma.paymentMethod.upsert({ where: { code: method.code }, update: { ...method, isActive: true, scope: 'GLOBAL', companyId: null }, create: { ...method, scope: 'GLOBAL' } });
   }
   console.log('Development seed completed.');
