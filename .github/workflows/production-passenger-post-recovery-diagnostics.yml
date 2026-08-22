@@ -115,7 +115,8 @@ jobs:
                       applications.push({
                         version, user, app_root: appRoot, domain: app.domain, app_uri: app.app_uri,
                         app_mode: app.app_mode, startup_file: app.startup_file, app_status: app.app_status,
-                        app_venv: app.app_venv, application_keys: Object.keys(app).sort(),\n                        env_var_names: Object.keys(app.env_vars || {}).sort()
+                        app_venv: app.app_venv, application_keys: Object.keys(app).sort(),
+                        env_var_names: Object.keys(app.env_vars || {}).sort()
                       });
                     }
                   }
