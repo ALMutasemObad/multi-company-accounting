@@ -74,6 +74,15 @@ jobs:
             $1 ~ /^Passenger/ { print $1 " [configured]" }
           ' "$passenger_config"
 
+          printf '%s\n' '=== current Passenger error ID context ==='
+          if [[ -f "$passenger_log" ]]; then
+            grep -n -B 80 -A 120 -- '55ee3e41' "$passenger_log" |
+              sed -E \
+                -e 's#(mysql://)[^/@[:space:]]+:[^@[:space:]]+@#\1[redacted]@#g' \
+                -e 's/(RESEND_API_KEY|REGISTRATION_TOKEN_SECRET|REGISTRATION_AUDIT_PEPPER|DATABASE_URL)=([^[:space:]]+)/\1=[redacted]/g' \
+                -e 's/re_[A-Za-z0-9_-]{16,}/re_[redacted]/g' \
+                -e 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/[redacted-email]/g' || true
+          fi
           printf '%s\n' '=== sanitized Passenger log tail ==='
           if [[ -f "$passenger_log" ]]; then
             tail -n 500 -- "$passenger_log" |
