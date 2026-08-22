@@ -67,6 +67,37 @@ jobs:
             }));
           ' "$current_release/release-manifest.json"
 
+          printf '%s\n' '=== sanitized cPanel Passenger application registry ==='
+          uapi_bin=/usr/local/cpanel/bin/uapi
+          if [[ -x "$uapi_bin" ]]; then
+            uapi_result=$(mktemp /tmp/mcap-passenger-apps.XXXXXX)
+            trap 'rm -f -- "$uapi_result"' EXIT
+            "$uapi_bin" --output=json PassengerApps list_applications > "$uapi_result"
+            node -e '
+              const fs = require("node:fs");
+              const payload = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+              const result = payload.result || {};
+              const data = result.data;
+              const allowed = new Set(["name", "domain", "path", "base_uri", "deployment_mode", "enabled", "nodejs_version", "startup_file"]);
+              const applications = [];
+              if (Array.isArray(data)) {
+                for (const item of data) {
+                  const summary = {};
+                  if (item && typeof item === "object") for (const key of allowed) if (key in item) summary[key] = item[key];
+                  applications.push(summary);
+                }
+              } else if (data && typeof data === "object") {
+                for (const [registryKey, item] of Object.entries(data)) {
+                  const summary = { registry_key: registryKey };
+                  if (item && typeof item === "object") for (const key of allowed) if (key in item) summary[key] = item[key];
+                  applications.push(summary);
+                }
+              }
+              console.log(JSON.stringify({ status: result.status, errors: result.errors, application_count: applications.length, applications }));
+            ' "$uapi_result"
+          else
+            printf '%s\n' 'cPanel UAPI is unavailable'
+          fi
           printf '%s\n' '=== Passenger configuration keys ==='
           awk '
             $1 == "SetEnv" { print "SetEnv " $2 " [redacted]"; next }
