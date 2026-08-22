@@ -1,4 +1,4 @@
-name: production-cloudlinux-recreate
+name: production-cloudlinux-recreate-diagnostic
 
 on:
   push:
@@ -13,10 +13,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  recover:
-    name: Recreate the broken CloudLinux production registration
+  diagnose:
+    name: Inspect CloudLinux state after the failed recreate
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     environment:
       name: production
     env:
@@ -34,203 +34,44 @@ jobs:
           printf '%s\n' "$CPANEL_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
           chmod 0600 "$HOME/.ssh/id_ed25519"
           install -m 0600 deploy/ssh/ifastnet_known_hosts "$HOME/.ssh/known_hosts"
-      - name: Back up and recreate the broken production registration
+      - name: Read the selector registry and command contract
         run: |
           ssh -i "$HOME/.ssh/id_ed25519" -p "$CPANEL_SSH_PORT" -o IdentitiesOnly=yes \
             "$CPANEL_SSH_USER@$CPANEL_SSH_HOST" bash -s <<'REMOTE'
           set -Eeuo pipefail
-
-          fail() { printf 'mcap-cloudlinux-recreate: %s\n' "$*" >&2; exit 1; }
-
           selector=/usr/sbin/cloudlinux-selector
-          deploy_root=/home/doralash/accounting-app
-          releases_dir="$deploy_root/releases"
-          current_link="$deploy_root/current"
-          previous_link="$deploy_root/previous"
-          passenger_config=/home/doralash/accounting.doralashab.com/.htaccess
-          backup_dir="$deploy_root/recovery-backups"
-          original_app_root=accounting-app/releases/0.1.0-1340b574957e
-          original_release="/home/doralash/$original_app_root"
-          original_venv=/home/doralash/nodevenv/accounting-app/releases/0.1.0-1340b574957e/22
-          target_app_root=accounting-app/releases/0.1.0-59897e185ecd
-          target_release="/home/doralash/$target_app_root"
-          target_venv=/home/doralash/nodevenv/accounting-app/releases/0.1.0-59897e185ecd/22
-          live_url=https://accounting.doralashab.com/live
-          ready_url=https://accounting.doralashab.com/ready
-
-          [[ "$(id -un)" == doralash ]] || fail "unexpected remote user"
-          [[ -x "$selector" ]] || fail "CloudLinux Node.js Selector is unavailable"
-          [[ -d "$deploy_root" && ! -L "$deploy_root" && "$(readlink -f -- "$deploy_root")" == "$deploy_root" ]] \
-            || fail "deployment root is invalid"
-          [[ -d "$releases_dir" && ! -L "$releases_dir" ]] || fail "release directory is invalid"
-          [[ -f "$passenger_config" && ! -L "$passenger_config" && "$(readlink -f -- "$passenger_config")" == "$passenger_config" ]] \
-            || fail "Passenger configuration is invalid"
-          [[ -d "$backup_dir" && ! -L "$backup_dir" ]] || fail "recovery backup directory is invalid"
-          [[ -d "$original_release" && ! -L "$original_release" ]] || fail "original registered release is unavailable"
-          [[ ! -e "$original_venv" && ! -L "$original_venv" ]] || fail "original virtualenv path is no longer missing"
-          [[ -d "$target_release" && ! -L "$target_release" ]] || fail "target release is unavailable"
-          [[ ! -e "$target_venv" && ! -L "$target_venv" ]] || fail "target virtualenv path already exists"
-          [[ -f "$target_release/apps/api/dist/server.js" && ! -L "$target_release/apps/api/dist/server.js" ]] \
-            || fail "target server entrypoint is invalid"
-
-          old_current=$(readlink -f -- "$current_link") || fail "current release link is unavailable"
-          case "$old_current" in
-            "$releases_dir/"*) ;;
-            *) fail "current release resolved outside the release directory" ;;
-          esac
-
+          snapshot=$(mktemp /tmp/mcap-selector-state.XXXXXX)
+          trap 'rm -f -- "$snapshot"' EXIT
+          "$selector" get --json --interpreter nodejs --user doralash > "$snapshot"
           node -e '
             const fs = require("node:fs");
-            const manifest = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-            if (manifest.releaseId !== "0.1.0-59897e185ecd" || manifest.commit !== "59897e185ecd2281ed0037cac39c243cb86ca5dd") {
-              throw new Error("target release manifest does not match the trusted main commit");
-            }
-            console.log("Trusted target release manifest validated.");
-          ' "$target_release/release-manifest.json"
-
-          umask 077
-          selector_before=$(mktemp /tmp/mcap-selector-before.XXXXXX)
-          env_json_file=$(mktemp /tmp/mcap-selector-env.XXXXXX)
-          destroy_result=$(mktemp /tmp/mcap-selector-destroy.XXXXXX)
-          create_result=$(mktemp /tmp/mcap-selector-create.XXXXXX)
-          restart_result=$(mktemp /tmp/mcap-selector-restart.XXXXXX)
-          registration_destroyed=false
-          target_created=false
-          current_switched=false
-          placeholder_created=false
-          config_backup=
-          registry_backup=
-
-          create_registration() {
-            local app_root=$1 output_file=$2 env_json
-            env_json=$(<"$env_json_file")
-            "$selector" create --json --interpreter nodejs --user doralash \
-              --app-root "$app_root" --app-uri '' --version 22.23.2 --app-mode production \
-              --startup-file apps/api/dist/server.js --domain accounting.doralashab.com \
-              --passenger-log-file /home/doralash/logs/accounting-passenger.log \
-              --env-vars "$env_json" > "$output_file" 2>&1
-          }
-
-          atomic_link() {
-            local target=$1 link=$2 temporary
-            temporary="${link}.next.$$"
-            [[ ! -e "$temporary" && ! -L "$temporary" ]] || return 1
-            ln -s -- "$target" "$temporary"
-            mv -Tf -- "$temporary" "$link"
-          }
-
-          cleanup() {
-            status=$?
-            set +e
-            if [[ "$status" != 0 ]]; then
-              if [[ "$target_created" == true ]]; then
-                "$selector" destroy --json --interpreter nodejs --user doralash --app-root "$target_app_root" > /dev/null 2>&1
-              fi
-              if [[ "$registration_destroyed" == true ]]; then
-                if [[ -d "$original_venv" && ! -L "$original_venv" ]]; then
-                  rmdir -- "$original_venv" 2>/dev/null
-                  rmdir -- "$(dirname -- "$original_venv")" 2>/dev/null
-                fi
-                create_registration "$original_app_root" /dev/null
-                "$selector" restart --json --interpreter nodejs --user doralash --app-root "$original_app_root" > /dev/null 2>&1
-              fi
-              if [[ "$current_switched" == true ]]; then
-                atomic_link "$old_current" "$current_link"
-              fi
-              if [[ -n "$config_backup" && -f "$config_backup" ]]; then
-                cp -p -- "$config_backup" "$passenger_config"
-                touch -- "$old_current/tmp/restart.txt" "$passenger_config"
-              fi
+            const payload = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            const versions = payload.available_versions || {};
+            const apps = versions["22.23.2"]?.users?.doralash?.applications || {};
+            const safe = Object.entries(apps).map(([root, app]) => ({
+              root,
+              domain: app.domain,
+              status: app.status,
+              startup_file: app.startup_file,
+              app_uri: app.app_uri,
+              env_keys: Object.keys(app.env_vars || {}).sort(),
+              venv: app.virtualenv,
+            }));
+            console.log(JSON.stringify({ result: payload.result, applications: safe }, null, 2));
+          ' "$snapshot"
+          printf 'current=%s\n' "$(readlink -f -- /home/doralash/accounting-app/current)"
+          printf 'previous=%s\n' "$(readlink -f -- /home/doralash/accounting-app/previous)"
+          for path in \
+            /home/doralash/nodevenv/accounting-app/releases/0.1.0-1340b574957e/22 \
+            /home/doralash/nodevenv/accounting-app/releases/0.1.0-59897e185ecd/22; do
+            if [[ -d "$path" && ! -L "$path" ]]; then
+              printf 'venv-present=%s\n' "$path"
+            else
+              printf 'venv-missing=%s\n' "$path"
             fi
-            if [[ "$placeholder_created" == true && -d "$original_venv" ]]; then
-              rmdir -- "$original_venv" 2>/dev/null
-              rmdir -- "$(dirname -- "$original_venv")" 2>/dev/null
-            fi
-            rm -f -- "$selector_before" "$env_json_file" "$destroy_result" "$create_result" "$restart_result"
-            exit "$status"
-          }
-          trap cleanup EXIT
-
-          "$selector" get --json --interpreter nodejs --user doralash > "$selector_before"
-          node -e '
-            const fs = require("node:fs");
-            const payload = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-            const root = process.argv[2];
-            const apps = payload.available_versions?.["22.23.2"]?.users?.doralash?.applications || {};
-            const app = apps[root];
-            if (payload.result !== "success" || !app || app.domain !== "accounting.doralashab.com" || app.startup_file !== "apps/api/dist/server.js") {
-              throw new Error("broken registration changed before recovery could begin");
-            }
-            const required = ["DATABASE_URL", "WEB_ORIGIN", "SESSION_COOKIE_SECURE", "TRUST_PROXY"];
-            for (const name of required) if (!(name in (app.env_vars || {}))) throw new Error(`registered environment is missing ${name}`);
-            const environment = { ...app.env_vars, PASSWORD_RESET_ENABLED: "false" };
-            fs.writeFileSync(process.argv[3], JSON.stringify(environment), { mode: 0o600 });
-            console.log("Broken registration and environment keys validated without revealing values.");
-          ' "$selector_before" "$original_app_root" "$env_json_file"
-
-          timestamp=$(date -u +%Y%m%dT%H%M%SZ)
-          config_backup="$backup_dir/htaccess-before-cloudlinux-recreate-$timestamp"
-          registry_backup="$backup_dir/cloudlinux-selector-before-recreate-$timestamp.json"
-          [[ ! -e "$config_backup" && ! -L "$config_backup" ]] || fail "configuration backup target already exists"
-          [[ ! -e "$registry_backup" && ! -L "$registry_backup" ]] || fail "registry backup target already exists"
-          cp -p -- "$passenger_config" "$config_backup"
-          cp -- "$selector_before" "$registry_backup"
-          chmod 0600 -- "$registry_backup"
-
-          mkdir -- "$(dirname -- "$original_venv")"
-          mkdir -- "$original_venv"
-          placeholder_created=true
-
-          registration_destroyed=true
-          "$selector" destroy --json --interpreter nodejs --user doralash --app-root "$original_app_root" > "$destroy_result" 2>&1
-          if [[ -d "$original_venv" && ! -L "$original_venv" ]]; then
-            rmdir -- "$original_venv" 2>/dev/null || true
-            rmdir -- "$(dirname -- "$original_venv")" 2>/dev/null || true
-          fi
-          placeholder_created=false
-          node -e '
-            const fs = require("node:fs");
-            const payload = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-            console.log(JSON.stringify({ result: payload.result, warning: payload.warning }));
-            if (payload.result !== "success") throw new Error("CloudLinux failed to remove the broken registration");
-          ' "$destroy_result"
-          target_created=true
-          create_registration "$target_app_root" "$create_result"
-          node -e '
-            const fs = require("node:fs");
-            const payload = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-            console.log(JSON.stringify({ result: payload.result, warning: payload.warning }));
-            if (payload.result !== "success") throw new Error("CloudLinux failed to create the replacement registration");
-          ' "$create_result"
-          atomic_link "$target_release" "$current_link"
-          current_switched=true
-          atomic_link "$old_current" "$previous_link"
-
-          "$selector" restart --json --interpreter nodejs --user doralash --app-root "$target_app_root" > "$restart_result" 2>&1
-          node -e '
-            const fs = require("node:fs");
-            const payload = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-            console.log(JSON.stringify({ result: payload.result, warning: payload.warning }));
-            if (payload.result !== "success") throw new Error("CloudLinux failed to restart the replacement registration");
-          ' "$restart_result"
-
-          healthy=false
-          for attempt in $(seq 1 25); do
-            live_status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --connect-timeout 2 --max-time 4 "$live_url" || true)
-            ready_status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --connect-timeout 2 --max-time 4 "$ready_url" || true)
-            printf 'health attempt %s/25: live=%s ready=%s\n' "$attempt" "${live_status:-000}" "${ready_status:-000}"
-            if [[ "$live_status" == 200 && "$ready_status" == 200 ]]; then
-              healthy=true
-              break
-            fi
-            sleep 2
           done
-          [[ "$healthy" == true ]] || fail "replacement registration failed production health checks"
-
-          registration_destroyed=false
-          target_created=false
-          current_switched=false
-          printf 'mcap-cloudlinux-recreate: production is healthy on release %s\n' "$(basename -- "$target_release")"
-          printf 'mcap-cloudlinux-recreate: recoverable backups: %s and %s\n' "$config_backup" "$registry_backup"
+          set +e
+          "$selector" create --help 2>&1
+          printf 'create-help-exit=%s\n' "$?"
           REMOTE
 
