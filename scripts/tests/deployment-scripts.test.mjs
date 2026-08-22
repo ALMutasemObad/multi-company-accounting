@@ -25,6 +25,28 @@ test("cPanel deployment scripts verify the active release and refresh stable Pas
   }
 });
 
+test("CloudLinux registration switching recreates immutable release roots and restores the source on failure", async () => {
+  const switcher = await readFile(
+    path.join(repositoryRoot, "deploy", "scripts", "switch-cloudlinux-registration.sh"),
+    "utf8",
+  );
+  const installer = await readFile(
+    path.join(repositoryRoot, "deploy", "scripts", "install-cpanel-release.sh"),
+    "utf8",
+  );
+
+  assert.match(switcher, /selector-before-/u);
+  assert.match(switcher, /write_environment_snapshot/u);
+  assert.match(switcher, /destroy_registration "\$source_root"/u);
+  assert.match(switcher, /create_registration "\$target_root"/u);
+  assert.match(switcher, /restore_source_registration/u);
+  assert.match(switcher, /chmod "\$config_mode"/u);
+  assert.doesNotMatch(switcher, /printf[^\n]*environment_json/u);
+  assert.match(installer, /MCAP_CLOUDLINUX_SWITCHER/u);
+  assert.match(installer, /activate_release "\$old_release" "\$release_dir"/u);
+  assert.match(installer, /activate_release "\$release_dir" "\$old_release"/u);
+});
+
 test("cPanel installer migrates and seeds the candidate before activating it", async () => {
   const source = await readFile(
     path.join(repositoryRoot, "deploy", "scripts", "install-cpanel-release.sh"),
@@ -66,6 +88,9 @@ test("CI deploys main only after both database gates and uses pinned SSH identit
   assert.match(source, /secrets\.CPANEL_SSH_PRIVATE_KEY/u);
   assert.match(source, /secrets\.BACKUP_ENCRYPTION_PASSPHRASE/u);
   assert.match(source, /deploy\/ssh\/ifastnet_known_hosts/u);
+  assert.match(source, /switch-cloudlinux-registration\.sh/u);
+  assert.match(source, /MCAP_CLOUDLINUX_SELECTOR=\/usr\/sbin\/cloudlinux-selector/u);
+  assert.match(source, /cloudlinux-registration\.integration\.sh/u);
   assert.match(source, /sha256sum --check mcap-finance-linux-x64\.tgz\.sha256/u);
   assert.match(source, /SELF_REGISTRATION_ENABLED: 'false'/u);
 });

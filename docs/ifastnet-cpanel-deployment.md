@@ -14,14 +14,14 @@
 المسار المقترح للنسخة الأولى هو `https://accounting.doralashab.com` باسم محايد، مع:
 
 ```text
-Application root: accounting-app/current
+Application root: accounting-app/releases/<release-id>
 Application startup file: apps/api/dist/server.js
 Application mode: Production
 Node.js version: 22.23.2
 Passenger log: logs/accounting-passenger.log
 ```
 
-يجب أن يشير `PassengerAppRoot` في ملف إعداد النطاق إلى المسار المستقر `/home/doralash/accounting-app/current`، لا إلى مجلد إصدار داخل `releases`. يحافظ ذلك على التبديل الذري ويتيح للمُثبّت إيقاظ Passenger عبر لمس ملف الإعداد نفسه.
+يسجل CloudLinux Node.js Selector جذر التطبيق وبيئة Node على مسار الإصدار الفعلي داخل `releases`، ولا يتبع رابط `current` عند تبديله. لذلك يبقى `current` مؤشرًا تشغيليًا للتدقيق، بينما يعيد مسار النشر إنشاء تسجيل Selector من الإصدار السابق إلى الإصدار الجديد مع الحفاظ على متغيرات البيئة المحمية. لا تغيّر `PassengerAppRoot` أو `PassengerNodejs` يدويًا بين الإصدارات.
 
 يخدم Express ملفات React المبنية من `apps/web/dist` مباشرة، لذلك لا يحتاج هذا المسار إلى إعداد Nginx أو PM2. أما مسار VPS الموثق في `production-operations.md` فيبقى متاحًا لبيئة تملك صلاحيات root.
 
@@ -40,7 +40,7 @@ Passenger log: logs/accounting-passenger.log
 1. نسخة قاعدة بيانات مشفرة إلى `/home/doralash/backups/mcap`.
 2. `prisma migrate deploy` على الإصدار المرشح قبل تفعيله.
 3. Seed المرجعيات الإنتاجية المتكرر والآمن.
-4. التبديل الذري للرابط `current` وإيقاظ Passenger.
+4. تبديل رابط `current` وإعادة إنشاء تسجيل CloudLinux وبيئة Node على جذر الإصدار immutable الجديد.
 5. فحص `/ready` وبصمة واجهة الإصدار الجديد، مع رجوع التطبيق تلقائيًا عند الفشل.
 
 يحتاج المستودع إلى سري GitHub من مستوى المستودع أو بيئة `production`:
@@ -63,13 +63,21 @@ export MCAP_NPX_CLI=/opt/alt/alt-nodejs22/root/usr/lib/node_modules/npm/bin/npx-
 export MCAP_HEALTH_URL=https://accounting.doralashab.com/ready
 export MCAP_APP_URL=https://accounting.doralashab.com
 export MCAP_PASSENGER_CONFIG_FILE=/home/doralash/accounting.doralashab.com/.htaccess
+export MCAP_CLOUDLINUX_SWITCHER="$PWD/deploy/scripts/switch-cloudlinux-registration.sh"
+export MCAP_CLOUDLINUX_SELECTOR=/usr/sbin/cloudlinux-selector
+export MCAP_CLOUDLINUX_USER=doralash
+export MCAP_CLOUDLINUX_HOME=/home/doralash
+export MCAP_CLOUDLINUX_DOMAIN=accounting.doralashab.com
+export MCAP_CLOUDLINUX_VERSION=22.23.2
+export MCAP_CLOUDLINUX_PASSENGER_LOG_FILE=/home/doralash/logs/accounting-passenger.log
+export MCAP_CLOUDLINUX_BACKUP_DIRECTORY=/home/doralash/accounting-app/recovery-backups
 export MCAP_DEPLOY_CONFIRM=DEPLOY:<release-id>
 bash deploy/scripts/install-cpanel-release.sh \
   mcap-finance-linux-x64.tgz \
   <trusted-sha256>
 ```
 
-يتحقق المثبت من البصمة وManifest والمنصة، ويفك الإصدار إلى مجلد مستقل، ويبدّل رابط `current` ذريًا، ثم يلمس `tmp/restart.txt` وملف إعداد Passenger. لا يكتفي بفحص `/ready`؛ بل يقارن بصمة HTML المقدّم عبر النطاق مع `apps/web/dist/index.html` في الإصدار المتوقع حتى لا تعتبر عملية قديمة سليمة إصدارًا ناجحًا. عند فشل إصدار لاحق يعيد الإصدار السابق تلقائيًا. لا يحذف أي إصدار.
+يتحقق المثبت من البصمة وManifest والمنصة، ويفك الإصدار إلى مجلد مستقل، ويبدّل رابط `current`، ثم يستدعي `switch-cloudlinux-registration.sh`. يأخذ المحوّل لقطة محمية من تسجيل Selector وبيئته، يزيل تسجيل المصدر، وينشئ تسجيل الهدف على مساره immutable؛ وإذا فشل الإنشاء يعيد تسجيل المصدر تلقائيًا. بعد ذلك لا يكتفي المثبت بفحص `/ready`، بل يقارن بصمة HTML المقدّم عبر النطاق مع `apps/web/dist/index.html` في الإصدار المتوقع حتى لا تعتبر عملية قديمة سليمة إصدارًا ناجحًا. الرجوع يعيد إنشاء تسجيل الإصدار السابق ولا يحذف مجلدات الإصدارات.
 
 المسار اليدوي أعلاه مخصص للطوارئ. الإصدارات الاعتيادية تنشرها مهمة CI تلقائيًا باستخدام `deploy/scripts/deploy-cpanel-release.sh`، وهي تضيف النسخ المشفر والترحيلات والـSeed قبل استدعاء المثبت الذري.
 

@@ -14,6 +14,7 @@ curl_bin=${MCAP_CURL_BIN:-/usr/bin/curl}
 health_url=${MCAP_HEALTH_URL:-}
 app_url=${MCAP_APP_URL:-}
 passenger_config_file=${MCAP_PASSENGER_CONFIG_FILE:-}
+cloudlinux_switcher=${MCAP_CLOUDLINUX_SWITCHER:-}
 health_attempts=${MCAP_HEALTH_ATTEMPTS:-30}
 run_database_migrations=${MCAP_RUN_DATABASE_MIGRATIONS:-false}
 
@@ -24,6 +25,10 @@ run_database_migrations=${MCAP_RUN_DATABASE_MIGRATIONS:-false}
 app_url=${app_url%/}
 [[ "$passenger_config_file" == /* && "$passenger_config_file" != / ]] || fail "MCAP_PASSENGER_CONFIG_FILE must be an explicit absolute non-root path"
 [[ -f "$passenger_config_file" && ! -L "$passenger_config_file" ]] || fail "Passenger configuration must be a regular non-symlink file"
+if [[ -n "$cloudlinux_switcher" ]]; then
+  [[ "$cloudlinux_switcher" == /* && -f "$cloudlinux_switcher" && ! -L "$cloudlinux_switcher" ]] \
+    || fail "MCAP_CLOUDLINUX_SWITCHER must be an explicit regular file"
+fi
 [[ "$expected_sha" =~ ^[0-9a-fA-F]{64}$ ]] || fail "a trusted SHA-256 value is required"
 [[ "$health_attempts" =~ ^[1-9][0-9]{0,2}$ ]] || fail "MCAP_HEALTH_ATTEMPTS must be between 1 and 999"
 [[ "$run_database_migrations" == true || "$run_database_migrations" == false ]] || fail "MCAP_RUN_DATABASE_MIGRATIONS must be true or false"
@@ -104,8 +109,13 @@ atomic_link() {
   mv -Tf -- "$temporary" "$link"
 }
 
-restart_passenger() {
-  touch -- "$current_link/tmp/restart.txt"
+activate_release() {
+  local source_release=$1 target_release=$2
+  if [[ -n "$cloudlinux_switcher" ]]; then
+    bash "$cloudlinux_switcher" "$source_release" "$target_release"
+    return
+  fi
+  touch -- "$target_release/tmp/restart.txt"
   touch -- "$passenger_config_file"
 }
 active_release_matches() {
@@ -135,7 +145,14 @@ fi
 if [[ -n "$old_release" ]]; then atomic_link "$old_release" "$previous_link"; fi
 atomic_link "$release_dir" "$current_link"
 
-if restart_passenger && wait_until_ready "$release_dir" "$release_id"; then
+activation_completed=false
+if [[ -n "$old_release" ]] && activate_release "$old_release" "$release_dir"; then
+  activation_completed=true
+elif [[ -z "$old_release" && -z "$cloudlinux_switcher" ]] && activate_release "$release_dir" "$release_dir"; then
+  activation_completed=true
+fi
+
+if [[ "$activation_completed" == true ]] && wait_until_ready "$release_dir" "$release_id"; then
   log "release $release_id is active and ready"
   exit 0
 fi
@@ -143,7 +160,12 @@ fi
 log "release $release_id failed readiness checks"
 if [[ -n "$old_release" ]]; then
   atomic_link "$old_release" "$current_link"
-  restart_passenger || fail "automatic rollback could not restart Passenger"
+  if [[ "$activation_completed" == true ]]; then
+    activate_release "$release_dir" "$old_release" || fail "automatic rollback could not restore the CloudLinux registration"
+  else
+    touch -- "$old_release/tmp/restart.txt"
+    touch -- "$passenger_config_file"
+  fi
   wait_until_ready "$old_release" "$(basename -- "$old_release")" || fail "automatic rollback completed but the previous release is not ready"
   log "rolled back automatically to $(basename -- "$old_release")"
 else

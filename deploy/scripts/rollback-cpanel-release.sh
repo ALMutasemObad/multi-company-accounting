@@ -11,6 +11,7 @@ curl_bin=${MCAP_CURL_BIN:-/usr/bin/curl}
 health_url=${MCAP_HEALTH_URL:-}
 app_url=${MCAP_APP_URL:-}
 passenger_config_file=${MCAP_PASSENGER_CONFIG_FILE:-}
+cloudlinux_switcher=${MCAP_CLOUDLINUX_SWITCHER:-}
 health_attempts=${MCAP_HEALTH_ATTEMPTS:-30}
 
 [[ "$deploy_root" == /* && "$deploy_root" != / ]] || fail "MCAP_DEPLOY_ROOT must be an explicit absolute non-root path"
@@ -19,6 +20,10 @@ health_attempts=${MCAP_HEALTH_ATTEMPTS:-30}
 app_url=${app_url%/}
 [[ "$passenger_config_file" == /* && "$passenger_config_file" != / ]] || fail "MCAP_PASSENGER_CONFIG_FILE must be an explicit absolute non-root path"
 [[ -f "$passenger_config_file" && ! -L "$passenger_config_file" ]] || fail "Passenger configuration must be a regular non-symlink file"
+if [[ -n "$cloudlinux_switcher" ]]; then
+  [[ "$cloudlinux_switcher" == /* && -f "$cloudlinux_switcher" && ! -L "$cloudlinux_switcher" ]] \
+    || fail "MCAP_CLOUDLINUX_SWITCHER must be an explicit regular file"
+fi
 [[ "$health_attempts" =~ ^[1-9][0-9]{0,2}$ ]] || fail "MCAP_HEALTH_ATTEMPTS must be between 1 and 999"
 [[ -x "$node_bin" && -x "$curl_bin" ]] || fail "Node and curl must be executable"
 
@@ -44,8 +49,13 @@ atomic_link() {
   mv -Tf -- "$temporary" "$link"
 }
 
-restart_passenger() {
-  touch -- "$current_link/tmp/restart.txt"
+activate_release() {
+  local source_release=$1 target_release=$2
+  if [[ -n "$cloudlinux_switcher" ]]; then
+    bash "$cloudlinux_switcher" "$source_release" "$target_release"
+    return
+  fi
+  touch -- "$target_release/tmp/restart.txt"
   touch -- "$passenger_config_file"
 }
 active_release_matches() {
@@ -74,13 +84,20 @@ rollback_id=$(basename -- "$rollback_release")
 "$node_bin" "$rollback_release/scripts/release/verify-release.mjs" --root "$rollback_release"
 
 atomic_link "$rollback_release" "$current_link"
-if restart_passenger && wait_until_ready "$rollback_release" "$rollback_id"; then
+activation_completed=false
+if activate_release "$current_release" "$rollback_release"; then activation_completed=true; fi
+if [[ "$activation_completed" == true ]] && wait_until_ready "$rollback_release" "$rollback_id"; then
   atomic_link "$current_release" "$previous_link"
   log "release $rollback_id is active and ready; the replaced release remains available"
   exit 0
 fi
 
 atomic_link "$current_release" "$current_link"
-restart_passenger || fail "rollback failed and Passenger could not restart the original release"
+if [[ "$activation_completed" == true ]]; then
+  activate_release "$rollback_release" "$current_release" || fail "rollback failed and CloudLinux could not restore the original registration"
+else
+  touch -- "$current_release/tmp/restart.txt"
+  touch -- "$passenger_config_file"
+fi
 wait_until_ready "$current_release" "$(basename -- "$current_release")" || fail "rollback failed and the original release is not ready"
 fail "rollback target failed readiness checks; restored $(basename -- "$current_release")"

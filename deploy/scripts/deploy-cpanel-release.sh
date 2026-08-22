@@ -14,6 +14,8 @@ passenger_config_file=${MCAP_PASSENGER_CONFIG_FILE:-}
 backup_directory=${MCAP_BACKUP_DIRECTORY:-}
 mysql_bin=${MCAP_MYSQL_BIN:-/usr/bin/mysql}
 mysqldump_bin=${MCAP_MYSQLDUMP_BIN:-/usr/bin/mysqldump}
+script_directory=$(cd -- "$(dirname -- "$0")" && pwd -P)
+cloudlinux_switcher="$script_directory/switch-cloudlinux-registration.sh"
 
 [[ -n "$archive_input" && -n "$checksum_file_input" ]] || fail "usage: deploy-cpanel-release.sh <archive.tgz> <checksum-file>"
 [[ "$deploy_root" == /* && "$deploy_root" != / ]] || fail "MCAP_DEPLOY_ROOT must be an explicit absolute non-root path"
@@ -24,6 +26,7 @@ mysqldump_bin=${MCAP_MYSQLDUMP_BIN:-/usr/bin/mysqldump}
 [[ -f "$npx_cli" && ! -L "$npx_cli" ]] || fail "npm exec entrypoint is unavailable: $npx_cli"
 [[ -x "$mysql_bin" ]] || fail "MySQL client is unavailable: $mysql_bin"
 [[ -x "$mysqldump_bin" ]] || fail "MySQL dump client is unavailable: $mysqldump_bin"
+[[ -f "$cloudlinux_switcher" && ! -L "$cloudlinux_switcher" ]] || fail "CloudLinux registration switcher is unavailable"
 
 archive=$(readlink -f -- "$archive_input") || fail "release archive does not exist"
 checksum_file=$(readlink -f -- "$checksum_file_input") || fail "release checksum file does not exist"
@@ -83,8 +86,9 @@ MCAP_NPX_CLI="$npx_cli" \
 MCAP_HEALTH_URL="${MCAP_HEALTH_URL:-}" \
 MCAP_APP_URL="${MCAP_APP_URL:-}" \
 MCAP_PASSENGER_CONFIG_FILE="$passenger_config_file" \
+MCAP_CLOUDLINUX_SWITCHER="$cloudlinux_switcher" \
 MCAP_DEPLOY_CONFIRM="DEPLOY:$release_id" \
 MCAP_RUN_DATABASE_MIGRATIONS=true \
-  bash "$(dirname -- "$0")/install-cpanel-release.sh" "$archive" "$expected_sha"
+  bash "$script_directory/install-cpanel-release.sh" "$archive" "$expected_sha"
 
 log "production deployment completed for $release_id"
