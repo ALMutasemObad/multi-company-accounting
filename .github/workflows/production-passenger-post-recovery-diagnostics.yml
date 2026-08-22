@@ -68,7 +68,7 @@ jobs:
           ' "$current_release/release-manifest.json"
 
           printf '%s\n' '=== sanitized cPanel Passenger application registry ==='
-          uapi_bin=/usr/local/cpanel/bin/uapi
+          uapi_bin=/usr/bin/uapi
           if [[ -x "$uapi_bin" ]]; then
             uapi_result=$(mktemp /tmp/mcap-passenger-apps.XXXXXX)
             trap 'rm -f -- "$uapi_result"' EXIT
@@ -99,7 +99,7 @@ jobs:
             printf '%s\n' 'cPanel UAPI is unavailable'
           fi
           printf '%s\n' '=== sanitized CloudLinux Node.js Selector registry ==='
-          selector_bin=/usr/bin/cloudlinux-selector
+          selector_bin=/usr/sbin/cloudlinux-selector
           if [[ -x "$selector_bin" ]]; then
             selector_result=$(mktemp /tmp/mcap-node-selector.XXXXXX)
             selector_error=$(mktemp /tmp/mcap-node-selector-error.XXXXXX)
