@@ -98,6 +98,36 @@ jobs:
           else
             printf '%s\n' 'cPanel UAPI is unavailable'
           fi
+          printf '%s\n' '=== sanitized CloudLinux Node.js Selector registry ==='
+          selector_bin=/usr/bin/cloudlinux-selector
+          if [[ -x "$selector_bin" ]]; then
+            selector_result=$(mktemp /tmp/mcap-node-selector.XXXXXX)
+            selector_error=$(mktemp /tmp/mcap-node-selector-error.XXXXXX)
+            trap 'rm -f -- "${uapi_result:-}" "$selector_result" "$selector_error"' EXIT
+            if "$selector_bin" get --json --interpreter nodejs --user doralash > "$selector_result" 2> "$selector_error"; then
+              node -e '
+                const fs = require("node:fs");
+                const payload = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+                const applications = [];
+                for (const [version, versionData] of Object.entries(payload.available_versions || {})) {
+                  for (const [user, userData] of Object.entries(versionData.users || {})) {
+                    for (const [appRoot, app] of Object.entries(userData.applications || {})) {
+                      applications.push({
+                        version, user, app_root: appRoot, domain: app.domain, app_uri: app.app_uri,
+                        app_mode: app.app_mode, startup_file: app.startup_file, app_status: app.app_status,
+                        env_var_names: Object.keys(app.env_vars || {}).sort()
+                      });
+                    }
+                  }
+                }
+                console.log(JSON.stringify({ result: payload.result, selector_enabled: payload.selector_enabled, application_count: applications.length, applications }));
+              ' "$selector_result"
+            else
+              printf 'cloudlinux-selector failed: %s\n' "$(tr '\n' ' ' < "$selector_error")"
+            fi
+          else
+            printf '%s\n' 'CloudLinux Node.js Selector CLI is unavailable'
+          fi
           printf '%s\n' '=== Passenger configuration keys ==='
           awk '
             $1 == "SetEnv" { print "SetEnv " $2 " [redacted]"; next }
