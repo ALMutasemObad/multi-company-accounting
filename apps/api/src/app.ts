@@ -62,6 +62,8 @@ import {
   createOpenApiResponseValidator,
   OpenApiResponseContractError,
 } from './platform/openapi-response-validator.js';
+import type { DataImportService } from './imports/data-import-service.js';
+import { createDataImportRouter } from './imports/data-import-router.js';
 
 type ClientRequestProblem = {
   status: number;
@@ -102,7 +104,7 @@ function clientRequestProblem(error: unknown): ClientRequestProblem | undefined 
   return undefined;
 }
 
-export function createApp(config: AppConfig, services: { readiness?: ReadinessCheck; metrics?: OperationalMetrics; auth?: AuthService; registration?: RegistrationService; passwordReset?: PasswordResetService; users?: UserService; companies?: CompanyService; printing?: PrintService; audit?: AuditService; security?: SecurityEventService; fiscal?: FiscalService; accounts?: AccountService; journals?: ManualJournalService; receiptReferences?: ReceiptReferenceService; treasury?: TreasuryService; receipts?: ReceiptService; suppliers?: SupplierReferenceService; payments?: PaymentService; reports?: ReportService; taxes?: TaxService; salesInvoices?: SalesInvoiceService; purchaseInvoices?: PurchaseInvoiceService } = {}) {
+export function createApp(config: AppConfig, services: { readiness?: ReadinessCheck; metrics?: OperationalMetrics; auth?: AuthService; registration?: RegistrationService; passwordReset?: PasswordResetService; users?: UserService; companies?: CompanyService; printing?: PrintService; audit?: AuditService; security?: SecurityEventService; fiscal?: FiscalService; accounts?: AccountService; journals?: ManualJournalService; receiptReferences?: ReceiptReferenceService; treasury?: TreasuryService; receipts?: ReceiptService; suppliers?: SupplierReferenceService; payments?: PaymentService; reports?: ReportService; taxes?: TaxService; salesInvoices?: SalesInvoiceService; purchaseInvoices?: PurchaseInvoiceService; dataImports?: DataImportService } = {}) {
   const app = express();
   const metrics = services.metrics ?? operationalMetrics;
 
@@ -192,6 +194,7 @@ export function createApp(config: AppConfig, services: { readiness?: ReadinessCh
   if (services.auth && services.salesInvoices) app.use('/api/v1', createSalesInvoiceRouter(services.auth, services.salesInvoices));
   if (services.auth && services.purchaseInvoices) app.use('/api/v1', createPurchaseInvoiceRouter(services.auth, services.purchaseInvoices));
   if (services.auth && services.reports) app.use('/api/v1', createReportRouter(services.auth, services.reports));
+  if (services.auth && services.dataImports) app.use('/api/v1', createDataImportRouter(services.auth, services.dataImports));
 
   if (config.NODE_ENV === 'production' || config.SERVE_WEB_ASSETS) {
     const webRoot = fileURLToPath(new URL('../../web/dist/', import.meta.url));

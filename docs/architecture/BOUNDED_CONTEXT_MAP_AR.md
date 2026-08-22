@@ -29,6 +29,7 @@ last_updated: "2026-08-22"
 | Tax | معدلات الضرائب وربط حساباتها والحساب والتقريب | `TaxRate` | يكشف `TaxQuotePort` للمبيعات والمشتريات ويملك النسخ المتفائلة |
 | Printing & Document Output | اللقطات التاريخية والتوليد | `DocumentPrintArchive` | يقرأ عبر Document Snapshot Port |
 | Reporting | التقارير والقوائم وRead Models | لا يملك حقائق مالية تشغيلية | قراءة فقط، ويمكنه امتلاك projections مستقبلًا |
+| Data Import | تنسيق القوالب والمعاينة والاعتماد الجماعي | `DataImportBatch` فقط | Process Manager؛ يستدعي منافذ المالكين ولا يخزن الملف أو يرحّل الفواتير |
 | Audit | سجل الأعمال والامتثال | `AuditLog` | Append-only، وليس Event Bus |
 | Security Monitoring | أحداث المخاطر والإقرار | `SecurityEvent` | يمكنه إصدار تنبيه Integration بعد حفظ الحدث |
 | Application Infrastructure | Idempotency وOutbox والتسلسلات التقنية والتشغيل | `IdempotencyRecord`, `OutboxEvent`, `MasterDataCodeSequence` | ليست Bounded Context أعمال؛ توفر حجز الرمز الذري للكيانات المرجعية ولا تملك تلك الكيانات |
@@ -47,6 +48,7 @@ Treasury ─────────────> Core Accounting posting port
 Treasury ─────────────> AR/AP settlement ports
 Registration/Onboarding ──> Treasury setup port
 Sales/Purchases ──────> Tax Configuration query port
+Data Import ──────────> Sales/AR, Purchases/AP application ports
 All operational contexts ──> Audit append port
 
 Reporting <────────── read/query ports or dedicated read models
@@ -80,7 +82,7 @@ Printing  <────────── immutable document snapshot port
 
 ## 6. حالة النقل والاستثناءات الانتقالية
 
-اكتمل في 22 أغسطس 2026 نقل إنشاء وعكس `JournalEntry/JournalLine` إلى `PostingEngine`، واستبدلت عقود التخصيص `targetJournalLineId` بـ`ReceivableItemId/PayableItemId`، ونقل CRUD والحساب الضريبي إلى وحدة `Tax`، ونقل CRUD الصناديق وطرق الدفع وسياسة أداة الحركة إلى وحدة `Treasury`. يبقى رابط سطر الذمة على الفاتورة أثرًا داخليًا لـCore Accounting ولا يعبر عقدًا عامًا. التفاصيل في [عناصر الذمم وعقد التسوية](AR_AP_SETTLEMENT_ITEMS_AR.md) و[ملكية Tax](TAX_CONTEXT_OWNERSHIP_AR.md) و[ملكية Treasury](TREASURY_CONTEXT_OWNERSHIP_AR.md).
+اكتمل في 22 أغسطس 2026 نقل إنشاء وعكس `JournalEntry/JournalLine` إلى `PostingEngine`، واستبدلت عقود التخصيص `targetJournalLineId` بـ`ReceivableItemId/PayableItemId`، ونقل CRUD والحساب الضريبي إلى وحدة `Tax`، ونقل CRUD الصناديق وطرق الدفع وسياسة أداة الحركة إلى وحدة `Treasury`. أضيف `Data Import` كسياق داعم يملك `DataImportBatch` فقط ويستدعي منافذ المالكين لإنشاء بياناتهم؛ لا يكتب Ledger ولا يخزن الملف. يبقى رابط سطر الذمة على الفاتورة أثرًا داخليًا لـCore Accounting ولا يعبر عقدًا عامًا. التفاصيل في [عناصر الذمم وعقد التسوية](AR_AP_SETTLEMENT_ITEMS_AR.md) و[ملكية Tax](TAX_CONTEXT_OWNERSHIP_AR.md) و[ملكية Treasury](TREASURY_CONTEXT_OWNERSHIP_AR.md) و[سياق الاستيراد](DATA_IMPORT_CONTEXT_AR.md).
 
 الاستثناءات التالية ما زالت موجودة ولا تعد نمطًا مسموحًا للنسخ:
 

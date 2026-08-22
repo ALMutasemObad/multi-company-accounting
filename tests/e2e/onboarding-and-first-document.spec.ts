@@ -130,6 +130,23 @@ test('self-registers, switches locale, configures currency, and creates the firs
   await yearDialog.getByRole('button', { name: 'Create year' }).click();
   await expect(page.locator('.fiscal-year-card').filter({ hasText: fiscalYearName })).toBeVisible({ timeout: 30_000 });
 
+  await openWorkspacePage(page, 'Import center', 'Bulk import center');
+  await page.getByLabel('File format').selectOption('CSV');
+  const templateDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download template' }).click();
+  expect((await templateDownload).suggestedFilename()).toBe('customers-import-template.csv');
+  const customerCsv = '\uFEFF"receivable_account_code","name_ar","name_en","phone","email","tax_number","address_type","address_line1","address_line2","city","region","postal_code","country_code","is_primary"\r\n"1130","عميل E2E","E2E imported customer","","e2e.import@example.test","","BILLING","Aden","","Aden","","","YE","true"';
+  await page.locator('.import-dropzone input[type="file"]').setInputFiles({ name: 'e2e-customers.csv', mimeType: 'text/csv', buffer: Buffer.from(customerCsv, 'utf8') });
+  await page.getByRole('button', { name: 'Validate and preview' }).click();
+  await expect(page.getByText('This batch is ready')).toBeVisible({ timeout: 30_000 });
+  const committedImport = page.waitForResponse((response) => response.url().includes('/api/v1/data-imports/') && response.url().endsWith('/commit') && response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Commit batch' }).click();
+  expect((await committedImport).status()).toBe(200);
+  await expect(page.getByText('Successfully created 1 records.')).toBeVisible();
+
+  await openWorkspacePage(page, 'Customers', 'Customers');
+  await expect(page.locator('.data-table tbody tr').filter({ hasText: 'E2E imported customer' })).toBeVisible();
+
   await openWorkspacePage(page, 'Manual journals', 'Manual journals');
   await page.getByRole('button', { name: /Create journal|New journal entry/ }).first().click();
   const journalDialog = page.getByRole('dialog', { name: 'New journal entry' });

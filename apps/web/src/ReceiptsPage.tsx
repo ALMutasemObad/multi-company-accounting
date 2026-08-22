@@ -580,7 +580,7 @@ function ReceiptDetails({
         <div className="allocation-detail-list">
           {receipt.allocations.map((allocation) => (
             <div key={allocation.id ?? allocation.receivableItemId}>
-              <span>{t("pages.receipts.099")}{allocation.receivableItemId}</span>
+              <span><strong dir="ltr">{allocation.invoiceNumber ?? t("errors.NOT_FOUND")}</strong>{allocation.customerName ? ` — ${allocation.customerName}` : ""}{allocation.dueDate ? ` — ${new Date(allocation.dueDate).toLocaleDateString(activeIntlLocale())}` : ""}</span>
               <strong>{formatMoney(allocation.allocatedAmount)}</strong>
             </div>
           ))}

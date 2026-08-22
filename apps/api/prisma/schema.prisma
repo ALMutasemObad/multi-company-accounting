@@ -126,6 +126,24 @@ enum OutboxStatus {
   FAILED
 }
 
+enum DataImportType {
+  CUSTOMERS
+  SUPPLIERS
+  SALES_INVOICES
+  PURCHASE_INVOICES
+}
+
+enum DataImportFormat {
+  CSV
+  XLSX
+}
+
+enum DataImportStatus {
+  PREVIEWED
+  COMMITTED
+  EXPIRED
+}
+
 model Organization {
   id                   BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
   code                 String                @unique @default(uuid()) @db.VarChar(80)
@@ -212,6 +230,7 @@ model Company {
   documentPrintArchives            DocumentPrintArchive[]
   companyCurrencies                CompanyCurrency[]
   registrationRequests             RegistrationRequest[]    @relation("RegistrationCompany")
+  dataImportBatches                DataImportBatch[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -244,6 +263,7 @@ model User {
   exchangeRatesUpdated       CompanyExchangeRate[]  @relation("ExchangeRateUpdatedBy")
   registrationRequests       RegistrationRequest[]  @relation("RegistrationUser")
   passwordResetRequests      PasswordResetRequest[]
+  dataImportBatches          DataImportBatch[]         @relation("DataImportCreatedBy")
 
   @@map("users")
 }
@@ -356,6 +376,31 @@ model OutboxEvent {
   @@index([aggregateType, aggregateId, createdAt])
   @@index([processedAt])
   @@map("outbox_events")
+}
+
+model DataImportBatch {
+  id            BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId      String           @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId     BigInt           @map("company_id") @db.UnsignedBigInt
+  createdById   BigInt           @map("created_by_id") @db.UnsignedBigInt
+  importType    DataImportType   @map("import_type")
+  sourceFormat  DataImportFormat @map("source_format")
+  fileHash      Bytes            @map("file_hash") @db.Binary(32)
+  rowCount      Int              @map("row_count") @db.UnsignedSmallInt
+  validRowCount Int              @map("valid_row_count") @db.UnsignedSmallInt
+  errorRowCount Int              @map("error_row_count") @db.UnsignedSmallInt
+  status        DataImportStatus @default(PREVIEWED)
+  expiresAt     DateTime         @map("expires_at")
+  committedAt   DateTime?        @map("committed_at")
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
+  company       Company          @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  createdBy     User             @relation("DataImportCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([companyId, status, createdAt])
+  @@index([createdById, createdAt])
+  @@index([status, expiresAt])
+  @@map("data_import_batches")
 }
 
 model CompanyCurrency {

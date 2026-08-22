@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.12.0
+  version: 1.13.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -74,6 +74,8 @@ tags:
   description: السنوات والفترات المالية وتسلسلات المستندات.
 - name: Accounts
   description: دليل الحسابات ومراكز التكلفة.
+- name: Data Imports
+  description: معاينة واعتماد الاستيراد الجماعي الآمن دون تخزين الملف أو بياناته الخام.
 - name: Customers
   description: العملاء وعناوينهم وحسابات الذمم.
 - name: Suppliers
@@ -2487,6 +2489,119 @@ paths:
       security:
       - SessionCookie: []
         CsrfToken: []
+  /data-imports:
+    get:
+      tags: [Data Imports]
+      summary: عرض سجل دفعات الاستيراد
+      operationId: listDataImports
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: قائمة دفعات الاستيراد
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/DataImportBatch' } }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-permission: data_imports.view
+      security: [{ SessionCookie: [] }]
+  /data-imports/templates/{importType}/{format}:
+    get:
+      tags: [Data Imports]
+      summary: تنزيل قالب استيراد موحد
+      operationId: downloadDataImportTemplate
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: importType
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/DataImportType' }
+      - name: format
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/DataImportFormat' }
+      responses:
+        '200':
+          description: قالب CSV أو XLSX
+          content:
+            text/csv:
+              schema: { type: string, format: binary }
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-permission: data_imports.view
+      security: [{ SessionCookie: [] }]
+  /data-imports/preview:
+    post:
+      tags: [Data Imports]
+      summary: تحليل الملف ومعاينته دون تنفيذ أي بيانات أعمال
+      operationId: previewDataImport
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DataImportFileRequest' }
+      responses:
+        '201':
+          description: نتيجة المعاينة ودفعتها قصيرة العمر
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataImportPreview' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '413': { $ref: '#/components/responses/ValidationError' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-permission: data_imports.view
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /data-imports/{batchId}/commit:
+    post:
+      tags: [Data Imports]
+      summary: اعتماد دفعة سليمة ذرياً كمسودات فقط
+      operationId: commitDataImport
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: batchId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DataImportFileRequest' }
+      responses:
+        '200':
+          description: نتيجة الاعتماد القابلة لإعادة التشغيل بالمفتاح نفسه
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataImportCommitResult' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-permission: data_imports.execute
+      security: [{ SessionCookie: [], CsrfToken: [] }]
   /customers:
     get:
       tags:
@@ -5961,6 +6076,74 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
   schemas:
+    DataImportType:
+      type: string
+      enum: [CUSTOMERS, SUPPLIERS, SALES_INVOICES, PURCHASE_INVOICES]
+    DataImportFormat:
+      type: string
+      enum: [CSV, XLSX]
+    DataImportStatus:
+      type: string
+      enum: [PREVIEWED, COMMITTED, EXPIRED]
+    DataImportFileRequest:
+      type: object
+      additionalProperties: false
+      required: [importType, sourceFormat, contentBase64]
+      properties:
+        importType: { $ref: '#/components/schemas/DataImportType' }
+        sourceFormat: { $ref: '#/components/schemas/DataImportFormat' }
+        contentBase64:
+          type: string
+          minLength: 4
+          maxLength: 720000
+          pattern: '^[A-Za-z0-9+/]+={0,2}$'
+    DataImportBatch:
+      type: object
+      additionalProperties: false
+      required: [id, importType, sourceFormat, rowCount, validRowCount, errorRowCount, status, expiresAt, committedAt, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        importType: { $ref: '#/components/schemas/DataImportType' }
+        sourceFormat: { $ref: '#/components/schemas/DataImportFormat' }
+        rowCount: { type: integer, minimum: 1, maximum: 500 }
+        validRowCount: { type: integer, minimum: 0, maximum: 500 }
+        errorRowCount: { type: integer, minimum: 0, maximum: 500 }
+        status: { $ref: '#/components/schemas/DataImportStatus' }
+        expiresAt: { type: string, format: date-time }
+        committedAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+    DataImportRowError:
+      type: object
+      additionalProperties: false
+      required: [row, column, code]
+      properties:
+        row: { type: integer, minimum: 1, maximum: 501 }
+        column: { type: string, minLength: 1, maxLength: 80 }
+        code: { type: string, minLength: 1, maxLength: 80 }
+    DataImportPreview:
+      type: object
+      additionalProperties: false
+      required: [batch, errors]
+      properties:
+        batch: { $ref: '#/components/schemas/DataImportBatch' }
+        errors:
+          type: array
+          maxItems: 200
+          items: { $ref: '#/components/schemas/DataImportRowError' }
+    DataImportCommitResult:
+      type: object
+      additionalProperties: false
+      required: [batchId, status, createdCount, createdIds, requestId]
+      properties:
+        batchId: { type: string, format: uuid }
+        status: { type: string, const: COMMITTED }
+        createdCount: { type: integer, minimum: 1, maximum: 500 }
+        createdIds:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items: { $ref: '#/components/schemas/Id' }
+        requestId: { type: string, format: uuid }
     Id:
       type: string
       pattern: ^[1-9][0-9]*$
@@ -8172,7 +8355,7 @@ components:
         isActive: { type: boolean }
     TaxRate:
       type: object
-      required: [id, code, nameAr, rate, isActive, version]
+      required: [id, code, nameAr, rate, isActive, isReady, readinessReason, version]
       properties:
         id: { type: string, pattern: '^[1-9][0-9]*$' }
         code: { type: string, maxLength: 40, readOnly: true }
@@ -8180,6 +8363,8 @@ components:
         rate: { type: string }
         outputTaxAccountId: { type: [string, 'null'] }
         isActive: { type: boolean }
+        isReady: { type: boolean }
+        readinessReason: { type: [string, 'null'], enum: [TAX_RATE_INACTIVE, TAX_ACCOUNT_MISSING, TAX_ACCOUNT_INACTIVE, TAX_ACCOUNT_INVALID, null] }
         version: { type: integer, minimum: 0 }
     PurchaseTaxRateInput:
       type: object
@@ -8201,7 +8386,7 @@ components:
         isActive: { type: boolean }
     PurchaseTaxRate:
       type: object
-      required: [id, code, nameAr, rate, isActive, version]
+      required: [id, code, nameAr, rate, isActive, isReady, readinessReason, version]
       properties:
         id: { type: string, pattern: '^[1-9][0-9]*$' }
         code: { type: string, maxLength: 40, readOnly: true }
@@ -8209,6 +8394,8 @@ components:
         rate: { type: string }
         inputTaxAccountId: { type: [string, 'null'] }
         isActive: { type: boolean }
+        isReady: { type: boolean }
+        readinessReason: { type: [string, 'null'], enum: [TAX_RATE_INACTIVE, TAX_ACCOUNT_MISSING, TAX_ACCOUNT_INACTIVE, TAX_ACCOUNT_INVALID, null] }
         version: { type: integer, minimum: 0 }
     ReceivablesAgingReport:
       type: object
@@ -8626,12 +8813,18 @@ components:
       - type: object
         required:
         - id
+        - invoiceNumber
+        - customerName
+        - dueDate
         properties:
           id:
             type: string
             pattern: ^[1-9][0-9]*$
             example: '1001'
             description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
+          invoiceNumber: { type: string, maxLength: 60 }
+          customerName: { type: string, maxLength: 200 }
+          dueDate: { type: string, format: date }
     PaymentAllocationInput:
       type: object
       additionalProperties: false

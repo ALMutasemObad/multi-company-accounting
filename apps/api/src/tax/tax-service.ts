@@ -25,6 +25,12 @@ export interface TaxQuotePort {
     usage: TaxUsage,
     taxRateIds: bigint[],
   ): Promise<Map<string, TaxQuote>>;
+  resolveCodeIds(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+    usage: TaxUsage,
+    codes: string[],
+  ): Promise<Map<string, bigint>>;
 }
 
 type TaxRateCreate = {
@@ -70,9 +76,6 @@ export class TaxService implements TaxQuotePort {
       where: {
         companyId: context.companyId,
         ...(activeOnly ? { isActive: true } : {}),
-        ...(usage === "OUTPUT"
-          ? { OR: [{ outputTaxAccountId: { not: null } }, { rate: 0 }] }
-          : { OR: [{ inputTaxAccountId: { not: null } }, { rate: 0 }] }),
       },
       include: taxRateInclude,
       orderBy: [{ rate: "asc" }, { code: "asc" }],
@@ -180,8 +183,22 @@ export class TaxService implements TaxQuotePort {
     return quotes;
   }
 
+  async resolveCodeIds(tx: Prisma.TransactionClient, companyId: bigint, usage: TaxUsage, codes: string[]) {
+    const uniqueCodes = [...new Set(codes.filter(Boolean))].sort();
+    if (!uniqueCodes.length) return new Map<string, bigint>();
+    const rates = await tx.taxRate.findMany({ where: { companyId, code: { in: uniqueCodes }, isActive: true }, include: taxRateInclude, orderBy: { code: "asc" } });
+    if (rates.length !== uniqueCodes.length) throw new TaxError("INVALID_TAX_RATE");
+    const result = new Map<string, bigint>();
+    for (const rate of rates) {
+      this.assertAccount(usage, rate.rate, usage === "OUTPUT" ? rate.outputTaxAccount : rate.inputTaxAccount);
+      result.set(rate.code, rate.id);
+    }
+    return result;
+  }
+
   static json(value: any, usage: TaxUsage) {
     const account = usage === "OUTPUT" ? value.outputTaxAccount : value.inputTaxAccount;
+    const readinessReason = TaxService.readinessReason(value, usage);
     const publicAccount = account
       ? { id: account.id.toString(), code: account.code, nameAr: account.nameAr }
       : null;
@@ -200,8 +217,23 @@ export class TaxService implements TaxQuotePort {
             inputTaxAccount: publicAccount,
           }),
       isActive: value.isActive,
+      isReady: readinessReason === null,
+      readinessReason,
       version: value.version,
     };
+  }
+
+  private static readinessReason(value: any, usage: TaxUsage) {
+    if (!value.isActive) return "TAX_RATE_INACTIVE";
+    if (decimal(value.rate).equals(0)) return null;
+    const account = usage === "OUTPUT" ? value.outputTaxAccount : value.inputTaxAccount;
+    if (!account) return "TAX_ACCOUNT_MISSING";
+    if (!account.isActive) return "TAX_ACCOUNT_INACTIVE";
+    const requiredClass = usage === "OUTPUT" ? "LIABILITY" : "ASSET";
+    if (!account.allowsPosting || account._count.children > 0 || account.accountType.class !== requiredClass) {
+      return "TAX_ACCOUNT_INVALID";
+    }
+    return null;
   }
 
   private validRate(value: string) {

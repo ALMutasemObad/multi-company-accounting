@@ -97,7 +97,18 @@ export class ReceiptService {
   private include() {
     return {
       accountingDocument: true,
-      allocations: { orderBy: { id: "asc" as const } },
+      allocations: {
+        orderBy: { id: "asc" as const },
+        include: {
+          receivableItem: {
+            include: {
+              salesInvoice: {
+                include: { accountingDocument: true },
+              },
+            },
+          },
+        },
+      },
     } as const;
   }
   async list(
@@ -468,6 +479,9 @@ export class ReceiptService {
         id: a.id.toString(),
         receivableItemId: a.receivableItemId.toString(),
         allocatedAmount: a.allocatedAmount.toFixed(4),
+        invoiceNumber: a.receivableItem.salesInvoice.accountingDocument.documentNumber,
+        customerName: a.receivableItem.salesInvoice.customerNameSnapshot,
+        dueDate: a.receivableItem.dueDate.toISOString().slice(0, 10),
       })),
     };
   }

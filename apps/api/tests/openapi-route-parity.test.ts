@@ -20,6 +20,7 @@ import { createRegistrationRouter } from '../src/registration/registration-route
 import { createPasswordResetRouter } from '../src/auth/password-reset-router.js';
 import { createTaxRouter } from '../src/tax/tax-router.js';
 import { createTreasuryRouter } from '../src/treasury/treasury-router.js';
+import { createDataImportRouter } from '../src/imports/data-import-router.js';
 
 type RouteLayer = {
   route?: {
@@ -50,6 +51,7 @@ const routers = [
   { prefix: '', router: createSalesInvoiceRouter(stub, stub) },
   { prefix: '', router: createPurchaseInvoiceRouter(stub, stub) },
   { prefix: '', router: createReportRouter(stub, stub) },
+  { prefix: '', router: createDataImportRouter(stub, stub) },
 ] as const;
 
 function normalizePath(path: string) {

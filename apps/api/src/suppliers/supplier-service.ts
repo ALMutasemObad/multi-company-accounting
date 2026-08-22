@@ -84,51 +84,41 @@ export class SupplierReferenceService {
   }
   async createSupplier(context: ActorContext, input: SupplierInput) {
     try {
-      return await this.prisma.$transaction(async (tx) => {
-        await this.validPostingAccount(
-          tx,
-          context.companyId,
-          input.payableAccountId,
-        );
-        const code = await reserveMasterDataCode(
-          tx,
-          context.companyId,
-          "SUPPLIER",
-        );
-        const value = await tx.supplier.create({
-          data: {
-            companyId: context.companyId,
-            payableAccountId: input.payableAccountId,
-            code,
-            nameAr: input.nameAr,
-            nameEn: input.nameEn ?? null,
-            phone: input.phone ?? null,
-            email: input.email ?? null,
-            taxNumberLast4: last4(input.taxNumber),
-            ...(input.addresses?.length
-              ? { addresses: {
-                  create: input.addresses.map((address) => ({
-                    addressType: address.addressType,
-                    line1: address.line1,
-                    line2: address.line2 ?? null,
-                    city: address.city ?? null,
-                    region: address.region ?? null,
-                    postalCode: address.postalCode ?? null,
-                    countryCode: address.countryCode ?? null,
-                    isPrimary: address.isPrimary ?? false,
-                  })),
-                } }
-              : {}),
-          },
-          include: { addresses: true },
-        });
-        await this.audit(tx, context, "SUPPLIER_CREATED", "SUPPLIER", value.id);
-        return value;
-      });
+      return await this.prisma.$transaction((tx) => this.createImportedSupplier(tx, context, input, false));
     } catch (error) {
       if (unique(error)) throw new ReferenceError("CODE_EXISTS");
       throw error;
     }
+  }
+
+  async resolveImportedSupplier(tx: Prisma.TransactionClient, companyId: bigint, row: Record<string, string>): Promise<SupplierInput> {
+    const account = await tx.account.findFirst({ where: { companyId, code: row.payable_account_code! } });
+    if (!account) throw new ReferenceError("INVALID_ACCOUNT");
+    await this.validPostingAccount(tx, companyId, account.id);
+    const addressType = row.address_type || "PAYMENT";
+    if (!["LEGAL", "PAYMENT", "OTHER"].includes(addressType)) throw new ReferenceError("INVALID_ACCOUNT");
+    return {
+      payableAccountId: account.id,
+      nameAr: row.name_ar!, nameEn: row.name_en || null, phone: row.phone || null,
+      email: row.email || null, taxNumber: row.tax_number || null,
+      ...(row.address_line1 ? { addresses: [{ addressType: addressType as AddressInput["addressType"], line1: row.address_line1, line2: row.address_line2 || null, city: row.city || null, region: row.region || null, postalCode: row.postal_code || null, countryCode: row.country_code || null, isPrimary: (row.is_primary ?? "").toLowerCase() === "true" }] } : {}),
+    };
+  }
+
+  async createImportedSupplier(tx: Prisma.TransactionClient, context: ActorContext, input: SupplierInput, imported = true) {
+    await this.validPostingAccount(tx, context.companyId, input.payableAccountId);
+    const code = await reserveMasterDataCode(tx, context.companyId, "SUPPLIER");
+    const value = await tx.supplier.create({
+      data: {
+        companyId: context.companyId, payableAccountId: input.payableAccountId, code,
+        nameAr: input.nameAr, nameEn: input.nameEn ?? null, phone: input.phone ?? null,
+        email: input.email ?? null, taxNumberLast4: last4(input.taxNumber),
+        ...(input.addresses?.length ? { addresses: { create: input.addresses.map((address) => ({ addressType: address.addressType, line1: address.line1, line2: address.line2 ?? null, city: address.city ?? null, region: address.region ?? null, postalCode: address.postalCode ?? null, countryCode: address.countryCode ?? null, isPrimary: address.isPrimary ?? false })) } } : {}),
+      },
+      include: { addresses: true },
+    });
+    await this.audit(tx, context, "SUPPLIER_CREATED", "SUPPLIER", value.id, imported ? { source: "DATA_IMPORT" } : undefined);
+    return value;
   }
   async updateSupplier(
     context: ActorContext,

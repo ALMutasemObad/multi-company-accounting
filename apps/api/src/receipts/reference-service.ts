@@ -84,51 +84,44 @@ export class ReceiptReferenceService {
   }
   async createCustomer(context: ActorContext, input: CustomerInput) {
     try {
-      return await this.prisma.$transaction(async (tx) => {
-        await this.validPostingAccount(
-          tx,
-          context.companyId,
-          input.receivableAccountId,
-        );
-        const code = await reserveMasterDataCode(
-          tx,
-          context.companyId,
-          "CUSTOMER",
-        );
-        const value = await tx.customer.create({
-          data: {
-            companyId: context.companyId,
-            receivableAccountId: input.receivableAccountId,
-            code,
-            nameAr: input.nameAr,
-            nameEn: input.nameEn ?? null,
-            phone: input.phone ?? null,
-            email: input.email ?? null,
-            taxNumberLast4: last4(input.taxNumber),
-            ...(input.addresses?.length
-              ? { addresses: {
-                  create: input.addresses.map((address) => ({
-                    addressType: address.addressType,
-                    line1: address.line1,
-                    line2: address.line2 ?? null,
-                    city: address.city ?? null,
-                    region: address.region ?? null,
-                    postalCode: address.postalCode ?? null,
-                    countryCode: address.countryCode ?? null,
-                    isPrimary: address.isPrimary ?? false,
-                  })),
-                } }
-              : {}),
-          },
-          include: { addresses: true },
-        });
-        await this.audit(tx, context, "CUSTOMER_CREATED", "CUSTOMER", value.id);
-        return value;
-      });
+      return await this.prisma.$transaction((tx) => this.createImportedCustomer(tx, context, input, false));
     } catch (error) {
       if (unique(error)) throw new ReferenceError("CODE_EXISTS");
       throw error;
     }
+  }
+
+  async resolveImportedCustomer(tx: Prisma.TransactionClient, companyId: bigint, row: Record<string, string>): Promise<CustomerInput> {
+    const account = await tx.account.findFirst({ where: { companyId, code: row.receivable_account_code! } });
+    if (!account) throw new ReferenceError("INVALID_ACCOUNT");
+    await this.validPostingAccount(tx, companyId, account.id);
+    const addressType = row.address_type || "BILLING";
+    if (!["LEGAL", "BILLING", "OTHER"].includes(addressType)) throw new ReferenceError("INVALID_ACCOUNT");
+    return {
+      receivableAccountId: account.id,
+      nameAr: row.name_ar!,
+      nameEn: row.name_en || null,
+      phone: row.phone || null,
+      email: row.email || null,
+      taxNumber: row.tax_number || null,
+      ...(row.address_line1 ? { addresses: [{ addressType: addressType as AddressInput["addressType"], line1: row.address_line1, line2: row.address_line2 || null, city: row.city || null, region: row.region || null, postalCode: row.postal_code || null, countryCode: row.country_code || null, isPrimary: (row.is_primary ?? "").toLowerCase() === "true" }] } : {}),
+    };
+  }
+
+  async createImportedCustomer(tx: Prisma.TransactionClient, context: ActorContext, input: CustomerInput, imported = true) {
+    await this.validPostingAccount(tx, context.companyId, input.receivableAccountId);
+    const code = await reserveMasterDataCode(tx, context.companyId, "CUSTOMER");
+    const value = await tx.customer.create({
+      data: {
+        companyId: context.companyId, receivableAccountId: input.receivableAccountId, code,
+        nameAr: input.nameAr, nameEn: input.nameEn ?? null, phone: input.phone ?? null,
+        email: input.email ?? null, taxNumberLast4: last4(input.taxNumber),
+        ...(input.addresses?.length ? { addresses: { create: input.addresses.map((address) => ({ addressType: address.addressType, line1: address.line1, line2: address.line2 ?? null, city: address.city ?? null, region: address.region ?? null, postalCode: address.postalCode ?? null, countryCode: address.countryCode ?? null, isPrimary: address.isPrimary ?? false })) } } : {}),
+      },
+      include: { addresses: true },
+    });
+    await this.audit(tx, context, "CUSTOMER_CREATED", "CUSTOMER", value.id, imported ? { source: "DATA_IMPORT" } : undefined);
+    return value;
   }
   async updateCustomer(
     context: ActorContext,

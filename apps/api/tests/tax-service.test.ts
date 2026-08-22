@@ -13,6 +13,15 @@ const validAccount = (id: bigint, accountClass: string) => ({
 });
 
 describe("TaxService ownership and quote policy", () => {
+  it("returns unusable rates with explicit readiness instead of hiding configuration defects", async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const service = new TaxService({ taxRate: { findMany } } as never);
+    await service.list({ companyId: 77n, userId: 2n }, "OUTPUT", false);
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { companyId: 77n } }));
+    expect(TaxService.json({ id: 1n, code: "VAT", nameAr: "ضريبة", rate: new Prisma.Decimal("15"), isActive: true, version: 0, outputTaxAccount: null, inputTaxAccount: null }, "OUTPUT")).toMatchObject({ isReady: false, readinessReason: "TAX_ACCOUNT_MISSING" });
+    expect(TaxService.json({ id: 2n, code: "ZERO", nameAr: "صفر", rate: new Prisma.Decimal("0"), isActive: true, version: 0, outputTaxAccount: null, inputTaxAccount: null }, "OUTPUT")).toMatchObject({ isReady: true, readinessReason: null });
+  });
+
   it("resolves sorted output quotes through a company-scoped query", async () => {
     const findMany = vi.fn().mockResolvedValue([
       {
@@ -58,6 +67,14 @@ describe("TaxService ownership and quote policy", () => {
     };
     await expect(service.resolveQuotes(tx as never, 10n, "INPUT", [4n]))
       .rejects.toEqual(new TaxError("INVALID_TAX_RATE"));
+  });
+
+  it("resolves import-facing codes through the Tax owner and enforces readiness", async () => {
+    const findMany = vi.fn().mockResolvedValue([{ id: 4n, code: "VAT15", rate: new Prisma.Decimal("15"), isActive: true, outputTaxAccount: validAccount(40n, "LIABILITY"), inputTaxAccount: null }]);
+    const service = new TaxService({} as never);
+    const resolved = await service.resolveCodeIds({ taxRate: { findMany } } as never, 10n, "OUTPUT", ["VAT15", "VAT15"]);
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { companyId: 10n, code: { in: ["VAT15"] }, isActive: true } }));
+    expect(resolved.get("VAT15")).toBe(4n);
   });
 
   it("requires the expected company and version in every mutation", async () => {

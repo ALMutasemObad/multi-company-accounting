@@ -181,6 +181,9 @@ export type ReceiptAllocation = {
   id?: string;
   receivableItemId: string;
   allocatedAmount: string;
+  invoiceNumber?: string;
+  customerName?: string;
+  dueDate?: string;
 };
 
 export type PaymentAllocation = {
@@ -277,6 +280,8 @@ export type TaxRate = {
   inputTaxAccountId?: string | null;
   inputTaxAccount?: { id: string; code: string; nameAr: string } | null;
   isActive: boolean;
+  isReady: boolean;
+  readinessReason: "TAX_RATE_INACTIVE" | "TAX_ACCOUNT_MISSING" | "TAX_ACCOUNT_INACTIVE" | "TAX_ACCOUNT_INVALID" | null;
   version: number;
 };
 
@@ -506,3 +511,8 @@ export type LedgerReport = {
   closingDebit: string;
   closingCredit: string;
 };
+
+export type DataImportType = "CUSTOMERS" | "SUPPLIERS" | "SALES_INVOICES" | "PURCHASE_INVOICES";
+export type DataImportFormat = "CSV" | "XLSX";
+export type DataImportBatch = { id: string; importType: DataImportType; sourceFormat: DataImportFormat; rowCount: number; validRowCount: number; errorRowCount: number; status: "PREVIEWED" | "COMMITTED" | "EXPIRED"; expiresAt: string; committedAt: string | null; createdAt: string };
+export type DataImportPreview = { batch: DataImportBatch; errors: Array<{ row: number; column: string; code: string }> };

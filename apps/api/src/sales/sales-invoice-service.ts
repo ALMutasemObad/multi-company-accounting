@@ -12,6 +12,7 @@ import { ReceivableItemService } from "../receivables/receivable-item-service.js
 import { calculateTaxDocument, TaxCalculationError } from "../tax/tax-calculator.js";
 import { TaxError, TaxService, type TaxQuotePort } from "../tax/tax-service.js";
 import type { ActorContext } from "../users/user-service.js";
+import type { DataImportInvoiceGroup } from "../imports/data-import-types.js";
 
 export type SalesInvoiceErrorReason =
   | "NOT_FOUND"
@@ -387,6 +388,51 @@ export class SalesInvoiceService {
       });
       return { document: result.document, ids: result.entries.map((entry) => entry.id.toString()) };
     });
+  }
+
+  async resolveImportedDraft(tx: Prisma.TransactionClient, companyId: bigint, group: DataImportInvoiceGroup): Promise<SalesInvoiceInput> {
+    const first = group.rows[0]!.values;
+    const documentDate = asDate(first.document_date!);
+    const period = await tx.fiscalPeriod.findFirst({ where: { companyId, status: "OPEN", startDate: { lte: documentDate }, endDate: { gte: documentDate } }, orderBy: { startDate: "desc" } });
+    if (!period) throw new SalesInvoiceError("PERIOD_CLOSED");
+    const customer = await tx.customer.findFirst({ where: { companyId, code: first.customer_code!, isActive: true } });
+    if (!customer) throw new SalesInvoiceError("INVALID_CUSTOMER");
+    const companyCurrency = await tx.companyCurrency.findFirst({ where: { companyId, isActive: true, currency: { code: first.currency_code!, isActive: true } } });
+    if (!companyCurrency) throw new SalesInvoiceError("INVALID_CURRENCY");
+    let taxRateIds: Map<string, bigint>;
+    try {
+      taxRateIds = await this.taxes.resolveCodeIds(tx, companyId, "OUTPUT", group.rows.map((row) => row.values.tax_code ?? ""));
+    } catch (error) {
+      if (error instanceof TaxError) throw new SalesInvoiceError("INVALID_TAX_RATE");
+      throw error;
+    }
+    const lines: SalesInvoiceLineInput[] = [];
+    for (const row of group.rows) {
+      const account = await tx.account.findFirst({ where: { companyId, code: row.values.account_code! } });
+      if (!account) throw new SalesInvoiceError("INVALID_ACCOUNT");
+      const costCenter = row.values.cost_center_code ? await tx.costCenter.findFirst({ where: { companyId, code: row.values.cost_center_code, isActive: true } }) : null;
+      if (row.values.cost_center_code && !costCenter) throw new SalesInvoiceError("INVALID_COST_CENTER");
+      lines.push({ description: row.values.line_description!, quantity: row.values.quantity!, unitPrice: row.values.unit_price!, discountAmount: row.values.discount_amount || "0", revenueAccountId: account.id, costCenterId: costCenter?.id ?? null, taxRateId: row.values.tax_code ? taxRateIds.get(row.values.tax_code)! : null });
+    }
+    const input: SalesInvoiceInput = { documentType: "SALES_INVOICE", fiscalPeriodId: period.id, documentDate: first.document_date!, dueDate: first.due_date!, description: first.description!, customerId: customer.id, currencyId: companyCurrency.currencyId, exchangeRate: first.exchange_rate!, customerAddress: first.customer_address || null, notes: first.notes || null, lines };
+    this.validDate(period, input.documentDate);
+    await this.prepare(tx, companyId, input);
+    return input;
+  }
+
+  async createImportedDraft(tx: Prisma.TransactionClient, context: ActorContext, input: SalesInvoiceInput) {
+    const period = await tx.fiscalPeriod.findFirst({ where: { id: input.fiscalPeriodId, companyId: context.companyId } });
+    if (!period || period.status === "CLOSED") throw new SalesInvoiceError("PERIOD_CLOSED");
+    this.validDate(period, input.documentDate);
+    const prepared = await this.prepare(tx, context.companyId, input);
+    const documentNumber = await this.reserveInTransaction(tx, context.companyId, period.fiscalYearId, "SALES_INVOICE");
+    const document = await tx.accountingDocument.create({ data: { companyId: context.companyId, fiscalPeriodId: input.fiscalPeriodId, documentType: "SALES_INVOICE", documentNumber, documentDate: asDate(input.documentDate), description: input.description, createdBy: context.userId } });
+    const invoice = await tx.salesInvoice.create({
+      data: { companyId: context.companyId, accountingDocumentId: document.id, customerId: input.customerId, currencyId: input.currencyId, exchangeRate: decimal(input.exchangeRate), dueDate: asDate(input.dueDate), subtotal: prepared.calculation.subtotal, discountTotal: prepared.calculation.discountTotal, taxableTotal: prepared.calculation.taxableTotal, taxTotal: prepared.calculation.taxTotal, total: prepared.calculation.total, baseTotal: prepared.calculation.baseTotal, customerNameSnapshot: prepared.customer.nameAr, customerTaxLast4: prepared.customer.taxNumberLast4, customerAddressSnapshot: prepared.customerAddress, notes: input.notes ?? null, lines: { create: prepared.calculation.lines } },
+      include: this.include(),
+    });
+    await this.audit(tx, context, "SALES_INVOICE_CREATED", invoice.id, { documentType: "SALES_INVOICE", source: "DATA_IMPORT" });
+    return invoice;
   }
 
   async cancel(context: ActorContext, id: bigint, version: number, reason: string) {

@@ -23,12 +23,13 @@ const AdminPage = lazy(() => import("./AdminPage").then((module) => ({ default: 
 const AuditLogsPage = lazy(() => import("./AuditLogsPage").then((module) => ({ default: module.AuditLogsPage })));
 const SecurityEventsPage = lazy(() => import("./SecurityEventsPage").then((module) => ({ default: module.SecurityEventsPage })));
 const CompanySettingsPage = lazy(() => import("./CompanySettingsPage").then((module) => ({ default: module.CompanySettingsPage })));
+const DataImportsPage = lazy(() => import("./DataImportsPage").then((module) => ({ default: module.DataImportsPage })));
 
-type View = "dashboard" | "customers" | "sales" | "receipts" | "suppliers" | "purchases" | "payments" | "journals" | "fiscal" | "accounts" | "treasury" | "reports" | "admin" | "audit" | "security" | "settings";
+type View = "dashboard" | "customers" | "sales" | "receipts" | "suppliers" | "purchases" | "payments" | "journals" | "fiscal" | "accounts" | "treasury" | "reports" | "imports" | "admin" | "audit" | "security" | "settings";
 
 const viewFromHash = (): View => {
   const value = location.hash.slice(1);
-  return ["dashboard", "customers", "sales", "receipts", "suppliers", "purchases", "payments", "journals", "fiscal", "accounts", "treasury", "reports", "admin", "audit", "security", "settings"].includes(value) ? value as View : "dashboard";
+  return ["dashboard", "customers", "sales", "receipts", "suppliers", "purchases", "payments", "journals", "fiscal", "accounts", "treasury", "reports", "imports", "admin", "audit", "security", "settings"].includes(value) ? value as View : "dashboard";
 };
 
 const navigationItems: Array<{ view: View; icon: Parameters<typeof Icon>[0]["name"]; label: TranslationKey }> = [
@@ -44,6 +45,7 @@ const navigationItems: Array<{ view: View; icon: Parameters<typeof Icon>[0]["nam
   { view: "accounts", icon: "accounts", label: "nav.accounts" },
   { view: "treasury", icon: "treasury", label: "nav.treasury" },
   { view: "reports", icon: "reports", label: "nav.reports" },
+  { view: "imports", icon: "arrowUp", label: "nav.imports" },
   { view: "admin", icon: "users", label: "nav.admin" },
   { view: "audit", icon: "audit", label: "nav.audit" },
   { view: "security", icon: "audit", label: "nav.security" },
@@ -67,6 +69,7 @@ const viewTitleKey: Record<View, TranslationKey> = {
   accounts: "view.accounts",
   treasury: "nav.treasury",
   reports: "nav.reports",
+  imports: "nav.imports",
 };
 
 export default function App() {
@@ -274,6 +277,7 @@ export default function App() {
             {view === "accounts" && <AccountsPage notify={notify} />}
             {view === "treasury" && <TreasuryPage notify={notify} />}
             {view === "reports" && <ReportsPage />}
+            {view === "imports" && <DataImportsPage notify={notify} />}
             {view === "admin" && <AdminPage notify={notify} />}
             {view === "audit" && <AuditLogsPage notify={notify} onNavigate={navigate} />}
             {view === "security" && <SecurityEventsPage notify={notify} />}

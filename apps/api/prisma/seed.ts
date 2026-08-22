@@ -130,6 +130,8 @@ try {
     ['purchase_invoices.print', 'purchase_invoices', 'طباعة وأرشفة فواتير المشتريات والإشعارات المدينة'],
     ['input_tax_rates.manage', 'purchase_invoices', 'إدارة حساب ضريبة المدخلات'],
     ['reports.payables.view', 'reports', 'عرض أرصدة الموردين وأعمار الديون'],
+    ['data_imports.view', 'data_imports', 'عرض قوالب ومعاينات وسجل استيراد البيانات'],
+    ['data_imports.execute', 'data_imports', 'تنفيذ استيراد البيانات بعد المعاينة'],
   ] as const;
   for (const [code, module, descriptionAr] of permissionDefinitions) {
     const permission = await prisma.permission.upsert({

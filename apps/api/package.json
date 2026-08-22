@@ -22,8 +22,10 @@
     "cors": "2.8.6",
     "dotenv": "17.4.2",
     "express": "5.2.1",
+    "fflate": "0.8.3",
     "helmet": "8.3.0",
     "pdfkit": "^0.19.1",
+    "read-excel-file": "9.3.10",
     "zod": "4.4.3"
   },
   "devDependencies": {

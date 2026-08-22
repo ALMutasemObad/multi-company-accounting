@@ -13,6 +13,7 @@ import { archiveDocument } from "../printing/print-archive.js";
 import { calculateTaxDocument, TaxCalculationError } from "../tax/tax-calculator.js";
 import { TaxError, TaxService, type TaxQuotePort } from "../tax/tax-service.js";
 import type { ActorContext } from "../users/user-service.js";
+import type { DataImportInvoiceGroup } from "../imports/data-import-types.js";
 
 export type PurchaseInvoiceErrorReason =
   | "NOT_FOUND"
@@ -392,6 +393,51 @@ export class PurchaseInvoiceService {
       await archiveDocument(tx, context, invoice.accountingDocumentId);
       return { document: result.document, ids: result.entries.map((entry) => entry.id.toString()) };
     });
+  }
+
+  async resolveImportedDraft(tx: Prisma.TransactionClient, companyId: bigint, group: DataImportInvoiceGroup): Promise<PurchaseInvoiceInput> {
+    const first = group.rows[0]!.values;
+    const documentDate = asDate(first.document_date!);
+    const period = await tx.fiscalPeriod.findFirst({ where: { companyId, status: "OPEN", startDate: { lte: documentDate }, endDate: { gte: documentDate } }, orderBy: { startDate: "desc" } });
+    if (!period) throw new PurchaseInvoiceError("PERIOD_CLOSED");
+    const supplier = await tx.supplier.findFirst({ where: { companyId, code: first.supplier_code!, isActive: true } });
+    if (!supplier) throw new PurchaseInvoiceError("INVALID_SUPPLIER");
+    const companyCurrency = await tx.companyCurrency.findFirst({ where: { companyId, isActive: true, currency: { code: first.currency_code!, isActive: true } } });
+    if (!companyCurrency) throw new PurchaseInvoiceError("INVALID_CURRENCY");
+    let taxRateIds: Map<string, bigint>;
+    try {
+      taxRateIds = await this.taxes.resolveCodeIds(tx, companyId, "INPUT", group.rows.map((row) => row.values.tax_code ?? ""));
+    } catch (error) {
+      if (error instanceof TaxError) throw new PurchaseInvoiceError("INVALID_TAX_RATE");
+      throw error;
+    }
+    const lines: PurchaseInvoiceLineInput[] = [];
+    for (const row of group.rows) {
+      const account = await tx.account.findFirst({ where: { companyId, code: row.values.account_code! } });
+      if (!account) throw new PurchaseInvoiceError("INVALID_ACCOUNT");
+      const costCenter = row.values.cost_center_code ? await tx.costCenter.findFirst({ where: { companyId, code: row.values.cost_center_code, isActive: true } }) : null;
+      if (row.values.cost_center_code && !costCenter) throw new PurchaseInvoiceError("INVALID_COST_CENTER");
+      lines.push({ description: row.values.line_description!, quantity: row.values.quantity!, unitPrice: row.values.unit_price!, discountAmount: row.values.discount_amount || "0", debitAccountId: account.id, costCenterId: costCenter?.id ?? null, taxRateId: row.values.tax_code ? taxRateIds.get(row.values.tax_code)! : null });
+    }
+    const input: PurchaseInvoiceInput = { documentType: "PURCHASE_INVOICE", fiscalPeriodId: period.id, documentDate: first.document_date!, dueDate: first.due_date!, description: first.description!, supplierId: supplier.id, supplierInvoiceNumber: first.supplier_invoice_number || null, currencyId: companyCurrency.currencyId, exchangeRate: first.exchange_rate!, supplierAddress: first.supplier_address || null, notes: first.notes || null, lines };
+    this.validDate(period, input.documentDate);
+    await this.prepare(tx, companyId, input);
+    return input;
+  }
+
+  async createImportedDraft(tx: Prisma.TransactionClient, context: ActorContext, input: PurchaseInvoiceInput) {
+    const period = await tx.fiscalPeriod.findFirst({ where: { id: input.fiscalPeriodId, companyId: context.companyId } });
+    if (!period || period.status === "CLOSED") throw new PurchaseInvoiceError("PERIOD_CLOSED");
+    this.validDate(period, input.documentDate);
+    const prepared = await this.prepare(tx, context.companyId, input);
+    const documentNumber = await this.reserveInTransaction(tx, context.companyId, period.fiscalYearId, "PURCHASE_INVOICE");
+    const document = await tx.accountingDocument.create({ data: { companyId: context.companyId, fiscalPeriodId: input.fiscalPeriodId, documentType: "PURCHASE_INVOICE", documentNumber, documentDate: asDate(input.documentDate), description: input.description, createdBy: context.userId } });
+    const invoice = await tx.purchaseInvoice.create({
+      data: { companyId: context.companyId, accountingDocumentId: document.id, supplierId: input.supplierId, supplierInvoiceNumber: input.supplierInvoiceNumber?.trim() || null, currencyId: input.currencyId, exchangeRate: decimal(input.exchangeRate), dueDate: asDate(input.dueDate), subtotal: prepared.calculation.subtotal, discountTotal: prepared.calculation.discountTotal, taxableTotal: prepared.calculation.taxableTotal, taxTotal: prepared.calculation.taxTotal, total: prepared.calculation.total, baseTotal: prepared.calculation.baseTotal, supplierNameSnapshot: prepared.supplier.nameAr, supplierTaxLast4: prepared.supplier.taxNumberLast4, supplierAddressSnapshot: prepared.supplierAddress, notes: input.notes ?? null, lines: { create: prepared.calculation.lines } },
+      include: this.include(),
+    });
+    await this.audit(tx, context, "PURCHASE_INVOICE_CREATED", invoice.id, { documentType: "PURCHASE_INVOICE", source: "DATA_IMPORT" });
+    return invoice;
   }
 
   async cancel(context: ActorContext, id: bigint, version: number, reason: string) {

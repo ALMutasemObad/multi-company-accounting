@@ -565,6 +565,7 @@ describe.runIf(enabled)(
         .send(apiPayload("IT-RCP مسودة"))
         .expect(201);
       expect(created.body.baseAmount).toBe("200.0000");
+      expect(created.body.allocations[0]).toMatchObject({ invoiceNumber: "IT-RCP-INVOICE", customerName: "عميل اختبار القبض", dueDate: "2043-03-01" });
       const updated = await agent
         .patch(`/api/v1/receipts/${created.body.id}`)
         .set("X-CSRF-Token", csrf)

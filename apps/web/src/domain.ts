@@ -1,4 +1,4 @@
-import type { Currency, JournalEntry, Payment, PaymentAllocation, ReceiptAllocation } from "./types";
+import type { Currency, JournalEntry, Payment, PaymentAllocation, ReceiptAllocation, TaxRate } from "./types";
 import { activeIntlLocale, dictionaries, translate, type TranslationKey } from "./i18n";
 
 export function messageForError(code?: string, reason?: string) {
@@ -90,6 +90,10 @@ export function validateReceiptDraft(input: {
   )
     errors.push(translate("validation.payment.allocationLine"));
   return errors;
+}
+
+export function taxReadinessLabel(taxRate: TaxRate) {
+  return taxRate.readinessReason ? messageForError(undefined, taxRate.readinessReason) : "";
 }
 
 export function toMoney(value: string) {

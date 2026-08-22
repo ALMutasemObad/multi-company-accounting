@@ -10,11 +10,12 @@ import {
 } from "../generate-openapi-guards.mjs";
 
 test("generated OpenAPI guards are committed and current", () => {
-  assert.equal(guardedOperationIds.length, 77);
-  assert.equal(responseOperationIds.length, 151);
+  assert.equal(guardedOperationIds.length, 79);
+  assert.equal(responseOperationIds.length, 155);
   assert.ok(guardedOperationIds.includes("createManualJournal"));
   assert.ok(guardedOperationIds.includes("createReceipt"));
   assert.ok(guardedOperationIds.includes("updatePaymentMethod"));
+  assert.ok(guardedOperationIds.includes("commitDataImport"));
   assert.equal(readFileSync(generatedPath, "utf8"), buildGeneratedSource());
 });
 
@@ -31,7 +32,7 @@ test("guard generation reflects request constraints from the contract", () => {
 
 test("guard generation covers request transforms and response schemas", () => {
   const generated = buildGeneratedSource();
-  assert.match(generated, /openApiContractCoverage = \{ operations: 151, requestBodies: 77, responseBodies: 1059 \}/u);
+  assert.match(generated, /openApiContractCoverage = \{ operations: 155, requestBodies: 79, responseBodies: 1083 \}/u);
   assert.match(generated, /"receivableItemId": z\.string\(\).*\.transform\(\(value\) => BigInt\(value\)\)/u);
   assert.match(generated, /export const openApiResponseBodySchemas = \{/u);
 });

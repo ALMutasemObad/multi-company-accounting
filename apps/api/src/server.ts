@@ -35,6 +35,7 @@ import { configureHttpServerTimeouts } from './operations/http-server.js';
 import { operationalMetrics } from './operations/metrics.js';
 import { TaxService } from './tax/tax-service.js';
 import { TreasuryService } from './treasury/treasury-service.js';
+import { DataImportService } from './imports/data-import-service.js';
 
 const config = loadConfig();
 if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required to start the API');
@@ -89,6 +90,7 @@ const passwordResetHandler = passwordReset
 const outboxHandlers = new Map<string, OutboxHandler>();
 if (registrationVerificationHandler) outboxHandlers.set(REGISTRATION_VERIFICATION_REQUESTED, registrationVerificationHandler.handle);
 if (passwordResetHandler) outboxHandlers.set(PASSWORD_RESET_REQUESTED, passwordResetHandler.handle);
+outboxHandlers.set('DataImportCommitted', async (event) => { logEvent('info', 'data_import_committed', { eventId: event.eventId, aggregateId: event.aggregateId, companyId: event.companyId?.toString() ?? null }); });
 const outboxWorker = outboxHandlers.size
   ? new OutboxWorker(database, outboxHandlers, {
       pollIntervalMs: config.OUTBOX_POLL_INTERVAL_MS,
@@ -100,6 +102,11 @@ const outboxWorker = outboxHandlers.size
       metrics: operationalMetrics,
     })
   : undefined;
+const receiptReferences = new ReceiptReferenceService(database);
+const suppliers = new SupplierReferenceService(database);
+const salesInvoices = new SalesInvoiceService(database, taxes);
+const purchaseInvoices = new PurchaseInvoiceService(database, taxes);
+const dataImports = new DataImportService(database, receiptReferences, suppliers, salesInvoices, purchaseInvoices, outboxAppender);
 const app = createApp(config, {
   readiness: new DatabaseReadinessService(database, config.READINESS_TIMEOUT_MS),
   metrics: operationalMetrics,
@@ -114,15 +121,16 @@ const app = createApp(config, {
   fiscal: new FiscalService(database),
   accounts: new AccountService(database),
   journals: new ManualJournalService(database),
-  receiptReferences: new ReceiptReferenceService(database),
+  receiptReferences,
   treasury,
   receipts: new ReceiptService(database, treasury),
-  suppliers: new SupplierReferenceService(database),
+  suppliers,
   payments: new PaymentService(database, treasury),
   reports: new ReportService(database),
   taxes,
-  salesInvoices: new SalesInvoiceService(database, taxes),
-  purchaseInvoices: new PurchaseInvoiceService(database, taxes),
+  salesInvoices,
+  purchaseInvoices,
+  dataImports,
 });
 
 const server = app.listen(config.PORT, () => {
