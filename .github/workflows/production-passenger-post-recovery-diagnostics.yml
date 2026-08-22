@@ -115,7 +115,7 @@ jobs:
                       applications.push({
                         version, user, app_root: appRoot, domain: app.domain, app_uri: app.app_uri,
                         app_mode: app.app_mode, startup_file: app.startup_file, app_status: app.app_status,
-                        app_venv: app.app_venv, application_keys: Object.keys(app).sort(),
+                        virtualenv: app.virtualenv, application_keys: Object.keys(app).sort(),
                         env_var_names: Object.keys(app.env_vars || {}).sort()
                       });
                     }
@@ -134,6 +134,12 @@ jobs:
             control_path=$(command -v -- "$control_command" || true)
             printf '%s=%s\n' "$control_command" "${control_path:-unavailable}"
           done
+          printf '%s\n' '=== effective Passenger Node interpreter ==='
+          awk '$1 == "PassengerNodejs" { print $1 " " $2 }' "$passenger_config"
+          printf '%s\n' '=== existing accounting Node virtualenv directories ==='
+          if [[ -d /home/doralash/nodevenv/accounting-app && ! -L /home/doralash/nodevenv/accounting-app ]]; then
+            find /home/doralash/nodevenv/accounting-app -maxdepth 6 -type d -print | head -n 100
+          fi
           printf '%s\n' '=== registered root and venv path state ==='
           for inspected_path in \
             /home/doralash/accounting-app/releases/0.1.0-1340b574957e \
