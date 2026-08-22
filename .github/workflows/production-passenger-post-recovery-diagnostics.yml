@@ -115,7 +115,7 @@ jobs:
                       applications.push({
                         version, user, app_root: appRoot, domain: app.domain, app_uri: app.app_uri,
                         app_mode: app.app_mode, startup_file: app.startup_file, app_status: app.app_status,
-                        env_var_names: Object.keys(app.env_vars || {}).sort()
+                        app_venv: app.app_venv, application_keys: Object.keys(app).sort(),\n                        env_var_names: Object.keys(app.env_vars || {}).sort()
                       });
                     }
                   }
@@ -132,6 +132,22 @@ jobs:
           for control_command in cloudlinux-selector selectorctl passenger-config passenger-status uapi; do
             control_path=$(command -v -- "$control_command" || true)
             printf '%s=%s\n' "$control_command" "${control_path:-unavailable}"
+          done
+          printf '%s\n' '=== registered root and venv path state ==='
+          for inspected_path in \
+            /home/doralash/accounting-app/releases/0.1.0-1340b574957e \
+            /home/doralash/nodevenv/accounting-app/releases/0.1.0-1340b574957e/22 \
+            /home/doralash/accounting-app/current \
+            /home/doralash/nodevenv/accounting-app; do
+            if [[ -L "$inspected_path" ]]; then
+              printf '%s: symlink -> %s\n' "$inspected_path" "$(readlink -f -- "$inspected_path" || true)"
+            elif [[ -d "$inspected_path" ]]; then
+              printf '%s: directory\n' "$inspected_path"
+            elif [[ -e "$inspected_path" ]]; then
+              printf '%s: other\n' "$inspected_path"
+            else
+              printf '%s: missing\n' "$inspected_path"
+            fi
           done
           printf '%s\n' '=== Passenger configuration keys ==='
           awk '
