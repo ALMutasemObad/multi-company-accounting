@@ -93,9 +93,15 @@ test("cPanel production pipeline backs up before invoking the atomic installer",
 
 test("CI deploys main only after both database gates and uses pinned SSH identity", async () => {
   const source = await readFile(path.join(repositoryRoot, ".github", "workflows", "ci.yml"), "utf8");
+  const provenanceIndex = source.indexOf("Verify merged pull request provenance");
+  const sshSecretIndex = source.indexOf("CPANEL_SSH_PRIVATE_KEY: ${{ secrets.CPANEL_SSH_PRIVATE_KEY }}");
 
   assert.match(source, /deploy-production:[\s\S]*needs: \[hosting-compatibility, verify\]/u);
   assert.match(source, /github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/u);
+  assert.match(source, /pull-requests: read/u);
+  assert.match(source, /pullRequest\.merge_commit_sha === sha/u);
+  assert.match(source, /pullRequest\.base\?\.ref === "main"/u);
+  assert.match(source, /event\.forced \|\| matches\.length !== 1/u);
   assert.match(source, /secrets\.CPANEL_SSH_PRIVATE_KEY/u);
   assert.match(source, /secrets\.BACKUP_ENCRYPTION_PASSPHRASE/u);
   assert.match(source, /deploy\/ssh\/ifastnet_known_hosts/u);
@@ -107,4 +113,6 @@ test("CI deploys main only after both database gates and uses pinned SSH identit
   assert.match(source, /mcap_https_redirect_probe/u);
   assert.match(source, /redirect_status/u);
   assert.match(source, /redirect_location/u);
+  assert.ok(provenanceIndex > 0, "production provenance verification must be present");
+  assert.ok(sshSecretIndex > provenanceIndex, "PR provenance must be verified before production secrets are read");
 });
