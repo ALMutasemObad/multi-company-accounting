@@ -24,6 +24,7 @@ const RELEASE_PATHS = [
   "package.json",
   "scripts/database-backup.mjs",
   "scripts/database-restore.mjs",
+  "scripts/verify-database-identities.mjs",
   "scripts/lib",
   "scripts/release/verify-release.mjs",
 ];
