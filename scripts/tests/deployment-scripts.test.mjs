@@ -40,11 +40,22 @@ test("CloudLinux registration switching recreates immutable release roots and re
   assert.match(switcher, /destroy_registration "\$source_root"/u);
   assert.match(switcher, /create_registration "\$target_root"/u);
   assert.match(switcher, /restore_source_registration/u);
+  assert.match(switcher, /ensure_https_redirect/u);
+  assert.match(switcher, /# BEGIN MCAP HTTPS REDIRECT/u);
+  assert.match(switcher, /sourceText\.indexOf\(start\) > sourceText\.indexOf\(end\)/u);
+  assert.match(switcher, /RewriteCond %\{HTTPS\} !=on/u);
+  assert.match(switcher, /RewriteCond %\{HTTP:X-Forwarded-Proto\} !\^https\$/u);
+  assert.match(switcher, /RewriteRule \^ https:\/\/\$\{domain\}%\{REQUEST_URI\} \[R=308,L,NE\]/u);
+  assert.doesNotMatch(switcher, /https:\/\/%\{HTTP_HOST\}/u);
+  assert.match(switcher, /restore_passenger_config/u);
   assert.match(switcher, /chmod "\$config_mode"/u);
   assert.doesNotMatch(switcher, /printf[^\n]*environment_json/u);
   assert.match(installer, /MCAP_CLOUDLINUX_SWITCHER/u);
   assert.match(installer, /activate_release "\$old_release" "\$release_dir"/u);
   assert.match(installer, /activate_release "\$release_dir" "\$old_release"/u);
+  assert.match(installer, /https_redirect_matches/u);
+  assert.match(installer, /mcap_https_redirect_probe/u);
+  assert.match(installer, /case "\$status" in 301\|308/u);
 });
 
 test("cPanel installer migrates and seeds the candidate before activating it", async () => {
@@ -93,4 +104,7 @@ test("CI deploys main only after both database gates and uses pinned SSH identit
   assert.match(source, /cloudlinux-registration\.integration\.sh/u);
   assert.match(source, /sha256sum --check mcap-finance-linux-x64\.tgz\.sha256/u);
   assert.match(source, /SELF_REGISTRATION_ENABLED: 'false'/u);
+  assert.match(source, /mcap_https_redirect_probe/u);
+  assert.match(source, /redirect_status/u);
+  assert.match(source, /redirect_location/u);
 });

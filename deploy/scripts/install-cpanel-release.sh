@@ -23,6 +23,7 @@ run_database_migrations=${MCAP_RUN_DATABASE_MIGRATIONS:-false}
 [[ "$health_url" == https://* ]] || fail "MCAP_HEALTH_URL must be an HTTPS readiness URL"
 [[ "$app_url" == https://* && "$app_url" != *\?* && "$app_url" != *\#* ]] || fail "MCAP_APP_URL must be an HTTPS application URL without a query or fragment"
 app_url=${app_url%/}
+http_app_url="http://${app_url#https://}"
 [[ "$passenger_config_file" == /* && "$passenger_config_file" != / ]] || fail "MCAP_PASSENGER_CONFIG_FILE must be an explicit absolute non-root path"
 [[ -f "$passenger_config_file" && ! -L "$passenger_config_file" ]] || fail "Passenger configuration must be a regular non-symlink file"
 if [[ -n "$cloudlinux_switcher" ]]; then
@@ -126,11 +127,31 @@ active_release_matches() {
     "$app_url/?mcap_release_probe=$expected_id" | sha256sum | awk '{print $1}') || return 1
   [[ "$actual_hash" == "$expected_hash" ]]
 }
+https_redirect_matches() {
+  local expected_id=$1 probe_path headers status location
+  probe_path="/ready?mcap_https_redirect_probe=$expected_id"
+  headers=$(mktemp /tmp/mcap-https-headers.XXXXXX) || return 1
+  if status=$("$curl_bin" --silent --show-error --max-time 5 --max-redirs 0 \
+      --proto '=http' --output /dev/null --dump-header "$headers" \
+      --write-out '%{http_code}' "$http_app_url$probe_path"); then
+    location=$(awk 'BEGIN { IGNORECASE=1 } /^Location:/ {
+      sub(/\r$/, ""); sub(/^[^:]+:[[:space:]]*/, ""); print; exit
+    }' "$headers")
+  else
+    rm -f -- "$headers"
+    return 1
+  fi
+  rm -f -- "$headers"
+  case "$status" in 301|308) ;; *) return 1 ;; esac
+  [[ "$location" == "$app_url$probe_path" ]]
+}
 wait_until_ready() {
-  local expected_release=$1 expected_id=$2 attempt
+  local expected_release=$1 expected_id=$2 require_https_redirect=${3:-true} attempt
   for ((attempt = 1; attempt <= health_attempts; attempt += 1)); do
     if "$curl_bin" --silent --show-error --fail --max-time 5 "$health_url" >/dev/null \
-      && active_release_matches "$expected_release" "$expected_id"; then return 0; fi
+      && active_release_matches "$expected_release" "$expected_id"; then
+      if [[ "$require_https_redirect" != true ]] || https_redirect_matches "$expected_id"; then return 0; fi
+    fi
     sleep 1
   done
   return 1
@@ -166,7 +187,8 @@ if [[ -n "$old_release" ]]; then
     touch -- "$old_release/tmp/restart.txt"
     touch -- "$passenger_config_file"
   fi
-  wait_until_ready "$old_release" "$(basename -- "$old_release")" || fail "automatic rollback completed but the previous release is not ready"
+  wait_until_ready "$old_release" "$(basename -- "$old_release")" false \
+    || fail "automatic rollback completed but the previous release is not ready"
   log "rolled back automatically to $(basename -- "$old_release")"
 else
   log "no previous release was available for automatic rollback"

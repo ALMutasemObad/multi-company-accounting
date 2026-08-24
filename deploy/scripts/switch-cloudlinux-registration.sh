@@ -64,6 +64,8 @@ restart_result=$(mktemp /tmp/mcap-cloudlinux-restart.XXXXXX)
 registry_backup="$backup_directory/selector-before-$(basename -- "$target_release")-$timestamp.json"
 config_backup="$backup_directory/htaccess-before-$(basename -- "$target_release")-$timestamp"
 rollback_required=false
+https_redirect_temp=""
+config_restore_temp=""
 
 registered_root() {
   "$selector" get --json --interpreter nodejs --user "$cloudlinux_user" > "$state_file"
@@ -162,6 +164,52 @@ restart_registration() {
   summarize_result restart "$result_file" "$command_exit"
 }
 
+ensure_https_redirect() {
+  https_redirect_temp=$(mktemp "${passenger_config_file}.mcap-https.XXXXXXXX")
+  "$node_bin" -e '
+    const fs = require("node:fs");
+    const [source, destination, domain] = process.argv.slice(1);
+    if (!/^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$/.test(domain)) process.exit(2);
+    const start = "# BEGIN MCAP HTTPS REDIRECT";
+    const end = "# END MCAP HTTPS REDIRECT";
+    const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const sourceText = fs.readFileSync(source, "utf8");
+    const startCount = sourceText.split(start).length - 1;
+    const endCount = sourceText.split(end).length - 1;
+    if (startCount !== endCount || startCount > 1) process.exit(3);
+    if (startCount === 1 && sourceText.indexOf(start) > sourceText.indexOf(end)) process.exit(3);
+    const withoutManagedBlock = sourceText
+      .replace(new RegExp(`${escape(start)}[\\s\\S]*?${escape(end)}\\s*`, "g"), "")
+      .trimEnd();
+    const block = [
+      start,
+      "# Managed by the verified deployment pipeline.",
+      "<IfModule mod_rewrite.c>",
+      "  RewriteEngine On",
+      "  RewriteCond %{HTTPS} !=on",
+      "  RewriteCond %{HTTP:X-Forwarded-Proto} !^https$ [NC]",
+      `  RewriteRule ^ https://${domain}%{REQUEST_URI} [R=308,L,NE]`,
+      "</IfModule>",
+      end,
+    ].join("\n");
+    const output = `${withoutManagedBlock}${withoutManagedBlock ? "\n\n" : ""}${block}\n`;
+    if (output.includes("%{HTTP_HOST}")) process.exit(4);
+    fs.writeFileSync(destination, output, { encoding: "utf8", mode: 0o600 });
+  ' "$passenger_config_file" "$https_redirect_temp" "$cloudlinux_domain"
+  chmod "$config_mode" -- "$https_redirect_temp"
+  mv -f -- "$https_redirect_temp" "$passenger_config_file"
+  https_redirect_temp=""
+}
+
+restore_passenger_config() {
+  [[ -f "$config_backup" && ! -L "$config_backup" ]] || return 1
+  config_restore_temp=$(mktemp "${passenger_config_file}.mcap-restore.XXXXXXXX")
+  cp -- "$config_backup" "$config_restore_temp"
+  chmod "$config_mode" -- "$config_restore_temp"
+  mv -f -- "$config_restore_temp" "$passenger_config_file"
+  config_restore_temp=""
+}
+
 restore_source_registration() {
   local active_root
   set +e
@@ -176,6 +224,7 @@ restore_source_registration() {
   fi
   chmod "$config_mode" -- "$passenger_config_file" 2>/dev/null || true
   if [[ "$active_root" == "$source_root" ]]; then
+    restore_passenger_config || return 1
     restart_registration "$source_root" "$restart_result" >/dev/null 2>&1
     log "restored source registration $source_root"
     return 0
@@ -189,6 +238,8 @@ cleanup() {
   set +e
   if [[ "$status" != 0 && "$rollback_required" == true ]]; then restore_source_registration; fi
   rm -f -- "$state_file" "$environment_file" "$destroy_result" "$create_result" "$restart_result"
+  [[ -z "$https_redirect_temp" ]] || rm -f -- "$https_redirect_temp"
+  [[ -z "$config_restore_temp" ]] || rm -f -- "$config_restore_temp"
   exit "$status"
 }
 trap 'status=$?; trap - EXIT; cleanup "$status"' EXIT
@@ -209,6 +260,7 @@ create_registration "$target_root" "$create_result"
 [[ "$(registered_root)" == "$target_root" ]] || fail "target registration was not created"
 validate_registered_environment "$target_root"
 restart_registration "$target_root" "$restart_result"
+ensure_https_redirect
 rollback_required=false
 
 log "registered $(basename -- "$target_release") and preserved recoverable configuration backups"

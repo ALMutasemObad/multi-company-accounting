@@ -125,12 +125,22 @@ run_switch "$source_release" "$target_release"
 [[ "$(<"$state_root")" == apps/releases/target ]]
 [[ "$(stat -c '%a' -- "$passenger_config")" == 644 ]]
 [[ -n "$(find "$backup_directory" -maxdepth 1 -type f -name 'selector-before-target-*.json' -print -quit)" ]]
+[[ "$(grep -Fc '# BEGIN MCAP HTTPS REDIRECT' "$passenger_config")" == 1 ]]
+grep -Fq 'RewriteCond %{HTTPS} !=on' "$passenger_config"
+grep -Fq 'RewriteCond %{HTTP:X-Forwarded-Proto} !^https$ [NC]' "$passenger_config"
+grep -Fq 'RewriteRule ^ https://example.test%{REQUEST_URI} [R=308,L,NE]' "$passenger_config"
+if grep -Fq '%{HTTP_HOST}' "$passenger_config"; then
+  printf 'HTTPS redirect must not trust the incoming Host header\n' >&2
+  exit 1
+fi
 
 run_switch "$target_release" "$source_release"
 [[ "$(<"$state_root")" == apps/releases/source ]]
 [[ "$(stat -c '%a' -- "$passenger_config")" == 644 ]]
+[[ "$(grep -Fc '# BEGIN MCAP HTTPS REDIRECT' "$passenger_config")" == 1 ]]
 
 export FAKE_FAIL_CREATE_ROOT=apps/releases/target
+config_before_failed_switch=$(sha256sum -- "$passenger_config" | awk '{print $1}')
 if run_switch "$source_release" "$target_release"; then
   printf 'CloudLinux switch unexpectedly succeeded when target creation failed\n' >&2
   exit 1
@@ -138,3 +148,4 @@ fi
 unset FAKE_FAIL_CREATE_ROOT
 [[ "$(<"$state_root")" == apps/releases/source ]]
 [[ "$(stat -c '%a' -- "$passenger_config")" == 644 ]]
+[[ "$(sha256sum -- "$passenger_config" | awk '{print $1}')" == "$config_before_failed_switch" ]]

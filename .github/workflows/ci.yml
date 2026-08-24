@@ -378,5 +378,19 @@ jobs:
                   "$remote_dir/mcap-finance-linux-x64.tgz.sha256"
       - name: Verify the public production endpoints
         run: |
+          http_app_url="http://${CPANEL_APP_URL#https://}"
+          redirect_probe_path="/ready?mcap_https_redirect_probe=$GITHUB_RUN_ID"
+          redirect_headers=$(mktemp)
+          trap 'rm -f -- "$redirect_headers"' EXIT
+          redirect_status=$(curl --silent --show-error --max-time 10 --max-redirs 0 \
+            --proto '=http' --output /dev/null --dump-header "$redirect_headers" \
+            --write-out '%{http_code}' "$http_app_url$redirect_probe_path")
+          redirect_location=$(awk 'BEGIN { IGNORECASE=1 } /^Location:/ {
+            sub(/\r$/, ""); sub(/^[^:]+:[[:space:]]*/, ""); print; exit
+          }' "$redirect_headers")
+          case "$redirect_status" in 301|308) ;; *) exit 1 ;; esac
+          test "$redirect_location" = "$CPANEL_APP_URL$redirect_probe_path"
           curl --fail --silent --show-error --max-time 10 "$CPANEL_APP_URL/live"
           curl --fail --silent --show-error --max-time 10 "$CPANEL_APP_URL/ready"
+          rm -f -- "$redirect_headers"
+          trap - EXIT
