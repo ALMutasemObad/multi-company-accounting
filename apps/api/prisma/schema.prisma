@@ -213,6 +213,7 @@ model Company {
   customers                        Customer[]
   customerAddresses                CustomerAddress[]
   cashBankAccounts                 CashBankAccount[]
+  warehouses                       Warehouse[]
   paymentMethods                   PaymentMethod[]
   receipts                         Receipt[]
   receiptAllocations               ReceiptAllocation[]
@@ -861,6 +862,25 @@ model CashBankAccount {
   @@unique([companyId, code])
   @@unique([id, companyId])
   @@map("cash_bank_accounts")
+}
+
+model Warehouse {
+  id        BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId BigInt   @map("company_id") @db.UnsignedBigInt
+  code      String   @db.VarChar(40)
+  nameAr    String   @map("name_ar") @db.VarChar(160)
+  nameEn    String?  @map("name_en") @db.VarChar(160)
+  address   String?  @db.VarChar(300)
+  isActive  Boolean  @default(true) @map("is_active")
+  version   Int      @default(0) @db.UnsignedInt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([companyId, code])
+  @@unique([id, companyId])
+  @@index([companyId, isActive, nameAr])
+  @@map("warehouses")
 }
 
 model PaymentMethod {

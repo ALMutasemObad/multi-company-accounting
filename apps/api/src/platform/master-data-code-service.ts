@@ -5,6 +5,7 @@ export type MasterDataEntityType =
   | "SUPPLIER"
   | "COST_CENTER"
   | "CASH_BANK_ACCOUNT"
+  | "WAREHOUSE"
   | "PAYMENT_METHOD"
   | "TAX_RATE"
   | "CUSTOM_ROLE";
@@ -17,6 +18,7 @@ const defaults: Record<
   SUPPLIER: { prefix: "SUP-", padding: 6 },
   COST_CENTER: { prefix: "CC-", padding: 6 },
   CASH_BANK_ACCOUNT: { prefix: "CB-", padding: 6 },
+  WAREHOUSE: { prefix: "WH-", padding: 6 },
   PAYMENT_METHOD: {
     // PaymentMethod.code is globally unique because GLOBAL methods have no
     // company owner. Embedding the company id keeps generated company methods

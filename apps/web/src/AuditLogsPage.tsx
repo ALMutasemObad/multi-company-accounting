@@ -21,7 +21,7 @@ import { Button,
 
 type Notice = (message: string, tone?: "success" | "error") => void;
 type Filters = { search: string; userId: string; action: string; entityType: string; dateFrom: string; dateTo: string };
-type TargetView = "admin" | "settings" | "customers" | "suppliers" | "receipts" | "payments" | "journals" | "fiscal" | "accounts" | "treasury";
+type TargetView = "admin" | "settings" | "customers" | "suppliers" | "receipts" | "payments" | "journals" | "fiscal" | "accounts" | "treasury" | "inventory";
 const emptyFilters: Filters = { search: "", userId: "", action: "", entityType: "", dateFrom: "", dateTo: "" };
 
 function codedLabel(scope: "action" | "entity", code: string) {
@@ -30,7 +30,7 @@ function codedLabel(scope: "action" | "entity", code: string) {
 }
 const actionLabel = (code: string) => codedLabel("action", code);
 const entityLabel = (code: string) => codedLabel("entity", code);
-const targetFor = (entityType: string): TargetView | null => ({ USER: "admin", ROLE: "admin", COMPANY: "settings", CUSTOMER: "customers", SUPPLIER: "suppliers", RECEIPT: "receipts", PAYMENT: "payments", MANUAL_JOURNAL: "journals", FISCAL_YEAR: "fiscal", FISCAL_PERIOD: "fiscal", ACCOUNT: "accounts", COST_CENTER: "accounts", CASH_BANK_ACCOUNT: "treasury", PAYMENT_METHOD: "treasury" } as Record<string, TargetView>)[entityType] ?? null;
+const targetFor = (entityType: string): TargetView | null => ({ USER: "admin", ROLE: "admin", COMPANY: "settings", CUSTOMER: "customers", SUPPLIER: "suppliers", RECEIPT: "receipts", PAYMENT: "payments", MANUAL_JOURNAL: "journals", FISCAL_YEAR: "fiscal", FISCAL_PERIOD: "fiscal", ACCOUNT: "accounts", COST_CENTER: "accounts", CASH_BANK_ACCOUNT: "treasury", PAYMENT_METHOD: "treasury", WAREHOUSE: "inventory" } as Record<string, TargetView>)[entityType] ?? null;
 
 export function AuditLogsPage({ notify, onNavigate }: { notify: Notice; onNavigate: (view: TargetView) => void }) {
   const [rows, setRows] = useState<AuditLog[]>([]);
