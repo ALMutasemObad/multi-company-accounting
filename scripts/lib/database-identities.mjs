@@ -34,8 +34,7 @@ export class DatabaseIdentityPolicyError extends Error {
 
 const normalizeScope = (value) => value
   .replaceAll("`", "")
-  .replaceAll("\\_", "_")
-  .replaceAll("\\%", "%")
+  .replace(/\\+([_%])/gu, "$1")
   .trim()
   .toUpperCase();
 
