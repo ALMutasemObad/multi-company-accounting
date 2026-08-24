@@ -21,6 +21,7 @@ import { createPasswordResetRouter } from '../src/auth/password-reset-router.js'
 import { createTaxRouter } from '../src/tax/tax-router.js';
 import { createTreasuryRouter } from '../src/treasury/treasury-router.js';
 import { createDataImportRouter } from '../src/imports/data-import-router.js';
+import { createInventoryRouter } from '../src/inventory/inventory-router.js';
 
 type RouteLayer = {
   route?: {
@@ -44,6 +45,7 @@ const routers = [
   { prefix: '', router: createManualJournalRouter(stub, stub) },
   { prefix: '', router: createReceiptReferenceRouter(stub, stub) },
   { prefix: '', router: createTreasuryRouter(stub, stub) },
+  { prefix: '', router: createInventoryRouter(stub, stub) },
   { prefix: '', router: createReceiptRouter(stub, stub) },
   { prefix: '', router: createSupplierRouter(stub, stub) },
   { prefix: '', router: createPaymentRouter(stub, stub) },

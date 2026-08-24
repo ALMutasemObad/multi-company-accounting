@@ -256,3 +256,20 @@ describe("Treasury ownership boundary guardrails", () => {
     );
   });
 });
+
+describe("Inventory ownership boundary guardrails", () => {
+  it("keeps warehouse writes inside the Inventory context", async () => {
+    const [inventory, sales, purchases, imports] = await Promise.all([
+      source("inventory/inventory-service.ts"),
+      source("sales/sales-invoice-service.ts"),
+      source("purchases/purchase-invoice-service.ts"),
+      source("imports/data-import-service.ts"),
+    ]);
+    expect(inventory).toContain('"WAREHOUSE"');
+    expect(inventory).toContain("companyId: context.companyId, version: input.version");
+    expect(inventory).toContain("version: { increment: 1 }");
+    expect(`${sales}\n${purchases}\n${imports}`).not.toMatch(
+      /\.warehouse\.(?:create|update|updateMany|delete|findFirst|findMany|upsert|count)\s*\(/u,
+    );
+  });
+});

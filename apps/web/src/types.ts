@@ -101,6 +101,16 @@ export type CashBankAccount = {
   version: number;
 };
 
+export type Warehouse = {
+  id: string;
+  code: string;
+  nameAr: string;
+  nameEn: string | null;
+  address: string | null;
+  isActive: boolean;
+  version: number;
+};
+
 export type PaymentMethod = {
   id: string;
   code: string;

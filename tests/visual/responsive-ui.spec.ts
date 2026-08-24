@@ -29,6 +29,7 @@ const workspaceScreens: Screen[] = [
   'fiscal',
   'accounts',
   'treasury',
+  'inventory',
   'reports',
   'imports',
   'admin',
@@ -112,7 +113,7 @@ async function interfaceFailures(page: Page) {
     for (const [pattern, description] of forbiddenCopy) {
       if (pattern.test(bodyText)) failures.push(`visible ${description}`);
     }
-    const leakedTranslationKey = bodyText.match(/\b(?:pages|common|nav|login|registration|passwordReset|settings|imports)\.[A-Za-z0-9_.-]+\b/u)?.[0];
+    const leakedTranslationKey = bodyText.match(/\b(?:pages|common|nav|login|registration|passwordReset|settings|imports|inventory)\.[A-Za-z0-9_.-]+\b/u)?.[0];
     if (leakedTranslationKey) failures.push(`visible translation key: ${leakedTranslationKey}`);
 
     for (const element of document.querySelectorAll<HTMLElement>('.search-box button, .section-tabs button')) {
@@ -165,7 +166,7 @@ async function auditCurrentInterface(page: Page, locale: Locale, label: string) 
 }
 
 for (const locale of ['ar', 'en'] as const) {
-  test(`${locale}: all 20 screens satisfy the responsive interface contract`, async ({ page }) => {
+  test(`${locale}: all 21 screens satisfy the responsive interface contract`, async ({ page }) => {
     const runtimeErrors: string[] = [];
     page.on('pageerror', (error) => runtimeErrors.push(error.message));
     await configureLocale(page, locale);

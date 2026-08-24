@@ -22,11 +22,20 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 155, requestBodies: 79, responseBodies: 1083 });
-    expect(guardedOpenApiOperations).toHaveLength(79);
+    expect(openApiContractCoverage).toEqual({ operations: 160, requestBodies: 82, responseBodies: 1117 });
+    expect(guardedOpenApiOperations).toHaveLength(82);
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
-      'login', 'createUser', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'previewDataImport', 'commitDataImport',
+      'login', 'createUser', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'previewDataImport', 'commitDataImport',
     ]));
+  });
+
+  it('keeps warehouse codes server-owned and versioned changes contract-backed', () => {
+    expect(openApiRequestBodySchemas.createWarehouse.parse({
+      nameAr: '  المستودع الرئيسي  ', nameEn: 'Main', address: 'Riyadh',
+    })).toEqual({ nameAr: 'المستودع الرئيسي', nameEn: 'Main', address: 'Riyadh' });
+    expect(openApiRequestBodySchemas.createWarehouse.safeParse({ code: 'MANUAL', nameAr: 'مستودع' }).success).toBe(false);
+    expect(openApiRequestBodySchemas.updateWarehouse.safeParse({ nameAr: 'مستودع' }).success).toBe(false);
+    expect(openApiRequestBodySchemas.deactivateWarehouse.safeParse({ version: 0, reason: 'لا' }).success).toBe(false);
   });
 
   it('enforces the password-reset boundary from OpenAPI', () => {

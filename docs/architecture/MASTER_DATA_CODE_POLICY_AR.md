@@ -1,8 +1,8 @@
 ---
 title: "Master Data Code Policy"
 status: "mandatory"
-version: "1.1"
-last_updated: "2026-08-21"
+version: "1.2"
+last_updated: "2026-08-24"
 related:
   - "ARCHITECTURE_GUARDRAILS_AR.md"
   - "BOUNDED_CONTEXT_MAP_AR.md"
@@ -23,6 +23,7 @@ related:
 | المورد | الشركة + نوع الكيان | `SUP-` | `SUP-000001` | Purchases & Accounts Payable |
 | مركز التكلفة | الشركة + نوع الكيان | `CC-` | `CC-000001` | Core Accounting |
 | حساب الصندوق/البنك | الشركة + نوع الكيان | `CB-` | `CB-000001` | Treasury |
+| المستودع | الشركة + نوع الكيان | `WH-` | `WH-000001` | Inventory |
 | طريقة الدفع الخاصة بالشركة | الشركة + نوع الكيان، مع تفرد عمومي للحقل | `PM-{companyId}-` | `PM-42-000001` | Treasury |
 | معدل الضريبة | الشركة + نوع الكيان | `TAX-` | `TAX-000001` | Tax Configuration |
 | الدور المخصص | الشركة + نوع الكيان | `ROL-` | `ROL-000001` | Identity & Access |
@@ -58,7 +59,7 @@ related:
 ## 4. التوافق والترحيل
 
 - الرموز الموجودة قبل اعتماد السياسة تبقى كما هي؛ لا يعاد ترقيمها ولا تغيير المراجع المطبوعة أو التاريخية.
-- يهيئ الترحيل `20260822150000_auto_master_data_codes` تسلسلي العميل والمورد، ويوسع `20260822210000_expand_auto_codes_and_password_reset` الأنواع الأخرى. حساب أكبر لاحقة رقمية مسموح داخل ترحيل النشر الأحادي فقط لإجراء الـbackfill، وليس خوارزمية حجز وقت التشغيل.
+- يهيئ الترحيل `20260822150000_auto_master_data_codes` تسلسلي العميل والمورد، ويوسع `20260822210000_expand_auto_codes_and_password_reset` الأنواع الأخرى، ويضيف `20260824170000_inventory_warehouse_foundation` تسلسل المستودع. حساب أكبر لاحقة رقمية مسموح داخل ترحيل النشر الأحادي فقط لإجراء الـbackfill، وليس خوارزمية حجز وقت التشغيل.
 - اختلاف الشكل القديم عن الصيغة الجديدة مقبول. يمنع إجراء إعادة تنسيق جماعية بلا خطة انتقال وموافقة أعمال مستقلة.
 - تغيير البادئة أو عدد الخانات لا يغير الرموز السابقة، ويحتاج Migration وعقد API وتوثيقًا واختبارات توافق.
 
@@ -71,6 +72,7 @@ related:
 | الحجز الذري | `apps/api/src/platform/master-data-code-service.ts` |
 | العملاء | `apps/api/src/receipts/reference-service.ts` و`reference-router.ts` |
 | الخزينة وطرق الدفع | `apps/api/src/treasury/treasury-service.ts` و`treasury-router.ts` |
+| المستودعات | `apps/api/src/inventory/inventory-service.ts` و`inventory-router.ts` |
 | الموردون | `apps/api/src/suppliers/supplier-service.ts` و`supplier-router.ts` |
 | الحسابات ومراكز التكلفة | `apps/api/src/accounts/account-service.ts` و`account-router.ts` |
 | الضرائب | `apps/api/src/tax/tax-service.ts` و`tax-router.ts` |

@@ -36,6 +36,7 @@ import { operationalMetrics } from './operations/metrics.js';
 import { TaxService } from './tax/tax-service.js';
 import { TreasuryService } from './treasury/treasury-service.js';
 import { DataImportService } from './imports/data-import-service.js';
+import { InventoryService } from './inventory/inventory-service.js';
 
 const config = loadConfig();
 if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required to start the API');
@@ -123,6 +124,7 @@ const app = createApp(config, {
   journals: new ManualJournalService(database),
   receiptReferences,
   treasury,
+  inventory: new InventoryService(database),
   receipts: new ReceiptService(database, treasury),
   suppliers,
   payments: new PaymentService(database, treasury),

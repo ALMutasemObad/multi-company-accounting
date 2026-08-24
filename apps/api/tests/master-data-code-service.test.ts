@@ -7,6 +7,7 @@ describe("master-data code formatting", () => {
     expect(formatMasterDataCode("SUP-", 42n, 6)).toBe("SUP-000042");
     expect(formatMasterDataCode("CC-", 7n, 6)).toBe("CC-000007");
     expect(formatMasterDataCode("CB-", 8n, 6)).toBe("CB-000008");
+    expect(formatMasterDataCode("WH-", 12n, 6)).toBe("WH-000012");
     expect(formatMasterDataCode("PM-42-", 9n, 6)).toBe("PM-42-000009");
     expect(formatMasterDataCode("TAX-", 10n, 6)).toBe("TAX-000010");
     expect(formatMasterDataCode("ROL-", 11n, 6)).toBe("ROL-000011");

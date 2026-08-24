@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.13.0
+  version: 1.14.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -28,6 +28,8 @@ info:
     - يملك Tax نسب الضرائب وحساباتها وسياسة التقريب؛ تحمل تعديلات النسب version متفائلًا لمنع فقد تحديثات المبيعات والمشتريات.
 
     - يملك Treasury حسابات النقد والبنوك وطرق الدفع؛ تستهلك حركات القبض والصرف TreasuryInstrumentPort وتحمل تعديلات المراجع version متفائلًا.
+
+    - تبدأ رحلة Inventory بإدارة المستودعات المعزولة حسب الشركة، مع رموز خادمية ثابتة ونسخ متفائلة، دون أثر على الأستاذ في هذه المرحلة.
 
     - OpenAPI هو العقد التنفيذي الموحد لأجسام JSON؛ تولد منه حراس Zod وأنواع الطلب والاستجابة وبصمة تغطية حتمية، وتفحص الاستجابات في بيئات التطوير والاختبار.
 
@@ -82,6 +84,8 @@ tags:
   description: الموردون وعناوينهم وحسابات الذمم.
 - name: Treasury
   description: حسابات النقد والبنوك وطرق الدفع.
+- name: Inventory
+  description: المستودعات والبيانات الأساسية للمخزون؛ لا تنشئ هذه المرحلة قيودًا محاسبية.
 - name: Manual Journals
   description: القيود اليومية اليدوية ودورة الترحيل والعكس.
 - name: Receipts
@@ -3413,6 +3417,206 @@ paths:
       x-permission: currencies.view
       security:
       - SessionCookie: []
+  /warehouses:
+    get:
+      tags:
+      - Inventory
+      summary: عرض مستودعات الشركة الحالية
+      operationId: listWarehouses
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - $ref: '#/components/parameters/Search'
+      - name: active
+        in: query
+        schema:
+          type: boolean
+      responses:
+        '200':
+          description: قائمة المستودعات
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Warehouse'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      x-permission: warehouses.view
+      security:
+      - SessionCookie: []
+    post:
+      tags:
+      - Inventory
+      summary: إنشاء مستودع
+      operationId: createWarehouse
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WarehouseCreateRequest'
+      responses:
+        '201':
+          description: تم إنشاء المستودع
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Warehouse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/BusinessRuleViolation'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      x-permission: warehouses.manage
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+  /warehouses/{warehouseId}:
+    get:
+      tags:
+      - Inventory
+      summary: عرض مستودع
+      operationId: getWarehouse
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: warehouseId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      responses:
+        '200':
+          description: بيانات المستودع
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Warehouse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      x-permission: warehouses.view
+      security:
+      - SessionCookie: []
+    patch:
+      tags:
+      - Inventory
+      summary: تعديل مستودع
+      operationId: updateWarehouse
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: warehouseId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WarehouseUpdateRequest'
+      responses:
+        '200':
+          description: تم تعديل المستودع
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Warehouse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/BusinessRuleViolation'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      x-permission: warehouses.manage
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+  /warehouses/{warehouseId}/deactivate:
+    post:
+      tags:
+      - Inventory
+      summary: تعطيل مستودع
+      operationId: deactivateWarehouse
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: warehouseId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WarehouseDeactivateRequest'
+      responses:
+        '200':
+          description: تم تعطيل المستودع
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Warehouse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/BusinessRuleViolation'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      x-permission: warehouses.manage
+      security:
+      - SessionCookie: []
+        CsrfToken: []
   /cash-bank-accounts:
     get:
       tags:
@@ -7802,6 +8006,94 @@ components:
           - 'null'
           writeOnly: true
           maxLength: 64
+    Warehouse:
+      type: object
+      required:
+      - id
+      - code
+      - nameAr
+      - nameEn
+      - address
+      - isActive
+      - version
+      properties:
+        id:
+          type: string
+          pattern: ^[1-9][0-9]*$
+          description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
+        code:
+          type: string
+          readOnly: true
+          pattern: ^WH-[0-9]+$
+          maxLength: 40
+          description: رمز ثابت يولده النظام تلقائيًا داخل الشركة.
+        nameAr:
+          type: string
+          minLength: 1
+          maxLength: 160
+        nameEn:
+          type: [string, 'null']
+          maxLength: 160
+        address:
+          type: [string, 'null']
+          maxLength: 300
+        isActive:
+          type: boolean
+        version:
+          type: integer
+          minimum: 0
+    WarehouseCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - nameAr
+      properties:
+        nameAr:
+          type: string
+          x-trim: true
+          minLength: 1
+          maxLength: 160
+        nameEn:
+          type: [string, 'null']
+          maxLength: 160
+        address:
+          type: [string, 'null']
+          maxLength: 300
+    WarehouseUpdateRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - version
+      properties:
+        version:
+          type: integer
+          minimum: 0
+        nameAr:
+          type: string
+          x-trim: true
+          minLength: 1
+          maxLength: 160
+        nameEn:
+          type: [string, 'null']
+          maxLength: 160
+        address:
+          type: [string, 'null']
+          maxLength: 300
+    WarehouseDeactivateRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - version
+      - reason
+      properties:
+        version:
+          type: integer
+          minimum: 0
+        reason:
+          type: string
+          x-trim: true
+          minLength: 3
+          maxLength: 500
     CashBankAccountType:
       type: string
       enum:

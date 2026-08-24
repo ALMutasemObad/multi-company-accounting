@@ -18,6 +18,7 @@ const ManualJournalsPage = lazy(() => import("./ManualJournalsPage").then((modul
 const FiscalPage = lazy(() => import("./FiscalPage").then((module) => ({ default: module.FiscalPage })));
 const AccountsPage = lazy(() => import("./AccountsPage").then((module) => ({ default: module.AccountsPage })));
 const TreasuryPage = lazy(() => import("./TreasuryPage").then((module) => ({ default: module.TreasuryPage })));
+const InventoryPage = lazy(() => import("./InventoryPage").then((module) => ({ default: module.InventoryPage })));
 const ReportsPage = lazy(() => import("./ReportsPage").then((module) => ({ default: module.ReportsPage })));
 const AdminPage = lazy(() => import("./AdminPage").then((module) => ({ default: module.AdminPage })));
 const AuditLogsPage = lazy(() => import("./AuditLogsPage").then((module) => ({ default: module.AuditLogsPage })));
@@ -25,11 +26,11 @@ const SecurityEventsPage = lazy(() => import("./SecurityEventsPage").then((modul
 const CompanySettingsPage = lazy(() => import("./CompanySettingsPage").then((module) => ({ default: module.CompanySettingsPage })));
 const DataImportsPage = lazy(() => import("./DataImportsPage").then((module) => ({ default: module.DataImportsPage })));
 
-type View = "dashboard" | "customers" | "sales" | "receipts" | "suppliers" | "purchases" | "payments" | "journals" | "fiscal" | "accounts" | "treasury" | "reports" | "imports" | "admin" | "audit" | "security" | "settings";
+type View = "dashboard" | "customers" | "sales" | "receipts" | "suppliers" | "purchases" | "payments" | "journals" | "fiscal" | "accounts" | "treasury" | "inventory" | "reports" | "imports" | "admin" | "audit" | "security" | "settings";
 
 const viewFromHash = (): View => {
   const value = location.hash.slice(1);
-  return ["dashboard", "customers", "sales", "receipts", "suppliers", "purchases", "payments", "journals", "fiscal", "accounts", "treasury", "reports", "imports", "admin", "audit", "security", "settings"].includes(value) ? value as View : "dashboard";
+  return ["dashboard", "customers", "sales", "receipts", "suppliers", "purchases", "payments", "journals", "fiscal", "accounts", "treasury", "inventory", "reports", "imports", "admin", "audit", "security", "settings"].includes(value) ? value as View : "dashboard";
 };
 
 const navigationItems: Array<{ view: View; icon: Parameters<typeof Icon>[0]["name"]; label: TranslationKey }> = [
@@ -44,6 +45,7 @@ const navigationItems: Array<{ view: View; icon: Parameters<typeof Icon>[0]["nam
   { view: "fiscal", icon: "calendar", label: "nav.fiscal" },
   { view: "accounts", icon: "accounts", label: "nav.accounts" },
   { view: "treasury", icon: "treasury", label: "nav.treasury" },
+  { view: "inventory", icon: "inventory", label: "nav.inventory" },
   { view: "reports", icon: "reports", label: "nav.reports" },
   { view: "imports", icon: "arrowUp", label: "nav.imports" },
   { view: "admin", icon: "users", label: "nav.admin" },
@@ -68,6 +70,7 @@ const viewTitleKey: Record<View, TranslationKey> = {
   fiscal: "view.fiscal",
   accounts: "view.accounts",
   treasury: "nav.treasury",
+  inventory: "nav.inventory",
   reports: "nav.reports",
   imports: "nav.imports",
 };
@@ -276,6 +279,7 @@ export default function App() {
             {view === "fiscal" && <FiscalPage notify={notify} />}
             {view === "accounts" && <AccountsPage notify={notify} />}
             {view === "treasury" && <TreasuryPage notify={notify} />}
+            {view === "inventory" && <InventoryPage notify={notify} />}
             {view === "reports" && <ReportsPage />}
             {view === "imports" && <DataImportsPage notify={notify} />}
             {view === "admin" && <AdminPage notify={notify} />}
