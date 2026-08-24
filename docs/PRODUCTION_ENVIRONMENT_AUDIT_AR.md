@@ -6,8 +6,8 @@
 
 ## الحكم التنفيذي
 
-- الحالة التشغيلية: **GO**؛ أثبت التشغيل النهائي رقم 87 بعد حذف أسرار Repository أن النطاق وAPI وقاعدة البيانات ومسار النشر بأسرار `production` فقط جاهزة.
-- اعتماد حوكمة البيئة: **NO-GO مؤقتًا** حتى إغلاق P0-2 أدناه، ثم حسم بندي P1 أو قبول مخاطرهما صراحةً. أُغلق P0-1 تقنيًا في مسار النشر، ويثبت تشغيل الإصدار نفسه القبول على النطاق العام.
+- الحالة التشغيلية: **GO**؛ أثبت تشغيل الإنتاج رقم 93 النطاق وAPI وقاعدة البيانات ومسار النشر والقياسات بأسرار `production` فقط.
+- اعتماد حوكمة البيئة: **NO-GO مؤقتًا** حتى إغلاق P0-2 أدناه، ثم حسم P1-1 أو قبول مخاطره صراحةً. أُغلق P0-1 وP1-2 تقنيًا وإنتاجيًا، ويثبت تشغيل الإصدار نفسه القبول على النطاق العام.
 
 ## الأدلة الإيجابية
 
@@ -19,6 +19,9 @@
 - نسخ تشغيل النقل اليدوي رقم [1](https://github.com/ALMutasemObad/multi-company-accounting/actions/runs/32714717494) السرّين إلى بيئة `production` عبر `stdin` دون طباعة القيم، ثم تحقق من وجود سجليهما؛ وأكدت صفحة البيئة وجودهما مستقلًا.
 - أثبت تشغيل القبول رقم [84](https://github.com/ALMutasemObad/multi-company-accounting/actions/runs/32715589926) استخدام سري Environment ذوي الأولوية: نجح إعداد مفتاح SSH والرفع، ثم النسخ الاحتياطي المشفر والترحيل والتفعيل وفحص النطاق العام. بصمة Artifact هي `sha256:bc1796f28c63efeeafee80b3c1b145876708306120bc5a60c051126cb7198e92` للالتزام `14ffa4a`.
 - أثبت تشغيل ما بعد الحذف رقم [87](https://github.com/ALMutasemObad/multi-company-accounting/actions/runs/32717170493) عدم وجود fallback أوسع: بدأ بعد أن أصبحت Repository secrets فارغة وأُلغي PAT، ونجحت كل خطوات SSH والنسخ الاحتياطي المشفر والتفعيل وفحص النطاق للالتزام `bd83b9d`. بصمة Artifact هي `sha256:04be7b88733f71ae1861d91ed4726e82adc382b9822a9553505c2e0e9cd398c7`.
+- أثبت تشغيل الإنتاج رقم [93](https://github.com/ALMutasemObad/multi-company-accounting/actions/runs/32722561885) نشر الالتزام `da7c4e7` بعد نجاح بوابتي MariaDB/MySQL وShellCheck وتكامل CloudLinux؛ مرر رمز القياسات عبر `stdin`، فعّل بيئة الهدف، ثم أثبت `401` بلا رمز وكشطًا موثقًا ناجحًا وعدم وجود تنبيه نشط.
+- أثبت تشغيل المراقبة رقم [1](https://github.com/ALMutasemObad/multi-company-accounting/actions/runs/32723804308) قناة التنبيه: نجح الكشط الفعلي أولًا ثم فشل عمدًا مع Annotation باسم `Production monitoring test alert`. وأثبت التشغيل العادي رقم [2](https://github.com/ALMutasemObad/multi-company-accounting/actions/runs/32723895437) نجاح الكشط وعدم وجود تنبيه نشط أو حديث.
+- أكد فحص عام مستقل بعد النشر أن `/metrics` يعيد `401 Unauthorized` مع `Cache-Control: no-store` و`WWW-Authenticate: Bearer` دون رمز.
 - أنشأ النشر نسخة مشفرة قبل الترحيل داخل `/home/doralash/backups/mcap`، وثبّت Artifact ذي بصمة SHA-256 موثقة، ثم تحقق من الإصدار النشط والواجهة العامة.
 - إعدادات الإنتاج الحرجة فعالة لأن التطبيق اجتاز fail-fast ويعمل: `WEB_ORIGIN` الآمن و`SESSION_COOKIE_SECURE` و`TRUST_PROXY`. كوكي PRE_AUTH المرصودة تحمل `HttpOnly; Secure; SameSite=Lax`.
 - الاستجابات تتضمن HSTS وCSP و`X-Frame-Options: SAMEORIGIN` و`X-Content-Type-Options: nosniff` وCORS محصورًا في نطاق الإنتاج.
@@ -53,7 +56,7 @@
 
 المتبقي المثبت:
 
-- تعرض `production` السرين `CPANEL_SSH_PRIVATE_KEY` و`BACKUP_ENCRYPTION_PASSPHRASE`، وتعرض صفحة Repository secrets الحالة `This repository has no secrets` بعد حذف نسختيهما والسر المؤقت.
+- تعرض `production` الأسرار الثلاثة `CPANEL_SSH_PRIVATE_KEY` و`BACKUP_ENCRYPTION_PASSPHRASE` و`METRICS_BEARER_TOKEN`، وتعرض صفحة Repository secrets الحالة `This repository has no secrets` بعد حذف النسخ الأوسع والسر المؤقت.
 - تعرض صفحة Fine-grained personal access tokens الحالة `No fine-grained tokens created` بعد إلغاء اعتماد النقل؛ ولا يوجد Workflow نقل في الفرع الافتراضي.
 - بيئة `production` لا توفر Required Reviewers في واجهة الخطة الحالية، فلا يوجد ضابط موافقة مستقل يعوض غياب حماية الفرع.
 
@@ -77,14 +80,17 @@
 
 ### P1-2 — تفعيل القياسات والمراقبة
 
-المشاهدة: يعيد `/metrics` واجهة SPA بدل `401`؛ وهذا يثبت أن مسار Prometheus غير مفعّل في التطبيق الحالي. نقاط الحياة والجاهزية متاحة، لكن قياسات deadlock وdeadline وOutbox غير قابلة للكشط.
+الحالة: **مغلق ومثبت إنتاجيًا في التشغيل 93 وتشغيلي المراقبة 1 و2**. كانت المشاهدة الأصلية أن `/metrics` يعيد واجهة SPA بدل `401`؛ أما الإصدار الحالي فيفعّل المسار برمز مستقل ويكشطه من مراقب خارجي.
 
-الإغلاق المطلوب:
+الإجراء المطبق:
 
-- تفعيل `METRICS_ENABLED` مع `METRICS_BEARER_TOKEN` مستقل، وتقييد الوصول من cPanel/Apache إن أمكن.
-- ربط تنبيهات deadlock وretry exhaustion وrequest deadline وOutbox lag/dead letter بالمسؤول التشغيلي.
+- تحفظ بيئة `production` رمزًا عشوائيًا مستقلًا باسم `METRICS_BEARER_TOKEN`. يمرره النشر عبر `stdin` وملف مؤقت `0600`، ويدمج `METRICS_ENABLED=true` والرمز في لقطة CloudLinux الهدف دون Artifact أو سجل ثم يحذف الملف في جميع حالات الخروج.
+- يعيد المسار دون رمز `401` مع Bearer challenge ومنع التخزين المؤقت، ويستخدم مقارنة ثابتة الزمن. يثبت النشر الكشط الموثق ويُفشل التفعيل عند وجود تنبيه نشط.
+- يضيف المقياس `mcap_operational_alert_last_fired_timestamp_seconds` ذاكرة منخفضة الكاردينالية للتنبيهات القصيرة، ويكشط Workflow خارجي كل ساعة التنبيهات النشطة أو المطلقة خلال 65 دقيقة.
+- ترتبط قواعد deadlock وretry exhaustion وrequest deadline وOutbox lag/dead letter بـGitHub Actions annotations. أثبت الاختبار التركيبي ظهور التنبيه للمسؤول بعد كَشط إنتاجي ناجح، من دون حقن عطل في قاعدة البيانات.
+- لم يضف Apache قيد IP لأن مصدر GitHub Actions لا يملك عنوان كاشط ثابتًا معتمدًا في هذا التصميم؛ الضابط الحالي TLS + Bearer مستقل، وتبقى إضافة Allowlist ممكنة عند اعتماد كاشط ثابت.
 
-معيار القبول: يعيد `/metrics` دون رمز `401`، وينجح الكشط بالرمز من مصدر المراقبة فقط، ويصل تنبيه اختباري موثق.
+معيار القبول: **متحقق**؛ يعيد `/metrics` دون رمز `401`، وينجح الكشط بالرمز من مصدر المراقبة، ووصل تنبيه اختباري موثق ثم نجح تشغيل عادي.
 
 ## حدود التدقيق
 
@@ -96,5 +102,4 @@
 
 1. تفعيل إنفاذ حماية `main` عبر GitHub Pro أو مؤسسة Team/Enterprise ثم إعادة تدقيق P0-2؛ اكتملت دورة أسرار البيئة وحذف النسخ الأوسع والاعتماد المؤقت.
 2. فصل مستخدم DDL أو توثيق قبول المخاطرة.
-3. تفعيل القياسات والتنبيهات.
-4. بعد نجاح البنود السابقة، إعادة هذا التدقيق وإصدار اعتماد **GO** نهائي للبيئة.
+3. بعد نجاح البنود السابقة، إعادة هذا التدقيق وإصدار اعتماد **GO** نهائي للبيئة.
