@@ -22,10 +22,10 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 160, requestBodies: 82, responseBodies: 1117 });
-    expect(guardedOpenApiOperations).toHaveLength(82);
+    expect(openApiContractCoverage).toEqual({ operations: 170, requestBodies: 88, responseBodies: 1185 });
+    expect(guardedOpenApiOperations).toHaveLength(88);
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
-      'login', 'createUser', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'previewDataImport', 'commitDataImport',
+      'login', 'createUser', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'previewDataImport', 'commitDataImport',
     ]));
   });
 
@@ -36,6 +36,20 @@ describe('generated OpenAPI request guards', () => {
     expect(openApiRequestBodySchemas.createWarehouse.safeParse({ code: 'MANUAL', nameAr: 'مستودع' }).success).toBe(false);
     expect(openApiRequestBodySchemas.updateWarehouse.safeParse({ nameAr: 'مستودع' }).success).toBe(false);
     expect(openApiRequestBodySchemas.deactivateWarehouse.safeParse({ version: 0, reason: 'لا' }).success).toBe(false);
+  });
+
+  it('enforces semantic unit codes and server-owned inventory item codes', () => {
+    expect(openApiRequestBodySchemas.createUnitOfMeasure.parse({
+      code: ' ea ', nameAr: '  حبة  ', decimalPlaces: 0,
+    })).toEqual({ code: 'ea', nameAr: 'حبة', decimalPlaces: 0 });
+    expect(openApiRequestBodySchemas.createUnitOfMeasure.safeParse({ code: '1EA', nameAr: 'حبة', decimalPlaces: 0 }).success).toBe(false);
+    expect(openApiRequestBodySchemas.updateUnitOfMeasure.safeParse({ version: 0, code: 'KG' }).success).toBe(false);
+    expect(openApiRequestBodySchemas.createInventoryItem.parse({
+      unitOfMeasureId: '12', nameAr: '  قلم  ', description: null,
+    })).toEqual({ unitOfMeasureId: 12n, nameAr: 'قلم', description: null });
+    expect(openApiRequestBodySchemas.createInventoryItem.safeParse({
+      code: 'MANUAL', unitOfMeasureId: '12', nameAr: 'قلم',
+    }).success).toBe(false);
   });
 
   it('enforces the password-reset boundary from OpenAPI', () => {

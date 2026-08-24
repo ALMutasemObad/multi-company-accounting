@@ -1,7 +1,7 @@
 ---
 title: "Master Data Code Policy"
 status: "mandatory"
-version: "1.2"
+version: "1.3"
 last_updated: "2026-08-24"
 related:
   - "ARCHITECTURE_GUARDRAILS_AR.md"
@@ -24,6 +24,7 @@ related:
 | مركز التكلفة | الشركة + نوع الكيان | `CC-` | `CC-000001` | Core Accounting |
 | حساب الصندوق/البنك | الشركة + نوع الكيان | `CB-` | `CB-000001` | Treasury |
 | المستودع | الشركة + نوع الكيان | `WH-` | `WH-000001` | Inventory |
+| صنف المخزون | الشركة + نوع الكيان | `ITM-` | `ITM-000001` | Inventory |
 | طريقة الدفع الخاصة بالشركة | الشركة + نوع الكيان، مع تفرد عمومي للحقل | `PM-{companyId}-` | `PM-42-000001` | Treasury |
 | معدل الضريبة | الشركة + نوع الكيان | `TAX-` | `TAX-000001` | Tax Configuration |
 | الدور المخصص | الشركة + نوع الكيان | `ROL-` | `ROL-000001` | Identity & Access |
@@ -42,6 +43,7 @@ related:
 |---|---|---|
 | رمز الحساب في دليل الحسابات | يدوي ودلالي | يعبّر عن بنية الدليل ومستوى الحساب وسياسة المنشأة، وتغيير معناه قرار محاسبي |
 | رمز العملة | يدوي وفق ISO 4217 أو نطاق عملة الشركة | الرمز معيار تبادل ودلالة أعمال، وليس رقمًا مرجعيًا داخليًا |
+| رمز وحدة القياس | يدوي ودلالي، ثابت بعد الإنشاء | يعبّر عن معيار الكمية مثل `EA` أو `KG` ويظهر في التبادل والمستندات، وليس رقمًا داخليًا متسلسلاً |
 | رمز Permission والدور النظامي | ثابت يملكه Seed/Migration | عقد تفويض برمجي تعتمد عليه RBAC، وليس قيمة يختارها المستخدم |
 | رمز نوع الحساب والقالب | ثابت يملكه Seed/Migration | مفتاح دلالي للقواعد والقوالب |
 | رمز المؤسسة/الشركة | UUID للتسجيل أو قيمة تجهيز صريحة | معرّف تكامل وتجهيز طويل العمر يحتاج سياسة مستقلة، وليس تسلسل شاشة مرجعية |
@@ -59,7 +61,7 @@ related:
 ## 4. التوافق والترحيل
 
 - الرموز الموجودة قبل اعتماد السياسة تبقى كما هي؛ لا يعاد ترقيمها ولا تغيير المراجع المطبوعة أو التاريخية.
-- يهيئ الترحيل `20260822150000_auto_master_data_codes` تسلسلي العميل والمورد، ويوسع `20260822210000_expand_auto_codes_and_password_reset` الأنواع الأخرى، ويضيف `20260824170000_inventory_warehouse_foundation` تسلسل المستودع. حساب أكبر لاحقة رقمية مسموح داخل ترحيل النشر الأحادي فقط لإجراء الـbackfill، وليس خوارزمية حجز وقت التشغيل.
+- يهيئ الترحيل `20260822150000_auto_master_data_codes` تسلسلي العميل والمورد، ويوسع `20260822210000_expand_auto_codes_and_password_reset` الأنواع الأخرى، ويضيف `20260824170000_inventory_warehouse_foundation` تسلسل المستودع، ثم يضيف `20260824200000_inventory_item_catalog` تسلسل الصنف. حساب أكبر لاحقة رقمية مسموح داخل ترحيل النشر الأحادي فقط لإجراء الـbackfill، وليس خوارزمية حجز وقت التشغيل.
 - اختلاف الشكل القديم عن الصيغة الجديدة مقبول. يمنع إجراء إعادة تنسيق جماعية بلا خطة انتقال وموافقة أعمال مستقلة.
 - تغيير البادئة أو عدد الخانات لا يغير الرموز السابقة، ويحتاج Migration وعقد API وتوثيقًا واختبارات توافق.
 
@@ -72,7 +74,7 @@ related:
 | الحجز الذري | `apps/api/src/platform/master-data-code-service.ts` |
 | العملاء | `apps/api/src/receipts/reference-service.ts` و`reference-router.ts` |
 | الخزينة وطرق الدفع | `apps/api/src/treasury/treasury-service.ts` و`treasury-router.ts` |
-| المستودعات | `apps/api/src/inventory/inventory-service.ts` و`inventory-router.ts` |
+| المستودعات والكتالوج | `apps/api/src/inventory/inventory-service.ts` و`inventory-catalog-service.ts` مع موجهيهما |
 | الموردون | `apps/api/src/suppliers/supplier-service.ts` و`supplier-router.ts` |
 | الحسابات ومراكز التكلفة | `apps/api/src/accounts/account-service.ts` و`account-router.ts` |
 | الضرائب | `apps/api/src/tax/tax-service.ts` و`tax-router.ts` |

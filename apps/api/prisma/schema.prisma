@@ -214,6 +214,8 @@ model Company {
   customerAddresses                CustomerAddress[]
   cashBankAccounts                 CashBankAccount[]
   warehouses                       Warehouse[]
+  unitsOfMeasure                   UnitOfMeasure[]
+  inventoryItems                   InventoryItem[]
   paymentMethods                   PaymentMethod[]
   receipts                         Receipt[]
   receiptAllocations               ReceiptAllocation[]
@@ -881,6 +883,48 @@ model Warehouse {
   @@unique([id, companyId])
   @@index([companyId, isActive, nameAr])
   @@map("warehouses")
+}
+
+model UnitOfMeasure {
+  id             BigInt          @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId      BigInt          @map("company_id") @db.UnsignedBigInt
+  code           String          @db.VarChar(20)
+  nameAr         String          @map("name_ar") @db.VarChar(120)
+  nameEn         String?         @map("name_en") @db.VarChar(120)
+  decimalPlaces  Int             @default(0) @map("decimal_places") @db.UnsignedTinyInt
+  isActive       Boolean         @default(true) @map("is_active")
+  version        Int             @default(0) @db.UnsignedInt
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+  company        Company         @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  inventoryItems InventoryItem[]
+
+  @@unique([companyId, code])
+  @@unique([id, companyId])
+  @@index([companyId, isActive, nameAr])
+  @@map("units_of_measure")
+}
+
+model InventoryItem {
+  id                BigInt        @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId         BigInt        @map("company_id") @db.UnsignedBigInt
+  unitOfMeasureId   BigInt        @map("unit_of_measure_id") @db.UnsignedBigInt
+  code              String        @db.VarChar(40)
+  nameAr            String        @map("name_ar") @db.VarChar(200)
+  nameEn            String?       @map("name_en") @db.VarChar(200)
+  description       String?       @db.VarChar(500)
+  isActive          Boolean       @default(true) @map("is_active")
+  version           Int           @default(0) @db.UnsignedInt
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+  company           Company       @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  unitOfMeasure     UnitOfMeasure @relation(fields: [unitOfMeasureId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([companyId, code])
+  @@unique([id, companyId])
+  @@index([companyId, unitOfMeasureId, isActive])
+  @@index([companyId, isActive, nameAr])
+  @@map("inventory_items")
 }
 
 model PaymentMethod {

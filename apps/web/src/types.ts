@@ -111,6 +111,27 @@ export type Warehouse = {
   version: number;
 };
 
+export type UnitOfMeasure = {
+  id: string;
+  code: string;
+  nameAr: string;
+  nameEn: string | null;
+  decimalPlaces: number;
+  isActive: boolean;
+  version: number;
+};
+
+export type InventoryItem = {
+  id: string;
+  code: string;
+  nameAr: string;
+  nameEn: string | null;
+  description: string | null;
+  isActive: boolean;
+  version: number;
+  unitOfMeasure: UnitOfMeasure;
+};
+
 export type PaymentMethod = {
   id: string;
   code: string;
