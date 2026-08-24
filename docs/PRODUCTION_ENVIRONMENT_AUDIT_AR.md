@@ -6,7 +6,7 @@
 
 ## الحكم التنفيذي
 
-- الحالة التشغيلية: **GO**؛ الإصدار `0.1.0-14ffa4a37d49` نشط، والنطاق وAPI وقاعدة البيانات جاهزة.
+- الحالة التشغيلية: **GO**؛ أثبت التشغيل النهائي رقم 87 بعد حذف أسرار Repository أن النطاق وAPI وقاعدة البيانات ومسار النشر بأسرار `production` فقط جاهزة.
 - اعتماد حوكمة البيئة: **NO-GO مؤقتًا** حتى إغلاق P0-2 أدناه، ثم حسم بندي P1 أو قبول مخاطرهما صراحةً. أُغلق P0-1 تقنيًا في مسار النشر، ويثبت تشغيل الإصدار نفسه القبول على النطاق العام.
 
 ## الأدلة الإيجابية
@@ -18,6 +18,7 @@
 - أثبت تشغيل GitHub Actions رقم [78](https://github.com/ALMutasemObad/multi-company-accounting/actions/runs/32711130785) نجاح حارس منشأ PR قبل قراءة الأسرار ونشر الالتزام `114a22d`، وأثبت التشغيل رقم [81](https://github.com/ALMutasemObad/multi-company-accounting/actions/runs/32713855741) نجاح المسار نفسه بعد دمج أداة النقل المؤقتة.
 - نسخ تشغيل النقل اليدوي رقم [1](https://github.com/ALMutasemObad/multi-company-accounting/actions/runs/32714717494) السرّين إلى بيئة `production` عبر `stdin` دون طباعة القيم، ثم تحقق من وجود سجليهما؛ وأكدت صفحة البيئة وجودهما مستقلًا.
 - أثبت تشغيل القبول رقم [84](https://github.com/ALMutasemObad/multi-company-accounting/actions/runs/32715589926) استخدام سري Environment ذوي الأولوية: نجح إعداد مفتاح SSH والرفع، ثم النسخ الاحتياطي المشفر والترحيل والتفعيل وفحص النطاق العام. بصمة Artifact هي `sha256:bc1796f28c63efeeafee80b3c1b145876708306120bc5a60c051126cb7198e92` للالتزام `14ffa4a`.
+- أثبت تشغيل ما بعد الحذف رقم [87](https://github.com/ALMutasemObad/multi-company-accounting/actions/runs/32717170493) عدم وجود fallback أوسع: بدأ بعد أن أصبحت Repository secrets فارغة وأُلغي PAT، ونجحت كل خطوات SSH والنسخ الاحتياطي المشفر والتفعيل وفحص النطاق للالتزام `bd83b9d`. بصمة Artifact هي `sha256:04be7b88733f71ae1861d91ed4726e82adc382b9822a9553505c2e0e9cd398c7`.
 - أنشأ النشر نسخة مشفرة قبل الترحيل داخل `/home/doralash/backups/mcap`، وثبّت Artifact ذي بصمة SHA-256 موثقة، ثم تحقق من الإصدار النشط والواجهة العامة.
 - إعدادات الإنتاج الحرجة فعالة لأن التطبيق اجتاز fail-fast ويعمل: `WEB_ORIGIN` الآمن و`SESSION_COOKIE_SECURE` و`TRUST_PROXY`. كوكي PRE_AUTH المرصودة تحمل `HttpOnly; Secure; SameSite=Lax`.
 - الاستجابات تتضمن HSTS وCSP و`X-Frame-Options: SAMEORIGIN` و`X-Content-Type-Options: nosniff` وCORS محصورًا في نطاق الإنتاج.
@@ -59,7 +60,6 @@
 الإغلاق المطلوب:
 
 - ترقية الحساب الشخصي إلى GitHub Pro، أو نقل المستودع الخاص إلى Organization بخطة Team/Enterprise، ثم إعادة التحقق من تحول القاعدة إلى `Active`/منفذة فعلًا.
-- يشترط اعتماد سجل الحذف نجاح تشغيل `main` الناتج عن دمج هذا التوثيق بعد خلو Repository secrets؛ يثبت ذلك عدم وجود fallback أوسع مع بقاء النشر سليمًا.
 
 معيار القبول: لا تستطيع أي وظيفة خارج `deploy-production` ولا أي فرع غير `main` الوصول إلى أسرار الإنتاج، ولا يصل تغيير إلى `main` دون البوابات المعتمدة.
 
