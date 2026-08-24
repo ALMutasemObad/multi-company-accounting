@@ -40,10 +40,10 @@ test("grant parsing includes only global and selected-schema privileges", () => 
   assert.deepEqual([...privileges].sort(), ["DELETE", "INSERT", "SELECT", "UPDATE", "USAGE"]);
 });
 
-test("grant parsing accepts escaped wildcard characters emitted by cPanel MariaDB", () => {
+test("grant parsing accepts escaped wildcard characters emitted by cPanel MariaDB in batch mode", () => {
   const privileges = collectApplicablePrivileges([
     "GRANT USAGE ON *.* TO `runtime`@`%`",
-    "GRANT SELECT, INSERT, UPDATE, DELETE ON `mcap\\_finance`.* TO `runtime`@`%`",
+    "GRANT SELECT, INSERT, UPDATE, DELETE ON `mcap\\\\_finance`.* TO `runtime`@`%`",
   ], "mcap_finance");
 
   assert.deepEqual([...privileges].sort(), ["DELETE", "INSERT", "SELECT", "UPDATE", "USAGE"]);
