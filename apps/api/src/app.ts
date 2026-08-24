@@ -124,6 +124,7 @@ export function createApp(config: AppConfig, services: { readiness?: ReadinessCh
 
   if (config.METRICS_ENABLED) {
     app.get('/metrics', (request, response) => {
+      response.setHeader('Cache-Control', 'no-store');
       const expected = config.METRICS_BEARER_TOKEN;
       const supplied = request.header('Authorization')?.match(/^Bearer (.+)$/u)?.[1];
       const authorized = expected

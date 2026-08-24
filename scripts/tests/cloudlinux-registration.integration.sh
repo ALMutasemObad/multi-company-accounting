@@ -20,14 +20,17 @@ passenger_config="$home_root/site/.htaccess"
 fake_bin="$test_root/bin"
 state_root="$test_root/active-root"
 state_environment="$test_root/environment.json"
+metrics_token_file="$test_root/metrics-token"
 mkdir -p -- "$source_release/apps/api/dist" "$target_release/apps/api/dist" \
   "$(dirname -- "$passenger_config")" "$fake_bin"
 touch -- "$source_release/apps/api/dist/server.js" "$target_release/apps/api/dist/server.js"
 printf 'PassengerAppRoot "%s"\n' "$source_release" > "$passenger_config"
 chmod 0644 -- "$passenger_config"
 printf '%s\n' 'apps/releases/source' > "$state_root"
-printf '%s\n' '{"DATABASE_URL":"mysql://fixture","WEB_ORIGIN":"https://example.test","SESSION_COOKIE_SECURE":"true","TRUST_PROXY":"true"}' \
+printf '%s\n' '{"DATABASE_URL":"mysql://fixture","WEB_ORIGIN":"https://example.test","SESSION_COOKIE_SECURE":"true","TRUST_PROXY":"true","METRICS_ENABLED":"false"}' \
   > "$state_environment"
+printf '%s' 'fixture-metrics-token-12345678901234567890' > "$metrics_token_file"
+chmod 0600 -- "$metrics_token_file"
 
 cat > "$fake_bin/cloudlinux-selector" <<'FAKE_SELECTOR'
 #!/usr/bin/env bash
@@ -118,11 +121,17 @@ run_switch() {
   MCAP_CLOUDLINUX_PASSENGER_LOG_FILE="$home_root/logs/passenger.log" \
   MCAP_CLOUDLINUX_BACKUP_DIRECTORY="$backup_directory" \
   MCAP_PASSENGER_CONFIG_FILE="$passenger_config" \
+  MCAP_METRICS_TOKEN_FILE="${3:-}" \
     bash deploy/scripts/switch-cloudlinux-registration.sh "$1" "$2"
 }
 
-run_switch "$source_release" "$target_release"
+run_switch "$source_release" "$target_release" "$metrics_token_file"
 [[ "$(<"$state_root")" == apps/releases/target ]]
+"$FAKE_NODE_BIN" -e '
+  const fs = require("node:fs");
+  const environment = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+  if (environment.METRICS_ENABLED !== "true" || environment.METRICS_BEARER_TOKEN !== "fixture-metrics-token-12345678901234567890") process.exit(1);
+' "$state_environment"
 [[ "$(stat -c '%a' -- "$passenger_config")" == 644 ]]
 [[ -n "$(find "$backup_directory" -maxdepth 1 -type f -name 'selector-before-target-*.json' -print -quit)" ]]
 [[ "$(grep -Fc '# BEGIN MCAP HTTPS REDIRECT' "$passenger_config")" == 1 ]]
@@ -134,6 +143,7 @@ if grep -Fq '%{HTTP_HOST}' "$passenger_config"; then
   exit 1
 fi
 
+rm -f -- "$metrics_token_file"
 run_switch "$target_release" "$source_release"
 [[ "$(<"$state_root")" == apps/releases/source ]]
 [[ "$(stat -c '%a' -- "$passenger_config")" == 644 ]]

@@ -37,6 +37,19 @@ expected_sha=$(awk 'NR == 1 { print $1 }' "$checksum_file")
 
 IFS= read -r backup_passphrase || fail "encrypted backup passphrase is required on standard input"
 [[ ${#backup_passphrase} -ge 32 ]] || fail "encrypted backup passphrase must contain at least 32 characters"
+IFS= read -r metrics_bearer_token || fail "metrics bearer token is required on standard input"
+[[ ${#metrics_bearer_token} -ge 32 && ${#metrics_bearer_token} -le 500 ]] \
+  || fail "metrics bearer token must contain between 32 and 500 characters"
+
+metrics_token_file=$(mktemp /tmp/mcap-metrics-token.XXXXXX)
+cleanup() {
+  local status=$?
+  rm -f -- "$metrics_token_file"
+  exit "$status"
+}
+trap cleanup EXIT
+printf '%s' "$metrics_bearer_token" > "$metrics_token_file"
+unset metrics_bearer_token
 
 database_url=$(awk '
   $1 == "SetEnv" && $2 == "DATABASE_URL" {
@@ -87,6 +100,7 @@ MCAP_HEALTH_URL="${MCAP_HEALTH_URL:-}" \
 MCAP_APP_URL="${MCAP_APP_URL:-}" \
 MCAP_PASSENGER_CONFIG_FILE="$passenger_config_file" \
 MCAP_CLOUDLINUX_SWITCHER="$cloudlinux_switcher" \
+MCAP_METRICS_TOKEN_FILE="$metrics_token_file" \
 MCAP_DEPLOY_CONFIRM="DEPLOY:$release_id" \
 MCAP_RUN_DATABASE_MIGRATIONS=true \
   bash "$script_directory/install-cpanel-release.sh" "$archive" "$expected_sha"

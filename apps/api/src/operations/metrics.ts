@@ -208,6 +208,7 @@ export class OperationalMetrics implements OperationalMetricsSink {
   private readonly outboxEvents = this.registry.gauge('mcap_outbox_events', 'Current outbox event counts by non-terminal status.', ['status']);
   private readonly outboxOldestLag = this.registry.gauge('mcap_outbox_oldest_lag_seconds', 'Age of the oldest pending or processing outbox event.');
   private readonly activeAlerts = this.registry.gauge('mcap_operational_alert_active', 'Whether a built-in operational alert rule is currently active.', ['alert']);
+  private readonly alertLastFired = this.registry.gauge('mcap_operational_alert_last_fired_timestamp_seconds', 'Unix timestamp of the latest built-in operational alert firing.', ['alert']);
 
   constructor(configuration: Partial<AlertConfiguration> = {}, dependencies: { now?: () => number } = {}) {
     this.configuration = { ...defaultAlertConfiguration, ...configuration };
@@ -336,6 +337,7 @@ export class OperationalMetrics implements OperationalMetricsSink {
     const cooldownExpired = active && previous !== undefined && now - previous.lastLoggedAt >= this.configuration.cooldownMs;
     if (transitioned || cooldownExpired) {
       if (active) {
+        this.alertLastFired.set({ alert: rule }, now / 1_000);
         logEvent('error', 'operational_alert_firing', { alert: rule, value, threshold, windowMs: this.configuration.windowMs });
       } else if (previous?.active) {
         logEvent('info', 'operational_alert_resolved', { alert: rule, value, threshold, windowMs: this.configuration.windowMs });
