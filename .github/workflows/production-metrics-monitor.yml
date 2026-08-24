@@ -1,0 +1,75 @@
+name: production-metrics-monitor
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      test_alert:
+        description: Emit a synthetic monitoring alert after a successful scrape
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-metrics-monitor
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    name: Scrape production metrics and surface alerts
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    environment:
+      name: production
+      url: https://accounting.doralashab.com
+    env:
+      APP_URL: https://accounting.doralashab.com
+      METRICS_BEARER_TOKEN: ${{ secrets.METRICS_BEARER_TOKEN }}
+      TEST_ALERT: ${{ github.event_name == 'workflow_dispatch' && inputs.test_alert || false }}
+    steps:
+      - name: Verify protected metrics and operational alerts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "${#METRICS_BEARER_TOKEN}" -ge 32
+          test "${#METRICS_BEARER_TOKEN}" -le 500
+          unauthenticated_status=$(curl --silent --show-error --max-time 10 \
+            --proto '=https' --output /dev/null --write-out '%{http_code}' \
+            "$APP_URL/metrics")
+          test "$unauthenticated_status" = 401
+
+          metrics_output=$(mktemp)
+          trap 'rm -f -- "$metrics_output"' EXIT
+          curl --fail --silent --show-error --max-time 10 --proto '=https' \
+            --header "Authorization: Bearer $METRICS_BEARER_TOKEN" \
+            --output "$metrics_output" "$APP_URL/metrics"
+          grep --fixed-strings '# TYPE mcap_operational_alert_active gauge' "$metrics_output"
+          grep --fixed-strings '# TYPE mcap_operational_alert_last_fired_timestamp_seconds gauge' "$metrics_output"
+
+          node - "$metrics_output" <<'NODE'
+          const fs = require('node:fs');
+          const input = fs.readFileSync(process.argv[2], 'utf8');
+          const recentCutoffSeconds = Math.floor(Date.now() / 1_000) - 3_900;
+          const alerts = new Set();
+          for (const line of input.split('\n')) {
+            const active = line.match(/^mcap_operational_alert_active\{alert="([A-Z0-9_]+)"\} 1$/u);
+            if (active) alerts.add(active[1]);
+            const lastFired = line.match(/^mcap_operational_alert_last_fired_timestamp_seconds\{alert="([A-Z0-9_]+)"\} ([0-9]+(?:\.[0-9]+)?)$/u);
+            if (lastFired && Number(lastFired[2]) >= recentCutoffSeconds) alerts.add(lastFired[1]);
+          }
+          if (alerts.size) {
+            for (const alert of [...alerts].sort()) {
+              console.error(`::error title=Production operational alert::${alert}`);
+            }
+            process.exit(1);
+          }
+          NODE
+
+          if [[ "$TEST_ALERT" == true ]]; then
+            printf '::error title=Production monitoring test alert::Synthetic delivery test after a successful authenticated scrape\n'
+            exit 1
+          fi

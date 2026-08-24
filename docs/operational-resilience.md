@@ -94,6 +94,7 @@ unset MCAP_METRICS_TOKEN
 - `mcap_outbox_events` و`mcap_outbox_oldest_lag_seconds` و`mcap_outbox_delivery_lag_seconds`.
 - `mcap_outbox_retry_total` و`mcap_outbox_dead_letter_total`.
 - `mcap_operational_alert_active{alert="..."}` لحالة قواعد التنبيه المدمجة.
+- `mcap_operational_alert_last_fired_timestamp_seconds{alert="..."}` يحفظ آخر وقت إطلاق لكل قاعدة حتى لا يفوت الكاشط الخارجي تنبيهًا قصيرًا انتهى قبل الكشط التالي.
 
 ## قواعد التنبيه القابلة للضبط
 
@@ -109,6 +110,12 @@ unset MCAP_METRICS_TOKEN
 | `ALERT_COOLDOWN_MS` | 300000 | مدة إعادة إصدار Log لتنبيه مستمر |
 
 تُصدر الانتقالات Logs باسم `operational_alert_firing` و`operational_alert_resolved` دون بيانات حساسة. ويجب على منصة المراقبة أيضًا التنبيه على Gauge؛ السجل المدمج ليس بديلًا عن Prometheus/Alertmanager أو المنصة المعتمدة.
+
+### مراقب الإنتاج في GitHub Actions
+
+يشغّل `.github/workflows/production-metrics-monitor.yml` كشطًا خارجيًا كل ساعة من بيئة `production`. يتحقق أولًا من أن الطلب دون رمز يعيد `401`، ثم يستخدم `METRICS_BEARER_TOKEN` من أسرار البيئة ويصدر فشلًا وGitHub annotation عند وجود تنبيه نشط أو إطلاق حدث خلال آخر 65 دقيقة. لا يُطبع الرمز ولا يُحفظ في Artifact، وتبقى المراقبة خارج عملية Passenger نفسها.
+
+يتيح `workflow_dispatch` إدخال `test_alert=true`. بعد نجاح الكشط الفعلي يصدر هذا الخيار تنبيهًا تركيبيًا متعمدًا ويفشل التشغيل، لإثبات وصول قناة التنبيه دون حقن خطأ في قاعدة الإنتاج. شغّل الاختبار مرة عند التفعيل، ووثّق رابط التشغيل الفاشل المقصود، ثم شغّل مراقبة يدوية عادية ناجحة. إذا توقفت GitHub Actions بسبب الحصة أو عطل المنصة، تعامل مع غياب التشغيل الدوري كعطل مراقبة ولا تعتبر سجلات Passenger بديلًا دائمًا.
 
 ## الاستجابة للحوادث
 

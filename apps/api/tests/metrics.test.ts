@@ -27,7 +27,7 @@ describe('operational metrics and alert rules', () => {
       requestDeadlineCountThreshold: 1,
       outboxLagMsThreshold: 1_000,
       outboxDeadLetterCountThreshold: 1,
-    });
+    }, { now: () => 1_700_000_000_000 });
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     metrics.recordTransactionAttempt('POST_SALES_INVOICE');
@@ -46,8 +46,13 @@ describe('operational metrics and alert rules', () => {
     expect(output).toContain('mcap_outbox_events{status="FAILED"} 1');
     expect(output).toContain('mcap_operational_alert_active{alert="DB_DEADLOCK_RATIO_HIGH"} 1');
     expect(output).toContain('mcap_operational_alert_active{alert="OUTBOX_LAG_HIGH"} 1');
+    expect(output).toContain('mcap_operational_alert_last_fired_timestamp_seconds{alert="DB_DEADLOCK_RATIO_HIGH"} 1700000000');
+    expect(output).toContain('mcap_operational_alert_last_fired_timestamp_seconds{alert="OUTBOX_DEAD_LETTER_PRESENT"} 1700000000');
     expect(output).not.toContain('companyId');
     expect(output).not.toContain('requestId');
+    expect(consoleError.mock.calls.flat().join('\n')).toContain('operational_alert_firing');
+    expect(consoleError.mock.calls.flat().join('\n')).toContain('DB_DEADLOCK_RATIO_HIGH');
+    expect(consoleError.mock.calls.flat().join('\n')).toContain('OUTBOX_DEAD_LETTER_PRESENT');
     consoleError.mockRestore();
   });
 

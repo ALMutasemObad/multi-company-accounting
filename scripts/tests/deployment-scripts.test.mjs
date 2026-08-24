@@ -83,6 +83,8 @@ test("cPanel production pipeline backs up before invoking the atomic installer",
   const installerIndex = source.indexOf("install-cpanel-release.sh");
 
   assert.match(source, /IFS= read -r backup_passphrase/u);
+  assert.match(source, /IFS= read -r metrics_bearer_token/u);
+  assert.match(source, /MCAP_METRICS_TOKEN_FILE="\$metrics_token_file"/u);
   assert.match(source, /SetEnv" && \$2 == "DATABASE_URL"/u);
   assert.match(source, /BACKUP_ENCRYPTION_PASSPHRASE="\$backup_passphrase"/u);
   assert.match(source, /MCAP_RUN_DATABASE_MIGRATIONS=true/u);
@@ -104,6 +106,7 @@ test("CI deploys main only after both database gates and uses pinned SSH identit
   assert.match(source, /event\.forced \|\| matches\.length !== 1/u);
   assert.match(source, /secrets\.CPANEL_SSH_PRIVATE_KEY/u);
   assert.match(source, /secrets\.BACKUP_ENCRYPTION_PASSPHRASE/u);
+  assert.match(source, /secrets\.METRICS_BEARER_TOKEN/u);
   assert.match(source, /deploy\/ssh\/ifastnet_known_hosts/u);
   assert.match(source, /switch-cloudlinux-registration\.sh/u);
   assert.match(source, /MCAP_CLOUDLINUX_SELECTOR=\/usr\/sbin\/cloudlinux-selector/u);
@@ -113,6 +116,23 @@ test("CI deploys main only after both database gates and uses pinned SSH identit
   assert.match(source, /mcap_https_redirect_probe/u);
   assert.match(source, /redirect_status/u);
   assert.match(source, /redirect_location/u);
+  assert.match(source, /test "\$metrics_status" = 401/u);
+  assert.match(source, /mcap_operational_alert_active/u);
   assert.ok(provenanceIndex > 0, "production provenance verification must be present");
   assert.ok(sshSecretIndex > provenanceIndex, "PR provenance must be verified before production secrets are read");
+});
+
+test("production metrics monitor protects the scrape and surfaces recent or synthetic alerts", async () => {
+  const source = await readFile(
+    path.join(repositoryRoot, ".github", "workflows", "production-metrics-monitor.yml"),
+    "utf8",
+  );
+
+  assert.match(source, /cron: '17 \* \* \* \*'/u);
+  assert.match(source, /environment:\s+name: production/u);
+  assert.match(source, /secrets\.METRICS_BEARER_TOKEN/u);
+  assert.match(source, /test "\$unauthenticated_status" = 401/u);
+  assert.match(source, /mcap_operational_alert_active/u);
+  assert.match(source, /mcap_operational_alert_last_fired_timestamp_seconds/u);
+  assert.match(source, /Production monitoring test alert/u);
 });

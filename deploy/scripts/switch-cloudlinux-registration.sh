@@ -18,6 +18,7 @@ startup_file=${MCAP_CLOUDLINUX_STARTUP_FILE:-apps/api/dist/server.js}
 passenger_log_file=${MCAP_CLOUDLINUX_PASSENGER_LOG_FILE:-}
 passenger_config_file=${MCAP_PASSENGER_CONFIG_FILE:-}
 backup_directory=${MCAP_CLOUDLINUX_BACKUP_DIRECTORY:-}
+metrics_token_file=${MCAP_METRICS_TOKEN_FILE:-}
 
 [[ "$source_release" == /* && "$target_release" == /* && "$source_release" != "$target_release" ]] \
   || fail "source and target releases must be different explicit absolute paths"
@@ -38,6 +39,10 @@ backup_directory=${MCAP_CLOUDLINUX_BACKUP_DIRECTORY:-}
   || fail "target release is invalid"
 [[ -f "$source_release/$startup_file" && ! -L "$source_release/$startup_file" ]] || fail "source startup file is invalid"
 [[ -f "$target_release/$startup_file" && ! -L "$target_release/$startup_file" ]] || fail "target startup file is invalid"
+if [[ -n "$metrics_token_file" ]]; then
+  [[ "$metrics_token_file" == /* && -f "$metrics_token_file" && ! -L "$metrics_token_file" ]] \
+    || fail "MCAP_METRICS_TOKEN_FILE must be an explicit regular file"
+fi
 
 case "$source_release" in "$cloudlinux_home"/*) ;; *) fail "source release is outside MCAP_CLOUDLINUX_HOME" ;; esac
 case "$target_release" in "$cloudlinux_home"/*) ;; *) fail "target release is outside MCAP_CLOUDLINUX_HOME" ;; esac
@@ -58,6 +63,7 @@ config_mode=$(stat -c '%a' -- "$passenger_config_file")
 timestamp=$(date -u +%Y%m%dT%H%M%SZ)
 state_file=$(mktemp /tmp/mcap-cloudlinux-state.XXXXXX)
 environment_file=$(mktemp /tmp/mcap-cloudlinux-environment.XXXXXX)
+target_environment_file=$(mktemp /tmp/mcap-cloudlinux-target-environment.XXXXXX)
 destroy_result=$(mktemp /tmp/mcap-cloudlinux-destroy.XXXXXX)
 create_result=$(mktemp /tmp/mcap-cloudlinux-create.XXXXXX)
 restart_result=$(mktemp /tmp/mcap-cloudlinux-restart.XXXXXX)
@@ -84,17 +90,23 @@ registered_root() {
 }
 
 validate_registered_environment() {
-  local expected_root=$1
+  local expected_root=$1 expect_metrics=${2:-false}
   "$node_bin" -e '
     const fs = require("node:fs");
     const payload = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-    const [version, user, root, domain, startup] = process.argv.slice(2);
+    const [version, user, root, domain, startup, expectMetrics] = process.argv.slice(2);
     const app = payload.available_versions?.[version]?.users?.[user]?.applications?.[root];
     if (!app || app.domain !== domain || app.startup_file !== startup) process.exit(2);
     for (const key of ["DATABASE_URL", "WEB_ORIGIN", "SESSION_COOKIE_SECURE", "TRUST_PROXY"]) {
       if (!(key in (app.env_vars || {}))) process.exit(3);
     }
-  ' "$state_file" "$cloudlinux_version" "$cloudlinux_user" "$expected_root" "$cloudlinux_domain" "$startup_file"
+    if (expectMetrics === "true") {
+      const token = app.env_vars?.METRICS_BEARER_TOKEN;
+      if (app.env_vars?.METRICS_ENABLED !== "true" || typeof token !== "string" || token.length < 32 || token.length > 500) {
+        process.exit(4);
+      }
+    }
+  ' "$state_file" "$cloudlinux_version" "$cloudlinux_user" "$expected_root" "$cloudlinux_domain" "$startup_file" "$expect_metrics"
 }
 
 write_environment_snapshot() {
@@ -107,6 +119,21 @@ write_environment_snapshot() {
     const environment = { ...app.env_vars };
     fs.writeFileSync(output, JSON.stringify(environment), { mode: 0o600 });
   ' "$state_file" "$environment_file" "$cloudlinux_version" "$cloudlinux_user" "$source_root"
+}
+
+write_target_environment_snapshot() {
+  "$node_bin" -e '
+    const fs = require("node:fs");
+    const [source, destination, tokenPath] = process.argv.slice(1);
+    const environment = JSON.parse(fs.readFileSync(source, "utf8"));
+    const token = tokenPath
+      ? fs.readFileSync(tokenPath, "utf8")
+      : environment.METRICS_BEARER_TOKEN;
+    if (typeof token !== "string" || token.length < 32 || token.length > 500 || /[\r\n]/u.test(token)) process.exit(2);
+    environment.METRICS_ENABLED = "true";
+    environment.METRICS_BEARER_TOKEN = token;
+    fs.writeFileSync(destination, JSON.stringify(environment), { mode: 0o600 });
+  ' "$environment_file" "$target_environment_file" "$metrics_token_file"
 }
 
 summarize_result() {
@@ -139,8 +166,8 @@ destroy_registration() {
 }
 
 create_registration() {
-  local root=$1 result_file=$2 command_exit environment_json
-  environment_json=$(<"$environment_file")
+  local root=$1 result_file=$2 environment_path=${3:-$environment_file} command_exit environment_json
+  environment_json=$(<"$environment_path")
   if "$selector" create --json --interpreter nodejs --domain "$cloudlinux_domain" \
       --app-root "$root" --app-uri '' --version "$cloudlinux_version" --app-mode production \
       --startup-file "$startup_file" --passenger-log-file "$passenger_log_file" \
@@ -237,7 +264,7 @@ cleanup() {
   local status=$1
   set +e
   if [[ "$status" != 0 && "$rollback_required" == true ]]; then restore_source_registration; fi
-  rm -f -- "$state_file" "$environment_file" "$destroy_result" "$create_result" "$restart_result"
+  rm -f -- "$state_file" "$environment_file" "$target_environment_file" "$destroy_result" "$create_result" "$restart_result"
   [[ -z "$https_redirect_temp" ]] || rm -f -- "$https_redirect_temp"
   [[ -z "$config_restore_temp" ]] || rm -f -- "$config_restore_temp"
   exit "$status"
@@ -251,14 +278,15 @@ chmod 0600 -- "$registry_backup"
 cp -p -- "$passenger_config_file" "$config_backup"
 chmod 0600 -- "$config_backup"
 write_environment_snapshot
+write_target_environment_snapshot
 log "validated source registration without revealing environment values"
 
 rollback_required=true
 destroy_registration "$source_root" "$destroy_result"
 [[ -z "$(registered_root)" ]] || fail "source registration still exists after destroy"
-create_registration "$target_root" "$create_result"
+create_registration "$target_root" "$create_result" "$target_environment_file"
 [[ "$(registered_root)" == "$target_root" ]] || fail "target registration was not created"
-validate_registered_environment "$target_root"
+validate_registered_environment "$target_root" true
 restart_registration "$target_root" "$restart_result"
 ensure_https_redirect
 rollback_required=false

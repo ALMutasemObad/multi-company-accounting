@@ -383,10 +383,13 @@ jobs:
       - name: Back up, migrate, and activate production atomically
         env:
           BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
+          METRICS_BEARER_TOKEN: ${{ secrets.METRICS_BEARER_TOKEN }}
         run: |
           test "${#BACKUP_ENCRYPTION_PASSPHRASE}" -ge 32
+          test "${#METRICS_BEARER_TOKEN}" -ge 32
+          test "${#METRICS_BEARER_TOKEN}" -le 500
           remote_dir="$CPANEL_DEPLOY_ROOT/incoming/github-$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          printf '%s\n' "$BACKUP_ENCRYPTION_PASSPHRASE" | \
+          { printf '%s\n' "$BACKUP_ENCRYPTION_PASSPHRASE"; printf '%s\n' "$METRICS_BEARER_TOKEN"; } | \
             ssh -i "$HOME/.ssh/id_ed25519" -p "$CPANEL_SSH_PORT" -o IdentitiesOnly=yes \
               "$CPANEL_SSH_USER@$CPANEL_SSH_HOST" \
               env \
@@ -410,6 +413,8 @@ jobs:
                   "$remote_dir/mcap-finance-linux-x64.tgz" \
                   "$remote_dir/mcap-finance-linux-x64.tgz.sha256"
       - name: Verify the public production endpoints
+        env:
+          METRICS_BEARER_TOKEN: ${{ secrets.METRICS_BEARER_TOKEN }}
         run: |
           http_app_url="http://${CPANEL_APP_URL#https://}"
           redirect_probe_path="/ready?mcap_https_redirect_probe=$GITHUB_RUN_ID"
@@ -425,5 +430,26 @@ jobs:
           test "$redirect_location" = "$CPANEL_APP_URL$redirect_probe_path"
           curl --fail --silent --show-error --max-time 10 "$CPANEL_APP_URL/live"
           curl --fail --silent --show-error --max-time 10 "$CPANEL_APP_URL/ready"
+          metrics_status=$(curl --silent --show-error --max-time 10 --output /dev/null \
+            --write-out '%{http_code}' "$CPANEL_APP_URL/metrics")
+          test "$metrics_status" = 401
+          metrics_output=$(mktemp)
+          trap 'rm -f -- "$redirect_headers" "$metrics_output"' EXIT
+          curl --fail --silent --show-error --max-time 10 \
+            --header "Authorization: Bearer $METRICS_BEARER_TOKEN" \
+            --output "$metrics_output" "$CPANEL_APP_URL/metrics"
+          grep --fixed-strings '# TYPE mcap_operational_alert_active gauge' "$metrics_output"
+          active_alerts=$(awk '
+            /^mcap_operational_alert_active\{alert="[A-Z0-9_]+"\} 1$/ {
+              line=$0; sub(/^.*alert="/, "", line); sub(/"\} 1$/, "", line); print line
+            }
+          ' "$metrics_output")
+          if test -n "$active_alerts"; then
+            while IFS= read -r alert; do
+              printf '::error title=Production operational alert::%s\n' "$alert"
+            done <<< "$active_alerts"
+            exit 1
+          fi
           rm -f -- "$redirect_headers"
+          rm -f -- "$metrics_output"
           trap - EXIT

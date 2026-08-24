@@ -67,6 +67,7 @@ describe('GET /health', () => {
       .set('Authorization', 'Bearer test-metrics-bearer-token-1234567890')
       .expect(200);
     expect(response.headers['content-type']).toContain('text/plain');
+    expect(response.headers['cache-control']).toBe('no-store');
     expect(response.text).toContain('mcap_db_transaction_attempt_total{operation="POST_TEST"} 1');
     expect(response.text).not.toContain('test-metrics-bearer-token');
   });
