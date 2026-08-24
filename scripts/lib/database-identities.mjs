@@ -32,7 +32,12 @@ export class DatabaseIdentityPolicyError extends Error {
   }
 }
 
-const normalizeScope = (value) => value.replaceAll("`", "").trim().toUpperCase();
+const normalizeScope = (value) => value
+  .replaceAll("`", "")
+  .replaceAll("\\_", "_")
+  .replaceAll("\\%", "%")
+  .trim()
+  .toUpperCase();
 
 export const collectApplicablePrivileges = (grantStatements, database) => {
   const targetScope = `${database}.*`.toUpperCase();

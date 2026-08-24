@@ -40,6 +40,15 @@ test("grant parsing includes only global and selected-schema privileges", () => 
   assert.deepEqual([...privileges].sort(), ["DELETE", "INSERT", "SELECT", "UPDATE", "USAGE"]);
 });
 
+test("grant parsing accepts escaped wildcard characters emitted by cPanel MariaDB", () => {
+  const privileges = collectApplicablePrivileges([
+    "GRANT USAGE ON *.* TO `runtime`@`%`",
+    "GRANT SELECT, INSERT, UPDATE, DELETE ON `mcap\\_finance`.* TO `runtime`@`%`",
+  ], "mcap_finance");
+
+  assert.deepEqual([...privileges].sort(), ["DELETE", "INSERT", "SELECT", "UPDATE", "USAGE"]);
+});
+
 test("database identity policy accepts DML-only runtime and DDL-capable migration accounts", () => {
   assert.deepEqual(verify(), {
     status: "verified",
