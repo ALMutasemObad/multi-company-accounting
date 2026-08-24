@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-type Locale = 'ar' | 'en';
+type Locale = 'ar' | 'en' | 'ur' | 'hi';
 
 type Screen = {
   name: string;
@@ -9,7 +9,7 @@ type Screen = {
   kind: 'auth' | 'workspace';
 };
 
-const directions: Record<Locale, 'rtl' | 'ltr'> = { ar: 'rtl', en: 'ltr' };
+const directions: Record<Locale, 'rtl' | 'ltr'> = { ar: 'rtl', en: 'ltr', ur: 'rtl', hi: 'ltr' };
 
 const authScreens: Screen[] = [
   { name: 'login', path: '/?qa=login', ready: '.login-card', kind: 'auth' },
@@ -165,7 +165,7 @@ async function auditCurrentInterface(page: Page, locale: Locale, label: string) 
   expect.soft(await interfaceFailures(page), `${locale}/${label} responsive interface contract`).toEqual([]);
 }
 
-for (const locale of ['ar', 'en'] as const) {
+for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
   test(`${locale}: all 21 screens satisfy the responsive interface contract`, async ({ page }) => {
     const runtimeErrors: string[] = [];
     page.on('pageerror', (error) => runtimeErrors.push(error.message));

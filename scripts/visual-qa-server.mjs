@@ -31,7 +31,7 @@ function responseFor(url, method) {
   if (pathname === "/settings") return { data: [{ key: "accounting.manual_journal_maker_checker_enabled", value: true }] };
   if (pathname === "/auth/register/options") return {
     currencies: [currency, { id: "currency-yer", code: "YER", nameAr: "ريال يمني", nameEn: "Yemeni Rial", decimals: 2 }],
-    locales: ["ar", "en"],
+    locales: ["ar", "en", "ur", "hi"],
     timezones: ["Asia/Riyadh", "Asia/Aden"],
     chartTemplates: [{ code: "STANDARD_TRADING", nameAr: "الدليل التجاري القياسي", nameEn: "Standard trading chart" }],
     passwordPolicy: { minLength: 12, maxLength: 128 },

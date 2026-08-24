@@ -1,5 +1,5 @@
 :root {
-  font-family: "Noto Sans Arabic", Tahoma, Arial, sans-serif;
+  font-family: "Noto Sans Arabic", "Noto Sans Devanagari", Tahoma, Arial, sans-serif;
   color: #17352d;
   background: #f4f5f1;
   font-synthesis: none;
@@ -60,7 +60,7 @@ label > span, fieldset legend {
   font-weight: 600;
 }
 h1, h2, h3, p { margin-top: 0; }
-h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", sans-serif; }
+h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", "Noto Sans Devanagari", sans-serif; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
 .skip-link { position: fixed; z-index: 300; inset-block-start: 10px; inset-inline-start: 10px; transform: translateY(-160%); padding: 10px 14px; border-radius: 10px; background: var(--green-950); color: #fff; font-weight: 700; text-decoration: none; transition: transform .15s ease; }
 .skip-link:focus { transform: translateY(0); }
@@ -76,7 +76,7 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", sans-serif; }
   border-radius: 13px 13px 13px 4px;
   background: linear-gradient(145deg, var(--gold), #efd27d);
   color: var(--green-950);
-  font-family: "Noto Kufi Arabic", sans-serif;
+  font-family: "Noto Kufi Arabic", "Noto Sans Devanagari", sans-serif;
   font-size: 1.35rem;
   font-weight: 700;
   box-shadow: 0 7px 22px rgba(216, 173, 72, .2);
@@ -86,7 +86,7 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", sans-serif; }
   display: block;
   margin-bottom: 8px;
   color: var(--green-700);
-  font-family: "Noto Kufi Arabic", sans-serif;
+  font-family: "Noto Kufi Arabic", "Noto Sans Devanagari", sans-serif;
   font-size: .73rem;
   font-weight: 700;
   letter-spacing: .04em;
@@ -190,7 +190,7 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", sans-serif; }
   box-shadow: 0 0 0 55px rgba(255,255,255,.035), 0 0 0 110px rgba(255,255,255,.02);
   content: "";
 }
-.auth-brand { display: flex; align-items: center; gap: 13px; font-family: "Noto Kufi Arabic", sans-serif; font-weight: 700; }
+.auth-brand { display: flex; align-items: center; gap: 13px; font-family: "Noto Kufi Arabic", "Noto Sans Devanagari", sans-serif; font-weight: 700; }
 .auth-story h1 { max-width: 600px; margin-bottom: 24px; font-size: clamp(2.5rem, 4vw, 5rem); line-height: 1.45; letter-spacing: -.04em; }
 .auth-story p { max-width: 610px; color: #d5e5df; font-size: 1.1rem; line-height: 2; }
 .auth-story > small { position: relative; z-index: 1; color: #aac6bc; }
@@ -250,7 +250,7 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", sans-serif; }
 }
 .company-grid button:hover { border-color: #abc3b9; transform: translateY(-2px); }
 .company-grid button div { display: flex; flex: 1; flex-direction: column; }
-.company-grid button strong { color: var(--ink); font-family: "Noto Kufi Arabic", sans-serif; }
+.company-grid button strong { color: var(--ink); font-family: "Noto Kufi Arabic", "Noto Sans Devanagari", sans-serif; }
 .company-grid button span { color: var(--muted); font-size: .85rem; }
 
 .app-shell { display: flex; min-height: 100vh; background: #f4f5f1; }
@@ -388,7 +388,7 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", sans-serif; }
   background: rgba(255,255,255,.65);
   text-align: center;
 }
-.empty-mark { display: grid; width: 54px; height: 54px; margin-bottom: 16px; place-items: center; border-radius: 18px; background: var(--green-100); color: var(--green-700); font-family: "Noto Kufi Arabic"; font-size: 1.5rem; font-weight: 700; }
+.empty-mark { display: grid; width: 54px; height: 54px; margin-bottom: 16px; place-items: center; border-radius: 18px; background: var(--green-100); color: var(--green-700); font-family: "Noto Kufi Arabic", "Noto Sans Devanagari"; font-size: 1.5rem; font-weight: 700; }
 .empty-state h3 { margin-bottom: 7px; }
 .empty-state p, .error-panel p { max-width: 480px; color: var(--muted); }
 .error-panel { border-color: #ebc6c2; background: #fffafa; }
@@ -577,7 +577,7 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", sans-serif; }
   box-shadow: 0 8px 28px rgba(24,53,45,.05);
 }
 .metric-card > span { grid-column: 1; color: var(--muted); font-size: .79rem; }
-.metric-card > strong { grid-column: 1; margin-top: 11px; overflow: hidden; font-family: "Noto Kufi Arabic"; font-size: clamp(1.15rem, 2vw, 1.75rem); text-overflow: ellipsis; white-space: nowrap; }
+.metric-card > strong { grid-column: 1; margin-top: 11px; overflow: hidden; font-family: "Noto Kufi Arabic", "Noto Sans Devanagari"; font-size: clamp(1.15rem, 2vw, 1.75rem); text-overflow: ellipsis; white-space: nowrap; }
 .metric-card > small { grid-column: 1; color: var(--muted); }
 .metric-icon { grid-column: 2; grid-row: 1 / 4; display: grid; width: 43px; height: 43px; place-items: center; border-radius: 13px; background: var(--green-100); color: var(--green-700); }
 .metric-card.negative .metric-icon { background: var(--danger-soft); color: var(--danger); }
