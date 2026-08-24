@@ -10,6 +10,7 @@ import {
 } from '../outbox/outbox.js';
 import { logEvent } from '../operations/logger.js';
 import type { PasswordResetMailer } from '../registration/registration-mailer.js';
+import { resolveSupportedLocale, type SupportedLocale } from '../registration/supported-locales.js';
 
 const payloadSchema = z.object({}).strict();
 
@@ -17,7 +18,7 @@ type Delivery = {
   requestId: bigint;
   tokenHash: Uint8Array<ArrayBuffer>;
   email: string;
-  locale: 'ar' | 'en';
+  locale: SupportedLocale;
   resetUrl: string;
   expiresAt: Date;
 };
@@ -131,7 +132,7 @@ export class PasswordResetHandler {
       requestId: request.id,
       tokenHash,
       email: request.user.emailNormalized,
-      locale: request.locale === 'en' ? 'en' : 'ar',
+      locale: resolveSupportedLocale(request.locale),
       resetUrl: url.toString(),
       expiresAt,
     };

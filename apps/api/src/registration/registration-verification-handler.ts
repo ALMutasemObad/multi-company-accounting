@@ -11,13 +11,14 @@ import {
 import { logEvent } from '../operations/logger.js';
 import { RegistrationEventRecorder } from './registration-event-recorder.js';
 import type { RegistrationMailer } from './registration-mailer.js';
+import { resolveSupportedLocale, type SupportedLocale } from './supported-locales.js';
 
 const payloadSchema = z.object({ deliveryGeneration: z.number().int().min(1).max(65_535) }).strict();
 
 type DeliveryClaim = {
   requestId: bigint;
   emailNormalized: string;
-  locale: 'ar' | 'en';
+  locale: SupportedLocale;
   deliveryGeneration: number;
   verificationTokenHash: Uint8Array<ArrayBuffer>;
   verificationUrl: string;
@@ -133,7 +134,7 @@ export class RegistrationVerificationHandler {
     return {
       requestId: request.id,
       emailNormalized: request.emailNormalized,
-      locale: request.locale === 'en' ? 'en' : 'ar',
+      locale: resolveSupportedLocale(request.locale),
       deliveryGeneration,
       verificationTokenHash,
       verificationUrl: url.toString(),

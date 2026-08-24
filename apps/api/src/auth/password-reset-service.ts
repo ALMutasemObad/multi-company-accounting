@@ -6,6 +6,7 @@ import {
   type OutboxAppender,
 } from '../outbox/outbox.js';
 import type { ClientMetadata } from './auth-store.js';
+import type { SupportedLocale } from '../registration/supported-locales.js';
 
 export class PasswordResetError extends Error {
   constructor(public readonly reason: 'INVALID_OR_EXPIRED_TOKEN') {
@@ -35,7 +36,7 @@ export class PasswordResetService {
   }
 
   async requestReset(
-    input: { email: string; locale: 'ar' | 'en' },
+    input: { email: string; locale: SupportedLocale },
     metadata: ClientMetadata = {},
   ) {
     const emailNormalized = input.email.trim().toLocaleLowerCase('en-US');

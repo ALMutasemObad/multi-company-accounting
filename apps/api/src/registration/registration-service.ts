@@ -15,6 +15,7 @@ import {
 } from '../platform/transaction-executor.js';
 import { RegistrationEventRecorder, type RegistrationMetadata } from './registration-event-recorder.js';
 import { assertRequestActive, ClientDisconnectedError, sleepWithinRequest } from '../operations/request-context.js';
+import { supportedLocales, type SupportedLocale } from './supported-locales.js';
 
 export type { RegistrationMetadata } from './registration-event-recorder.js';
 
@@ -26,7 +27,7 @@ export type StartRegistrationInput = {
   companyName: string;
   timezone: string;
   baseCurrencyCode: string;
-  locale: 'ar' | 'en';
+  locale: SupportedLocale;
   chartTemplateCode: string;
 };
 
@@ -70,7 +71,7 @@ export class RegistrationService {
     const timezones = [...new Set(['UTC', ...Intl.supportedValuesOf('timeZone')])];
     return {
       currencies,
-      locales: ['ar', 'en'] as const,
+      locales: supportedLocales,
       timezones,
       chartTemplates: [{ code: DEFAULT_CHART_TEMPLATE_CODE, nameAr: 'دليل عام للمنشآت الصغيرة', nameEn: 'Small business general chart' }],
       passwordPolicy: { minLength: 12, maxLength: 1024 },

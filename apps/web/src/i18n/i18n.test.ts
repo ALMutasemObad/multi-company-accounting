@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { createTranslator, dictionaries, localizedReferenceName, resolveLocale, supportedLocales } from "./index";
+import { createTranslator, dictionaries, localeDetails, localizedReferenceName, resolveLocale, supportedLocales } from "./index";
 import { setActiveLocale } from "./core";
 
 afterEach(() => setActiveLocale("ar"));
@@ -8,6 +8,8 @@ describe("translation dictionaries", () => {
   it("keeps every locale aligned to the Arabic source keys", () => {
     expect(supportedLocales).toContain("ar");
     expect(supportedLocales).toContain("en");
+    expect(supportedLocales).toContain("ur");
+    expect(supportedLocales).toContain("hi");
     const sourceKeys = Object.keys(dictionaries.ar).sort();
     for (const locale of supportedLocales) expect(Object.keys(dictionaries[locale]).sort()).toEqual(sourceKeys);
   });
@@ -27,11 +29,20 @@ describe("translation dictionaries", () => {
   it("translates and interpolates values without hiding missing placeholders", () => {
     expect(createTranslator("ar")("settings.pageOf", { page: 2, totalPages: 5 })).toBe("صفحة 2 من 5");
     expect(createTranslator("en")("app.booting", { productName: "Jowar" })).toBe("Preparing Jowar");
+    expect(createTranslator("ur")("language.label")).toBe("زبان");
+    expect(createTranslator("hi")("language.label")).toBe("भाषा");
     expect(createTranslator("en")("app.booting")).toContain("{productName}");
+  });
+
+  it("uses the correct direction and Intl locale for the new languages", () => {
+    expect(localeDetails.ur).toMatchObject({ dir: "rtl", intl: "ur-PK" });
+    expect(localeDetails.hi).toMatchObject({ dir: "ltr", intl: "hi-IN" });
   });
 
   it("preserves Arabic as the safe default for unknown or empty locale values", () => {
     expect(resolveLocale("en")).toBe("en");
+    expect(resolveLocale("ur")).toBe("ur");
+    expect(resolveLocale("hi")).toBe("hi");
     expect(resolveLocale("unknown-locale")).toBe("ar");
     expect(resolveLocale(null)).toBe("ar");
   });

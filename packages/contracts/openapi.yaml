@@ -6863,7 +6863,7 @@ components:
       required: [email, locale]
       properties:
         email: { type: string, format: email, maxLength: 320, x-trim: true }
-        locale: { type: string, enum: [ar, en] }
+        locale: { type: string, enum: [ar, en, ur, hi] }
     PasswordResetCompleteRequest:
       type: object
       additionalProperties: false
@@ -6889,7 +6889,7 @@ components:
         companyName: { type: string, minLength: 1, maxLength: 200, x-trim: true }
         timezone: { type: string, minLength: 1, maxLength: 64, x-trim: true }
         baseCurrencyCode: { type: string, pattern: '^[A-Z]{3}$', x-trim: true }
-        locale: { type: string, enum: [ar, en] }
+        locale: { type: string, enum: [ar, en, ur, hi] }
         chartTemplateCode: { type: string, minLength: 1, maxLength: 80, x-trim: true }
     RegistrationResendRequest:
       type: object
@@ -6940,7 +6940,7 @@ components:
               decimals: { type: integer, minimum: 0, maximum: 6 }
         locales:
           type: array
-          items: { type: string, enum: [ar, en] }
+          items: { type: string, enum: [ar, en, ur, hi] }
         timezones:
           type: array
           items: { type: string }

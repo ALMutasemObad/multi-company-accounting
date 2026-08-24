@@ -55,6 +55,8 @@ describe('generated OpenAPI request guards', () => {
   it('enforces the password-reset boundary from OpenAPI', () => {
     expect(startPasswordResetRequestSchema.parse({ email: ' owner@example.com ', locale: 'ar' }))
       .toEqual({ email: 'owner@example.com', locale: 'ar' });
+    expect(startPasswordResetRequestSchema.safeParse({ email: 'owner@example.com', locale: 'ur' }).success).toBe(true);
+    expect(startPasswordResetRequestSchema.safeParse({ email: 'owner@example.com', locale: 'hi' }).success).toBe(true);
     expect(startPasswordResetRequestSchema.safeParse({ email: 'owner@example.com', locale: 'fr' }).success).toBe(false);
     expect(startPasswordResetRequestSchema.safeParse({ email: 'owner@example.com', locale: 'ar', extra: true }).success).toBe(false);
 
@@ -71,6 +73,8 @@ describe('generated OpenAPI request guards', () => {
       baseCurrencyCode: 'YER', locale: 'ar', chartTemplateCode: 'SMALL_BUSINESS_GENERAL',
     } as const;
     expect(startSelfRegistrationRequestSchema.parse(registration)).toMatchObject({ email: 'owner@example.com', displayName: 'Owner', timezone: 'Asia/Aden' });
+    expect(startSelfRegistrationRequestSchema.safeParse({ ...registration, locale: 'ur' }).success).toBe(true);
+    expect(startSelfRegistrationRequestSchema.safeParse({ ...registration, locale: 'hi' }).success).toBe(true);
     expect(startSelfRegistrationRequestSchema.safeParse({ ...registration, password: 'short' }).success).toBe(false);
     expect(startSelfRegistrationRequestSchema.safeParse({ ...registration, baseCurrencyCode: 'yer' }).success).toBe(false);
     expect(startSelfRegistrationRequestSchema.safeParse({ ...registration, extra: true }).success).toBe(false);

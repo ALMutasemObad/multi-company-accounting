@@ -33,7 +33,7 @@ function fixture(overrides: Partial<RegistrationService> = {}) {
   const validatePreAuth = vi.fn().mockResolvedValue(undefined);
   const auth = { validatePreAuth } as unknown as AuthService;
   const registration = {
-    options: vi.fn().mockResolvedValue({ currencies: [], locales: ['ar', 'en'], timezones: ['Asia/Aden'], chartTemplates: [], passwordPolicy: { minLength: 12, maxLength: 1024 } }),
+    options: vi.fn().mockResolvedValue({ currencies: [], locales: ['ar', 'en', 'ur', 'hi'], timezones: ['Asia/Aden'], chartTemplates: [], passwordPolicy: { minLength: 12, maxLength: 1024 } }),
     start: vi.fn().mockResolvedValue({ status: 'PENDING_VERIFICATION' }),
     resend: vi.fn().mockResolvedValue({ status: 'PENDING_VERIFICATION' }),
     verify: vi.fn().mockResolvedValue({ status: 'COMPLETED', companyId: '11', userId: '7' }),
