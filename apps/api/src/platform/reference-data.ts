@@ -43,6 +43,8 @@ export const permissionDefinitions = [
   ['cash_bank_accounts.manage', 'treasury', 'إدارة الصناديق والحسابات البنكية'],
   ['warehouses.view', 'inventory', 'عرض المستودعات'],
   ['warehouses.manage', 'inventory', 'إدارة المستودعات'],
+  ['inventory_catalog.view', 'inventory', 'عرض وحدات القياس وكتالوج الأصناف'],
+  ['inventory_catalog.manage', 'inventory', 'إدارة وحدات القياس وكتالوج الأصناف'],
   ['receipts.view', 'receipts', 'عرض سندات القبض'],
   ['receipts.create', 'receipts', 'إنشاء سندات القبض'],
   ['receipts.update', 'receipts', 'تعديل سندات القبض'],

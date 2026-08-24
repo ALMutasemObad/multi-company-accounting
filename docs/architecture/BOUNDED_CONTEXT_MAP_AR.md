@@ -26,7 +26,7 @@ last_updated: "2026-08-24"
 | Sales & Accounts Receivable | العميل والفاتورة والذمة وسياسة تسوية التحصيل | `Customer`, `CustomerAddress`, `SalesInvoice`, `SalesInvoiceLine`, `ReceivableItem` | يكشف `ReceivableSettlementPort` ولا ينشئ Journal Lines مباشرة |
 | Purchases & Accounts Payable | المورد والفاتورة والذمة وسياسة تسوية السداد | `Supplier`, `SupplierAddress`, `PurchaseInvoice`, `PurchaseInvoiceLine`, `PayableItem` | يكشف `PayableSettlementPort` ولا ينشئ Journal Lines مباشرة |
 | Treasury | النقد والبنوك وطرق الدفع وحركات القبض والصرف وتخصيصاتها | `CashBankAccount`, `PaymentMethod`, `Receipt`, `ReceiptAllocation`, `Payment`, `PaymentAllocation` | تستخدم التخصيصات هوية العنصر، والتنسيق مع AR/AP وLedger عبر Ports |
-| Inventory | المستودعات، ثم الأصناف والوحدات وحركات المخزون والتكلفة تدريجيًا | `Warehouse` حاليًا؛ وتحدد ملكية الكيانات اللاحقة عند تنفيذها | شريحة المستودعات بيانات رئيسية فقط، معزولة حسب الشركة ولا تكتب في Ledger |
+| Inventory | المستودعات وكتالوج الأصناف، ثم حركات المخزون والتكلفة تدريجيًا | `Warehouse`, `UnitOfMeasure`, `InventoryItem` حاليًا؛ وتحدد ملكية كيانات الحركة عند تنفيذها | الشريحة الحالية بيانات رئيسية فقط، معزولة حسب الشركة ولا تكتب في Ledger |
 | Tax | معدلات الضرائب وربط حساباتها والحساب والتقريب | `TaxRate` | يكشف `TaxQuotePort` للمبيعات والمشتريات ويملك النسخ المتفائلة |
 | Printing & Document Output | اللقطات التاريخية والتوليد | `DocumentPrintArchive` | يقرأ عبر Document Snapshot Port |
 | Reporting | التقارير والقوائم وRead Models | لا يملك حقائق مالية تشغيلية | قراءة فقط، ويمكنه امتلاك projections مستقبلًا |
@@ -84,7 +84,7 @@ Printing  <────────── immutable document snapshot port
 
 ## 6. حالة النقل والاستثناءات الانتقالية
 
-اكتمل في 22 أغسطس 2026 نقل إنشاء وعكس `JournalEntry/JournalLine` إلى `PostingEngine`، واستبدلت عقود التخصيص `targetJournalLineId` بـ`ReceivableItemId/PayableItemId`، ونقل CRUD والحساب الضريبي إلى وحدة `Tax`، ونقل CRUD الصناديق وطرق الدفع وسياسة أداة الحركة إلى وحدة `Treasury`. أضيف `Data Import` كسياق داعم يملك `DataImportBatch` فقط ويستدعي منافذ المالكين لإنشاء بياناتهم؛ لا يكتب Ledger ولا يخزن الملف. وفي 24 أغسطس بدأت رحلة Inventory بسياق مستقل يملك `Warehouse` دون إدخال أصناف أو أرصدة أو أثر محاسبي في الشريحة الأولى. يبقى رابط سطر الذمة على الفاتورة أثرًا داخليًا لـCore Accounting ولا يعبر عقدًا عامًا. التفاصيل في [عناصر الذمم وعقد التسوية](AR_AP_SETTLEMENT_ITEMS_AR.md) و[ملكية Tax](TAX_CONTEXT_OWNERSHIP_AR.md) و[ملكية Treasury](TREASURY_CONTEXT_OWNERSHIP_AR.md) و[سياق الاستيراد](DATA_IMPORT_CONTEXT_AR.md) و[أساس Inventory](INVENTORY_CONTEXT_FOUNDATION_AR.md).
+اكتمل في 22 أغسطس 2026 نقل إنشاء وعكس `JournalEntry/JournalLine` إلى `PostingEngine`، واستبدلت عقود التخصيص `targetJournalLineId` بـ`ReceivableItemId/PayableItemId`، ونقل CRUD والحساب الضريبي إلى وحدة `Tax`، ونقل CRUD الصناديق وطرق الدفع وسياسة أداة الحركة إلى وحدة `Treasury`. أضيف `Data Import` كسياق داعم يملك `DataImportBatch` فقط ويستدعي منافذ المالكين لإنشاء بياناتهم؛ لا يكتب Ledger ولا يخزن الملف. وفي 24 أغسطس بدأت رحلة Inventory بسياق مستقل يملك `Warehouse`، ثم توسعت بالشريحة التالية إلى `UnitOfMeasure` و`InventoryItem` دون أرصدة أو حركات أو أثر محاسبي. يبقى رابط سطر الذمة على الفاتورة أثرًا داخليًا لـCore Accounting ولا يعبر عقدًا عامًا. التفاصيل في [عناصر الذمم وعقد التسوية](AR_AP_SETTLEMENT_ITEMS_AR.md) و[ملكية Tax](TAX_CONTEXT_OWNERSHIP_AR.md) و[ملكية Treasury](TREASURY_CONTEXT_OWNERSHIP_AR.md) و[سياق الاستيراد](DATA_IMPORT_CONTEXT_AR.md) و[أساس Inventory](INVENTORY_CONTEXT_FOUNDATION_AR.md).
 
 الاستثناءات التالية ما زالت موجودة ولا تعد نمطًا مسموحًا للنسخ:
 

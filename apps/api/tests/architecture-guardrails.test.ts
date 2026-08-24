@@ -258,9 +258,10 @@ describe("Treasury ownership boundary guardrails", () => {
 });
 
 describe("Inventory ownership boundary guardrails", () => {
-  it("keeps warehouse writes inside the Inventory context", async () => {
-    const [inventory, sales, purchases, imports] = await Promise.all([
+  it("keeps warehouse and catalog writes inside the Inventory context", async () => {
+    const [inventory, catalog, sales, purchases, imports] = await Promise.all([
       source("inventory/inventory-service.ts"),
+      source("inventory/inventory-catalog-service.ts"),
       source("sales/sales-invoice-service.ts"),
       source("purchases/purchase-invoice-service.ts"),
       source("imports/data-import-service.ts"),
@@ -268,8 +269,13 @@ describe("Inventory ownership boundary guardrails", () => {
     expect(inventory).toContain('"WAREHOUSE"');
     expect(inventory).toContain("companyId: context.companyId, version: input.version");
     expect(inventory).toContain("version: { increment: 1 }");
+    expect(catalog).toContain('"INVENTORY_ITEM"');
+    expect(catalog).toContain('"UNIT_OF_MEASURE"');
+    expect(catalog).toContain("FOR UPDATE");
+    expect(catalog).toContain("companyId: context.companyId, version: input.version");
+    expect(catalog).toContain("version: { increment: 1 }");
     expect(`${sales}\n${purchases}\n${imports}`).not.toMatch(
-      /\.warehouse\.(?:create|update|updateMany|delete|findFirst|findMany|upsert|count)\s*\(/u,
+      /\.(?:warehouse|unitOfMeasure|inventoryItem)\.(?:create|update|updateMany|delete|findFirst|findMany|upsert|count)\s*\(/u,
     );
   });
 });

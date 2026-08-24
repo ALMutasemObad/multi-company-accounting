@@ -197,6 +197,47 @@ for (const locale of ['ar', 'en'] as const) {
     expect.soft(runtimeErrors, `${locale} runtime errors`).toEqual([]);
   });
 
+  test(`${locale}: inventory catalog tabs and editors stay responsive`, async ({ page }) => {
+    const runtimeErrors: string[] = [];
+    page.on('pageerror', (error) => runtimeErrors.push(error.message));
+    await configureLocale(page, locale);
+    await page.goto('/?qa=inventory#inventory');
+    await waitForStableInterface(page, { name: 'inventory', path: '', ready: '.workspace-page', kind: 'workspace' });
+
+    const tabs = page.locator('.section-tabs button');
+    await expect(tabs).toHaveCount(3);
+    for (const [index, name] of [[1, 'units'], [2, 'items']] as const) {
+      await test.step(name, async () => {
+        await tabs.nth(index).click();
+        await expect(tabs.nth(index)).toHaveAttribute('aria-selected', 'true');
+        await expect(page.locator('.workspace-page .loading')).toHaveCount(0);
+        await auditCurrentInterface(page, locale, `inventory-${name}`);
+
+        const opener = page.locator('.inventory-catalog-toolbar .button.primary');
+        await expect(opener).toBeEnabled();
+        await opener.click();
+        const dialog = page.getByRole('dialog');
+        await expect(dialog).toBeVisible();
+        await expect(dialog).toBeFocused();
+        expect.soft(await dialog.evaluate((element) => {
+          const target = element as HTMLElement;
+          const titleId = target.getAttribute('aria-labelledby');
+          return {
+            labelled: Boolean(titleId && document.querySelectorAll(`#${CSS.escape(titleId)}`).length === 1),
+            contained: target.scrollWidth <= target.clientWidth + 1,
+            scrollLocked: document.body.style.overflow === 'hidden',
+          };
+        }), `${locale}/inventory-${name} dialog contract`).toEqual({ labelled: true, contained: true, scrollLocked: true });
+        await auditCurrentInterface(page, locale, `inventory-${name}-editor`);
+        await page.keyboard.press('Escape');
+        await expect(dialog).toHaveCount(0);
+        await expect(opener).toBeFocused();
+      });
+    }
+
+    expect.soft(runtimeErrors, `${locale} inventory catalog runtime errors`).toEqual([]);
+  });
+
   test(`${locale}: sales and purchase invoice editors stay contained and accessible`, async ({ page }) => {
     const runtimeErrors: string[] = [];
     page.on('pageerror', (error) => runtimeErrors.push(error.message));

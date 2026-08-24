@@ -69,6 +69,12 @@ function responseFor(url, method) {
   if (pathname === "/reports/income-statement") return { range: { dateFrom: "2026-01-01", dateTo: "2026-12-31" }, comparisonRange: null, company: { name: company.name }, baseCurrency: currency, sections: { revenues: zeroSection, expenses: zeroSection }, totals: { revenues: "0.00", expenses: "0.00", netIncome: "0.00", comparisonNetIncome: null } };
   if (pathname === "/reports/ledger") return { subject: { id: "account-qa", code: "1000", nameAr: "حساب تجريبي", type: "ACCOUNT" }, range: { dateFrom: "2026-01-01", dateTo: "2026-12-31" }, openingDebit: "0.00", openingCredit: "0.00", data: [], meta, closingDebit: "0.00", closingCredit: "0.00" };
   if (pathname === "/reports/payables-aging" || pathname === "/reports/receivables-aging") return { asOf: "2026-08-21", baseCurrency: currency, data: [], totals: { current: "0.00", days1To30: "0.00", days31To60: "0.00", days61To90: "0.00", daysOver90: "0.00", total: "0.00" } };
+  if (pathname === "/units-of-measure") return list([
+    { id: "unit-ea", code: "EA", nameAr: "حبة", nameEn: "Each", decimalPlaces: 0, isActive: true, version: 0 },
+  ]);
+  if (pathname === "/inventory-items") return list([
+    { id: "item-qa", code: "ITM-000001", nameAr: "صنف تجريبي", nameEn: "Sample item", description: "صنف مخصص للفحص البصري", isActive: true, version: 0, unitOfMeasure: { id: "unit-ea", code: "EA", nameAr: "حبة", nameEn: "Each", decimalPlaces: 0, isActive: true, version: 0 } },
+  ]);
   if (method !== "GET") return null;
   return list();
 }

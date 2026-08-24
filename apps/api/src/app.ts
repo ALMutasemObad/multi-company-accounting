@@ -66,6 +66,8 @@ import type { DataImportService } from './imports/data-import-service.js';
 import { createDataImportRouter } from './imports/data-import-router.js';
 import type { InventoryService } from './inventory/inventory-service.js';
 import { createInventoryRouter } from './inventory/inventory-router.js';
+import type { InventoryCatalogService } from './inventory/inventory-catalog-service.js';
+import { createInventoryCatalogRouter } from './inventory/inventory-catalog-router.js';
 
 type ClientRequestProblem = {
   status: number;
@@ -106,7 +108,7 @@ function clientRequestProblem(error: unknown): ClientRequestProblem | undefined 
   return undefined;
 }
 
-export function createApp(config: AppConfig, services: { readiness?: ReadinessCheck; metrics?: OperationalMetrics; auth?: AuthService; registration?: RegistrationService; passwordReset?: PasswordResetService; users?: UserService; companies?: CompanyService; printing?: PrintService; audit?: AuditService; security?: SecurityEventService; fiscal?: FiscalService; accounts?: AccountService; journals?: ManualJournalService; receiptReferences?: ReceiptReferenceService; treasury?: TreasuryService; inventory?: InventoryService; receipts?: ReceiptService; suppliers?: SupplierReferenceService; payments?: PaymentService; reports?: ReportService; taxes?: TaxService; salesInvoices?: SalesInvoiceService; purchaseInvoices?: PurchaseInvoiceService; dataImports?: DataImportService } = {}) {
+export function createApp(config: AppConfig, services: { readiness?: ReadinessCheck; metrics?: OperationalMetrics; auth?: AuthService; registration?: RegistrationService; passwordReset?: PasswordResetService; users?: UserService; companies?: CompanyService; printing?: PrintService; audit?: AuditService; security?: SecurityEventService; fiscal?: FiscalService; accounts?: AccountService; journals?: ManualJournalService; receiptReferences?: ReceiptReferenceService; treasury?: TreasuryService; inventory?: InventoryService; inventoryCatalog?: InventoryCatalogService; receipts?: ReceiptService; suppliers?: SupplierReferenceService; payments?: PaymentService; reports?: ReportService; taxes?: TaxService; salesInvoices?: SalesInvoiceService; purchaseInvoices?: PurchaseInvoiceService; dataImports?: DataImportService } = {}) {
   const app = express();
   const metrics = services.metrics ?? operationalMetrics;
 
@@ -191,6 +193,7 @@ export function createApp(config: AppConfig, services: { readiness?: ReadinessCh
   if (services.auth && services.receiptReferences) app.use('/api/v1', createReceiptReferenceRouter(services.auth, services.receiptReferences));
   if (services.auth && services.treasury) app.use('/api/v1', createTreasuryRouter(services.auth, services.treasury));
   if (services.auth && services.inventory) app.use('/api/v1', createInventoryRouter(services.auth, services.inventory));
+  if (services.auth && services.inventoryCatalog) app.use('/api/v1', createInventoryCatalogRouter(services.auth, services.inventoryCatalog));
   if (services.auth && services.receipts) app.use('/api/v1', createReceiptRouter(services.auth, services.receipts));
   if (services.auth && services.suppliers) app.use('/api/v1', createSupplierRouter(services.auth, services.suppliers));
   if (services.auth && services.payments) app.use('/api/v1', createPaymentRouter(services.auth, services.payments));

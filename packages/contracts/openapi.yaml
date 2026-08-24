@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.14.0
+  version: 1.15.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -30,6 +30,8 @@ info:
     - يملك Treasury حسابات النقد والبنوك وطرق الدفع؛ تستهلك حركات القبض والصرف TreasuryInstrumentPort وتحمل تعديلات المراجع version متفائلًا.
 
     - تبدأ رحلة Inventory بإدارة المستودعات المعزولة حسب الشركة، مع رموز خادمية ثابتة ونسخ متفائلة، دون أثر على الأستاذ في هذه المرحلة.
+
+    - يضيف كتالوج Inventory وحدات قياس دلالية وأصنافًا برموز ITM خادمية ثابتة، مع قفل يمنع ربط صنف نشط بوحدة معطلة، ودون أرصدة أو حركات أو تكلفة.
 
     - OpenAPI هو العقد التنفيذي الموحد لأجسام JSON؛ تولد منه حراس Zod وأنواع الطلب والاستجابة وبصمة تغطية حتمية، وتفحص الاستجابات في بيئات التطوير والاختبار.
 
@@ -3614,6 +3616,411 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
       x-permission: warehouses.manage
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+  /units-of-measure:
+    get:
+      tags:
+      - Inventory
+      summary: عرض وحدات القياس للشركة الحالية
+      operationId: listUnitsOfMeasure
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - $ref: '#/components/parameters/Search'
+      - name: active
+        in: query
+        schema:
+          type: boolean
+      responses:
+        '200':
+          description: قائمة وحدات القياس
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/UnitOfMeasure'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      x-permission: inventory_catalog.view
+      security:
+      - SessionCookie: []
+    post:
+      tags:
+      - Inventory
+      summary: إنشاء وحدة قياس
+      operationId: createUnitOfMeasure
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnitOfMeasureCreateRequest'
+      responses:
+        '201':
+          description: تم إنشاء وحدة القياس
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnitOfMeasure'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/BusinessRuleViolation'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      x-permission: inventory_catalog.manage
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+  /units-of-measure/{unitOfMeasureId}:
+    get:
+      tags:
+      - Inventory
+      summary: عرض وحدة قياس
+      operationId: getUnitOfMeasure
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: unitOfMeasureId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      responses:
+        '200':
+          description: بيانات وحدة القياس
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnitOfMeasure'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      x-permission: inventory_catalog.view
+      security:
+      - SessionCookie: []
+    patch:
+      tags:
+      - Inventory
+      summary: تعديل وحدة قياس
+      operationId: updateUnitOfMeasure
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: unitOfMeasureId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnitOfMeasureUpdateRequest'
+      responses:
+        '200':
+          description: تم تعديل وحدة القياس
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnitOfMeasure'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/BusinessRuleViolation'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      x-permission: inventory_catalog.manage
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+  /units-of-measure/{unitOfMeasureId}/deactivate:
+    post:
+      tags:
+      - Inventory
+      summary: تعطيل وحدة قياس غير مستخدمة
+      operationId: deactivateUnitOfMeasure
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: unitOfMeasureId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryCatalogDeactivateRequest'
+      responses:
+        '200':
+          description: تم تعطيل وحدة القياس
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnitOfMeasure'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/BusinessRuleViolation'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      x-permission: inventory_catalog.manage
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+  /inventory-items:
+    get:
+      tags:
+      - Inventory
+      summary: عرض كتالوج أصناف الشركة الحالية
+      operationId: listInventoryItems
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - $ref: '#/components/parameters/Search'
+      - name: active
+        in: query
+        schema:
+          type: boolean
+      - name: unitOfMeasureId
+        in: query
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      responses:
+        '200':
+          description: قائمة الأصناف
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/InventoryItem'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      x-permission: inventory_catalog.view
+      security:
+      - SessionCookie: []
+    post:
+      tags:
+      - Inventory
+      summary: إنشاء صنف مخزني
+      operationId: createInventoryItem
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryItemCreateRequest'
+      responses:
+        '201':
+          description: تم إنشاء الصنف
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryItem'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/BusinessRuleViolation'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      x-permission: inventory_catalog.manage
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+  /inventory-items/{inventoryItemId}:
+    get:
+      tags:
+      - Inventory
+      summary: عرض صنف مخزني
+      operationId: getInventoryItem
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: inventoryItemId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      responses:
+        '200':
+          description: بيانات الصنف
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryItem'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      x-permission: inventory_catalog.view
+      security:
+      - SessionCookie: []
+    patch:
+      tags:
+      - Inventory
+      summary: تعديل صنف مخزني
+      operationId: updateInventoryItem
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: inventoryItemId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryItemUpdateRequest'
+      responses:
+        '200':
+          description: تم تعديل الصنف
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryItem'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/BusinessRuleViolation'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      x-permission: inventory_catalog.manage
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+  /inventory-items/{inventoryItemId}/deactivate:
+    post:
+      tags:
+      - Inventory
+      summary: تعطيل صنف مخزني
+      operationId: deactivateInventoryItem
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: inventoryItemId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryCatalogDeactivateRequest'
+      responses:
+        '200':
+          description: تم تعطيل الصنف
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryItem'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/BusinessRuleViolation'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      x-permission: inventory_catalog.manage
       security:
       - SessionCookie: []
         CsrfToken: []
@@ -8080,6 +8487,186 @@ components:
           type: [string, 'null']
           maxLength: 300
     WarehouseDeactivateRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - version
+      - reason
+      properties:
+        version:
+          type: integer
+          minimum: 0
+        reason:
+          type: string
+          x-trim: true
+          minLength: 3
+          maxLength: 500
+    UnitOfMeasure:
+      type: object
+      required:
+      - id
+      - code
+      - nameAr
+      - nameEn
+      - decimalPlaces
+      - isActive
+      - version
+      properties:
+        id:
+          type: string
+          pattern: ^[1-9][0-9]*$
+          description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
+        code:
+          type: string
+          pattern: ^[A-Z][A-Z0-9_-]{0,19}$
+          maxLength: 20
+          description: رمز أعمال دلالي ثابت داخل الشركة مثل EA أو KG.
+        nameAr:
+          type: string
+          minLength: 1
+          maxLength: 120
+        nameEn:
+          type: [string, 'null']
+          maxLength: 120
+        decimalPlaces:
+          type: integer
+          minimum: 0
+          maximum: 6
+        isActive:
+          type: boolean
+        version:
+          type: integer
+          minimum: 0
+    UnitOfMeasureCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - code
+      - nameAr
+      - decimalPlaces
+      properties:
+        code:
+          type: string
+          x-trim: true
+          pattern: ^[A-Za-z][A-Za-z0-9_-]{0,19}$
+          maxLength: 20
+        nameAr:
+          type: string
+          x-trim: true
+          minLength: 1
+          maxLength: 120
+        nameEn:
+          type: [string, 'null']
+          maxLength: 120
+        decimalPlaces:
+          type: integer
+          minimum: 0
+          maximum: 6
+    UnitOfMeasureUpdateRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - version
+      properties:
+        version:
+          type: integer
+          minimum: 0
+        nameAr:
+          type: string
+          x-trim: true
+          minLength: 1
+          maxLength: 120
+        nameEn:
+          type: [string, 'null']
+          maxLength: 120
+        decimalPlaces:
+          type: integer
+          minimum: 0
+          maximum: 6
+    InventoryItem:
+      type: object
+      required:
+      - id
+      - code
+      - nameAr
+      - nameEn
+      - description
+      - isActive
+      - version
+      - unitOfMeasure
+      properties:
+        id:
+          type: string
+          pattern: ^[1-9][0-9]*$
+          description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
+        code:
+          type: string
+          readOnly: true
+          pattern: ^ITM-[0-9]+$
+          maxLength: 40
+          description: رمز ثابت يولده النظام تلقائيًا داخل الشركة.
+        nameAr:
+          type: string
+          minLength: 1
+          maxLength: 200
+        nameEn:
+          type: [string, 'null']
+          maxLength: 200
+        description:
+          type: [string, 'null']
+          maxLength: 500
+        isActive:
+          type: boolean
+        version:
+          type: integer
+          minimum: 0
+        unitOfMeasure:
+          $ref: '#/components/schemas/UnitOfMeasure'
+    InventoryItemCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - unitOfMeasureId
+      - nameAr
+      properties:
+        unitOfMeasureId:
+          type: string
+          pattern: ^[1-9][0-9]*$
+        nameAr:
+          type: string
+          x-trim: true
+          minLength: 1
+          maxLength: 200
+        nameEn:
+          type: [string, 'null']
+          maxLength: 200
+        description:
+          type: [string, 'null']
+          maxLength: 500
+    InventoryItemUpdateRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - version
+      properties:
+        version:
+          type: integer
+          minimum: 0
+        unitOfMeasureId:
+          type: string
+          pattern: ^[1-9][0-9]*$
+        nameAr:
+          type: string
+          x-trim: true
+          minLength: 1
+          maxLength: 200
+        nameEn:
+          type: [string, 'null']
+          maxLength: 200
+        description:
+          type: [string, 'null']
+          maxLength: 500
+    InventoryCatalogDeactivateRequest:
       type: object
       additionalProperties: false
       required:
