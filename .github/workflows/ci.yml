@@ -86,7 +86,9 @@ jobs:
         env:
           MYSQL_BIN: mariadb
           MYSQLDUMP_BIN: mariadb-dump
-        run: bash scripts/ci/database-roundtrip.sh
+        run: |
+          bash scripts/ci/database-identities.integration.sh
+          bash scripts/ci/database-roundtrip.sh
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -187,7 +189,9 @@ jobs:
       - name: Test onboarding and the first accounting document on MySQL
         run: npm run e2e
       - name: Prove encrypted backup and isolated restore on MySQL
-        run: bash scripts/ci/database-roundtrip.sh
+        run: |
+          bash scripts/ci/database-identities.integration.sh
+          bash scripts/ci/database-roundtrip.sh
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -232,7 +236,8 @@ jobs:
           bash -n deploy/scripts/install-release.sh deploy/scripts/rollback-release.sh \
             deploy/scripts/install-cpanel-release.sh deploy/scripts/rollback-cpanel-release.sh \
             deploy/scripts/deploy-cpanel-release.sh deploy/scripts/switch-cloudlinux-registration.sh \
-            scripts/ci/database-roundtrip.sh scripts/tests/deployment-rollback.integration.sh \
+            scripts/ci/database-roundtrip.sh scripts/ci/database-identities.integration.sh \
+            scripts/tests/deployment-rollback.integration.sh \
             scripts/tests/cloudlinux-registration.integration.sh
           curl --fail --silent --show-error --location \
             --output /tmp/shellcheck.tar.xz \
@@ -244,7 +249,7 @@ jobs:
             deploy/scripts/install-release.sh deploy/scripts/rollback-release.sh \
             deploy/scripts/install-cpanel-release.sh deploy/scripts/rollback-cpanel-release.sh \
             deploy/scripts/deploy-cpanel-release.sh deploy/scripts/switch-cloudlinux-registration.sh \
-            scripts/tests/cloudlinux-registration.integration.sh
+            scripts/ci/database-identities.integration.sh scripts/tests/cloudlinux-registration.integration.sh
           bash scripts/tests/deployment-rollback.integration.sh
           bash scripts/tests/cloudlinux-registration.integration.sh
       - name: Create reproducible verified release
@@ -384,12 +389,15 @@ jobs:
         env:
           BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
           METRICS_BEARER_TOKEN: ${{ secrets.METRICS_BEARER_TOKEN }}
+          MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
         run: |
           test "${#BACKUP_ENCRYPTION_PASSPHRASE}" -ge 32
           test "${#METRICS_BEARER_TOKEN}" -ge 32
           test "${#METRICS_BEARER_TOKEN}" -le 500
+          case "$MIGRATION_DATABASE_URL" in mysql://*) ;; *) exit 1 ;; esac
+          test "${#MIGRATION_DATABASE_URL}" -le 2048
           remote_dir="$CPANEL_DEPLOY_ROOT/incoming/github-$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          { printf '%s\n' "$BACKUP_ENCRYPTION_PASSPHRASE"; printf '%s\n' "$METRICS_BEARER_TOKEN"; } | \
+          { printf '%s\n' "$BACKUP_ENCRYPTION_PASSPHRASE"; printf '%s\n' "$METRICS_BEARER_TOKEN"; printf '%s\n' "$MIGRATION_DATABASE_URL"; } | \
             ssh -i "$HOME/.ssh/id_ed25519" -p "$CPANEL_SSH_PORT" -o IdentitiesOnly=yes \
               "$CPANEL_SSH_USER@$CPANEL_SSH_HOST" \
               env \

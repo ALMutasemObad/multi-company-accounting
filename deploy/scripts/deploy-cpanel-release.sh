@@ -40,11 +40,17 @@ IFS= read -r backup_passphrase || fail "encrypted backup passphrase is required 
 IFS= read -r metrics_bearer_token || fail "metrics bearer token is required on standard input"
 [[ ${#metrics_bearer_token} -ge 32 && ${#metrics_bearer_token} -le 500 ]] \
   || fail "metrics bearer token must contain between 32 and 500 characters"
+IFS= read -r migration_database_url || fail "migration database URL is required on standard input"
+[[ "$migration_database_url" == mysql://* && ${#migration_database_url} -le 2048 ]] \
+  || fail "migration database URL must be a valid-length MySQL URL"
+[[ ! "$migration_database_url" =~ [[:cntrl:]] ]] \
+  || fail "migration database URL contains unsupported control characters"
 
 metrics_token_file=$(mktemp /tmp/mcap-metrics-token.XXXXXX)
 cleanup() {
   local status=$?
   rm -f -- "$metrics_token_file"
+  unset database_url migration_database_url backup_passphrase
   exit "$status"
 }
 trap cleanup EXIT
@@ -73,7 +79,7 @@ esac
 [[ -f "$current_release/scripts/database-backup.mjs" ]] || fail "the current release cannot create a production backup"
 
 log "creating an encrypted pre-deployment database backup"
-DATABASE_URL="$database_url" \
+DATABASE_URL="$migration_database_url" \
 BACKUP_DIRECTORY="$backup_directory" \
 BACKUP_ENCRYPTION_PASSPHRASE="$backup_passphrase" \
 MYSQL_BIN="$mysql_bin" \
@@ -93,9 +99,11 @@ release_id=$(tar -xOzf "$archive" ./release-manifest.json | "$node_bin" -e '
 
 log "installing verified release $release_id"
 DATABASE_URL="$database_url" \
+MIGRATION_DATABASE_URL="$migration_database_url" \
 MCAP_DEPLOY_ROOT="$deploy_root" \
 MCAP_NODE_BIN="$node_bin" \
 MCAP_NPX_CLI="$npx_cli" \
+MCAP_MYSQL_BIN="$mysql_bin" \
 MCAP_HEALTH_URL="${MCAP_HEALTH_URL:-}" \
 MCAP_APP_URL="${MCAP_APP_URL:-}" \
 MCAP_PASSENGER_CONFIG_FILE="$passenger_config_file" \

@@ -10,6 +10,7 @@ expected_sha=${2:-${MCAP_RELEASE_SHA256:-}}
 deploy_root=${MCAP_DEPLOY_ROOT:-}
 node_bin=${MCAP_NODE_BIN:-/opt/alt/alt-nodejs22/root/usr/bin/node}
 npx_cli=${MCAP_NPX_CLI:-/opt/alt/alt-nodejs22/root/usr/lib/node_modules/npm/bin/npx-cli.js}
+mysql_bin=${MCAP_MYSQL_BIN:-/usr/bin/mysql}
 curl_bin=${MCAP_CURL_BIN:-/usr/bin/curl}
 health_url=${MCAP_HEALTH_URL:-}
 app_url=${MCAP_APP_URL:-}
@@ -37,7 +38,13 @@ fi
 [[ -x "$curl_bin" ]] || fail "curl executable is unavailable: $curl_bin"
 if [[ "$run_database_migrations" == true ]]; then
   [[ -f "$npx_cli" && ! -L "$npx_cli" ]] || fail "npm exec entrypoint is unavailable: $npx_cli"
+  [[ -x "$mysql_bin" ]] || fail "MySQL client is unavailable: $mysql_bin"
   [[ "${DATABASE_URL:-}" == mysql://* ]] || fail "DATABASE_URL must be a MySQL URL when migrations are enabled"
+  [[ "${MIGRATION_DATABASE_URL:-}" == mysql://* ]] \
+    || fail "MIGRATION_DATABASE_URL must be a MySQL URL when migrations are enabled"
+  runtime_database_url=$DATABASE_URL
+  migration_database_url=$MIGRATION_DATABASE_URL
+  unset DATABASE_URL MIGRATION_DATABASE_URL
 fi
 
 archive=$(readlink -f -- "$archive_input") || fail "release archive does not exist"
@@ -79,17 +86,25 @@ release_dir="$releases_dir/$release_id"
 [[ ! -e "$release_dir" && ! -L "$release_dir" ]] || fail "release already exists: $release_id"
 
 if [[ "$run_database_migrations" == true ]]; then
+  log "verifying distinct runtime and migration database identities"
+  DATABASE_URL="$runtime_database_url" \
+  MIGRATION_DATABASE_URL="$migration_database_url" \
+  MYSQL_BIN="$mysql_bin" \
+    "$node_bin" "$incoming/scripts/verify-database-identities.mjs"
   log "applying forward-compatible database migrations for $release_id"
   (
     cd "$incoming/apps/api"
+    DATABASE_URL="$migration_database_url" \
     PATH="$(dirname -- "$node_bin"):${PATH:-/usr/bin:/bin}" \
       "$node_bin" "$npx_cli" --yes prisma@7.9.1 migrate deploy
   )
   log "seeding production reference data for $release_id"
   (
     cd "$incoming"
-    "$node_bin" apps/api/dist/platform/seed-reference-data.js
+    DATABASE_URL="$migration_database_url" \
+      "$node_bin" apps/api/dist/platform/seed-reference-data.js
   )
+  unset runtime_database_url migration_database_url
 fi
 
 mv -- "$incoming" "$release_dir"

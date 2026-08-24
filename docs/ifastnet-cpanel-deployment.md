@@ -45,17 +45,18 @@ Passenger log: logs/accounting-passenger.log
 5. حفظ `.htaccess` ثم تثبيت كتلة `308` مُدارة إلى النطاق المعياري بعد إعادة تشغيل التسجيل، مع استعادة الملف والتسجيل السابقين عند الفشل.
 6. فحص `/ready` وبصمة واجهة الإصدار الجديد، ثم فحص HTTP العام و`Location` والمسار والاستعلام قبل قبول النشر، مع رجوع التطبيق تلقائيًا عند فشل التفعيل أو الجاهزية.
 
-يحتاج النشر إلى ثلاثة أسرار GitHub داخل بيئة `production` المقيدة بفرع `main`:
+يحتاج النشر إلى أربعة أسرار GitHub داخل بيئة `production` المقيدة بفرع `main`:
 
 ```text
 CPANEL_SSH_PRIVATE_KEY=<private half of the dedicated deployment key>
 BACKUP_ENCRYPTION_PASSPHRASE=<single-line random secret, at least 32 characters>
 METRICS_BEARER_TOKEN=<separate single-line random secret, 32 to 500 characters>
+MIGRATION_DATABASE_URL=mysql://<dedicated-ddl-user>:<secret>@<host>:3306/<production-database>
 ```
 
-لا تستخدم مفتاح SSH شخصيًا، ولا تغيّر ملف `deploy/ssh/ifastnet_known_hosts` إلا بعد التحقق من بصمة الخادم عبر قناة موثوقة. قيمة تشفير النسخ مطلوبة للاستعادة؛ احتفظ بنسخة منها في مدير أسرار مستقل عن حساب الاستضافة. لا تعرض GitHub قيمة سر محفوظ ولا تنقله بين المستودع والبيئة؛ أعد إدخاله من مدير الأسرار، وأثبت نشرًا ناجحًا من Environment secret قبل حذف أي نسخة أوسع. لا تصل أسرار الإنتاج إلى وظائف Pull Request؛ كما يرفض `deploy-production` الالتزام الذي لم ينتج عن PR واحد مدمج إلى `main` أو نتج عن Force Push قبل قراءة الأسرار.
+لا تستخدم مفتاح SSH شخصيًا، ولا تغيّر ملف `deploy/ssh/ifastnet_known_hosts` إلا بعد التحقق من بصمة الخادم عبر قناة موثوقة. قيمة تشفير النسخ مطلوبة للاستعادة؛ احتفظ بنسخة منها في مدير أسرار مستقل عن حساب الاستضافة. لا تعرض GitHub قيمة سر محفوظ ولا تنقله بين المستودع والبيئة؛ أعد إدخاله من مدير الأسرار، وأثبت نشرًا ناجحًا من Environment secret قبل حذف أي نسخة أوسع. لا تصل أسرار الإنتاج إلى وظائف Pull Request؛ كما يرفض `deploy-production` الالتزام الذي لم ينتج عن PR واحد مدمج إلى `main` أو نتج عن Force Push قبل قراءة الأسرار. يجب أن يشير `MIGRATION_DATABASE_URL` إلى قاعدة ومضيف `DATABASE_URL` نفسيهما لكن إلى حساب مستقل يملك DDL، ولا يوضع مطلقًا في Node.js Selector أو Passenger أو `.env.production` أو Artifact.
 
-يمرر Workflow عبارة النسخ ورمز القياسات إلى المضيف عبر `stdin`. يكتب سكربت النشر رمز القياسات مؤقتًا بتهيئة `0600`، ويدمج `METRICS_ENABLED=true` والرمز في لقطة بيئة CloudLinux للهدف فقط، ثم يحذف الملف في جميع حالات الخروج. تبقى لقطة المصدر مستقلة لاستعادة البيئة السابقة كما كانت عند فشل الإنشاء أو الجاهزية. بعد التفعيل يثبت Workflow أن `/metrics` يعيد `401` بلا رمز وأن الكشط الموثق ينجح، ويرفض النشر إذا وجد قاعدة تنبيه نشطة.
+يمرر Workflow عبارة النسخ ورمز القياسات وعنوان الترحيل إلى المضيف عبر `stdin`. يستخدم عنوان الترحيل للنسخة السابقة للترحيل و`prisma migrate deploy` وSeed فقط. قبل أي DDL يشغّل الإصدار المرشح `SHOW GRANTS FOR CURRENT_USER()` على الحسابين، ويرفض النشر ما لم يكونا مختلفين وعلى القاعدة نفسها وما لم يقتصر حساب التشغيل على `SELECT/INSERT/UPDATE/DELETE`. لا يطبع الفاحص أسماء الحسابات أو المضيف أو عناوين الاتصال أو كلمات المرور؛ يطبع تقرير قبول منقحًا فقط. يكتب سكربت النشر رمز القياسات مؤقتًا بتهيئة `0600`، ويدمج `METRICS_ENABLED=true` والرمز في لقطة بيئة CloudLinux للهدف فقط، ثم يحذف الملف في جميع حالات الخروج. تبقى لقطة المصدر مستقلة لاستعادة البيئة السابقة كما كانت عند فشل الإنشاء أو الجاهزية. بعد التفعيل يثبت Workflow أن `/metrics` يعيد `401` بلا رمز وأن الكشط الموثق ينجح، ويرفض النشر إذا وجد قاعدة تنبيه نشطة.
 
 ## تثبيت الإصدار
 
@@ -90,18 +91,20 @@ bash deploy/scripts/install-cpanel-release.sh \
 
 أضف متغيرات الإنتاج من `.env.production.example` في Node.js Selector. يجب أن يكون `WEB_ORIGIN` هو رابط HTTPS نفسه، وتبقى `SESSION_COOKIE_SECURE` و`TRUST_PROXY` مفعّلتين. عند تفعيل التسجيل الذاتي أضف أسرار Resend و`REGISTRATION_AUDIT_PEPPER` و`REGISTRATION_TOKEN_SECRET`؛ وإذا بقيت استعادة كلمة المرور مفعلة فتبقى أسرار Resend ومفتاح الرمز مطلوبة حتى مع `SELF_REGISTRATION_ENABLED=false`. لا تحفظ كلمة مرور قاعدة البيانات أو كلمة مرور المدير أو مفاتيح البريد في Git أو داخل ملفات Artifact.
 
+أنشئ مستخدمين لقاعدة الإنتاج: حساب تشغيل يملك `SELECT, INSERT, UPDATE, DELETE` فقط على قاعدة التطبيق، وحساب ترحيل مستقل يملك صلاحيات DDL/DML اللازمة عليها. ضع عنوان حساب التشغيل وحده باسم `DATABASE_URL` في Selector، وضع عنوان حساب الترحيل وحده باسم `MIGRATION_DATABASE_URL` في أسرار بيئة GitHub `production`. لا تمنح حساب التشغيل `CREATE` أو `ALTER` أو `DROP` أو `INDEX` أو `REFERENCES` أو `TRIGGER` أو `EVENT` أو `EXECUTE` أو `ALL PRIVILEGES`.
+
 أضف أيضًا مهلات `HTTP_*` و`API_*` بالقيم النموذجية مع إبقاء مهلة Passenger/Apache الخارجية أكبر من 70 ثانية. `server.ts` يضبط مهلات Node حتى تحت Passenger، لكن حد الاستضافة الخارجي يملكه المزود؛ تحقق منه قبل رفع Budget التسجيل. عند تفعيل `/metrics` يلزم `METRICS_BEARER_TOKEN` مستقل، وينبغي تقييد المسار بعنوان منصة المراقبة من cPanel/Apache متى أمكن إضافة إلى Bearer. لا تستخدم Session المستخدم للكشط ولا تحفظ الرمز في Git أو Access URL. راجع [دليل المرونة التشغيلية](operational-resilience.md) لهرم القيم وقواعد التنبيه.
 
 بعد النشر تحقق من ظهور شاشة «نسيت كلمة المرور»، وراقب Outbox حسب `event_type='PasswordResetRequested'` وسجل الأمان حسب `event_type='PASSWORD_RESET_COMPLETED'`. لا تختبر الإنتاج بحساب حقيقي ذي جلسات لازمة، لأن نجاح الاستعادة يلغي جميع جلساته عمدًا.
 
-قبل تشغيل التطبيق لأول مرة فقط، طبّق الترحيلات بالإصدار المثبت من Prisma، ثم شغّل المرجعيات الإنتاجية وجهّز شركة العميل:
+قبل تشغيل التطبيق لأول مرة فقط، طبّق الترحيلات بحساب DDL المستقل، ثم شغّل المرجعيات الإنتاجية وجهّز شركة العميل. لا تستخدم هذا المسار اليدوي الاعتيادي إلا من جلسة طوارئ محمية، ولا تحفظ عنوان DDL في سجل الأوامر:
 
 ```bash
 cd /home/doralash/accounting-app/current
 cd apps/api
-"$MCAP_NODE_BIN" "$MCAP_NPX_CLI" --yes prisma@7.9.1 migrate deploy
+DATABASE_URL="$MIGRATION_DATABASE_URL" "$MCAP_NODE_BIN" "$MCAP_NPX_CLI" --yes prisma@7.9.1 migrate deploy
 cd ../..
-npm run database:seed-reference
+DATABASE_URL="$MIGRATION_DATABASE_URL" npm run database:seed-reference
 npm run company:provision
 ```
 

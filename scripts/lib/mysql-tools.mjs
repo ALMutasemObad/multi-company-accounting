@@ -10,16 +10,18 @@ export const parseMysqlUrl = (rawValue) => {
   const url = new URL(rawValue);
   if (url.protocol !== "mysql:") throw new Error("DATABASE_URL must use the mysql protocol");
   const database = decodeURIComponent(url.pathname.replace(/^\//, ""));
+  const user = decodeURIComponent(url.username);
+  const password = decodeURIComponent(url.password);
   if (!safeDatabaseName.test(database)) throw new Error("DATABASE_URL must contain a safe database name");
-  if (!url.username) throw new Error("DATABASE_URL must contain a database user");
-  if ([url.hostname, url.username, url.password].some((value) => /[\r\n\0]/.test(value))) {
+  if (!user) throw new Error("DATABASE_URL must contain a database user");
+  if ([url.hostname, user, password].some((value) => /[\r\n\0]/.test(value))) {
     throw new Error("DATABASE_URL contains unsupported control characters");
   }
   return {
     host: url.hostname,
     port: url.port || "3306",
-    user: decodeURIComponent(url.username),
-    password: decodeURIComponent(url.password),
+    user,
+    password,
     database,
   };
 };

@@ -64,12 +64,17 @@ test("cPanel installer migrates and seeds the candidate before activating it", a
     "utf8",
   );
   const migrationIndex = source.indexOf("prisma@7.9.1 migrate deploy");
+  const identityVerificationIndex = source.indexOf("verify-database-identities.mjs");
   const seedIndex = source.indexOf("apps/api/dist/platform/seed-reference-data.js");
   const activationIndex = source.indexOf('atomic_link "$release_dir" "$current_link"');
 
   assert.match(source, /MCAP_RUN_DATABASE_MIGRATIONS/u);
+  assert.match(source, /MIGRATION_DATABASE_URL/u);
+  assert.match(source, /DATABASE_URL="\$migration_database_url"/u);
   assert.match(source, /PATH="\$\(dirname -- "\$node_bin"\):\$\{PATH:-\/usr\/bin:\/bin\}"/u);
   assert.ok(migrationIndex > 0, "candidate migrations must be present");
+  assert.ok(identityVerificationIndex > 0, "database identities must be verified");
+  assert.ok(migrationIndex > identityVerificationIndex, "identity verification must precede migrations");
   assert.ok(seedIndex > migrationIndex, "reference data must follow migrations");
   assert.ok(activationIndex > seedIndex, "activation must happen after migrations and reference data");
 });
@@ -84,9 +89,12 @@ test("cPanel production pipeline backs up before invoking the atomic installer",
 
   assert.match(source, /IFS= read -r backup_passphrase/u);
   assert.match(source, /IFS= read -r metrics_bearer_token/u);
+  assert.match(source, /IFS= read -r migration_database_url/u);
   assert.match(source, /MCAP_METRICS_TOKEN_FILE="\$metrics_token_file"/u);
   assert.match(source, /SetEnv" && \$2 == "DATABASE_URL"/u);
   assert.match(source, /BACKUP_ENCRYPTION_PASSPHRASE="\$backup_passphrase"/u);
+  assert.match(source, /DATABASE_URL="\$migration_database_url"/u);
+  assert.match(source, /MIGRATION_DATABASE_URL="\$migration_database_url"/u);
   assert.match(source, /MCAP_RUN_DATABASE_MIGRATIONS=true/u);
   assert.doesNotMatch(source, /set -x/u);
   assert.ok(backupIndex > 0, "encrypted backup must be present");
@@ -107,6 +115,7 @@ test("CI deploys main only after both database gates and uses pinned SSH identit
   assert.match(source, /secrets\.CPANEL_SSH_PRIVATE_KEY/u);
   assert.match(source, /secrets\.BACKUP_ENCRYPTION_PASSPHRASE/u);
   assert.match(source, /secrets\.METRICS_BEARER_TOKEN/u);
+  assert.match(source, /secrets\.MIGRATION_DATABASE_URL/u);
   assert.match(source, /deploy\/ssh\/ifastnet_known_hosts/u);
   assert.match(source, /switch-cloudlinux-registration\.sh/u);
   assert.match(source, /MCAP_CLOUDLINUX_SELECTOR=\/usr\/sbin\/cloudlinux-selector/u);

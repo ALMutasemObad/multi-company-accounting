@@ -28,6 +28,8 @@ export const DEFAULT_RELEASE_FILES = [
   "package.json",
   "scripts/database-backup.mjs",
   "scripts/database-restore.mjs",
+  "scripts/verify-database-identities.mjs",
+  "scripts/lib/database-identities.mjs",
   "scripts/lib/release-manifest.mjs",
   "scripts/release/verify-release.mjs",
   "tmp/restart.txt",
