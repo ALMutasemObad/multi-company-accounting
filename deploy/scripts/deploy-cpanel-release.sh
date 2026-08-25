@@ -14,6 +14,7 @@ passenger_config_file=${MCAP_PASSENGER_CONFIG_FILE:-}
 backup_directory=${MCAP_BACKUP_DIRECTORY:-}
 mysql_bin=${MCAP_MYSQL_BIN:-/usr/bin/mysql}
 mysqldump_bin=${MCAP_MYSQLDUMP_BIN:-/usr/bin/mysqldump}
+pipeline_lock_wait_seconds=${MCAP_PIPELINE_LOCK_WAIT_SECONDS:-900}
 script_directory=$(cd -- "$(dirname -- "$0")" && pwd -P)
 cloudlinux_switcher="$script_directory/switch-cloudlinux-registration.sh"
 
@@ -27,6 +28,9 @@ cloudlinux_switcher="$script_directory/switch-cloudlinux-registration.sh"
 [[ -x "$mysql_bin" ]] || fail "MySQL client is unavailable: $mysql_bin"
 [[ -x "$mysqldump_bin" ]] || fail "MySQL dump client is unavailable: $mysqldump_bin"
 [[ -f "$cloudlinux_switcher" && ! -L "$cloudlinux_switcher" ]] || fail "CloudLinux registration switcher is unavailable"
+[[ "$pipeline_lock_wait_seconds" =~ ^[1-9][0-9]{0,3}$ ]] \
+  && (( pipeline_lock_wait_seconds <= 1800 )) \
+  || fail "MCAP_PIPELINE_LOCK_WAIT_SECONDS must be between 1 and 1800"
 
 archive=$(readlink -f -- "$archive_input") || fail "release archive does not exist"
 checksum_file=$(readlink -f -- "$checksum_file_input") || fail "release checksum file does not exist"
@@ -67,7 +71,8 @@ database_url=$(awk '
 mkdir -p -- "$deploy_root" "$backup_directory"
 chmod 0700 -- "$backup_directory"
 exec 8>"$deploy_root/.pipeline.lock"
-flock -n 8 || fail "another production pipeline is running"
+flock -w "$pipeline_lock_wait_seconds" 8 \
+  || fail "timed out waiting for another production pipeline"
 
 current_link="$deploy_root/current"
 [[ -L "$current_link" ]] || fail "the current release link is unavailable"

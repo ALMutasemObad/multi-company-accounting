@@ -8,10 +8,13 @@ umask 077
 : "${CI_DATABASE_USER:?CI_DATABASE_USER is required}"
 
 restore_database=${CI_RESTORE_DATABASE:-mcap_finance_restore_test}
+legacy_restore_database="${restore_database}_legacy"
 mysql_bin=${MYSQL_BIN:-mysql}
 temp_root=$(readlink -f -- "${RUNNER_TEMP:-/tmp}")
 
 [[ "$restore_database" =~ ^[A-Za-z0-9_]+$ ]] || { echo "Unsafe restore database name" >&2; exit 1; }
+[[ "$legacy_restore_database" =~ ^[A-Za-z0-9_]+$ && ${#legacy_restore_database} -le 64 ]] \
+  || { echo "Unsafe legacy restore database name" >&2; exit 1; }
 [[ "$CI_DATABASE_USER" =~ ^[A-Za-z0-9_]+$ ]] || { echo "Unsafe database user name" >&2; exit 1; }
 command -v "$mysql_bin" >/dev/null
 command -v "${MYSQLDUMP_BIN:-mysqldump}" >/dev/null
@@ -31,7 +34,9 @@ printf '[client]\nhost=127.0.0.1\nport=3306\nuser=root\npassword=%s\ndefault-cha
 
 "$mysql_bin" --defaults-extra-file="$root_defaults" --execute="
   CREATE DATABASE \`$restore_database\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+  CREATE DATABASE \`$legacy_restore_database\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
   GRANT ALL PRIVILEGES ON \`$restore_database\`.* TO '$CI_DATABASE_USER'@'%';
+  GRANT ALL PRIVILEGES ON \`$legacy_restore_database\`.* TO '$CI_DATABASE_USER'@'%';
   FLUSH PRIVILEGES;
 "
 
@@ -52,4 +57,49 @@ restore_url=$(node -e '
 DATABASE_URL="$restore_url" \
 BACKUP_FILE="$backup_file" \
 RESTORE_CONFIRM="RESTORE:$restore_database" \
+node scripts/database-restore.mjs
+
+node --input-type=module - "$backup_file" <<'NODE'
+import { readFile, writeFile } from "node:fs/promises";
+import {
+  collectDatabaseVerification,
+  parseMysqlUrl,
+  runMysqlScalar,
+  withMysqlDefaultsFile,
+} from "./scripts/lib/mysql-tools.mjs";
+
+const [backupFile] = process.argv.slice(2);
+const connection = parseMysqlUrl(process.env.DATABASE_URL);
+const { mysqlVersion, verification } = await withMysqlDefaultsFile(connection, async (defaultsFile) => ({
+  mysqlVersion: await runMysqlScalar(
+    process.env.MYSQL_BIN || "mysql",
+    defaultsFile,
+    connection.database,
+    "SELECT VERSION()",
+  ),
+  verification: await collectDatabaseVerification(
+    process.env.MYSQL_BIN || "mysql",
+    defaultsFile,
+    connection.database,
+  ),
+}));
+const manifestPath = `${backupFile}.json`;
+const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+manifest.format = "mcap-backup-v1";
+manifest.sourceDatabase = connection.database;
+manifest.mysqlVersion = mysqlVersion;
+manifest.verification = verification;
+delete manifest.snapshotStartedAt;
+await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
+NODE
+
+legacy_restore_url=$(node -e '
+  const url = new URL(process.env.DATABASE_URL);
+  url.pathname = `/${process.argv[1]}`;
+  process.stdout.write(url.toString());
+' "$legacy_restore_database")
+
+DATABASE_URL="$legacy_restore_url" \
+BACKUP_FILE="$backup_file" \
+RESTORE_CONFIRM="RESTORE:$legacy_restore_database" \
 node scripts/database-restore.mjs

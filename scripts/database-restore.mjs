@@ -1,12 +1,19 @@
-import "dotenv/config";
 import { spawn } from "node:child_process";
 import { createReadStream } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { loadEnvFile } from "node:process";
 import { pipeline } from "node:stream/promises";
 import { createGunzip } from "node:zlib";
-import { BackupDecryptTransform, sha256File, validateBackupPassphrase } from "./lib/backup-format.mjs";
+import { BackupDecryptTransform, validateBackupPassphrase } from "./lib/backup-format.mjs";
+import { verifyBackupArtifact } from "./lib/backup-artifact-verifier.mjs";
 import { collectDatabaseVerification, parseMysqlUrl, runMysqlScalar, waitForChild, withMysqlDefaultsFile } from "./lib/mysql-tools.mjs";
+
+try {
+  loadEnvFile();
+} catch (error) {
+  if (error?.code !== "ENOENT") throw error;
+}
 
 const main = async () => {
   const connection = parseMysqlUrl(process.env.DATABASE_URL);
@@ -19,15 +26,12 @@ const main = async () => {
     throw new Error(`RESTORE_CONFIRM must equal ${expectedConfirmation}`);
   }
   const manifestPath = `${backupPath}.json`;
-  const [manifestText, actualSha256, backupStat] = await Promise.all([
-    readFile(manifestPath, "utf8"),
-    sha256File(backupPath),
-    stat(backupPath),
-  ]);
+  await verifyBackupArtifact(backupPath);
+  const manifestText = await readFile(manifestPath, "utf8");
   const manifest = JSON.parse(manifestText);
-  if (manifest.format !== "mcap-backup-v1") throw new Error("Unsupported backup manifest format");
-  if (manifest.sha256 !== actualSha256 || manifest.bytes !== backupStat.size) {
-    throw new Error("Backup integrity verification failed");
+  const isLegacyManifest = manifest.format === "mcap-backup-v1";
+  if (isLegacyManifest && (!manifest.verification || typeof manifest.verification !== "object")) {
+    throw new Error("Legacy backup manifest verification metadata is invalid");
   }
 
   const verification = await withMysqlDefaultsFile(connection, async (defaultsFile) => {
@@ -74,10 +78,20 @@ const main = async () => {
       "SELECT COUNT(*) FROM _prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL",
     ));
     const databaseVerification = await collectDatabaseVerification(mysqlBinary, defaultsFile, connection.database);
+    const rowCountsAreValid = Object.values(databaseVerification.rowCounts).every(
+      (value) => Number.isSafeInteger(Number(value)) && Number(value) >= 0,
+    );
+    const requiredCoreRowsExist = ["organizations", "companies", "users"].every(
+      (name) => Number.isSafeInteger(Number(databaseVerification.rowCounts[name]))
+        && Number(databaseVerification.rowCounts[name]) > 0,
+    );
     if (
       tableCount === 0
       || schemaMigrationCount !== manifest.schemaMigrationCount
-      || JSON.stringify(databaseVerification) !== JSON.stringify(manifest.verification)
+      || !rowCountsAreValid
+      || !requiredCoreRowsExist
+      || databaseVerification.journalTotals.baseDebit !== databaseVerification.journalTotals.baseCredit
+      || (isLegacyManifest && JSON.stringify(databaseVerification) !== JSON.stringify(manifest.verification))
     ) {
       throw new Error("Restored database verification failed");
     }
@@ -87,7 +101,6 @@ const main = async () => {
   process.stdout.write(`${JSON.stringify({
     status: "restored",
     targetDatabase: connection.database,
-    sourceDatabase: manifest.sourceDatabase,
     ...verification,
   })}\n`);
 };
