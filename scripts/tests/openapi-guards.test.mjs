@@ -20,7 +20,10 @@ test("generated OpenAPI guards are committed and current", () => {
   assert.ok(guardedOperationIds.includes("createInventoryItem"));
   assert.ok(guardedOperationIds.includes("createInventoryMovement"));
   assert.ok(guardedOperationIds.includes("commitDataImport"));
-  assert.equal(readFileSync(generatedPath, "utf8"), buildGeneratedSource());
+  assert.equal(
+    readFileSync(generatedPath, "utf8").replace(/\r\n?/gu, "\n"),
+    buildGeneratedSource().replace(/\r\n?/gu, "\n"),
+  );
 });
 
 test("guard generation reflects request constraints from the contract", () => {

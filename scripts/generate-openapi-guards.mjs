@@ -376,6 +376,7 @@ const currentDocument = assertObject(parse(readFileSync(contractPath, "utf8")), 
 const currentInventory = contractInventory(currentDocument);
 export const guardedOperationIds = currentInventory.requests.map((item) => item.operationId);
 export const responseOperationIds = [...new Set(currentInventory.responses.map((item) => item.operationId))];
+const normalizeNewlines = (value) => value.replace(/\r\n?/gu, "\n");
 
 function run() {
   const unknownArguments = process.argv.slice(2).filter((argument) => argument !== "--check");
@@ -383,7 +384,7 @@ function run() {
   const generated = buildGeneratedSource();
   if (process.argv.includes("--check")) {
     const current = existsSync(generatedPath) ? readFileSync(generatedPath, "utf8") : undefined;
-    if (current !== generated) {
+    if (current === undefined || normalizeNewlines(current) !== normalizeNewlines(generated)) {
       console.error("Generated OpenAPI guards are stale. Run: npm run contracts:generate");
       process.exitCode = 1;
       return;

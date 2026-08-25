@@ -24,7 +24,7 @@ jobs:
       CPANEL_SSH_PORT: '1394'
       CPANEL_SSH_USER: doralash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Configure the pinned production SSH identity
         env:
           CPANEL_SSH_PRIVATE_KEY: ${{ secrets.CPANEL_SSH_PRIVATE_KEY }}

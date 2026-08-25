@@ -1,0 +1,604 @@
+name: production backup and restore drill
+
+on:
+  schedule:
+    - cron: '43 1 * * *'
+  workflow_dispatch:
+    inputs:
+      restore_drill:
+        description: Restore the new production backup into an isolated MariaDB database
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  backup:
+    name: Create encrypted offsite production backup
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: https://accounting.doralashab.com
+    env:
+      CPANEL_SSH_HOST: sv13.byethost13.org
+      CPANEL_SSH_PORT: '1394'
+      CPANEL_SSH_USER: doralash
+      CPANEL_DEPLOY_ROOT: /home/doralash/accounting-app
+      CPANEL_BACKUP_DIRECTORY: /home/doralash/backups/mcap
+      CPANEL_PASSENGER_CONFIG_FILE: /home/doralash/accounting.doralashab.com/.htaccess
+      MAX_PREVIOUS_BACKUP_ARTIFACT_AGE_SECONDS: '91800'
+      LOCAL_BACKUP_RETENTION_DAYS: '7'
+      LOCAL_ORPHAN_GRACE_DAYS: '1'
+    outputs:
+      restore_drill: ${{ steps.mode.outputs.restore_drill }}
+      previous_status: ${{ steps.previous.outputs.status }}
+      previous_stale: ${{ steps.previous.outputs.stale }}
+      previous_age_seconds: ${{ steps.previous.outputs.age_seconds }}
+      backup_created_at: ${{ steps.verify.outputs.created_at }}
+      backup_recovery_point_at: ${{ steps.verify.outputs.recovery_point_at }}
+      backup_age_seconds: ${{ steps.verify.outputs.age_seconds }}
+      backup_bytes: ${{ steps.verify.outputs.bytes }}
+      backup_sha256: ${{ steps.verify.outputs.sha256 }}
+      schema_migration_count: ${{ steps.verify.outputs.schema_migration_count }}
+      artifact_digest: ${{ steps.offsite.outputs.artifact-digest }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.23.2
+
+      - name: Verify this is the current main revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          current_main=$(gh api \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "/repos/$GITHUB_REPOSITORY/git/ref/heads/main" \
+            --jq '.object.sha')
+          test "$GITHUB_REF" = refs/heads/main
+          test "$current_main" = "$GITHUB_SHA"
+
+      - name: Decide whether this run includes the monthly restore drill
+        id: mode
+        env:
+          REQUESTED_RESTORE_DRILL: ${{ inputs.restore_drill }}
+        run: |
+          set -Eeuo pipefail
+          restore_drill=false
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch && "$REQUESTED_RESTORE_DRILL" == true ]]; then
+            restore_drill=true
+          elif [[ "$GITHUB_EVENT_NAME" == schedule && "$(date -u +%d)" == 01 ]]; then
+            restore_drill=true
+          fi
+          printf 'restore_drill=%s\n' "$restore_drill" >> "$GITHUB_OUTPUT"
+
+      - name: Inspect the previous offsite recovery point
+        id: previous
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          artifacts_json=$(mktemp)
+          workflow_runs_json=$(mktemp)
+          trap 'rm -f -- "$artifacts_json" "$workflow_runs_json"' EXIT
+          gh api --paginate --slurp \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "/repos/$GITHUB_REPOSITORY/actions/artifacts?name=mcap-production-database-backup&per_page=100" \
+            > "$artifacts_json"
+          gh api --paginate --slurp \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "/repos/$GITHUB_REPOSITORY/actions/workflows/production-backup-dr.yml/runs?branch=main&exclude_pull_requests=true&per_page=100" \
+            > "$workflow_runs_json"
+          node - "$artifacts_json" "$workflow_runs_json" "$GITHUB_EVENT_NAME" \
+            "$MAX_PREVIOUS_BACKUP_ARTIFACT_AGE_SECONDS" "$GITHUB_OUTPUT" <<'NODE'
+          const fs = require('node:fs');
+          const [file, runsFile, eventName, maxAgeText, outputFile] = process.argv.slice(2);
+          const maxAge = Number(maxAgeText);
+          const payloadPages = JSON.parse(fs.readFileSync(file, 'utf8'));
+          const runPages = JSON.parse(fs.readFileSync(runsFile, 'utf8'));
+          const artifacts = (Array.isArray(payloadPages) ? payloadPages : [payloadPages])
+            .flatMap((page) => page.artifacts || []);
+          const workflowRuns = (Array.isArray(runPages) ? runPages : [runPages])
+            .flatMap((page) => page.workflow_runs || []);
+          const trustedRunIds = new Set(workflowRuns
+            .filter((run) => run.head_branch === 'main')
+            .map((run) => run.id));
+          const candidates = artifacts
+            .filter((artifact) =>
+              !artifact.expired &&
+              artifact.name === 'mcap-production-database-backup' &&
+              trustedRunIds.has(artifact.workflow_run?.id))
+            .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
+          const latest = candidates[0];
+          if (!latest) {
+            const stale = eventName === 'schedule';
+            fs.appendFileSync(outputFile, `status=missing\nage_seconds=\nstale=${stale}\n`);
+            console.log(stale
+              ? '::error title=Production backup RPO::No retained offsite backup exists before this scheduled run.'
+              : 'No previous offsite backup exists; this manual run is the controlled bootstrap.');
+            process.exit(0);
+          }
+          const ageSeconds = Math.max(0, Math.floor((Date.now() - Date.parse(latest.created_at)) / 1000));
+          const stale = !Number.isFinite(ageSeconds) || ageSeconds > maxAge;
+          fs.appendFileSync(outputFile, `status=${stale ? 'stale' : 'fresh'}\nage_seconds=${ageSeconds}\nstale=${stale}\n`);
+          if (stale) console.log(`::error title=Production backup RPO::Previous offsite backup age ${ageSeconds}s exceeds ${maxAge}s.`);
+          else console.log(`Previous offsite recovery point age: ${ageSeconds}s.`);
+          NODE
+
+      - name: Configure the pinned production SSH identity
+        env:
+          CPANEL_SSH_PRIVATE_KEY: ${{ secrets.CPANEL_SSH_PRIVATE_KEY }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$CPANEL_SSH_PRIVATE_KEY"
+          install -m 0700 -d "$HOME/.ssh"
+          printf '%s\n' "$CPANEL_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+          chmod 0600 "$HOME/.ssh/id_ed25519"
+          install -m 0600 deploy/ssh/ifastnet_known_hosts "$HOME/.ssh/known_hosts"
+
+      - name: Stage the audited backup helper on production
+        id: stage
+        run: |
+          set -Eeuo pipefail
+          remote_dir="$CPANEL_DEPLOY_ROOT/incoming/dr-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          local_dir="$RUNNER_TEMP/mcap-production-backup"
+          case "$remote_dir" in
+            /home/doralash/accounting-app/incoming/dr-[0-9]*) ;;
+            *) exit 1 ;;
+          esac
+          install -m 0700 -d "$local_dir"
+          printf 'remote_dir=%s\nlocal_dir=%s\n' "$remote_dir" "$local_dir" >> "$GITHUB_OUTPUT"
+          ssh -i "$HOME/.ssh/id_ed25519" -p "$CPANEL_SSH_PORT" -o IdentitiesOnly=yes \
+            "$CPANEL_SSH_USER@$CPANEL_SSH_HOST" bash -s -- "$remote_dir" <<'REMOTE'
+          set -Eeuo pipefail
+          umask 077
+          remote_dir=$1
+          case "$remote_dir" in
+            /home/doralash/accounting-app/incoming/dr-[0-9]*) ;;
+            *) exit 1 ;;
+          esac
+          test ! -e "$remote_dir"
+          mkdir -p -- "$(dirname -- "$remote_dir")"
+          mkdir -m 0700 -- "$remote_dir"
+          REMOTE
+          scp -i "$HOME/.ssh/id_ed25519" -P "$CPANEL_SSH_PORT" -o IdentitiesOnly=yes \
+            deploy/scripts/create-cpanel-offsite-backup.sh \
+            deploy/scripts/normalize-cpanel-backup.mjs \
+            "$CPANEL_SSH_USER@$CPANEL_SSH_HOST:$remote_dir/"
+
+      - name: Create and download the encrypted production backup
+        id: create
+        env:
+          BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
+          MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+          REMOTE_DIR: ${{ steps.stage.outputs.remote_dir }}
+          LOCAL_DIR: ${{ steps.stage.outputs.local_dir }}
+        run: |
+          set -Eeuo pipefail
+          test "${#BACKUP_ENCRYPTION_PASSPHRASE}" -ge 32
+          case "$MIGRATION_DATABASE_URL" in mysql://*) ;; *) exit 1 ;; esac
+          remote_result=$(
+            { printf '%s\n' "$BACKUP_ENCRYPTION_PASSPHRASE"; printf '%s\n' "$MIGRATION_DATABASE_URL"; } | \
+              ssh -i "$HOME/.ssh/id_ed25519" -p "$CPANEL_SSH_PORT" -o IdentitiesOnly=yes \
+                "$CPANEL_SSH_USER@$CPANEL_SSH_HOST" \
+                env \
+                  MCAP_DEPLOY_ROOT="$CPANEL_DEPLOY_ROOT" \
+                  MCAP_BACKUP_DIRECTORY="$CPANEL_BACKUP_DIRECTORY" \
+                  MCAP_PASSENGER_CONFIG_FILE="$CPANEL_PASSENGER_CONFIG_FILE" \
+                  MCAP_NODE_BIN=/opt/alt/alt-nodejs22/root/usr/bin/node \
+                  MCAP_MYSQL_BIN=/usr/bin/mysql \
+                  MCAP_MYSQLDUMP_BIN=/usr/bin/mysqldump \
+                  MCAP_PIPELINE_LOCK_WAIT_SECONDS=900 \
+                  bash "$REMOTE_DIR/create-cpanel-offsite-backup.sh"
+          )
+          # shellcheck disable=SC2016
+          mapfile -t names < <(node -e '
+            const result = JSON.parse(process.argv[1]);
+            if (
+              result.status !== "created" ||
+              !/^mcap-[A-Za-z0-9_.-]+\.sql\.gz\.jwb$/.test(result.file) ||
+              result.manifest !== `${result.file}.json`
+            ) process.exit(2);
+            process.stdout.write(`${result.file}\n${result.manifest}\n`);
+          ' "$remote_result")
+          test "${#names[@]}" -eq 2
+          backup_file=${names[0]}
+          manifest_file=${names[1]}
+          scp -i "$HOME/.ssh/id_ed25519" -P "$CPANEL_SSH_PORT" -o IdentitiesOnly=yes \
+            "$CPANEL_SSH_USER@$CPANEL_SSH_HOST:$CPANEL_BACKUP_DIRECTORY/$backup_file" \
+            "$CPANEL_SSH_USER@$CPANEL_SSH_HOST:$CPANEL_BACKUP_DIRECTORY/$manifest_file" \
+            "$LOCAL_DIR/"
+          printf 'backup_file=%s\nmanifest_file=%s\n' "$backup_file" "$manifest_file" >> "$GITHUB_OUTPUT"
+
+      - name: Verify the downloaded recovery point
+        id: verify
+        env:
+          LOCAL_DIR: ${{ steps.stage.outputs.local_dir }}
+          BACKUP_FILE: ${{ steps.create.outputs.backup_file }}
+          BACKUP_MAX_AGE_SECONDS: '3600'
+        run: |
+          set -Eeuo pipefail
+          verification=$(node scripts/verify-backup-artifact.mjs "$LOCAL_DIR/$BACKUP_FILE")
+          printf '%s\n' "$verification"
+          node - "$verification" "$GITHUB_OUTPUT" <<'NODE'
+          const fs = require('node:fs');
+          const [text, outputFile] = process.argv.slice(2);
+          const result = JSON.parse(text);
+          if (result.status !== 'verified') process.exit(2);
+          fs.appendFileSync(outputFile,
+            `created_at=${result.createdAt}\nrecovery_point_at=${result.recoveryPointAt}\n` +
+            `age_seconds=${result.ageSeconds}\nbytes=${result.bytes}\n` +
+            `sha256=${result.sha256}\nschema_migration_count=${result.schemaMigrationCount}\n`);
+          NODE
+
+      - name: Store the encrypted backup outside iFastNet
+        id: offsite
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mcap-production-database-backup
+          path: ${{ steps.stage.outputs.local_dir }}/
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
+          overwrite: ${{ github.run_attempt > 1 }}
+
+      - name: Prune only offsite-backed local recovery points
+        run: |
+          set -Eeuo pipefail
+          [[ "$LOCAL_BACKUP_RETENTION_DAYS" =~ ^[1-9][0-9]*$ ]]
+          [[ "$LOCAL_ORPHAN_GRACE_DAYS" =~ ^[1-9][0-9]*$ ]]
+          ssh -i "$HOME/.ssh/id_ed25519" -p "$CPANEL_SSH_PORT" -o IdentitiesOnly=yes \
+            "$CPANEL_SSH_USER@$CPANEL_SSH_HOST" bash -s -- \
+              "$CPANEL_BACKUP_DIRECTORY" "$LOCAL_BACKUP_RETENTION_DAYS" "$LOCAL_ORPHAN_GRACE_DAYS" <<'REMOTE'
+          set -Eeuo pipefail
+          umask 077
+          backup_directory=$1
+          retention_days=$2
+          orphan_grace_days=$3
+          [[ "$backup_directory" == /home/doralash/backups/mcap ]]
+          [[ "$retention_days" =~ ^[1-9][0-9]*$ ]]
+          [[ "$orphan_grace_days" =~ ^[1-9][0-9]*$ ]]
+          [[ -d "$backup_directory" && ! -L "$backup_directory" ]]
+          [[ "$(readlink -f -- "$backup_directory")" == "$backup_directory" ]]
+          cutoff_epoch=$(date -u --date="$retention_days days ago" +%s)
+          orphan_cutoff_epoch=$(date -u --date="$orphan_grace_days days ago" +%s)
+          removed=0
+          removed_orphans=0
+          shopt -s nullglob
+          for manifest_file in "$backup_directory"/mcap-production-*.sql.gz.jwb.json; do
+            backup_file=${manifest_file%.json}
+            [[ -f "$manifest_file" && ! -L "$manifest_file" ]]
+            [[ ! -L "$backup_file" ]]
+            if [[ -f "$backup_file" ]]; then
+              modified_epoch=$(stat -c '%Y' -- "$manifest_file")
+              if (( modified_epoch < cutoff_epoch )); then
+                rm -f -- "$backup_file" "$manifest_file"
+                removed=$((removed + 1))
+              fi
+            elif [[ -e "$backup_file" ]]; then
+              printf 'Unexpected production backup path type: %s\n' "$backup_file" >&2
+              exit 1
+            fi
+          done
+          for partial_file in "$backup_directory"/mcap-production-*.partial; do
+            [[ -f "$partial_file" && ! -L "$partial_file" ]]
+            modified_epoch=$(stat -c '%Y' -- "$partial_file")
+            if (( modified_epoch < orphan_cutoff_epoch )); then
+              rm -f -- "$partial_file"
+              removed_orphans=$((removed_orphans + 1))
+            fi
+          done
+          for backup_file in "$backup_directory"/mcap-production-*.sql.gz.jwb; do
+            [[ -f "$backup_file" && ! -L "$backup_file" ]]
+            manifest_file="$backup_file.json"
+            [[ ! -L "$manifest_file" ]]
+            if [[ ! -e "$manifest_file" && ! -L "$manifest_file" ]]; then
+              modified_epoch=$(stat -c '%Y' -- "$backup_file")
+              if (( modified_epoch < orphan_cutoff_epoch )); then
+                rm -f -- "$backup_file"
+                removed_orphans=$((removed_orphans + 1))
+              fi
+            fi
+          done
+          for manifest_file in "$backup_directory"/mcap-production-*.sql.gz.jwb.json; do
+            [[ -f "$manifest_file" && ! -L "$manifest_file" ]]
+            backup_file=${manifest_file%.json}
+            if [[ ! -e "$backup_file" && ! -L "$backup_file" ]]; then
+              modified_epoch=$(stat -c '%Y' -- "$manifest_file")
+              if (( modified_epoch < orphan_cutoff_epoch )); then
+                rm -f -- "$manifest_file"
+                removed_orphans=$((removed_orphans + 1))
+              fi
+            fi
+          done
+          printf 'Pruned %s offsite-backed local recovery point(s) and %s stale orphan(s).\n' \
+            "$removed" "$removed_orphans"
+          REMOTE
+
+      - name: Remove the temporary remote helper
+        if: always() && steps.stage.outputs.remote_dir != ''
+        continue-on-error: true
+        env:
+          REMOTE_DIR: ${{ steps.stage.outputs.remote_dir }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/id_ed25519" -p "$CPANEL_SSH_PORT" -o IdentitiesOnly=yes \
+            "$CPANEL_SSH_USER@$CPANEL_SSH_HOST" bash -s -- "$REMOTE_DIR" <<'REMOTE'
+          set -Eeuo pipefail
+          remote_dir=$1
+          case "$remote_dir" in
+            /home/doralash/accounting-app/incoming/dr-[0-9]*) ;;
+            *) exit 1 ;;
+          esac
+          test -d "$remote_dir" && test ! -L "$remote_dir"
+          rm -f -- \
+            "$remote_dir/create-cpanel-offsite-backup.sh" \
+            "$remote_dir/normalize-cpanel-backup.mjs"
+          rmdir -- "$remote_dir"
+          REMOTE
+
+  restore_drill:
+    name: Restore the production backup into isolated MariaDB
+    needs: backup
+    if: needs.backup.outputs.restore_drill == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: https://accounting.doralashab.com
+    services:
+      mariadb:
+        image: mariadb:10.11.11@sha256:96be0d3dfbeb07bc420e5fb8a6dc05c492676f1f89980a497a55e6fbbba3f1c4
+        env:
+          MYSQL_DATABASE: mcap_production_dr_restore
+          MYSQL_USER: mcap_dr
+          MYSQL_PASSWORD: dr_database_password
+          MYSQL_ROOT_PASSWORD: dr_root_password
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mariadb-admin ping -h 127.0.0.1 -umcap_dr -pdr_database_password"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    env:
+      DATABASE_URL: mysql://mcap_dr:dr_database_password@127.0.0.1:3306/mcap_production_dr_restore
+      RESTORE_CONFIRM: RESTORE:mcap_production_dr_restore
+      MYSQL_BIN: mariadb
+      RTO_OBJECTIVE_SECONDS: '900'
+    outputs:
+      rto_seconds: ${{ steps.restore.outputs.rto_seconds }}
+      rto_met: ${{ steps.restore.outputs.rto_met }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.23.2
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: mcap-production-database-backup
+          path: dr-backup
+      - name: Install the MariaDB restore client
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes mariadb-client
+      - name: Verify the external artifact before decryption
+        id: artifact
+        env:
+          BACKUP_MAX_AGE_SECONDS: '3600'
+        run: |
+          set -Eeuo pipefail
+          backup_file=$(find dr-backup -maxdepth 1 -type f -name '*.sql.gz.jwb' -print -quit)
+          test -n "$backup_file"
+          test -f "$backup_file.json"
+          verification=$(node scripts/verify-backup-artifact.mjs "$backup_file")
+          printf '%s\n' "$verification"
+          printf 'backup_file=%s\n' "$backup_file" >> "$GITHUB_OUTPUT"
+      - name: Restore and verify the production recovery point
+        id: restore
+        env:
+          BACKUP_FILE: ${{ steps.artifact.outputs.backup_file }}
+          BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
+        run: |
+          set -Eeuo pipefail
+          started_ms=$(date +%s%3N)
+          restore_result=$(node scripts/database-restore.mjs)
+          completed_ms=$(date +%s%3N)
+          elapsed_ms=$((completed_ms - started_ms))
+          rto_seconds=$(((elapsed_ms + 999) / 1000))
+          rto_met=true
+          if (( rto_seconds > RTO_OBJECTIVE_SECONDS )); then rto_met=false; fi
+          printf '%s\n' "$restore_result"
+          printf 'rto_seconds=%s\nrto_met=%s\nrestore_result=%s\n' \
+            "$rto_seconds" "$rto_met" "$restore_result" >> "$GITHUB_OUTPUT"
+      - name: Write sanitized recovery evidence
+        id: evidence
+        env:
+          RESTORE_RESULT: ${{ steps.restore.outputs.restore_result }}
+          RTO_SECONDS: ${{ steps.restore.outputs.rto_seconds }}
+          RTO_MET: ${{ steps.restore.outputs.rto_met }}
+          BACKUP_CREATED_AT: ${{ needs.backup.outputs.backup_created_at }}
+          BACKUP_RECOVERY_POINT_AT: ${{ needs.backup.outputs.backup_recovery_point_at }}
+          BACKUP_AGE_SECONDS: ${{ needs.backup.outputs.backup_age_seconds }}
+          PREVIOUS_BACKUP_STATUS: ${{ needs.backup.outputs.previous_status }}
+          PREVIOUS_BACKUP_STALE: ${{ needs.backup.outputs.previous_stale }}
+          PREVIOUS_BACKUP_AGE_SECONDS: ${{ needs.backup.outputs.previous_age_seconds }}
+          BACKUP_BYTES: ${{ needs.backup.outputs.backup_bytes }}
+          BACKUP_SHA256: ${{ needs.backup.outputs.backup_sha256 }}
+          SCHEMA_MIGRATION_COUNT: ${{ needs.backup.outputs.schema_migration_count }}
+          ARTIFACT_DIGEST: ${{ needs.backup.outputs.artifact_digest }}
+        run: |
+          set -Eeuo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const restored = JSON.parse(process.env.RESTORE_RESULT);
+          if (restored.status !== 'restored') process.exit(2);
+          const previousAge = process.env.PREVIOUS_BACKUP_AGE_SECONDS
+            ? Number(process.env.PREVIOUS_BACKUP_AGE_SECONDS)
+            : null;
+          const restoreObjectiveMet = process.env.RTO_MET === 'true';
+          const previousStale = process.env.PREVIOUS_BACKUP_STALE === 'true';
+          const recoveryPointObjectiveMet = previousStale
+            ? false
+            : process.env.PREVIOUS_BACKUP_STATUS === 'fresh'
+              ? true
+              : null;
+          const status = !restoreObjectiveMet
+            ? 'failed_restore_objective'
+            : recoveryPointObjectiveMet === false
+              ? 'failed_recovery_point_objective'
+              : recoveryPointObjectiveMet === null
+                ? 'accepted_bootstrap'
+                : 'passed';
+          const evidence = {
+            status,
+            exercisedAt: new Date().toISOString(),
+            workflowRunId: process.env.GITHUB_RUN_ID,
+            commit: process.env.GITHUB_SHA,
+            backup: {
+              createdAt: process.env.BACKUP_CREATED_AT,
+              recoveryPointAt: process.env.BACKUP_RECOVERY_POINT_AT,
+              recoveryPointAgeAtVerificationSeconds: Number(process.env.BACKUP_AGE_SECONDS),
+              previousRecoveryPointAgeSeconds: previousAge,
+              bytes: Number(process.env.BACKUP_BYTES),
+              sha256: process.env.BACKUP_SHA256,
+              artifactDigest: process.env.ARTIFACT_DIGEST,
+              schemaMigrationCount: Number(process.env.SCHEMA_MIGRATION_COUNT),
+              retentionDays: 90,
+            },
+            restore: {
+              engine: 'MariaDB 10.11.11',
+              isolatedDatabase: true,
+              tableCount: restored.tableCount,
+              schemaMigrationCount: restored.schemaMigrationCount,
+              technicalRestoreExecutionSeconds: Number(process.env.RTO_SECONDS),
+              technicalObjectiveSeconds: 900,
+              objectiveMet: restoreObjectiveMet,
+            },
+            recoveryPointObjective: {
+              maximumRecoveryPointAgeSeconds: 93600,
+              artifactFreshnessGateSeconds: 91800,
+              observedPreviousArtifactAgeSeconds: previousAge,
+              measurement: 'trusted GitHub artifact created_at proxy',
+              objectiveMet: recoveryPointObjectiveMet,
+            },
+          };
+          fs.writeFileSync('dr-evidence.json', `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o600 });
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `status=${status}\n`);
+          NODE
+      - name: Store the monthly restore evidence
+        if: steps.evidence.outputs.status == 'passed' || steps.evidence.outputs.status == 'accepted_bootstrap'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mcap-production-restore-drill
+          path: dr-evidence.json
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: ${{ github.run_attempt > 1 }}
+      - name: Store failed restore objective evidence
+        if: steps.evidence.outputs.status == 'failed_restore_objective' || steps.evidence.outputs.status == 'failed_recovery_point_objective'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mcap-production-restore-drill-failed-evidence
+          path: dr-evidence.json
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: ${{ github.run_attempt > 1 }}
+      - name: Enforce the restore drill objectives
+        if: always() && (steps.evidence.outputs.status == 'failed_restore_objective' || steps.evidence.outputs.status == 'failed_recovery_point_objective')
+        env:
+          EVIDENCE_STATUS: ${{ steps.evidence.outputs.status }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "$EVIDENCE_STATUS" == failed_restore_objective ]]; then
+            printf '::error title=Production restore RTO::Restore exceeded %ss.\n' "$RTO_OBJECTIVE_SECONDS"
+          else
+            printf '::error title=Production backup RPO::The prior offsite recovery point was missing or stale.\n'
+          fi
+          exit 1
+
+  recovery_objective_gate:
+    name: Enforce production recovery objectives
+    needs: [backup, restore_drill]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Persist a failed required restore drill
+        id: persistence
+        env:
+          BACKUP_RESULT: ${{ needs.backup.result }}
+          RESTORE_EXPECTED_OUTPUT: ${{ needs.backup.outputs.restore_drill }}
+          RESTORE_RESULT: ${{ needs.restore_drill.result }}
+          REQUESTED_RESTORE_DRILL: ${{ inputs.restore_drill }}
+        run: |
+          set -Eeuo pipefail
+          restore_expected=$RESTORE_EXPECTED_OUTPUT
+          if [[ "$restore_expected" != true ]]; then
+            restore_expected=false
+            if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch && "$REQUESTED_RESTORE_DRILL" == true ]]; then
+              restore_expected=true
+            elif [[ "$GITHUB_EVENT_NAME" == schedule && "$(date -u +%d)" == 01 ]]; then
+              restore_expected=true
+            fi
+          fi
+          failure=false
+          if [[ "$restore_expected" == true && "$RESTORE_RESULT" != success ]]; then failure=true; fi
+          printf 'restore_expected=%s\nfailure=%s\n' "$restore_expected" "$failure" >> "$GITHUB_OUTPUT"
+          if [[ "$failure" == true ]]; then
+            node <<'NODE'
+          const fs = require('node:fs');
+          const marker = {
+            status: 'failed',
+            observedAt: new Date().toISOString(),
+            workflowRunId: process.env.GITHUB_RUN_ID,
+            commit: process.env.GITHUB_SHA,
+            backupJob: process.env.BACKUP_RESULT,
+            restoreJob: process.env.RESTORE_RESULT,
+          };
+          fs.writeFileSync('dr-failure.json', `${JSON.stringify(marker, null, 2)}\n`, { mode: 0o600 });
+          NODE
+          fi
+      - name: Store the persistent restore failure marker
+        if: steps.persistence.outputs.failure == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mcap-production-restore-drill-failure
+          path: dr-failure.json
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: ${{ github.run_attempt > 1 }}
+      - name: Surface backup or restore failures and stale recovery points
+        env:
+          BACKUP_RESULT: ${{ needs.backup.result }}
+          PREVIOUS_STALE: ${{ needs.backup.outputs.previous_stale }}
+          RESTORE_EXPECTED: ${{ steps.persistence.outputs.restore_expected }}
+          RESTORE_RESULT: ${{ needs.restore_drill.result }}
+        run: |
+          set -Eeuo pipefail
+          failed=false
+          if [[ "$BACKUP_RESULT" != success ]]; then
+            printf '::error title=Production backup failed::No verified offsite recovery point was produced.\n'
+            failed=true
+          fi
+          if [[ "$PREVIOUS_STALE" == true ]]; then
+            printf '::error title=Production backup RPO::The prior offsite recovery point exceeded 26 hours or was missing.\n'
+            failed=true
+          fi
+          if [[ "$RESTORE_EXPECTED" == true && "$RESTORE_RESULT" != success ]]; then
+            printf '::error title=Production restore drill failed::The isolated monthly restore did not complete successfully.\n'
+            failed=true
+          fi
+          [[ "$failed" == false ]]
