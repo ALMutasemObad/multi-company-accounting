@@ -205,8 +205,12 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
     await waitForStableInterface(page, { name: 'inventory', path: '', ready: '.workspace-page', kind: 'workspace' });
 
     const tabs = page.locator('.section-tabs button');
-    await expect(tabs).toHaveCount(3);
-    for (const [index, name] of [[1, 'units'], [2, 'items']] as const) {
+    await expect(tabs).toHaveCount(5);
+    await tabs.nth(1).click();
+    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('.workspace-page .loading')).toHaveCount(0);
+    await auditCurrentInterface(page, locale, 'inventory-balances');
+    for (const [index, name] of [[2, 'movements'], [3, 'units'], [4, 'items']] as const) {
       await test.step(name, async () => {
         await tabs.nth(index).click();
         await expect(tabs.nth(index)).toHaveAttribute('aria-selected', 'true');

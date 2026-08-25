@@ -7,6 +7,17 @@ import {
   type PostingLinePlan,
 } from "../core-accounting/posting-engine.js";
 import { FiscalService } from "../fiscal/fiscal-service.js";
+import {
+  InventoryCatalogService,
+  InventoryInvoiceSelectionError,
+  inventoryQuantityFitsUnit,
+  type InventoryInvoiceCatalogPort,
+} from "../inventory/inventory-catalog-service.js";
+import {
+  InventoryMovementError,
+  InventoryMovementService,
+  type InventoryInvoiceStockPort,
+} from "../inventory/inventory-movement-service.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
 import { PayableItemService } from "../payables/payable-item-service.js";
 import { archiveDocument } from "../printing/print-archive.js";
@@ -26,6 +37,11 @@ export type PurchaseInvoiceErrorReason =
   | "INVALID_COST_CENTER"
   | "INVALID_TAX_RATE"
   | "INVALID_CURRENCY"
+  | "WAREHOUSE_REQUIRED"
+  | "INVALID_WAREHOUSE"
+  | "INVALID_INVENTORY_ITEM"
+  | "INVALID_QUANTITY_PRECISION"
+  | "INSUFFICIENT_STOCK"
   | "INVALID_LINE"
   | "INVALID_DISCOUNT"
   | "INVALID_TOTAL"
@@ -43,6 +59,7 @@ export class PurchaseInvoiceError extends Error {
   }
 }
 export type PurchaseInvoiceLineInput = {
+  inventoryItemId?: bigint | null;
   description: string;
   quantity: string;
   unitPrice: string;
@@ -59,6 +76,7 @@ export type PurchaseInvoiceInput = {
   dueDate: string;
   description: string;
   supplierId: bigint;
+  warehouseId?: bigint | null;
   supplierInvoiceNumber?: string | null;
   sourceInvoiceId?: bigint | null;
   currencyId: bigint;
@@ -69,6 +87,20 @@ export type PurchaseInvoiceInput = {
 };
 
 export type PurchaseInvoiceUpdate = { version: number } & Partial<PurchaseInvoiceInput>;
+
+type PurchaseInvoiceStockSnapshot = {
+  id: bigint;
+  warehouseId: bigint | null;
+  accountingDocument: {
+    documentType: string;
+    documentNumber: string;
+    documentDate: Date;
+  };
+  lines: Array<{
+    inventoryItemId: bigint | null;
+    quantity: Prisma.Decimal;
+  }>;
+};
 
 const asDate = (value: string) => new Date(`${value}T00:00:00.000Z`);
 const day = (value: Date) => value.toISOString().slice(0, 10);
@@ -96,11 +128,20 @@ export class PurchaseInvoiceService {
   private readonly posting = new PostingEngine();
   private readonly payables = new PayableItemService();
   private readonly taxes: TaxQuotePort;
+  private readonly inventory: InventoryInvoiceCatalogPort;
+  private readonly stock: InventoryInvoiceStockPort;
   private readonly commands: IdempotentCommandExecutor;
 
-  constructor(private readonly prisma: PrismaClient, taxes?: TaxQuotePort) {
+  constructor(
+    private readonly prisma: PrismaClient,
+    taxes?: TaxQuotePort,
+    inventory?: InventoryInvoiceCatalogPort,
+    stock?: InventoryInvoiceStockPort,
+  ) {
     this.fiscal = new FiscalService(prisma);
     this.taxes = taxes ?? new TaxService(prisma);
+    this.inventory = inventory ?? new InventoryCatalogService(prisma);
+    this.stock = stock ?? new InventoryMovementService(prisma);
     this.commands = new IdempotentCommandExecutor(prisma);
   }
 
@@ -195,6 +236,7 @@ export class PurchaseInvoiceService {
           companyId: context.companyId,
           accountingDocumentId: document.id,
           supplierId: input.supplierId,
+          warehouseId: prepared.inventory.warehouse?.id ?? null,
           supplierInvoiceNumber: input.supplierInvoiceNumber?.trim() || null,
           sourceInvoiceId: input.documentType === "PURCHASE_DEBIT_NOTE" ? input.sourceInvoiceId ?? null : null,
           currencyId: input.currencyId,
@@ -209,6 +251,8 @@ export class PurchaseInvoiceService {
           supplierNameSnapshot: prepared.supplier.nameAr,
           supplierTaxLast4: prepared.supplier.taxNumberLast4,
           supplierAddressSnapshot: prepared.supplierAddress,
+          warehouseCodeSnapshot: prepared.inventory.warehouse?.code ?? null,
+          warehouseNameSnapshot: prepared.inventory.warehouse?.nameAr ?? null,
           notes: input.notes ?? null,
           lines: { create: prepared.calculation.lines },
         },
@@ -233,6 +277,7 @@ export class PurchaseInvoiceService {
         dueDate: input.dueDate ?? day(current.dueDate),
         description: input.description ?? current.accountingDocument.description,
         supplierId: input.supplierId ?? current.supplierId,
+        warehouseId: input.warehouseId === undefined ? current.warehouseId : input.warehouseId,
         supplierInvoiceNumber: input.supplierInvoiceNumber === undefined ? current.supplierInvoiceNumber : input.supplierInvoiceNumber,
         sourceInvoiceId: input.sourceInvoiceId === undefined ? current.sourceInvoiceId : input.sourceInvoiceId,
         currencyId: input.currencyId ?? current.currencyId,
@@ -241,7 +286,8 @@ export class PurchaseInvoiceService {
         notes: input.notes === undefined ? current.notes : input.notes,
         lines: input.lines ?? current.lines.map((line) => ({
           description: line.description,
-          quantity: line.quantity.toFixed(4),
+          inventoryItemId: line.inventoryItemId,
+          quantity: line.quantity.toFixed(6),
           unitPrice: line.unitPrice.toFixed(4),
           discountAmount: line.discountAmount.toFixed(4),
           debitAccountId: line.debitAccountId,
@@ -263,6 +309,7 @@ export class PurchaseInvoiceService {
         where: { id },
         data: {
           supplierId: merged.supplierId,
+          warehouseId: prepared.inventory.warehouse?.id ?? null,
           supplierInvoiceNumber: merged.supplierInvoiceNumber?.trim() || null,
           sourceInvoiceId: merged.documentType === "PURCHASE_DEBIT_NOTE" ? merged.sourceInvoiceId ?? null : null,
           currencyId: merged.currencyId,
@@ -277,6 +324,8 @@ export class PurchaseInvoiceService {
           supplierNameSnapshot: prepared.supplier.nameAr,
           supplierTaxLast4: prepared.supplier.taxNumberLast4,
           supplierAddressSnapshot: prepared.supplierAddress,
+          warehouseCodeSnapshot: prepared.inventory.warehouse?.code ?? null,
+          warehouseNameSnapshot: prepared.inventory.warehouse?.nameAr ?? null,
           notes: merged.notes ?? null,
           lines: { create: prepared.calculation.lines },
         },
@@ -334,25 +383,33 @@ export class PurchaseInvoiceService {
         actorUserId: context.userId,
         error: (reason) => this.postingError(reason),
         beforeLedger: async (postingTx) => {
-          if (input.documentType !== "PURCHASE_DEBIT_NOTE") return;
-          const source = await postingTx.purchaseInvoice.findFirst({
-            where: { id: input.sourceInvoiceId!, companyId: context.companyId },
-            select: { accountingDocumentId: true },
-          });
-          if (!source) throw new PurchaseInvoiceError("INVALID_SOURCE_INVOICE");
-          await lockAccountingDocument(
+          if (input.documentType === "PURCHASE_DEBIT_NOTE") {
+            const source = await postingTx.purchaseInvoice.findFirst({
+              where: { id: input.sourceInvoiceId!, companyId: context.companyId },
+              select: { accountingDocumentId: true },
+            });
+            if (!source) throw new PurchaseInvoiceError("INVALID_SOURCE_INVOICE");
+            await lockAccountingDocument(
+              postingTx,
+              context.companyId,
+              source.accountingDocumentId,
+            );
+            await this.payables.applyDebit(postingTx, {
+              companyId: context.companyId,
+              sourceInvoiceId: input.sourceInvoiceId!,
+              amount: prepared.calculation.total,
+              invalid: () => new PurchaseInvoiceError("INVALID_SOURCE_INVOICE"),
+              overAllocation: () => new PurchaseInvoiceError("DEBIT_EXCEEDS_INVOICE"),
+              conflict: () => new PurchaseInvoiceError("VERSION_CONFLICT"),
+            });
+          }
+          await this.applyStockMovement(
             postingTx,
-            context.companyId,
-            source.accountingDocumentId,
+            context,
+            invoice,
+            "POST",
+            day(invoice.accountingDocument.documentDate),
           );
-          await this.payables.applyDebit(postingTx, {
-            companyId: context.companyId,
-            sourceInvoiceId: input.sourceInvoiceId!,
-            amount: prepared.calculation.total,
-            invalid: () => new PurchaseInvoiceError("INVALID_SOURCE_INVOICE"),
-            overAllocation: () => new PurchaseInvoiceError("DEBIT_EXCEEDS_INVOICE"),
-            conflict: () => new PurchaseInvoiceError("VERSION_CONFLICT"),
-          });
         },
         afterEntries: async (postingTx, entries) => {
           const apLine = entries[0]?.lines.find((line) => line.lineNumber === 1);
@@ -477,9 +534,7 @@ export class PurchaseInvoiceService {
               hasSettlements: () => new PurchaseInvoiceError("HAS_SETTLEMENTS"),
               conflict: () => new PurchaseInvoiceError("VERSION_CONFLICT"),
             });
-            return;
-          }
-          if (original.documentType === "PURCHASE_DEBIT_NOTE") {
+          } else if (original.documentType === "PURCHASE_DEBIT_NOTE") {
             if (!invoice.sourceInvoiceId)
               throw new PurchaseInvoiceError("INVALID_SOURCE_INVOICE");
             await this.payables.reverseDebit(postingTx, {
@@ -490,6 +545,13 @@ export class PurchaseInvoiceService {
               conflict: () => new PurchaseInvoiceError("VERSION_CONFLICT"),
             });
           }
+          await this.applyStockMovement(
+            postingTx,
+            context,
+            invoice,
+            "REVERSE",
+            input.reversalDate,
+          );
         },
         error: (reason) => this.postingError(reason),
       });
@@ -543,6 +605,9 @@ export class PurchaseInvoiceService {
       supplierId: value.supplierId.toString(),
       supplierInvoiceNumber: value.supplierInvoiceNumber,
       supplier: value.supplier ? { ...value.supplier, id: value.supplier.id.toString() } : undefined,
+      warehouseId: value.warehouseId?.toString() ?? null,
+      warehouseCodeSnapshot: value.warehouseCodeSnapshot,
+      warehouseNameSnapshot: value.warehouseNameSnapshot,
       sourceInvoiceId: value.sourceInvoiceId?.toString() ?? null,
       sourceInvoiceNumber: value.sourceInvoice?.accountingDocument.documentNumber ?? null,
       payableItemId: value.payableItem?.id.toString() ?? null,
@@ -565,7 +630,28 @@ export class PurchaseInvoiceService {
       supplierTaxMasked: value.supplierTaxLast4 ? `****${value.supplierTaxLast4}` : null,
       supplierAddressSnapshot: value.supplierAddressSnapshot,
       notes: value.notes,
-      lines: value.lines.map((line: any) => ({ id: line.id.toString(), lineNumber: line.lineNumber, description: line.description, debitAccountId: line.debitAccountId.toString(), debitAccount: line.debitAccount ? { ...line.debitAccount, id: line.debitAccount.id.toString() } : undefined, costCenterId: line.costCenterId?.toString() ?? null, costCenter: line.costCenter ? { ...line.costCenter, id: line.costCenter.id.toString() } : null, taxRateId: line.taxRateId?.toString() ?? null, taxRate: line.taxRate ? { ...line.taxRate, id: line.taxRate.id.toString(), rate: line.taxRate.rate.toFixed(4) } : null, quantity: line.quantity.toFixed(4), unitPrice: line.unitPrice.toFixed(4), discountAmount: line.discountAmount.toFixed(4), netAmount: line.netAmount.toFixed(4), taxRateSnapshot: line.taxRateSnapshot.toFixed(4), taxAmount: line.taxAmount.toFixed(4), totalAmount: line.totalAmount.toFixed(4) })),
+      lines: value.lines.map((line: any) => ({
+        id: line.id.toString(),
+        lineNumber: line.lineNumber,
+        inventoryItemId: line.inventoryItemId?.toString() ?? null,
+        inventoryItemCodeSnapshot: line.inventoryItemCodeSnapshot,
+        inventoryItemNameSnapshot: line.inventoryItemNameSnapshot,
+        unitOfMeasureCodeSnapshot: line.unitOfMeasureCodeSnapshot,
+        description: line.description,
+        debitAccountId: line.debitAccountId.toString(),
+        debitAccount: line.debitAccount ? { ...line.debitAccount, id: line.debitAccount.id.toString() } : undefined,
+        costCenterId: line.costCenterId?.toString() ?? null,
+        costCenter: line.costCenter ? { ...line.costCenter, id: line.costCenter.id.toString() } : null,
+        taxRateId: line.taxRateId?.toString() ?? null,
+        taxRate: line.taxRate ? { ...line.taxRate, id: line.taxRate.id.toString(), rate: line.taxRate.rate.toFixed(4) } : null,
+        quantity: line.quantity.toFixed(6),
+        unitPrice: line.unitPrice.toFixed(4),
+        discountAmount: line.discountAmount.toFixed(4),
+        netAmount: line.netAmount.toFixed(4),
+        taxRateSnapshot: line.taxRateSnapshot.toFixed(4),
+        taxAmount: line.taxAmount.toFixed(4),
+        totalAmount: line.totalAmount.toFixed(4),
+      })),
     };
   }
 
@@ -595,6 +681,29 @@ export class PurchaseInvoiceService {
     if (accounts.length !== accountIds.length || accounts.some((account) => account._count.children || !["ASSET", "EXPENSE"].includes(account.accountType.class))) throw new PurchaseInvoiceError("INVALID_ACCOUNT");
     const costCenterIds = [...new Set(input.lines.flatMap((line) => line.costCenterId ? [line.costCenterId.toString()] : []))].map(BigInt);
     if (costCenterIds.length && await tx.costCenter.count({ where: { companyId, id: { in: costCenterIds }, isActive: true } }) !== costCenterIds.length) throw new PurchaseInvoiceError("INVALID_COST_CENTER");
+    let inventory;
+    try {
+      inventory = await this.inventory.resolveInvoiceSelection(tx, {
+        companyId,
+        warehouseId: input.warehouseId,
+        inventoryItemIds: input.lines.flatMap((line) =>
+          line.inventoryItemId ? [line.inventoryItemId] : [],
+        ),
+      });
+    } catch (error) {
+      if (error instanceof InventoryInvoiceSelectionError) {
+        throw new PurchaseInvoiceError(error.reason);
+      }
+      throw error;
+    }
+    for (const line of input.lines) {
+      if (!line.inventoryItemId) continue;
+      const item = inventory.items.get(line.inventoryItemId.toString());
+      if (!item) throw new PurchaseInvoiceError("INVALID_INVENTORY_ITEM");
+      if (!inventoryQuantityFitsUnit(line.quantity, item.unitOfMeasure.decimalPlaces)) {
+        throw new PurchaseInvoiceError("INVALID_QUANTITY_PRECISION");
+      }
+    }
     const taxIds = [...new Set(input.lines.flatMap((line) => line.taxRateId ? [line.taxRateId.toString()] : []))].map(BigInt);
     let taxQuotes;
     try {
@@ -619,10 +728,20 @@ export class PurchaseInvoiceService {
       })), input.exchangeRate);
       calculation = {
         ...taxCalculation,
-        lines: taxCalculation.lines.map(({ accountId, ...line }) => ({
-          ...line,
-          debitAccountId: accountId,
-        })),
+        lines: taxCalculation.lines.map(({ accountId, ...line }, index) => {
+          const inventoryItemId = input.lines[index]!.inventoryItemId ?? null;
+          const item = inventoryItemId
+            ? inventory.items.get(inventoryItemId.toString())
+            : undefined;
+          return {
+            ...line,
+            debitAccountId: accountId,
+            inventoryItemId,
+            inventoryItemCodeSnapshot: item?.code ?? null,
+            inventoryItemNameSnapshot: item?.nameAr ?? null,
+            unitOfMeasureCodeSnapshot: item?.unitOfMeasure.code ?? null,
+          };
+        }),
       };
     } catch (error) {
       if (error instanceof TaxCalculationError) throw new PurchaseInvoiceError(error.reason);
@@ -639,13 +758,14 @@ export class PurchaseInvoiceService {
       supplier,
       supplierAddress,
       calculation,
+      inventory,
       taxAccounts: new Map([...taxQuotes].flatMap(([id, quote]) =>
         quote.accountId ? [[id, quote.accountId] as const] : [])),
     };
   }
 
   private inputFrom(value: any): PurchaseInvoiceInput {
-    return { documentType: value.accountingDocument.documentType, fiscalPeriodId: value.accountingDocument.fiscalPeriodId, documentDate: day(value.accountingDocument.documentDate), dueDate: day(value.dueDate), description: value.accountingDocument.description, supplierId: value.supplierId, supplierInvoiceNumber: value.supplierInvoiceNumber, sourceInvoiceId: value.sourceInvoiceId, currencyId: value.currencyId, exchangeRate: value.exchangeRate.toFixed(8), supplierAddress: value.supplierAddressSnapshot, notes: value.notes, lines: value.lines.map((line: any) => ({ description: line.description, quantity: line.quantity.toFixed(4), unitPrice: line.unitPrice.toFixed(4), discountAmount: line.discountAmount.toFixed(4), debitAccountId: line.debitAccountId, costCenterId: line.costCenterId, taxRateId: line.taxRateId })) };
+    return { documentType: value.accountingDocument.documentType, fiscalPeriodId: value.accountingDocument.fiscalPeriodId, documentDate: day(value.accountingDocument.documentDate), dueDate: day(value.dueDate), description: value.accountingDocument.description, supplierId: value.supplierId, warehouseId: value.warehouseId, supplierInvoiceNumber: value.supplierInvoiceNumber, sourceInvoiceId: value.sourceInvoiceId, currencyId: value.currencyId, exchangeRate: value.exchangeRate.toFixed(8), supplierAddress: value.supplierAddressSnapshot, notes: value.notes, lines: value.lines.map((line: any) => ({ inventoryItemId: line.inventoryItemId, description: line.description, quantity: line.quantity.toFixed(6), unitPrice: line.unitPrice.toFixed(4), discountAmount: line.discountAmount.toFixed(4), debitAccountId: line.debitAccountId, costCenterId: line.costCenterId, taxRateId: line.taxRateId })) };
   }
 
   private async validateDebitLimit(tx: Prisma.TransactionClient, companyId: bigint, sourceInvoiceId: bigint, amount: Prisma.Decimal, currentId?: bigint) {
@@ -687,6 +807,48 @@ export class PurchaseInvoiceService {
 
   private audit(tx: Prisma.TransactionClient, context: ActorContext, action: string, id: bigint, details?: Prisma.InputJsonValue, entityType = "PURCHASE_INVOICE") {
     return tx.auditLog.create({ data: { companyId: context.companyId, actorUserId: context.userId, action, entityType, entityId: id.toString(), ...(details ? { details } : {}) } });
+  }
+
+  private async applyStockMovement(
+    tx: Prisma.TransactionClient,
+    context: ActorContext,
+    invoice: PurchaseInvoiceStockSnapshot,
+    sourceEvent: "POST" | "REVERSE",
+    stockDate: string,
+  ) {
+    const inventoryLines = invoice.lines.flatMap((line) => line.inventoryItemId
+      ? [{ inventoryItemId: line.inventoryItemId, quantity: line.quantity.toFixed(6) }]
+      : []);
+    if (inventoryLines.length === 0) return null;
+    if (!invoice.warehouseId) throw new PurchaseInvoiceError("WAREHOUSE_REQUIRED");
+    try {
+      return await this.stock.applyInvoiceStockMovement(tx, {
+        companyId: context.companyId,
+        actorUserId: context.userId,
+        invoiceId: invoice.id,
+        documentType: invoice.accountingDocument.documentType as "PURCHASE_INVOICE" | "PURCHASE_DEBIT_NOTE",
+        sourceEvent,
+        documentNumber: invoice.accountingDocument.documentNumber,
+        movementDate: stockDate,
+        warehouseId: invoice.warehouseId,
+        lines: inventoryLines,
+      });
+    } catch (error) {
+      if (!(error instanceof InventoryMovementError)) throw error;
+      if (error.reason === "INSUFFICIENT_STOCK") {
+        throw new PurchaseInvoiceError("INSUFFICIENT_STOCK");
+      }
+      if (["INVALID_WAREHOUSE", "WAREHOUSE_INACTIVE"].includes(error.reason)) {
+        throw new PurchaseInvoiceError("INVALID_WAREHOUSE");
+      }
+      if (["INVALID_INVENTORY_ITEM", "ITEM_INACTIVE"].includes(error.reason)) {
+        throw new PurchaseInvoiceError("INVALID_INVENTORY_ITEM");
+      }
+      if (error.reason === "INVALID_QUANTITY_PRECISION") {
+        throw new PurchaseInvoiceError("INVALID_QUANTITY_PRECISION");
+      }
+      throw new PurchaseInvoiceError("INVALID_LINE");
+    }
   }
 
   private async command(context: ActorContext, id: bigint, operation: string, key: string, fingerprint: string, execute: (tx: Prisma.TransactionClient, invoice: any) => Promise<{ document: any; ids: string[] }>) {

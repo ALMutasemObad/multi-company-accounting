@@ -144,6 +144,27 @@ enum DataImportStatus {
   EXPIRED
 }
 
+enum InventoryMovementType {
+  OPENING_BALANCE
+  RECEIPT
+  ISSUE
+  TRANSFER
+  ADJUSTMENT_IN
+  ADJUSTMENT_OUT
+}
+
+enum InventoryMovementSourceType {
+  SALES_INVOICE
+  SALES_CREDIT_NOTE
+  PURCHASE_INVOICE
+  PURCHASE_DEBIT_NOTE
+}
+
+enum InventoryMovementSourceEvent {
+  POST
+  REVERSE
+}
+
 model Organization {
   id                   BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
   code                 String                @unique @default(uuid()) @db.VarChar(80)
@@ -216,6 +237,10 @@ model Company {
   warehouses                       Warehouse[]
   unitsOfMeasure                   UnitOfMeasure[]
   inventoryItems                   InventoryItem[]
+  inventoryMovementSequence        InventoryMovementSequence?
+  inventoryMovements               InventoryMovement[]
+  inventoryMovementLines           InventoryMovementLine[]
+  inventoryBalances                InventoryBalance[]
   paymentMethods                   PaymentMethod[]
   receipts                         Receipt[]
   receiptAllocations               ReceiptAllocation[]
@@ -266,7 +291,8 @@ model User {
   exchangeRatesUpdated       CompanyExchangeRate[]  @relation("ExchangeRateUpdatedBy")
   registrationRequests       RegistrationRequest[]  @relation("RegistrationUser")
   passwordResetRequests      PasswordResetRequest[]
-  dataImportBatches          DataImportBatch[]         @relation("DataImportCreatedBy")
+  dataImportBatches          DataImportBatch[]      @relation("DataImportCreatedBy")
+  inventoryMovementsCreated  InventoryMovement[]    @relation("InventoryMovementCreatedBy")
 
   @@map("users")
 }
@@ -867,17 +893,22 @@ model CashBankAccount {
 }
 
 model Warehouse {
-  id        BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
-  companyId BigInt   @map("company_id") @db.UnsignedBigInt
-  code      String   @db.VarChar(40)
-  nameAr    String   @map("name_ar") @db.VarChar(160)
-  nameEn    String?  @map("name_en") @db.VarChar(160)
-  address   String?  @db.VarChar(300)
-  isActive  Boolean  @default(true) @map("is_active")
-  version   Int      @default(0) @db.UnsignedInt
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  company   Company  @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  id               BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId        BigInt            @map("company_id") @db.UnsignedBigInt
+  code             String            @db.VarChar(40)
+  nameAr           String            @map("name_ar") @db.VarChar(160)
+  nameEn           String?           @map("name_en") @db.VarChar(160)
+  address          String?           @db.VarChar(300)
+  isActive         Boolean           @default(true) @map("is_active")
+  version          Int               @default(0) @db.UnsignedInt
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+  company          Company           @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  salesInvoices    SalesInvoice[]
+  purchaseInvoices PurchaseInvoice[]
+  movementLinesFrom InventoryMovementLine[] @relation("InventoryMovementFromWarehouse")
+  movementLinesTo   InventoryMovementLine[] @relation("InventoryMovementToWarehouse")
+  inventoryBalances InventoryBalance[]
 
   @@unique([companyId, code])
   @@unique([id, companyId])
@@ -906,25 +937,115 @@ model UnitOfMeasure {
 }
 
 model InventoryItem {
-  id                BigInt        @id @default(autoincrement()) @db.UnsignedBigInt
-  companyId         BigInt        @map("company_id") @db.UnsignedBigInt
-  unitOfMeasureId   BigInt        @map("unit_of_measure_id") @db.UnsignedBigInt
-  code              String        @db.VarChar(40)
-  nameAr            String        @map("name_ar") @db.VarChar(200)
-  nameEn            String?       @map("name_en") @db.VarChar(200)
-  description       String?       @db.VarChar(500)
-  isActive          Boolean       @default(true) @map("is_active")
-  version           Int           @default(0) @db.UnsignedInt
-  createdAt         DateTime      @default(now()) @map("created_at")
-  updatedAt         DateTime      @updatedAt @map("updated_at")
-  company           Company       @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  unitOfMeasure     UnitOfMeasure @relation(fields: [unitOfMeasureId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  id                   BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId            BigInt                @map("company_id") @db.UnsignedBigInt
+  unitOfMeasureId      BigInt                @map("unit_of_measure_id") @db.UnsignedBigInt
+  code                 String                @db.VarChar(40)
+  nameAr               String                @map("name_ar") @db.VarChar(200)
+  nameEn               String?               @map("name_en") @db.VarChar(200)
+  description          String?               @db.VarChar(500)
+  isActive             Boolean               @default(true) @map("is_active")
+  version              Int                   @default(0) @db.UnsignedInt
+  createdAt            DateTime              @default(now()) @map("created_at")
+  updatedAt            DateTime              @updatedAt @map("updated_at")
+  company              Company               @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  unitOfMeasure        UnitOfMeasure         @relation(fields: [unitOfMeasureId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  salesInvoiceLines    SalesInvoiceLine[]
+  purchaseInvoiceLines PurchaseInvoiceLine[]
+  movementLines        InventoryMovementLine[]
+  inventoryBalances    InventoryBalance[]
 
   @@unique([companyId, code])
   @@unique([id, companyId])
   @@index([companyId, unitOfMeasureId, isActive])
   @@index([companyId, isActive, nameAr])
   @@map("inventory_items")
+}
+
+model InventoryMovementSequence {
+  companyId  BigInt   @id @map("company_id") @db.UnsignedBigInt
+  prefix     String   @default("IMV-") @db.VarChar(12)
+  nextNumber BigInt   @default(1) @map("next_number") @db.UnsignedBigInt
+  padding    Int      @default(8) @db.UnsignedTinyInt
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@map("inventory_movement_sequences")
+}
+
+model InventoryMovement {
+  id                           BigInt                        @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId                    BigInt                        @map("company_id") @db.UnsignedBigInt
+  movementNumber               String                        @map("movement_number") @db.VarChar(40)
+  movementType                 InventoryMovementType         @map("movement_type")
+  movementDate                 DateTime                      @map("movement_date") @db.Date
+  description                  String                        @db.VarChar(500)
+  externalReference            String?                       @map("external_reference") @db.VarChar(100)
+  sourceType                   InventoryMovementSourceType?  @map("source_type")
+  sourceId                     BigInt?                       @map("source_id") @db.UnsignedBigInt
+  sourceEvent                  InventoryMovementSourceEvent? @map("source_event")
+  sourceDocumentNumberSnapshot String?                       @map("source_document_number_snapshot") @db.VarChar(40)
+  createdById                  BigInt                        @map("created_by_id") @db.UnsignedBigInt
+  createdAt                    DateTime                      @default(now()) @map("created_at")
+  company                      Company                       @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  createdBy                    User                          @relation("InventoryMovementCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  lines                        InventoryMovementLine[]
+
+  @@unique([companyId, movementNumber])
+  @@unique([companyId, sourceType, sourceId, sourceEvent], map: "inventory_movements_invoice_source_key")
+  @@unique([id, companyId])
+  @@index([companyId, movementDate, id])
+  @@index([companyId, movementType, movementDate])
+  @@index([companyId, externalReference])
+  @@map("inventory_movements")
+}
+
+model InventoryMovementLine {
+  id                         BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId                  BigInt            @map("company_id") @db.UnsignedBigInt
+  movementId                 BigInt            @map("movement_id") @db.UnsignedBigInt
+  lineNumber                 Int               @map("line_number") @db.UnsignedSmallInt
+  inventoryItemId            BigInt            @map("inventory_item_id") @db.UnsignedBigInt
+  fromWarehouseId            BigInt?           @map("from_warehouse_id") @db.UnsignedBigInt
+  toWarehouseId              BigInt?           @map("to_warehouse_id") @db.UnsignedBigInt
+  quantity                   Decimal           @db.Decimal(19, 6)
+  inventoryItemCodeSnapshot  String            @map("inventory_item_code_snapshot") @db.VarChar(40)
+  inventoryItemNameSnapshot  String            @map("inventory_item_name_snapshot") @db.VarChar(200)
+  unitOfMeasureCodeSnapshot  String            @map("unit_of_measure_code_snapshot") @db.VarChar(20)
+  fromWarehouseCodeSnapshot  String?           @map("from_warehouse_code_snapshot") @db.VarChar(40)
+  fromWarehouseNameSnapshot  String?           @map("from_warehouse_name_snapshot") @db.VarChar(160)
+  toWarehouseCodeSnapshot    String?           @map("to_warehouse_code_snapshot") @db.VarChar(40)
+  toWarehouseNameSnapshot    String?           @map("to_warehouse_name_snapshot") @db.VarChar(160)
+  company                    Company           @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  movement                   InventoryMovement @relation(fields: [movementId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  inventoryItem              InventoryItem     @relation(fields: [inventoryItemId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  fromWarehouse              Warehouse?        @relation("InventoryMovementFromWarehouse", fields: [fromWarehouseId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  toWarehouse                Warehouse?        @relation("InventoryMovementToWarehouse", fields: [toWarehouseId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([movementId, lineNumber])
+  @@index([companyId, inventoryItemId])
+  @@index([companyId, fromWarehouseId])
+  @@index([companyId, toWarehouseId])
+  @@map("inventory_movement_lines")
+}
+
+model InventoryBalance {
+  id              BigInt        @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId       BigInt        @map("company_id") @db.UnsignedBigInt
+  warehouseId     BigInt        @map("warehouse_id") @db.UnsignedBigInt
+  inventoryItemId BigInt        @map("inventory_item_id") @db.UnsignedBigInt
+  onHand          Decimal       @default(0) @map("on_hand") @db.Decimal(19, 6)
+  version         Int           @default(0) @db.UnsignedInt
+  movementCount   Int           @default(0) @map("movement_count") @db.UnsignedInt
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+  company         Company       @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  warehouse       Warehouse     @relation(fields: [warehouseId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([companyId, warehouseId, inventoryItemId])
+  @@unique([id, companyId])
+  @@index([companyId, inventoryItemId, warehouseId])
+  @@map("inventory_balances")
 }
 
 model PaymentMethod {
@@ -1020,6 +1141,7 @@ model SalesInvoice {
   companyId               BigInt             @map("company_id") @db.UnsignedBigInt
   accountingDocumentId    BigInt             @unique @map("accounting_document_id") @db.UnsignedBigInt
   customerId              BigInt             @map("customer_id") @db.UnsignedBigInt
+  warehouseId             BigInt?            @map("warehouse_id") @db.UnsignedBigInt
   sourceInvoiceId         BigInt?            @map("source_invoice_id") @db.UnsignedBigInt
   arJournalLineId         BigInt?            @unique @map("ar_journal_line_id") @db.UnsignedBigInt
   currencyId              BigInt             @map("currency_id") @db.UnsignedBigInt
@@ -1034,10 +1156,13 @@ model SalesInvoice {
   customerNameSnapshot    String             @map("customer_name_snapshot") @db.VarChar(200)
   customerTaxLast4        String?            @map("customer_tax_last4") @db.VarChar(4)
   customerAddressSnapshot String?            @map("customer_address_snapshot") @db.VarChar(500)
+  warehouseCodeSnapshot   String?            @map("warehouse_code_snapshot") @db.VarChar(40)
+  warehouseNameSnapshot   String?            @map("warehouse_name_snapshot") @db.VarChar(160)
   notes                   String?            @db.VarChar(1000)
   company                 Company            @relation(fields: [companyId], references: [id])
   accountingDocument      AccountingDocument @relation(fields: [accountingDocumentId, companyId], references: [id, companyId])
   customer                Customer           @relation(fields: [customerId, companyId], references: [id, companyId])
+  warehouse               Warehouse?         @relation(fields: [warehouseId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
   sourceInvoice           SalesInvoice?      @relation("SalesCreditNotes", fields: [sourceInvoiceId, companyId], references: [id, companyId])
   creditNotes             SalesInvoice[]     @relation("SalesCreditNotes")
   arJournalLine           JournalLine?       @relation("SalesInvoiceArLine", fields: [arJournalLineId, companyId], references: [id, companyId])
@@ -1049,6 +1174,7 @@ model SalesInvoice {
   @@unique([accountingDocumentId, companyId])
   @@unique([arJournalLineId, companyId])
   @@index([companyId, customerId, dueDate])
+  @@index([companyId, warehouseId])
   @@index([sourceInvoiceId, companyId])
   @@map("sales_invoices")
 }
@@ -1079,29 +1205,35 @@ model ReceivableItem {
 }
 
 model SalesInvoiceLine {
-  id               BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
-  companyId        BigInt       @map("company_id") @db.UnsignedBigInt
-  salesInvoiceId   BigInt       @map("sales_invoice_id") @db.UnsignedBigInt
-  lineNumber       Int          @map("line_number") @db.UnsignedSmallInt
-  revenueAccountId BigInt       @map("revenue_account_id") @db.UnsignedBigInt
-  costCenterId     BigInt?      @map("cost_center_id") @db.UnsignedBigInt
-  taxRateId        BigInt?      @map("tax_rate_id") @db.UnsignedBigInt
-  description      String       @db.VarChar(500)
-  quantity         Decimal      @db.Decimal(19, 4)
-  unitPrice        Decimal      @map("unit_price") @db.Decimal(19, 4)
-  discountAmount   Decimal      @map("discount_amount") @db.Decimal(19, 4)
-  netAmount        Decimal      @map("net_amount") @db.Decimal(19, 4)
-  taxRateSnapshot  Decimal      @map("tax_rate_snapshot") @db.Decimal(9, 4)
-  taxAmount        Decimal      @map("tax_amount") @db.Decimal(19, 4)
-  totalAmount      Decimal      @map("total_amount") @db.Decimal(19, 4)
-  company          Company      @relation(fields: [companyId], references: [id])
-  salesInvoice     SalesInvoice @relation(fields: [salesInvoiceId, companyId], references: [id, companyId])
-  revenueAccount   Account      @relation("SalesRevenueAccount", fields: [revenueAccountId, companyId], references: [id, companyId])
-  costCenter       CostCenter?  @relation(fields: [costCenterId, companyId], references: [id, companyId])
-  taxRate          TaxRate?     @relation(fields: [taxRateId, companyId], references: [id, companyId])
+  id                        BigInt         @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId                 BigInt         @map("company_id") @db.UnsignedBigInt
+  salesInvoiceId            BigInt         @map("sales_invoice_id") @db.UnsignedBigInt
+  inventoryItemId           BigInt?        @map("inventory_item_id") @db.UnsignedBigInt
+  lineNumber                Int            @map("line_number") @db.UnsignedSmallInt
+  revenueAccountId          BigInt         @map("revenue_account_id") @db.UnsignedBigInt
+  costCenterId              BigInt?        @map("cost_center_id") @db.UnsignedBigInt
+  taxRateId                 BigInt?        @map("tax_rate_id") @db.UnsignedBigInt
+  description               String         @db.VarChar(500)
+  inventoryItemCodeSnapshot String?        @map("inventory_item_code_snapshot") @db.VarChar(40)
+  inventoryItemNameSnapshot String?        @map("inventory_item_name_snapshot") @db.VarChar(200)
+  unitOfMeasureCodeSnapshot String?        @map("unit_of_measure_code_snapshot") @db.VarChar(20)
+  quantity                  Decimal        @db.Decimal(19, 6)
+  unitPrice                 Decimal        @map("unit_price") @db.Decimal(19, 4)
+  discountAmount            Decimal        @map("discount_amount") @db.Decimal(19, 4)
+  netAmount                 Decimal        @map("net_amount") @db.Decimal(19, 4)
+  taxRateSnapshot           Decimal        @map("tax_rate_snapshot") @db.Decimal(9, 4)
+  taxAmount                 Decimal        @map("tax_amount") @db.Decimal(19, 4)
+  totalAmount               Decimal        @map("total_amount") @db.Decimal(19, 4)
+  company                   Company        @relation(fields: [companyId], references: [id])
+  salesInvoice              SalesInvoice   @relation(fields: [salesInvoiceId, companyId], references: [id, companyId])
+  inventoryItem             InventoryItem? @relation(fields: [inventoryItemId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  revenueAccount            Account        @relation("SalesRevenueAccount", fields: [revenueAccountId, companyId], references: [id, companyId])
+  costCenter                CostCenter?    @relation(fields: [costCenterId, companyId], references: [id, companyId])
+  taxRate                   TaxRate?       @relation(fields: [taxRateId, companyId], references: [id, companyId])
 
   @@unique([salesInvoiceId, lineNumber])
   @@index([companyId, revenueAccountId])
+  @@index([companyId, inventoryItemId])
   @@index([companyId, taxRateId])
   @@map("sales_invoice_lines")
 }
@@ -1138,6 +1270,7 @@ model PurchaseInvoice {
   companyId               BigInt                @map("company_id") @db.UnsignedBigInt
   accountingDocumentId    BigInt                @unique @map("accounting_document_id") @db.UnsignedBigInt
   supplierId              BigInt                @map("supplier_id") @db.UnsignedBigInt
+  warehouseId             BigInt?               @map("warehouse_id") @db.UnsignedBigInt
   sourceInvoiceId         BigInt?               @map("source_invoice_id") @db.UnsignedBigInt
   apJournalLineId         BigInt?               @unique @map("ap_journal_line_id") @db.UnsignedBigInt
   currencyId              BigInt                @map("currency_id") @db.UnsignedBigInt
@@ -1152,11 +1285,14 @@ model PurchaseInvoice {
   supplierNameSnapshot    String                @map("supplier_name_snapshot") @db.VarChar(200)
   supplierTaxLast4        String?               @map("supplier_tax_last4") @db.VarChar(4)
   supplierAddressSnapshot String?               @map("supplier_address_snapshot") @db.VarChar(500)
+  warehouseCodeSnapshot   String?               @map("warehouse_code_snapshot") @db.VarChar(40)
+  warehouseNameSnapshot   String?               @map("warehouse_name_snapshot") @db.VarChar(160)
   supplierInvoiceNumber   String?               @map("supplier_invoice_number") @db.VarChar(100)
   notes                   String?               @db.VarChar(1000)
   company                 Company               @relation(fields: [companyId], references: [id])
   accountingDocument      AccountingDocument    @relation(fields: [accountingDocumentId, companyId], references: [id, companyId])
   supplier                Supplier              @relation(fields: [supplierId, companyId], references: [id, companyId])
+  warehouse               Warehouse?            @relation(fields: [warehouseId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
   sourceInvoice           PurchaseInvoice?      @relation("PurchaseDebitNotes", fields: [sourceInvoiceId, companyId], references: [id, companyId])
   debitNotes              PurchaseInvoice[]     @relation("PurchaseDebitNotes")
   apJournalLine           JournalLine?          @relation("PurchaseInvoiceApLine", fields: [apJournalLineId, companyId], references: [id, companyId])
@@ -1168,6 +1304,7 @@ model PurchaseInvoice {
   @@unique([accountingDocumentId, companyId])
   @@unique([apJournalLineId, companyId])
   @@index([companyId, supplierId, dueDate])
+  @@index([companyId, warehouseId])
   @@index([sourceInvoiceId, companyId])
   @@index([companyId, supplierInvoiceNumber])
   @@map("purchase_invoices")
@@ -1199,29 +1336,35 @@ model PayableItem {
 }
 
 model PurchaseInvoiceLine {
-  id                BigInt          @id @default(autoincrement()) @db.UnsignedBigInt
-  companyId         BigInt          @map("company_id") @db.UnsignedBigInt
-  purchaseInvoiceId BigInt          @map("purchase_invoice_id") @db.UnsignedBigInt
-  lineNumber        Int             @map("line_number") @db.UnsignedSmallInt
-  debitAccountId    BigInt          @map("debit_account_id") @db.UnsignedBigInt
-  costCenterId      BigInt?         @map("cost_center_id") @db.UnsignedBigInt
-  taxRateId         BigInt?         @map("tax_rate_id") @db.UnsignedBigInt
-  description       String          @db.VarChar(500)
-  quantity          Decimal         @db.Decimal(19, 4)
-  unitPrice         Decimal         @map("unit_price") @db.Decimal(19, 4)
-  discountAmount    Decimal         @map("discount_amount") @db.Decimal(19, 4)
-  netAmount         Decimal         @map("net_amount") @db.Decimal(19, 4)
-  taxRateSnapshot   Decimal         @map("tax_rate_snapshot") @db.Decimal(9, 4)
-  taxAmount         Decimal         @map("tax_amount") @db.Decimal(19, 4)
-  totalAmount       Decimal         @map("total_amount") @db.Decimal(19, 4)
-  company           Company         @relation(fields: [companyId], references: [id])
-  purchaseInvoice   PurchaseInvoice @relation(fields: [purchaseInvoiceId, companyId], references: [id, companyId])
-  debitAccount      Account         @relation("PurchaseDebitAccount", fields: [debitAccountId, companyId], references: [id, companyId])
-  costCenter        CostCenter?     @relation(fields: [costCenterId, companyId], references: [id, companyId])
-  taxRate           TaxRate?        @relation(fields: [taxRateId, companyId], references: [id, companyId])
+  id                        BigInt          @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId                 BigInt          @map("company_id") @db.UnsignedBigInt
+  purchaseInvoiceId         BigInt          @map("purchase_invoice_id") @db.UnsignedBigInt
+  inventoryItemId           BigInt?         @map("inventory_item_id") @db.UnsignedBigInt
+  lineNumber                Int             @map("line_number") @db.UnsignedSmallInt
+  debitAccountId            BigInt          @map("debit_account_id") @db.UnsignedBigInt
+  costCenterId              BigInt?         @map("cost_center_id") @db.UnsignedBigInt
+  taxRateId                 BigInt?         @map("tax_rate_id") @db.UnsignedBigInt
+  description               String          @db.VarChar(500)
+  inventoryItemCodeSnapshot String?         @map("inventory_item_code_snapshot") @db.VarChar(40)
+  inventoryItemNameSnapshot String?         @map("inventory_item_name_snapshot") @db.VarChar(200)
+  unitOfMeasureCodeSnapshot String?         @map("unit_of_measure_code_snapshot") @db.VarChar(20)
+  quantity                  Decimal         @db.Decimal(19, 6)
+  unitPrice                 Decimal         @map("unit_price") @db.Decimal(19, 4)
+  discountAmount            Decimal         @map("discount_amount") @db.Decimal(19, 4)
+  netAmount                 Decimal         @map("net_amount") @db.Decimal(19, 4)
+  taxRateSnapshot           Decimal         @map("tax_rate_snapshot") @db.Decimal(9, 4)
+  taxAmount                 Decimal         @map("tax_amount") @db.Decimal(19, 4)
+  totalAmount               Decimal         @map("total_amount") @db.Decimal(19, 4)
+  company                   Company         @relation(fields: [companyId], references: [id])
+  purchaseInvoice           PurchaseInvoice @relation(fields: [purchaseInvoiceId, companyId], references: [id, companyId])
+  inventoryItem             InventoryItem?  @relation(fields: [inventoryItemId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  debitAccount              Account         @relation("PurchaseDebitAccount", fields: [debitAccountId, companyId], references: [id, companyId])
+  costCenter                CostCenter?     @relation(fields: [costCenterId, companyId], references: [id, companyId])
+  taxRate                   TaxRate?        @relation(fields: [taxRateId, companyId], references: [id, companyId])
 
   @@unique([purchaseInvoiceId, lineNumber])
   @@index([companyId, debitAccountId])
+  @@index([companyId, inventoryItemId])
   @@index([companyId, taxRateId])
   @@map("purchase_invoice_lines")
 }

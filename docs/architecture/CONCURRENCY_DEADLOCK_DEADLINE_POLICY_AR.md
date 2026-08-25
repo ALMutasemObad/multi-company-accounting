@@ -1,8 +1,8 @@
 ---
 title: "Concurrency, Deadlock and Deadline Policy"
 status: "mandatory"
-version: "1.2"
-last_updated: "2026-08-22"
+version: "1.4"
+last_updated: "2026-08-25"
 related:
   - "ARCHITECTURE_GUARDRAILS_AR.md"
   - "ADR-003-domain-boundaries-and-eventing.md"
@@ -126,6 +126,10 @@ related:
 6. Accounts/Cost Centers/Currencies المطلوبة بترتيب ثابت عند الحاجة لقفلها.
 7. Journal/Balance rows بترتيب `(accountId, fiscalPeriodStart, fiscalPeriodId)` أو الترتيب المعتمد في Posting Engine.
 8. Audit وOutbox inserts في النهاية.
+
+يطبق دفتر حركة Inventory ترتيبًا متخصصًا داخل هذا الإطار: سجل Idempotency، ثم المستودعات، ثم وحدات القياس، ثم الأصناف حسب المعرّف، ثم مفاتيح الرصيد `(warehouseId, inventoryItemId)` بترتيب ثابت، ثم `InventoryMovementSequence` والحركة والأسطر والتدقيق. يسبق قفل الوحدة قفل الصنف كي يطابق مسارات الكتالوج، ويؤخر قفل التسلسل حتى تصبح قواعد الرصيد محسومة، فلا يحجز رقم الشركة طوال عمل حركات غير متعارضة. يستخدم تعطيل المستودع أو الصنف قفل المرجع نفسه قبل فحص الرصيد، ولذلك لا يستطيع مسار حركة متزامن تجاوز قرار التعطيل أو إدخال كمية إلى مرجع أصبح معطلًا.
+
+عند توليد الحركة من فاتورة، يحتفظ `PostingEngine` بالمستوى الأعلى: Idempotency ثم الفترة ومستند المصدر، ثم قفل مستند الإشعار الأصلي وعنصر الذمة عند الصلة، وبعدها يستدعي `InventoryInvoiceStockPort` قبل قفل أسطر Ledger. داخل المنفذ يبقى ترتيب Inventory السابق كما هو. ينشئ كل `(companyId, sourceType, sourceId, sourceEvent)` حركة واحدة على الأكثر؛ لكن هذا التفرد دفاع إضافي ولا يستبدل قفل مستند الفاتورة أو Idempotency الأمر المالي.
 
 قواعد إضافية:
 

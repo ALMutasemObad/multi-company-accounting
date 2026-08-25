@@ -686,14 +686,15 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", "Noto Sans Devanaga
 .invoice-line-editor label { min-width: 0; }
 .invoice-line-editor input, .invoice-line-editor select { width: 100%; }
 .invoice-line-editor .line-index { grid-column: 1; grid-row: 1; }
-.invoice-line-editor .line-description { grid-column: 2; grid-row: 1; }
-.invoice-line-editor .line-quantity { grid-column: 3; grid-row: 1; }
-.invoice-line-editor .line-unit-price { grid-column: 4; grid-row: 1; }
-.invoice-line-editor .line-discount { grid-column: 5; grid-row: 1; }
-.invoice-line-editor .line-account { grid-column: 2 / span 2; grid-row: 2; }
-.invoice-line-editor .line-tax { grid-column: 4; grid-row: 2; }
-.invoice-line-editor .line-cost-center { grid-column: 5; grid-row: 2; }
-.invoice-line-editor .line-delete { grid-column: 6; grid-row: 2; }
+.invoice-line-editor .line-item { grid-column: 2 / span 2; grid-row: 1; }
+.invoice-line-editor .line-description { grid-column: 4 / span 2; grid-row: 1; }
+.invoice-line-editor .line-quantity { grid-column: 2; grid-row: 2; }
+.invoice-line-editor .line-unit-price { grid-column: 3; grid-row: 2; }
+.invoice-line-editor .line-discount { grid-column: 4; grid-row: 2; }
+.invoice-line-editor .line-tax { grid-column: 5; grid-row: 2; }
+.invoice-line-editor .line-account { grid-column: 2 / span 2; grid-row: 3; }
+.invoice-line-editor .line-cost-center { grid-column: 4 / span 2; grid-row: 3; }
+.invoice-line-editor .line-delete { grid-column: 6; grid-row: 3; }
 .line-index { align-self: center; display: grid; width: 28px; height: 28px; place-items: center; border-radius: 50%; background: var(--green-700); color: white; font-weight: 800; }
 .invoice-live-summary { display: grid; grid-template-columns: repeat(4, minmax(130px, 1fr)); gap: 10px; }
 .invoice-live-summary > span { display: flex; flex-direction: column; gap: 4px; padding: 13px 15px; border: 1px solid var(--line); border-radius: 11px; background: #f7f9f7; color: var(--muted); }
@@ -762,14 +763,15 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", "Noto Sans Devanaga
   .page-actions { width: 100%; }
   .invoice-line-editor { grid-template-columns: 32px repeat(2, minmax(0, 1fr)); }
   .invoice-line-editor .line-index { grid-column: 1; grid-row: 1; }
-  .invoice-line-editor .line-description { grid-column: 2 / -1; grid-row: 1; }
-  .invoice-line-editor .line-quantity { grid-column: 2; grid-row: 2; }
-  .invoice-line-editor .line-unit-price { grid-column: 3; grid-row: 2; }
-  .invoice-line-editor .line-discount { grid-column: 2; grid-row: 3; }
-  .invoice-line-editor .line-account { grid-column: 3; grid-row: 3; }
-  .invoice-line-editor .line-tax { grid-column: 2; grid-row: 4; }
-  .invoice-line-editor .line-cost-center { grid-column: 3; grid-row: 4; }
-  .invoice-line-editor .line-delete { grid-column: 3; grid-row: 5; }
+  .invoice-line-editor .line-item { grid-column: 2 / -1; grid-row: 1; }
+  .invoice-line-editor .line-description { grid-column: 2 / -1; grid-row: 2; }
+  .invoice-line-editor .line-quantity { grid-column: 2; grid-row: 3; }
+  .invoice-line-editor .line-unit-price { grid-column: 3; grid-row: 3; }
+  .invoice-line-editor .line-discount { grid-column: 2; grid-row: 4; }
+  .invoice-line-editor .line-tax { grid-column: 3; grid-row: 4; }
+  .invoice-line-editor .line-account { grid-column: 2; grid-row: 5; }
+  .invoice-line-editor .line-cost-center { grid-column: 3; grid-row: 5; }
+  .invoice-line-editor .line-delete { grid-column: 3; grid-row: 6; }
   .invoice-live-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .invoice-summary { grid-template-columns: 1fr; }
 }
@@ -816,6 +818,7 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", "Noto Sans Devanaga
   .invoice-line-editor > * { grid-column: 2; }
   .invoice-line-editor .line-index { grid-column: 1; grid-row: 1; }
   .invoice-line-editor .line-description,
+  .invoice-line-editor .line-item,
   .invoice-line-editor .line-quantity,
   .invoice-line-editor .line-unit-price,
   .invoice-line-editor .line-discount,

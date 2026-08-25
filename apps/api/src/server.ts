@@ -38,6 +38,7 @@ import { TreasuryService } from './treasury/treasury-service.js';
 import { DataImportService } from './imports/data-import-service.js';
 import { InventoryService } from './inventory/inventory-service.js';
 import { InventoryCatalogService } from './inventory/inventory-catalog-service.js';
+import { InventoryMovementService } from './inventory/inventory-movement-service.js';
 
 const config = loadConfig();
 if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required to start the API');
@@ -106,8 +107,10 @@ const outboxWorker = outboxHandlers.size
   : undefined;
 const receiptReferences = new ReceiptReferenceService(database);
 const suppliers = new SupplierReferenceService(database);
-const salesInvoices = new SalesInvoiceService(database, taxes);
-const purchaseInvoices = new PurchaseInvoiceService(database, taxes);
+const inventoryCatalog = new InventoryCatalogService(database);
+const inventoryMovements = new InventoryMovementService(database);
+const salesInvoices = new SalesInvoiceService(database, taxes, inventoryCatalog, inventoryMovements);
+const purchaseInvoices = new PurchaseInvoiceService(database, taxes, inventoryCatalog, inventoryMovements);
 const dataImports = new DataImportService(database, receiptReferences, suppliers, salesInvoices, purchaseInvoices, outboxAppender);
 const app = createApp(config, {
   readiness: new DatabaseReadinessService(database, config.READINESS_TIMEOUT_MS),
@@ -126,7 +129,8 @@ const app = createApp(config, {
   receiptReferences,
   treasury,
   inventory: new InventoryService(database),
-  inventoryCatalog: new InventoryCatalogService(database),
+  inventoryCatalog,
+  inventoryMovements,
   receipts: new ReceiptService(database, treasury),
   suppliers,
   payments: new PaymentService(database, treasury),

@@ -9,7 +9,8 @@ export type InventoryCatalogErrorReason =
   | "VERSION_CONFLICT"
   | "UNIT_INACTIVE"
   | "UNIT_IN_USE"
-  | "ITEM_INACTIVE";
+  | "ITEM_INACTIVE"
+  | "ITEM_HAS_STOCK";
 
 export class InventoryCatalogError extends Error {
   constructor(public readonly reason: InventoryCatalogErrorReason) {
@@ -46,6 +47,57 @@ export type InventoryItemUpdate = {
   description?: string | null | undefined;
 };
 
+export type InventoryInvoiceSelectionErrorReason =
+  | "WAREHOUSE_REQUIRED"
+  | "INVALID_WAREHOUSE"
+  | "INVALID_INVENTORY_ITEM";
+
+export class InventoryInvoiceSelectionError extends Error {
+  constructor(public readonly reason: InventoryInvoiceSelectionErrorReason) {
+    super(reason);
+  }
+}
+
+export type InvoiceWarehouseReference = {
+  id: bigint;
+  code: string;
+  nameAr: string;
+};
+
+export type InvoiceInventoryItemReference = {
+  id: bigint;
+  code: string;
+  nameAr: string;
+  description: string | null;
+  unitOfMeasure: {
+    code: string;
+    decimalPlaces: number;
+  };
+};
+
+export type InventoryInvoiceSelection = {
+  warehouse: InvoiceWarehouseReference | null;
+  items: Map<string, InvoiceInventoryItemReference>;
+};
+
+export interface InventoryInvoiceCatalogPort {
+  resolveInvoiceSelection(
+    tx: Prisma.TransactionClient,
+    input: {
+      companyId: bigint;
+      warehouseId?: bigint | null | undefined;
+      inventoryItemIds: bigint[];
+    },
+  ): Promise<InventoryInvoiceSelection>;
+}
+
+export function inventoryQuantityFitsUnit(
+  value: Prisma.Decimal.Value,
+  decimalPlaces: number,
+) {
+  return new Prisma.Decimal(value).decimalPlaces() <= decimalPlaces;
+}
+
 type LockedUnit = {
   id: bigint;
 };
@@ -59,7 +111,7 @@ const nullableTrimmed = (value: string | null | undefined) => {
 const isUniqueConflict = (error: unknown) =>
   error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 
-export class InventoryCatalogService {
+export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
   private readonly transactions: TransactionExecutor;
 
   constructor(private readonly prisma: PrismaClient) {
@@ -250,6 +302,56 @@ export class InventoryCatalogService {
     return value;
   }
 
+  async resolveInvoiceSelection(
+    tx: Prisma.TransactionClient,
+    input: {
+      companyId: bigint;
+      warehouseId?: bigint | null | undefined;
+      inventoryItemIds: bigint[];
+    },
+  ): Promise<InventoryInvoiceSelection> {
+    const uniqueItemIds = [...new Set(input.inventoryItemIds.map(String))].map(BigInt);
+    if (uniqueItemIds.length > 0 && !input.warehouseId) {
+      throw new InventoryInvoiceSelectionError("WAREHOUSE_REQUIRED");
+    }
+
+    const warehouse = input.warehouseId
+      ? await tx.warehouse.findFirst({
+          where: { id: input.warehouseId, companyId: input.companyId, isActive: true },
+          select: { id: true, code: true, nameAr: true },
+        })
+      : null;
+    if (input.warehouseId && !warehouse) {
+      throw new InventoryInvoiceSelectionError("INVALID_WAREHOUSE");
+    }
+
+    const items = uniqueItemIds.length
+      ? await tx.inventoryItem.findMany({
+          where: {
+            companyId: input.companyId,
+            id: { in: uniqueItemIds },
+            isActive: true,
+            unitOfMeasure: { isActive: true },
+          },
+          select: {
+            id: true,
+            code: true,
+            nameAr: true,
+            description: true,
+            unitOfMeasure: { select: { code: true, decimalPlaces: true } },
+          },
+        })
+      : [];
+    if (items.length !== uniqueItemIds.length) {
+      throw new InventoryInvoiceSelectionError("INVALID_INVENTORY_ITEM");
+    }
+
+    return {
+      warehouse,
+      items: new Map(items.map((item) => [item.id.toString(), item])),
+    };
+  }
+
   async createItem(context: ActorContext, input: InventoryItemInput) {
     try {
       return await this.transactions.execute(
@@ -327,11 +429,21 @@ export class InventoryCatalogService {
     return this.transactions.execute(
       { operation: "DEACTIVATE_INVENTORY_ITEM", companyId: context.companyId },
       async (tx) => {
+        await tx.$queryRaw<Array<{ id: bigint }>>`
+          SELECT id FROM inventory_items
+          WHERE id = ${id} AND company_id = ${context.companyId}
+          FOR UPDATE
+        `;
         const current = await tx.inventoryItem.findFirst({
           where: { id, companyId: context.companyId },
         });
         if (!current) throw new InventoryCatalogError("NOT_FOUND");
         if (!current.isActive) throw new InventoryCatalogError("ITEM_INACTIVE");
+        const stocked = await tx.inventoryBalance.findFirst({
+          where: { companyId: context.companyId, inventoryItemId: id, onHand: { gt: 0 } },
+          select: { id: true },
+        });
+        if (stocked) throw new InventoryCatalogError("ITEM_HAS_STOCK");
         const changed = await tx.inventoryItem.updateMany({
           where: { id, companyId: context.companyId, version: input.version, isActive: true },
           data: { isActive: false, version: { increment: 1 } },

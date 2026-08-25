@@ -30,7 +30,7 @@ function codedLabel(scope: "action" | "entity", code: string) {
 }
 const actionLabel = (code: string) => codedLabel("action", code);
 const entityLabel = (code: string) => codedLabel("entity", code);
-const targetFor = (entityType: string): TargetView | null => ({ USER: "admin", ROLE: "admin", COMPANY: "settings", CUSTOMER: "customers", SUPPLIER: "suppliers", RECEIPT: "receipts", PAYMENT: "payments", MANUAL_JOURNAL: "journals", FISCAL_YEAR: "fiscal", FISCAL_PERIOD: "fiscal", ACCOUNT: "accounts", COST_CENTER: "accounts", CASH_BANK_ACCOUNT: "treasury", PAYMENT_METHOD: "treasury", WAREHOUSE: "inventory" } as Record<string, TargetView>)[entityType] ?? null;
+const targetFor = (entityType: string): TargetView | null => ({ USER: "admin", ROLE: "admin", COMPANY: "settings", CUSTOMER: "customers", SUPPLIER: "suppliers", RECEIPT: "receipts", PAYMENT: "payments", MANUAL_JOURNAL: "journals", FISCAL_YEAR: "fiscal", FISCAL_PERIOD: "fiscal", ACCOUNT: "accounts", COST_CENTER: "accounts", CASH_BANK_ACCOUNT: "treasury", PAYMENT_METHOD: "treasury", WAREHOUSE: "inventory", UNIT_OF_MEASURE: "inventory", INVENTORY_ITEM: "inventory", INVENTORY_MOVEMENT: "inventory" } as Record<string, TargetView>)[entityType] ?? null;
 
 export function AuditLogsPage({ notify, onNavigate }: { notify: Notice; onNavigate: (view: TargetView) => void }) {
   const [rows, setRows] = useState<AuditLog[]>([]);

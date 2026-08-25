@@ -23,6 +23,7 @@ import { createTreasuryRouter } from '../src/treasury/treasury-router.js';
 import { createDataImportRouter } from '../src/imports/data-import-router.js';
 import { createInventoryRouter } from '../src/inventory/inventory-router.js';
 import { createInventoryCatalogRouter } from '../src/inventory/inventory-catalog-router.js';
+import { createInventoryMovementRouter } from '../src/inventory/inventory-movement-router.js';
 
 type RouteLayer = {
   route?: {
@@ -48,6 +49,7 @@ const routers = [
   { prefix: '', router: createTreasuryRouter(stub, stub) },
   { prefix: '', router: createInventoryRouter(stub, stub) },
   { prefix: '', router: createInventoryCatalogRouter(stub, stub) },
+  { prefix: '', router: createInventoryMovementRouter(stub, stub) },
   { prefix: '', router: createReceiptRouter(stub, stub) },
   { prefix: '', router: createSupplierRouter(stub, stub) },
   { prefix: '', router: createPaymentRouter(stub, stub) },

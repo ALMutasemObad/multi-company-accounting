@@ -75,6 +75,16 @@ function responseFor(url, method) {
   if (pathname === "/inventory-items") return list([
     { id: "item-qa", code: "ITM-000001", nameAr: "صنف تجريبي", nameEn: "Sample item", description: "صنف مخصص للفحص البصري", isActive: true, version: 0, unitOfMeasure: { id: "unit-ea", code: "EA", nameAr: "حبة", nameEn: "Each", decimalPlaces: 0, isActive: true, version: 0 } },
   ]);
+  if (pathname === "/warehouses") return list([
+    { id: "warehouse-qa", code: "WH-000001", nameAr: "المستودع الرئيسي", nameEn: "Main warehouse", address: "الرياض", isActive: true, version: 0 },
+    { id: "warehouse-branch", code: "WH-000002", nameAr: "مستودع الفرع", nameEn: "Branch warehouse", address: "جدة", isActive: true, version: 0 },
+  ]);
+  if (pathname === "/inventory-balances") return list([
+    { id: "balance-qa", warehouse: { id: "warehouse-qa", code: "WH-000001", nameAr: "المستودع الرئيسي", nameEn: "Main warehouse" }, inventoryItem: { id: "item-qa", code: "ITM-000001", nameAr: "صنف تجريبي", nameEn: "Sample item", unitOfMeasure: { id: "unit-ea", code: "EA", nameAr: "حبة", nameEn: "Each", decimalPlaces: 0 } }, onHand: "125.000000", version: 3, movementCount: 4, updatedAt: "2026-08-24T12:00:00.000Z" },
+  ]);
+  const movement = { id: "movement-qa", movementNumber: "IMV-00000001", movementType: "RECEIPT", movementDate: "2026-08-24", description: "استلام بضاعة تجريبية", externalReference: "PO-QA-1", source: null, createdByName: "مدير النظام", createdAt: "2026-08-24T12:00:00.000Z", lineCount: 1 };
+  if (pathname === "/inventory-movements") return method === "POST" ? { ...movement, lines: [] } : list([movement]);
+  if (pathname === "/inventory-movements/movement-qa") return { ...movement, lines: [{ id: "movement-line-qa", lineNumber: 1, inventoryItemId: "item-qa", inventoryItemCode: "ITM-000001", inventoryItemName: "صنف تجريبي", unitOfMeasureCode: "EA", fromWarehouseId: null, fromWarehouseCode: null, fromWarehouseName: null, toWarehouseId: "warehouse-qa", toWarehouseCode: "WH-000001", toWarehouseName: "المستودع الرئيسي", quantity: "125.000000" }] };
   if (method !== "GET") return null;
   return list();
 }

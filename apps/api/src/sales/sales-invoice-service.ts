@@ -7,6 +7,17 @@ import {
   type PostingLinePlan,
 } from "../core-accounting/posting-engine.js";
 import { FiscalService } from "../fiscal/fiscal-service.js";
+import {
+  InventoryCatalogService,
+  InventoryInvoiceSelectionError,
+  inventoryQuantityFitsUnit,
+  type InventoryInvoiceCatalogPort,
+} from "../inventory/inventory-catalog-service.js";
+import {
+  InventoryMovementError,
+  InventoryMovementService,
+  type InventoryInvoiceStockPort,
+} from "../inventory/inventory-movement-service.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
 import { ReceivableItemService } from "../receivables/receivable-item-service.js";
 import { calculateTaxDocument, TaxCalculationError } from "../tax/tax-calculator.js";
@@ -25,6 +36,11 @@ export type SalesInvoiceErrorReason =
   | "INVALID_COST_CENTER"
   | "INVALID_TAX_RATE"
   | "INVALID_CURRENCY"
+  | "WAREHOUSE_REQUIRED"
+  | "INVALID_WAREHOUSE"
+  | "INVALID_INVENTORY_ITEM"
+  | "INVALID_QUANTITY_PRECISION"
+  | "INSUFFICIENT_STOCK"
   | "INVALID_LINE"
   | "INVALID_DISCOUNT"
   | "INVALID_TOTAL"
@@ -43,6 +59,7 @@ export class SalesInvoiceError extends Error {
 }
 
 export type SalesInvoiceLineInput = {
+  inventoryItemId?: bigint | null;
   description: string;
   quantity: string;
   unitPrice: string;
@@ -59,6 +76,7 @@ export type SalesInvoiceInput = {
   dueDate: string;
   description: string;
   customerId: bigint;
+  warehouseId?: bigint | null;
   sourceInvoiceId?: bigint | null;
   currencyId: bigint;
   exchangeRate: string;
@@ -68,6 +86,20 @@ export type SalesInvoiceInput = {
 };
 
 export type SalesInvoiceUpdate = { version: number } & Partial<SalesInvoiceInput>;
+
+type SalesInvoiceStockSnapshot = {
+  id: bigint;
+  warehouseId: bigint | null;
+  accountingDocument: {
+    documentType: string;
+    documentNumber: string;
+    documentDate: Date;
+  };
+  lines: Array<{
+    inventoryItemId: bigint | null;
+    quantity: Prisma.Decimal;
+  }>;
+};
 
 const asDate = (value: string) => new Date(`${value}T00:00:00.000Z`);
 const day = (value: Date) => value.toISOString().slice(0, 10);
@@ -95,11 +127,20 @@ export class SalesInvoiceService {
   private readonly posting = new PostingEngine();
   private readonly receivables = new ReceivableItemService();
   private readonly taxes: TaxQuotePort;
+  private readonly inventory: InventoryInvoiceCatalogPort;
+  private readonly stock: InventoryInvoiceStockPort;
   private readonly commands: IdempotentCommandExecutor;
 
-  constructor(private readonly prisma: PrismaClient, taxes?: TaxQuotePort) {
+  constructor(
+    private readonly prisma: PrismaClient,
+    taxes?: TaxQuotePort,
+    inventory?: InventoryInvoiceCatalogPort,
+    stock?: InventoryInvoiceStockPort,
+  ) {
     this.fiscal = new FiscalService(prisma);
     this.taxes = taxes ?? new TaxService(prisma);
+    this.inventory = inventory ?? new InventoryCatalogService(prisma);
+    this.stock = stock ?? new InventoryMovementService(prisma);
     this.commands = new IdempotentCommandExecutor(prisma);
   }
 
@@ -194,6 +235,7 @@ export class SalesInvoiceService {
           companyId: context.companyId,
           accountingDocumentId: document.id,
           customerId: input.customerId,
+          warehouseId: prepared.inventory.warehouse?.id ?? null,
           sourceInvoiceId: input.documentType === "SALES_CREDIT_NOTE" ? input.sourceInvoiceId ?? null : null,
           currencyId: input.currencyId,
           exchangeRate: decimal(input.exchangeRate),
@@ -207,6 +249,8 @@ export class SalesInvoiceService {
           customerNameSnapshot: prepared.customer.nameAr,
           customerTaxLast4: prepared.customer.taxNumberLast4,
           customerAddressSnapshot: prepared.customerAddress,
+          warehouseCodeSnapshot: prepared.inventory.warehouse?.code ?? null,
+          warehouseNameSnapshot: prepared.inventory.warehouse?.nameAr ?? null,
           notes: input.notes ?? null,
           lines: { create: prepared.calculation.lines },
         },
@@ -231,6 +275,7 @@ export class SalesInvoiceService {
         dueDate: input.dueDate ?? day(current.dueDate),
         description: input.description ?? current.accountingDocument.description,
         customerId: input.customerId ?? current.customerId,
+        warehouseId: input.warehouseId === undefined ? current.warehouseId : input.warehouseId,
         sourceInvoiceId: input.sourceInvoiceId === undefined ? current.sourceInvoiceId : input.sourceInvoiceId,
         currencyId: input.currencyId ?? current.currencyId,
         exchangeRate: input.exchangeRate ?? current.exchangeRate.toFixed(8),
@@ -238,7 +283,8 @@ export class SalesInvoiceService {
         notes: input.notes === undefined ? current.notes : input.notes,
         lines: input.lines ?? current.lines.map((line) => ({
           description: line.description,
-          quantity: line.quantity.toFixed(4),
+          inventoryItemId: line.inventoryItemId,
+          quantity: line.quantity.toFixed(6),
           unitPrice: line.unitPrice.toFixed(4),
           discountAmount: line.discountAmount.toFixed(4),
           revenueAccountId: line.revenueAccountId,
@@ -260,6 +306,7 @@ export class SalesInvoiceService {
         where: { id },
         data: {
           customerId: merged.customerId,
+          warehouseId: prepared.inventory.warehouse?.id ?? null,
           sourceInvoiceId: merged.documentType === "SALES_CREDIT_NOTE" ? merged.sourceInvoiceId ?? null : null,
           currencyId: merged.currencyId,
           exchangeRate: decimal(merged.exchangeRate),
@@ -273,6 +320,8 @@ export class SalesInvoiceService {
           customerNameSnapshot: prepared.customer.nameAr,
           customerTaxLast4: prepared.customer.taxNumberLast4,
           customerAddressSnapshot: prepared.customerAddress,
+          warehouseCodeSnapshot: prepared.inventory.warehouse?.code ?? null,
+          warehouseNameSnapshot: prepared.inventory.warehouse?.nameAr ?? null,
           notes: merged.notes ?? null,
           lines: { create: prepared.calculation.lines },
         },
@@ -330,25 +379,33 @@ export class SalesInvoiceService {
         actorUserId: context.userId,
         error: (reason) => this.postingError(reason),
         beforeLedger: async (postingTx) => {
-          if (input.documentType !== "SALES_CREDIT_NOTE") return;
-          const source = await postingTx.salesInvoice.findFirst({
-            where: { id: input.sourceInvoiceId!, companyId: context.companyId },
-            select: { accountingDocumentId: true },
-          });
-          if (!source) throw new SalesInvoiceError("INVALID_SOURCE_INVOICE");
-          await lockAccountingDocument(
+          if (input.documentType === "SALES_CREDIT_NOTE") {
+            const source = await postingTx.salesInvoice.findFirst({
+              where: { id: input.sourceInvoiceId!, companyId: context.companyId },
+              select: { accountingDocumentId: true },
+            });
+            if (!source) throw new SalesInvoiceError("INVALID_SOURCE_INVOICE");
+            await lockAccountingDocument(
+              postingTx,
+              context.companyId,
+              source.accountingDocumentId,
+            );
+            await this.receivables.applyCredit(postingTx, {
+              companyId: context.companyId,
+              sourceInvoiceId: input.sourceInvoiceId!,
+              amount: prepared.calculation.total,
+              invalid: () => new SalesInvoiceError("INVALID_SOURCE_INVOICE"),
+              overAllocation: () => new SalesInvoiceError("CREDIT_EXCEEDS_INVOICE"),
+              conflict: () => new SalesInvoiceError("VERSION_CONFLICT"),
+            });
+          }
+          await this.applyStockMovement(
             postingTx,
-            context.companyId,
-            source.accountingDocumentId,
+            context,
+            invoice,
+            "POST",
+            day(invoice.accountingDocument.documentDate),
           );
-          await this.receivables.applyCredit(postingTx, {
-            companyId: context.companyId,
-            sourceInvoiceId: input.sourceInvoiceId!,
-            amount: prepared.calculation.total,
-            invalid: () => new SalesInvoiceError("INVALID_SOURCE_INVOICE"),
-            overAllocation: () => new SalesInvoiceError("CREDIT_EXCEEDS_INVOICE"),
-            conflict: () => new SalesInvoiceError("VERSION_CONFLICT"),
-          });
         },
         afterEntries: async (postingTx, entries) => {
           const arLine = entries[0]?.lines.find((line) => line.lineNumber === 1);
@@ -472,9 +529,7 @@ export class SalesInvoiceService {
               hasSettlements: () => new SalesInvoiceError("HAS_SETTLEMENTS"),
               conflict: () => new SalesInvoiceError("VERSION_CONFLICT"),
             });
-            return;
-          }
-          if (original.documentType === "SALES_CREDIT_NOTE") {
+          } else if (original.documentType === "SALES_CREDIT_NOTE") {
             if (!invoice.sourceInvoiceId)
               throw new SalesInvoiceError("INVALID_SOURCE_INVOICE");
             await this.receivables.reverseCredit(postingTx, {
@@ -485,6 +540,13 @@ export class SalesInvoiceService {
               conflict: () => new SalesInvoiceError("VERSION_CONFLICT"),
             });
           }
+          await this.applyStockMovement(
+            postingTx,
+            context,
+            invoice,
+            "REVERSE",
+            input.reversalDate,
+          );
         },
         error: (reason) => this.postingError(reason),
       });
@@ -537,6 +599,9 @@ export class SalesInvoiceService {
       document: documentJson(value.accountingDocument),
       customerId: value.customerId.toString(),
       customer: value.customer ? { ...value.customer, id: value.customer.id.toString() } : undefined,
+      warehouseId: value.warehouseId?.toString() ?? null,
+      warehouseCodeSnapshot: value.warehouseCodeSnapshot,
+      warehouseNameSnapshot: value.warehouseNameSnapshot,
       sourceInvoiceId: value.sourceInvoiceId?.toString() ?? null,
       sourceInvoiceNumber: value.sourceInvoice?.accountingDocument.documentNumber ?? null,
       receivableItemId: value.receivableItem?.id.toString() ?? null,
@@ -559,7 +624,28 @@ export class SalesInvoiceService {
       customerTaxMasked: value.customerTaxLast4 ? `****${value.customerTaxLast4}` : null,
       customerAddressSnapshot: value.customerAddressSnapshot,
       notes: value.notes,
-      lines: value.lines.map((line: any) => ({ id: line.id.toString(), lineNumber: line.lineNumber, description: line.description, revenueAccountId: line.revenueAccountId.toString(), revenueAccount: line.revenueAccount ? { ...line.revenueAccount, id: line.revenueAccount.id.toString() } : undefined, costCenterId: line.costCenterId?.toString() ?? null, costCenter: line.costCenter ? { ...line.costCenter, id: line.costCenter.id.toString() } : null, taxRateId: line.taxRateId?.toString() ?? null, taxRate: line.taxRate ? { ...line.taxRate, id: line.taxRate.id.toString(), rate: line.taxRate.rate.toFixed(4) } : null, quantity: line.quantity.toFixed(4), unitPrice: line.unitPrice.toFixed(4), discountAmount: line.discountAmount.toFixed(4), netAmount: line.netAmount.toFixed(4), taxRateSnapshot: line.taxRateSnapshot.toFixed(4), taxAmount: line.taxAmount.toFixed(4), totalAmount: line.totalAmount.toFixed(4) })),
+      lines: value.lines.map((line: any) => ({
+        id: line.id.toString(),
+        lineNumber: line.lineNumber,
+        inventoryItemId: line.inventoryItemId?.toString() ?? null,
+        inventoryItemCodeSnapshot: line.inventoryItemCodeSnapshot,
+        inventoryItemNameSnapshot: line.inventoryItemNameSnapshot,
+        unitOfMeasureCodeSnapshot: line.unitOfMeasureCodeSnapshot,
+        description: line.description,
+        revenueAccountId: line.revenueAccountId.toString(),
+        revenueAccount: line.revenueAccount ? { ...line.revenueAccount, id: line.revenueAccount.id.toString() } : undefined,
+        costCenterId: line.costCenterId?.toString() ?? null,
+        costCenter: line.costCenter ? { ...line.costCenter, id: line.costCenter.id.toString() } : null,
+        taxRateId: line.taxRateId?.toString() ?? null,
+        taxRate: line.taxRate ? { ...line.taxRate, id: line.taxRate.id.toString(), rate: line.taxRate.rate.toFixed(4) } : null,
+        quantity: line.quantity.toFixed(6),
+        unitPrice: line.unitPrice.toFixed(4),
+        discountAmount: line.discountAmount.toFixed(4),
+        netAmount: line.netAmount.toFixed(4),
+        taxRateSnapshot: line.taxRateSnapshot.toFixed(4),
+        taxAmount: line.taxAmount.toFixed(4),
+        totalAmount: line.totalAmount.toFixed(4),
+      })),
     };
   }
 
@@ -589,6 +675,29 @@ export class SalesInvoiceService {
     if (accounts.length !== accountIds.length || accounts.some((account) => account._count.children || account.accountType.class !== "REVENUE")) throw new SalesInvoiceError("INVALID_ACCOUNT");
     const costCenterIds = [...new Set(input.lines.flatMap((line) => line.costCenterId ? [line.costCenterId.toString()] : []))].map(BigInt);
     if (costCenterIds.length && await tx.costCenter.count({ where: { companyId, id: { in: costCenterIds }, isActive: true } }) !== costCenterIds.length) throw new SalesInvoiceError("INVALID_COST_CENTER");
+    let inventory;
+    try {
+      inventory = await this.inventory.resolveInvoiceSelection(tx, {
+        companyId,
+        warehouseId: input.warehouseId,
+        inventoryItemIds: input.lines.flatMap((line) =>
+          line.inventoryItemId ? [line.inventoryItemId] : [],
+        ),
+      });
+    } catch (error) {
+      if (error instanceof InventoryInvoiceSelectionError) {
+        throw new SalesInvoiceError(error.reason);
+      }
+      throw error;
+    }
+    for (const line of input.lines) {
+      if (!line.inventoryItemId) continue;
+      const item = inventory.items.get(line.inventoryItemId.toString());
+      if (!item) throw new SalesInvoiceError("INVALID_INVENTORY_ITEM");
+      if (!inventoryQuantityFitsUnit(line.quantity, item.unitOfMeasure.decimalPlaces)) {
+        throw new SalesInvoiceError("INVALID_QUANTITY_PRECISION");
+      }
+    }
     const taxIds = [...new Set(input.lines.flatMap((line) => line.taxRateId ? [line.taxRateId.toString()] : []))].map(BigInt);
     let taxQuotes;
     try {
@@ -613,10 +722,20 @@ export class SalesInvoiceService {
       })), input.exchangeRate);
       calculation = {
         ...taxCalculation,
-        lines: taxCalculation.lines.map(({ accountId, ...line }) => ({
-          ...line,
-          revenueAccountId: accountId,
-        })),
+        lines: taxCalculation.lines.map(({ accountId, ...line }, index) => {
+          const inventoryItemId = input.lines[index]!.inventoryItemId ?? null;
+          const item = inventoryItemId
+            ? inventory.items.get(inventoryItemId.toString())
+            : undefined;
+          return {
+            ...line,
+            revenueAccountId: accountId,
+            inventoryItemId,
+            inventoryItemCodeSnapshot: item?.code ?? null,
+            inventoryItemNameSnapshot: item?.nameAr ?? null,
+            unitOfMeasureCodeSnapshot: item?.unitOfMeasure.code ?? null,
+          };
+        }),
       };
     } catch (error) {
       if (error instanceof TaxCalculationError) throw new SalesInvoiceError(error.reason);
@@ -633,13 +752,14 @@ export class SalesInvoiceService {
       customer,
       customerAddress,
       calculation,
+      inventory,
       taxAccounts: new Map([...taxQuotes].flatMap(([id, quote]) =>
         quote.accountId ? [[id, quote.accountId] as const] : [])),
     };
   }
 
   private inputFrom(value: any): SalesInvoiceInput {
-    return { documentType: value.accountingDocument.documentType, fiscalPeriodId: value.accountingDocument.fiscalPeriodId, documentDate: day(value.accountingDocument.documentDate), dueDate: day(value.dueDate), description: value.accountingDocument.description, customerId: value.customerId, sourceInvoiceId: value.sourceInvoiceId, currencyId: value.currencyId, exchangeRate: value.exchangeRate.toFixed(8), customerAddress: value.customerAddressSnapshot, notes: value.notes, lines: value.lines.map((line: any) => ({ description: line.description, quantity: line.quantity.toFixed(4), unitPrice: line.unitPrice.toFixed(4), discountAmount: line.discountAmount.toFixed(4), revenueAccountId: line.revenueAccountId, costCenterId: line.costCenterId, taxRateId: line.taxRateId })) };
+    return { documentType: value.accountingDocument.documentType, fiscalPeriodId: value.accountingDocument.fiscalPeriodId, documentDate: day(value.accountingDocument.documentDate), dueDate: day(value.dueDate), description: value.accountingDocument.description, customerId: value.customerId, warehouseId: value.warehouseId, sourceInvoiceId: value.sourceInvoiceId, currencyId: value.currencyId, exchangeRate: value.exchangeRate.toFixed(8), customerAddress: value.customerAddressSnapshot, notes: value.notes, lines: value.lines.map((line: any) => ({ inventoryItemId: line.inventoryItemId, description: line.description, quantity: line.quantity.toFixed(6), unitPrice: line.unitPrice.toFixed(4), discountAmount: line.discountAmount.toFixed(4), revenueAccountId: line.revenueAccountId, costCenterId: line.costCenterId, taxRateId: line.taxRateId })) };
   }
 
   private async validateCreditLimit(tx: Prisma.TransactionClient, companyId: bigint, sourceInvoiceId: bigint, amount: Prisma.Decimal, currentId?: bigint) {
@@ -681,6 +801,48 @@ export class SalesInvoiceService {
 
   private audit(tx: Prisma.TransactionClient, context: ActorContext, action: string, id: bigint, details?: Prisma.InputJsonValue, entityType = "SALES_INVOICE") {
     return tx.auditLog.create({ data: { companyId: context.companyId, actorUserId: context.userId, action, entityType, entityId: id.toString(), ...(details ? { details } : {}) } });
+  }
+
+  private async applyStockMovement(
+    tx: Prisma.TransactionClient,
+    context: ActorContext,
+    invoice: SalesInvoiceStockSnapshot,
+    sourceEvent: "POST" | "REVERSE",
+    stockDate: string,
+  ) {
+    const inventoryLines = invoice.lines.flatMap((line) => line.inventoryItemId
+      ? [{ inventoryItemId: line.inventoryItemId, quantity: line.quantity.toFixed(6) }]
+      : []);
+    if (inventoryLines.length === 0) return null;
+    if (!invoice.warehouseId) throw new SalesInvoiceError("WAREHOUSE_REQUIRED");
+    try {
+      return await this.stock.applyInvoiceStockMovement(tx, {
+        companyId: context.companyId,
+        actorUserId: context.userId,
+        invoiceId: invoice.id,
+        documentType: invoice.accountingDocument.documentType as "SALES_INVOICE" | "SALES_CREDIT_NOTE",
+        sourceEvent,
+        documentNumber: invoice.accountingDocument.documentNumber,
+        movementDate: stockDate,
+        warehouseId: invoice.warehouseId,
+        lines: inventoryLines,
+      });
+    } catch (error) {
+      if (!(error instanceof InventoryMovementError)) throw error;
+      if (error.reason === "INSUFFICIENT_STOCK") {
+        throw new SalesInvoiceError("INSUFFICIENT_STOCK");
+      }
+      if (["INVALID_WAREHOUSE", "WAREHOUSE_INACTIVE"].includes(error.reason)) {
+        throw new SalesInvoiceError("INVALID_WAREHOUSE");
+      }
+      if (["INVALID_INVENTORY_ITEM", "ITEM_INACTIVE"].includes(error.reason)) {
+        throw new SalesInvoiceError("INVALID_INVENTORY_ITEM");
+      }
+      if (error.reason === "INVALID_QUANTITY_PRECISION") {
+        throw new SalesInvoiceError("INVALID_QUANTITY_PRECISION");
+      }
+      throw new SalesInvoiceError("INVALID_LINE");
+    }
   }
 
   private async command(context: ActorContext, id: bigint, operation: string, key: string, fingerprint: string, execute: (tx: Prisma.TransactionClient, invoice: any) => Promise<{ document: any; ids: string[] }>) {

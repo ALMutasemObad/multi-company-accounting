@@ -22,10 +22,10 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 170, requestBodies: 88, responseBodies: 1185 });
-    expect(guardedOpenApiOperations).toHaveLength(88);
+    expect(openApiContractCoverage).toEqual({ operations: 174, requestBodies: 89, responseBodies: 1210 });
+    expect(guardedOpenApiOperations).toHaveLength(89);
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
-      'login', 'createUser', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'previewDataImport', 'commitDataImport',
+      'login', 'createUser', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'previewDataImport', 'commitDataImport',
     ]));
   });
 
@@ -49,6 +49,58 @@ describe('generated OpenAPI request guards', () => {
     })).toEqual({ unitOfMeasureId: 12n, nameAr: 'قلم', description: null });
     expect(openApiRequestBodySchemas.createInventoryItem.safeParse({
       code: 'MANUAL', unitOfMeasureId: '12', nameAr: 'قلم',
+    }).success).toBe(false);
+  });
+
+  it('validates invoice catalog links and six-decimal item quantities', () => {
+    const line = {
+      inventoryItemId: '41',
+      description: 'قلم',
+      quantity: '2.125000',
+      unitPrice: '10.0000',
+      discountAmount: '0.0000',
+      revenueAccountId: '8',
+    };
+    expect(openApiRequestBodySchemas.createSalesInvoice.parse({
+      documentType: 'SALES_INVOICE',
+      fiscalPeriodId: '1',
+      documentDate: '2045-01-01',
+      dueDate: '2045-01-01',
+      description: 'فاتورة أصناف',
+      customerId: '2',
+      warehouseId: '9',
+      currencyId: '3',
+      exchangeRate: '1.00000000',
+      lines: [line],
+    })).toMatchObject({ warehouseId: 9n, lines: [{ inventoryItemId: 41n, quantity: '2.125000' }] });
+    expect(openApiRequestBodySchemas.createSalesInvoice.safeParse({
+      documentType: 'SALES_INVOICE', fiscalPeriodId: '1', documentDate: '2045-01-01',
+      dueDate: '2045-01-01', description: 'فاتورة', customerId: '2', currencyId: '3',
+      exchangeRate: '1.00000000', lines: [{ ...line, quantity: '2.1234567' }],
+    }).success).toBe(false);
+  });
+
+  it('normalizes inventory movement identifiers and bounds quantity precision', () => {
+    expect(openApiRequestBodySchemas.createInventoryMovement.parse({
+      movementType: 'TRANSFER',
+      movementDate: '2026-08-24',
+      description: '  تحويل بين مستودعين  ',
+      externalReference: null,
+      lines: [{ inventoryItemId: '41', fromWarehouseId: '9', toWarehouseId: '10', quantity: '2.125000' }],
+    })).toEqual({
+      movementType: 'TRANSFER',
+      movementDate: '2026-08-24',
+      description: 'تحويل بين مستودعين',
+      externalReference: null,
+      lines: [{ inventoryItemId: 41n, fromWarehouseId: 9n, toWarehouseId: 10n, quantity: '2.125000' }],
+    });
+    expect(openApiRequestBodySchemas.createInventoryMovement.safeParse({
+      movementType: 'RECEIPT', movementDate: '2026-08-24', description: 'استلام',
+      lines: [{ inventoryItemId: '41', toWarehouseId: '9', quantity: '2.1234567' }],
+    }).success).toBe(false);
+    expect(openApiRequestBodySchemas.createInventoryMovement.safeParse({
+      movementType: 'DELETE_STOCK', movementDate: '2026-08-24', description: 'نوع مرفوض',
+      lines: [{ inventoryItemId: '41', toWarehouseId: '9', quantity: '1' }],
     }).success).toBe(false);
   });
 

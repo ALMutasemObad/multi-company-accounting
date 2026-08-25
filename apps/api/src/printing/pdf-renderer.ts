@@ -57,6 +57,7 @@ export function renderDocumentPdf(snapshot: PrintSnapshot): Promise<Buffer> {
         ["رقم فاتورة المورد", snapshot.invoice.supplierInvoiceNumber ?? "-"],
         ["تاريخ الاستحقاق", snapshot.invoice.dueDate],
         ["الفاتورة الأصلية", snapshot.invoice.sourceInvoiceNumber ?? "-"],
+        ["المستودع", snapshot.invoice.warehouseName ? `${snapshot.invoice.warehouseCode ?? ""} ${snapshot.invoice.warehouseName}`.trim() : "-"],
         ["الإجمالي", `${money(snapshot.invoice.total)} ${snapshot.invoice.currencyCode}`],
         ["الخصم والضريبة", `${money(snapshot.invoice.discountTotal)} / ${money(snapshot.invoice.taxTotal)}`],
       ];
@@ -73,7 +74,8 @@ export function renderDocumentPdf(snapshot: PrintSnapshot): Promise<Buffer> {
       let hx = x; heads.forEach((head, i) => { pdf.font("ArabicBold").fontSize(7).fillColor("#294b41").text(head, hx + 3, headerY + 7, { width: widths[i]! - 6, align: "center", features: ["rtla"], lineBreak: false }); hx += widths[i]!; }); pdf.y = headerY + 24;
       for (const line of snapshot.invoice.lines) {
         ensure(28); const rowY = pdf.y; let lx = x;
-        const values = [money(line.total), money(line.tax), money(line.unitPrice), money(line.quantity), line.description, `${line.accountCode} ${line.accountName}`];
+        const itemDescription = line.itemName ? `${line.itemCode ?? ""} ${line.itemName} (${line.unitOfMeasureCode ?? ""})، ${line.description}`.trim() : line.description;
+        const values = [money(line.total), money(line.tax), money(line.unitPrice), money(line.quantity), itemDescription, `${line.accountCode} ${line.accountName}`];
         values.forEach((value, i) => { pdf.rect(lx, rowY, widths[i]!, 28).stroke("#dce6e1"); const isArabic = i >= 4; pdf.font(isArabic ? "Arabic" : "Helvetica").fontSize(7).fillColor("#263f37").text(isArabic ? arabicSafe(value) : value, lx + 3, rowY + 8, { width: widths[i]! - 6, align: isArabic ? "right" : "center", features: isArabic ? ["rtla"] : [], lineBreak: false }); lx += widths[i]!; });
         pdf.y = rowY + 28;
       }

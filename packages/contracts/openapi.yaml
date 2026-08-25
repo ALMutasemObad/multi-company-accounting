@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.15.0
+  version: 1.18.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -31,7 +31,9 @@ info:
 
     - تبدأ رحلة Inventory بإدارة المستودعات المعزولة حسب الشركة، مع رموز خادمية ثابتة ونسخ متفائلة، دون أثر على الأستاذ في هذه المرحلة.
 
-    - يضيف كتالوج Inventory وحدات قياس دلالية وأصنافًا برموز ITM خادمية ثابتة، مع قفل يمنع ربط صنف نشط بوحدة معطلة، ودون أرصدة أو حركات أو تكلفة.
+    - يضيف كتالوج Inventory وحدات قياس دلالية وأصنافًا برموز ITM خادمية ثابتة، مع قفل يمنع ربط صنف نشط بوحدة معطلة.
+
+    - يضيف Inventory دفتر حركة كميًا غير قابل للتعديل وإسقاط أرصدة مقفلاً في المعاملة نفسها، مع منع المخزون السالب ومفاتيح Idempotency؛ ولا يدّعي تقييم المخزون أو تكلفة المبيعات في هذه المرحلة.
 
     - OpenAPI هو العقد التنفيذي الموحد لأجسام JSON؛ تولد منه حراس Zod وأنواع الطلب والاستجابة وبصمة تغطية حتمية، وتفحص الاستجابات في بيئات التطوير والاختبار.
 
@@ -4024,6 +4026,136 @@ paths:
       security:
       - SessionCookie: []
         CsrfToken: []
+  /inventory-balances:
+    get:
+      tags: [Inventory]
+      summary: عرض أرصدة المخزون الحالية للشركة
+      operationId: listInventoryBalances
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - $ref: '#/components/parameters/Search'
+      - name: warehouseId
+        in: query
+        schema: { type: string, pattern: '^[1-9][0-9]*$' }
+      - name: inventoryItemId
+        in: query
+        schema: { type: string, pattern: '^[1-9][0-9]*$' }
+      - name: nonZero
+        in: query
+        schema: { type: boolean }
+      responses:
+        '200':
+          description: قائمة الأرصدة
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/InventoryBalance' } }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-permission: inventory_movements.view
+      security: [{ SessionCookie: [] }]
+  /inventory-movements:
+    get:
+      tags: [Inventory]
+      summary: عرض دفتر حركات المخزون
+      operationId: listInventoryMovements
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - $ref: '#/components/parameters/Search'
+      - name: movementType
+        in: query
+        schema: { $ref: '#/components/schemas/InventoryMovementType' }
+      - name: dateFrom
+        in: query
+        schema: { type: string, format: date }
+      - name: dateTo
+        in: query
+        schema: { type: string, format: date }
+      - name: warehouseId
+        in: query
+        schema: { type: string, pattern: '^[1-9][0-9]*$' }
+      - name: inventoryItemId
+        in: query
+        schema: { type: string, pattern: '^[1-9][0-9]*$' }
+      responses:
+        '200':
+          description: قائمة الحركات
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/InventoryMovement' } }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-permission: inventory_movements.view
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [Inventory]
+      summary: إنشاء وترحيل حركة مخزون غير قابلة للتعديل
+      operationId: createInventoryMovement
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InventoryMovementCreateRequest' }
+      responses:
+        '201':
+          description: تم إنشاء الحركة وتحديث الأرصدة ذريًا
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InventoryMovement' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+      x-permission: inventory_movements.create
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /inventory-movements/{movementId}:
+    get:
+      tags: [Inventory]
+      summary: عرض حركة مخزون مع أسطرها التاريخية
+      operationId: getInventoryMovement
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: movementId
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[1-9][0-9]*$' }
+      responses:
+        '200':
+          description: تفاصيل الحركة
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InventoryMovement' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-permission: inventory_movements.view
+      security: [{ SessionCookie: [] }]
   /cash-bank-accounts:
     get:
       tags:
@@ -8681,6 +8813,157 @@ components:
           x-trim: true
           minLength: 3
           maxLength: 500
+    InventoryMovementType:
+      type: string
+      enum:
+      - OPENING_BALANCE
+      - RECEIPT
+      - ISSUE
+      - TRANSFER
+      - ADJUSTMENT_IN
+      - ADJUSTMENT_OUT
+    InventoryWarehouseReference:
+      type: object
+      additionalProperties: false
+      required: [id, code, nameAr, nameEn]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        code: { type: string, maxLength: 40 }
+        nameAr: { type: string, maxLength: 160 }
+        nameEn: { type: [string, 'null'], maxLength: 160 }
+    InventoryItemReference:
+      type: object
+      additionalProperties: false
+      required: [id, code, nameAr, nameEn, unitOfMeasure]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        code: { type: string, maxLength: 40 }
+        nameAr: { type: string, maxLength: 200 }
+        nameEn: { type: [string, 'null'], maxLength: 200 }
+        unitOfMeasure:
+          type: object
+          additionalProperties: false
+          required: [id, code, nameAr, nameEn, decimalPlaces]
+          properties:
+            id: { type: string, pattern: '^[1-9][0-9]*$' }
+            code: { type: string, maxLength: 20 }
+            nameAr: { type: string, maxLength: 120 }
+            nameEn: { type: [string, 'null'], maxLength: 120 }
+            decimalPlaces: { type: integer, minimum: 0, maximum: 6 }
+    InventoryBalance:
+      type: object
+      additionalProperties: false
+      required: [id, warehouse, inventoryItem, onHand, version, movementCount, updatedAt]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        warehouse: { $ref: '#/components/schemas/InventoryWarehouseReference' }
+        inventoryItem: { $ref: '#/components/schemas/InventoryItemReference' }
+        onHand: { type: string, pattern: '^[0-9]{1,13}\.[0-9]{6}$' }
+        version: { type: integer, minimum: 0 }
+        movementCount: { type: integer, minimum: 0 }
+        updatedAt: { type: string, format: date-time }
+    InventoryMovementLine:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - lineNumber
+      - inventoryItemId
+      - inventoryItemCode
+      - inventoryItemName
+      - unitOfMeasureCode
+      - fromWarehouseId
+      - fromWarehouseCode
+      - fromWarehouseName
+      - toWarehouseId
+      - toWarehouseCode
+      - toWarehouseName
+      - quantity
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        lineNumber: { type: integer, minimum: 1, maximum: 100 }
+        inventoryItemId: { type: string, pattern: '^[1-9][0-9]*$' }
+        inventoryItemCode: { type: string, maxLength: 40 }
+        inventoryItemName: { type: string, maxLength: 200 }
+        unitOfMeasureCode: { type: string, maxLength: 20 }
+        fromWarehouseId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+        fromWarehouseCode: { type: [string, 'null'], maxLength: 40 }
+        fromWarehouseName: { type: [string, 'null'], maxLength: 160 }
+        toWarehouseId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+        toWarehouseCode: { type: [string, 'null'], maxLength: 40 }
+        toWarehouseName: { type: [string, 'null'], maxLength: 160 }
+        quantity: { type: string, pattern: '^[0-9]{1,13}\.[0-9]{6}$' }
+    InventoryMovementSource:
+      type: object
+      additionalProperties: false
+      required: [type, id, event, documentNumber]
+      properties:
+        type:
+          type: string
+          enum: [SALES_INVOICE, SALES_CREDIT_NOTE, PURCHASE_INVOICE, PURCHASE_DEBIT_NOTE]
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        event:
+          type: string
+          enum: [POST, REVERSE]
+        documentNumber: { type: string, maxLength: 40 }
+    InventoryMovement:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - movementNumber
+      - movementType
+      - movementDate
+      - description
+      - externalReference
+      - source
+      - createdByName
+      - createdAt
+      - lineCount
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        movementNumber: { type: string, pattern: '^IMV-[0-9]+$', maxLength: 40 }
+        movementType: { $ref: '#/components/schemas/InventoryMovementType' }
+        movementDate: { type: string, format: date }
+        description: { type: string, minLength: 1, maxLength: 500 }
+        externalReference: { type: [string, 'null'], maxLength: 100 }
+        source:
+          oneOf:
+          - { $ref: '#/components/schemas/InventoryMovementSource' }
+          - { type: 'null' }
+        createdByName: { type: string, maxLength: 160 }
+        createdAt: { type: string, format: date-time }
+        lineCount: { type: integer, minimum: 1, maximum: 100 }
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: '#/components/schemas/InventoryMovementLine' }
+    InventoryMovementLineCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [inventoryItemId, quantity]
+      properties:
+        inventoryItemId: { type: string, pattern: '^[1-9][0-9]*$' }
+        fromWarehouseId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+        toWarehouseId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+        quantity:
+          type: string
+          pattern: '^[0-9]{1,13}(?:\.[0-9]{1,6})?$'
+    InventoryMovementCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [movementType, movementDate, description, lines]
+      properties:
+        movementType: { $ref: '#/components/schemas/InventoryMovementType' }
+        movementDate: { type: string, format: date }
+        description: { type: string, x-trim: true, minLength: 1, maxLength: 500 }
+        externalReference: { type: [string, 'null'], maxLength: 100 }
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: '#/components/schemas/InventoryMovementLineCreateRequest' }
     CashBankAccountType:
       type: string
       enum:
@@ -9078,8 +9361,9 @@ components:
       additionalProperties: false
       required: [description, quantity, unitPrice, discountAmount, revenueAccountId]
       properties:
+        inventoryItemId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
         description: { type: string, x-trim: true, minLength: 1, maxLength: 500 }
-        quantity: { type: string, pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        quantity: { type: string, pattern: '^(0|[1-9][0-9]{0,12})\.[0-9]{1,6}$' }
         unitPrice: { type: string, pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
         discountAmount: { type: string, pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
         revenueAccountId: { type: string, pattern: '^[1-9][0-9]*$' }
@@ -9096,6 +9380,7 @@ components:
         dueDate: { type: string, format: date }
         description: { type: string, x-trim: true, minLength: 1, maxLength: 500 }
         customerId: { type: string, pattern: '^[1-9][0-9]*$' }
+        warehouseId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
         sourceInvoiceId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
         currencyId: { type: string, pattern: '^[1-9][0-9]*$' }
         exchangeRate: { type: string, pattern: '^[0-9]{1,11}\.[0-9]{8}$' }
@@ -9114,6 +9399,7 @@ components:
         dueDate: { type: string, format: date }
         description: { type: string, x-trim: true, minLength: 1, maxLength: 500 }
         customerId: { type: string, pattern: '^[1-9][0-9]*$' }
+        warehouseId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
         sourceInvoiceId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
         currencyId: { type: string, pattern: '^[1-9][0-9]*$' }
         exchangeRate: { type: string, pattern: '^[0-9]{1,11}\.[0-9]{8}$' }
@@ -9122,11 +9408,14 @@ components:
         lines: { type: array, minItems: 1, maxItems: 200, items: { $ref: '#/components/schemas/SalesInvoiceLineInput' } }
     SalesInvoice:
       type: object
-      required: [id, document, customerId, receivableItemId, settlementVersion, currencyId, dueDate, subtotal, discountTotal, taxTotal, total, baseTotal, paidAmount, creditedAmount, outstandingAmount, settlementStatus, lines]
+      required: [id, document, customerId, warehouseId, receivableItemId, settlementVersion, currencyId, dueDate, subtotal, discountTotal, taxTotal, total, baseTotal, paidAmount, creditedAmount, outstandingAmount, settlementStatus, lines]
       properties:
         id: { type: string, pattern: '^[1-9][0-9]*$' }
         document: { $ref: '#/components/schemas/AccountingDocumentHeader' }
         customerId: { type: string, pattern: '^[1-9][0-9]*$' }
+        warehouseId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+        warehouseCodeSnapshot: { type: [string, 'null'], maxLength: 40 }
+        warehouseNameSnapshot: { type: [string, 'null'], maxLength: 160 }
         sourceInvoiceId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
         receivableItemId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$', description: معرّف عنصر الذمة المدينة المملوك لـAR، ويظهر بعد ترحيل الفاتورة. }
         settlementVersion: { type: [integer, 'null'], minimum: 0 }
@@ -9141,14 +9430,24 @@ components:
         creditedAmount: { type: string }
         outstandingAmount: { type: string }
         settlementStatus: { type: string, enum: [OPEN, PARTIAL, PAID] }
-        lines: { type: array, items: { type: object } }
+        lines:
+          type: array
+          items:
+            type: object
+            properties:
+              inventoryItemId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+              inventoryItemCodeSnapshot: { type: [string, 'null'], maxLength: 40 }
+              inventoryItemNameSnapshot: { type: [string, 'null'], maxLength: 200 }
+              unitOfMeasureCodeSnapshot: { type: [string, 'null'], maxLength: 20 }
+              quantity: { type: string, pattern: '^(0|[1-9][0-9]{0,12})\.[0-9]{6}$' }
     PurchaseInvoiceLineInput:
       type: object
       additionalProperties: false
       required: [description, quantity, unitPrice, discountAmount, debitAccountId]
       properties:
+        inventoryItemId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
         description: { type: string, x-trim: true, minLength: 1, maxLength: 500 }
-        quantity: { type: string, pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        quantity: { type: string, pattern: '^(0|[1-9][0-9]{0,12})\.[0-9]{1,6}$' }
         unitPrice: { type: string, pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
         discountAmount: { type: string, pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
         debitAccountId: { type: string, pattern: '^[1-9][0-9]*$' }
@@ -9165,6 +9464,7 @@ components:
         dueDate: { type: string, format: date }
         description: { type: string, x-trim: true, minLength: 1, maxLength: 500 }
         supplierId: { type: string, pattern: '^[1-9][0-9]*$' }
+        warehouseId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
         supplierInvoiceNumber: { type: [string, 'null'], x-trim: true, maxLength: 100 }
         sourceInvoiceId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
         currencyId: { type: string, pattern: '^[1-9][0-9]*$' }
@@ -9184,6 +9484,7 @@ components:
         dueDate: { type: string, format: date }
         description: { type: string, x-trim: true, minLength: 1, maxLength: 500 }
         supplierId: { type: string, pattern: '^[1-9][0-9]*$' }
+        warehouseId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
         supplierInvoiceNumber: { type: [string, 'null'], x-trim: true, maxLength: 100 }
         sourceInvoiceId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
         currencyId: { type: string, pattern: '^[1-9][0-9]*$' }
@@ -9193,11 +9494,14 @@ components:
         lines: { type: array, minItems: 1, maxItems: 200, items: { $ref: '#/components/schemas/PurchaseInvoiceLineInput' } }
     PurchaseInvoice:
       type: object
-      required: [id, document, supplierId, payableItemId, settlementVersion, currencyId, dueDate, subtotal, discountTotal, taxTotal, total, baseTotal, paidAmount, debitedAmount, outstandingAmount, settlementStatus, lines]
+      required: [id, document, supplierId, warehouseId, payableItemId, settlementVersion, currencyId, dueDate, subtotal, discountTotal, taxTotal, total, baseTotal, paidAmount, debitedAmount, outstandingAmount, settlementStatus, lines]
       properties:
         id: { type: string, pattern: '^[1-9][0-9]*$' }
         document: { $ref: '#/components/schemas/AccountingDocumentHeader' }
         supplierId: { type: string, pattern: '^[1-9][0-9]*$' }
+        warehouseId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+        warehouseCodeSnapshot: { type: [string, 'null'], maxLength: 40 }
+        warehouseNameSnapshot: { type: [string, 'null'], maxLength: 160 }
         supplierInvoiceNumber: { type: [string, 'null'], maxLength: 100 }
         sourceInvoiceId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
         payableItemId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$', description: معرّف عنصر الذمة الدائنة المملوك لـAP، ويظهر بعد ترحيل الفاتورة. }
@@ -9213,7 +9517,16 @@ components:
         debitedAmount: { type: string }
         outstandingAmount: { type: string }
         settlementStatus: { type: string, enum: [OPEN, PARTIAL, PAID] }
-        lines: { type: array, items: { type: object } }
+        lines:
+          type: array
+          items:
+            type: object
+            properties:
+              inventoryItemId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+              inventoryItemCodeSnapshot: { type: [string, 'null'], maxLength: 40 }
+              inventoryItemNameSnapshot: { type: [string, 'null'], maxLength: 200 }
+              unitOfMeasureCodeSnapshot: { type: [string, 'null'], maxLength: 20 }
+              quantity: { type: string, pattern: '^(0|[1-9][0-9]{0,12})\.[0-9]{6}$' }
     TaxRateInput:
       type: object
       additionalProperties: false
