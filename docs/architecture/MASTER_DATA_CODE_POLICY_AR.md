@@ -1,8 +1,8 @@
 ---
 title: "Master Data Code Policy"
 status: "mandatory"
-version: "1.3"
-last_updated: "2026-08-24"
+version: "1.4"
+last_updated: "2026-08-25"
 related:
   - "ARCHITECTURE_GUARDRAILS_AR.md"
   - "BOUNDED_CONTEXT_MAP_AR.md"
@@ -48,6 +48,7 @@ related:
 | رمز نوع الحساب والقالب | ثابت يملكه Seed/Migration | مفتاح دلالي للقواعد والقوالب |
 | رمز المؤسسة/الشركة | UUID للتسجيل أو قيمة تجهيز صريحة | معرّف تكامل وتجهيز طويل العمر يحتاج سياسة مستقلة، وليس تسلسل شاشة مرجعية |
 | رقم المستند المحاسبي | `DocumentSequence` مستقل | تسلسل أعمال له نوع مستند وفترة وسياسة تدقيق مختلفة |
+| رقم حركة المخزون | `InventoryMovementSequence` مستقل يملكه Inventory | هوية سجل حركة immutable وليست رمز بيانات رئيسية؛ لها بادئة `IMV-` وسياسة Idempotency مستقلة |
 
 ## 3. قواعد التزامن والتنفيذ
 

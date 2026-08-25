@@ -7,7 +7,8 @@ export type InventoryErrorReason =
   | "NOT_FOUND"
   | "CODE_EXISTS"
   | "VERSION_CONFLICT"
-  | "WAREHOUSE_INACTIVE";
+  | "WAREHOUSE_INACTIVE"
+  | "WAREHOUSE_HAS_STOCK";
 
 export class InventoryError extends Error {
   constructor(public readonly reason: InventoryErrorReason) {
@@ -149,11 +150,21 @@ export class InventoryService {
     return this.transactions.execute(
       { operation: "DEACTIVATE_WAREHOUSE", companyId: context.companyId },
       async (tx) => {
+        await tx.$queryRaw<Array<{ id: bigint }>>`
+          SELECT id FROM warehouses
+          WHERE id = ${id} AND company_id = ${context.companyId}
+          FOR UPDATE
+        `;
         const current = await tx.warehouse.findFirst({
           where: { id, companyId: context.companyId },
         });
         if (!current) throw new InventoryError("NOT_FOUND");
         if (!current.isActive) throw new InventoryError("WAREHOUSE_INACTIVE");
+        const stocked = await tx.inventoryBalance.findFirst({
+          where: { companyId: context.companyId, warehouseId: id, onHand: { gt: 0 } },
+          select: { id: true },
+        });
+        if (stocked) throw new InventoryError("WAREHOUSE_HAS_STOCK");
         const changed = await tx.warehouse.updateMany({
           where: { id, companyId: context.companyId, version: input.version, isActive: true },
           data: { isActive: false, version: { increment: 1 } },

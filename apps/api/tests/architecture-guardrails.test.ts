@@ -271,11 +271,43 @@ describe("Inventory ownership boundary guardrails", () => {
     expect(inventory).toContain("version: { increment: 1 }");
     expect(catalog).toContain('"INVENTORY_ITEM"');
     expect(catalog).toContain('"UNIT_OF_MEASURE"');
+    expect(catalog).toContain("interface InventoryInvoiceCatalogPort");
+    expect(catalog).toContain("resolveInvoiceSelection(");
     expect(catalog).toContain("FOR UPDATE");
     expect(catalog).toContain("companyId: context.companyId, version: input.version");
     expect(catalog).toContain("version: { increment: 1 }");
     expect(`${sales}\n${purchases}\n${imports}`).not.toMatch(
       /\.(?:warehouse|unitOfMeasure|inventoryItem)\.(?:create|update|updateMany|delete|findFirst|findMany|upsert|count)\s*\(/u,
     );
+    expect(`${sales}\n${purchases}\n${imports}`).not.toMatch(
+      /\.(?:inventoryMovement|inventoryMovementLine|inventoryBalance)\.(?:create|update|updateMany|delete|upsert)\s*\(/u,
+    );
+    expect(`${sales}\n${purchases}`).not.toMatch(/(?:warehouse|inventoryItem):\s*\{\s*select:/u);
+    expect(sales).toContain("this.inventory.resolveInvoiceSelection");
+    expect(purchases).toContain("this.inventory.resolveInvoiceSelection");
+    expect(sales).toContain("this.stock.applyInvoiceStockMovement");
+    expect(purchases).toContain("this.stock.applyInvoiceStockMovement");
+  });
+
+  it("keeps quantity movements immutable, company-scoped and outside Ledger costing", async () => {
+    const [movements, router, schema, openapi] = await Promise.all([
+      source("inventory/inventory-movement-service.ts"),
+      source("inventory/inventory-movement-router.ts"),
+      projectFile("apps/api/prisma/schema.prisma"),
+      projectFile("packages/contracts/openapi.yaml"),
+    ]);
+    expect(movements).toContain('operation: "CREATE_INVENTORY_MOVEMENT"');
+    expect(movements).toContain("interface InventoryInvoiceStockPort");
+    expect(movements).toContain("companyId_sourceType_sourceId_sourceEvent");
+    expect(movements).toContain('throw new InventoryMovementError("INSUFFICIENT_STOCK")');
+    expect(movements).toContain("FOR UPDATE");
+    expect(movements).toContain("companyId: context.companyId");
+    expect(movements).not.toMatch(/journalEntry|journalLine|PostingEngine|costOfGoods|inventoryValuation/iu);
+    expect(router).toContain('router.post("/inventory-movements"');
+    expect(router).not.toMatch(/router\.(?:patch|put|delete)\("\/inventory-movements/iu);
+    expect(schema).toContain("model InventoryMovement");
+    expect(schema).toContain("model InventoryBalance");
+    expect(schema).toContain("@@unique([companyId, sourceType, sourceId, sourceEvent]");
+    expect(openapi).toContain("دفتر حركة كميًا غير قابل للتعديل");
   });
 });

@@ -1,8 +1,8 @@
 ---
 title: "Bounded Context Map"
 status: "accepted target architecture"
-version: "1.2"
-last_updated: "2026-08-24"
+version: "1.5"
+last_updated: "2026-08-25"
 ---
 
 # خريطة الـBounded Contexts وملكية البيانات
@@ -26,7 +26,7 @@ last_updated: "2026-08-24"
 | Sales & Accounts Receivable | العميل والفاتورة والذمة وسياسة تسوية التحصيل | `Customer`, `CustomerAddress`, `SalesInvoice`, `SalesInvoiceLine`, `ReceivableItem` | يكشف `ReceivableSettlementPort` ولا ينشئ Journal Lines مباشرة |
 | Purchases & Accounts Payable | المورد والفاتورة والذمة وسياسة تسوية السداد | `Supplier`, `SupplierAddress`, `PurchaseInvoice`, `PurchaseInvoiceLine`, `PayableItem` | يكشف `PayableSettlementPort` ولا ينشئ Journal Lines مباشرة |
 | Treasury | النقد والبنوك وطرق الدفع وحركات القبض والصرف وتخصيصاتها | `CashBankAccount`, `PaymentMethod`, `Receipt`, `ReceiptAllocation`, `Payment`, `PaymentAllocation` | تستخدم التخصيصات هوية العنصر، والتنسيق مع AR/AP وLedger عبر Ports |
-| Inventory | المستودعات وكتالوج الأصناف، ثم حركات المخزون والتكلفة تدريجيًا | `Warehouse`, `UnitOfMeasure`, `InventoryItem` حاليًا؛ وتحدد ملكية كيانات الحركة عند تنفيذها | الشريحة الحالية بيانات رئيسية فقط، معزولة حسب الشركة ولا تكتب في Ledger |
+| Inventory | المستودعات والكتالوج ودفتر الحركة الكمي والأرصدة، ثم التكلفة تدريجيًا | `Warehouse`, `UnitOfMeasure`, `InventoryItem`, `InventoryMovementSequence`, `InventoryMovement`, `InventoryMovementLine`, `InventoryBalance` | يكشف منفذ تحقق واختيار للفواتير؛ الحركة الحالية كمية ولا تكتب في Ledger أو تدّعي تقييمًا |
 | Tax | معدلات الضرائب وربط حساباتها والحساب والتقريب | `TaxRate` | يكشف `TaxQuotePort` للمبيعات والمشتريات ويملك النسخ المتفائلة |
 | Printing & Document Output | اللقطات التاريخية والتوليد | `DocumentPrintArchive` | يقرأ عبر Document Snapshot Port |
 | Reporting | التقارير والقوائم وRead Models | لا يملك حقائق مالية تشغيلية | قراءة فقط، ويمكنه امتلاك projections مستقبلًا |
@@ -50,7 +50,7 @@ Treasury ─────────────> AR/AP settlement ports
 Registration/Onboarding ──> Treasury setup port
 Sales/Purchases ──────> Tax Configuration query port
 Data Import ──────────> Sales/AR, Purchases/AP application ports
-Sales/Purchases ─────> Inventory application ports (عند إضافة الحركات مستقبلًا)
+Sales/Purchases ─────> Inventory catalog and invoice-stock application ports
 All operational contexts ──> Audit append port
 
 Reporting <────────── read/query ports or dedicated read models
@@ -66,6 +66,7 @@ Printing  <────────── immutable document snapshot port
 - التحقق من الفترة المفتوحة.
 - التحقق من صلاحية الحساب.
 - التحقق من Outstanding قبل التخصيص.
+- التحقق من مستودع وصنف نشطين ودقة كمية وحدة القياس عند حفظ الفاتورة.
 - إنشاء القيد وتغيير حالة المصدر.
 - حجز رقم المستند.
 
@@ -84,7 +85,7 @@ Printing  <────────── immutable document snapshot port
 
 ## 6. حالة النقل والاستثناءات الانتقالية
 
-اكتمل في 22 أغسطس 2026 نقل إنشاء وعكس `JournalEntry/JournalLine` إلى `PostingEngine`، واستبدلت عقود التخصيص `targetJournalLineId` بـ`ReceivableItemId/PayableItemId`، ونقل CRUD والحساب الضريبي إلى وحدة `Tax`، ونقل CRUD الصناديق وطرق الدفع وسياسة أداة الحركة إلى وحدة `Treasury`. أضيف `Data Import` كسياق داعم يملك `DataImportBatch` فقط ويستدعي منافذ المالكين لإنشاء بياناتهم؛ لا يكتب Ledger ولا يخزن الملف. وفي 24 أغسطس بدأت رحلة Inventory بسياق مستقل يملك `Warehouse`، ثم توسعت بالشريحة التالية إلى `UnitOfMeasure` و`InventoryItem` دون أرصدة أو حركات أو أثر محاسبي. يبقى رابط سطر الذمة على الفاتورة أثرًا داخليًا لـCore Accounting ولا يعبر عقدًا عامًا. التفاصيل في [عناصر الذمم وعقد التسوية](AR_AP_SETTLEMENT_ITEMS_AR.md) و[ملكية Tax](TAX_CONTEXT_OWNERSHIP_AR.md) و[ملكية Treasury](TREASURY_CONTEXT_OWNERSHIP_AR.md) و[سياق الاستيراد](DATA_IMPORT_CONTEXT_AR.md) و[أساس Inventory](INVENTORY_CONTEXT_FOUNDATION_AR.md).
+اكتمل في 22 أغسطس 2026 نقل إنشاء وعكس `JournalEntry/JournalLine` إلى `PostingEngine`، واستبدلت عقود التخصيص `targetJournalLineId` بـ`ReceivableItemId/PayableItemId`، ونقل CRUD والحساب الضريبي إلى وحدة `Tax`، ونقل CRUD الصناديق وطرق الدفع وسياسة أداة الحركة إلى وحدة `Treasury`. أضيف `Data Import` كسياق داعم يملك `DataImportBatch` فقط ويستدعي منافذ المالكين لإنشاء بياناتهم؛ لا يكتب Ledger ولا يخزن الملف. وفي 24 و25 أغسطس بدأت رحلة Inventory بسياق مستقل يملك `Warehouse`، ثم توسعت إلى الكتالوج وربط تأليف الفواتير ودفتر حركة كمي immutable، ثم رُبط ترحيل وعكس فواتير الأصناف بحركة كمية ذرية عبر `InventoryInvoiceStockPort` مع تفرد مصدر ومنع المخزون السالب. لم تعتمد بعد سياسة تقييم أو أثر محاسبي للمخزون، ولا توجد أذونات استلام وتسليم مستقلة؛ الفاتورة المرحلة هي مستند الكمية الانتقالي. يبقى رابط سطر الذمة على الفاتورة أثرًا داخليًا لـCore Accounting ولا يعبر عقدًا عامًا. التفاصيل في [عناصر الذمم وعقد التسوية](AR_AP_SETTLEMENT_ITEMS_AR.md) و[ملكية Tax](TAX_CONTEXT_OWNERSHIP_AR.md) و[ملكية Treasury](TREASURY_CONTEXT_OWNERSHIP_AR.md) و[سياق الاستيراد](DATA_IMPORT_CONTEXT_AR.md) و[أساس Inventory](INVENTORY_CONTEXT_FOUNDATION_AR.md).
 
 الاستثناءات التالية ما زالت موجودة ولا تعد نمطًا مسموحًا للنسخ:
 

@@ -1,11 +1,11 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
-import { api } from "./api";
+import { api, idempotencyKey } from "./api";
 import { localizedReferenceName, translate as t } from "./i18n";
-import type { InventoryItem, ListResponse, UnitOfMeasure, Warehouse } from "./types";
+import type { InventoryBalance, InventoryItem, InventoryMovement, InventoryMovementType, ListResponse, UnitOfMeasure, Warehouse } from "./types";
 import { Button, EmptyState, Icon, Modal, PageHeader, Pagination, Spinner } from "./ui";
 
 type Notice = (message: string, tone?: "success" | "error") => void;
-type Tab = "warehouses" | "units" | "items";
+type Tab = "balances" | "movements" | "warehouses" | "units" | "items";
 type PageMeta = { page: number; pageSize: number; total: number; totalPages: number };
 
 const emptyMeta: PageMeta = { page: 1, pageSize: 10, total: 0, totalPages: 0 };
@@ -15,12 +15,166 @@ export function InventoryPage({ notify }: { notify: Notice }) {
   return <section className="workspace-page">
     <PageHeader kicker={t("inventory.kicker")} title={t("inventory.title")} description={t("inventory.description")} />
     <div className="section-tabs" role="tablist" aria-label={t("inventory.tabs.label")}>
-      {(["warehouses", "units", "items"] as const).map((value) => <button key={value} type="button" role="tab" aria-selected={tab === value} className={tab === value ? "active" : ""} onClick={() => setTab(value)}>{t(`inventory.tabs.${value}`)}</button>)}
+      {(["warehouses", "balances", "movements", "units", "items"] as const).map((value) => <button key={value} type="button" role="tab" aria-selected={tab === value} className={tab === value ? "active" : ""} onClick={() => setTab(value)}>{t(`inventory.tabs.${value}`)}</button>)}
     </div>
+    {tab === "balances" && <BalancesPanel />}
+    {tab === "movements" && <MovementsPanel notify={notify} />}
     {tab === "warehouses" && <WarehousesPanel notify={notify} />}
     {tab === "units" && <UnitsPanel notify={notify} />}
     {tab === "items" && <ItemsPanel notify={notify} />}
   </section>;
+}
+
+const movementTypes: InventoryMovementType[] = ["OPENING_BALANCE", "RECEIPT", "ISSUE", "TRANSFER", "ADJUSTMENT_IN", "ADJUSTMENT_OUT"];
+const movementTypeLabel = (value: InventoryMovementType) => t(`inventory.movements.types.${value}`);
+const quantityLabel = (value: string) => Number(value).toLocaleString(undefined, { maximumFractionDigits: 6 });
+
+function BalancesPanel() {
+  const [balances, setBalances] = useState<InventoryBalance[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [catalog, setCatalog] = useState<InventoryItem[]>([]);
+  const [meta, setMeta] = useState<PageMeta>(emptyMeta);
+  const [page, setPage] = useState(1);
+  const [warehouseId, setWarehouseId] = useState("");
+  const [inventoryItemId, setInventoryItemId] = useState("");
+  const [nonZero, setNonZero] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    const query = new URLSearchParams({ page: String(page), pageSize: "10", nonZero: String(nonZero), ...(warehouseId ? { warehouseId } : {}), ...(inventoryItemId ? { inventoryItemId } : {}) });
+    try {
+      const [result, warehouseResult, itemResult] = await Promise.all([
+        api<ListResponse<InventoryBalance>>(`/inventory-balances?${query}`),
+        api<ListResponse<Warehouse>>("/warehouses?page=1&pageSize=100&active=true"),
+        api<ListResponse<InventoryItem>>("/inventory-items?page=1&pageSize=100&active=true"),
+      ]);
+      setBalances(result.data);
+      setMeta(result.meta);
+      setWarehouses(warehouseResult.data);
+      setCatalog(itemResult.data);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t("inventory.balances.loadError"));
+    } finally {
+      setLoading(false);
+    }
+  }, [inventoryItemId, nonZero, page, warehouseId]);
+
+  useEffect(() => { void load(); }, [load]);
+  return <>
+    <div className="toolbar treasury-filters inventory-catalog-toolbar">
+      <select aria-label={t("inventory.balances.warehouse")} value={warehouseId} onChange={(event) => { setPage(1); setWarehouseId(event.target.value); }}><option value="">{t("inventory.balances.allWarehouses")}</option>{warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.code} — {localizedReferenceName(warehouse)}</option>)}</select>
+      <select aria-label={t("inventory.balances.item")} value={inventoryItemId} onChange={(event) => { setPage(1); setInventoryItemId(event.target.value); }}><option value="">{t("inventory.balances.allItems")}</option>{catalog.map((item) => <option key={item.id} value={item.id}>{item.code} — {localizedReferenceName(item)}</option>)}</select>
+      <label className="checkbox-line"><input type="checkbox" checked={nonZero} onChange={(event) => { setPage(1); setNonZero(event.target.checked); }} />{t("inventory.balances.nonZero")}</label>
+    </div>
+    {error ? <ErrorPanel error={error} retry={load} /> : loading ? <Spinner label={t("inventory.balances.loading")} /> : !balances.length ? <EmptyState title={t("inventory.balances.emptyTitle")} description={t("inventory.balances.emptyDescription")} /> : <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("inventory.balances.warehouse")}</th><th>{t("inventory.balances.item")}</th><th>{t("inventory.balances.onHand")}</th><th>{t("inventory.balances.movements")}</th><th>{t("inventory.balances.updatedAt")}</th></tr></thead><tbody>{balances.map((balance) => <tr key={balance.id}><td><strong>{localizedReferenceName(balance.warehouse)}</strong><small dir="ltr">{balance.warehouse.code}</small></td><td><strong>{localizedReferenceName(balance.inventoryItem)}</strong><small dir="ltr">{balance.inventoryItem.code}</small></td><td><strong dir="ltr">{quantityLabel(balance.onHand)}</strong> <span className="code-pill" dir="ltr">{balance.inventoryItem.unitOfMeasure.code}</span></td><td>{balance.movementCount}</td><td>{new Date(balance.updatedAt).toLocaleString()}</td></tr>)}</tbody></table></div>}
+    <Pagination {...meta} page={page} onChange={setPage} />
+  </>;
+}
+
+function MovementsPanel({ notify }: { notify: Notice }) {
+  const [movements, setMovements] = useState<InventoryMovement[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [catalog, setCatalog] = useState<InventoryItem[]>([]);
+  const [meta, setMeta] = useState<PageMeta>(emptyMeta);
+  const [page, setPage] = useState(1);
+  const [typeFilter, setTypeFilter] = useState("");
+  const [search, setSearch] = useState("");
+  const [submittedSearch, setSubmittedSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [detail, setDetail] = useState<InventoryMovement | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    const query = new URLSearchParams({ page: String(page), pageSize: "10", ...(typeFilter ? { movementType: typeFilter } : {}), ...(submittedSearch ? { search: submittedSearch } : {}) });
+    try {
+      const [result, warehouseResult, itemResult] = await Promise.all([
+        api<ListResponse<InventoryMovement>>(`/inventory-movements?${query}`),
+        api<ListResponse<Warehouse>>("/warehouses?page=1&pageSize=100&active=true"),
+        api<ListResponse<InventoryItem>>("/inventory-items?page=1&pageSize=100&active=true"),
+      ]);
+      setMovements(result.data);
+      setMeta(result.meta);
+      setWarehouses(warehouseResult.data);
+      setCatalog(itemResult.data);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t("inventory.movements.loadError"));
+    } finally {
+      setLoading(false);
+    }
+  }, [page, submittedSearch, typeFilter]);
+
+  useEffect(() => { void load(); }, [load]);
+  async function showDetail(id: string) {
+    try { setDetail(await api<InventoryMovement>(`/inventory-movements/${id}`)); }
+    catch (cause) { notify(cause instanceof Error ? cause.message : t("inventory.movements.loadError"), "error"); }
+  }
+
+  return <>
+    <div className="toolbar treasury-filters inventory-catalog-toolbar">
+      <SearchBox value={search} label={t("inventory.movements.search")} onChange={setSearch} onSubmit={() => { setPage(1); setSubmittedSearch(search.trim()); }} />
+      <select aria-label={t("inventory.movements.type")} value={typeFilter} onChange={(event) => { setPage(1); setTypeFilter(event.target.value); }}><option value="">{t("inventory.movements.allTypes")}</option>{movementTypes.map((value) => <option key={value} value={value}>{movementTypeLabel(value)}</option>)}</select>
+      <Button icon="plus" disabled={!warehouses.length || !catalog.length} onClick={() => setCreating(true)}>{t("inventory.movements.create")}</Button>
+    </div>
+    {!loading && (!warehouses.length || !catalog.length) && <div className="inline-notice neutral">{t("inventory.movements.referencesRequired")}</div>}
+    {error ? <ErrorPanel error={error} retry={load} /> : loading ? <Spinner label={t("inventory.movements.loading")} /> : !movements.length ? <EmptyState title={t("inventory.movements.emptyTitle")} description={t("inventory.movements.emptyDescription")} action={warehouses.length && catalog.length ? <Button icon="plus" onClick={() => setCreating(true)}>{t("inventory.movements.create")}</Button> : undefined} /> : <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("inventory.movements.number")}</th><th>{t("inventory.movements.date")}</th><th>{t("inventory.movements.type")}</th><th>{t("inventory.movements.description")}</th><th>{t("inventory.movements.lineCount")}</th><th>{t("inventory.actions")}</th></tr></thead><tbody>{movements.map((movement) => <tr key={movement.id}><td><strong dir="ltr">{movement.movementNumber}</strong>{movement.externalReference && <small dir="ltr">{movement.externalReference}</small>}</td><td dir="ltr">{movement.movementDate}</td><td><span className="status-chip active">{movementTypeLabel(movement.movementType)}</span></td><td>{movement.description}</td><td>{movement.lineCount}</td><td><Button variant="ghost" onClick={() => void showDetail(movement.id)}>{t("inventory.movements.view")}</Button></td></tr>)}</tbody></table></div>}
+    <Pagination {...meta} page={page} onChange={setPage} />
+    {creating && <MovementForm warehouses={warehouses} catalog={catalog} onClose={() => setCreating(false)} onSaved={async () => { setCreating(false); notify(t("inventory.movements.created")); await load(); }} />}
+    {detail && <MovementDetail movement={detail} onClose={() => setDetail(null)} />}
+  </>;
+}
+
+type MovementLineDraft = { inventoryItemId: string; fromWarehouseId: string; toWarehouseId: string; quantity: string };
+const emptyMovementLine = (): MovementLineDraft => ({ inventoryItemId: "", fromWarehouseId: "", toWarehouseId: "", quantity: "" });
+
+function MovementForm({ warehouses, catalog, onClose, onSaved }: { warehouses: Warehouse[]; catalog: InventoryItem[]; onClose: () => void; onSaved: () => void }) {
+  const [movementType, setMovementType] = useState<InventoryMovementType>("RECEIPT");
+  const [movementDate, setMovementDate] = useState(new Date().toISOString().slice(0, 10));
+  const [description, setDescription] = useState("");
+  const [externalReference, setExternalReference] = useState("");
+  const [lines, setLines] = useState<MovementLineDraft[]>([emptyMovementLine()]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const inbound = ["OPENING_BALANCE", "RECEIPT", "ADJUSTMENT_IN"].includes(movementType);
+  const outbound = ["ISSUE", "ADJUSTMENT_OUT"].includes(movementType);
+  const updateLine = (index: number, patch: Partial<MovementLineDraft>) => setLines((current) => current.map((line, currentIndex) => currentIndex === index ? { ...line, ...patch } : line));
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const body = {
+        movementType,
+        movementDate,
+        description: description.trim(),
+        externalReference: externalReference.trim() || null,
+        lines: lines.map((line) => ({
+          inventoryItemId: line.inventoryItemId,
+          quantity: line.quantity,
+          ...(!inbound ? { fromWarehouseId: line.fromWarehouseId } : {}),
+          ...(!outbound ? { toWarehouseId: line.toWarehouseId } : {}),
+        })),
+      };
+      await api("/inventory-movements", { method: "POST", idempotencyKey: idempotencyKey("inventory-movement", crypto.randomUUID()), body: JSON.stringify(body) });
+      onSaved();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t("inventory.movements.saveError"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return <Modal title={t("inventory.movements.create")} description={t("inventory.movements.formDescription")} onClose={onClose}><form className="document-form" onSubmit={submit}>{error && <div className="form-error" role="alert">{error}</div>}<div className="form-grid"><label><span>{t("inventory.movements.type")}</span><select value={movementType} onChange={(event) => { setMovementType(event.target.value as InventoryMovementType); setLines([emptyMovementLine()]); }}>{movementTypes.map((value) => <option key={value} value={value}>{movementTypeLabel(value)}</option>)}</select></label><label><span>{t("inventory.movements.date")}</span><input type="date" value={movementDate} onChange={(event) => setMovementDate(event.target.value)} required /></label><label className="full"><span>{t("inventory.movements.description")}</span><input value={description} onChange={(event) => setDescription(event.target.value)} maxLength={500} required /></label><label className="full"><span>{t("inventory.movements.externalReference")}</span><input dir="ltr" value={externalReference} onChange={(event) => setExternalReference(event.target.value)} maxLength={100} /></label></div><div className="line-editor"><div className="line-editor-header"><h3>{t("inventory.movements.lines")}</h3><Button type="button" variant="secondary" icon="plus" onClick={() => setLines((current) => [...current, emptyMovementLine()])}>{t("inventory.movements.addLine")}</Button></div>{lines.map((line, index) => <div className="form-grid inventory-movement-line" key={index}><label><span>{t("inventory.balances.item")}</span><select value={line.inventoryItemId} onChange={(event) => updateLine(index, { inventoryItemId: event.target.value })} required><option value="">{t("inventory.movements.selectItem")}</option>{catalog.map((item) => <option key={item.id} value={item.id}>{item.code} — {localizedReferenceName(item)} ({item.unitOfMeasure.code})</option>)}</select></label>{!inbound && <label><span>{t("inventory.movements.fromWarehouse")}</span><select value={line.fromWarehouseId} onChange={(event) => updateLine(index, { fromWarehouseId: event.target.value })} required><option value="">{t("inventory.movements.selectWarehouse")}</option>{warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.code} — {localizedReferenceName(warehouse)}</option>)}</select></label>}{!outbound && <label><span>{t("inventory.movements.toWarehouse")}</span><select value={line.toWarehouseId} onChange={(event) => updateLine(index, { toWarehouseId: event.target.value })} required><option value="">{t("inventory.movements.selectWarehouse")}</option>{warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.code} — {localizedReferenceName(warehouse)}</option>)}</select></label>}<label><span>{t("inventory.movements.quantity")}</span><input dir="ltr" inputMode="decimal" value={line.quantity} onChange={(event) => updateLine(index, { quantity: event.target.value })} pattern="[0-9]{1,13}([.][0-9]{1,6})?" required /></label>{lines.length > 1 && <div className="form-actions"><Button type="button" variant="ghost" icon="ban" onClick={() => setLines((current) => current.filter((_, currentIndex) => currentIndex !== index))}>{t("inventory.movements.removeLine")}</Button></div>}</div>)}</div><div className="inline-notice neutral">{t("inventory.movements.immutableNotice")}</div><FormActions saving={saving} onClose={onClose} /></form></Modal>;
+}
+
+function MovementDetail({ movement, onClose }: { movement: InventoryMovement; onClose: () => void }) {
+  return <Modal title={movement.movementNumber} description={`${movementTypeLabel(movement.movementType)} · ${movement.movementDate}`} onClose={onClose}><div className="detail-grid"><div><span>{t("inventory.movements.description")}</span><strong>{movement.description}</strong></div><div><span>{t("inventory.movements.externalReference")}</span><strong dir="ltr">{movement.externalReference || "—"}</strong></div><div><span>{t("inventory.movements.createdBy")}</span><strong>{movement.createdByName}</strong></div></div><div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>#</th><th>{t("inventory.balances.item")}</th><th>{t("inventory.movements.route")}</th><th>{t("inventory.movements.quantity")}</th></tr></thead><tbody>{movement.lines?.map((line) => <tr key={line.id}><td>{line.lineNumber}</td><td><strong>{line.inventoryItemName}</strong><small dir="ltr">{line.inventoryItemCode}</small></td><td>{line.fromWarehouseName || t("inventory.movements.externalSource")} → {line.toWarehouseName || t("inventory.movements.externalDestination")}</td><td><strong dir="ltr">{quantityLabel(line.quantity)}</strong> <span className="code-pill" dir="ltr">{line.unitOfMeasureCode}</span></td></tr>)}</tbody></table></div><div className="form-actions"><Button onClick={onClose}>{t("inventory.cancel")}</Button></div></Modal>;
 }
 
 function WarehousesPanel({ notify }: { notify: Notice }) {

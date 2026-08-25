@@ -132,6 +132,61 @@ export type InventoryItem = {
   unitOfMeasure: UnitOfMeasure;
 };
 
+export type InventoryMovementType =
+  | "OPENING_BALANCE"
+  | "RECEIPT"
+  | "ISSUE"
+  | "TRANSFER"
+  | "ADJUSTMENT_IN"
+  | "ADJUSTMENT_OUT";
+
+export type InventoryBalance = {
+  id: string;
+  warehouse: Pick<Warehouse, "id" | "code" | "nameAr" | "nameEn">;
+  inventoryItem: Pick<InventoryItem, "id" | "code" | "nameAr" | "nameEn"> & {
+    unitOfMeasure: Pick<UnitOfMeasure, "id" | "code" | "nameAr" | "nameEn" | "decimalPlaces">;
+  };
+  onHand: string;
+  version: number;
+  movementCount: number;
+  updatedAt: string;
+};
+
+export type InventoryMovementLine = {
+  id: string;
+  lineNumber: number;
+  inventoryItemId: string;
+  inventoryItemCode: string;
+  inventoryItemName: string;
+  unitOfMeasureCode: string;
+  fromWarehouseId: string | null;
+  fromWarehouseCode: string | null;
+  fromWarehouseName: string | null;
+  toWarehouseId: string | null;
+  toWarehouseCode: string | null;
+  toWarehouseName: string | null;
+  quantity: string;
+};
+
+export type InventoryMovement = {
+  id: string;
+  movementNumber: string;
+  movementType: InventoryMovementType;
+  movementDate: string;
+  description: string;
+  externalReference: string | null;
+  source: {
+    type: "SALES_INVOICE" | "SALES_CREDIT_NOTE" | "PURCHASE_INVOICE" | "PURCHASE_DEBIT_NOTE";
+    id: string;
+    event: "POST" | "REVERSE";
+    documentNumber: string;
+  } | null;
+  createdByName: string;
+  createdAt: string;
+  lineCount: number;
+  lines?: InventoryMovementLine[];
+};
+
 export type PaymentMethod = {
   id: string;
   code: string;
@@ -319,6 +374,10 @@ export type TaxRate = {
 export type SalesInvoiceLine = {
   id: string;
   lineNumber: number;
+  inventoryItemId: string | null;
+  inventoryItemCodeSnapshot: string | null;
+  inventoryItemNameSnapshot: string | null;
+  unitOfMeasureCodeSnapshot: string | null;
   description: string;
   revenueAccountId: string;
   revenueAccount?: { id: string; code: string; nameAr: string };
@@ -340,6 +399,9 @@ export type SalesInvoice = {
   document: DocumentHeader;
   customerId: string;
   customer?: { id: string; code: string; nameAr: string };
+  warehouseId: string | null;
+  warehouseCodeSnapshot: string | null;
+  warehouseNameSnapshot: string | null;
   sourceInvoiceId: string | null;
   sourceInvoiceNumber: string | null;
   receivableItemId: string | null;
@@ -387,6 +449,10 @@ export type ReceivablesAgingReport = {
 
 export type PurchaseInvoiceLine = {
   id: string; lineNumber: number; description: string;
+  inventoryItemId: string | null;
+  inventoryItemCodeSnapshot: string | null;
+  inventoryItemNameSnapshot: string | null;
+  unitOfMeasureCodeSnapshot: string | null;
   debitAccountId: string;
   debitAccount?: { id: string; code: string; nameAr: string };
   costCenterId: string | null;
@@ -399,6 +465,9 @@ export type PurchaseInvoiceLine = {
 export type PurchaseInvoice = {
   id: string; document: DocumentHeader; supplierId: string;
   supplier?: { id: string; code: string; nameAr: string };
+  warehouseId: string | null;
+  warehouseCodeSnapshot: string | null;
+  warehouseNameSnapshot: string | null;
   supplierInvoiceNumber: string | null;
   sourceInvoiceId: string | null; sourceInvoiceNumber: string | null;
   payableItemId: string | null; settlementVersion: number | null; currencyId: string;

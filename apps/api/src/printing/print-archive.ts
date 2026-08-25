@@ -53,6 +53,8 @@ export async function archiveDocument(tx: Prisma.TransactionClient, context: Act
       supplierAddress: document.purchaseInvoice.supplierAddressSnapshot,
       supplierInvoiceNumber: document.purchaseInvoice.supplierInvoiceNumber,
       sourceInvoiceNumber: document.purchaseInvoice.sourceInvoice?.accountingDocument.documentNumber ?? null,
+      warehouseCode: document.purchaseInvoice.warehouseCodeSnapshot,
+      warehouseName: document.purchaseInvoice.warehouseNameSnapshot,
       dueDate: dateOnly(document.purchaseInvoice.dueDate),
       currencyCode: document.purchaseInvoice.currency.code,
       exchangeRate: document.purchaseInvoice.exchangeRate.toFixed(8),
@@ -62,7 +64,7 @@ export async function archiveDocument(tx: Prisma.TransactionClient, context: Act
       total: document.purchaseInvoice.total.toFixed(4),
       baseTotal: document.purchaseInvoice.baseTotal.toFixed(4),
       notes: document.purchaseInvoice.notes,
-      lines: document.purchaseInvoice.lines.map((line) => ({ number: line.lineNumber, description: line.description, accountCode: line.debitAccount.code, accountName: line.debitAccount.nameAr, quantity: line.quantity.toFixed(4), unitPrice: line.unitPrice.toFixed(4), discount: line.discountAmount.toFixed(4), taxRate: line.taxRateSnapshot.toFixed(4), tax: line.taxAmount.toFixed(4), total: line.totalAmount.toFixed(4) })),
+      lines: document.purchaseInvoice.lines.map((line) => ({ number: line.lineNumber, itemCode: line.inventoryItemCodeSnapshot, itemName: line.inventoryItemNameSnapshot, unitOfMeasureCode: line.unitOfMeasureCodeSnapshot, description: line.description, accountCode: line.debitAccount.code, accountName: line.debitAccount.nameAr, quantity: line.quantity.toFixed(6), unitPrice: line.unitPrice.toFixed(4), discount: line.discountAmount.toFixed(4), taxRate: line.taxRateSnapshot.toFixed(4), tax: line.taxAmount.toFixed(4), total: line.totalAmount.toFixed(4) })),
     } : null,
     entries: document.journalEntries.map((entry) => ({ number: entry.entryNumber, date: dateOnly(entry.entryDate), description: entry.description, lines: entry.lines.map((line) => ({ number: line.lineNumber, accountCode: line.account.code, accountName: line.account.nameAr, costCenter: line.costCenter?.nameAr ?? null, description: line.description, currencyCode: line.currency.code, exchangeRate: line.exchangeRate.toFixed(8), debit: line.debitAmount.toFixed(4), credit: line.creditAmount.toFixed(4), baseDebit: line.baseDebitAmount.toFixed(4), baseCredit: line.baseCreditAmount.toFixed(4) })) })),
   };

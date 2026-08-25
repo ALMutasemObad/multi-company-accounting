@@ -101,6 +101,11 @@ export function toMoney(value: string) {
   return numeric.toFixed(4);
 }
 
+export function toQuantity(value: string) {
+  const numeric = Number(value || 0);
+  return numeric.toFixed(6);
+}
+
 export function toRate(value: string) {
   const numeric = Number(value || 0);
   return numeric.toFixed(8);

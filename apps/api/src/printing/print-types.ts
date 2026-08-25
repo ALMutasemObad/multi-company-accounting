@@ -7,9 +7,10 @@ export type PrintSnapshot = {
   invoice?: null | {
     supplierName: string; supplierTaxMasked: string | null; supplierAddress: string | null;
     supplierInvoiceNumber: string | null; sourceInvoiceNumber: string | null; dueDate: string;
+    warehouseCode?: string | null; warehouseName?: string | null;
     currencyCode: string; exchangeRate: string; subtotal: string; discountTotal: string;
     taxTotal: string; total: string; baseTotal: string; notes: string | null;
-    lines: Array<{ number: number; description: string; accountCode: string; accountName: string; quantity: string; unitPrice: string; discount: string; taxRate: string; tax: string; total: string }>;
+    lines: Array<{ number: number; itemCode?: string | null; itemName?: string | null; unitOfMeasureCode?: string | null; description: string; accountCode: string; accountName: string; quantity: string; unitPrice: string; discount: string; taxRate: string; tax: string; total: string }>;
   };
   entries: Array<{ number: number; date: string; description: string; lines: Array<{ number: number; accountCode: string; accountName: string; costCenter: string | null; description: string | null; currencyCode: string; exchangeRate: string; debit: string; credit: string; baseDebit: string; baseCredit: string }> }>;
 };

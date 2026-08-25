@@ -95,6 +95,8 @@ try {
     ['warehouses.manage', 'inventory', 'إدارة المستودعات'],
     ['inventory_catalog.view', 'inventory', 'عرض وحدات القياس وكتالوج الأصناف'],
     ['inventory_catalog.manage', 'inventory', 'إدارة وحدات القياس وكتالوج الأصناف'],
+    ['inventory_movements.view', 'inventory', 'عرض أرصدة وحركات المخزون'],
+    ['inventory_movements.create', 'inventory', 'إنشاء حركات المخزون'],
     ['receipts.view', 'receipts', 'عرض سندات القبض'],
     ['receipts.create', 'receipts', 'إنشاء سندات القبض'],
     ['receipts.update', 'receipts', 'تعديل سندات القبض'],

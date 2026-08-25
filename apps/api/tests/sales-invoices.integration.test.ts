@@ -5,6 +5,7 @@ import { createApp } from "../src/app.js";
 import { AuthService } from "../src/auth/auth-service.js";
 import { PrismaAuthStore } from "../src/auth/prisma-auth-store.js";
 import { createDatabase } from "../src/database.js";
+import { InventoryMovementService } from "../src/inventory/inventory-movement-service.js";
 import { ReceiptService } from "../src/receipts/receipt-service.js";
 import { SalesInvoiceService } from "../src/sales/sales-invoice-service.js";
 import { TaxService } from "../src/tax/tax-service.js";
@@ -30,10 +31,21 @@ describe.runIf(enabled)("sales invoices and receivables with MariaDB", () => {
   let cashBankId: bigint;
   let paymentMethodId: bigint;
   let taxRateId: bigint;
+  let warehouseId: bigint;
+  let unitOfMeasureId: bigint;
+  let inventoryItemId: bigint;
 
   async function removeYear(id: bigint) {
     const documentWhere = { companyId, fiscalPeriod: { fiscalYearId: id } };
     const invoiceWhere = { companyId, accountingDocument: { fiscalPeriod: { fiscalYearId: id } } };
+    const invoiceIds = (await prisma!.salesInvoice.findMany({ where: invoiceWhere, select: { id: true } })).map(({ id: invoiceId }) => invoiceId);
+    const movementIds = invoiceIds.length
+      ? (await prisma!.inventoryMovement.findMany({ where: { companyId, sourceType: { in: ["SALES_INVOICE", "SALES_CREDIT_NOTE"] }, sourceId: { in: invoiceIds } }, select: { id: true } })).map(({ id: movementId }) => movementId)
+      : [];
+    if (movementIds.length) {
+      await prisma!.inventoryMovementLine.deleteMany({ where: { companyId, movementId: { in: movementIds } } });
+      await prisma!.inventoryMovement.deleteMany({ where: { companyId, id: { in: movementIds } } });
+    }
     await prisma!.receiptAllocation.deleteMany({ where: { companyId, receipt: { accountingDocument: { fiscalPeriod: { fiscalYearId: id } } } } });
     await prisma!.receipt.deleteMany({ where: { companyId, accountingDocument: { fiscalPeriod: { fiscalYearId: id } } } });
     await prisma!.receivableItem.deleteMany({ where: { companyId, salesInvoice: { accountingDocument: { fiscalPeriod: { fiscalYearId: id } } } } });
@@ -58,12 +70,25 @@ describe.runIf(enabled)("sales invoices and receivables with MariaDB", () => {
     currencyId = (await prisma!.company.findUniqueOrThrow({ where: { id: companyId } })).baseCurrencyId;
     const abandoned = await prisma!.fiscalYear.findFirst({ where: { companyId, name: "IT-SALES-2044" } });
     if (abandoned) await removeYear(abandoned.id);
-    await prisma!.idempotencyRecord.deleteMany({ where: { companyId, operation: { in: ["POST_SALES_INVOICE", "REVERSE_SALES_INVOICE", "POST_RECEIPT"] } } });
+    await prisma!.idempotencyRecord.deleteMany({ where: { companyId, operation: { in: ["POST_SALES_INVOICE", "REVERSE_SALES_INVOICE", "POST_RECEIPT", "CREATE_INVENTORY_MOVEMENT"] } } });
     await prisma!.taxRate.deleteMany({ where: { companyId, code: "IT-VAT15" } });
     await prisma!.taxRate.deleteMany({ where: { companyId, code: { startsWith: "IT-SALES-RATE-" } } });
     await prisma!.customerAddress.deleteMany({ where: { companyId, customer: { code: "IT-SALES-CUST" } } });
     await prisma!.customer.deleteMany({ where: { companyId, code: "IT-SALES-CUST" } });
     await prisma!.cashBankAccount.deleteMany({ where: { companyId, code: "IT-SALES-CASH" } });
+    const staleInventoryItems = await prisma!.inventoryItem.findMany({ where: { companyId, code: "IT-SALES-ITEM" }, select: { id: true } });
+    if (staleInventoryItems.length) {
+      const staleItemIds = staleInventoryItems.map(({ id }) => id);
+      const staleMovementIds = (await prisma!.inventoryMovementLine.findMany({ where: { companyId, inventoryItemId: { in: staleItemIds } }, select: { movementId: true }, distinct: ["movementId"] })).map(({ movementId }) => movementId);
+      if (staleMovementIds.length) {
+        await prisma!.inventoryMovementLine.deleteMany({ where: { companyId, movementId: { in: staleMovementIds } } });
+        await prisma!.inventoryMovement.deleteMany({ where: { companyId, id: { in: staleMovementIds } } });
+      }
+      await prisma!.inventoryBalance.deleteMany({ where: { companyId, inventoryItemId: { in: staleItemIds } } });
+    }
+    await prisma!.inventoryItem.deleteMany({ where: { companyId, code: "IT-SALES-ITEM" } });
+    await prisma!.unitOfMeasure.deleteMany({ where: { companyId, code: "ITS3" } });
+    await prisma!.warehouse.deleteMany({ where: { companyId, code: "IT-SALES-WH" } });
     await prisma!.account.deleteMany({ where: { companyId, code: { startsWith: "IT-SALES-" } } });
 
     const types = Object.fromEntries((await prisma!.accountType.findMany()).map((type) => [type.code, type.id]));
@@ -75,6 +100,9 @@ describe.runIf(enabled)("sales invoices and receivables with MariaDB", () => {
     cashBankId = (await prisma!.cashBankAccount.create({ data: { companyId, ledgerAccountId: cashLedgerId, accountType: "CASH", code: "IT-SALES-CASH", nameAr: "صندوق مبيعات اختباري" } })).id;
     paymentMethodId = (await prisma!.paymentMethod.findFirstOrThrow({ where: { code: "CASH" } })).id;
     taxRateId = (await prisma!.taxRate.create({ data: { companyId, outputTaxAccountId: taxAccountId, code: "IT-VAT15", nameAr: "ضريبة 15% اختبارية", rate: "15.0000" } })).id;
+    warehouseId = (await prisma!.warehouse.create({ data: { companyId, code: "IT-SALES-WH", nameAr: "مستودع مبيعات اختباري" } })).id;
+    unitOfMeasureId = (await prisma!.unitOfMeasure.create({ data: { companyId, code: "ITS3", nameAr: "وحدة ثلاثية", decimalPlaces: 3 } })).id;
+    inventoryItemId = (await prisma!.inventoryItem.create({ data: { companyId, unitOfMeasureId, code: "IT-SALES-ITEM", nameAr: "صنف مبيعات اختباري" } })).id;
     const year = await prisma!.fiscalYear.create({ data: { companyId, name: "IT-SALES-2044", startDate: new Date("2044-01-01T00:00:00.000Z"), endDate: new Date("2044-12-31T00:00:00.000Z"), periods: { create: { periodNumber: 1, name: "السنة الاختبارية", startDate: new Date("2044-01-01T00:00:00.000Z"), endDate: new Date("2044-12-31T00:00:00.000Z") } } }, include: { periods: true } });
     yearId = year.id;
     periodId = year.periods[0]!.id;
@@ -87,9 +115,20 @@ describe.runIf(enabled)("sales invoices and receivables with MariaDB", () => {
 
   afterAll(async () => {
     if (!prisma) return;
-    await prisma.idempotencyRecord.deleteMany({ where: { companyId, operation: { in: ["POST_SALES_INVOICE", "REVERSE_SALES_INVOICE", "POST_RECEIPT"] } } });
-    await prisma.auditLog.deleteMany({ where: { companyId, entityType: { in: ["SALES_INVOICE", "TAX_RATE", "RECEIPT"] } } });
+    await prisma.idempotencyRecord.deleteMany({ where: { companyId, operation: { in: ["POST_SALES_INVOICE", "REVERSE_SALES_INVOICE", "POST_RECEIPT", "CREATE_INVENTORY_MOVEMENT"] } } });
+    await prisma.auditLog.deleteMany({ where: { companyId, entityType: { in: ["SALES_INVOICE", "TAX_RATE", "RECEIPT", "INVENTORY_MOVEMENT"] } } });
     if (yearId) await removeYear(yearId);
+    if (inventoryItemId) {
+      const movementIds = (await prisma.inventoryMovementLine.findMany({ where: { companyId, inventoryItemId }, select: { movementId: true }, distinct: ["movementId"] })).map(({ movementId }) => movementId);
+      if (movementIds.length) {
+        await prisma.inventoryMovementLine.deleteMany({ where: { companyId, movementId: { in: movementIds } } });
+        await prisma.inventoryMovement.deleteMany({ where: { companyId, id: { in: movementIds } } });
+      }
+      await prisma.inventoryBalance.deleteMany({ where: { companyId, inventoryItemId } });
+      await prisma.inventoryItem.deleteMany({ where: { id: inventoryItemId, companyId } });
+    }
+    if (unitOfMeasureId) await prisma.unitOfMeasure.deleteMany({ where: { id: unitOfMeasureId, companyId } });
+    if (warehouseId) await prisma.warehouse.deleteMany({ where: { id: warehouseId, companyId } });
     if (taxAccountId) await prisma.taxRate.deleteMany({ where: { companyId, outputTaxAccountId: taxAccountId } });
     await prisma.taxRate.deleteMany({ where: { companyId, code: { startsWith: "IT-SALES-RATE-" } } });
     if (customerId) {
@@ -121,6 +160,7 @@ describe.runIf(enabled)("sales invoices and receivables with MariaDB", () => {
     expect(invoice.body.taxTotal).toBe("285.0000");
 
     const posted = await agent.post(`/api/v1/sales-invoices/${invoice.body.id}/post`).set(headers).set("Idempotency-Key", "it-post-sales-invoice").send({ version: 0 }).expect(200);
+    expect(await prisma!.inventoryMovement.count({ where: { companyId, sourceType: "SALES_INVOICE", sourceId: BigInt(invoice.body.id) } })).toBe(0);
     const detail = await agent.get(`/api/v1/sales-invoices/${invoice.body.id}`).expect(200);
     expect(detail.body.receivableItemId).toMatch(/^[1-9][0-9]*$/);
     expect(detail.body.settlementVersion).toBe(0);
@@ -157,6 +197,86 @@ describe.runIf(enabled)("sales invoices and receivables with MariaDB", () => {
     expect(restored.status).toBe("PARTIAL");
     expect(restored.version).toBe(3);
   }, 20_000);
+
+  it("links a sales draft to active inventory references and preserves their snapshots", async () => {
+    const agent = request.agent(app);
+    const csrf = await agent.get("/api/v1/auth/csrf").expect(200);
+    const login = await agent.post("/api/v1/auth/login").set("X-CSRF-Token", csrf.body.csrfToken).send({ email: "admin@mcap.local", password }).expect(200);
+    const companies = await agent.get("/api/v1/auth/companies").expect(200);
+    await agent.put("/api/v1/auth/context").set("X-CSRF-Token", login.body.csrfToken).send({ companyId: companies.body.data[0].id }).expect(204);
+    const headers = { "X-CSRF-Token": login.body.csrfToken };
+    const payload = {
+      documentType: "SALES_INVOICE", fiscalPeriodId: periodId.toString(), documentDate: "2044-02-22", dueDate: "2044-02-22", description: "فاتورة مرتبطة بالكتالوج", customerId: customerId.toString(), currencyId: currencyId.toString(), exchangeRate: "1.00000000",
+      lines: [{ inventoryItemId: inventoryItemId.toString(), description: "صنف مبيعات اختباري", quantity: "2.125000", unitPrice: "10.0000", discountAmount: "0.0000", revenueAccountId: revenueId.toString(), taxRateId: null }],
+    };
+
+    await agent.post("/api/v1/sales-invoices").set(headers).send(payload).expect(422).expect(({ body }) => expect(body.reason).toBe("WAREHOUSE_REQUIRED"));
+    await agent.post("/api/v1/sales-invoices").set(headers).send({ ...payload, warehouseId: warehouseId.toString(), lines: [{ ...payload.lines[0], quantity: "2.125100" }] }).expect(422).expect(({ body }) => expect(body.reason).toBe("INVALID_QUANTITY_PRECISION"));
+    const invoice = await agent.post("/api/v1/sales-invoices").set(headers).send({ ...payload, warehouseId: warehouseId.toString() }).expect(201);
+    expect(invoice.body).toMatchObject({ warehouseId: warehouseId.toString(), warehouseCodeSnapshot: "IT-SALES-WH", warehouseNameSnapshot: "مستودع مبيعات اختباري" });
+    expect(invoice.body.lines[0]).toMatchObject({ inventoryItemId: inventoryItemId.toString(), inventoryItemCodeSnapshot: "IT-SALES-ITEM", inventoryItemNameSnapshot: "صنف مبيعات اختباري", unitOfMeasureCodeSnapshot: "ITS3", quantity: "2.125000" });
+
+    await prisma!.warehouse.update({ where: { id: warehouseId }, data: { nameAr: "اسم مستودع معدل" } });
+    await prisma!.inventoryItem.update({ where: { id: inventoryItemId }, data: { nameAr: "اسم صنف معدل" } });
+    const historical = await agent.get(`/api/v1/sales-invoices/${invoice.body.id}`).expect(200);
+    expect(historical.body.warehouseNameSnapshot).toBe("مستودع مبيعات اختباري");
+    expect(historical.body.lines[0].inventoryItemNameSnapshot).toBe("صنف مبيعات اختباري");
+    await prisma!.warehouse.update({ where: { id: warehouseId }, data: { nameAr: "مستودع مبيعات اختباري" } });
+    await prisma!.inventoryItem.update({ where: { id: inventoryItemId }, data: { nameAr: "صنف مبيعات اختباري" } });
+
+    const movements = new InventoryMovementService(prisma!);
+    await movements.createMovement({ companyId, userId }, {
+      movementType: "OPENING_BALANCE",
+      movementDate: "2044-02-21",
+      description: "رصيد افتتاحي لاختبار ربط المبيعات",
+      lines: [{ inventoryItemId, toWarehouseId: warehouseId, quantity: "10.000000" }],
+    }, "it-opening-sales-invoice-stock");
+
+    await agent.post(`/api/v1/sales-invoices/${invoice.body.id}/post`).set(headers).set("Idempotency-Key", "it-post-catalog-sales-invoice").send({ version: 0 }).expect(200);
+    await agent.post(`/api/v1/sales-invoices/${invoice.body.id}/post`).set(headers).set("Idempotency-Key", "it-post-catalog-sales-invoice").send({ version: 0 }).expect(200);
+    expect((await prisma!.inventoryBalance.findUniqueOrThrow({ where: { companyId_warehouseId_inventoryItemId: { companyId, warehouseId, inventoryItemId } } })).onHand.toFixed(6)).toBe("7.875000");
+    const saleMovement = await prisma!.inventoryMovement.findFirstOrThrow({ where: { companyId, sourceType: "SALES_INVOICE", sourceId: BigInt(invoice.body.id), sourceEvent: "POST" }, include: { lines: true } });
+    expect(saleMovement).toMatchObject({ movementType: "ISSUE", sourceDocumentNumberSnapshot: invoice.body.document.documentNumber });
+    expect(saleMovement.lines).toHaveLength(1);
+    expect(saleMovement.lines[0]!.quantity.toFixed(6)).toBe("2.125000");
+
+    const credit = await agent.post("/api/v1/sales-invoices").set(headers).send({
+      documentType: "SALES_CREDIT_NOTE", fiscalPeriodId: periodId.toString(), documentDate: "2044-02-23", dueDate: "2044-02-23", description: "إرجاع صنف للمخزون", customerId: customerId.toString(), warehouseId: warehouseId.toString(), sourceInvoiceId: invoice.body.id, currencyId: currencyId.toString(), exchangeRate: "1.00000000",
+      lines: [{ inventoryItemId: inventoryItemId.toString(), description: "مرتجع صنف مبيعات", quantity: "0.125000", unitPrice: "10.0000", discountAmount: "0.0000", revenueAccountId: revenueId.toString(), taxRateId: null }],
+    }).expect(201);
+    await agent.post(`/api/v1/sales-invoices/${credit.body.id}/post`).set(headers).set("Idempotency-Key", "it-post-catalog-sales-credit").send({ version: 0 }).expect(200);
+    expect((await prisma!.inventoryBalance.findUniqueOrThrow({ where: { companyId_warehouseId_inventoryItemId: { companyId, warehouseId, inventoryItemId } } })).onHand.toFixed(6)).toBe("8.000000");
+    await agent.post(`/api/v1/sales-invoices/${credit.body.id}/reverse`).set(headers).set("Idempotency-Key", "it-reverse-catalog-sales-credit").send({ version: 1, reversalDate: "2044-02-24", reason: "اختبار عكس مرتجع المبيعات" }).expect(200);
+    expect((await prisma!.inventoryBalance.findUniqueOrThrow({ where: { companyId_warehouseId_inventoryItemId: { companyId, warehouseId, inventoryItemId } } })).onHand.toFixed(6)).toBe("7.875000");
+    await agent.post(`/api/v1/sales-invoices/${invoice.body.id}/reverse`).set(headers).set("Idempotency-Key", "it-reverse-catalog-sales-invoice").send({ version: 1, reversalDate: "2044-02-25", reason: "اختبار إعادة كمية فاتورة المبيعات" }).expect(200);
+    expect((await prisma!.inventoryBalance.findUniqueOrThrow({ where: { companyId_warehouseId_inventoryItemId: { companyId, warehouseId, inventoryItemId } } })).onHand.toFixed(6)).toBe("10.000000");
+
+    const generated = await prisma!.inventoryMovement.findMany({
+      where: { companyId, sourceType: { in: ["SALES_INVOICE", "SALES_CREDIT_NOTE"] }, sourceId: { in: [BigInt(invoice.body.id), BigInt(credit.body.id)] } },
+      orderBy: { id: "asc" },
+    });
+    expect(generated.map(({ movementType, sourceEvent }) => `${sourceEvent}:${movementType}`)).toEqual([
+      "POST:ISSUE",
+      "POST:RECEIPT",
+      "REVERSE:ISSUE",
+      "REVERSE:RECEIPT",
+    ]);
+
+    const insufficient = await agent.post("/api/v1/sales-invoices").set(headers).send({
+      ...payload,
+      warehouseId: warehouseId.toString(),
+      documentDate: "2044-02-26",
+      dueDate: "2044-02-26",
+      description: "فاتورة يجب أن تفشل ذريًا لنقص المخزون",
+      lines: [{ ...payload.lines[0], quantity: "11.000000" }],
+    }).expect(201);
+    await agent.post(`/api/v1/sales-invoices/${insufficient.body.id}/post`).set(headers).set("Idempotency-Key", "it-post-insufficient-sales-stock").send({ version: 0 }).expect(422).expect(({ body }) => expect(body.reason).toBe("INSUFFICIENT_STOCK"));
+    const failedDocument = await prisma!.accountingDocument.findUniqueOrThrow({ where: { id: BigInt(insufficient.body.document.id) } });
+    expect(failedDocument.status).toBe("DRAFT");
+    expect(await prisma!.journalEntry.count({ where: { companyId, accountingDocumentId: failedDocument.id } })).toBe(0);
+    expect(await prisma!.inventoryMovement.count({ where: { companyId, sourceType: "SALES_INVOICE", sourceId: BigInt(insufficient.body.id), sourceEvent: "POST" } })).toBe(0);
+    expect((await prisma!.inventoryBalance.findUniqueOrThrow({ where: { companyId_warehouseId_inventoryItemId: { companyId, warehouseId, inventoryItemId } } })).onHand.toFixed(6)).toBe("10.000000");
+  }, 30_000);
 
   it("updates and cancels drafts, manages tax rates, and reverses an unsettled invoice", async () => {
     const agent = request.agent(app);
