@@ -47,6 +47,10 @@ gh workflow run production-backup-dr.yml --ref main -f restore_drill=true
 - وجود Artifact النسخة وArtifact الدليل `mcap-production-restore-drill`، وداخله الملف المنقح `dr-evidence.json`، ببصمة ومدة احتفاظ ظاهرتين.
 - تشغيل المراقبة الساعي التالي من دون تنبيه missing/stale.
 
+### خط أساس القبول الإنتاجي
+
+في 25 أغسطس 2026 نشر تشغيل [32839845689](https://github.com/ALMutasemObad/multi-company-accounting/actions/runs/32839845689) الالتزام `c39b97949655f43c9fe35f98b3d47cce5c6c6054`، ثم أنشأ تشغيل القبول [32840949844](https://github.com/ALMutasemObad/multi-company-accounting/actions/runs/32840949844) نسخة الإنتاج المشفرة واستعاد Artifact نفسه إلى MariaDB 10.11.11 معزولة. كان عمر نقطة الاستعادة 7 ثوانٍ، واستُعيدت 56 جدولًا و38 Migration خلال ثانية واحدة مقابل هدف 900 ثانية. سُجلت النتيجة `accepted_bootstrap` لأن هذا أول Artifact موثوق ولا توجد نسخة سابقة يمكن قياس فجوتها؛ ينفذ التشغيل اليومي التالي بوابة عمر الـArtifact السابقة المعتادة. نجح تشغيل المراقبة [32841244870](https://github.com/ALMutasemObad/multi-company-accounting/actions/runs/32841244870) بعد ذلك دون تنبيه.
+
 ## مصفوفة الفشل والاستجابة
 
 | الفشل | السلوك الآمن | الإجراء |
