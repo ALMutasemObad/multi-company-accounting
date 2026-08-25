@@ -5,8 +5,18 @@ import { openApiRequestBodySchemas as bodies } from '../generated/openapi-reques
 import { AccountError, AccountService } from './account-service.js';
 
 const id = z.string().regex(/^[1-9][0-9]*$/).transform(BigInt);
-const pagination = z.object({ page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(25), search: z.string().trim().min(1).optional() });
-const accountQuery = pagination.extend({ parentId: id.optional(), active: z.enum(['true', 'false']).transform((v) => v === 'true').optional() });
+const pagination = z.object({ page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(25), search: z.string().trim().min(1).max(200).optional() });
+const booleanQuery = z.enum(['true', 'false']).transform((value) => value === 'true');
+const accountClasses = z.string().transform((value) => value.split(',')).pipe(
+  z.array(z.enum(['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE'])).min(1).max(5),
+);
+const accountQuery = pagination.extend({
+  parentId: id.optional(),
+  active: booleanQuery.optional(),
+  allowsPosting: booleanQuery.optional(),
+  accountClasses: accountClasses.optional(),
+});
+const costCenterQuery = pagination.extend({ active: booleanQuery.optional() });
 function sid(request: Request) { return Object.fromEntries((request.headers.cookie ?? '').split(';').map((part) => part.trim().split('=', 2)).filter(([key, value]) => key && value)).sid; }
 const accountJson = (v: any) => ({ id: v.id.toString(), accountTypeId: v.accountTypeId.toString(), parentAccountId: v.parentAccountId?.toString() ?? null, code: v.code, nameAr: v.nameAr, nameEn: v.nameEn, level: v.level, allowsPosting: v.allowsPosting, isControlAccount: v.isControlAccount, isActive: v.isActive, sourceTemplateCode: v.sourceTemplateCode ?? null, sourceTemplateKey: v.sourceTemplateKey ?? null });
 const typeJson = (v: any) => ({ id: v.id.toString(), code: v.code, nameAr: v.nameAr, class: v.class, normalBalance: v.normalBalance, statementSection: v.statementSection });
@@ -23,7 +33,7 @@ export function createAccountRouter(auth: AuthService, service: AccountService) 
   router.patch('/accounts/:accountId', async (req, res) => { const context = await authorize(req, 'accounts.update', true); res.json(accountJson(await service.updateAccount(context, id.parse(req.params.accountId), bodies.updateAccount.parse(req.body)))); });
   router.post('/accounts/:accountId/deactivate', async (req, res) => { const context = await authorize(req, 'accounts.deactivate', true); const body = bodies.deactivateAccount.parse(req.body); res.json(accountJson(await service.deactivateAccount(context, id.parse(req.params.accountId), body.reason))); });
   router.delete('/accounts/:accountId', async (req, res) => { const context = await authorize(req, 'accounts.delete', true); const body = bodies.deleteAccount.parse(req.body); res.json(await service.deleteAccount(context, id.parse(req.params.accountId), body.reason)); });
-  router.get('/cost-centers', async (req, res) => { const context = await authorize(req, 'cost_centers.manage', false); const q = pagination.parse(req.query); const result = await service.listCostCenters(context, q); res.json({ data: result.data.map(centerJson), meta: { page: q.page, pageSize: q.pageSize, total: result.total, totalPages: Math.ceil(result.total / q.pageSize) } }); });
+  router.get('/cost-centers', async (req, res) => { const context = await authorize(req, 'cost_centers.manage', false); const q = costCenterQuery.parse(req.query); const result = await service.listCostCenters(context, q); res.json({ data: result.data.map(centerJson), meta: { page: q.page, pageSize: q.pageSize, total: result.total, totalPages: Math.ceil(result.total / q.pageSize) } }); });
   router.post('/cost-centers', async (req, res) => { const context = await authorize(req, 'cost_centers.manage', true); res.status(201).json(centerJson(await service.createCostCenter(context, bodies.createCostCenter.parse(req.body)))); });
   router.get('/cost-centers/:costCenterId', async (req, res) => { const context = await authorize(req, 'cost_centers.manage', false); res.json(centerJson(await service.getCostCenter(context, id.parse(req.params.costCenterId)))); });
   router.patch('/cost-centers/:costCenterId', async (req, res) => { const context = await authorize(req, 'cost_centers.manage', true); res.json(centerJson(await service.updateCostCenter(context, id.parse(req.params.costCenterId), bodies.updateCostCenter.parse(req.body)))); });

@@ -525,6 +525,21 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", "Noto Sans Devanaga
 .check-field { display: flex !important; align-items: center; grid-template-columns: auto 1fr; gap: 9px !important; }
 .check-field input { width: 17px; height: 17px; accent-color: var(--green-700); }
 .reference-badge { display: inline-flex; padding: 4px 8px; border-radius: 999px; background: #eef1f7; color: #5f6980; font-size: .7rem; font-weight: 700; }
+.reference-combobox { position: relative; min-width: 0; }
+.reference-combobox-input { position: relative; }
+.reference-combobox-input input { width: 100%; padding-inline-end: 38px; }
+.reference-combobox-clear { position: absolute; inset-inline-end: 7px; top: 50%; width: 28px; height: 28px; padding: 0; translate: 0 -50%; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 1.25rem; line-height: 1; }
+.reference-combobox-clear:hover { background: #eef1f7; color: var(--ink); }
+.reference-combobox-panel { position: absolute; z-index: 80; inset-inline: 0; top: calc(100% + 5px); overflow: hidden; width: 100%; max-width: 100%; border: 1px solid var(--line); border-radius: 12px; background: #fff; box-shadow: 0 16px 40px rgb(22 31 29 / 18%); }
+.reference-combobox-options { display: grid; overflow-y: auto; max-height: 240px; padding: 6px; }
+.reference-combobox-option { width: 100%; padding: 9px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--ink); text-align: start; line-height: 1.45; }
+.reference-combobox-option:hover, .reference-combobox-option.active, .reference-combobox-option[aria-selected="true"] { background: #edf6f1; color: var(--brand-dark); }
+.reference-combobox-option.optional { color: var(--muted); border-bottom: 1px solid var(--line); border-radius: 0; }
+.reference-combobox-option:disabled { opacity: .55; cursor: not-allowed; }
+.reference-combobox-status { display: block; padding: 10px 12px; color: var(--muted); font-size: .8rem; }
+.reference-combobox-status.error { color: var(--danger); }
+.reference-combobox-more { width: 100%; padding: 9px 12px; border: 0; border-top: 1px solid var(--line); background: #f7f9f7; color: var(--brand-dark); font-weight: 750; }
+.reference-combobox-more:hover { background: #edf6f1; }
 
 .toast {
   position: fixed;

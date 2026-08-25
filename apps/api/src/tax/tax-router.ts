@@ -9,6 +9,12 @@ const id = z.string().regex(/^[1-9][0-9]*$/).transform(BigInt);
 const activeOnly = z.enum(["true", "false"])
   .transform((value) => value === "true")
   .optional();
+const listQuery = z.object({
+  activeOnly,
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  search: z.string().trim().min(1).max(200).optional(),
+});
 
 function sid(request: Request) {
   return Object.fromEntries(
@@ -43,10 +49,17 @@ export function createTaxRouter(auth: AuthService, service: TaxService) {
 
     router.get(options.basePath, async (request, response) => {
       const context = await authorize(request, options.viewPermission, false);
-      const onlyActive = activeOnly.parse(request.query.activeOnly);
+      const query = listQuery.parse(request.query);
+      const result = await service.list(context, options.usage, query);
       response.json({
-        data: (await service.list(context, options.usage, onlyActive))
+        data: result.data
           .map((value) => TaxService.json(value, options.usage)),
+        meta: {
+          page: query.page,
+          pageSize: query.pageSize,
+          total: result.total,
+          totalPages: Math.ceil(result.total / query.pageSize),
+        },
       });
     });
 

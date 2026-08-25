@@ -15,11 +15,41 @@ const validAccount = (id: bigint, accountClass: string) => ({
 describe("TaxService ownership and quote policy", () => {
   it("returns unusable rates with explicit readiness instead of hiding configuration defects", async () => {
     const findMany = vi.fn().mockResolvedValue([]);
-    const service = new TaxService({ taxRate: { findMany } } as never);
-    await service.list({ companyId: 77n, userId: 2n }, "OUTPUT", false);
+    const tx = { taxRate: { findMany, count: vi.fn().mockResolvedValue(0) } };
+    const service = new TaxService({ $transaction: vi.fn(async (run: (client: unknown) => unknown) => run(tx)) } as never);
+    await service.list({ companyId: 77n, userId: 2n }, "OUTPUT", { page: 1, pageSize: 25 });
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { companyId: 77n } }));
     expect(TaxService.json({ id: 1n, code: "VAT", nameAr: "ضريبة", rate: new Prisma.Decimal("15"), isActive: true, version: 0, outputTaxAccount: null, inputTaxAccount: null }, "OUTPUT")).toMatchObject({ isReady: false, readinessReason: "TAX_ACCOUNT_MISSING" });
     expect(TaxService.json({ id: 2n, code: "ZERO", nameAr: "صفر", rate: new Prisma.Decimal("0"), isActive: true, version: 0, outputTaxAccount: null, inputTaxAccount: null }, "OUTPUT")).toMatchObject({ isReady: true, readinessReason: null });
+  });
+
+  it("paginates and searches rates inside the current company", async () => {
+    const tx = {
+      taxRate: {
+        findMany: vi.fn().mockResolvedValue([{ id: 2n }]),
+        count: vi.fn().mockResolvedValue(21),
+      },
+    };
+    const prisma = { $transaction: vi.fn(async (run: (client: unknown) => unknown) => run(tx)) };
+    const service = new TaxService(prisma as never);
+
+    const result = await service.list(
+      { companyId: 77n, userId: 2n },
+      "INPUT",
+      { page: 2, pageSize: 20, activeOnly: true, search: "مدخلات" },
+    );
+
+    const where = {
+      companyId: 77n,
+      isActive: true,
+      OR: [
+        { code: { contains: "مدخلات" } },
+        { nameAr: { contains: "مدخلات" } },
+      ],
+    };
+    expect(tx.taxRate.findMany).toHaveBeenCalledWith(expect.objectContaining({ where, skip: 20, take: 20 }));
+    expect(tx.taxRate.count).toHaveBeenCalledWith({ where });
+    expect(result).toEqual({ data: [{ id: 2n }], total: 21 });
   });
 
   it("resolves sorted output quotes through a company-scoped query", async () => {

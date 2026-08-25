@@ -293,6 +293,20 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
         expect.soft(dialogFailures, `${locale}/${invoice.name} dialog contract`).toEqual([]);
         await auditCurrentInterface(page, locale, invoice.name);
 
+        const referenceInputs = dialog.locator('.reference-combobox input[role="combobox"]');
+        expect.soft(await referenceInputs.count(), `${locale}/${invoice.name} server-search references`).toBeGreaterThanOrEqual(6);
+        await referenceInputs.nth(1).click();
+        const listbox = dialog.getByRole('listbox');
+        await expect(listbox).toBeVisible();
+        await expect(listbox.getByRole('option')).toHaveCount(3);
+        expect.soft(await listbox.evaluate((element) => {
+          const panel = element.parentElement!.getBoundingClientRect();
+          const dialogRect = element.closest('[role="dialog"]')!.getBoundingClientRect();
+          return panel.left >= dialogRect.left - 1 && panel.right <= dialogRect.right + 1;
+        }), `${locale}/${invoice.name} reference picker containment`).toBe(true);
+        await listbox.getByRole('option').nth(1).click();
+        await expect(listbox).toHaveCount(0);
+
         await page.keyboard.press('Escape');
         await expect(dialog).toHaveCount(0);
         await expect(opener).toBeFocused();

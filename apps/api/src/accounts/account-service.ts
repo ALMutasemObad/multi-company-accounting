@@ -6,7 +6,15 @@ import { applyDefaultChartTemplate, inspectDefaultChartTemplate } from './defaul
 export type AccountErrorReason = 'NOT_FOUND' | 'CODE_EXISTS' | 'INVALID_PARENT' | 'CYCLE_DETECTED' | 'LEVEL_EXCEEDED' | 'HAS_ACTIVE_CHILDREN' | 'HAS_CHILDREN' | 'ACCOUNT_IN_USE' | 'POSTING_NOT_ALLOWED' | 'TEMPLATE_CONFLICT';
 export class AccountError extends Error { constructor(public readonly reason: AccountErrorReason) { super(reason); } }
 
-type Page = { page: number; pageSize: number; search?: string | undefined; parentId?: bigint | undefined; active?: boolean | undefined };
+type Page = {
+  page: number;
+  pageSize: number;
+  search?: string | undefined;
+  parentId?: bigint | undefined;
+  active?: boolean | undefined;
+  allowsPosting?: boolean | undefined;
+  accountClasses?: Array<'ASSET' | 'LIABILITY' | 'EQUITY' | 'REVENUE' | 'EXPENSE'> | undefined;
+};
 type AccountInput = { accountTypeId: bigint; parentAccountId?: bigint | null | undefined; code: string; nameAr: string; nameEn?: string | null | undefined; allowsPosting: boolean; isControlAccount?: boolean | undefined };
 type AccountUpdate = { accountTypeId?: bigint | undefined; parentAccountId?: bigint | null | undefined; code?: string | undefined; nameAr?: string | undefined; nameEn?: string | null | undefined; allowsPosting?: boolean | undefined; isControlAccount?: boolean | undefined };
 type CostCenterInput = { parentId?: bigint | null | undefined; nameAr: string; nameEn?: string | null | undefined };
@@ -20,7 +28,7 @@ export class AccountService {
   listTypes() { return this.prisma.accountType.findMany({ orderBy: { id: 'asc' } }); }
 
   listAccounts(context: ActorContext, input: Page) {
-    const where: Prisma.AccountWhereInput = { companyId: context.companyId, ...(input.parentId !== undefined ? { parentAccountId: input.parentId } : {}), ...(input.active !== undefined ? { isActive: input.active } : {}), ...(input.search ? { OR: [{ code: { contains: input.search } }, { nameAr: { contains: input.search } }, { nameEn: { contains: input.search } }] } : {}) };
+    const where: Prisma.AccountWhereInput = { companyId: context.companyId, ...(input.parentId !== undefined ? { parentAccountId: input.parentId } : {}), ...(input.active !== undefined ? { isActive: input.active } : {}), ...(input.allowsPosting !== undefined ? { allowsPosting: input.allowsPosting } : {}), ...(input.accountClasses?.length ? { accountType: { class: { in: input.accountClasses } } } : {}), ...(input.search ? { OR: [{ code: { contains: input.search } }, { nameAr: { contains: input.search } }, { nameEn: { contains: input.search } }] } : {}) };
     return this.prisma.$transaction(async (tx) => ({ data: await tx.account.findMany({ where, include: { accountType: true }, orderBy: [{ code: 'asc' }], skip: (input.page - 1) * input.pageSize, take: input.pageSize }), total: await tx.account.count({ where }) }));
   }
 
@@ -106,7 +114,7 @@ export class AccountService {
 
   async assertPostingAllowed(companyId: bigint, id: bigint) { const value = await this.prisma.account.findFirst({ where: { id, companyId }, include: { _count: { select: { children: true } } } }); if (!value) throw new AccountError('NOT_FOUND'); if (!value.isActive || !value.allowsPosting || value._count.children > 0) throw new AccountError('POSTING_NOT_ALLOWED'); return value; }
 
-  listCostCenters(context: ActorContext, input: Page) { const where: Prisma.CostCenterWhereInput = { companyId: context.companyId, ...(input.search ? { OR: [{ code: { contains: input.search } }, { nameAr: { contains: input.search } }, { nameEn: { contains: input.search } }] } : {}) }; return this.prisma.$transaction(async (tx) => ({ data: await tx.costCenter.findMany({ where, orderBy: { code: 'asc' }, skip: (input.page - 1) * input.pageSize, take: input.pageSize }), total: await tx.costCenter.count({ where }) })); }
+  listCostCenters(context: ActorContext, input: Page) { const where: Prisma.CostCenterWhereInput = { companyId: context.companyId, ...(input.active !== undefined ? { isActive: input.active } : {}), ...(input.search ? { OR: [{ code: { contains: input.search } }, { nameAr: { contains: input.search } }, { nameEn: { contains: input.search } }] } : {}) }; return this.prisma.$transaction(async (tx) => ({ data: await tx.costCenter.findMany({ where, orderBy: { code: 'asc' }, skip: (input.page - 1) * input.pageSize, take: input.pageSize }), total: await tx.costCenter.count({ where }) })); }
   async getCostCenter(context: ActorContext, id: bigint) { const value = await this.prisma.costCenter.findFirst({ where: { id, companyId: context.companyId } }); if (!value) throw new AccountError('NOT_FOUND'); return value; }
   async createCostCenter(context: ActorContext, input: CostCenterInput) { try { return await this.prisma.$transaction(async (tx) => { if (input.parentId != null && !await tx.costCenter.findFirst({ where: { id: input.parentId, companyId: context.companyId, isActive: true } })) throw new AccountError('INVALID_PARENT'); const code = await reserveMasterDataCode(tx, context.companyId, 'COST_CENTER'); const value = await tx.costCenter.create({ data: { companyId: context.companyId, parentId: input.parentId ?? null, code, nameAr: input.nameAr, nameEn: input.nameEn ?? null } }); await this.audit(tx, context, 'COST_CENTER_CREATED', 'COST_CENTER', value.id); return value; }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }); } catch (error) { if (knownUnique(error)) throw new AccountError('CODE_EXISTS'); throw error; } }
   async updateCostCenter(context: ActorContext, id: bigint, input: CostCenterUpdate) { return this.prisma.$transaction(async (tx) => { const current = await tx.costCenter.findFirst({ where: { id, companyId: context.companyId } }); if (!current) throw new AccountError('NOT_FOUND'); if (input.parentId != null) { if (input.parentId === id) throw new AccountError('CYCLE_DETECTED'); let cursor = await tx.costCenter.findFirst({ where: { id: input.parentId, companyId: context.companyId, isActive: true } }); if (!cursor) throw new AccountError('INVALID_PARENT'); while (cursor.parentId != null) { if (cursor.parentId === id) throw new AccountError('CYCLE_DETECTED'); cursor = await tx.costCenter.findFirst({ where: { id: cursor.parentId, companyId: context.companyId } }); if (!cursor) throw new AccountError('INVALID_PARENT'); } } const value = await tx.costCenter.update({ where: { id }, data: { ...(input.parentId !== undefined ? { parentId: input.parentId } : {}), ...(input.nameAr !== undefined ? { nameAr: input.nameAr } : {}), ...(input.nameEn !== undefined ? { nameEn: input.nameEn } : {}) } }); await this.audit(tx, context, 'COST_CENTER_UPDATED', 'COST_CENTER', id); return value; }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }); }

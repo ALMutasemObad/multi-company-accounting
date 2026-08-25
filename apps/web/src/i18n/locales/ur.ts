@@ -1,6 +1,12 @@
 import type { ar } from "./ar";
 
 export const ur = {
+  "referencePicker.loading": "تلاش جاری ہے…",
+  "referencePicker.empty": "کوئی مماثل نتیجہ نہیں ملا۔",
+  "referencePicker.more": "مزید نتائج لوڈ کریں",
+  "referencePicker.clear": "انتخاب صاف کریں",
+  "referencePicker.required": "تلاش کے نتائج میں سے کوئی قدر منتخب کریں۔",
+  "referencePicker.loadError": "تلاش کے نتائج لوڈ نہیں ہو سکے۔",
   "status.DRAFT": "ڈرافٹ",
   "status.POSTED": "پوسٹ کیا گیا",
   "status.CANCELLED": "منسوخ شدہ",
