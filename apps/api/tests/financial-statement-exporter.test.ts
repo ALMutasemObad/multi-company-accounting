@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { financialPositionTable, journalReportToCsv, tableToCsv, tableToPdf, tableToXlsx } from "../src/reports/financial-statement-exporter.js";
+import { financialPositionTable, journalReportToCsv, ledgerReportTable, tableToCsv, tableToPdf, tableToXlsx } from "../src/reports/financial-statement-exporter.js";
 
 const report = {
   company: { name: "الشركة التجريبية" }, baseCurrency: { code: "SAR", nameAr: "ريال سعودي" }, asOf: "2026-08-11", comparisonAsOf: null,
@@ -29,5 +29,21 @@ describe("financial statement exports", () => {
     expect(csv).toContain("رقم المستند");
     expect(csv).toContain("'=صيغة");
     expect(csv).toContain("25.0000");
+  });
+  it("exports a complete customer account statement table", async () => {
+    const table = ledgerReportTable({
+      company: { name: "الشركة التجريبية" }, baseCurrency: { code: "SAR", nameAr: "ريال سعودي" },
+      subject: { code: "CUS-000001", nameAr: "عميل تجريبي", type: "CUSTOMER" },
+      range: { dateFrom: "2026-01-01", dateTo: "2026-08-11" },
+      openingDebit: "100.0000", openingCredit: "0.0000",
+      data: [{ date: "2026-02-01", documentNumber: "SI-1", description: "فاتورة مبيعات", debit: "50.0000", credit: "0.0000", runningDebit: "150.0000", runningCredit: "0.0000" }],
+      closingDebit: "150.0000", closingCredit: "0.0000",
+    });
+    expect(table[1]?.[0]?.value).toContain("CUS-000001");
+    expect(table[3]).toHaveLength(7);
+    expect(tableToCsv(table).toString("utf8")).toContain("الرصيد الافتتاحي");
+    expect(tableToXlsx(table, "كشف الحساب").includes(Buffer.from("xl/worksheets/sheet1.xml"))).toBe(true);
+    const pdf = await tableToPdf(table, "كشف الحساب", "الشركة التجريبية");
+    expect(pdf.subarray(0, 4).toString()).toBe("%PDF");
   });
 });

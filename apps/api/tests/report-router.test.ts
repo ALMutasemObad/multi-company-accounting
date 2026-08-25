@@ -11,13 +11,22 @@ describe("report routes", () => {
     const financialPosition = vi.fn().mockResolvedValue({ totals: {}, sections: {} });
     const incomeStatement = vi.fn().mockResolvedValue({ totals: {}, sections: {} });
     const ledger = vi.fn().mockResolvedValue({ data: [] });
+    const ledgerExport = vi.fn().mockResolvedValue({
+      company: { name: "شركة الاختبار" },
+      baseCurrency: { id: "1", code: "SAR", nameAr: "ريال سعودي", decimals: 2 },
+      subject: { id: "12", code: "CUS-000012", nameAr: "عميل الاختبار", nameEn: null, type: "CUSTOMER" },
+      range: { dateFrom: "2026-01-01", dateTo: "2026-08-11" },
+      openingDebit: "0.0000", openingCredit: "0.0000", data: [],
+      meta: { page: 1, pageSize: 10_000, total: 0, totalPages: 0 },
+      closingDebit: "0.0000", closingCredit: "0.0000", truncated: false,
+    });
     const journalReport = vi.fn().mockResolvedValue({ data: [], meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 }, totals: { debit: "0.0000", credit: "0.0000" } });
     const journalReportExport = vi.fn().mockResolvedValue({ data: [], total: 0, truncated: false });
     const recordExport = vi.fn().mockResolvedValue(undefined);
     const app = express();
     app.use(express.json());
-    app.use("/api/v1", createReportRouter({ authorize } as any, { dashboard, trialBalance, financialPosition, incomeStatement, ledger, journalReport, journalReportExport, recordExport } as any));
-    return { app, authorize, dashboard, trialBalance, financialPosition, incomeStatement, ledger, journalReport, journalReportExport, recordExport };
+    app.use("/api/v1", createReportRouter({ authorize } as any, { dashboard, trialBalance, financialPosition, incomeStatement, ledger, ledgerExport, journalReport, journalReportExport, recordExport } as any));
+    return { app, authorize, dashboard, trialBalance, financialPosition, incomeStatement, ledger, ledgerExport, journalReport, journalReportExport, recordExport };
   }
 
   it("requires the dedicated dashboard permission and forwards the company context", async () => {
@@ -67,5 +76,16 @@ describe("report routes", () => {
     expect(response.headers["x-total-count"]).toBe("1");
     expect(journalReportExport).toHaveBeenCalled();
     expect(recordExport).toHaveBeenCalledWith({ userId: 1n, companyId: 2n }, "JOURNAL_REPORT", "CSV", expect.any(Object));
+  });
+
+  it("exports an audited account statement with a dedicated permission", async () => {
+    const { app, authorize, ledgerExport, recordExport } = fixture();
+    const response = await request(app).get("/api/v1/reports/ledger/csv?customerId=12&dateFrom=2026-01-01&dateTo=2026-08-11").expect(200);
+    expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ permission: "reports.ledger.export" }));
+    expect(response.headers["content-type"]).toContain("text/csv");
+    expect(response.headers["x-total-count"]).toBe("0");
+    expect(response.headers["x-result-truncated"]).toBe("false");
+    expect(ledgerExport).toHaveBeenCalledWith({ userId: 1n, companyId: 2n }, expect.objectContaining({ customerId: 12n }));
+    expect(recordExport).toHaveBeenCalledWith({ userId: 1n, companyId: 2n }, "LEDGER_ACCOUNT_STATEMENT", "CSV", expect.any(Object));
   });
 });

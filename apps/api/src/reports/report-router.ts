@@ -2,7 +2,7 @@ import { Router, type ErrorRequestHandler, type Request } from "express";
 import { z, ZodError } from "zod";
 import type { AuthService } from "../auth/auth-service.js";
 import { ReportError, ReportService } from "./report-service.js";
-import { financialPositionTable, incomeStatementTable, journalReportToCsv, tableToCsv, tableToPdf, tableToXlsx } from "./financial-statement-exporter.js";
+import { financialPositionTable, incomeStatementTable, journalReportToCsv, ledgerReportTable, tableToCsv, tableToPdf, tableToXlsx } from "./financial-statement-exporter.js";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const id = z.string().regex(/^[1-9]\d*$/).transform(BigInt);
@@ -66,6 +66,22 @@ export function createReportRouter(auth: AuthService, service: ReportService) {
   router.get("/reports/ledger", async (request, response) => {
     const context = await authorize(request, "reports.ledger.view");
     response.json(await service.ledger(context, ledgerQuery.parse(request.query)));
+  });
+  router.get("/reports/ledger/:format", async (request, response) => {
+    const context = await authorize(request, "reports.ledger.export");
+    const format = z.enum(["csv", "xlsx", "pdf"]).parse(request.params.format);
+    const parsed = ledgerQuery.parse({ ...request.query, page: 1, pageSize: 100 });
+    const { page: _page, pageSize: _pageSize, ...parameters } = parsed;
+    const report = await service.ledgerExport(context, parameters);
+    const table = ledgerReportTable(report);
+    const title = `كشف حساب ${report.subject.code} من ${report.range.dateFrom} إلى ${report.range.dateTo}`;
+    const content = format === "csv" ? tableToCsv(table) : format === "xlsx" ? tableToXlsx(table, "كشف الحساب") : await tableToPdf(table, title, report.company.name);
+    await service.recordExport(context, "LEDGER_ACCOUNT_STATEMENT", format.toUpperCase(), parameters);
+    response.setHeader("Content-Type", format === "csv" ? "text/csv; charset=utf-8" : format === "xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/pdf");
+    response.setHeader("Content-Disposition", `attachment; filename="account-statement-${report.range.dateFrom}-${report.range.dateTo}.${format}"`);
+    response.setHeader("X-Total-Count", report.meta.total.toString());
+    response.setHeader("X-Result-Truncated", String(report.truncated));
+    response.send(content);
   });
   router.get("/reports/financial-position/:format", async (request, response) => {
     const context = await authorize(request, "reports.financial_statements.export");

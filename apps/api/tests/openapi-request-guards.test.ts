@@ -22,7 +22,7 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 174, requestBodies: 89, responseBodies: 1210 });
+    expect(openApiContractCoverage).toEqual({ operations: 175, requestBodies: 89, responseBodies: 1215 });
     expect(guardedOpenApiOperations).toHaveLength(89);
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
       'login', 'createUser', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'previewDataImport', 'commitDataImport',

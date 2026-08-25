@@ -6,6 +6,7 @@ export type ReportRange = { dateFrom: string; dateTo: string };
 export type FinancialPositionQuery = { asOf: string; compareAsOf?: string | undefined; includeZeroBalances?: boolean | undefined };
 export type IncomeStatementQuery = ReportRange & { compareDateFrom?: string | undefined; compareDateTo?: string | undefined; includeZeroBalances?: boolean | undefined };
 export type LedgerQuery = ReportRange & { accountId?: bigint | undefined; customerId?: bigint | undefined; supplierId?: bigint | undefined; page: number; pageSize: number };
+export type LedgerExportQuery = Omit<LedgerQuery, "page" | "pageSize">;
 export type JournalReportQuery = ReportRange & {
   documentType?: "MANUAL_JOURNAL" | "RECEIPT" | "PAYMENT" | "SALES_INVOICE" | "SALES_CREDIT_NOTE" | "PERIOD_CLOSE" | undefined;
   status?: "POSTED" | "REVERSED" | undefined;
@@ -220,13 +221,14 @@ export class ReportService {
   async ledger(context: ActorContext, input: LedgerQuery) {
     const selector = input.accountId != null ? { accountId: input.accountId } : input.customerId != null ? { customerId: input.customerId } : { supplierId: input.supplierId! };
     const subject = input.accountId != null
-      ? await this.prisma.account.findFirst({ where: { id: input.accountId, companyId: context.companyId }, select: { id: true, code: true, nameAr: true } })
+      ? await this.prisma.account.findFirst({ where: { id: input.accountId, companyId: context.companyId }, select: { id: true, code: true, nameAr: true, nameEn: true } })
       : input.customerId != null
-        ? await this.prisma.customer.findFirst({ where: { id: input.customerId, companyId: context.companyId }, select: { id: true, code: true, nameAr: true } })
-        : await this.prisma.supplier.findFirst({ where: { id: input.supplierId!, companyId: context.companyId }, select: { id: true, code: true, nameAr: true } });
+        ? await this.prisma.customer.findFirst({ where: { id: input.customerId, companyId: context.companyId }, select: { id: true, code: true, nameAr: true, nameEn: true } })
+        : await this.prisma.supplier.findFirst({ where: { id: input.supplierId!, companyId: context.companyId }, select: { id: true, code: true, nameAr: true, nameEn: true } });
     if (!subject) throw new ReportError("NOT_FOUND");
     const documentStatus = { in: ["POSTED" as const, "REVERSED" as const] };
-    const [opening, lines] = await this.prisma.$transaction([
+    const [company, opening, lines] = await this.prisma.$transaction([
+      this.companyCurrency(context.companyId),
       this.prisma.journalLine.aggregate({ where: { companyId: context.companyId, ...selector, journalEntry: { entryDate: { lt: asDate(input.dateFrom) }, accountingDocument: { status: documentStatus } } }, _sum: { baseDebitAmount: true, baseCreditAmount: true } }),
       this.prisma.journalLine.findMany({ where: { companyId: context.companyId, ...selector, journalEntry: { entryDate: { gte: asDate(input.dateFrom), lte: asDate(input.dateTo) }, accountingDocument: { status: documentStatus } } }, include: { journalEntry: { include: { accountingDocument: { select: { id: true, documentNumber: true, documentType: true, status: true } } } } }, orderBy: [{ journalEntry: { entryDate: "asc" } }, { id: "asc" }] }),
     ]);
@@ -239,7 +241,23 @@ export class ReportService {
     });
     const start = (input.page - 1) * input.pageSize;
     const closing = this.splitBalance(running);
-    return { subject: { id: subject.id.toString(), code: subject.code, nameAr: subject.nameAr, type: input.accountId != null ? "ACCOUNT" : input.customerId != null ? "CUSTOMER" : "SUPPLIER" }, range: { dateFrom: input.dateFrom, dateTo: input.dateTo }, openingDebit: openingSplit.debit, openingCredit: openingSplit.credit, data: data.slice(start, start + input.pageSize), meta: { page: input.page, pageSize: input.pageSize, total: data.length, totalPages: Math.ceil(data.length / input.pageSize) }, closingDebit: closing.debit, closingCredit: closing.credit };
+    return {
+      company: { name: company.name },
+      baseCurrency: this.currencyJson(company.baseCurrency),
+      subject: { id: subject.id.toString(), code: subject.code, nameAr: subject.nameAr, nameEn: subject.nameEn, type: input.accountId != null ? "ACCOUNT" as const : input.customerId != null ? "CUSTOMER" as const : "SUPPLIER" as const },
+      range: { dateFrom: input.dateFrom, dateTo: input.dateTo },
+      openingDebit: openingSplit.debit,
+      openingCredit: openingSplit.credit,
+      data: data.slice(start, start + input.pageSize),
+      meta: { page: input.page, pageSize: input.pageSize, total: data.length, totalPages: Math.ceil(data.length / input.pageSize) },
+      closingDebit: closing.debit,
+      closingCredit: closing.credit,
+    };
+  }
+
+  async ledgerExport(context: ActorContext, input: LedgerExportQuery) {
+    const report = await this.ledger(context, { ...input, page: 1, pageSize: 10_000 });
+    return { ...report, truncated: report.meta.total > report.data.length };
   }
 
   async recordExport(context: ActorContext, report: string, format: string, parameters: Record<string, unknown>) {

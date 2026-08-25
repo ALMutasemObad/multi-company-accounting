@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { currentYearRange, trialBalanceCsv } from "./reporting";
+import { accountStatementQuery, currentYearRange, trialBalanceCsv } from "./reporting";
 
 describe("reporting helpers", () => {
   it("builds the complete current-year range", () => {
@@ -10,5 +10,13 @@ describe("reporting helpers", () => {
     const csv = trialBalanceCsv([{ accountId: "1", code: "1100", nameAr: 'الصندوق "الرئيسي"', accountClass: "ASSET", debit: "100.0000", credit: "25.0000", balance: "75.0000" }]);
     expect(csv).toContain('"الصندوق ""الرئيسي"""');
     expect(csv).toContain('"100.0000","25.0000","75.0000"');
+  });
+
+  it("builds an account statement query with exactly one subject", () => {
+    const customer = accountStatementQuery({ subjectType: "customer", subjectId: "42", dateFrom: "2026-01-01", dateTo: "2026-12-31", page: 2, pageSize: 25 });
+    expect(customer.get("customerId")).toBe("42");
+    expect(customer.get("accountId")).toBeNull();
+    expect(customer.get("supplierId")).toBeNull();
+    expect(customer.get("page")).toBe("2");
   });
 });

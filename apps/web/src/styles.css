@@ -647,6 +647,7 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", "Noto Sans Devanaga
 .activity-panel .empty-state, .report-section .empty-state { min-height: 230px; margin: 20px; }
 .inline-notice { margin-bottom: 15px; padding: 10px 13px; border: 1px solid #ebc6c2; border-radius: 10px; background: #fffafa; color: var(--danger); font-size: .8rem; }
 .report-toolbar { width: 100%; max-width: 100%; flex-wrap: wrap; margin-bottom: 20px; }
+.report-toolbar .account-statement-subject { min-width: min(320px, 100%); flex: 1; }
 .audit-filters { display: grid; grid-template-columns: minmax(220px, 1.5fr) repeat(3, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; padding: 18px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: 0 8px 30px rgba(24,53,45,.045); }
 .audit-filters label > span { margin-bottom: 4px; font-size: .72rem; }
 .audit-filter-actions { display: flex; align-items: end; gap: 7px; }

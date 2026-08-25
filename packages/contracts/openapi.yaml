@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.19.0
+  version: 1.20.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -6379,6 +6379,55 @@ paths:
       x-permission: reports.ledger.view
       security:
       - SessionCookie: []
+  /reports/ledger/{format}:
+    get:
+      tags:
+      - Reports
+      summary: تصدير كشف حساب الأستاذ أو العميل أو المورد
+      operationId: exportLedgerReport
+      description: يجب توفير واحد فقط من accountId أو customerId أو supplierId. يقتصر ملف التصدير على أول 10000 حركة ويعلن العدد الكامل وحالة الاقتطاع في ترويسات الاستجابة.
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: format
+        in: path
+        required: true
+        schema: { type: string, enum: [csv, xlsx, pdf] }
+      - name: accountId
+        in: query
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+          description: معرّف حساب الأستاذ.
+      - name: customerId
+        in: query
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+          description: معرّف العميل.
+      - name: supplierId
+        in: query
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+          description: معرّف المورد.
+      - name: dateFrom
+        in: query
+        required: true
+        schema: { type: string, format: date }
+      - name: dateTo
+        in: query
+        required: true
+        schema: { type: string, format: date }
+      responses:
+        '200': { description: ملف كشف الحساب }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-permission: reports.ledger.export
+      security:
+      - SessionCookie: []
   /reports/trial-balance:
     get:
       tags:
@@ -10732,14 +10781,20 @@ components:
     LedgerReportRow:
       type: object
       required:
+      - id
       - date
+      - documentId
       - documentNumber
+      - documentType
+      - status
       - description
       - debit
       - credit
       - runningDebit
       - runningCredit
       properties:
+        id:
+          $ref: '#/components/schemas/Id'
         date:
           type: string
           format: date
@@ -10751,6 +10806,10 @@ components:
           description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
         documentNumber:
           type: string
+        documentType:
+          $ref: '#/components/schemas/AccountingDocumentType'
+        status:
+          $ref: '#/components/schemas/AccountingDocumentStatus'
         description:
           type: string
         debit:
@@ -10773,9 +10832,22 @@ components:
           pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
           example: '1250.0000'
           description: قيمة مالية عشرية DECIMAL(19,4) كنص.
+    LedgerReportSubject:
+      type: object
+      required: [id, code, nameAr, nameEn, type]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        code: { type: string }
+        nameAr: { type: string }
+        nameEn: { type: [string, 'null'] }
+        type: { type: string, enum: [ACCOUNT, CUSTOMER, SUPPLIER] }
     LedgerReport:
       type: object
       required:
+      - company
+      - baseCurrency
+      - subject
+      - range
       - openingDebit
       - openingCredit
       - data
@@ -10783,6 +10855,23 @@ components:
       - closingDebit
       - closingCredit
       properties:
+        company:
+          type: object
+          required: [name]
+          properties:
+            name: { type: string }
+        baseCurrency:
+          type: object
+          required: [id, code, nameAr, decimals]
+          properties:
+            id: { $ref: '#/components/schemas/Id' }
+            code: { type: string, pattern: '^[A-Z]{3}$' }
+            nameAr: { type: string }
+            decimals: { type: integer, minimum: 0, maximum: 8 }
+        subject:
+          $ref: '#/components/schemas/LedgerReportSubject'
+        range:
+          $ref: '#/components/schemas/ReportRange'
         openingDebit:
           type: string
           pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
