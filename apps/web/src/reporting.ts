@@ -18,3 +18,24 @@ export function trialBalanceCsv(rows: TrialBalanceRow[]) {
     .map((row) => row.map(escape).join(","))
     .join("\r\n");
 }
+
+export type AccountStatementSubjectType = "account" | "customer" | "supplier";
+
+export function accountStatementQuery(input: {
+  subjectType: AccountStatementSubjectType;
+  subjectId: string;
+  dateFrom: string;
+  dateTo: string;
+  page?: number;
+  pageSize?: number;
+}) {
+  const subjectParameter = `${input.subjectType}Id`;
+  const query = new URLSearchParams({
+    [subjectParameter]: input.subjectId,
+    dateFrom: input.dateFrom,
+    dateTo: input.dateTo,
+  });
+  if (input.page != null) query.set("page", String(input.page));
+  if (input.pageSize != null) query.set("pageSize", String(input.pageSize));
+  return query;
+}

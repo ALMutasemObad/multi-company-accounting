@@ -10,9 +10,12 @@ import { api,
   downloadFile } from "./api";
 import { formatMoney } from "./domain";
 import { currentYearRange,
+  accountStatementQuery,
   monthLabel,
-  trialBalanceCsv } from "./reporting";
+  trialBalanceCsv,
+  type AccountStatementSubjectType } from "./reporting";
 import type { Account,
+  Customer,
   DashboardReport,
   FinancialPositionReport,
   IncomeStatementReport,
@@ -20,7 +23,9 @@ import type { Account,
   LedgerReport,
   StatementRow,
   StatementSection,
+  Supplier,
   TrialBalanceReport } from "./types";
+import { ReferenceCombobox } from "./ReferenceCombobox";
 import { Button,
   EmptyState,
   Pagination,
@@ -28,7 +33,7 @@ import { Button,
   PageHeader,
 } from "./ui";
 
-type Tab = "cash" | "trial" | "journal" | "position" | "income";
+type Tab = "cash" | "trial" | "journal" | "ledger" | "position" | "income";
 
 export function ReportsPage() {
   const initial = currentYearRange();
@@ -44,8 +49,12 @@ export function ReportsPage() {
   const [journalAccountId, setJournalAccountId] = useState("");
   const [journalSearch, setJournalSearch] = useState("");
   const [journalPage, setJournalPage] = useState(1);
+  const [statementSubjectType, setStatementSubjectType] = useState<AccountStatementSubjectType>("customer");
+  const [statementSubjectId, setStatementSubjectId] = useState("");
+  const [statementSubjectLabel, setStatementSubjectLabel] = useState("");
+  const [statementPage, setStatementPage] = useState(1);
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [applied, setApplied] = useState({ dateFrom: initial.dateFrom, dateTo: initial.dateTo, compareEnabled: false, compareDateFrom: previousYear(initial.dateFrom), compareDateTo: previousYear(initial.dateTo), includeZeroBalances: false, journalDocumentType: "", journalStatus: "", journalAccountId: "", journalSearch: "" });
+  const [applied, setApplied] = useState({ dateFrom: initial.dateFrom, dateTo: initial.dateTo, compareEnabled: false, compareDateFrom: previousYear(initial.dateFrom), compareDateTo: previousYear(initial.dateTo), includeZeroBalances: false, journalDocumentType: "", journalStatus: "", journalAccountId: "", journalSearch: "", statementSubjectType: "customer" as AccountStatementSubjectType, statementSubjectId: "" });
   const [cashFlow, setCashFlow] = useState<DashboardReport | null>(null);
   const [trial, setTrial] = useState<TrialBalanceReport | null>(null);
   const [position, setPosition] = useState<FinancialPositionReport | null>(null);
@@ -73,6 +82,10 @@ export function ReportsPage() {
         ]);
         setJournal(report); setAccounts(accountResult.data);
       }
+      if (tab === "ledger" && applied.statementSubjectId) {
+        const query = accountStatementQuery({ subjectType: applied.statementSubjectType, subjectId: applied.statementSubjectId, dateFrom: applied.dateFrom, dateTo: applied.dateTo, page: statementPage, pageSize: 25 });
+        setLedger(await api<LedgerReport>(`/reports/ledger?${query}`));
+      }
       if (tab === "position") {
         const query = new URLSearchParams({ asOf: applied.dateTo, includeZeroBalances: String(applied.includeZeroBalances) });
         if (applied.compareEnabled) query.set("compareAsOf", applied.compareDateTo);
@@ -85,10 +98,10 @@ export function ReportsPage() {
       }
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("pages.reports.001")); }
     finally { setLoading(false); }
-  }, [accounts, applied, journalPage, tab]);
+  }, [accounts, applied, journalPage, statementPage, tab]);
   useEffect(() => { void load(); }, [load]);
 
-  function applyFilters() { setJournalPage(1); setApplied({ dateFrom, dateTo, compareEnabled, compareDateFrom, compareDateTo, includeZeroBalances, journalDocumentType, journalStatus, journalAccountId, journalSearch: journalSearch.trim() }); }
+  function applyFilters() { setJournalPage(1); setStatementPage(1); setApplied({ dateFrom, dateTo, compareEnabled, compareDateFrom, compareDateTo, includeZeroBalances, journalDocumentType, journalStatus, journalAccountId, journalSearch: journalSearch.trim(), statementSubjectType, statementSubjectId }); }
   function downloadTrialCsv() {
     if (!trial) return;
     const blob = new Blob(["\uFEFF", trialBalanceCsv(trial.data)], { type: "text/csv;charset=utf-8" });
@@ -120,16 +133,22 @@ export function ReportsPage() {
     if (applied.journalSearch) query.set("search", applied.journalSearch);
     await downloadFile(`/reports/journal/csv?${query}`, `journal-report-${applied.dateFrom}-${applied.dateTo}.csv`);
   }
+  async function exportAccountStatement(format: "csv" | "xlsx" | "pdf") {
+    if (!applied.statementSubjectId) return;
+    const query = accountStatementQuery({ subjectType: applied.statementSubjectType, subjectId: applied.statementSubjectId, dateFrom: applied.dateFrom, dateTo: applied.dateTo });
+    await downloadFile(`/reports/ledger/${format}?${query}`, `account-statement-${applied.dateFrom}-${applied.dateTo}.${format}`);
+  }
 
   const comparisonInvalid = (tab === "position" || tab === "income") && compareEnabled && (!compareDateFrom || !compareDateTo || compareDateFrom > compareDateTo);
-  const invalid = !dateFrom || !dateTo || dateFrom > dateTo || comparisonInvalid;
-  const hasData = tab === "cash" ? cashFlow : tab === "trial" ? trial : tab === "journal" ? journal : tab === "position" ? position : income;
+  const invalid = !dateFrom || !dateTo || dateFrom > dateTo || comparisonInvalid || (tab === "ledger" && !statementSubjectId);
+  const hasData = tab === "cash" ? cashFlow : tab === "trial" ? trial : tab === "journal" ? journal : tab === "ledger" ? ledger : tab === "position" ? position : income;
   return <section className="workspace-page reports-page">
     <PageHeader kicker={t("pages.reports.003")} title={t("pages.reports.004")} description={t("pages.reports.005")} />
     <div className="section-tabs report-tabs" role="tablist">
       <button className={tab === "cash" ? "active" : ""} onClick={() => setTab("cash")}>{t("pages.reports.006")}</button>
       <button className={tab === "trial" ? "active" : ""} onClick={() => setTab("trial")}>{t("pages.reports.007")}</button>
       <button className={tab === "journal" ? "active" : ""} onClick={() => setTab("journal")}>{t("pages.reports.008")}</button>
+      <button className={tab === "ledger" ? "active" : ""} onClick={() => setTab("ledger")}>{t("accountStatement.tab")}</button>
       <button className={tab === "position" ? "active" : ""} onClick={() => setTab("position")}>{t("pages.reports.009")}</button>
       <button className={tab === "income" ? "active" : ""} onClick={() => setTab("income")}>{t("pages.reports.010")}</button>
     </div>
@@ -146,6 +165,14 @@ export function ReportsPage() {
         <label><span>{t("pages.accounts.039")}</span><select value={journalAccountId} onChange={(event) => setJournalAccountId(event.target.value)}><option value="">{t("pages.reports.030")}</option>{accounts.filter((account) => account.allowsPosting).map((account) => <option key={account.id} value={account.id}>{account.code} - {localizedReferenceName(account)}</option>)}</select></label>
         <label><span>{t("pages.accounts.026")}</span><input value={journalSearch} onChange={(event) => setJournalSearch(event.target.value)} placeholder={t("pages.reports.032")} /></label>
       </>}
+      {tab === "ledger" && <>
+        <label><span>{t("accountStatement.subjectType")}</span><select value={statementSubjectType} onChange={(event) => { setStatementSubjectType(event.target.value as AccountStatementSubjectType); setStatementSubjectId(""); setStatementSubjectLabel(""); setLedger(null); }}><option value="customer">{t("accountStatement.customer")}</option><option value="supplier">{t("accountStatement.supplier")}</option><option value="account">{t("accountStatement.ledgerAccount")}</option></select></label>
+        <label className="account-statement-subject"><span>{t("accountStatement.subject")}</span>
+          {statementSubjectType === "customer" ? <ReferenceCombobox<Customer> endpoint="/customers" value={statementSubjectId} selectedLabel={statementSubjectLabel} onChange={(value) => { setStatementSubjectId(value?.id ?? ""); setStatementSubjectLabel(value ? `${value.code} — ${localizedReferenceName(value)}` : ""); }} optionLabel={(value) => `${value.code} — ${localizedReferenceName(value)}`} placeholder={t("accountStatement.selectCustomer")} searchLabel={t("pages.customers.015")} required />
+            : statementSubjectType === "supplier" ? <ReferenceCombobox<Supplier> endpoint="/suppliers" value={statementSubjectId} selectedLabel={statementSubjectLabel} onChange={(value) => { setStatementSubjectId(value?.id ?? ""); setStatementSubjectLabel(value ? `${value.code} — ${localizedReferenceName(value)}` : ""); }} optionLabel={(value) => `${value.code} — ${localizedReferenceName(value)}`} placeholder={t("accountStatement.selectSupplier")} searchLabel={t("pages.suppliers.014")} required />
+              : <ReferenceCombobox<Account> endpoint="/accounts?allowsPosting=true" value={statementSubjectId} selectedLabel={statementSubjectLabel} onChange={(value) => { setStatementSubjectId(value?.id ?? ""); setStatementSubjectLabel(value ? `${value.code} — ${localizedReferenceName(value)}` : ""); }} optionLabel={(value) => `${value.code} — ${localizedReferenceName(value)}`} placeholder={t("accountStatement.selectAccount")} searchLabel={t("pages.accounts.025")} required />}
+        </label>
+      </>}
       <Button disabled={invalid} onClick={applyFilters}>{t("pages.purchase-invoices.114")}</Button>
     </div>
     {loading && !hasData ? <Spinner label={t("pages.reports.034")} /> : error && !hasData ? <div className="error-panel" role="alert"><h3>{t("pages.reports.035")}</h3><p>{error}</p><Button onClick={() => void load()}>{t("pages.accounts.030")}</Button></div> : <>
@@ -153,10 +180,11 @@ export function ReportsPage() {
       {tab === "cash" && <CashFlowView report={cashFlow} />}
       {tab === "trial" && <TrialBalanceView report={trial} onDownload={downloadTrialCsv} />}
       {tab === "journal" && <JournalReportView report={journal} onExport={() => void exportJournal()} onPageChange={setJournalPage} />}
+      {tab === "ledger" && (ledger ? <LedgerView report={ledger} onExport={(format) => void exportAccountStatement(format)} onPageChange={setStatementPage} /> : <EmptyState title={t("accountStatement.emptyTitle")} description={t("accountStatement.emptyDescription")} />)}
       {tab === "position" && position && <FinancialPositionView report={position} onLedger={(id) => void openLedger(id)} onExport={(format) => void exportReport(format)} />}
       {tab === "income" && income && <IncomeStatementView report={income} onLedger={(id) => void openLedger(id)} onExport={(format) => void exportReport(format)} />}
       {ledgerLoading && <Spinner label={t("pages.reports.037")} />}
-      {ledger && <LedgerView report={ledger} onClose={() => setLedger(null)} />}
+      {tab !== "ledger" && ledger && <LedgerView report={ledger} onClose={() => setLedger(null)} />}
     </>}
   </section>;
 }
@@ -199,8 +227,8 @@ function StatementTable({ sections, hasComparison, onLedger }: { sections: Array
 function renderRows(rows: StatementRow[], hasComparison: boolean, onLedger: (id: string) => void, depth = 0): React.ReactNode[] {
   return rows.flatMap((row) => [<tr key={row.accountId ?? row.code}><td style={{ paddingInlineStart: `${16 + depth * 24}px` }}>{row.accountId ? <button className="account-drilldown" onClick={() => onLedger(row.accountId!)}><span className="code-pill">{row.code}</span>{localizedReferenceName(row)}</button> : <strong>{localizedReferenceName(row)}</strong>}</td><td className="money-cell">{formatMoney(row.amount)}</td>{hasComparison && <><td className="money-cell">{formatMoney(row.comparisonAmount ?? 0)}</td><td className={`money-cell ${Number(row.variance ?? 0) >= 0 ? "positive-text" : "negative-text"}`}>{formatMoney(row.variance ?? 0)}</td><td className="money-cell">{row.variancePercent == null ? "—" : `${row.variancePercent}%`}</td></>}</tr>, ...renderRows(row.children, hasComparison, onLedger, depth + 1)]);
 }
-function LedgerView({ report, onClose }: { report: LedgerReport; onClose: () => void }) {
-  return <article className="panel report-section ledger-panel"><header><div><h2>{t("pages.reports.089")}{localizedReferenceName(report.subject)}</h2><p>{report.subject.code}{t("pages.reports.090")}{report.range.dateFrom}{t("pages.payments.051")}{report.range.dateTo}</p></div><Button variant="secondary" onClick={onClose}>{t("pages.audit-logs.037")}</Button></header><div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("pages.dashboard.037")}</th><th>{t("pages.purchase-invoices.037")}</th><th>{t("pages.manual-journals.032")}</th><th>{t("pages.manual-journals.060")}</th><th>{t("pages.manual-journals.061")}</th><th>{t("pages.reports.092")}</th><th>{t("pages.reports.093")}</th></tr></thead><tbody><tr className="statement-total-row"><td colSpan={3}>{t("pages.reports.094")}</td><td>{formatMoney(report.openingDebit)}</td><td>{formatMoney(report.openingCredit)}</td><td>{formatMoney(report.openingDebit)}</td><td>{formatMoney(report.openingCredit)}</td></tr>{report.data.map((row) => <tr key={row.id}><td>{row.date}</td><td><span className="code-pill">{row.documentNumber}</span></td><td>{row.description}</td><td className="money-cell">{formatMoney(row.debit)}</td><td className="money-cell">{formatMoney(row.credit)}</td><td className="money-cell">{formatMoney(row.runningDebit)}</td><td className="money-cell">{formatMoney(row.runningCredit)}</td></tr>)}</tbody><tfoot><tr><th colSpan={5}>{t("pages.reports.095")}</th><th>{formatMoney(report.closingDebit)}</th><th>{formatMoney(report.closingCredit)}</th></tr></tfoot></table></div></article>;
+function LedgerView({ report, onClose, onExport, onPageChange }: { report: LedgerReport; onClose?: () => void; onExport?: (format: "csv" | "xlsx" | "pdf") => void; onPageChange?: (page: number) => void }) {
+  return <article className="panel report-section ledger-panel"><header><div><h2>{t("pages.reports.089")}{localizedReferenceName(report.subject)}</h2><p>{report.subject.code}{t("pages.reports.090")}{report.range.dateFrom}{t("pages.payments.051")}{report.range.dateTo}{t("accountStatement.currency", { value1: report.baseCurrency.code })}</p></div>{onExport ? <ExportActions onExport={onExport} /> : onClose ? <Button variant="secondary" onClick={onClose}>{t("pages.audit-logs.037")}</Button> : null}</header><div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("pages.dashboard.037")}</th><th>{t("pages.purchase-invoices.037")}</th><th>{t("pages.manual-journals.032")}</th><th>{t("pages.manual-journals.060")}</th><th>{t("pages.manual-journals.061")}</th><th>{t("pages.reports.092")}</th><th>{t("pages.reports.093")}</th></tr></thead><tbody><tr className="statement-total-row"><td colSpan={3}>{t("pages.reports.094")}</td><td>{formatMoney(report.openingDebit)}</td><td>{formatMoney(report.openingCredit)}</td><td>{formatMoney(report.openingDebit)}</td><td>{formatMoney(report.openingCredit)}</td></tr>{report.data.map((row) => <tr key={row.id}><td>{row.date}</td><td><span className="code-pill">{row.documentNumber}</span></td><td>{row.description}</td><td className="money-cell">{formatMoney(row.debit)}</td><td className="money-cell">{formatMoney(row.credit)}</td><td className="money-cell">{formatMoney(row.runningDebit)}</td><td className="money-cell">{formatMoney(row.runningCredit)}</td></tr>)}</tbody><tfoot><tr><th colSpan={5}>{t("pages.reports.095")}</th><th>{formatMoney(report.closingDebit)}</th><th>{formatMoney(report.closingCredit)}</th></tr></tfoot></table></div>{onPageChange && <Pagination {...report.meta} page={report.meta.page} onChange={onPageChange} />}</article>;
 }
 function Metric({ label, value, tone = "" }: { label: string; value: string; tone?: string }) { return <article className={`metric-card ${tone}`}><span>{label}</span><strong>{formatMoney(value)}</strong><small>{t("pages.reports.096")}</small></article>; }
 function ExportActions({ onExport }: { onExport: (format: "csv" | "xlsx" | "pdf") => void }) { return <div className="report-export-actions"><Button variant="secondary" onClick={() => onExport("csv")}>CSV</Button><Button variant="secondary" onClick={() => onExport("xlsx")}>Excel</Button><Button variant="secondary" onClick={() => onExport("pdf")}>PDF</Button></div>; }

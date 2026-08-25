@@ -602,7 +602,9 @@ export type IncomeStatementReport = {
 };
 
 export type LedgerReport = {
-  subject: { id: string; code: string; nameAr: string; type: "ACCOUNT" | "CUSTOMER" | "SUPPLIER" };
+  company: { name: string };
+  baseCurrency: { id: string; code: string; nameAr: string; decimals: number };
+  subject: { id: string; code: string; nameAr: string; nameEn: string | null; type: "ACCOUNT" | "CUSTOMER" | "SUPPLIER" };
   range: { dateFrom: string; dateTo: string };
   openingDebit: string;
   openingCredit: string;

@@ -66,6 +66,33 @@ export function incomeStatementTable(report: ExportReport & { range: { dateFrom:
   return rows;
 }
 
+export function ledgerReportTable(report: {
+  company: { name: string };
+  baseCurrency: { code: string; nameAr: string };
+  subject: { code: string; nameAr: string; type: "ACCOUNT" | "CUSTOMER" | "SUPPLIER" };
+  range: { dateFrom: string; dateTo: string };
+  openingDebit: string;
+  openingCredit: string;
+  data: Array<{ date: string; documentNumber: string; description: string; debit: string; credit: string; runningDebit: string; runningCredit: string }>;
+  closingDebit: string;
+  closingCredit: string;
+}) {
+  const subjectType = report.subject.type === "CUSTOMER" ? "العميل" : report.subject.type === "SUPPLIER" ? "المورد" : "حساب الأستاذ";
+  return [
+    [{ value: report.company.name, style: 1 }],
+    [{ value: `كشف حساب ${subjectType}: ${report.subject.code} - ${report.subject.nameAr}`, style: 1 }],
+    [{ value: `من ${report.range.dateFrom} إلى ${report.range.dateTo}` }, { value: `العملة: ${report.baseCurrency.code}` }],
+    ["التاريخ", "رقم المستند", "البيان", "مدين", "دائن", "الرصيد المدين", "الرصيد الدائن"].map((value) => ({ value, style: 2 })),
+    [{ value: "الرصيد الافتتاحي", style: 3 }, { value: "" }, { value: "" }, { value: report.openingDebit, numeric: true, style: 5 }, { value: report.openingCredit, numeric: true, style: 5 }, { value: report.openingDebit, numeric: true, style: 5 }, { value: report.openingCredit, numeric: true, style: 5 }],
+    ...report.data.map((row) => [
+      { value: row.date }, { value: row.documentNumber }, { value: row.description },
+      { value: row.debit, numeric: true, style: 4 }, { value: row.credit, numeric: true, style: 4 },
+      { value: row.runningDebit, numeric: true, style: 4 }, { value: row.runningCredit, numeric: true, style: 4 },
+    ]),
+    [{ value: "الرصيد الختامي", style: 3 }, { value: "" }, { value: "" }, { value: "" }, { value: "" }, { value: report.closingDebit, numeric: true, style: 5 }, { value: report.closingCredit, numeric: true, style: 5 }],
+  ] satisfies Cell[][];
+}
+
 export function tableToCsv(rows: Cell[][]) {
   return Buffer.from(`\uFEFF${rows.map((row) => row.map((cell) => csvEscape(cell.value)).join(",")).join("\r\n")}`, "utf8");
 }
@@ -82,13 +109,16 @@ export function tableToXlsx(rows: Cell[][], sheetName: string) {
     const ref = `${column(cellIndex)}${rowIndex + 1}`;
     return cell.numeric && cell.value !== "" ? `<c r="${ref}" s="${cell.style ?? 0}" t="n"><v>${xml(cell.value)}</v></c>` : `<c r="${ref}" s="${cell.style ?? 0}" t="inlineStr"><is><t xml:space="preserve">${xml(cell.value)}</t></is></c>`;
   }).join("")}</row>`).join("");
+  const columnCount = Math.max(1, ...rows.map((row) => row.length));
+  const columnWidths = columnCount === 7 ? [14, 20, 42, 16, 16, 18, 18] : [42, ...Array.from({ length: columnCount - 1 }, () => 18)];
+  const columns = columnWidths.map((width, index) => `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`).join("");
   const files: Record<string, string> = {
     "[Content_Types].xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`,
     "_rels/.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
     "xl/workbook.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${xml(sheetName)}" sheetId="1" r:id="rId1"/></sheets></workbook>`,
     "xl/_rels/workbook.xml.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
     "xl/styles.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="11"/><name val="Arial"/></font><font><b/><sz val="15"/><color rgb="FF173F34"/><name val="Arial"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Arial"/></font></fonts><fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF173F34"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE8F1ED"/></patternFill></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="2" fillId="2" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="center"/></xf><xf numFmtId="0" fontId="1" fillId="3" borderId="0" xfId="0"/><xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="4" fontId="1" fillId="3" borderId="0" xfId="0"/></cellXfs></styleSheet>`,
-    "xl/worksheets/sheet1.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0" rightToLeft="1"/></sheetViews><cols><col min="1" max="1" width="42" customWidth="1"/><col min="2" max="5" width="18" customWidth="1"/></cols><sheetData>${sheetRows}</sheetData></worksheet>`,
+    "xl/worksheets/sheet1.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0" rightToLeft="1"/></sheetViews><cols>${columns}</cols><sheetData>${sheetRows}</sheetData></worksheet>`,
   };
   return zipStore(Object.entries(files).map(([name, content]) => ({ name, data: Buffer.from(content, "utf8") })));
 }
@@ -101,7 +131,8 @@ export function tableToPdf(rows: Cell[][], title: string, companyName: string): 
     pdf.registerFont("Arabic", arabicFont).registerFont("ArabicBold", arabicBoldFont);
     const pageHeader = () => { pdf.rect(0, 0, 842, 75).fill("#173f34"); pdf.font("ArabicBold").fontSize(17).fillColor("#ffffff").text(arabicSafe(companyName), 36, 18, { width: 770, align: "right", features: ["rtla"] }); pdf.font("Arabic").fontSize(10).fillColor("#d6e7df").text(arabicSafe(title), 36, 47, { width: 770, align: "right", features: ["rtla"] }); pdf.y = 92; };
     pageHeader();
-    const widths = [370, 100, 100, 100, 100];
+    const columnCount = Math.max(1, ...rows.map((row) => row.length));
+    const widths = columnCount === 7 ? [80, 100, 250, 80, 80, 90, 90] : [370, 100, 100, 100, 100];
     for (let rowIndex = 3; rowIndex < rows.length; rowIndex += 1) {
       if (pdf.y > 530) { pdf.addPage(); pageHeader(); }
       const row = rows[rowIndex]!; const y = pdf.y; const isHeader = rowIndex === 3; const isSection = row[0]?.style === 3;

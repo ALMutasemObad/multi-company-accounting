@@ -11,7 +11,7 @@ import {
 
 test("generated OpenAPI guards are committed and current", () => {
   assert.equal(guardedOperationIds.length, 89);
-  assert.equal(responseOperationIds.length, 174);
+  assert.equal(responseOperationIds.length, 175);
   assert.ok(guardedOperationIds.includes("createManualJournal"));
   assert.ok(guardedOperationIds.includes("createReceipt"));
   assert.ok(guardedOperationIds.includes("updatePaymentMethod"));
@@ -39,7 +39,7 @@ test("guard generation reflects request constraints from the contract", () => {
 
 test("guard generation covers request transforms and response schemas", () => {
   const generated = buildGeneratedSource();
-  assert.match(generated, /openApiContractCoverage = \{ operations: 174, requestBodies: 89, responseBodies: 1210 \}/u);
+  assert.match(generated, /openApiContractCoverage = \{ operations: 175, requestBodies: 89, responseBodies: 1215 \}/u);
   assert.match(generated, /"receivableItemId": z\.string\(\).*\.transform\(\(value\) => BigInt\(value\)\)/u);
   assert.match(generated, /export const openApiResponseBodySchemas = \{/u);
 });
