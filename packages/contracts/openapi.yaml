@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.18.0
+  version: 1.19.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -1976,6 +1976,17 @@ paths:
         in: query
         schema:
           type: boolean
+      - name: allowsPosting
+        in: query
+        description: قصر النتائج على الحسابات التي تسمح أو لا تسمح بالترحيل المباشر.
+        schema:
+          type: boolean
+      - name: accountClasses
+        in: query
+        description: فئات الحسابات المطلوبة مفصولة بفواصل.
+        schema:
+          type: string
+          pattern: '^(ASSET|LIABILITY|EQUITY|REVENUE|EXPENSE)(,(ASSET|LIABILITY|EQUITY|REVENUE|EXPENSE)){0,4}$'
       x-permission: accounts.view
       security:
       - SessionCookie: []
@@ -2312,6 +2323,10 @@ paths:
       - $ref: '#/components/parameters/Page'
       - $ref: '#/components/parameters/PageSize'
       - $ref: '#/components/parameters/Search'
+      - name: active
+        in: query
+        schema:
+          type: boolean
       x-permission: cost_centers.manage
       security:
       - SessionCookie: []
@@ -5174,8 +5189,13 @@ paths:
       tags: [Taxes]
       summary: عرض نسب ضريبة المبيعات
       operationId: listTaxRates
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - $ref: '#/components/parameters/Search'
+      - { name: activeOnly, in: query, schema: { type: boolean } }
       responses:
-        '200': { description: نجاح, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: '#/components/schemas/TaxRate' } } } } } } }
+        '200': { description: نجاح, content: { application/json: { schema: { type: object, required: [data, meta], properties: { data: { type: array, items: { $ref: '#/components/schemas/TaxRate' } }, meta: { $ref: '#/components/schemas/PaginationMeta' } } } } } }
         '400': { $ref: '#/components/responses/ValidationError' }
       x-permission: sales_invoices.view
       security: [{ SessionCookie: [] }]
@@ -5223,8 +5243,13 @@ paths:
       tags: [Taxes]
       summary: عرض نسب ضريبة المشتريات وحسابات المدخلات
       operationId: listPurchaseTaxRates
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - $ref: '#/components/parameters/Search'
+      - { name: activeOnly, in: query, schema: { type: boolean } }
       responses:
-        '200': { description: نجاح, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: '#/components/schemas/PurchaseTaxRate' } } } } } } }
+        '200': { description: نجاح, content: { application/json: { schema: { type: object, required: [data, meta], properties: { data: { type: array, items: { $ref: '#/components/schemas/PurchaseTaxRate' } }, meta: { $ref: '#/components/schemas/PaginationMeta' } } } } } }
         '400': { $ref: '#/components/responses/ValidationError' }
       x-permission: purchase_invoices.view
       security: [{ SessionCookie: [] }]

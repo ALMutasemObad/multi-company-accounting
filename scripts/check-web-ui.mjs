@@ -126,6 +126,17 @@ for (const file of await sourceFiles(sourceDir)) {
 }
 
 const styles = await readFile(path.join(sourceDir, "styles.css"), "utf8");
+for (const invoicePage of ["SalesInvoicesPage.tsx", "PurchaseInvoicesPage.tsx"]) {
+  const source = await readFile(path.join(sourceDir, invoicePage), "utf8");
+  if (!source.includes("<ReferenceCombobox")) {
+    failures.push(`apps/web/src/${invoicePage}: invoice reference fields must use server-search comboboxes`);
+  }
+  for (const endpoint of ["customers", "suppliers", "accounts", "cost-centers", "tax-rates", "purchase-tax-rates", "warehouses", "inventory-items"]) {
+    if (new RegExp(`/${endpoint}\\?[^\\n]*pageSize=100`).test(source)) {
+      failures.push(`apps/web/src/${invoicePage}: /${endpoint} reference options must not be capped at the first 100 rows`);
+    }
+  }
+}
 const requiredCss = [
   [":focus-visible", "a visible keyboard-focus treatment"],
   ["prefers-reduced-motion", "a reduced-motion fallback"],

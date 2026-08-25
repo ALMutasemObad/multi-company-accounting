@@ -1,6 +1,12 @@
 import type { ar } from "./ar";
 
 export const hi = {
+  "referencePicker.loading": "खोज जारी है…",
+  "referencePicker.empty": "कोई मिलता-जुलता परिणाम नहीं मिला।",
+  "referencePicker.more": "और परिणाम लोड करें",
+  "referencePicker.clear": "चयन हटाएँ",
+  "referencePicker.required": "खोज परिणामों में से कोई मान चुनें।",
+  "referencePicker.loadError": "खोज परिणाम लोड नहीं किए जा सके।",
   "status.DRAFT": "ड्राफ्ट",
   "status.POSTED": "पोस्ट किया गया",
   "status.CANCELLED": "रद्द किया गया",

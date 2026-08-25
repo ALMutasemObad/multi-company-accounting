@@ -5,6 +5,12 @@ import type { ActorContext } from "../users/user-service.js";
 
 export type TaxUsage = "OUTPUT" | "INPUT";
 export type TaxErrorReason = "NOT_FOUND" | "VERSION_CONFLICT" | "INVALID_TAX_RATE";
+export type TaxListQuery = {
+  activeOnly?: boolean | undefined;
+  page: number;
+  pageSize: number;
+  search?: string | undefined;
+};
 
 export class TaxError extends Error {
   constructor(public readonly reason: TaxErrorReason) {
@@ -64,6 +70,8 @@ const taxRateInclude = {
   inputTaxAccount: { select: accountSelection },
 } as const;
 
+type TaxRateListItem = Prisma.TaxRateGetPayload<{ include: typeof taxRateInclude }>;
+
 export class TaxService implements TaxQuotePort {
   private readonly transactions: TransactionExecutor;
 
@@ -71,15 +79,34 @@ export class TaxService implements TaxQuotePort {
     this.transactions = new TransactionExecutor(prisma);
   }
 
-  list(context: ActorContext, usage: TaxUsage, activeOnly = false) {
-    return this.prisma.taxRate.findMany({
-      where: {
-        companyId: context.companyId,
-        ...(activeOnly ? { isActive: true } : {}),
-      },
-      include: taxRateInclude,
-      orderBy: [{ rate: "asc" }, { code: "asc" }],
-    });
+  list(
+    context: ActorContext,
+    _usage: TaxUsage,
+    input: TaxListQuery,
+  ): Promise<{ data: TaxRateListItem[]; total: number }> {
+    const where: Prisma.TaxRateWhereInput = {
+      companyId: context.companyId,
+      ...(input.activeOnly ? { isActive: true } : {}),
+      ...(input.search
+        ? {
+            OR: [
+              { code: { contains: input.search } },
+              { nameAr: { contains: input.search } },
+            ],
+          }
+        : {}),
+    };
+    const orderBy: Prisma.TaxRateOrderByWithRelationInput[] = [{ rate: "asc" }, { code: "asc" }];
+    return this.prisma.$transaction(async (tx) => ({
+      data: await tx.taxRate.findMany({
+        where,
+        include: taxRateInclude,
+        orderBy,
+        skip: (input.page - 1) * input.pageSize,
+        take: input.pageSize,
+      }),
+      total: await tx.taxRate.count({ where }),
+    }));
   }
 
   create(context: ActorContext, usage: TaxUsage, input: TaxRateCreate) {
