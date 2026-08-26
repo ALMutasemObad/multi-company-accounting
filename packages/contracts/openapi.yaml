@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.23.0
+  version: 1.24.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -4634,6 +4634,276 @@ paths:
       security:
       - SessionCookie: []
         CsrfToken: []
+  /bank-statement-imports:
+    get:
+      tags: [Bank Reconciliation]
+      summary: عرض استيرادات كشوف البنك
+      operationId: listBankStatementImports
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200': { description: نجاح, content: { application/json: { schema: { $ref: '#/components/schemas/BankStatementImportList' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: bank_reconciliation.view
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [Bank Reconciliation]
+      summary: اعتماد استيراد كشف بنك بعد تحليله خارج المعاملة
+      operationId: commitBankStatementImport
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/BankStatementFileRequest' } } }
+      responses:
+        '201': { description: تم الاعتماد, content: { application/json: { schema: { $ref: '#/components/schemas/BankStatementImport' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: bank_reconciliation.import
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /bank-statement-imports/preview:
+    post:
+      tags: [Bank Reconciliation]
+      summary: معاينة كشف بنك دون حفظ
+      operationId: previewBankStatement
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/BankStatementFileRequest' } } }
+      responses:
+        '200': { description: نجاح, content: { application/json: { schema: { $ref: '#/components/schemas/NormalizedBankStatementPreview' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '413': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: bank_reconciliation.import
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /bank-statement-imports/{importId}:
+    get:
+      tags: [Bank Reconciliation]
+      summary: عرض استيراد كشف وخطوطه
+      operationId: getBankStatementImport
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: importId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: نجاح, content: { application/json: { schema: { $ref: '#/components/schemas/BankStatementImportDetail' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: bank_reconciliation.view
+      security: [{ SessionCookie: [] }]
+  /bank-reconciliation/sessions:
+    get:
+      tags: [Bank Reconciliation]
+      summary: عرض جلسات المطابقة البنكية
+      operationId: listBankReconciliationSessions
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - { name: status, in: query, schema: { $ref: '#/components/schemas/BankReconciliationSessionStatus' } }
+      responses:
+        '200': { description: نجاح, content: { application/json: { schema: { $ref: '#/components/schemas/BankReconciliationSessionList' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: bank_reconciliation.view
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [Bank Reconciliation]
+      summary: إنشاء جلسة مطابقة لحساب وفترة
+      operationId: createBankReconciliationSession
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/BankReconciliationSessionCreateRequest' } } }
+      responses:
+        '201': { description: تم الإنشاء, content: { application/json: { schema: { $ref: '#/components/schemas/BankReconciliationSession' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: bank_reconciliation.review
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /bank-reconciliation/sessions/{sessionId}:
+    get:
+      tags: [Bank Reconciliation]
+      summary: عرض تفاصيل جلسة المطابقة
+      operationId: getBankReconciliationSession
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: sessionId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: نجاح, content: { application/json: { schema: { $ref: '#/components/schemas/BankReconciliationSessionDetail' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: bank_reconciliation.view
+      security: [{ SessionCookie: [] }]
+  /bank-reconciliation/sessions/{sessionId}/book-movements:
+    get:
+      tags: [Bank Reconciliation]
+      summary: عرض حركات الدفاتر المتاحة للربط اليدوي
+      operationId: listBankReconciliationBookMovements
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: sessionId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: نجاح, content: { application/json: { schema: { $ref: '#/components/schemas/BankReconciliationBookMovementList' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: bank_reconciliation.view
+      security: [{ SessionCookie: [] }]
+  /bank-reconciliation/sessions/{sessionId}/suggestions:
+    post:
+      tags: [Bank Reconciliation]
+      summary: توليد اقتراحات مطابقة محلية 1:1
+      operationId: generateBankReconciliationSuggestions
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: sessionId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/BankReconciliationSuggestionRequest' } } }
+      responses:
+        '200': { description: نجاح, content: { application/json: { schema: { $ref: '#/components/schemas/BankReconciliationSuggestionResult' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: bank_reconciliation.review
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /bank-reconciliation/sessions/{sessionId}/matches/manual:
+    post:
+      tags: [Bank Reconciliation]
+      summary: اعتماد ربط يدوي 1:1 دون أثر محاسبي
+      operationId: createManualBankReconciliationMatch
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: sessionId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ManualBankReconciliationMatchRequest' } } }
+      responses:
+        '201': { description: تم الاعتماد, content: { application/json: { schema: { $ref: '#/components/schemas/BankReconciliationMatchCommandResult' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: bank_reconciliation.review
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /bank-reconciliation/sessions/{sessionId}/matches/{matchId}/approve:
+    post:
+      tags: [Bank Reconciliation]
+      summary: اعتماد اقتراح مطابقة
+      operationId: approveBankReconciliationMatch
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: sessionId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: matchId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ApproveBankReconciliationMatchRequest' } } }
+      responses:
+        '200': { description: تم الاعتماد, content: { application/json: { schema: { $ref: '#/components/schemas/BankReconciliationMatchCommandResult' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: bank_reconciliation.review
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /bank-reconciliation/sessions/{sessionId}/matches/{matchId}/release:
+    post:
+      tags: [Bank Reconciliation]
+      summary: فك ربط مطابقة مع حفظ الأثر التاريخي
+      operationId: releaseBankReconciliationMatch
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: sessionId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: matchId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ReleaseBankReconciliationMatchRequest' } } }
+      responses:
+        '200': { description: تم فك الربط, content: { application/json: { schema: { $ref: '#/components/schemas/BankReconciliationMatchCommandResult' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: bank_reconciliation.review
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /bank-reconciliation/sessions/{sessionId}/lines/{lineId}/classify:
+    post:
+      tags: [Bank Reconciliation]
+      summary: تصنيف سطر بنك غير مطابق
+      operationId: classifyBankStatementLine
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: sessionId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: lineId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ClassifyBankStatementLineRequest' } } }
+      responses:
+        '200': { description: تم التصنيف, content: { application/json: { schema: { $ref: '#/components/schemas/BankStatementLineClassificationResult' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: bank_reconciliation.review
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /bank-reconciliation/sessions/{sessionId}/close:
+    post:
+      tags: [Bank Reconciliation]
+      summary: إقفال جلسة مكتملة بفارق صفر أو تفسير معتمد
+      operationId: closeBankReconciliationSession
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: sessionId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CloseBankReconciliationSessionRequest' } } }
+      responses:
+        '200': { description: تم الإقفال, content: { application/json: { schema: { $ref: '#/components/schemas/BankReconciliationCloseResult' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: bank_reconciliation.close
+      security: [{ SessionCookie: [], CsrfToken: [] }]
   /manual-journals:
     get:
       tags:
@@ -9207,6 +9477,332 @@ components:
           type: string
           pattern: '^[0-9]{1,11}(?:\.[0-9]{1,8})?$'
         reason: { type: string, x-trim: true, minLength: 3, maxLength: 500 }
+    BankStatementFormat:
+      type: string
+      enum: [CSV, CAMT053]
+    BankStatementDirection:
+      type: string
+      enum: [CREDIT, DEBIT]
+    BankStatementCsvColumns:
+      type: object
+      additionalProperties: false
+      required: [bookingDate]
+      properties:
+        bookingDate: { type: string, x-trim: true, minLength: 1, maxLength: 120 }
+        valueDate: { type: string, x-trim: true, minLength: 1, maxLength: 120 }
+        amount: { type: string, x-trim: true, minLength: 1, maxLength: 120 }
+        debit: { type: string, x-trim: true, minLength: 1, maxLength: 120 }
+        credit: { type: string, x-trim: true, minLength: 1, maxLength: 120 }
+        currency: { type: string, x-trim: true, minLength: 1, maxLength: 120 }
+        externalId: { type: string, x-trim: true, minLength: 1, maxLength: 120 }
+        reference: { type: string, x-trim: true, minLength: 1, maxLength: 120 }
+        description: { type: string, x-trim: true, minLength: 1, maxLength: 120 }
+    BankStatementCsvProfile:
+      type: object
+      additionalProperties: false
+      required: [delimiter, dateFormat, decimalSeparator, defaultCurrency, columns]
+      properties:
+        delimiter: { type: string, enum: [',', ';', "\t"] }
+        dateFormat: { type: string, enum: [YYYY-MM-DD, DD/MM/YYYY, MM/DD/YYYY] }
+        decimalSeparator: { type: string, enum: ['.', ','] }
+        thousandsSeparator: { type: string, enum: [',', '.', ' '] }
+        defaultCurrency: { type: string, pattern: '^[A-Z]{3}$' }
+        accountIdentifier: { type: string, x-trim: true, minLength: 1, maxLength: 120 }
+        positiveAmountDirection: { $ref: '#/components/schemas/BankStatementDirection' }
+        columns: { $ref: '#/components/schemas/BankStatementCsvColumns' }
+    BankStatementFileRequest:
+      type: object
+      additionalProperties: false
+      required: [cashBankAccountId, format, contentBase64]
+      properties:
+        cashBankAccountId: { $ref: '#/components/schemas/Id' }
+        format: { $ref: '#/components/schemas/BankStatementFormat' }
+        contentBase64:
+          type: string
+          minLength: 4
+          maxLength: 700000
+          pattern: '^[A-Za-z0-9+/]+={0,2}$'
+        fileName: { type: string, x-trim: true, minLength: 1, maxLength: 255 }
+        csvProfile: { $ref: '#/components/schemas/BankStatementCsvProfile' }
+        expectedAccountIdentifier: { type: string, x-trim: true, minLength: 1, maxLength: 120 }
+        expectedCurrency: { type: string, pattern: '^[A-Z]{3}$' }
+    BankStatementPreviewLine:
+      type: object
+      additionalProperties: false
+      required: [sourceRowNumber, bookingDate, valueDate, amount, direction, currency, fingerprintSha256, externalId, reference, description]
+      properties:
+        sourceRowNumber: { type: integer, minimum: 1, maximum: 65535 }
+        bookingDate: { type: string, format: date }
+        valueDate: { type: [string, 'null'], format: date }
+        amount: { type: string, pattern: '^-?(?:0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        direction: { $ref: '#/components/schemas/BankStatementDirection' }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        fingerprintSha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+        externalId: { type: [string, 'null'], maxLength: 160 }
+        reference: { type: [string, 'null'], maxLength: 160 }
+        description: { type: [string, 'null'], maxLength: 500 }
+    NormalizedBankStatementPreview:
+      type: object
+      additionalProperties: false
+      required: [format, sourceHashSha256, statementId, accountIdentifierMasked, currency, periodStart, periodEnd, openingBalance, closingBalance, netMovement, ignoredEntryCount, sourceTimeZoneOffsets, lines]
+      properties:
+        format: { $ref: '#/components/schemas/BankStatementFormat' }
+        sourceHashSha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+        statementId: { type: [string, 'null'], maxLength: 120 }
+        accountIdentifierMasked: { type: [string, 'null'], pattern: '^\*{4}.{1,4}$' }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        periodStart: { type: [string, 'null'], format: date }
+        periodEnd: { type: [string, 'null'], format: date }
+        openingBalance: { type: [string, 'null'], pattern: '^-?(?:0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        closingBalance: { type: [string, 'null'], pattern: '^-?(?:0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        netMovement: { type: string, pattern: '^-?(?:0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        ignoredEntryCount: { type: integer, minimum: 0, maximum: 65535 }
+        sourceTimeZoneOffsets: { type: array, maxItems: 100, items: { type: string, maxLength: 6 } }
+        lines: { type: array, minItems: 1, maxItems: 5000, items: { $ref: '#/components/schemas/BankStatementPreviewLine' } }
+    BankReconciliationCashAccountReference:
+      type: object
+      additionalProperties: false
+      required: [id, code, nameAr]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        code: { type: string, maxLength: 40 }
+        nameAr: { type: string, maxLength: 160 }
+    BankStatementImport:
+      type: object
+      additionalProperties: false
+      required: [id, cashBankAccount, format, sourceHashSha256, statementId, accountIdentifierMasked, currency, periodStart, periodEnd, openingBalance, closingBalance, netMovement, lineCount, ignoredEntryCount, status, version, committedAt, cancelledAt, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        cashBankAccount: { $ref: '#/components/schemas/BankReconciliationCashAccountReference' }
+        format: { $ref: '#/components/schemas/BankStatementFormat' }
+        sourceHashSha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+        statementId: { type: [string, 'null'], maxLength: 120 }
+        accountIdentifierMasked: { type: [string, 'null'], pattern: '^\*{4}.{1,4}$' }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        periodStart: { type: string, format: date }
+        periodEnd: { type: string, format: date }
+        openingBalance: { type: [string, 'null'], pattern: '^-?(?:0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        closingBalance: { type: [string, 'null'], pattern: '^-?(?:0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        netMovement: { type: string, pattern: '^-?(?:0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        lineCount: { type: integer, minimum: 1, maximum: 5000 }
+        ignoredEntryCount: { type: integer, minimum: 0, maximum: 65535 }
+        status: { type: string, enum: [COMMITTED, CANCELLED] }
+        version: { type: integer, minimum: 0 }
+        committedAt: { type: string, format: date-time }
+        cancelledAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+    BankStatementLineClassification:
+      type: string
+      enum: [PENDING_TRANSACTION, BANK_FEE, BANK_INTEREST, BANK_ERROR, NEEDS_ACCOUNTING_DOCUMENT]
+    BankStatementLine:
+      type: object
+      additionalProperties: false
+      required: [id, sourceRowNumber, bookingDate, valueDate, amount, direction, currency, fingerprintSha256, externalId, reference, description, classification, classificationNote, classifiedAt, version]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        sourceRowNumber: { type: integer, minimum: 1, maximum: 65535 }
+        bookingDate: { type: string, format: date }
+        valueDate: { type: [string, 'null'], format: date }
+        amount: { type: string, pattern: '^-?(?:0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        direction: { $ref: '#/components/schemas/BankStatementDirection' }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        fingerprintSha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+        externalId: { type: [string, 'null'], maxLength: 160 }
+        reference: { type: [string, 'null'], maxLength: 160 }
+        description: { type: [string, 'null'], maxLength: 500 }
+        classification: { oneOf: [{ $ref: '#/components/schemas/BankStatementLineClassification' }, { type: 'null' }] }
+        classificationNote: { type: [string, 'null'], maxLength: 500 }
+        classifiedAt: { type: [string, 'null'], format: date-time }
+        version: { type: integer, minimum: 0 }
+    BankStatementImportDetail:
+      allOf:
+      - $ref: '#/components/schemas/BankStatementImport'
+      - type: object
+        required: [lines]
+        properties:
+          lines: { type: array, maxItems: 5000, items: { $ref: '#/components/schemas/BankStatementLine' } }
+    BankStatementImportList:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/BankStatementImport' } }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    BankReconciliationSessionStatus:
+      type: string
+      enum: [OPEN, CLOSED]
+    BankReconciliationSessionCreateRequest:
+      type: object
+      additionalProperties: false
+      description: تنشأ جلسة واحدة لكل وارد في شريحة 1:1، ويجب أن يطابق النطاق فترة الوارد كاملة.
+      required: [statementImportId, dateFrom, dateTo]
+      properties:
+        statementImportId: { type: string, format: uuid }
+        dateFrom: { type: string, format: date }
+        dateTo: { type: string, format: date }
+    BankReconciliationSession:
+      type: object
+      additionalProperties: false
+      required: [id, statementImportId, cashBankAccount, dateFrom, dateTo, currency, bankOpeningBalance, bankClosingBalance, bankNetMovement, bookOpeningBalance, bookClosingBalance, bookNetMovement, difference, status, version, closedAt, closingExplanation, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        statementImportId: { type: string, format: uuid }
+        cashBankAccount: { $ref: '#/components/schemas/BankReconciliationCashAccountReference' }
+        dateFrom: { type: string, format: date }
+        dateTo: { type: string, format: date }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        bankOpeningBalance: { type: [string, 'null'], pattern: '^-?(?:0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        bankClosingBalance: { type: [string, 'null'], pattern: '^-?(?:0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        bankNetMovement: { type: string, pattern: '^-?(?:0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        bookOpeningBalance: { type: string, pattern: '^-?(?:0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        bookClosingBalance: { type: string, pattern: '^-?(?:0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        bookNetMovement: { type: string, pattern: '^-?(?:0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        difference: { type: string, pattern: '^-?(?:0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        status: { $ref: '#/components/schemas/BankReconciliationSessionStatus' }
+        version: { type: integer, minimum: 0 }
+        closedAt: { type: [string, 'null'], format: date-time }
+        closingExplanation: { type: [string, 'null'], maxLength: 500 }
+        createdAt: { type: string, format: date-time }
+    BankReconciliationBookMovement:
+      type: object
+      additionalProperties: false
+      required: [key, occurredOn, amount, currency, reference, documentType, documentNumber]
+      properties:
+        key: { type: string, pattern: '^[a-f0-9]{64}$' }
+        occurredOn: { type: string, format: date }
+        amount: { type: string, pattern: '^-?(?:0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        reference: { type: [string, 'null'], maxLength: 160 }
+        documentType: { type: string, maxLength: 40 }
+        documentNumber: { type: string, maxLength: 60 }
+    BankReconciliationBookMovementAvailability:
+      allOf:
+      - $ref: '#/components/schemas/BankReconciliationBookMovement'
+      - type: object
+        required: [matched]
+        properties: { matched: { type: boolean } }
+    BankReconciliationBookMovementList:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/BankReconciliationBookMovementAvailability' } }
+    BankReconciliationMatch:
+      type: object
+      additionalProperties: false
+      required: [id, bankStatementLineId, bookMovement, status, source, rule, score, version, approvedAt, releasedAt, releaseReason, createdAt]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        bankStatementLineId: { $ref: '#/components/schemas/Id' }
+        bookMovement: { $ref: '#/components/schemas/BankReconciliationBookMovement' }
+        status: { type: string, enum: [PROPOSED, APPROVED, RELEASED] }
+        source: { type: string, enum: [SUGGESTED, MANUAL] }
+        rule: { type: string, enum: [EXACT_REFERENCE_AMOUNT_CURRENCY, EXACT_AMOUNT_CURRENCY_DATE, MANUAL] }
+        score: { type: integer, minimum: 0, maximum: 100 }
+        version: { type: integer, minimum: 0 }
+        approvedAt: { type: [string, 'null'], format: date-time }
+        releasedAt: { type: [string, 'null'], format: date-time }
+        releaseReason: { type: [string, 'null'], maxLength: 500 }
+        createdAt: { type: string, format: date-time }
+    BankReconciliationSessionDetail:
+      allOf:
+      - $ref: '#/components/schemas/BankReconciliationSession'
+      - type: object
+        required: [lines, matches]
+        properties:
+          lines: { type: array, maxItems: 5000, items: { $ref: '#/components/schemas/BankStatementLine' } }
+          matches: { type: array, maxItems: 5000, items: { $ref: '#/components/schemas/BankReconciliationMatch' } }
+    BankReconciliationSessionList:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/BankReconciliationSession' } }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    BankReconciliationSuggestionRequest:
+      type: object
+      additionalProperties: false
+      required: [sessionVersion, dateWindowDays]
+      properties:
+        sessionVersion: { type: integer, minimum: 0 }
+        dateWindowDays: { type: integer, minimum: 0, maximum: 30 }
+    BankReconciliationSuggestionResult:
+      type: object
+      additionalProperties: false
+      required: [sessionId, sessionVersion, proposalCount]
+      properties:
+        sessionId: { type: string, format: uuid }
+        sessionVersion: { type: integer, minimum: 1 }
+        proposalCount: { type: integer, minimum: 0, maximum: 5000 }
+    ManualBankReconciliationMatchRequest:
+      type: object
+      additionalProperties: false
+      required: [sessionVersion, bankStatementLineId, bookMovementKey]
+      properties:
+        sessionVersion: { type: integer, minimum: 0 }
+        bankStatementLineId: { $ref: '#/components/schemas/Id' }
+        bookMovementKey: { type: string, pattern: '^[a-f0-9]{64}$' }
+    ApproveBankReconciliationMatchRequest:
+      type: object
+      additionalProperties: false
+      required: [sessionVersion, matchVersion]
+      properties:
+        sessionVersion: { type: integer, minimum: 0 }
+        matchVersion: { type: integer, minimum: 0 }
+    ReleaseBankReconciliationMatchRequest:
+      type: object
+      additionalProperties: false
+      required: [sessionVersion, matchVersion, reason]
+      properties:
+        sessionVersion: { type: integer, minimum: 0 }
+        matchVersion: { type: integer, minimum: 0 }
+        reason: { type: string, x-trim: true, minLength: 3, maxLength: 500 }
+    BankReconciliationMatchCommandResult:
+      type: object
+      additionalProperties: false
+      required: [sessionId, sessionVersion, matchId, matchVersion, status]
+      properties:
+        sessionId: { type: string, format: uuid }
+        sessionVersion: { type: integer, minimum: 1 }
+        matchId: { $ref: '#/components/schemas/Id' }
+        matchVersion: { type: integer, minimum: 0 }
+        status: { type: string, enum: [APPROVED, RELEASED] }
+    ClassifyBankStatementLineRequest:
+      type: object
+      additionalProperties: false
+      required: [sessionVersion, lineVersion, classification, note]
+      properties:
+        sessionVersion: { type: integer, minimum: 0 }
+        lineVersion: { type: integer, minimum: 0 }
+        classification: { $ref: '#/components/schemas/BankStatementLineClassification' }
+        note: { type: string, x-trim: true, minLength: 3, maxLength: 500 }
+    BankStatementLineClassificationResult:
+      type: object
+      additionalProperties: false
+      required: [sessionId, sessionVersion, lineId, lineVersion, classification]
+      properties:
+        sessionId: { type: string, format: uuid }
+        sessionVersion: { type: integer, minimum: 1 }
+        lineId: { $ref: '#/components/schemas/Id' }
+        lineVersion: { type: integer, minimum: 1 }
+        classification: { $ref: '#/components/schemas/BankStatementLineClassification' }
+    CloseBankReconciliationSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [sessionVersion]
+      properties:
+        sessionVersion: { type: integer, minimum: 0 }
+        explanation: { type: string, x-trim: true, minLength: 3, maxLength: 500 }
+    BankReconciliationCloseResult:
+      type: object
+      additionalProperties: false
+      required: [sessionId, sessionVersion, status, difference, closedAt]
+      properties:
+        sessionId: { type: string, format: uuid }
+        sessionVersion: { type: integer, minimum: 1 }
+        status: { type: string, const: CLOSED }
+        difference: { type: string, pattern: '^-?(?:0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        closedAt: { type: string, format: date-time }
     CashBankAccountType:
       type: string
       enum:

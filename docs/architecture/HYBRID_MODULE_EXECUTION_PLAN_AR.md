@@ -1,8 +1,8 @@
 ---
 title: "Hybrid Open Source Module Execution Plan"
-status: "phases 0-1 parser spike complete — product implementation not started"
-version: "1.0"
-date: "2026-08-26"
+status: "phase 2 bank reconciliation backend complete locally — phase 3 UI not started"
+version: "1.1"
+date: "2026-08-27"
 related:
   - "OPEN_SOURCE_MODULE_ADOPTION_POLICY_AR.md"
   - "OPEN_SOURCE_MODULE_INTEGRATION_STUDY_AR.md"
@@ -61,7 +61,7 @@ related:
 
 ## 3. خارطة التنفيذ المختصرة
 
-الحالة في 2026-08-26: اكتملت المرحلتان 0 و1 بقرار **GO لطبقة Parser فقط** موثق في `BANK_STATEMENT_PARSER_SPIKE_RESULT_AR.md`. لم تبدأ المرحلة 2، ولا توجد Migration أو API أو واجهة أو نشر ناتج عن الـSpike.
+الحالة في 2026-08-27: اكتملت المرحلتان 0 و1 بقرار **GO لطبقة Parser فقط**، ثم اكتمل Backend المرحلة 2 محليًا خلف Feature Flag مع قاعدة البيانات وOpenAPI وRBAC وAudit وIdempotency والتزامن. لم تبدأ المرحلة 3، ولا توجد واجهة أو روابط مستخدم أو نشر ناتج عن هذا التنفيذ.
 
 | المرحلة | الناتج | المكوّن المفتوح المصدر | الحجم النسبي | يعتمد على | بوابة الخروج |
 |---:|---|---|---:|---|---|
@@ -192,6 +192,10 @@ related:
 - طلبان متزامنان لا يعتمدان السطر نفسه.
 - إعادة الاستيراد أو إعادة الأمر تنتج أثرًا واحدًا.
 - إقفال الجلسة يثبت فرقًا صفريًا أو تفسيرًا محكومًا قابلًا للتدقيق.
+
+### 6.7 حالة التنفيذ في 2026-08-27
+
+اكتملت الشريحة الخلفية محليًا وفق [عقد Backend المطابقة البنكية](BANK_RECONCILIATION_BACKEND_AR.md). أضيفت الجداول الأربعة والترحيل 44 والمسارات والصلاحيات والحراس المولدة، وثبتت اختبارات القاعدة المعزولة أن الـParser والـMatcher ودورة المطابقة لا تنشئ أو تعدل `JournalEntry/JournalLine`. بقيت `BANK_RECONCILIATION_ENABLED=false` افتراضيًا، ولم تنفذ واجهة أو إطلاق تدريجي أو نشر؛ وهذه عناصر المرحلة 3 وليست روابط ناقصة في المنتج الحالي.
 
 ## 7. المرحلة 3 — واجهة المطابقة والإطلاق
 

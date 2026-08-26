@@ -39,6 +39,9 @@ import { DataImportService } from './imports/data-import-service.js';
 import { InventoryService } from './inventory/inventory-service.js';
 import { InventoryCatalogService } from './inventory/inventory-catalog-service.js';
 import { InventoryMovementService } from './inventory/inventory-movement-service.js';
+import { BankStatementParser } from './treasury/reconciliation/bank-statement-parser.js';
+import { PrismaReconciliationLedgerQueryAdapter } from './treasury/reconciliation/adapters/prisma-reconciliation-ledger-query-adapter.js';
+import { BankReconciliationService } from './treasury/reconciliation/reconciliation-service.js';
 
 const config = loadConfig();
 if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required to start the API');
@@ -55,6 +58,13 @@ operationalMetrics.configure({
 const database = createDatabase(config.DATABASE_URL);
 const taxes = new TaxService(database);
 const treasury = new TreasuryService(database);
+const bankReconciliation = config.BANK_RECONCILIATION_ENABLED
+  ? new BankReconciliationService(
+      database,
+      new BankStatementParser(),
+      new PrismaReconciliationLedgerQueryAdapter(),
+    )
+  : undefined;
 const auth = new AuthService(new PrismaAuthStore(database), { verify }, {
   preAuthTtlMinutes: config.PRE_AUTH_TTL_MINUTES,
   sessionTtlHours: config.SESSION_TTL_HOURS,
@@ -128,6 +138,7 @@ const app = createApp(config, {
   journals: new ManualJournalService(database),
   receiptReferences,
   treasury,
+  ...(bankReconciliation ? { bankReconciliation } : {}),
   inventory: new InventoryService(database),
   inventoryCatalog,
   inventoryMovements,

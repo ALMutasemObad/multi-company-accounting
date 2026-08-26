@@ -171,6 +171,46 @@ enum InventoryMovementStatus {
   REVERSED
 }
 
+enum BankStatementFormat {
+  CSV
+  CAMT053
+}
+
+enum BankStatementImportStatus {
+  COMMITTED
+  CANCELLED
+}
+
+enum BankStatementLineClassification {
+  PENDING_TRANSACTION
+  BANK_FEE
+  BANK_INTEREST
+  BANK_ERROR
+  NEEDS_ACCOUNTING_DOCUMENT
+}
+
+enum BankReconciliationSessionStatus {
+  OPEN
+  CLOSED
+}
+
+enum BankReconciliationMatchStatus {
+  PROPOSED
+  APPROVED
+  RELEASED
+}
+
+enum BankReconciliationMatchSource {
+  SUGGESTED
+  MANUAL
+}
+
+enum BankReconciliationMatchRule {
+  EXACT_REFERENCE_AMOUNT_CURRENCY
+  EXACT_AMOUNT_CURRENCY_DATE
+  MANUAL
+}
+
 model Organization {
   id                   BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
   code                 String                @unique @default(uuid()) @db.VarChar(80)
@@ -266,6 +306,10 @@ model Company {
   companyCurrencies                 CompanyCurrency[]
   registrationRequests              RegistrationRequest[]              @relation("RegistrationCompany")
   dataImportBatches                 DataImportBatch[]
+  bankStatementImports              BankStatementImport[]
+  bankStatementLines                BankStatementLine[]
+  bankReconciliationSessions        BankReconciliationSession[]
+  bankReconciliationMatches         BankReconciliationMatch[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -273,34 +317,40 @@ model Company {
 }
 
 model User {
-  id                         BigInt                             @id @default(autoincrement()) @db.UnsignedBigInt
-  emailNormalized            String                             @unique @map("email_normalized") @db.VarChar(320)
-  passwordHash               String                             @map("password_hash") @db.VarChar(255)
-  displayName                String                             @map("display_name") @db.VarChar(160)
-  nameEn                     String?                            @map("name_en") @db.VarChar(160)
-  isActive                   Boolean                            @default(true) @map("is_active")
-  failedLoginAttempts        Int                                @default(0) @map("failed_login_attempts") @db.UnsignedTinyInt
-  lockedUntil                DateTime?                          @map("locked_until")
-  lastLoginAt                DateTime?                          @map("last_login_at")
-  createdAt                  DateTime                           @default(now()) @map("created_at")
-  updatedAt                  DateTime                           @updatedAt @map("updated_at")
-  assignments                UserCompany[]
-  sessions                   Session[]
-  idempotency                IdempotencyRecord[]
-  auditLogs                  AuditLog[]
-  securityEvents             SecurityEvent[]                    @relation("SecurityEventUser")
-  securityEventsAcknowledged SecurityEvent[]                    @relation("SecurityEventAcknowledgedBy")
-  periodsClosed              FiscalPeriod[]                     @relation("PeriodClosedBy")
-  periodsReopened            FiscalPeriod[]                     @relation("PeriodReopenedBy")
-  documentsCreated           AccountingDocument[]               @relation("DocumentCreatedBy")
-  documentsPosted            AccountingDocument[]               @relation("DocumentPostedBy")
-  printArchivesCreated       DocumentPrintArchive[]             @relation("PrintArchiveCreatedBy")
-  exchangeRatesUpdated       CompanyExchangeRate[]              @relation("ExchangeRateUpdatedBy")
-  registrationRequests       RegistrationRequest[]              @relation("RegistrationUser")
-  passwordResetRequests      PasswordResetRequest[]
-  dataImportBatches          DataImportBatch[]                  @relation("DataImportCreatedBy")
-  inventoryMovementsCreated  InventoryMovement[]                @relation("InventoryMovementCreatedBy")
-  inventoryValuationsCreated InventoryValuationInitialization[] @relation("InventoryValuationCreatedBy")
+  id                                BigInt                             @id @default(autoincrement()) @db.UnsignedBigInt
+  emailNormalized                   String                             @unique @map("email_normalized") @db.VarChar(320)
+  passwordHash                      String                             @map("password_hash") @db.VarChar(255)
+  displayName                       String                             @map("display_name") @db.VarChar(160)
+  nameEn                            String?                            @map("name_en") @db.VarChar(160)
+  isActive                          Boolean                            @default(true) @map("is_active")
+  failedLoginAttempts               Int                                @default(0) @map("failed_login_attempts") @db.UnsignedTinyInt
+  lockedUntil                       DateTime?                          @map("locked_until")
+  lastLoginAt                       DateTime?                          @map("last_login_at")
+  createdAt                         DateTime                           @default(now()) @map("created_at")
+  updatedAt                         DateTime                           @updatedAt @map("updated_at")
+  assignments                       UserCompany[]
+  sessions                          Session[]
+  idempotency                       IdempotencyRecord[]
+  auditLogs                         AuditLog[]
+  securityEvents                    SecurityEvent[]                    @relation("SecurityEventUser")
+  securityEventsAcknowledged        SecurityEvent[]                    @relation("SecurityEventAcknowledgedBy")
+  periodsClosed                     FiscalPeriod[]                     @relation("PeriodClosedBy")
+  periodsReopened                   FiscalPeriod[]                     @relation("PeriodReopenedBy")
+  documentsCreated                  AccountingDocument[]               @relation("DocumentCreatedBy")
+  documentsPosted                   AccountingDocument[]               @relation("DocumentPostedBy")
+  printArchivesCreated              DocumentPrintArchive[]             @relation("PrintArchiveCreatedBy")
+  exchangeRatesUpdated              CompanyExchangeRate[]              @relation("ExchangeRateUpdatedBy")
+  registrationRequests              RegistrationRequest[]              @relation("RegistrationUser")
+  passwordResetRequests             PasswordResetRequest[]
+  dataImportBatches                 DataImportBatch[]                  @relation("DataImportCreatedBy")
+  inventoryMovementsCreated         InventoryMovement[]                @relation("InventoryMovementCreatedBy")
+  inventoryValuationsCreated        InventoryValuationInitialization[] @relation("InventoryValuationCreatedBy")
+  bankStatementImportsCreated       BankStatementImport[]              @relation("BankStatementImportCreatedBy")
+  bankStatementLinesClassified      BankStatementLine[]                @relation("BankStatementLineClassifiedBy")
+  bankReconciliationSessionsCreated BankReconciliationSession[]        @relation("BankReconciliationSessionCreatedBy")
+  bankReconciliationSessionsClosed  BankReconciliationSession[]        @relation("BankReconciliationSessionClosedBy")
+  bankReconciliationMatchesApproved BankReconciliationMatch[]          @relation("BankReconciliationMatchApprovedBy")
+  bankReconciliationMatchesReleased BankReconciliationMatch[]          @relation("BankReconciliationMatchReleasedBy")
 
   @@map("users")
 }
@@ -438,6 +488,156 @@ model DataImportBatch {
   @@index([createdById, createdAt])
   @@index([status, expiresAt])
   @@map("data_import_batches")
+}
+
+model BankStatementImport {
+  id                     BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId               String                     @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId              BigInt                     @map("company_id") @db.UnsignedBigInt
+  cashBankAccountId      BigInt                     @map("cash_bank_account_id") @db.UnsignedBigInt
+  createdById            BigInt                     @map("created_by_id") @db.UnsignedBigInt
+  format                 BankStatementFormat
+  sourceHashSha256       Bytes                      @map("source_hash_sha256") @db.Binary(32)
+  statementId            String?                    @map("statement_id") @db.VarChar(120)
+  accountIdentifierLast4 String?                    @map("account_identifier_last4") @db.VarChar(4)
+  currencyCode           String                     @map("currency_code") @db.Char(3)
+  periodStart            DateTime                   @map("period_start") @db.Date
+  periodEnd              DateTime                   @map("period_end") @db.Date
+  openingBalance         Decimal?                   @map("opening_balance") @db.Decimal(19, 4)
+  closingBalance         Decimal?                   @map("closing_balance") @db.Decimal(19, 4)
+  netMovement            Decimal                    @map("net_movement") @db.Decimal(19, 4)
+  lineCount              Int                        @map("line_count") @db.UnsignedSmallInt
+  ignoredEntryCount      Int                        @default(0) @map("ignored_entry_count") @db.UnsignedSmallInt
+  status                 BankStatementImportStatus  @default(COMMITTED)
+  version                Int                        @default(0) @db.UnsignedInt
+  committedAt            DateTime                   @default(now()) @map("committed_at")
+  cancelledAt            DateTime?                  @map("cancelled_at")
+  createdAt              DateTime                   @default(now()) @map("created_at")
+  updatedAt              DateTime                   @updatedAt @map("updated_at")
+  company                Company                    @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  cashBankAccount        CashBankAccount            @relation(fields: [cashBankAccountId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  createdBy              User                       @relation("BankStatementImportCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  lines                  BankStatementLine[]
+  reconciliationSession  BankReconciliationSession?
+
+  @@unique([id, companyId])
+  @@unique([companyId, cashBankAccountId, sourceHashSha256], map: "bank_statement_imports_company_account_hash_key")
+  @@index([companyId, status, committedAt])
+  @@index([createdById, createdAt])
+  @@map("bank_statement_imports")
+}
+
+model BankStatementLine {
+  id                 BigInt                           @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId          BigInt                           @map("company_id") @db.UnsignedBigInt
+  statementImportId  BigInt                           @map("statement_import_id") @db.UnsignedBigInt
+  sourceRowNumber    Int                              @map("source_row_number") @db.UnsignedSmallInt
+  bookingDate        DateTime                         @map("booking_date") @db.Date
+  valueDate          DateTime?                        @map("value_date") @db.Date
+  amount             Decimal                          @db.Decimal(19, 4)
+  currencyCode       String                           @map("currency_code") @db.Char(3)
+  fingerprintSha256  Bytes                            @map("fingerprint_sha256") @db.Binary(32)
+  externalId         String?                          @map("external_id") @db.VarChar(160)
+  reference          String?                          @db.VarChar(160)
+  description        String?                          @db.VarChar(500)
+  classification     BankStatementLineClassification?
+  classificationNote String?                          @map("classification_note") @db.VarChar(500)
+  classifiedById     BigInt?                          @map("classified_by_id") @db.UnsignedBigInt
+  classifiedAt       DateTime?                        @map("classified_at")
+  version            Int                              @default(0) @db.UnsignedInt
+  createdAt          DateTime                         @default(now()) @map("created_at")
+  company            Company                          @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  statementImport    BankStatementImport              @relation(fields: [statementImportId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  classifiedBy       User?                            @relation("BankStatementLineClassifiedBy", fields: [classifiedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  matches            BankReconciliationMatch[]
+
+  @@unique([id, companyId])
+  @@unique([statementImportId, sourceRowNumber])
+  @@index([companyId, bookingDate, id])
+  @@index([companyId, fingerprintSha256])
+  @@index([classifiedById, classifiedAt])
+  @@map("bank_statement_lines")
+}
+
+model BankReconciliationSession {
+  id                 BigInt                          @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId           String                          @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId          BigInt                          @map("company_id") @db.UnsignedBigInt
+  cashBankAccountId  BigInt                          @map("cash_bank_account_id") @db.UnsignedBigInt
+  statementImportId  BigInt                          @map("statement_import_id") @db.UnsignedBigInt
+  dateFrom           DateTime                        @map("date_from") @db.Date
+  dateTo             DateTime                        @map("date_to") @db.Date
+  currencyCode       String                          @map("currency_code") @db.Char(3)
+  bankOpeningBalance Decimal?                        @map("bank_opening_balance") @db.Decimal(19, 4)
+  bankClosingBalance Decimal?                        @map("bank_closing_balance") @db.Decimal(19, 4)
+  bankNetMovement    Decimal                         @map("bank_net_movement") @db.Decimal(19, 4)
+  bookOpeningBalance Decimal                         @map("book_opening_balance") @db.Decimal(19, 4)
+  bookClosingBalance Decimal                         @map("book_closing_balance") @db.Decimal(19, 4)
+  bookNetMovement    Decimal                         @map("book_net_movement") @db.Decimal(19, 4)
+  difference         Decimal                         @db.Decimal(19, 4)
+  status             BankReconciliationSessionStatus @default(OPEN)
+  version            Int                             @default(0) @db.UnsignedInt
+  createdById        BigInt                          @map("created_by_id") @db.UnsignedBigInt
+  closedById         BigInt?                         @map("closed_by_id") @db.UnsignedBigInt
+  closedAt           DateTime?                       @map("closed_at")
+  closingExplanation String?                         @map("closing_explanation") @db.VarChar(500)
+  createdAt          DateTime                        @default(now()) @map("created_at")
+  updatedAt          DateTime                        @updatedAt @map("updated_at")
+  company            Company                         @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  cashBankAccount    CashBankAccount                 @relation(fields: [cashBankAccountId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  statementImport    BankStatementImport             @relation(fields: [statementImportId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  createdBy          User                            @relation("BankReconciliationSessionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  closedBy           User?                           @relation("BankReconciliationSessionClosedBy", fields: [closedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  matches            BankReconciliationMatch[]
+
+  @@unique([id, companyId])
+  @@unique([statementImportId, companyId])
+  @@index([companyId, cashBankAccountId, status, dateFrom, dateTo])
+  @@index([createdById, createdAt])
+  @@index([closedById, closedAt])
+  @@map("bank_reconciliation_sessions")
+}
+
+model BankReconciliationMatch {
+  id                        BigInt                        @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId                 BigInt                        @map("company_id") @db.UnsignedBigInt
+  sessionId                 BigInt                        @map("session_id") @db.UnsignedBigInt
+  bankStatementLineId       BigInt                        @map("bank_statement_line_id") @db.UnsignedBigInt
+  bookMovementKey           String                        @map("book_movement_key") @db.VarChar(120)
+  bookMovementDate          DateTime                      @map("book_movement_date") @db.Date
+  bookAmount                Decimal                       @map("book_amount") @db.Decimal(19, 4)
+  currencyCode              String                        @map("currency_code") @db.Char(3)
+  bookReference             String?                       @map("book_reference") @db.VarChar(160)
+  bookDocumentType          String                        @map("book_document_type") @db.VarChar(40)
+  bookDocumentNumber        String                        @map("book_document_number") @db.VarChar(60)
+  status                    BankReconciliationMatchStatus @default(PROPOSED)
+  source                    BankReconciliationMatchSource
+  rule                      BankReconciliationMatchRule
+  score                     Int                           @db.UnsignedTinyInt
+  version                   Int                           @default(0) @db.UnsignedInt
+  activeBankStatementLineId BigInt?                       @map("active_bank_statement_line_id") @db.UnsignedBigInt
+  activeBookMovementKey     String?                       @map("active_book_movement_key") @db.VarChar(120)
+  approvedById              BigInt?                       @map("approved_by_id") @db.UnsignedBigInt
+  approvedAt                DateTime?                     @map("approved_at")
+  releasedById              BigInt?                       @map("released_by_id") @db.UnsignedBigInt
+  releasedAt                DateTime?                     @map("released_at")
+  releaseReason             String?                       @map("release_reason") @db.VarChar(500)
+  createdAt                 DateTime                      @default(now()) @map("created_at")
+  updatedAt                 DateTime                      @updatedAt @map("updated_at")
+  company                   Company                       @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  session                   BankReconciliationSession     @relation(fields: [sessionId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  bankStatementLine         BankStatementLine             @relation(fields: [bankStatementLineId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  approvedBy                User?                         @relation("BankReconciliationMatchApprovedBy", fields: [approvedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  releasedBy                User?                         @relation("BankReconciliationMatchReleasedBy", fields: [releasedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([id, companyId])
+  @@unique([companyId, activeBankStatementLineId])
+  @@unique([companyId, activeBookMovementKey])
+  @@index([companyId, sessionId, status, id])
+  @@index([companyId, bookMovementKey])
+  @@index([approvedById, approvedAt])
+  @@index([releasedById, releasedAt])
+  @@map("bank_reconciliation_matches")
 }
 
 model CompanyCurrency {
@@ -878,24 +1078,26 @@ model CustomerAddress {
 }
 
 model CashBankAccount {
-  id                 BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
-  companyId          BigInt              @map("company_id") @db.UnsignedBigInt
-  ledgerAccountId    BigInt              @map("ledger_account_id") @db.UnsignedBigInt
-  accountType        CashBankAccountType @map("account_type")
-  code               String              @db.VarChar(40)
-  nameAr             String              @map("name_ar") @db.VarChar(160)
-  nameEn             String?             @map("name_en") @db.VarChar(160)
-  bankName           String?             @map("bank_name") @db.VarChar(160)
-  accountNumberLast4 String?             @map("account_number_last4") @db.VarChar(4)
-  ibanLast4          String?             @map("iban_last4") @db.VarChar(4)
-  isActive           Boolean             @default(true) @map("is_active")
-  version            Int                 @default(0) @db.UnsignedInt
-  createdAt          DateTime            @default(now()) @map("created_at")
-  updatedAt          DateTime            @updatedAt @map("updated_at")
-  company            Company             @relation(fields: [companyId], references: [id])
-  ledgerAccount      Account             @relation(fields: [ledgerAccountId, companyId], references: [id, companyId])
-  receipts           Receipt[]
-  payments           Payment[]
+  id                         BigInt                      @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId                  BigInt                      @map("company_id") @db.UnsignedBigInt
+  ledgerAccountId            BigInt                      @map("ledger_account_id") @db.UnsignedBigInt
+  accountType                CashBankAccountType         @map("account_type")
+  code                       String                      @db.VarChar(40)
+  nameAr                     String                      @map("name_ar") @db.VarChar(160)
+  nameEn                     String?                     @map("name_en") @db.VarChar(160)
+  bankName                   String?                     @map("bank_name") @db.VarChar(160)
+  accountNumberLast4         String?                     @map("account_number_last4") @db.VarChar(4)
+  ibanLast4                  String?                     @map("iban_last4") @db.VarChar(4)
+  isActive                   Boolean                     @default(true) @map("is_active")
+  version                    Int                         @default(0) @db.UnsignedInt
+  createdAt                  DateTime                    @default(now()) @map("created_at")
+  updatedAt                  DateTime                    @updatedAt @map("updated_at")
+  company                    Company                     @relation(fields: [companyId], references: [id])
+  ledgerAccount              Account                     @relation(fields: [ledgerAccountId, companyId], references: [id, companyId])
+  receipts                   Receipt[]
+  payments                   Payment[]
+  bankStatementImports       BankStatementImport[]
+  bankReconciliationSessions BankReconciliationSession[]
 
   @@unique([companyId, code])
   @@unique([id, companyId])
@@ -1146,17 +1348,17 @@ model Receipt {
 }
 
 model ReceiptAllocation {
-  id                       BigInt         @id @default(autoincrement()) @db.UnsignedBigInt
-  companyId                BigInt         @map("company_id") @db.UnsignedBigInt
-  receiptId                BigInt         @map("receipt_id") @db.UnsignedBigInt
-  receivableItemId         BigInt         @map("receivable_item_id") @db.UnsignedBigInt
-  allocatedAmount          Decimal        @map("allocated_amount") @db.Decimal(19, 4)
-  carryingBaseAmount       Decimal?       @map("carrying_base_amount") @db.Decimal(19, 4)
-  settlementBaseAmount     Decimal?       @map("settlement_base_amount") @db.Decimal(19, 4)
-  realizedFxBaseAmount     Decimal?       @map("realized_fx_base_amount") @db.Decimal(19, 4)
-  company                  Company        @relation(fields: [companyId], references: [id])
-  receipt                  Receipt        @relation(fields: [receiptId, companyId], references: [id, companyId])
-  receivableItem           ReceivableItem @relation(fields: [receivableItemId, companyId], references: [id, companyId])
+  id                   BigInt         @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId            BigInt         @map("company_id") @db.UnsignedBigInt
+  receiptId            BigInt         @map("receipt_id") @db.UnsignedBigInt
+  receivableItemId     BigInt         @map("receivable_item_id") @db.UnsignedBigInt
+  allocatedAmount      Decimal        @map("allocated_amount") @db.Decimal(19, 4)
+  carryingBaseAmount   Decimal?       @map("carrying_base_amount") @db.Decimal(19, 4)
+  settlementBaseAmount Decimal?       @map("settlement_base_amount") @db.Decimal(19, 4)
+  realizedFxBaseAmount Decimal?       @map("realized_fx_base_amount") @db.Decimal(19, 4)
+  company              Company        @relation(fields: [companyId], references: [id])
+  receipt              Receipt        @relation(fields: [receiptId, companyId], references: [id, companyId])
+  receivableItem       ReceivableItem @relation(fields: [receivableItemId, companyId], references: [id, companyId])
 
   @@unique([receiptId, receivableItemId])
   @@index([companyId, receivableItemId])
@@ -1477,17 +1679,17 @@ model Payment {
 }
 
 model PaymentAllocation {
-  id                       BigInt      @id @default(autoincrement()) @db.UnsignedBigInt
-  companyId                BigInt      @map("company_id") @db.UnsignedBigInt
-  paymentId                BigInt      @map("payment_id") @db.UnsignedBigInt
-  payableItemId            BigInt      @map("payable_item_id") @db.UnsignedBigInt
-  allocatedAmount          Decimal     @map("allocated_amount") @db.Decimal(19, 4)
-  carryingBaseAmount       Decimal?    @map("carrying_base_amount") @db.Decimal(19, 4)
-  settlementBaseAmount     Decimal?    @map("settlement_base_amount") @db.Decimal(19, 4)
-  realizedFxBaseAmount     Decimal?    @map("realized_fx_base_amount") @db.Decimal(19, 4)
-  company                  Company     @relation(fields: [companyId], references: [id])
-  payment                  Payment     @relation(fields: [paymentId, companyId], references: [id, companyId])
-  payableItem              PayableItem @relation(fields: [payableItemId, companyId], references: [id, companyId])
+  id                   BigInt      @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId            BigInt      @map("company_id") @db.UnsignedBigInt
+  paymentId            BigInt      @map("payment_id") @db.UnsignedBigInt
+  payableItemId        BigInt      @map("payable_item_id") @db.UnsignedBigInt
+  allocatedAmount      Decimal     @map("allocated_amount") @db.Decimal(19, 4)
+  carryingBaseAmount   Decimal?    @map("carrying_base_amount") @db.Decimal(19, 4)
+  settlementBaseAmount Decimal?    @map("settlement_base_amount") @db.Decimal(19, 4)
+  realizedFxBaseAmount Decimal?    @map("realized_fx_base_amount") @db.Decimal(19, 4)
+  company              Company     @relation(fields: [companyId], references: [id])
+  payment              Payment     @relation(fields: [paymentId, companyId], references: [id, companyId])
+  payableItem          PayableItem @relation(fields: [payableItemId, companyId], references: [id, companyId])
 
   @@unique([paymentId, payableItemId])
   @@index([companyId, payableItemId])

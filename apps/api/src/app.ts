@@ -70,6 +70,8 @@ import type { InventoryCatalogService } from './inventory/inventory-catalog-serv
 import { createInventoryCatalogRouter } from './inventory/inventory-catalog-router.js';
 import type { InventoryMovementService } from './inventory/inventory-movement-service.js';
 import { createInventoryMovementRouter } from './inventory/inventory-movement-router.js';
+import type { BankReconciliationService } from './treasury/reconciliation/reconciliation-service.js';
+import { createBankReconciliationRouter } from './treasury/reconciliation/reconciliation-router.js';
 
 type ClientRequestProblem = {
   status: number;
@@ -110,7 +112,7 @@ function clientRequestProblem(error: unknown): ClientRequestProblem | undefined 
   return undefined;
 }
 
-export function createApp(config: AppConfig, services: { readiness?: ReadinessCheck; metrics?: OperationalMetrics; auth?: AuthService; registration?: RegistrationService; passwordReset?: PasswordResetService; users?: UserService; companies?: CompanyService; printing?: PrintService; audit?: AuditService; security?: SecurityEventService; fiscal?: FiscalService; accounts?: AccountService; journals?: ManualJournalService; receiptReferences?: ReceiptReferenceService; treasury?: TreasuryService; inventory?: InventoryService; inventoryCatalog?: InventoryCatalogService; inventoryMovements?: InventoryMovementService; receipts?: ReceiptService; suppliers?: SupplierReferenceService; payments?: PaymentService; reports?: ReportService; taxes?: TaxService; salesInvoices?: SalesInvoiceService; purchaseInvoices?: PurchaseInvoiceService; dataImports?: DataImportService } = {}) {
+export function createApp(config: AppConfig, services: { readiness?: ReadinessCheck; metrics?: OperationalMetrics; auth?: AuthService; registration?: RegistrationService; passwordReset?: PasswordResetService; users?: UserService; companies?: CompanyService; printing?: PrintService; audit?: AuditService; security?: SecurityEventService; fiscal?: FiscalService; accounts?: AccountService; journals?: ManualJournalService; receiptReferences?: ReceiptReferenceService; treasury?: TreasuryService; bankReconciliation?: BankReconciliationService; inventory?: InventoryService; inventoryCatalog?: InventoryCatalogService; inventoryMovements?: InventoryMovementService; receipts?: ReceiptService; suppliers?: SupplierReferenceService; payments?: PaymentService; reports?: ReportService; taxes?: TaxService; salesInvoices?: SalesInvoiceService; purchaseInvoices?: PurchaseInvoiceService; dataImports?: DataImportService } = {}) {
   const app = express();
   const metrics = services.metrics ?? operationalMetrics;
 
@@ -194,6 +196,7 @@ export function createApp(config: AppConfig, services: { readiness?: ReadinessCh
   if (services.auth && services.journals) app.use('/api/v1', createManualJournalRouter(services.auth, services.journals));
   if (services.auth && services.receiptReferences) app.use('/api/v1', createReceiptReferenceRouter(services.auth, services.receiptReferences));
   if (services.auth && services.treasury) app.use('/api/v1', createTreasuryRouter(services.auth, services.treasury));
+  if (services.auth && services.bankReconciliation) app.use('/api/v1', createBankReconciliationRouter(services.auth, services.bankReconciliation));
   if (services.auth && services.inventory) app.use('/api/v1', createInventoryRouter(services.auth, services.inventory));
   if (services.auth && services.inventoryCatalog) app.use('/api/v1', createInventoryCatalogRouter(services.auth, services.inventoryCatalog));
   if (services.auth && services.inventoryMovements) app.use('/api/v1', createInventoryMovementRouter(services.auth, services.inventoryMovements));

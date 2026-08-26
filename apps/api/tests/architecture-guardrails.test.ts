@@ -257,6 +257,31 @@ describe("Tax ownership boundary guardrails", () => {
 });
 
 describe("Treasury ownership boundary guardrails", () => {
+  it("keeps bank parsing and matching isolated from persistence and Ledger writes", async () => {
+    const [service, matcher, parser, ledgerAdapter, migration, referenceData] = await Promise.all([
+      source("treasury/reconciliation/reconciliation-service.ts"),
+      source("treasury/reconciliation/local-reconciliation-matcher.ts"),
+      source("treasury/reconciliation/bank-statement-parser.ts"),
+      source("treasury/reconciliation/adapters/prisma-reconciliation-ledger-query-adapter.ts"),
+      projectFile("apps/api/prisma/migrations/20260827010000_bank_reconciliation_backend/migration.sql"),
+      source("platform/reference-data.ts"),
+    ]);
+    expect(service).toContain("ReconciliationLedgerQueryPort");
+    expect(service).toContain("ReconciliationMatcherPort");
+    expect(ledgerAdapter).toContain("implements ReconciliationLedgerQueryPort");
+    expect(matcher).toContain("implements ReconciliationMatcherPort");
+    expect(`${parser}\n${matcher}`).not.toMatch(/\.(?:journalEntry|journalLine|bankStatementImport|bankStatementLine)\.(?:create|update|delete|upsert)/u);
+    expect(service).not.toMatch(/\.(?:journalEntry|journalLine)\.(?:create|createMany|update|updateMany|delete|upsert)/u);
+    expect(ledgerAdapter).not.toMatch(/\.(?:journalEntry|journalLine)\.(?:create|createMany|update|updateMany|delete|upsert)/u);
+    expect(service).toContain("lockSession(");
+    expect(service).toContain("lockLines(");
+    expect(service).toContain("ledgerSnapshotForSession(tx, session, true)");
+    expect(migration).toContain("bank_reconciliation_matches_company_active_line_key");
+    expect(migration).toContain("bank_reconciliation_matches_company_active_book_key");
+    expect(migration).toContain("WHERE `roles`.`code` = 'ADMINISTRATOR'");
+    expect(referenceData).toContain("bank_reconciliation.close");
+  });
+
   it("keeps cash-bank and payment-method access behind the Treasury application port", async () => {
     const [treasury, receipts, payments, customerReferences, suppliers, provisioning, seed] = await Promise.all([
       source("treasury/treasury-service.ts"),

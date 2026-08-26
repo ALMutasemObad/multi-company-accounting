@@ -24,6 +24,7 @@ import { createDataImportRouter } from '../src/imports/data-import-router.js';
 import { createInventoryRouter } from '../src/inventory/inventory-router.js';
 import { createInventoryCatalogRouter } from '../src/inventory/inventory-catalog-router.js';
 import { createInventoryMovementRouter } from '../src/inventory/inventory-movement-router.js';
+import { createBankReconciliationRouter } from '../src/treasury/reconciliation/reconciliation-router.js';
 
 type RouteLayer = {
   route?: {
@@ -47,6 +48,7 @@ const routers = [
   { prefix: '', router: createManualJournalRouter(stub, stub) },
   { prefix: '', router: createReceiptReferenceRouter(stub, stub) },
   { prefix: '', router: createTreasuryRouter(stub, stub) },
+  { prefix: '', router: createBankReconciliationRouter(stub, stub) },
   { prefix: '', router: createInventoryRouter(stub, stub) },
   { prefix: '', router: createInventoryCatalogRouter(stub, stub) },
   { prefix: '', router: createInventoryMovementRouter(stub, stub) },
