@@ -22,6 +22,21 @@ async function routerSources(
   return nested.flat();
 }
 
+async function allTypeScriptSources(
+  directory = new URL("../src/", import.meta.url),
+  prefix = "",
+): Promise<Array<{ path: string; content: string }>> {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const nested = await Promise.all(entries.map(async (entry) => {
+    if (entry.isDirectory()) {
+      return allTypeScriptSources(new URL(`${entry.name}/`, directory), `${prefix}${entry.name}/`);
+    }
+    if (!entry.isFile() || !entry.name.endsWith(".ts")) return [];
+    return [{ path: `${prefix}${entry.name}`, content: await readFile(new URL(entry.name, directory), "utf8") }];
+  }));
+  return nested.flat();
+}
+
 describe("OpenAPI executable-contract guardrails", () => {
   it("keeps every JSON request body parser backed by the generated contract", async () => {
     const routers = await routerSources();
@@ -67,6 +82,31 @@ describe("OpenAPI executable-contract guardrails", () => {
 });
 
 describe("core accounting architecture guardrails", () => {
+  it("pins adopted bank parsers and keeps their MIT notices", async () => {
+    const [apiPackage, notice] = await Promise.all([
+      projectFile("apps/api/package.json"),
+      projectFile("THIRD_PARTY_NOTICES.md"),
+    ]);
+    expect(JSON.parse(apiPackage).dependencies).toMatchObject({
+      "csv-parse": "7.0.2",
+      "fast-xml-parser": "5.11.0",
+    });
+    expect(notice).toContain("csv-parse 7.0.2");
+    expect(notice).toContain("Copyright (c) 2010 Adaltas");
+    expect(notice).toContain("fast-xml-parser 5.11.0");
+    expect(notice).toContain("Copyright (c) 2017 Amit Kumar Gupta");
+  });
+
+  it("keeps open-source bank file parsers behind Treasury adapters", async () => {
+    const sources = await allTypeScriptSources();
+    const parserImport = /from\s+["'](?:csv-parse(?:\/sync)?|fast-xml-parser)["']/u;
+    const importers = sources.filter(({ content }) => parserImport.test(content)).map(({ path }) => path).sort();
+    expect(importers).toEqual([
+      "treasury/reconciliation/adapters/camt053-bank-statement-adapter.ts",
+      "treasury/reconciliation/adapters/csv-bank-statement-adapter.ts",
+    ]);
+  });
+
   it("keeps cross-context JournalEntry and JournalLine writes inside PostingEngine", async () => {
     const services = await Promise.all(
       [

@@ -1,6 +1,6 @@
 ---
 title: "Hybrid Open Source Module Execution Plan"
-status: "approved planning baseline — implementation not started"
+status: "phases 0-1 parser spike complete — product implementation not started"
 version: "1.0"
 date: "2026-08-26"
 related:
@@ -60,6 +60,8 @@ related:
 - لا نشر قبل موافقة المستخدم المباشرة.
 
 ## 3. خارطة التنفيذ المختصرة
+
+الحالة في 2026-08-26: اكتملت المرحلتان 0 و1 بقرار **GO لطبقة Parser فقط** موثق في `BANK_STATEMENT_PARSER_SPIKE_RESULT_AR.md`. لم تبدأ المرحلة 2، ولا توجد Migration أو API أو واجهة أو نشر ناتج عن الـSpike.
 
 | المرحلة | الناتج | المكوّن المفتوح المصدر | الحجم النسبي | يعتمد على | بوابة الخروج |
 |---:|---|---|---:|---|---|

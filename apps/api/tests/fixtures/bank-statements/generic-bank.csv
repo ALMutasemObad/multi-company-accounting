@@ -1,0 +1,3 @@
+booking_date,value_date,debit,credit,currency,transaction_id,reference,description
+2026-08-01,2026-08-01,,"1,000.1000",SAR,TX-001,REF-001,دفعة عميل
+2026-08-02,2026-08-03,200.0500,,SAR,TX-002,REF-002,رسوم بنكية

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.08">
+  <BkToCstmrStmt>
+    <GrpHdr><MsgId>MSG-20260802</MsgId></GrpHdr>
+    <Stmt>
+      <Id>STMT-2026-08-02</Id>
+      <FrToDt>
+        <FrDtTm>2026-08-01T00:00:00+03:00</FrDtTm>
+        <ToDtTm>2026-08-02T23:59:59+03:00</ToDtTm>
+      </FrToDt>
+      <Acct>
+        <Id><IBAN>SA0000000000000000000001</IBAN></Id>
+        <Ccy>SAR</Ccy>
+      </Acct>
+      <Bal>
+        <Tp><CdOrPrtry><Cd>OPBD</Cd></CdOrPrtry></Tp>
+        <Amt Ccy="SAR">1000.0000</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+      </Bal>
+      <Bal>
+        <Tp><CdOrPrtry><Cd>CLBD</Cd></CdOrPrtry></Tp>
+        <Amt Ccy="SAR">1200.1500</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+      </Bal>
+      <Ntry>
+        <Amt Ccy="SAR">250.2500</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts><Cd>BOOK</Cd></Sts>
+        <BookgDt><Dt>2026-08-01</Dt></BookgDt>
+        <ValDt><Dt>2026-08-01</Dt></ValDt>
+        <AcctSvcrRef>ASR-001</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <Refs><EndToEndId>E2E-001</EndToEndId></Refs>
+            <RmtInf><Ustrd>تحصيل فاتورة</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="SAR">50.1000</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts><Cd>BOOK</Cd></Sts>
+        <BookgDt><Dt>2026-08-02</Dt></BookgDt>
+        <ValDt><Dt>2026-08-02</Dt></ValDt>
+        <AcctSvcrRef>ASR-002</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <Refs><EndToEndId>E2E-002</EndToEndId></Refs>
+            <RmtInf><Ustrd>مصروف بنكي</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>
