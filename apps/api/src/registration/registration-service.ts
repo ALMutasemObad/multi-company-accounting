@@ -339,7 +339,10 @@ export class RegistrationService {
   }
 
   private async waitForCompletion(requestId: bigint) {
-    for (let attempt = 0; attempt < 10; attempt += 1) {
+    // Provisioning creates the complete default chart and can legitimately take
+    // more than two seconds on a loaded database. Keep concurrent token replays
+    // attached to the same result for a bounded ten-second window.
+    for (let attempt = 0; attempt < 50; attempt += 1) {
       await sleepWithinRequest(200);
       assertRequestActive('WAIT_FOR_REGISTRATION_COMPLETION');
       const request = await this.prisma.registrationRequest.findUnique({ where: { id: requestId }, select: { status: true, provisionedCompanyId: true, provisionedUserId: true } });

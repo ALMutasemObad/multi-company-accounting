@@ -377,6 +377,8 @@ describe.runIf(enabled)(
           dueDate: new Date("2043-03-01"),
           originalAmount: "200.0000",
           outstandingAmount: "200.0000",
+          originalBaseAmount: "200.0000",
+          outstandingBaseAmount: "200.0000",
         },
       })).id;
     });
@@ -530,6 +532,27 @@ describe.runIf(enabled)(
       invalidRate.exchangeRate = "2.00000000";
       await agent.post("/api/v1/payments").set("X-CSRF-Token", csrf).send(invalidRate).expect(422);
       await agent.post("/api/v1/payments").set("X-CSRF-Token", csrf).send({ ...apiPayload("IT-PAY duplicate counterparty"), counterAccountId: expenseId.toString() }).expect(400);
+      await agent
+        .post("/api/v1/payments")
+        .set("X-CSRF-Token", csrf)
+        .send({ ...apiPayload("IT-PAY missing allocation"), allocations: [] })
+        .expect(422)
+        .expect(({ body }) => expect(body.reason).toBe("ALLOCATION_REQUIRED"));
+      const direct = await agent
+        .post("/api/v1/payments")
+        .set("X-CSRF-Token", csrf)
+        .send({
+          ...apiPayload("IT-PAY direct account"),
+          supplierId: null,
+          counterAccountId: expenseId.toString(),
+          allocations: [],
+        })
+        .expect(201);
+      await agent
+        .post(`/api/v1/payments/${direct.body.id}/cancel`)
+        .set("X-CSRF-Token", csrf)
+        .send({ version: 0, reason: "IT-PAY direct account cleanup" })
+        .expect(200);
       const created = await agent
         .post("/api/v1/payments")
         .set("X-CSRF-Token", csrf)

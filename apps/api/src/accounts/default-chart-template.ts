@@ -1,7 +1,7 @@
 import type { Prisma } from '@prisma/client';
 
 export const DEFAULT_CHART_TEMPLATE_CODE = 'SMALL_BUSINESS_GENERAL';
-export const DEFAULT_CHART_TEMPLATE_VERSION = 1;
+export const DEFAULT_CHART_TEMPLATE_VERSION = 2;
 
 export type DefaultChartDefinition = {
   key: string;
@@ -56,6 +56,7 @@ export const defaultChartDefinitions: readonly DefaultChartDefinition[] = [
   { key: 'other-operating-revenue', parentKey: 'operating-revenue', code: '4130', nameAr: 'إيرادات نشاط أخرى', nameEn: 'Other operating revenue', accountTypeCode: 'REVENUE', allowsPosting: true },
   { key: 'other-income', parentKey: 'revenue', code: '4200', nameAr: 'إيرادات أخرى', nameEn: 'Other income', accountTypeCode: 'REVENUE', allowsPosting: false },
   { key: 'misc-income', parentKey: 'other-income', code: '4210', nameAr: 'إيرادات متنوعة', nameEn: 'Miscellaneous income', accountTypeCode: 'REVENUE', allowsPosting: true },
+  { key: 'realized-fx-gain', parentKey: 'other-income', code: '4220', nameAr: 'أرباح فروق العملة المحققة', nameEn: 'Realized foreign exchange gains', accountTypeCode: 'REVENUE', allowsPosting: true },
 
   { key: 'expenses', parentKey: null, code: '5000', nameAr: 'المصروفات', nameEn: 'Expenses', accountTypeCode: 'EXPENSE', allowsPosting: false },
   { key: 'operating-expenses', parentKey: 'expenses', code: '5100', nameAr: 'المصروفات التشغيلية والإدارية', nameEn: 'Operating and administrative expenses', accountTypeCode: 'EXPENSE', allowsPosting: false },
@@ -79,6 +80,7 @@ export const defaultChartDefinitions: readonly DefaultChartDefinition[] = [
   { key: 'depreciation-expense', parentKey: 'depreciation-expenses', code: '5410', nameAr: 'مصروف الإهلاك', nameEn: 'Depreciation expense', accountTypeCode: 'EXPENSE', allowsPosting: true },
   { key: 'other-expenses', parentKey: 'expenses', code: '5500', nameAr: 'مصروفات أخرى', nameEn: 'Other expenses', accountTypeCode: 'EXPENSE', allowsPosting: false },
   { key: 'misc-expense', parentKey: 'other-expenses', code: '5510', nameAr: 'مصروفات متنوعة', nameEn: 'Miscellaneous expenses', accountTypeCode: 'EXPENSE', allowsPosting: true },
+  { key: 'realized-fx-loss', parentKey: 'other-expenses', code: '5520', nameAr: 'خسائر فروق العملة المحققة', nameEn: 'Realized foreign exchange losses', accountTypeCode: 'EXPENSE', allowsPosting: true },
 ] as const;
 
 type TemplateAccount = {

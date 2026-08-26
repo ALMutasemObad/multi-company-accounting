@@ -20,7 +20,7 @@ const incomeStatementQuery = z.object({ dateFrom: isoDate, dateTo: isoDate, comp
 const ledgerQuery = query.and(z.object({ accountId: id.optional(), customerId: id.optional(), supplierId: id.optional(), page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(50) }))
   .refine((value) => [value.accountId, value.customerId, value.supplierId].filter((item) => item != null).length === 1, { message: "Exactly one report subject is required" });
 const journalQuery = query.and(z.object({
-  documentType: z.enum(["MANUAL_JOURNAL", "RECEIPT", "PAYMENT", "SALES_INVOICE", "SALES_CREDIT_NOTE", "PERIOD_CLOSE"]).optional(),
+  documentType: z.enum(["MANUAL_JOURNAL", "INVENTORY_ADJUSTMENT", "RECEIPT", "PAYMENT", "SALES_INVOICE", "SALES_CREDIT_NOTE", "PURCHASE_INVOICE", "PURCHASE_DEBIT_NOTE", "PERIOD_CLOSE"]).optional(),
   status: z.enum(["POSTED", "REVERSED"]).optional(),
   accountId: id.optional(), search: z.string().trim().min(1).max(200).optional(),
   page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(25),

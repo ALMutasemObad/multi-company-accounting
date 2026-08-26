@@ -62,9 +62,10 @@ describe("report routes", () => {
 
   it("filters and paginates the journal report with its dedicated permission", async () => {
     const { app, authorize, journalReport } = fixture();
-    await request(app).get("/api/v1/reports/journal?dateFrom=2026-01-01&dateTo=2026-08-11&documentType=PAYMENT&status=POSTED&accountId=12&search=صيانة&page=2&pageSize=10").expect(200);
+    await request(app).get("/api/v1/reports/journal?dateFrom=2026-01-01&dateTo=2026-08-11&documentType=INVENTORY_ADJUSTMENT&status=POSTED&accountId=12&search=صيانة&page=2&pageSize=10").expect(200);
     expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ permission: "reports.journal.view" }));
-    expect(journalReport).toHaveBeenCalledWith({ userId: 1n, companyId: 2n }, expect.objectContaining({ documentType: "PAYMENT", status: "POSTED", accountId: 12n, search: "صيانة", page: 2, pageSize: 10 }));
+    expect(journalReport).toHaveBeenCalledWith({ userId: 1n, companyId: 2n }, expect.objectContaining({ documentType: "INVENTORY_ADJUSTMENT", status: "POSTED", accountId: 12n, search: "صيانة", page: 2, pageSize: 10 }));
+    await request(app).get("/api/v1/reports/journal?dateFrom=2026-01-01&dateTo=2026-08-11&documentType=PURCHASE_DEBIT_NOTE").expect(200);
   });
 
   it("exports a UTF-8 journal CSV and records the export", async () => {

@@ -100,6 +100,26 @@ export function createInventoryMovementRouter(
     ));
   });
 
+  router.post("/inventory-balances/:balanceId/initialize-valuation", async (request, response) => {
+    const context = await authorize(request, "inventory_movements.create", true);
+    response.json(await service.initializeBalanceValuation(
+      context,
+      id.parse(request.params.balanceId),
+      bodies.initializeInventoryBalanceValuation.parse(request.body),
+      idempotencyKey(request),
+    ));
+  });
+
+  router.post("/inventory-movements/:movementId/reverse", async (request, response) => {
+    const context = await authorize(request, "inventory_movements.reverse", true);
+    response.json(await service.reverseMovement(
+      context,
+      id.parse(request.params.movementId),
+      bodies.reverseInventoryMovement.parse(request.body),
+      idempotencyKey(request),
+    ));
+  });
+
   router.get("/inventory-movements/:movementId", async (request, response) => {
     const context = await authorize(request, "inventory_movements.view", false);
     response.json(InventoryMovementService.movementJson(
@@ -115,7 +135,14 @@ export function createInventoryMovementRouter(
     if (error instanceof InventoryMovementError) {
       const status = error.reason === "NOT_FOUND"
         ? 404
-        : ["IDEMPOTENCY_MISMATCH", "IDEMPOTENCY_IN_PROGRESS"].includes(error.reason)
+        : [
+            "IDEMPOTENCY_MISMATCH",
+            "IDEMPOTENCY_IN_PROGRESS",
+            "VERSION_CONFLICT",
+            "VALUATION_ALREADY_INITIALIZED",
+            "INVALID_STATE",
+            "ALREADY_REVERSED",
+          ].includes(error.reason)
           ? 409
           : 422;
       response.status(status).json({

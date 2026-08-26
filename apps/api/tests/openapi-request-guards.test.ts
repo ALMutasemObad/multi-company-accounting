@@ -22,10 +22,10 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 175, requestBodies: 89, responseBodies: 1215 });
-    expect(guardedOpenApiOperations).toHaveLength(89);
+    expect(openApiContractCoverage).toEqual({ operations: 178, requestBodies: 91, responseBodies: 1237 });
+    expect(guardedOpenApiOperations).toHaveLength(91);
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
-      'login', 'createUser', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'previewDataImport', 'commitDataImport',
+      'login', 'createUser', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'initializeInventoryBalanceValuation', 'reverseInventoryMovement', 'previewDataImport', 'commitDataImport',
     ]));
   });
 
@@ -102,6 +102,11 @@ describe('generated OpenAPI request guards', () => {
       movementType: 'DELETE_STOCK', movementDate: '2026-08-24', description: 'نوع مرفوض',
       lines: [{ inventoryItemId: '41', toWarehouseId: '9', quantity: '1' }],
     }).success).toBe(false);
+    expect(openApiRequestBodySchemas.reverseInventoryMovement.parse({
+      version: 0,
+      reversalDate: '2026-08-25',
+      reason: '  تصحيح حركة خاطئة  ',
+    })).toEqual({ version: 0, reversalDate: '2026-08-25', reason: 'تصحيح حركة خاطئة' });
   });
 
   it('enforces the password-reset boundary from OpenAPI', () => {

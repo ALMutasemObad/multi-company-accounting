@@ -42,6 +42,9 @@ export type PurchaseInvoiceErrorReason =
   | "INVALID_INVENTORY_ITEM"
   | "INVALID_QUANTITY_PRECISION"
   | "INSUFFICIENT_STOCK"
+  | "INVENTORY_VALUATION_REQUIRED"
+  | "INVENTORY_VALUE_MISMATCH"
+  | "INVENTORY_ACCOUNTING_NOT_CONFIGURED"
   | "INVALID_LINE"
   | "INVALID_DISCOUNT"
   | "INVALID_TOTAL"
@@ -91,6 +94,8 @@ export type PurchaseInvoiceUpdate = { version: number } & Partial<PurchaseInvoic
 type PurchaseInvoiceStockSnapshot = {
   id: bigint;
   warehouseId: bigint | null;
+  sourceInvoiceId: bigint | null;
+  exchangeRate: Prisma.Decimal;
   accountingDocument: {
     documentType: string;
     documentNumber: string;
@@ -99,6 +104,7 @@ type PurchaseInvoiceStockSnapshot = {
   lines: Array<{
     inventoryItemId: bigint | null;
     quantity: Prisma.Decimal;
+    netAmount: Prisma.Decimal;
   }>;
 };
 
@@ -343,10 +349,12 @@ export class PurchaseInvoiceService {
       const isDebitNote = input.documentType === "PURCHASE_DEBIT_NOTE";
       const zero = decimal(0);
       const detailLines: PostingLinePlan[] = [];
+      const inventoryNetLines: PostingLinePlan[] = [];
+      let inventoryFinancialBase = zero;
       let lineNumber = 2;
       for (const line of prepared.calculation.lines) {
         const baseNet = money(line.netAmount.mul(invoice.exchangeRate));
-        detailLines.push({
+        const netPostingLine: PostingLinePlan = {
           lineNumber: lineNumber++,
           accountId: line.debitAccountId,
           costCenterId: line.costCenterId,
@@ -357,7 +365,12 @@ export class PurchaseInvoiceService {
           creditAmount: isDebitNote ? line.netAmount : zero,
           baseDebitAmount: isDebitNote ? zero : baseNet,
           baseCreditAmount: isDebitNote ? baseNet : zero,
-        });
+        };
+        detailLines.push(netPostingLine);
+        if (line.inventoryItemId) {
+          inventoryNetLines.push(netPostingLine);
+          inventoryFinancialBase = inventoryFinancialBase.add(baseNet);
+        }
         if (line.taxAmount.gt(0)) {
           const taxAccountId = prepared.taxAccounts.get(line.taxRateId!.toString());
           if (!taxAccountId) throw new PurchaseInvoiceError("INVALID_TAX_RATE");
@@ -376,6 +389,18 @@ export class PurchaseInvoiceService {
         }
       }
       const baseTotal = detailLines.reduce((sum, line) => sum.add(isDebitNote ? line.baseCreditAmount as Prisma.Decimal : line.baseDebitAmount as Prisma.Decimal), zero);
+      const postingLines: PostingLinePlan[] = [{
+        lineNumber: 1,
+        accountId: prepared.supplier.payableAccountId,
+        supplierId: invoice.supplierId,
+        description: invoice.accountingDocument.description,
+        currencyId: invoice.currencyId,
+        exchangeRate: invoice.exchangeRate,
+        debitAmount: isDebitNote ? invoice.total : zero,
+        creditAmount: isDebitNote ? zero : invoice.total,
+        baseDebitAmount: isDebitNote ? baseTotal : zero,
+        baseCreditAmount: isDebitNote ? zero : baseTotal,
+      }, ...detailLines];
       const result = await this.posting.postPlan(tx, {
         companyId: context.companyId,
         documentId: invoice.accountingDocumentId,
@@ -394,22 +419,71 @@ export class PurchaseInvoiceService {
               context.companyId,
               source.accountingDocumentId,
             );
+            await this.validateDebitItemQuantities(
+              postingTx,
+              context.companyId,
+              input.sourceInvoiceId!,
+              input.lines,
+              invoice.id,
+            );
             await this.payables.applyDebit(postingTx, {
               companyId: context.companyId,
               sourceInvoiceId: input.sourceInvoiceId!,
               amount: prepared.calculation.total,
+              baseAmount: baseTotal,
               invalid: () => new PurchaseInvoiceError("INVALID_SOURCE_INVOICE"),
               overAllocation: () => new PurchaseInvoiceError("DEBIT_EXCEEDS_INVOICE"),
               conflict: () => new PurchaseInvoiceError("VERSION_CONFLICT"),
             });
           }
-          await this.applyStockMovement(
+          const stock = await this.applyStockMovement(
             postingTx,
             context,
             invoice,
             "POST",
             day(invoice.accountingDocument.documentDate),
           );
+          if (stock) {
+            for (const line of inventoryNetLines) line.accountId = stock.inventoryAccountId;
+            await postingTx.purchaseInvoiceLine.updateMany({
+              where: {
+                companyId: context.companyId,
+                purchaseInvoiceId: invoice.id,
+                inventoryItemId: { not: null },
+              },
+              data: { debitAccountId: stock.inventoryAccountId },
+            });
+            const difference = money(inventoryFinancialBase.sub(stock.totalCostBase));
+            if (isDebitNote && !difference.isZero()) {
+              const amount = difference.abs();
+              const nextLineNumber = Math.max(...postingLines.map((line) => line.lineNumber)) + 1;
+              postingLines.push({
+                lineNumber: nextLineNumber,
+                accountId: difference.gt(0)
+                  ? stock.inventoryAccountId
+                  : stock.costOfGoodsSoldAccountId,
+                description: `فرق تكلفة مرتجع: ${invoice.accountingDocument.documentNumber}`,
+                currencyId: stock.baseCurrencyId,
+                exchangeRate: 1,
+                debitAmount: amount,
+                creditAmount: zero,
+                baseDebitAmount: amount,
+                baseCreditAmount: zero,
+              }, {
+                lineNumber: nextLineNumber + 1,
+                accountId: difference.gt(0)
+                  ? stock.costOfGoodsSoldAccountId
+                  : stock.inventoryAccountId,
+                description: `فرق تكلفة مرتجع: ${invoice.accountingDocument.documentNumber}`,
+                currencyId: stock.baseCurrencyId,
+                exchangeRate: 1,
+                debitAmount: zero,
+                creditAmount: amount,
+                baseDebitAmount: zero,
+                baseCreditAmount: amount,
+              });
+            }
+          }
         },
         afterEntries: async (postingTx, entries) => {
           const apLine = entries[0]?.lines.find((line) => line.lineNumber === 1);
@@ -426,6 +500,7 @@ export class PurchaseInvoiceService {
               currencyId: invoice.currencyId,
               dueDate: invoice.dueDate,
               originalAmount: invoice.total,
+              originalBaseAmount: baseTotal,
             });
           }
         },
@@ -433,18 +508,7 @@ export class PurchaseInvoiceService {
           entryNumber: 1,
           entryDate: invoice.accountingDocument.documentDate,
           description: invoice.accountingDocument.description,
-          lines: [{
-            lineNumber: 1,
-            accountId: prepared.supplier.payableAccountId,
-            supplierId: invoice.supplierId,
-            description: invoice.accountingDocument.description,
-            currencyId: invoice.currencyId,
-            exchangeRate: invoice.exchangeRate,
-            debitAmount: isDebitNote ? invoice.total : zero,
-            creditAmount: isDebitNote ? zero : invoice.total,
-            baseDebitAmount: isDebitNote ? baseTotal : zero,
-            baseCreditAmount: isDebitNote ? zero : baseTotal,
-          }, ...detailLines],
+          lines: postingLines,
         }],
       });
       await archiveDocument(tx, context, invoice.accountingDocumentId);
@@ -459,6 +523,20 @@ export class PurchaseInvoiceService {
     if (!period) throw new PurchaseInvoiceError("PERIOD_CLOSED");
     const supplier = await tx.supplier.findFirst({ where: { companyId, code: first.supplier_code!, isActive: true } });
     if (!supplier) throw new PurchaseInvoiceError("INVALID_SUPPLIER");
+    const inventoryItemCodes = [...new Set(group.rows.flatMap((row) => row.values.inventory_item_code ? [row.values.inventory_item_code] : []))];
+    let importedInventory;
+    try {
+      importedInventory = await this.inventory.resolveImportedInvoiceSelection(tx, {
+        companyId,
+        warehouseCode: first.warehouse_code,
+        inventoryItemCodes,
+      });
+    } catch (error) {
+      if (error instanceof InventoryInvoiceSelectionError) {
+        throw new PurchaseInvoiceError(error.reason);
+      }
+      throw error;
+    }
     const companyCurrency = await tx.companyCurrency.findFirst({ where: { companyId, isActive: true, currency: { code: first.currency_code!, isActive: true } } });
     if (!companyCurrency) throw new PurchaseInvoiceError("INVALID_CURRENCY");
     let taxRateIds: Map<string, bigint>;
@@ -474,9 +552,9 @@ export class PurchaseInvoiceService {
       if (!account) throw new PurchaseInvoiceError("INVALID_ACCOUNT");
       const costCenter = row.values.cost_center_code ? await tx.costCenter.findFirst({ where: { companyId, code: row.values.cost_center_code, isActive: true } }) : null;
       if (row.values.cost_center_code && !costCenter) throw new PurchaseInvoiceError("INVALID_COST_CENTER");
-      lines.push({ description: row.values.line_description!, quantity: row.values.quantity!, unitPrice: row.values.unit_price!, discountAmount: row.values.discount_amount || "0", debitAccountId: account.id, costCenterId: costCenter?.id ?? null, taxRateId: row.values.tax_code ? taxRateIds.get(row.values.tax_code)! : null });
+      lines.push({ inventoryItemId: row.values.inventory_item_code ? importedInventory.itemsByCode.get(row.values.inventory_item_code)!.id : null, description: row.values.line_description!, quantity: row.values.quantity!, unitPrice: row.values.unit_price!, discountAmount: row.values.discount_amount || "0", debitAccountId: account.id, costCenterId: costCenter?.id ?? null, taxRateId: row.values.tax_code ? taxRateIds.get(row.values.tax_code)! : null });
     }
-    const input: PurchaseInvoiceInput = { documentType: "PURCHASE_INVOICE", fiscalPeriodId: period.id, documentDate: first.document_date!, dueDate: first.due_date!, description: first.description!, supplierId: supplier.id, supplierInvoiceNumber: first.supplier_invoice_number || null, currencyId: companyCurrency.currencyId, exchangeRate: first.exchange_rate!, supplierAddress: first.supplier_address || null, notes: first.notes || null, lines };
+    const input: PurchaseInvoiceInput = { documentType: "PURCHASE_INVOICE", fiscalPeriodId: period.id, documentDate: first.document_date!, dueDate: first.due_date!, description: first.description!, supplierId: supplier.id, supplierInvoiceNumber: first.supplier_invoice_number || null, warehouseId: importedInventory.warehouse?.id ?? null, currencyId: companyCurrency.currencyId, exchangeRate: first.exchange_rate!, supplierAddress: first.supplier_address || null, notes: first.notes || null, lines };
     this.validDate(period, input.documentDate);
     await this.prepare(tx, companyId, input);
     return input;
@@ -490,7 +568,7 @@ export class PurchaseInvoiceService {
     const documentNumber = await this.reserveInTransaction(tx, context.companyId, period.fiscalYearId, "PURCHASE_INVOICE");
     const document = await tx.accountingDocument.create({ data: { companyId: context.companyId, fiscalPeriodId: input.fiscalPeriodId, documentType: "PURCHASE_INVOICE", documentNumber, documentDate: asDate(input.documentDate), description: input.description, createdBy: context.userId } });
     const invoice = await tx.purchaseInvoice.create({
-      data: { companyId: context.companyId, accountingDocumentId: document.id, supplierId: input.supplierId, supplierInvoiceNumber: input.supplierInvoiceNumber?.trim() || null, currencyId: input.currencyId, exchangeRate: decimal(input.exchangeRate), dueDate: asDate(input.dueDate), subtotal: prepared.calculation.subtotal, discountTotal: prepared.calculation.discountTotal, taxableTotal: prepared.calculation.taxableTotal, taxTotal: prepared.calculation.taxTotal, total: prepared.calculation.total, baseTotal: prepared.calculation.baseTotal, supplierNameSnapshot: prepared.supplier.nameAr, supplierTaxLast4: prepared.supplier.taxNumberLast4, supplierAddressSnapshot: prepared.supplierAddress, notes: input.notes ?? null, lines: { create: prepared.calculation.lines } },
+      data: { companyId: context.companyId, accountingDocumentId: document.id, supplierId: input.supplierId, supplierInvoiceNumber: input.supplierInvoiceNumber?.trim() || null, warehouseId: prepared.inventory.warehouse?.id ?? null, currencyId: input.currencyId, exchangeRate: decimal(input.exchangeRate), dueDate: asDate(input.dueDate), subtotal: prepared.calculation.subtotal, discountTotal: prepared.calculation.discountTotal, taxableTotal: prepared.calculation.taxableTotal, taxTotal: prepared.calculation.taxTotal, total: prepared.calculation.total, baseTotal: prepared.calculation.baseTotal, supplierNameSnapshot: prepared.supplier.nameAr, supplierTaxLast4: prepared.supplier.taxNumberLast4, supplierAddressSnapshot: prepared.supplierAddress, warehouseCodeSnapshot: prepared.inventory.warehouse?.code ?? null, warehouseNameSnapshot: prepared.inventory.warehouse?.nameAr ?? null, notes: input.notes ?? null, lines: { create: prepared.calculation.lines } },
       include: this.include(),
     });
     await this.audit(tx, context, "PURCHASE_INVOICE_CREATED", invoice.id, { documentType: "PURCHASE_INVOICE", source: "DATA_IMPORT" });
@@ -541,6 +619,7 @@ export class PurchaseInvoiceService {
               companyId: context.companyId,
               sourceInvoiceId: invoice.sourceInvoiceId,
               amount: invoice.total,
+              baseAmount: invoice.baseTotal,
               invalid: () => new PurchaseInvoiceError("INVALID_SOURCE_INVOICE"),
               conflict: () => new PurchaseInvoiceError("VERSION_CONFLICT"),
             });
@@ -599,6 +678,7 @@ export class PurchaseInvoiceService {
     const paid = value.payableItem ? value.payableItem.paymentAllocations.filter((allocation: any) => allocation.payment.accountingDocument.status === "POSTED").reduce((sum: Prisma.Decimal, allocation: any) => sum.add(allocation.allocatedAmount), decimal(0)) : decimal(0);
     const debited = value.debitNotes?.filter((note: any) => note.accountingDocument.status === "POSTED").reduce((sum: Prisma.Decimal, note: any) => sum.add(note.total), decimal(0)) ?? decimal(0);
     const outstanding = value.accountingDocument.documentType === "PURCHASE_INVOICE" ? value.payableItem?.outstandingAmount ?? value.total.sub(paid).sub(debited) : decimal(0);
+    const outstandingBase = value.accountingDocument.documentType === "PURCHASE_INVOICE" ? value.payableItem?.outstandingBaseAmount ?? value.baseTotal : decimal(0);
     return {
       id: value.id.toString(),
       document: documentJson(value.accountingDocument),
@@ -625,6 +705,7 @@ export class PurchaseInvoiceService {
       paidAmount: paid.toFixed(4),
       debitedAmount: debited.toFixed(4),
       outstandingAmount: outstanding.toFixed(4),
+      outstandingBaseAmount: outstandingBase.toFixed(4),
       settlementStatus: outstanding.lte(0) ? "PAID" : paid.gt(0) || debited.gt(0) ? "PARTIAL" : "OPEN",
       supplierNameSnapshot: value.supplierNameSnapshot,
       supplierTaxMasked: value.supplierTaxLast4 ? `****${value.supplierTaxLast4}` : null,
@@ -749,8 +830,13 @@ export class PurchaseInvoiceService {
     }
     if (input.documentType === "PURCHASE_DEBIT_NOTE") {
       const source = await tx.purchaseInvoice.findFirst({ where: { id: input.sourceInvoiceId!, companyId, supplierId: input.supplierId, accountingDocument: { documentType: "PURCHASE_INVOICE", status: "POSTED" } } });
-      if (!source || source.currencyId !== input.currencyId) throw new PurchaseInvoiceError("INVALID_SOURCE_INVOICE");
+      if (
+        !source ||
+        source.currencyId !== input.currencyId ||
+        !source.exchangeRate.equals(decimal(input.exchangeRate))
+      ) throw new PurchaseInvoiceError("INVALID_SOURCE_INVOICE");
       await this.validateDebitLimit(tx, companyId, source.id, calculation.total, currentId);
+      await this.validateDebitItemQuantities(tx, companyId, source.id, input.lines, currentId);
     }
     const preferredAddress = supplier.addresses.find((address) => address.addressType === "BILLING") ?? supplier.addresses[0];
     const supplierAddress = input.supplierAddress ?? (preferredAddress ? [preferredAddress.line1, preferredAddress.line2, preferredAddress.city, preferredAddress.region, preferredAddress.postalCode].filter(Boolean).join("، ") : null);
@@ -774,6 +860,58 @@ export class PurchaseInvoiceService {
     if (!source.payableItem) throw new PurchaseInvoiceError("INVALID_SOURCE_INVOICE");
     const reserved = await tx.purchaseInvoice.aggregate({ where: { companyId, sourceInvoiceId, ...(currentId ? { id: { not: currentId } } : {}), accountingDocument: { documentType: "PURCHASE_DEBIT_NOTE", status: "DRAFT" } }, _sum: { total: true } });
     if (decimal(reserved._sum.total ?? 0).add(amount).gt(source.payableItem.outstandingAmount)) throw new PurchaseInvoiceError("DEBIT_EXCEEDS_INVOICE");
+  }
+
+  private async validateDebitItemQuantities(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+    sourceInvoiceId: bigint,
+    lines: PurchaseInvoiceLineInput[],
+    currentId?: bigint,
+  ) {
+    const requested = this.inventoryQuantities(lines);
+    if (requested.size === 0) return;
+    const source = await tx.purchaseInvoice.findFirst({
+      where: {
+        id: sourceInvoiceId,
+        companyId,
+        accountingDocument: { documentType: "PURCHASE_INVOICE", status: "POSTED" },
+      },
+      select: { lines: { select: { inventoryItemId: true, quantity: true } } },
+    });
+    if (!source) throw new PurchaseInvoiceError("INVALID_SOURCE_INVOICE");
+    const available = this.inventoryQuantities(source.lines);
+    const debitNotes = await tx.purchaseInvoice.findMany({
+      where: {
+        companyId,
+        sourceInvoiceId,
+        ...(currentId ? { id: { not: currentId } } : {}),
+        accountingDocument: {
+          documentType: "PURCHASE_DEBIT_NOTE",
+          status: { in: ["DRAFT", "POSTED"] },
+        },
+      },
+      select: { lines: { select: { inventoryItemId: true, quantity: true } } },
+    });
+    const alreadyDebited = this.inventoryQuantities(debitNotes.flatMap((note) => note.lines));
+    for (const [itemId, quantity] of requested) {
+      const sourceQuantity = available.get(itemId);
+      if (!sourceQuantity || quantity.add(alreadyDebited.get(itemId) ?? 0).gt(sourceQuantity)) {
+        throw new PurchaseInvoiceError("INVALID_SOURCE_INVOICE");
+      }
+    }
+  }
+
+  private inventoryQuantities(
+    lines: Array<{ inventoryItemId?: bigint | null; quantity: Prisma.Decimal.Value }>,
+  ) {
+    const result = new Map<string, Prisma.Decimal>();
+    for (const line of lines) {
+      if (!line.inventoryItemId) continue;
+      const key = line.inventoryItemId.toString();
+      result.set(key, (result.get(key) ?? decimal(0)).add(line.quantity));
+    }
+    return result;
   }
 
   private async validAccount(tx: Prisma.TransactionClient, companyId: bigint, id: bigint) {
@@ -817,7 +955,11 @@ export class PurchaseInvoiceService {
     stockDate: string,
   ) {
     const inventoryLines = invoice.lines.flatMap((line) => line.inventoryItemId
-      ? [{ inventoryItemId: line.inventoryItemId, quantity: line.quantity.toFixed(6) }]
+      ? [{
+          inventoryItemId: line.inventoryItemId,
+          quantity: line.quantity.toFixed(6),
+          baseNetAmount: money(line.netAmount.mul(invoice.exchangeRate)).toFixed(4),
+        }]
       : []);
     if (inventoryLines.length === 0) return null;
     if (!invoice.warehouseId) throw new PurchaseInvoiceError("WAREHOUSE_REQUIRED");
@@ -826,6 +968,7 @@ export class PurchaseInvoiceService {
         companyId: context.companyId,
         actorUserId: context.userId,
         invoiceId: invoice.id,
+        sourceInvoiceId: invoice.sourceInvoiceId,
         documentType: invoice.accountingDocument.documentType as "PURCHASE_INVOICE" | "PURCHASE_DEBIT_NOTE",
         sourceEvent,
         documentNumber: invoice.accountingDocument.documentNumber,
@@ -837,6 +980,15 @@ export class PurchaseInvoiceService {
       if (!(error instanceof InventoryMovementError)) throw error;
       if (error.reason === "INSUFFICIENT_STOCK") {
         throw new PurchaseInvoiceError("INSUFFICIENT_STOCK");
+      }
+      if (error.reason === "INVENTORY_VALUATION_REQUIRED") {
+        throw new PurchaseInvoiceError("INVENTORY_VALUATION_REQUIRED");
+      }
+      if (["INSUFFICIENT_INVENTORY_VALUE", "INVENTORY_VALUE_MISMATCH"].includes(error.reason)) {
+        throw new PurchaseInvoiceError("INVENTORY_VALUE_MISMATCH");
+      }
+      if (error.reason === "INVENTORY_ACCOUNTING_NOT_CONFIGURED") {
+        throw new PurchaseInvoiceError("INVENTORY_ACCOUNTING_NOT_CONFIGURED");
       }
       if (["INVALID_WAREHOUSE", "WAREHOUSE_INACTIVE"].includes(error.reason)) {
         throw new PurchaseInvoiceError("INVALID_WAREHOUSE");

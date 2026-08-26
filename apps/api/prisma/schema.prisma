@@ -36,6 +36,7 @@ enum FiscalPeriodStatus {
 
 enum AccountingDocumentType {
   MANUAL_JOURNAL
+  INVENTORY_ADJUSTMENT
   RECEIPT
   PAYMENT
   PERIOD_CLOSE
@@ -165,6 +166,11 @@ enum InventoryMovementSourceEvent {
   REVERSE
 }
 
+enum InventoryMovementStatus {
+  POSTED
+  REVERSED
+}
+
 model Organization {
   id                   BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
   code                 String                @unique @default(uuid()) @db.VarChar(80)
@@ -203,62 +209,63 @@ model Currency {
 }
 
 model Company {
-  id                               BigInt                   @id @default(autoincrement()) @db.UnsignedBigInt
-  organizationId                   BigInt                   @map("organization_id") @db.UnsignedBigInt
-  baseCurrencyId                   BigInt                   @map("base_currency_id") @db.UnsignedBigInt
-  code                             String                   @default(uuid()) @db.VarChar(80)
-  name                             String                   @db.VarChar(200)
-  timezone                         String                   @db.VarChar(64)
-  isActive                         Boolean                  @default(true) @map("is_active")
-  manualJournalMakerCheckerEnabled Boolean                  @default(true) @map("manual_journal_maker_checker_enabled")
-  createdAt                        DateTime                 @default(now()) @map("created_at")
-  updatedAt                        DateTime                 @updatedAt @map("updated_at")
-  organization                     Organization             @relation(fields: [organizationId], references: [id])
-  baseCurrency                     Currency                 @relation("BaseCurrency", fields: [baseCurrencyId], references: [id])
-  ownedCurrencies                  Currency[]               @relation("OwnedCurrencies")
-  assignments                      UserCompany[]
-  sessions                         Session[]
-  idempotency                      IdempotencyRecord[]
-  roles                            Role[]
-  auditLogs                        AuditLog[]
-  securityEvents                   SecurityEvent[]
-  fiscalYears                      FiscalYear[]
-  fiscalPeriods                    FiscalPeriod[]
-  documentSequences                DocumentSequence[]
-  masterDataCodeSequences          MasterDataCodeSequence[]
-  accountingDocuments              AccountingDocument[]
-  journalEntries                   JournalEntry[]
-  journalLines                     JournalLine[]
-  accounts                         Account[]
-  costCenters                      CostCenter[]
-  customers                        Customer[]
-  customerAddresses                CustomerAddress[]
-  cashBankAccounts                 CashBankAccount[]
-  warehouses                       Warehouse[]
-  unitsOfMeasure                   UnitOfMeasure[]
-  inventoryItems                   InventoryItem[]
-  inventoryMovementSequence        InventoryMovementSequence?
-  inventoryMovements               InventoryMovement[]
-  inventoryMovementLines           InventoryMovementLine[]
-  inventoryBalances                InventoryBalance[]
-  paymentMethods                   PaymentMethod[]
-  receipts                         Receipt[]
-  receiptAllocations               ReceiptAllocation[]
-  receivableItems                  ReceivableItem[]
-  suppliers                        Supplier[]
-  supplierAddresses                SupplierAddress[]
-  payments                         Payment[]
-  paymentAllocations               PaymentAllocation[]
-  payableItems                     PayableItem[]
-  taxRates                         TaxRate[]
-  salesInvoices                    SalesInvoice[]
-  salesInvoiceLines                SalesInvoiceLine[]
-  purchaseInvoices                 PurchaseInvoice[]
-  purchaseInvoiceLines             PurchaseInvoiceLine[]
-  documentPrintArchives            DocumentPrintArchive[]
-  companyCurrencies                CompanyCurrency[]
-  registrationRequests             RegistrationRequest[]    @relation("RegistrationCompany")
-  dataImportBatches                DataImportBatch[]
+  id                                BigInt                             @id @default(autoincrement()) @db.UnsignedBigInt
+  organizationId                    BigInt                             @map("organization_id") @db.UnsignedBigInt
+  baseCurrencyId                    BigInt                             @map("base_currency_id") @db.UnsignedBigInt
+  code                              String                             @default(uuid()) @db.VarChar(80)
+  name                              String                             @db.VarChar(200)
+  timezone                          String                             @db.VarChar(64)
+  isActive                          Boolean                            @default(true) @map("is_active")
+  manualJournalMakerCheckerEnabled  Boolean                            @default(true) @map("manual_journal_maker_checker_enabled")
+  createdAt                         DateTime                           @default(now()) @map("created_at")
+  updatedAt                         DateTime                           @updatedAt @map("updated_at")
+  organization                      Organization                       @relation(fields: [organizationId], references: [id])
+  baseCurrency                      Currency                           @relation("BaseCurrency", fields: [baseCurrencyId], references: [id])
+  ownedCurrencies                   Currency[]                         @relation("OwnedCurrencies")
+  assignments                       UserCompany[]
+  sessions                          Session[]
+  idempotency                       IdempotencyRecord[]
+  roles                             Role[]
+  auditLogs                         AuditLog[]
+  securityEvents                    SecurityEvent[]
+  fiscalYears                       FiscalYear[]
+  fiscalPeriods                     FiscalPeriod[]
+  documentSequences                 DocumentSequence[]
+  masterDataCodeSequences           MasterDataCodeSequence[]
+  accountingDocuments               AccountingDocument[]
+  journalEntries                    JournalEntry[]
+  journalLines                      JournalLine[]
+  accounts                          Account[]
+  costCenters                       CostCenter[]
+  customers                         Customer[]
+  customerAddresses                 CustomerAddress[]
+  cashBankAccounts                  CashBankAccount[]
+  warehouses                        Warehouse[]
+  unitsOfMeasure                    UnitOfMeasure[]
+  inventoryItems                    InventoryItem[]
+  inventoryMovementSequence         InventoryMovementSequence?
+  inventoryMovements                InventoryMovement[]
+  inventoryMovementLines            InventoryMovementLine[]
+  inventoryBalances                 InventoryBalance[]
+  inventoryValuationInitializations InventoryValuationInitialization[]
+  paymentMethods                    PaymentMethod[]
+  receipts                          Receipt[]
+  receiptAllocations                ReceiptAllocation[]
+  receivableItems                   ReceivableItem[]
+  suppliers                         Supplier[]
+  supplierAddresses                 SupplierAddress[]
+  payments                          Payment[]
+  paymentAllocations                PaymentAllocation[]
+  payableItems                      PayableItem[]
+  taxRates                          TaxRate[]
+  salesInvoices                     SalesInvoice[]
+  salesInvoiceLines                 SalesInvoiceLine[]
+  purchaseInvoices                  PurchaseInvoice[]
+  purchaseInvoiceLines              PurchaseInvoiceLine[]
+  documentPrintArchives             DocumentPrintArchive[]
+  companyCurrencies                 CompanyCurrency[]
+  registrationRequests              RegistrationRequest[]              @relation("RegistrationCompany")
+  dataImportBatches                 DataImportBatch[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -266,33 +273,34 @@ model Company {
 }
 
 model User {
-  id                         BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
-  emailNormalized            String                 @unique @map("email_normalized") @db.VarChar(320)
-  passwordHash               String                 @map("password_hash") @db.VarChar(255)
-  displayName                String                 @map("display_name") @db.VarChar(160)
-  nameEn                     String?                @map("name_en") @db.VarChar(160)
-  isActive                   Boolean                @default(true) @map("is_active")
-  failedLoginAttempts        Int                    @default(0) @map("failed_login_attempts") @db.UnsignedTinyInt
-  lockedUntil                DateTime?              @map("locked_until")
-  lastLoginAt                DateTime?              @map("last_login_at")
-  createdAt                  DateTime               @default(now()) @map("created_at")
-  updatedAt                  DateTime               @updatedAt @map("updated_at")
+  id                         BigInt                             @id @default(autoincrement()) @db.UnsignedBigInt
+  emailNormalized            String                             @unique @map("email_normalized") @db.VarChar(320)
+  passwordHash               String                             @map("password_hash") @db.VarChar(255)
+  displayName                String                             @map("display_name") @db.VarChar(160)
+  nameEn                     String?                            @map("name_en") @db.VarChar(160)
+  isActive                   Boolean                            @default(true) @map("is_active")
+  failedLoginAttempts        Int                                @default(0) @map("failed_login_attempts") @db.UnsignedTinyInt
+  lockedUntil                DateTime?                          @map("locked_until")
+  lastLoginAt                DateTime?                          @map("last_login_at")
+  createdAt                  DateTime                           @default(now()) @map("created_at")
+  updatedAt                  DateTime                           @updatedAt @map("updated_at")
   assignments                UserCompany[]
   sessions                   Session[]
   idempotency                IdempotencyRecord[]
   auditLogs                  AuditLog[]
-  securityEvents             SecurityEvent[]        @relation("SecurityEventUser")
-  securityEventsAcknowledged SecurityEvent[]        @relation("SecurityEventAcknowledgedBy")
-  periodsClosed              FiscalPeriod[]         @relation("PeriodClosedBy")
-  periodsReopened            FiscalPeriod[]         @relation("PeriodReopenedBy")
-  documentsCreated           AccountingDocument[]   @relation("DocumentCreatedBy")
-  documentsPosted            AccountingDocument[]   @relation("DocumentPostedBy")
-  printArchivesCreated       DocumentPrintArchive[] @relation("PrintArchiveCreatedBy")
-  exchangeRatesUpdated       CompanyExchangeRate[]  @relation("ExchangeRateUpdatedBy")
-  registrationRequests       RegistrationRequest[]  @relation("RegistrationUser")
+  securityEvents             SecurityEvent[]                    @relation("SecurityEventUser")
+  securityEventsAcknowledged SecurityEvent[]                    @relation("SecurityEventAcknowledgedBy")
+  periodsClosed              FiscalPeriod[]                     @relation("PeriodClosedBy")
+  periodsReopened            FiscalPeriod[]                     @relation("PeriodReopenedBy")
+  documentsCreated           AccountingDocument[]               @relation("DocumentCreatedBy")
+  documentsPosted            AccountingDocument[]               @relation("DocumentPostedBy")
+  printArchivesCreated       DocumentPrintArchive[]             @relation("PrintArchiveCreatedBy")
+  exchangeRatesUpdated       CompanyExchangeRate[]              @relation("ExchangeRateUpdatedBy")
+  registrationRequests       RegistrationRequest[]              @relation("RegistrationUser")
   passwordResetRequests      PasswordResetRequest[]
-  dataImportBatches          DataImportBatch[]      @relation("DataImportCreatedBy")
-  inventoryMovementsCreated  InventoryMovement[]    @relation("InventoryMovementCreatedBy")
+  dataImportBatches          DataImportBatch[]                  @relation("DataImportCreatedBy")
+  inventoryMovementsCreated  InventoryMovement[]                @relation("InventoryMovementCreatedBy")
+  inventoryValuationsCreated InventoryValuationInitialization[] @relation("InventoryValuationCreatedBy")
 
   @@map("users")
 }
@@ -659,6 +667,7 @@ model AccountingDocument {
   payment              Payment?
   salesInvoice         SalesInvoice?
   purchaseInvoice      PurchaseInvoice?
+  inventoryMovement    InventoryMovement?
   printArchive         DocumentPrintArchive?
 
   @@unique([companyId, documentType, documentNumber])
@@ -760,35 +769,36 @@ model AccountType {
 }
 
 model Account {
-  id                     BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
-  companyId              BigInt                @map("company_id") @db.UnsignedBigInt
-  accountTypeId          BigInt                @map("account_type_id") @db.UnsignedBigInt
-  parentAccountId        BigInt?               @map("parent_account_id") @db.UnsignedBigInt
-  code                   String                @db.VarChar(40)
-  nameAr                 String                @map("name_ar") @db.VarChar(180)
-  nameEn                 String?               @map("name_en") @db.VarChar(180)
-  level                  Int                   @db.UnsignedTinyInt
-  allowsPosting          Boolean               @map("allows_posting")
-  isControlAccount       Boolean               @default(false) @map("is_control_account")
-  isActive               Boolean               @default(true) @map("is_active")
-  sourceTemplateCode     String?               @map("source_template_code") @db.VarChar(80)
-  sourceTemplateKey      String?               @map("source_template_key") @db.VarChar(80)
-  createdAt              DateTime              @default(now()) @map("created_at")
-  updatedAt              DateTime              @updatedAt @map("updated_at")
-  company                Company               @relation(fields: [companyId], references: [id])
-  accountType            AccountType           @relation(fields: [accountTypeId], references: [id])
-  parent                 Account?              @relation("AccountTree", fields: [parentAccountId, companyId], references: [id, companyId])
-  children               Account[]             @relation("AccountTree")
-  journalLines           JournalLine[]
-  customers              Customer[]
-  cashBankAccounts       CashBankAccount[]
-  receiptCounterAccounts Receipt[]             @relation("ReceiptCounterAccount")
-  suppliers              Supplier[]
-  paymentCounterAccounts Payment[]             @relation("PaymentCounterAccount")
-  outputTaxRates         TaxRate[]             @relation("OutputTaxAccount")
-  inputTaxRates          TaxRate[]             @relation("InputTaxAccount")
-  salesInvoiceLines      SalesInvoiceLine[]    @relation("SalesRevenueAccount")
-  purchaseInvoiceLines   PurchaseInvoiceLine[] @relation("PurchaseDebitAccount")
+  id                       BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId                BigInt                @map("company_id") @db.UnsignedBigInt
+  accountTypeId            BigInt                @map("account_type_id") @db.UnsignedBigInt
+  parentAccountId          BigInt?               @map("parent_account_id") @db.UnsignedBigInt
+  code                     String                @db.VarChar(40)
+  nameAr                   String                @map("name_ar") @db.VarChar(180)
+  nameEn                   String?               @map("name_en") @db.VarChar(180)
+  level                    Int                   @db.UnsignedTinyInt
+  allowsPosting            Boolean               @map("allows_posting")
+  isControlAccount         Boolean               @default(false) @map("is_control_account")
+  isActive                 Boolean               @default(true) @map("is_active")
+  sourceTemplateCode       String?               @map("source_template_code") @db.VarChar(80)
+  sourceTemplateKey        String?               @map("source_template_key") @db.VarChar(80)
+  createdAt                DateTime              @default(now()) @map("created_at")
+  updatedAt                DateTime              @updatedAt @map("updated_at")
+  company                  Company               @relation(fields: [companyId], references: [id])
+  accountType              AccountType           @relation(fields: [accountTypeId], references: [id])
+  parent                   Account?              @relation("AccountTree", fields: [parentAccountId, companyId], references: [id, companyId])
+  children                 Account[]             @relation("AccountTree")
+  journalLines             JournalLine[]
+  customers                Customer[]
+  cashBankAccounts         CashBankAccount[]
+  receiptCounterAccounts   Receipt[]             @relation("ReceiptCounterAccount")
+  suppliers                Supplier[]
+  paymentCounterAccounts   Payment[]             @relation("PaymentCounterAccount")
+  outputTaxRates           TaxRate[]             @relation("OutputTaxAccount")
+  inputTaxRates            TaxRate[]             @relation("InputTaxAccount")
+  salesInvoiceLines        SalesInvoiceLine[]    @relation("SalesRevenueAccount")
+  purchaseInvoiceLines     PurchaseInvoiceLine[] @relation("PurchaseDebitAccount")
+  inventoryOffsetMovements InventoryMovement[]   @relation("InventoryMovementOffsetAccount")
 
   @@unique([companyId, code])
   @@unique([companyId, sourceTemplateCode, sourceTemplateKey])
@@ -893,19 +903,19 @@ model CashBankAccount {
 }
 
 model Warehouse {
-  id               BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
-  companyId        BigInt            @map("company_id") @db.UnsignedBigInt
-  code             String            @db.VarChar(40)
-  nameAr           String            @map("name_ar") @db.VarChar(160)
-  nameEn           String?           @map("name_en") @db.VarChar(160)
-  address          String?           @db.VarChar(300)
-  isActive         Boolean           @default(true) @map("is_active")
-  version          Int               @default(0) @db.UnsignedInt
-  createdAt        DateTime          @default(now()) @map("created_at")
-  updatedAt        DateTime          @updatedAt @map("updated_at")
-  company          Company           @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  salesInvoices    SalesInvoice[]
-  purchaseInvoices PurchaseInvoice[]
+  id                BigInt                  @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId         BigInt                  @map("company_id") @db.UnsignedBigInt
+  code              String                  @db.VarChar(40)
+  nameAr            String                  @map("name_ar") @db.VarChar(160)
+  nameEn            String?                 @map("name_en") @db.VarChar(160)
+  address           String?                 @db.VarChar(300)
+  isActive          Boolean                 @default(true) @map("is_active")
+  version           Int                     @default(0) @db.UnsignedInt
+  createdAt         DateTime                @default(now()) @map("created_at")
+  updatedAt         DateTime                @updatedAt @map("updated_at")
+  company           Company                 @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  salesInvoices     SalesInvoice[]
+  purchaseInvoices  PurchaseInvoice[]
   movementLinesFrom InventoryMovementLine[] @relation("InventoryMovementFromWarehouse")
   movementLinesTo   InventoryMovementLine[] @relation("InventoryMovementToWarehouse")
   inventoryBalances InventoryBalance[]
@@ -937,19 +947,19 @@ model UnitOfMeasure {
 }
 
 model InventoryItem {
-  id                   BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
-  companyId            BigInt                @map("company_id") @db.UnsignedBigInt
-  unitOfMeasureId      BigInt                @map("unit_of_measure_id") @db.UnsignedBigInt
-  code                 String                @db.VarChar(40)
-  nameAr               String                @map("name_ar") @db.VarChar(200)
-  nameEn               String?               @map("name_en") @db.VarChar(200)
-  description          String?               @db.VarChar(500)
-  isActive             Boolean               @default(true) @map("is_active")
-  version              Int                   @default(0) @db.UnsignedInt
-  createdAt            DateTime              @default(now()) @map("created_at")
-  updatedAt            DateTime              @updatedAt @map("updated_at")
-  company              Company               @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  unitOfMeasure        UnitOfMeasure         @relation(fields: [unitOfMeasureId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  id                   BigInt                  @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId            BigInt                  @map("company_id") @db.UnsignedBigInt
+  unitOfMeasureId      BigInt                  @map("unit_of_measure_id") @db.UnsignedBigInt
+  code                 String                  @db.VarChar(40)
+  nameAr               String                  @map("name_ar") @db.VarChar(200)
+  nameEn               String?                 @map("name_en") @db.VarChar(200)
+  description          String?                 @db.VarChar(500)
+  isActive             Boolean                 @default(true) @map("is_active")
+  version              Int                     @default(0) @db.UnsignedInt
+  createdAt            DateTime                @default(now()) @map("created_at")
+  updatedAt            DateTime                @updatedAt @map("updated_at")
+  company              Company                 @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  unitOfMeasure        UnitOfMeasure           @relation(fields: [unitOfMeasureId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
   salesInvoiceLines    SalesInvoiceLine[]
   purchaseInvoiceLines PurchaseInvoiceLine[]
   movementLines        InventoryMovementLine[]
@@ -985,14 +995,25 @@ model InventoryMovement {
   sourceId                     BigInt?                       @map("source_id") @db.UnsignedBigInt
   sourceEvent                  InventoryMovementSourceEvent? @map("source_event")
   sourceDocumentNumberSnapshot String?                       @map("source_document_number_snapshot") @db.VarChar(40)
+  accountingDocumentId         BigInt?                       @map("accounting_document_id") @db.UnsignedBigInt
+  offsetAccountId              BigInt?                       @map("offset_account_id") @db.UnsignedBigInt
+  reversalOfMovementId         BigInt?                       @map("reversal_of_movement_id") @db.UnsignedBigInt
+  status                       InventoryMovementStatus       @default(POSTED)
+  version                      Int                           @default(0) @db.UnsignedInt
   createdById                  BigInt                        @map("created_by_id") @db.UnsignedBigInt
   createdAt                    DateTime                      @default(now()) @map("created_at")
   company                      Company                       @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  accountingDocument           AccountingDocument?           @relation(fields: [accountingDocumentId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  offsetAccount                Account?                      @relation("InventoryMovementOffsetAccount", fields: [offsetAccountId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  reversalOfMovement           InventoryMovement?            @relation("InventoryMovementReversal", fields: [reversalOfMovementId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  reversedByMovement           InventoryMovement?            @relation("InventoryMovementReversal")
   createdBy                    User                          @relation("InventoryMovementCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
   lines                        InventoryMovementLine[]
 
   @@unique([companyId, movementNumber])
   @@unique([companyId, sourceType, sourceId, sourceEvent], map: "inventory_movements_invoice_source_key")
+  @@unique([accountingDocumentId, companyId])
+  @@unique([reversalOfMovementId, companyId])
   @@unique([id, companyId])
   @@index([companyId, movementDate, id])
   @@index([companyId, movementType, movementDate])
@@ -1001,26 +1022,29 @@ model InventoryMovement {
 }
 
 model InventoryMovementLine {
-  id                         BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
-  companyId                  BigInt            @map("company_id") @db.UnsignedBigInt
-  movementId                 BigInt            @map("movement_id") @db.UnsignedBigInt
-  lineNumber                 Int               @map("line_number") @db.UnsignedSmallInt
-  inventoryItemId            BigInt            @map("inventory_item_id") @db.UnsignedBigInt
-  fromWarehouseId            BigInt?           @map("from_warehouse_id") @db.UnsignedBigInt
-  toWarehouseId              BigInt?           @map("to_warehouse_id") @db.UnsignedBigInt
-  quantity                   Decimal           @db.Decimal(19, 6)
-  inventoryItemCodeSnapshot  String            @map("inventory_item_code_snapshot") @db.VarChar(40)
-  inventoryItemNameSnapshot  String            @map("inventory_item_name_snapshot") @db.VarChar(200)
-  unitOfMeasureCodeSnapshot  String            @map("unit_of_measure_code_snapshot") @db.VarChar(20)
-  fromWarehouseCodeSnapshot  String?           @map("from_warehouse_code_snapshot") @db.VarChar(40)
-  fromWarehouseNameSnapshot  String?           @map("from_warehouse_name_snapshot") @db.VarChar(160)
-  toWarehouseCodeSnapshot    String?           @map("to_warehouse_code_snapshot") @db.VarChar(40)
-  toWarehouseNameSnapshot    String?           @map("to_warehouse_name_snapshot") @db.VarChar(160)
-  company                    Company           @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  movement                   InventoryMovement @relation(fields: [movementId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
-  inventoryItem              InventoryItem     @relation(fields: [inventoryItemId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
-  fromWarehouse              Warehouse?        @relation("InventoryMovementFromWarehouse", fields: [fromWarehouseId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
-  toWarehouse                Warehouse?        @relation("InventoryMovementToWarehouse", fields: [toWarehouseId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  id                        BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId                 BigInt            @map("company_id") @db.UnsignedBigInt
+  movementId                BigInt            @map("movement_id") @db.UnsignedBigInt
+  lineNumber                Int               @map("line_number") @db.UnsignedSmallInt
+  inventoryItemId           BigInt            @map("inventory_item_id") @db.UnsignedBigInt
+  fromWarehouseId           BigInt?           @map("from_warehouse_id") @db.UnsignedBigInt
+  toWarehouseId             BigInt?           @map("to_warehouse_id") @db.UnsignedBigInt
+  quantity                  Decimal           @db.Decimal(19, 6)
+  unitCostBase              Decimal           @map("unit_cost_base") @db.Decimal(19, 8)
+  totalCostBase             Decimal           @map("total_cost_base") @db.Decimal(19, 4)
+  isCostInitialized         Boolean           @default(true) @map("is_cost_initialized")
+  inventoryItemCodeSnapshot String            @map("inventory_item_code_snapshot") @db.VarChar(40)
+  inventoryItemNameSnapshot String            @map("inventory_item_name_snapshot") @db.VarChar(200)
+  unitOfMeasureCodeSnapshot String            @map("unit_of_measure_code_snapshot") @db.VarChar(20)
+  fromWarehouseCodeSnapshot String?           @map("from_warehouse_code_snapshot") @db.VarChar(40)
+  fromWarehouseNameSnapshot String?           @map("from_warehouse_name_snapshot") @db.VarChar(160)
+  toWarehouseCodeSnapshot   String?           @map("to_warehouse_code_snapshot") @db.VarChar(40)
+  toWarehouseNameSnapshot   String?           @map("to_warehouse_name_snapshot") @db.VarChar(160)
+  company                   Company           @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  movement                  InventoryMovement @relation(fields: [movementId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  inventoryItem             InventoryItem     @relation(fields: [inventoryItemId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  fromWarehouse             Warehouse?        @relation("InventoryMovementFromWarehouse", fields: [fromWarehouseId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  toWarehouse               Warehouse?        @relation("InventoryMovementToWarehouse", fields: [toWarehouseId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
 
   @@unique([movementId, lineNumber])
   @@index([companyId, inventoryItemId])
@@ -1030,22 +1054,46 @@ model InventoryMovementLine {
 }
 
 model InventoryBalance {
-  id              BigInt        @id @default(autoincrement()) @db.UnsignedBigInt
-  companyId       BigInt        @map("company_id") @db.UnsignedBigInt
-  warehouseId     BigInt        @map("warehouse_id") @db.UnsignedBigInt
-  inventoryItemId BigInt        @map("inventory_item_id") @db.UnsignedBigInt
-  onHand          Decimal       @default(0) @map("on_hand") @db.Decimal(19, 6)
-  version         Int           @default(0) @db.UnsignedInt
-  movementCount   Int           @default(0) @map("movement_count") @db.UnsignedInt
-  updatedAt       DateTime      @updatedAt @map("updated_at")
-  company         Company       @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  warehouse       Warehouse     @relation(fields: [warehouseId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
-  inventoryItem   InventoryItem @relation(fields: [inventoryItemId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  id                      BigInt                            @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId               BigInt                            @map("company_id") @db.UnsignedBigInt
+  warehouseId             BigInt                            @map("warehouse_id") @db.UnsignedBigInt
+  inventoryItemId         BigInt                            @map("inventory_item_id") @db.UnsignedBigInt
+  onHand                  Decimal                           @default(0) @map("on_hand") @db.Decimal(19, 6)
+  inventoryValueBase      Decimal                           @default(0) @map("inventory_value_base") @db.Decimal(19, 4)
+  averageUnitCostBase     Decimal                           @default(0) @map("average_unit_cost_base") @db.Decimal(19, 8)
+  isValuationInitialized  Boolean                           @default(true) @map("is_valuation_initialized")
+  version                 Int                               @default(0) @db.UnsignedInt
+  movementCount           Int                               @default(0) @map("movement_count") @db.UnsignedInt
+  updatedAt               DateTime                          @updatedAt @map("updated_at")
+  company                 Company                           @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  warehouse               Warehouse                         @relation(fields: [warehouseId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  inventoryItem           InventoryItem                     @relation(fields: [inventoryItemId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  valuationInitialization InventoryValuationInitialization?
 
   @@unique([companyId, warehouseId, inventoryItemId])
   @@unique([id, companyId])
   @@index([companyId, inventoryItemId, warehouseId])
   @@map("inventory_balances")
+}
+
+model InventoryValuationInitialization {
+  id                 BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId          BigInt           @map("company_id") @db.UnsignedBigInt
+  inventoryBalanceId BigInt           @map("inventory_balance_id") @db.UnsignedBigInt
+  quantitySnapshot   Decimal          @map("quantity_snapshot") @db.Decimal(19, 6)
+  unitCostBase       Decimal          @map("unit_cost_base") @db.Decimal(19, 8)
+  totalValueBase     Decimal          @map("total_value_base") @db.Decimal(19, 4)
+  reason             String           @db.VarChar(500)
+  createdById        BigInt           @map("created_by_id") @db.UnsignedBigInt
+  createdAt          DateTime         @default(now()) @map("created_at")
+  company            Company          @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  inventoryBalance   InventoryBalance @relation(fields: [inventoryBalanceId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  createdBy          User             @relation("InventoryValuationCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([id, companyId])
+  @@unique([inventoryBalanceId, companyId])
+  @@index([companyId, createdAt])
+  @@map("inventory_valuation_initializations")
 }
 
 model PaymentMethod {
@@ -1098,14 +1146,17 @@ model Receipt {
 }
 
 model ReceiptAllocation {
-  id               BigInt         @id @default(autoincrement()) @db.UnsignedBigInt
-  companyId        BigInt         @map("company_id") @db.UnsignedBigInt
-  receiptId        BigInt         @map("receipt_id") @db.UnsignedBigInt
-  receivableItemId BigInt         @map("receivable_item_id") @db.UnsignedBigInt
-  allocatedAmount  Decimal        @map("allocated_amount") @db.Decimal(19, 4)
-  company          Company        @relation(fields: [companyId], references: [id])
-  receipt          Receipt        @relation(fields: [receiptId, companyId], references: [id, companyId])
-  receivableItem   ReceivableItem @relation(fields: [receivableItemId, companyId], references: [id, companyId])
+  id                       BigInt         @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId                BigInt         @map("company_id") @db.UnsignedBigInt
+  receiptId                BigInt         @map("receipt_id") @db.UnsignedBigInt
+  receivableItemId         BigInt         @map("receivable_item_id") @db.UnsignedBigInt
+  allocatedAmount          Decimal        @map("allocated_amount") @db.Decimal(19, 4)
+  carryingBaseAmount       Decimal?       @map("carrying_base_amount") @db.Decimal(19, 4)
+  settlementBaseAmount     Decimal?       @map("settlement_base_amount") @db.Decimal(19, 4)
+  realizedFxBaseAmount     Decimal?       @map("realized_fx_base_amount") @db.Decimal(19, 4)
+  company                  Company        @relation(fields: [companyId], references: [id])
+  receipt                  Receipt        @relation(fields: [receiptId, companyId], references: [id, companyId])
+  receivableItem           ReceivableItem @relation(fields: [receivableItemId, companyId], references: [id, companyId])
 
   @@unique([receiptId, receivableItemId])
   @@index([companyId, receivableItemId])
@@ -1180,23 +1231,25 @@ model SalesInvoice {
 }
 
 model ReceivableItem {
-  id                 BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
-  companyId          BigInt               @map("company_id") @db.UnsignedBigInt
-  salesInvoiceId     BigInt               @unique @map("sales_invoice_id") @db.UnsignedBigInt
-  customerId         BigInt               @map("customer_id") @db.UnsignedBigInt
-  currencyId         BigInt               @map("currency_id") @db.UnsignedBigInt
-  dueDate            DateTime             @map("due_date") @db.Date
-  originalAmount     Decimal              @map("original_amount") @db.Decimal(19, 4)
-  outstandingAmount  Decimal              @map("outstanding_amount") @db.Decimal(19, 4)
-  status             SettlementItemStatus @default(OPEN)
-  version            Int                  @default(0) @db.UnsignedInt
-  createdAt          DateTime             @default(now()) @map("created_at")
-  updatedAt          DateTime             @updatedAt @map("updated_at")
-  company            Company              @relation(fields: [companyId], references: [id])
-  salesInvoice       SalesInvoice         @relation(fields: [salesInvoiceId, companyId], references: [id, companyId])
-  customer           Customer             @relation(fields: [customerId, companyId], references: [id, companyId])
-  currency           Currency             @relation(fields: [currencyId], references: [id])
-  receiptAllocations ReceiptAllocation[]
+  id                    BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId             BigInt               @map("company_id") @db.UnsignedBigInt
+  salesInvoiceId        BigInt               @unique @map("sales_invoice_id") @db.UnsignedBigInt
+  customerId            BigInt               @map("customer_id") @db.UnsignedBigInt
+  currencyId            BigInt               @map("currency_id") @db.UnsignedBigInt
+  dueDate               DateTime             @map("due_date") @db.Date
+  originalAmount        Decimal              @map("original_amount") @db.Decimal(19, 4)
+  outstandingAmount     Decimal              @map("outstanding_amount") @db.Decimal(19, 4)
+  originalBaseAmount    Decimal              @map("original_base_amount") @db.Decimal(19, 4)
+  outstandingBaseAmount Decimal              @map("outstanding_base_amount") @db.Decimal(19, 4)
+  status                SettlementItemStatus @default(OPEN)
+  version               Int                  @default(0) @db.UnsignedInt
+  createdAt             DateTime             @default(now()) @map("created_at")
+  updatedAt             DateTime             @updatedAt @map("updated_at")
+  company               Company              @relation(fields: [companyId], references: [id])
+  salesInvoice          SalesInvoice         @relation(fields: [salesInvoiceId, companyId], references: [id, companyId])
+  customer              Customer             @relation(fields: [customerId, companyId], references: [id, companyId])
+  currency              Currency             @relation(fields: [currencyId], references: [id])
+  receiptAllocations    ReceiptAllocation[]
 
   @@unique([id, companyId])
   @@unique([salesInvoiceId, companyId])
@@ -1311,23 +1364,25 @@ model PurchaseInvoice {
 }
 
 model PayableItem {
-  id                 BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
-  companyId          BigInt               @map("company_id") @db.UnsignedBigInt
-  purchaseInvoiceId  BigInt               @unique @map("purchase_invoice_id") @db.UnsignedBigInt
-  supplierId         BigInt               @map("supplier_id") @db.UnsignedBigInt
-  currencyId         BigInt               @map("currency_id") @db.UnsignedBigInt
-  dueDate            DateTime             @map("due_date") @db.Date
-  originalAmount     Decimal              @map("original_amount") @db.Decimal(19, 4)
-  outstandingAmount  Decimal              @map("outstanding_amount") @db.Decimal(19, 4)
-  status             SettlementItemStatus @default(OPEN)
-  version            Int                  @default(0) @db.UnsignedInt
-  createdAt          DateTime             @default(now()) @map("created_at")
-  updatedAt          DateTime             @updatedAt @map("updated_at")
-  company            Company              @relation(fields: [companyId], references: [id])
-  purchaseInvoice    PurchaseInvoice      @relation(fields: [purchaseInvoiceId, companyId], references: [id, companyId])
-  supplier           Supplier             @relation(fields: [supplierId, companyId], references: [id, companyId])
-  currency           Currency             @relation(fields: [currencyId], references: [id])
-  paymentAllocations PaymentAllocation[]
+  id                    BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId             BigInt               @map("company_id") @db.UnsignedBigInt
+  purchaseInvoiceId     BigInt               @unique @map("purchase_invoice_id") @db.UnsignedBigInt
+  supplierId            BigInt               @map("supplier_id") @db.UnsignedBigInt
+  currencyId            BigInt               @map("currency_id") @db.UnsignedBigInt
+  dueDate               DateTime             @map("due_date") @db.Date
+  originalAmount        Decimal              @map("original_amount") @db.Decimal(19, 4)
+  outstandingAmount     Decimal              @map("outstanding_amount") @db.Decimal(19, 4)
+  originalBaseAmount    Decimal              @map("original_base_amount") @db.Decimal(19, 4)
+  outstandingBaseAmount Decimal              @map("outstanding_base_amount") @db.Decimal(19, 4)
+  status                SettlementItemStatus @default(OPEN)
+  version               Int                  @default(0) @db.UnsignedInt
+  createdAt             DateTime             @default(now()) @map("created_at")
+  updatedAt             DateTime             @updatedAt @map("updated_at")
+  company               Company              @relation(fields: [companyId], references: [id])
+  purchaseInvoice       PurchaseInvoice      @relation(fields: [purchaseInvoiceId, companyId], references: [id, companyId])
+  supplier              Supplier             @relation(fields: [supplierId, companyId], references: [id, companyId])
+  currency              Currency             @relation(fields: [currencyId], references: [id])
+  paymentAllocations    PaymentAllocation[]
 
   @@unique([id, companyId])
   @@unique([purchaseInvoiceId, companyId])
@@ -1422,14 +1477,17 @@ model Payment {
 }
 
 model PaymentAllocation {
-  id              BigInt      @id @default(autoincrement()) @db.UnsignedBigInt
-  companyId       BigInt      @map("company_id") @db.UnsignedBigInt
-  paymentId       BigInt      @map("payment_id") @db.UnsignedBigInt
-  payableItemId   BigInt      @map("payable_item_id") @db.UnsignedBigInt
-  allocatedAmount Decimal     @map("allocated_amount") @db.Decimal(19, 4)
-  company         Company     @relation(fields: [companyId], references: [id])
-  payment         Payment     @relation(fields: [paymentId, companyId], references: [id, companyId])
-  payableItem     PayableItem @relation(fields: [payableItemId, companyId], references: [id, companyId])
+  id                       BigInt      @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId                BigInt      @map("company_id") @db.UnsignedBigInt
+  paymentId                BigInt      @map("payment_id") @db.UnsignedBigInt
+  payableItemId            BigInt      @map("payable_item_id") @db.UnsignedBigInt
+  allocatedAmount          Decimal     @map("allocated_amount") @db.Decimal(19, 4)
+  carryingBaseAmount       Decimal?    @map("carrying_base_amount") @db.Decimal(19, 4)
+  settlementBaseAmount     Decimal?    @map("settlement_base_amount") @db.Decimal(19, 4)
+  realizedFxBaseAmount     Decimal?    @map("realized_fx_base_amount") @db.Decimal(19, 4)
+  company                  Company     @relation(fields: [companyId], references: [id])
+  payment                  Payment     @relation(fields: [paymentId, companyId], references: [id, companyId])
+  payableItem              PayableItem @relation(fields: [payableItemId, companyId], references: [id, companyId])
 
   @@unique([paymentId, payableItemId])
   @@index([companyId, payableItemId])

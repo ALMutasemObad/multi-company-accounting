@@ -3,7 +3,13 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import {
   PostingEngine,
   type PostingFailureReason,
+  type PostingEntryPlan,
 } from "../core-accounting/posting-engine.js";
+import {
+  RealizedFxAccountService,
+  type RealizedFxAccountPort,
+  type RealizedFxAccounts,
+} from "../core-accounting/realized-fx-account-service.js";
 import { FiscalService } from "../fiscal/fiscal-service.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
 import { ReceivableItemService } from "../receivables/receivable-item-service.js";
@@ -30,9 +36,11 @@ export type ReceiptErrorReason =
   | "REFERENCE_REQUIRED"
   | "INVALID_CURRENCY"
   | "INVALID_AMOUNT"
+  | "ALLOCATION_REQUIRED"
   | "ALLOCATION_MISMATCH"
   | "INVALID_ALLOCATION"
   | "OVER_ALLOCATION"
+  | "REALIZED_FX_ACCOUNT_NOT_CONFIGURED"
   | "ALREADY_REVERSED"
   | "IDEMPOTENCY_MISMATCH"
   | "IDEMPOTENCY_IN_PROGRESS";
@@ -88,10 +96,16 @@ export class ReceiptService {
   private readonly posting = new PostingEngine();
   private readonly receivables = new ReceivableItemService();
   private readonly treasury: TreasuryInstrumentPort;
+  private readonly fxAccounts: RealizedFxAccountPort;
   private readonly commands: IdempotentCommandExecutor;
-  constructor(private readonly prisma: PrismaClient, treasury?: TreasuryInstrumentPort) {
+  constructor(
+    private readonly prisma: PrismaClient,
+    treasury?: TreasuryInstrumentPort,
+    fxAccounts?: RealizedFxAccountPort,
+  ) {
     this.fiscal = new FiscalService(prisma);
     this.treasury = treasury ?? new TreasuryService(prisma);
+    this.fxAccounts = fxAccounts ?? new RealizedFxAccountService();
     this.commands = new IdempotentCommandExecutor(prisma);
   }
   private include() {
@@ -323,7 +337,12 @@ export class ReceiptService {
           actorUserId: context.userId,
           error: (reason) => this.postingError(reason),
           beforeLedger: async (postingTx) => {
-            await this.receivables.applyReceipt(postingTx, {
+            const settlementBases = this.allocateSettlementBase(
+              receipt.allocations,
+              receipt.baseAmount,
+              receipt.exchangeRate,
+            );
+            const carryingAllocations = await this.receivables.applyReceipt(postingTx, {
               companyId: context.companyId,
               customerId: receipt.customerId,
               currencyId: receipt.currencyId,
@@ -334,39 +353,55 @@ export class ReceiptService {
                 conflict: () => new ReceiptError("VERSION_CONFLICT"),
               },
             });
+            const carryingByItem = new Map(carryingAllocations.map((allocation) => [
+              allocation.receivableItemId.toString(),
+              allocation.carryingBaseAmount,
+            ]));
+            let carryingBaseTotal = zero;
+            let realizedFxBaseTotal = zero;
+            for (const allocation of receipt.allocations) {
+              const settlementBaseAmount = settlementBases.get(allocation.id.toString());
+              const carryingBaseAmount = carryingByItem.get(allocation.receivableItemId.toString());
+              if (!settlementBaseAmount || !carryingBaseAmount) {
+                throw new ReceiptError("INVALID_ALLOCATION");
+              }
+              const realizedFxBaseAmount = settlementBaseAmount.sub(carryingBaseAmount);
+              const changed = await postingTx.receiptAllocation.updateMany({
+                where: {
+                  id: allocation.id,
+                  companyId: context.companyId,
+                  receiptId: receipt.id,
+                  carryingBaseAmount: null,
+                  settlementBaseAmount: null,
+                  realizedFxBaseAmount: null,
+                },
+                data: { carryingBaseAmount, settlementBaseAmount, realizedFxBaseAmount },
+              });
+              if (changed.count !== 1) throw new ReceiptError("VERSION_CONFLICT");
+              carryingBaseTotal = carryingBaseTotal.add(carryingBaseAmount);
+              realizedFxBaseTotal = realizedFxBaseTotal.add(realizedFxBaseAmount);
+            }
+            const accounts = realizedFxBaseTotal.equals(0)
+              ? null
+              : await this.fxAccounts.resolve(
+                  postingTx,
+                  context.companyId,
+                  () => new ReceiptError("REALIZED_FX_ACCOUNT_NOT_CONFIGURED"),
+                );
+            if (!realizedFxBaseTotal.equals(0)) {
+              await this.audit(postingTx, context, "RECEIPT_REALIZED_FX_RECORDED", receipt.id, {
+                realizedFxBaseAmount: realizedFxBaseTotal.toFixed(4),
+              });
+            }
+            return [this.postingEntry(
+              receipt,
+              prepared,
+              receipt.allocations.length ? carryingBaseTotal : receipt.baseAmount,
+              realizedFxBaseTotal,
+              accounts,
+            )];
           },
-          entries: [
-            {
-              entryNumber: 1,
-              entryDate: receipt.accountingDocument.documentDate,
-              description: receipt.accountingDocument.description,
-              lines: [
-                {
-                  lineNumber: 1,
-                  accountId: prepared.cashBankLedgerAccountId,
-                  description: receipt.accountingDocument.description,
-                  currencyId: receipt.currencyId,
-                  exchangeRate: receipt.exchangeRate,
-                  debitAmount: receipt.amount,
-                  creditAmount: zero,
-                  baseDebitAmount: receipt.baseAmount,
-                  baseCreditAmount: zero,
-                },
-                {
-                  lineNumber: 2,
-                  accountId: prepared.counterLedgerAccountId,
-                  customerId: receipt.customerId,
-                  description: receipt.accountingDocument.description,
-                  currencyId: receipt.currencyId,
-                  exchangeRate: receipt.exchangeRate,
-                  debitAmount: zero,
-                  creditAmount: receipt.amount,
-                  baseDebitAmount: zero,
-                  baseCreditAmount: receipt.baseAmount,
-                },
-              ],
-            },
-          ],
+          entries: [this.postingEntry(receipt, prepared, receipt.baseAmount, zero, null)],
         });
         await archiveDocument(tx, context, receipt.accountingDocumentId);
         return {
@@ -457,6 +492,11 @@ export class ReceiptService {
     );
   }
   static json(v: any) {
+    const realizedFxBaseAmount = v.allocations.reduce(
+      (sum: Prisma.Decimal, allocation: any) =>
+        sum.add(allocation.realizedFxBaseAmount ?? 0),
+      new Prisma.Decimal(0),
+    );
     return {
       id: v.id.toString(),
       document: documentJson(v.accountingDocument),
@@ -468,6 +508,7 @@ export class ReceiptService {
       exchangeRate: v.exchangeRate.toFixed(8),
       amount: v.amount.toFixed(4),
       baseAmount: v.baseAmount.toFixed(4),
+      realizedFxBaseAmount: realizedFxBaseAmount.toFixed(4),
       referenceNumber: v.referenceNumber,
       counterpartyNameSnapshot: v.counterpartyNameSnapshot,
       counterpartyTaxMasked: v.counterpartyTaxLast4
@@ -479,6 +520,9 @@ export class ReceiptService {
         id: a.id.toString(),
         receivableItemId: a.receivableItemId.toString(),
         allocatedAmount: a.allocatedAmount.toFixed(4),
+        carryingBaseAmount: a.carryingBaseAmount?.toFixed(4) ?? null,
+        settlementBaseAmount: a.settlementBaseAmount?.toFixed(4) ?? null,
+        realizedFxBaseAmount: a.realizedFxBaseAmount?.toFixed(4) ?? null,
         invoiceNumber: a.receivableItem.salesInvoice.accountingDocument.documentNumber,
         customerName: a.receivableItem.salesInvoice.customerNameSnapshot,
         dueDate: a.receivableItem.dueDate.toISOString().slice(0, 10),
@@ -494,6 +538,89 @@ export class ReceiptService {
       generatedJournalEntryIds: v.generatedJournalEntryIds ?? v.ids ?? [],
       requestId: v.requestId,
     };
+  }
+  private postingEntry(
+    receipt: any,
+    prepared: {
+      cashBankLedgerAccountId: bigint;
+      counterLedgerAccountId: bigint;
+    },
+    carryingBaseAmount: Prisma.Decimal,
+    realizedFxBaseAmount: Prisma.Decimal,
+    accounts: RealizedFxAccounts | null,
+  ): PostingEntryPlan {
+    const zero = new Prisma.Decimal(0);
+    const lines: PostingEntryPlan["lines"] = [
+      {
+        lineNumber: 1,
+        accountId: prepared.cashBankLedgerAccountId,
+        description: receipt.accountingDocument.description,
+        currencyId: receipt.currencyId,
+        exchangeRate: receipt.exchangeRate,
+        debitAmount: receipt.amount,
+        creditAmount: zero,
+        baseDebitAmount: receipt.baseAmount,
+        baseCreditAmount: zero,
+      },
+      {
+        lineNumber: 2,
+        accountId: prepared.counterLedgerAccountId,
+        customerId: receipt.customerId,
+        description: receipt.accountingDocument.description,
+        currencyId: receipt.currencyId,
+        exchangeRate: carryingBaseAmount
+          .div(receipt.amount)
+          .toDecimalPlaces(8, Prisma.Decimal.ROUND_HALF_UP),
+        debitAmount: zero,
+        creditAmount: receipt.amount,
+        baseDebitAmount: zero,
+        baseCreditAmount: carryingBaseAmount,
+      },
+    ];
+    if (!realizedFxBaseAmount.equals(0)) {
+      if (!accounts) throw new ReceiptError("REALIZED_FX_ACCOUNT_NOT_CONFIGURED");
+      const gain = realizedFxBaseAmount.gt(0);
+      const amount = realizedFxBaseAmount.abs();
+      lines.push({
+        lineNumber: 3,
+        accountId: gain ? accounts.gainAccountId : accounts.lossAccountId,
+        description: gain ? "ربح فرق عملة محقق" : "خسارة فرق عملة محققة",
+        currencyId: accounts.baseCurrencyId,
+        exchangeRate: new Prisma.Decimal(1),
+        debitAmount: gain ? zero : amount,
+        creditAmount: gain ? amount : zero,
+        baseDebitAmount: gain ? zero : amount,
+        baseCreditAmount: gain ? amount : zero,
+      });
+    }
+    return {
+      entryNumber: 1,
+      entryDate: receipt.accountingDocument.documentDate,
+      description: receipt.accountingDocument.description,
+      lines,
+    };
+  }
+  private allocateSettlementBase(
+    allocations: Array<{ id: bigint; allocatedAmount: Prisma.Decimal }>,
+    totalBaseAmount: Prisma.Decimal,
+    exchangeRate: Prisma.Decimal,
+  ) {
+    const result = new Map<string, Prisma.Decimal>();
+    let assigned = new Prisma.Decimal(0);
+    allocations.forEach((allocation, index) => {
+      const baseAmount = index === allocations.length - 1
+        ? totalBaseAmount.sub(assigned)
+        : allocation.allocatedAmount
+            .mul(exchangeRate)
+            .toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP);
+      if (baseAmount.lte(0)) throw new ReceiptError("INVALID_ALLOCATION");
+      result.set(allocation.id.toString(), baseAmount);
+      assigned = assigned.add(baseAmount);
+    });
+    if (allocations.length > 0 && !assigned.equals(totalBaseAmount)) {
+      throw new ReceiptError("INVALID_ALLOCATION");
+    }
+    return result;
   }
   private async openPeriod(companyId: bigint, id: bigint) {
     const value = await this.prisma.fiscalPeriod.findFirst({
@@ -533,6 +660,9 @@ export class ReceiptService {
   ) {
     if ((input.customerId == null) === (input.counterAccountId == null))
       throw new ReceiptError("COUNTERPARTY_REQUIRED");
+    const allocations = input.allocations ?? [];
+    if (input.customerId != null && allocations.length === 0)
+      throw new ReceiptError("ALLOCATION_REQUIRED");
     const amount = new Prisma.Decimal(input.amount),
       rate = new Prisma.Decimal(input.exchangeRate);
     if (amount.lte(0) || rate.lte(0)) throw new ReceiptError("INVALID_AMOUNT");
@@ -578,7 +708,6 @@ export class ReceiptService {
     });
     if (input.currencyId === company.baseCurrencyId && !rate.equals(1))
       throw new ReceiptError("INVALID_CURRENCY");
-    const allocations = input.allocations ?? [];
     if (
       new Set(allocations.map((a) => a.receivableItemId.toString())).size !==
       allocations.length

@@ -147,6 +147,9 @@ export type InventoryBalance = {
     unitOfMeasure: Pick<UnitOfMeasure, "id" | "code" | "nameAr" | "nameEn" | "decimalPlaces">;
   };
   onHand: string;
+  inventoryValueBase: string;
+  averageUnitCostBase: string;
+  isValuationInitialized: boolean;
   version: number;
   movementCount: number;
   updatedAt: string;
@@ -166,6 +169,9 @@ export type InventoryMovementLine = {
   toWarehouseCode: string | null;
   toWarehouseName: string | null;
   quantity: string;
+  unitCostBase: string;
+  totalCostBase: string;
+  isCostInitialized: boolean;
 };
 
 export type InventoryMovement = {
@@ -175,12 +181,22 @@ export type InventoryMovement = {
   movementDate: string;
   description: string;
   externalReference: string | null;
+  status: "POSTED" | "REVERSED";
+  version: number;
   source: {
     type: "SALES_INVOICE" | "SALES_CREDIT_NOTE" | "PURCHASE_INVOICE" | "PURCHASE_DEBIT_NOTE";
     id: string;
     event: "POST" | "REVERSE";
     documentNumber: string;
   } | null;
+  accounting: {
+    documentNumber: string;
+    status: "DRAFT" | "POSTED" | "REVERSED" | "CANCELLED";
+    version: number;
+    offsetAccount: { id: string; code: string; nameAr: string } | null;
+  } | null;
+  reversalOf: { id: string; movementNumber: string } | null;
+  reversedBy: { id: string; movementNumber: string } | null;
   createdByName: string;
   createdAt: string;
   lineCount: number;
@@ -267,6 +283,9 @@ export type ReceiptAllocation = {
   id?: string;
   receivableItemId: string;
   allocatedAmount: string;
+  carryingBaseAmount?: string | null;
+  settlementBaseAmount?: string | null;
+  realizedFxBaseAmount?: string | null;
   invoiceNumber?: string;
   customerName?: string;
   dueDate?: string;
@@ -276,11 +295,14 @@ export type PaymentAllocation = {
   id?: string;
   payableItemId: string;
   allocatedAmount: string;
+  carryingBaseAmount?: string | null;
+  settlementBaseAmount?: string | null;
+  realizedFxBaseAmount?: string | null;
 };
 
 export type DocumentHeader = {
   id: string;
-  documentType: "PAYMENT" | "RECEIPT" | "MANUAL_JOURNAL" | "SALES_INVOICE" | "SALES_CREDIT_NOTE" | "PURCHASE_INVOICE" | "PURCHASE_DEBIT_NOTE";
+  documentType: "PAYMENT" | "RECEIPT" | "MANUAL_JOURNAL" | "INVENTORY_ADJUSTMENT" | "SALES_INVOICE" | "SALES_CREDIT_NOTE" | "PURCHASE_INVOICE" | "PURCHASE_DEBIT_NOTE";
   documentNumber: string;
   documentDate: string;
   description: string;
@@ -329,6 +351,7 @@ export type Payment = {
   exchangeRate: string;
   amount: string;
   baseAmount: string;
+  realizedFxBaseAmount: string;
   referenceNumber: string | null;
   counterpartyNameSnapshot: string;
   counterpartyTaxMasked: string | null;
@@ -348,6 +371,7 @@ export type Receipt = {
   exchangeRate: string;
   amount: string;
   baseAmount: string;
+  realizedFxBaseAmount: string;
   referenceNumber: string | null;
   counterpartyNameSnapshot: string;
   counterpartyTaxMasked: string | null;
@@ -419,6 +443,7 @@ export type SalesInvoice = {
   paidAmount: string;
   creditedAmount: string;
   outstandingAmount: string;
+  outstandingBaseAmount: string;
   settlementStatus: "OPEN" | "PARTIAL" | "PAID";
   customerNameSnapshot: string;
   customerTaxMasked: string | null;
@@ -474,7 +499,7 @@ export type PurchaseInvoice = {
   currency?: { id: string; code: string; nameAr: string };
   exchangeRate: string; dueDate: string; subtotal: string; discountTotal: string;
   taxableTotal: string; taxTotal: string; total: string; baseTotal: string;
-  paidAmount: string; debitedAmount: string; outstandingAmount: string;
+  paidAmount: string; debitedAmount: string; outstandingAmount: string; outstandingBaseAmount: string;
   settlementStatus: "OPEN" | "PARTIAL" | "PAID";
   supplierNameSnapshot: string; supplierTaxMasked: string | null;
   supplierAddressSnapshot: string | null; notes: string | null;
@@ -543,7 +568,7 @@ export type JournalReportRow = {
   journalEntryId: string;
   documentId: string;
   documentNumber: string;
-  documentType: "MANUAL_JOURNAL" | "RECEIPT" | "PAYMENT" | "PERIOD_CLOSE" | "SALES_INVOICE" | "SALES_CREDIT_NOTE" | "PURCHASE_INVOICE" | "PURCHASE_DEBIT_NOTE";
+  documentType: "MANUAL_JOURNAL" | "INVENTORY_ADJUSTMENT" | "RECEIPT" | "PAYMENT" | "PERIOD_CLOSE" | "SALES_INVOICE" | "SALES_CREDIT_NOTE" | "PURCHASE_INVOICE" | "PURCHASE_DEBIT_NOTE";
   documentDate: string;
   status: "POSTED" | "REVERSED";
   entryNumber: number;

@@ -60,11 +60,10 @@ describe.runIf(enabled)('accounts and cost centers with MariaDB', () => {
     }
   });
   it('applies the default chart idempotently, preserves customizations and safely restores deleted template leaves', async () => {
-    const originalIds = (await prisma!.account.findMany({ where: { companyId }, select: { id: true } })).map(({ id }) => id);
+    let usageId: bigint | undefined;
     try {
       const before = await agent.get('/api/v1/accounts/default-template').expect(200);
       expect(before.body.total).toBe(defaultChartDefinitions.length);
-      expect(before.body.missing).toBeGreaterThan(0);
       const applied = await agent.post('/api/v1/accounts/default-template/apply').set('X-CSRF-Token', csrf).expect(200);
       expect(applied.body.created + applied.body.linked + applied.body.existing).toBe(defaultChartDefinitions.length);
       expect(applied.body.missing).toBe(0);
@@ -84,16 +83,14 @@ describe.runIf(enabled)('accounts and cost centers with MariaDB', () => {
       const root = await prisma!.account.findFirstOrThrow({ where: { companyId, sourceTemplateCode: DEFAULT_CHART_TEMPLATE_CODE, sourceTemplateKey: 'assets' } });
       const blocked = await agent.delete(`/api/v1/accounts/${root.id}`).set('X-CSRF-Token', csrf).send({ reason: 'اختبار منع حذف الجذر' }).expect(422);
       expect(blocked.body.reason).toBe('HAS_CHILDREN');
+      usageId = (await prisma!.cashBankAccount.create({
+        data: { companyId, ledgerAccountId: cash.id, accountType: 'CASH', code: `IT-ACCOUNT-USE-${Date.now().toString().slice(-8)}`, nameAr: 'استخدام حساب لاختبار منع الحذف' },
+      })).id;
       const used = await agent.delete(`/api/v1/accounts/${cash.id}`).set('X-CSRF-Token', csrf).send({ reason: 'اختبار منع حذف حساب مستخدم' }).expect(409);
       expect(used.body.reason).toBe('ACCOUNT_IN_USE');
       await agent.patch(`/api/v1/accounts/${cash.id}`).set('X-CSRF-Token', csrf).send({ code: '1110', nameAr: 'الصندوق الرئيسي' }).expect(200);
     } finally {
-      const createdIds = (await prisma!.account.findMany({ where: { companyId, sourceTemplateCode: DEFAULT_CHART_TEMPLATE_CODE, id: { notIn: originalIds } }, select: { id: true } })).map(({ id }) => id);
-      if (createdIds.length) {
-        await prisma!.account.updateMany({ where: { id: { in: createdIds } }, data: { parentAccountId: null } });
-        await prisma!.account.deleteMany({ where: { id: { in: createdIds } } });
-      }
-      await prisma!.account.updateMany({ where: { id: { in: originalIds }, sourceTemplateCode: DEFAULT_CHART_TEMPLATE_CODE }, data: { sourceTemplateCode: null, sourceTemplateKey: null } });
+      if (usageId) await prisma!.cashBankAccount.deleteMany({ where: { id: usageId, companyId } });
       await prisma!.auditLog.deleteMany({ where: { companyId, action: { in: ['DEFAULT_CHART_TEMPLATE_APPLIED', 'ACCOUNT_DELETED'] } } });
     }
   });

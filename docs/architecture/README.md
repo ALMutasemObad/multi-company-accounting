@@ -1,7 +1,7 @@
 ---
 title: "Architecture Governance Index"
 status: "mandatory"
-last_updated: "2026-08-24"
+last_updated: "2026-08-26"
 ---
 
 # فهرس الحوكمة المعمارية
@@ -22,7 +22,8 @@ last_updated: "2026-08-24"
 10. [سياسة OpenAPI كعقد تنفيذي](OPENAPI_EXECUTABLE_CONTRACTS_AR.md): مصدر الحقيقة لأجسام JSON والتوليد والحراس وفحص الاستجابات وبوابات منع الانحراف.
 11. [سياق استيراد البيانات](DATA_IMPORT_CONTEXT_AR.md): ملكية دفعة الاستيراد، الحدود الأمنية، المعاينة والاعتماد الذري، ومنافذ الأهداف.
 12. [أساس سياق المخزون](INVENTORY_CONTEXT_FOUNDATION_AR.md): حدود شريحة المستودعات الحالية وخريطة التوسع إلى الأصناف والحركات والتكلفة.
-13. [قائمة مراجعة التغيير](CHANGE_REVIEW_CHECKLIST_AR.md): بوابة إلزامية للمراجعة قبل دمج أي تغيير ذي أثر معماري.
+13. [سياسة اعتماد الموديولات مفتوحة المصدر](OPEN_SOURCE_MODULE_ADOPTION_POLICY_AR.md): بوابة الاختيار والرخص والأمن وطريقة الربط وخطة التحديث والخروج.
+14. [قائمة مراجعة التغيير](CHANGE_REVIEW_CHECKLIST_AR.md): بوابة إلزامية للمراجعة قبل دمج أي تغيير ذي أثر معماري.
 
 التقرير [ARCHITECTURE_AUDIT_DDD_EVENT_DRIVEN_AR.md](../ARCHITECTURE_AUDIT_DDD_EVENT_DRIVEN_AR.md) وثيقة تقييم وأدلة، وليس بديلًا عن القرارات الحاكمة أعلاه.
 

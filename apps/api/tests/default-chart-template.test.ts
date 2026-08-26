@@ -3,7 +3,7 @@ import { defaultChartDefinitions } from '../src/accounts/default-chart-template.
 
 describe('default chart template contract', () => {
   it('has stable unique keys and codes with parents declared before children', () => {
-    expect(defaultChartDefinitions).toHaveLength(60);
+    expect(defaultChartDefinitions).toHaveLength(62);
     expect(new Set(defaultChartDefinitions.map(({ key }) => key)).size).toBe(defaultChartDefinitions.length);
     expect(new Set(defaultChartDefinitions.map(({ code }) => code)).size).toBe(defaultChartDefinitions.length);
     const seen = new Map<string, (typeof defaultChartDefinitions)[number]>();

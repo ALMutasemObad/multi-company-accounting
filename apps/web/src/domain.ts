@@ -47,6 +47,8 @@ export function validatePaymentDraft(input: {
   if (Number(input.amount) <= 0) errors.push(translate("validation.payment.amount"));
   if (Number(input.exchangeRate) <= 0)
     errors.push(translate("validation.payment.rate"));
+  if (input.supplierId && input.allocations.length === 0)
+    errors.push(translate("validation.payment.allocationsRequired"));
   if (
     input.allocations.length > 0 &&
     Math.abs(allocationsTotal(input.allocations) - Number(input.amount)) > 0.00005
@@ -76,6 +78,8 @@ export function validateReceiptDraft(input: {
   if (Number(input.amount) <= 0) errors.push(translate("validation.payment.amount"));
   if (Number(input.exchangeRate) <= 0)
     errors.push(translate("validation.payment.rate"));
+  if (input.customerId && input.allocations.length === 0)
+    errors.push(translate("validation.receipt.allocationsRequired"));
   if (
     input.allocations.length > 0 &&
     Math.abs(allocationsTotal(input.allocations) - Number(input.amount)) > 0.00005

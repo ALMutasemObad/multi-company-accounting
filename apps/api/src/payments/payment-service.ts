@@ -2,8 +2,14 @@ import { randomUUID } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import {
   PostingEngine,
+  type PostingEntryPlan,
   type PostingFailureReason,
 } from "../core-accounting/posting-engine.js";
+import {
+  RealizedFxAccountService,
+  type RealizedFxAccountPort,
+  type RealizedFxAccounts,
+} from "../core-accounting/realized-fx-account-service.js";
 import { FiscalService } from "../fiscal/fiscal-service.js";
 import { PayableItemService } from "../payables/payable-item-service.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
@@ -31,9 +37,11 @@ export type PaymentErrorReason =
   | "REFERENCE_REQUIRED"
   | "INVALID_CURRENCY"
   | "INVALID_AMOUNT"
+  | "ALLOCATION_REQUIRED"
   | "ALLOCATION_MISMATCH"
   | "INVALID_ALLOCATION"
   | "OVER_ALLOCATION"
+  | "REALIZED_FX_ACCOUNT_NOT_CONFIGURED"
   | "ALREADY_REVERSED"
   | "IDEMPOTENCY_MISMATCH"
   | "IDEMPOTENCY_IN_PROGRESS";
@@ -90,11 +98,17 @@ export class PaymentService {
   private readonly payables = new PayableItemService();
   private readonly transactions: TransactionExecutor;
   private readonly treasury: TreasuryInstrumentPort;
+  private readonly fxAccounts: RealizedFxAccountPort;
   private readonly commands: IdempotentCommandExecutor;
-  constructor(private readonly prisma: PrismaClient, treasury?: TreasuryInstrumentPort) {
+  constructor(
+    private readonly prisma: PrismaClient,
+    treasury?: TreasuryInstrumentPort,
+    fxAccounts?: RealizedFxAccountPort,
+  ) {
     this.fiscal = new FiscalService(prisma);
     this.transactions = new TransactionExecutor(prisma);
     this.treasury = treasury ?? new TreasuryService(prisma);
+    this.fxAccounts = fxAccounts ?? new RealizedFxAccountService();
     this.commands = new IdempotentCommandExecutor(prisma, this.transactions);
   }
   private include() {
@@ -315,7 +329,12 @@ export class PaymentService {
           actorUserId: context.userId,
           error: (reason) => this.postingError(reason),
           beforeLedger: async (postingTx) => {
-            await this.payables.applyPayment(postingTx, {
+            const settlementBases = this.allocateSettlementBase(
+              payment.allocations,
+              payment.baseAmount,
+              payment.exchangeRate,
+            );
+            const carryingAllocations = await this.payables.applyPayment(postingTx, {
               companyId: context.companyId,
               supplierId: payment.supplierId,
               currencyId: payment.currencyId,
@@ -326,39 +345,55 @@ export class PaymentService {
                 conflict: () => new PaymentError("VERSION_CONFLICT"),
               },
             });
+            const carryingByItem = new Map(carryingAllocations.map((allocation) => [
+              allocation.payableItemId.toString(),
+              allocation.carryingBaseAmount,
+            ]));
+            let carryingBaseTotal = zero;
+            let realizedFxBaseTotal = zero;
+            for (const allocation of payment.allocations) {
+              const settlementBaseAmount = settlementBases.get(allocation.id.toString());
+              const carryingBaseAmount = carryingByItem.get(allocation.payableItemId.toString());
+              if (!settlementBaseAmount || !carryingBaseAmount) {
+                throw new PaymentError("INVALID_ALLOCATION");
+              }
+              const realizedFxBaseAmount = carryingBaseAmount.sub(settlementBaseAmount);
+              const changed = await postingTx.paymentAllocation.updateMany({
+                where: {
+                  id: allocation.id,
+                  companyId: context.companyId,
+                  paymentId: payment.id,
+                  carryingBaseAmount: null,
+                  settlementBaseAmount: null,
+                  realizedFxBaseAmount: null,
+                },
+                data: { carryingBaseAmount, settlementBaseAmount, realizedFxBaseAmount },
+              });
+              if (changed.count !== 1) throw new PaymentError("VERSION_CONFLICT");
+              carryingBaseTotal = carryingBaseTotal.add(carryingBaseAmount);
+              realizedFxBaseTotal = realizedFxBaseTotal.add(realizedFxBaseAmount);
+            }
+            const accounts = realizedFxBaseTotal.equals(0)
+              ? null
+              : await this.fxAccounts.resolve(
+                  postingTx,
+                  context.companyId,
+                  () => new PaymentError("REALIZED_FX_ACCOUNT_NOT_CONFIGURED"),
+                );
+            if (!realizedFxBaseTotal.equals(0)) {
+              await this.audit(postingTx, context, "PAYMENT_REALIZED_FX_RECORDED", payment.id, {
+                realizedFxBaseAmount: realizedFxBaseTotal.toFixed(4),
+              });
+            }
+            return [this.postingEntry(
+              payment,
+              prepared,
+              payment.allocations.length ? carryingBaseTotal : payment.baseAmount,
+              realizedFxBaseTotal,
+              accounts,
+            )];
           },
-          entries: [
-            {
-              entryNumber: 1,
-              entryDate: payment.accountingDocument.documentDate,
-              description: payment.accountingDocument.description,
-              lines: [
-                {
-                  lineNumber: 1,
-                  accountId: prepared.cashBankLedgerAccountId,
-                  description: payment.accountingDocument.description,
-                  currencyId: payment.currencyId,
-                  exchangeRate: payment.exchangeRate,
-                  debitAmount: zero,
-                  creditAmount: payment.amount,
-                  baseDebitAmount: zero,
-                  baseCreditAmount: payment.baseAmount,
-                },
-                {
-                  lineNumber: 2,
-                  accountId: prepared.counterLedgerAccountId,
-                  supplierId: payment.supplierId,
-                  description: payment.accountingDocument.description,
-                  currencyId: payment.currencyId,
-                  exchangeRate: payment.exchangeRate,
-                  debitAmount: payment.amount,
-                  creditAmount: zero,
-                  baseDebitAmount: payment.baseAmount,
-                  baseCreditAmount: zero,
-                },
-              ],
-            },
-          ],
+          entries: [this.postingEntry(payment, prepared, payment.baseAmount, zero, null)],
         });
         await archiveDocument(tx, context, payment.accountingDocumentId);
         return {
@@ -449,6 +484,11 @@ export class PaymentService {
     );
   }
   static json(v: any) {
+    const realizedFxBaseAmount = v.allocations.reduce(
+      (sum: Prisma.Decimal, allocation: any) =>
+        sum.add(allocation.realizedFxBaseAmount ?? 0),
+      new Prisma.Decimal(0),
+    );
     return {
       id: v.id.toString(),
       document: documentJson(v.accountingDocument),
@@ -460,6 +500,7 @@ export class PaymentService {
       exchangeRate: v.exchangeRate.toFixed(8),
       amount: v.amount.toFixed(4),
       baseAmount: v.baseAmount.toFixed(4),
+      realizedFxBaseAmount: realizedFxBaseAmount.toFixed(4),
       referenceNumber: v.referenceNumber,
       counterpartyNameSnapshot: v.counterpartyNameSnapshot,
       counterpartyTaxMasked: v.counterpartyTaxLast4
@@ -471,6 +512,9 @@ export class PaymentService {
         id: a.id.toString(),
         payableItemId: a.payableItemId.toString(),
         allocatedAmount: a.allocatedAmount.toFixed(4),
+        carryingBaseAmount: a.carryingBaseAmount?.toFixed(4) ?? null,
+        settlementBaseAmount: a.settlementBaseAmount?.toFixed(4) ?? null,
+        realizedFxBaseAmount: a.realizedFxBaseAmount?.toFixed(4) ?? null,
       })),
     };
   }
@@ -483,6 +527,89 @@ export class PaymentService {
       generatedJournalEntryIds: v.generatedJournalEntryIds ?? v.ids ?? [],
       requestId: v.requestId,
     };
+  }
+  private postingEntry(
+    payment: any,
+    prepared: {
+      cashBankLedgerAccountId: bigint;
+      counterLedgerAccountId: bigint;
+    },
+    carryingBaseAmount: Prisma.Decimal,
+    realizedFxBaseAmount: Prisma.Decimal,
+    accounts: RealizedFxAccounts | null,
+  ): PostingEntryPlan {
+    const zero = new Prisma.Decimal(0);
+    const lines: PostingEntryPlan["lines"] = [
+      {
+        lineNumber: 1,
+        accountId: prepared.cashBankLedgerAccountId,
+        description: payment.accountingDocument.description,
+        currencyId: payment.currencyId,
+        exchangeRate: payment.exchangeRate,
+        debitAmount: zero,
+        creditAmount: payment.amount,
+        baseDebitAmount: zero,
+        baseCreditAmount: payment.baseAmount,
+      },
+      {
+        lineNumber: 2,
+        accountId: prepared.counterLedgerAccountId,
+        supplierId: payment.supplierId,
+        description: payment.accountingDocument.description,
+        currencyId: payment.currencyId,
+        exchangeRate: carryingBaseAmount
+          .div(payment.amount)
+          .toDecimalPlaces(8, Prisma.Decimal.ROUND_HALF_UP),
+        debitAmount: payment.amount,
+        creditAmount: zero,
+        baseDebitAmount: carryingBaseAmount,
+        baseCreditAmount: zero,
+      },
+    ];
+    if (!realizedFxBaseAmount.equals(0)) {
+      if (!accounts) throw new PaymentError("REALIZED_FX_ACCOUNT_NOT_CONFIGURED");
+      const gain = realizedFxBaseAmount.gt(0);
+      const amount = realizedFxBaseAmount.abs();
+      lines.push({
+        lineNumber: 3,
+        accountId: gain ? accounts.gainAccountId : accounts.lossAccountId,
+        description: gain ? "ربح فرق عملة محقق" : "خسارة فرق عملة محققة",
+        currencyId: accounts.baseCurrencyId,
+        exchangeRate: new Prisma.Decimal(1),
+        debitAmount: gain ? zero : amount,
+        creditAmount: gain ? amount : zero,
+        baseDebitAmount: gain ? zero : amount,
+        baseCreditAmount: gain ? amount : zero,
+      });
+    }
+    return {
+      entryNumber: 1,
+      entryDate: payment.accountingDocument.documentDate,
+      description: payment.accountingDocument.description,
+      lines,
+    };
+  }
+  private allocateSettlementBase(
+    allocations: Array<{ id: bigint; allocatedAmount: Prisma.Decimal }>,
+    totalBaseAmount: Prisma.Decimal,
+    exchangeRate: Prisma.Decimal,
+  ) {
+    const result = new Map<string, Prisma.Decimal>();
+    let assigned = new Prisma.Decimal(0);
+    allocations.forEach((allocation, index) => {
+      const baseAmount = index === allocations.length - 1
+        ? totalBaseAmount.sub(assigned)
+        : allocation.allocatedAmount
+            .mul(exchangeRate)
+            .toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP);
+      if (baseAmount.lte(0)) throw new PaymentError("INVALID_ALLOCATION");
+      result.set(allocation.id.toString(), baseAmount);
+      assigned = assigned.add(baseAmount);
+    });
+    if (allocations.length > 0 && !assigned.equals(totalBaseAmount)) {
+      throw new PaymentError("INVALID_ALLOCATION");
+    }
+    return result;
   }
   private async openPeriod(companyId: bigint, id: bigint) {
     const value = await this.prisma.fiscalPeriod.findFirst({
@@ -522,6 +649,9 @@ export class PaymentService {
   ) {
     if ((input.supplierId == null) === (input.counterAccountId == null))
       throw new PaymentError("COUNTERPARTY_REQUIRED");
+    const allocations = input.allocations ?? [];
+    if (input.supplierId != null && allocations.length === 0)
+      throw new PaymentError("ALLOCATION_REQUIRED");
     const amount = new Prisma.Decimal(input.amount),
       rate = new Prisma.Decimal(input.exchangeRate);
     if (amount.lte(0) || rate.lte(0)) throw new PaymentError("INVALID_AMOUNT");
@@ -567,7 +697,6 @@ export class PaymentService {
     });
     if (input.currencyId === company.baseCurrencyId && !rate.equals(1))
       throw new PaymentError("INVALID_CURRENCY");
-    const allocations = input.allocations ?? [];
     if (
       new Set(allocations.map((a) => a.payableItemId.toString())).size !==
       allocations.length

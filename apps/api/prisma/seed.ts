@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { hash } from 'argon2';
+import { applyDefaultChartTemplate } from '../src/accounts/default-chart-template.js';
 import { createDatabase } from '../src/database.js';
 import { currencyDefinitions } from '../src/platform/reference-data.js';
 import { paymentMethodDefinitions } from '../src/treasury/treasury-reference-data.js';
@@ -97,6 +98,7 @@ try {
     ['inventory_catalog.manage', 'inventory', 'إدارة وحدات القياس وكتالوج الأصناف'],
     ['inventory_movements.view', 'inventory', 'عرض أرصدة وحركات المخزون'],
     ['inventory_movements.create', 'inventory', 'إنشاء حركات المخزون'],
+    ['inventory_movements.reverse', 'inventory', 'عكس حركات المخزون اليدوية'],
     ['receipts.view', 'receipts', 'عرض سندات القبض'],
     ['receipts.create', 'receipts', 'إنشاء سندات القبض'],
     ['receipts.update', 'receipts', 'تعديل سندات القبض'],
@@ -125,6 +127,7 @@ try {
     ['sales_invoices.post', 'sales_invoices', 'ترحيل فواتير المبيعات والإشعارات الدائنة'],
     ['sales_invoices.cancel', 'sales_invoices', 'إلغاء مسودات فواتير المبيعات'],
     ['sales_invoices.reverse', 'sales_invoices', 'عكس فواتير المبيعات المرحلة'],
+    ['sales_invoices.print', 'sales_invoices', 'طباعة وأرشفة فواتير المبيعات والإشعارات الدائنة'],
     ['tax_rates.manage', 'sales_invoices', 'إدارة نسب ضريبة المبيعات'],
     ['reports.receivables.view', 'reports', 'عرض أرصدة العملاء وأعمار الديون'],
     ['purchase_invoices.view', 'purchase_invoices', 'عرض فواتير المشتريات والإشعارات المدينة'],
@@ -166,6 +169,7 @@ try {
   for (const accountType of accountTypes) {
     await prisma.accountType.upsert({ where: { code: accountType.code }, update: accountType, create: accountType });
   }
+  await prisma.$transaction((tx) => applyDefaultChartTemplate(tx, company.id));
   for (const method of paymentMethodDefinitions) {
     await prisma.paymentMethod.upsert({ where: { code: method.code }, update: { ...method, isActive: true, scope: 'GLOBAL', companyId: null }, create: { ...method, scope: 'GLOBAL' } });
   }

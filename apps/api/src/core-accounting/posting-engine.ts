@@ -57,7 +57,7 @@ export type PostPlanCommand = PostingCommandBase & {
   beforeLedger?: (
     tx: Prisma.TransactionClient,
     document: AccountingDocument,
-  ) => Promise<void>;
+  ) => Promise<PostingEntryPlan[] | void>;
   afterEntries?: (
     tx: Prisma.TransactionClient,
     entries: PersistedPostingEntry[],
@@ -161,17 +161,20 @@ export class PostingEngine {
     command: PostPlanCommand,
   ): Promise<PostingResult> {
     const { document, period } = await this.lockPostingScope(tx, command);
-    if (command.beforeLedger) await command.beforeLedger(tx, document);
+    const preparedEntries = command.beforeLedger
+      ? await command.beforeLedger(tx, document)
+      : undefined;
+    const postingEntries = preparedEntries ?? command.entries;
     await this.validateEntries(
       tx,
       command.companyId,
       period,
-      command.entries,
+      postingEntries,
       command.error,
     );
 
     const entries: PersistedPostingEntry[] = [];
-    for (const entry of command.entries) {
+    for (const entry of postingEntries) {
       entries.push(
         await tx.journalEntry.create({
           data: {

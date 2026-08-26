@@ -14,15 +14,22 @@ const MAX_XLSX_UNCOMPRESSED = 8 * 1024 * 1024;
 export const importHeaders: Record<DataImportTypeValue, readonly string[]> = {
   CUSTOMERS: ["receivable_account_code", "name_ar", "name_en", "phone", "email", "tax_number", "address_type", "address_line1", "address_line2", "city", "region", "postal_code", "country_code", "is_primary"],
   SUPPLIERS: ["payable_account_code", "name_ar", "name_en", "phone", "email", "tax_number", "address_type", "address_line1", "address_line2", "city", "region", "postal_code", "country_code", "is_primary"],
-  SALES_INVOICES: ["invoice_key", "document_date", "due_date", "description", "customer_code", "currency_code", "exchange_rate", "customer_address", "notes", "line_description", "quantity", "unit_price", "discount_amount", "account_code", "tax_code", "cost_center_code"],
-  PURCHASE_INVOICES: ["invoice_key", "document_date", "due_date", "description", "supplier_code", "supplier_invoice_number", "currency_code", "exchange_rate", "supplier_address", "notes", "line_description", "quantity", "unit_price", "discount_amount", "account_code", "tax_code", "cost_center_code"],
+  SALES_INVOICES: ["invoice_key", "document_date", "due_date", "description", "customer_code", "warehouse_code", "currency_code", "exchange_rate", "customer_address", "notes", "inventory_item_code", "line_description", "quantity", "unit_price", "discount_amount", "account_code", "tax_code", "cost_center_code"],
+  PURCHASE_INVOICES: ["invoice_key", "document_date", "due_date", "description", "supplier_code", "supplier_invoice_number", "warehouse_code", "currency_code", "exchange_rate", "supplier_address", "notes", "inventory_item_code", "line_description", "quantity", "unit_price", "discount_amount", "account_code", "tax_code", "cost_center_code"],
 };
 
 export const importExamples: Record<DataImportTypeValue, readonly string[]> = {
   CUSTOMERS: ["110100", "عميل تجريبي", "Sample customer", "+966500000000", "customer@example.com", "1234567890", "BILLING", "شارع الملك", "", "الرياض", "الرياض", "12345", "SA", "true"],
   SUPPLIERS: ["210100", "مورد تجريبي", "Sample supplier", "+966500000001", "supplier@example.com", "1234567890", "PAYMENT", "طريق الملك", "", "الرياض", "الرياض", "12345", "SA", "true"],
-  SALES_INVOICES: ["INV-001", "2026-08-22", "2026-09-21", "فاتورة مبيعات مستوردة", "CUS-000001", "SAR", "1.00000000", "", "", "خدمة استشارية", "1.0000", "1000.0000", "0.0000", "410100", "", ""],
-  PURCHASE_INVOICES: ["PINV-001", "2026-08-22", "2026-09-21", "فاتورة مشتريات مستوردة", "SUP-000001", "SUP-INV-001", "SAR", "1.00000000", "", "", "مصروف تشغيلي", "1.0000", "500.0000", "0.0000", "510100", "", ""],
+  SALES_INVOICES: ["INV-001", "2026-08-22", "2026-09-21", "فاتورة مبيعات مستوردة", "CUS-000001", "WH-000001", "SAR", "1.00000000", "", "", "ITM-000001", "صنف مبيع", "1.0000", "1000.0000", "0.0000", "4110", "", ""],
+  PURCHASE_INVOICES: ["PINV-001", "2026-08-22", "2026-09-21", "فاتورة مشتريات مستوردة", "SUP-000001", "SUP-INV-001", "WH-000001", "SAR", "1.00000000", "", "", "ITM-000001", "صنف مشترى", "1.0000", "500.0000", "0.0000", "5210", "", ""],
+};
+
+const optionalImportHeaders: Record<DataImportTypeValue, readonly string[]> = {
+  CUSTOMERS: [],
+  SUPPLIERS: [],
+  SALES_INVOICES: ["warehouse_code", "inventory_item_code"],
+  PURCHASE_INVOICES: ["warehouse_code", "inventory_item_code"],
 };
 
 export class DataImportParseError extends Error {
@@ -119,7 +126,8 @@ function rowsFromMatrix(matrix: string[][], type: DataImportTypeValue) {
   const headers = nonEmpty[0]!.map((header) => header.trim().toLowerCase());
   if (new Set(headers).size !== headers.length || headers.some((header) => !header)) throw new DataImportParseError("INVALID_HEADERS");
   const expected = importHeaders[type];
-  const missing = expected.filter((header) => !headers.includes(header));
+  const optional = optionalImportHeaders[type];
+  const missing = expected.filter((header) => !optional.includes(header) && !headers.includes(header));
   const unknown = headers.filter((header) => !expected.includes(header));
   if (missing.length || unknown.length) throw new DataImportParseError("INVALID_HEADERS", [...missing.map((column) => ({ row: 1, column, code: "MISSING_HEADER" })), ...unknown.map((column) => ({ row: 1, column, code: "UNKNOWN_HEADER" }))]);
   const data = nonEmpty.slice(1);

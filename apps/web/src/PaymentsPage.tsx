@@ -428,7 +428,7 @@ function PaymentForm({
           <legend>{t("pages.payments.054")}</legend>
           <div className="segmented">
             <button type="button" className={counterpartyType === "supplier" ? "selected" : ""} onClick={() => { setCounterpartyType("supplier"); setCounterAccountId(""); setCounterpartyName(""); }}>{t("pages.payments.055")}</button>
-            <button type="button" className={counterpartyType === "account" ? "selected" : ""} onClick={() => { setCounterpartyType("account"); setSupplierId(""); setCounterpartyName(""); }}>{t("pages.payments.056")}</button>
+            <button type="button" className={counterpartyType === "account" ? "selected" : ""} onClick={() => { setCounterpartyType("account"); setSupplierId(""); setCounterpartyName(""); setAllocations([]); }}>{t("pages.payments.056")}</button>
           </div>
         </fieldset>
         {counterpartyType === "supplier" ? (
@@ -470,14 +470,14 @@ function PaymentForm({
         <label className="full"><span>{t("pages.payments.073")}</span><input name="counterpartyAddress" defaultValue={payment?.counterpartyAddressSnapshot ?? ""} maxLength={500} /></label>
         <label className="full"><span>{t("pages.payments.074")}</span><textarea name="notes" defaultValue={payment?.notes ?? ""} maxLength={1000} rows={3} /></label>
 
-        <fieldset className="full allocations-field">
+        <fieldset className="full allocations-field" hidden={counterpartyType !== "supplier"}>
           <legend>{t("pages.payments.075")}</legend>
           <div className="allocation-heading">
             <p>{t("pages.payments.076")}</p>
             <Button type="button" variant="secondary" icon="plus" onClick={addAllocation}>{t("pages.payments.077")}</Button>
           </div>
           {allocations.length === 0 ? (
-            <div className="compact-empty">{t("pages.payments.078")}</div>
+            <div className="compact-empty">{t("validation.payment.allocationsRequired")}</div>
           ) : (
             <div className="allocation-list">
               {allocations.map((allocation, index) => (
@@ -551,6 +551,7 @@ function PaymentDetails({
         <div><dt>{t("pages.payments.092")}</dt><dd>{payment.referenceNumber || t("pages.customers.064")}</dd></div>
         <div><dt>{t("pages.manual-journals.067")}</dt><dd dir="ltr">{payment.exchangeRate}</dd></div>
         <div><dt>{t("pages.payments.095")}</dt><dd>{formatMoney(payment.baseAmount)}</dd></div>
+        {Number(payment.realizedFxBaseAmount) !== 0 && <div><dt>{t("settlement.fx.realized")}</dt><dd>{Number(payment.realizedFxBaseAmount) > 0 ? t("settlement.fx.gain") : t("settlement.fx.loss")} — {formatMoney(Math.abs(Number(payment.realizedFxBaseAmount)))}</dd></div>}
         {payment.notes && <div className="full"><dt>{t("pages.payments.074")}</dt><dd>{payment.notes}</dd></div>}
       </dl>
       <div className="subsection-heading"><div><h3>{t("pages.payments.096")}</h3><p>{payment.allocations.length}{t("pages.payments.097")}</p></div></div>
@@ -560,8 +561,8 @@ function PaymentDetails({
         <div className="allocation-detail-list">
           {payment.allocations.map((allocation) => (
             <div key={allocation.id ?? allocation.payableItemId}>
-              <span>{references.purchaseInvoices.find((invoice) => invoice.payableItemId === allocation.payableItemId)?.document.documentNumber ?? t("pages.payments.099", { value1: allocation.payableItemId })}</span>
-              <strong>{formatMoney(allocation.allocatedAmount)}</strong>
+              <span>{references.purchaseInvoices.find((invoice) => invoice.payableItemId === allocation.payableItemId)?.document.documentNumber ?? t("pages.payments.099", { value1: allocation.payableItemId })}{allocation.carryingBaseAmount && allocation.settlementBaseAmount && <small>{t("settlement.fx.carryingBase")}: {formatMoney(allocation.carryingBaseAmount)} · {t("settlement.fx.settlementBase")}: {formatMoney(allocation.settlementBaseAmount)}</small>}</span>
+              <strong>{formatMoney(allocation.allocatedAmount)}{allocation.realizedFxBaseAmount && Number(allocation.realizedFxBaseAmount) !== 0 && <small>{Number(allocation.realizedFxBaseAmount) > 0 ? t("settlement.fx.gain") : t("settlement.fx.loss")} {formatMoney(Math.abs(Number(allocation.realizedFxBaseAmount)))}</small>}</strong>
             </div>
           ))}
         </div>

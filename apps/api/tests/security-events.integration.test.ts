@@ -1,4 +1,4 @@
-import { verify } from "argon2";
+import { hash, verify } from "argon2";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
@@ -14,19 +14,38 @@ const prisma = enabled ? createDatabase(databaseUrl) : null;
 
 describe.runIf(enabled)("security event monitoring with MariaDB", () => {
   const testType = "TEST_CRITICAL_SECURITY_EVENT";
+  const accountantEmail = "it.security.accountant@mcap.local";
+  const reviewerEmail = "it.security.reviewer@mcap.local";
   let companyId: bigint;
+  const testUserIds: bigint[] = [];
 
   beforeAll(async () => {
     companyId = (await prisma!.company.findFirstOrThrow()).id;
-    await prisma!.user.updateMany({ where: { emailNormalized: { in: ["accountant@mcap.local", "reviewer@mcap.local"] } }, data: { failedLoginAttempts: 0, lockedUntil: null } });
+    const passwordHash = await hash(password);
+    for (const [emailNormalized, displayName] of [[accountantEmail, "محاسب اختبار الأمان"], [reviewerEmail, "مراجع اختبار الأمان"]] as const) {
+      const user = await prisma!.user.upsert({
+        where: { emailNormalized },
+        update: { displayName, passwordHash, isActive: true, failedLoginAttempts: 0, lockedUntil: null },
+        create: { emailNormalized, displayName, passwordHash },
+      });
+      testUserIds.push(user.id);
+      await prisma!.userCompany.upsert({
+        where: { userId_companyId: { userId: user.id, companyId } },
+        update: { isActive: true },
+        create: { userId: user.id, companyId },
+      });
+    }
     await prisma!.securityEvent.deleteMany({ where: { OR: [{ eventType: testType }, { userAgent: { in: ["MCAP Security Integration Test", "MCAP Failed Login Test", "MCAP Account Lock Test"] } }] } });
     await prisma!.auditLog.deleteMany({ where: { action: "SECURITY_EVENT_ACKNOWLEDGED", entityType: "SECURITY_EVENT" } });
   });
 
   afterAll(async () => {
-    await prisma!.user.updateMany({ where: { emailNormalized: { in: ["accountant@mcap.local", "reviewer@mcap.local"] } }, data: { failedLoginAttempts: 0, lockedUntil: null } });
+    await prisma!.session.deleteMany({ where: { userId: { in: testUserIds } } });
     await prisma!.securityEvent.deleteMany({ where: { OR: [{ eventType: testType }, { userAgent: { in: ["MCAP Security Integration Test", "MCAP Failed Login Test", "MCAP Account Lock Test"] } }] } });
     await prisma!.auditLog.deleteMany({ where: { action: "SECURITY_EVENT_ACKNOWLEDGED", entityType: "SECURITY_EVENT" } });
+    await prisma!.userCompanyRole.deleteMany({ where: { userId: { in: testUserIds }, companyId } });
+    await prisma!.userCompany.deleteMany({ where: { userId: { in: testUserIds }, companyId } });
+    await prisma!.user.deleteMany({ where: { id: { in: testUserIds } } });
     await prisma!.$disconnect();
   });
 
@@ -47,22 +66,22 @@ describe.runIf(enabled)("security event monitoring with MariaDB", () => {
   it("records authentication risk, filters alerts, and acknowledges a critical event", async () => {
     const failedAgent = request.agent(application());
     const preAuth = await failedAgent.get("/api/v1/auth/csrf").expect(200);
-    await failedAgent.post("/api/v1/auth/login").set("X-CSRF-Token", preAuth.body.csrfToken).set("User-Agent", "MCAP Failed Login Test").send({ email: "accountant@mcap.local", password: "wrong-password" }).expect(401);
-    const failed = await prisma!.securityEvent.findFirst({ where: { companyId, eventType: "LOGIN_FAILED", emailSnapshot: "accountant@mcap.local" }, orderBy: { id: "desc" } });
+    await failedAgent.post("/api/v1/auth/login").set("X-CSRF-Token", preAuth.body.csrfToken).set("User-Agent", "MCAP Failed Login Test").send({ email: accountantEmail, password: "wrong-password" }).expect(401);
+    const failed = await prisma!.securityEvent.findFirst({ where: { companyId, eventType: "LOGIN_FAILED", emailSnapshot: accountantEmail }, orderBy: { id: "desc" } });
     expect(failed).toMatchObject({ severity: "WARNING", userAgent: "MCAP Failed Login Test" });
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const lockAgent = request.agent(application());
       const lockCsrf = await lockAgent.get("/api/v1/auth/csrf").expect(200);
-      await lockAgent.post("/api/v1/auth/login").set("X-CSRF-Token", lockCsrf.body.csrfToken).set("User-Agent", "MCAP Account Lock Test").send({ email: "reviewer@mcap.local", password: "wrong-password" }).expect(401);
+      await lockAgent.post("/api/v1/auth/login").set("X-CSRF-Token", lockCsrf.body.csrfToken).set("User-Agent", "MCAP Account Lock Test").send({ email: reviewerEmail, password: "wrong-password" }).expect(401);
     }
-    const locked = await prisma!.securityEvent.findFirst({ where: { companyId, eventType: "ACCOUNT_LOCKED", emailSnapshot: "reviewer@mcap.local" }, orderBy: { id: "desc" } });
+    const locked = await prisma!.securityEvent.findFirst({ where: { companyId, eventType: "ACCOUNT_LOCKED", emailSnapshot: reviewerEmail }, orderBy: { id: "desc" } });
     expect(locked).toMatchObject({ severity: "CRITICAL" });
     const lockedAgent = request.agent(application());
     const lockedCsrf = await lockedAgent.get("/api/v1/auth/csrf").expect(200);
-    const lockedResponse = await lockedAgent.post("/api/v1/auth/login").set("X-CSRF-Token", lockedCsrf.body.csrfToken).set("User-Agent", "MCAP Account Lock Test").send({ email: "reviewer@mcap.local", password }).expect(401);
+    const lockedResponse = await lockedAgent.post("/api/v1/auth/login").set("X-CSRF-Token", lockedCsrf.body.csrfToken).set("User-Agent", "MCAP Account Lock Test").send({ email: reviewerEmail, password }).expect(401);
     expect(lockedResponse.body.code).toBe("ACCOUNT_LOCKED");
-    expect(await prisma!.securityEvent.findFirst({ where: { companyId, eventType: "LOCKED_ACCOUNT_LOGIN_ATTEMPT", emailSnapshot: "reviewer@mcap.local" }, orderBy: { id: "desc" } })).toMatchObject({ severity: "HIGH" });
+    expect(await prisma!.securityEvent.findFirst({ where: { companyId, eventType: "LOCKED_ACCOUNT_LOGIN_ATTEMPT", emailSnapshot: reviewerEmail }, orderBy: { id: "desc" } })).toMatchObject({ severity: "HIGH" });
 
     const admin = await prisma!.user.findUniqueOrThrow({ where: { emailNormalized: "admin@mcap.local" } });
     const critical = await prisma!.securityEvent.create({ data: { companyId, userId: admin.id, eventType: testType, severity: "CRITICAL", emailSnapshot: admin.emailNormalized, ipAddress: "203.0.113.9", details: { test: true } } });
@@ -83,7 +102,7 @@ describe.runIf(enabled)("security event monitoring with MariaDB", () => {
   });
 
   it("denies the security log to the accountant role", async () => {
-    const { agent } = await authenticate("accountant@mcap.local");
+    const { agent } = await authenticate(accountantEmail);
     await agent.get("/api/v1/security-events").expect(403);
   });
 });
