@@ -6,7 +6,7 @@ const require = createRequire(import.meta.url);
 const arabicFont = require.resolve("@fontsource/noto-sans-arabic/files/noto-sans-arabic-arabic-400-normal.woff");
 const arabicBoldFont = require.resolve("@fontsource/noto-sans-arabic/files/noto-sans-arabic-arabic-700-normal.woff");
 const productName = process.env.APP_NAME?.trim() || "النظام المحاسبي متعدد الشركات";
-const titles = { RECEIPT: "سند قبض", PAYMENT: "سند صرف", MANUAL_JOURNAL: "قيد يومية", PURCHASE_INVOICE: "فاتورة مشتريات", PURCHASE_DEBIT_NOTE: "إشعار مدين للمشتريات" } as const;
+const titles = { RECEIPT: "سند قبض", PAYMENT: "سند صرف", MANUAL_JOURNAL: "قيد يومية", PURCHASE_INVOICE: "فاتورة مشتريات", PURCHASE_DEBIT_NOTE: "إشعار مدين للمشتريات", SALES_INVOICE: "فاتورة مبيعات", SALES_CREDIT_NOTE: "إشعار دائن للمبيعات" } as const;
 const money = (value: string) => Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 const arabicSafe = (value: string) => value
   .replace(/[0-9]+/g, (digits) => [...digits].reverse().map((digit) => "٠١٢٣٤٥٦٧٨٩"[Number(digit)]!).join(""))
@@ -51,10 +51,13 @@ export function renderDocumentPdf(snapshot: PrintSnapshot): Promise<Buffer> {
       pdf.moveDown(.5);
     }
     if (snapshot.invoice) {
-      pdf.font("ArabicBold").fontSize(14).fillColor("#18352d"); right("بيانات فاتورة المورد");
+      const partyKind = snapshot.invoice.partyKind ?? "SUPPLIER";
+      const partyName = snapshot.invoice.partyName ?? snapshot.invoice.supplierName ?? "-";
+      const externalInvoiceNumber = snapshot.invoice.externalInvoiceNumber ?? snapshot.invoice.supplierInvoiceNumber ?? null;
+      pdf.font("ArabicBold").fontSize(14).fillColor("#18352d"); right(partyKind === "CUSTOMER" ? "بيانات فاتورة العميل" : "بيانات فاتورة المورد");
       const invoiceRows = [
-        ["المورد", snapshot.invoice.supplierName],
-        ["رقم فاتورة المورد", snapshot.invoice.supplierInvoiceNumber ?? "-"],
+        [partyKind === "CUSTOMER" ? "العميل" : "المورد", partyName],
+        [partyKind === "CUSTOMER" ? "مرجع العميل" : "رقم فاتورة المورد", externalInvoiceNumber ?? "-"],
         ["تاريخ الاستحقاق", snapshot.invoice.dueDate],
         ["الفاتورة الأصلية", snapshot.invoice.sourceInvoiceNumber ?? "-"],
         ["المستودع", snapshot.invoice.warehouseName ? `${snapshot.invoice.warehouseCode ?? ""} ${snapshot.invoice.warehouseName}`.trim() : "-"],

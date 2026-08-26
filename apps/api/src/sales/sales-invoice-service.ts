@@ -19,6 +19,7 @@ import {
   type InventoryInvoiceStockPort,
 } from "../inventory/inventory-movement-service.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
+import { archiveDocument } from "../printing/print-archive.js";
 import { ReceivableItemService } from "../receivables/receivable-item-service.js";
 import { calculateTaxDocument, TaxCalculationError } from "../tax/tax-calculator.js";
 import { TaxError, TaxService, type TaxQuotePort } from "../tax/tax-service.js";
@@ -41,6 +42,9 @@ export type SalesInvoiceErrorReason =
   | "INVALID_INVENTORY_ITEM"
   | "INVALID_QUANTITY_PRECISION"
   | "INSUFFICIENT_STOCK"
+  | "INVENTORY_VALUATION_REQUIRED"
+  | "INVENTORY_VALUE_MISMATCH"
+  | "INVENTORY_ACCOUNTING_NOT_CONFIGURED"
   | "INVALID_LINE"
   | "INVALID_DISCOUNT"
   | "INVALID_TOTAL"
@@ -90,6 +94,7 @@ export type SalesInvoiceUpdate = { version: number } & Partial<SalesInvoiceInput
 type SalesInvoiceStockSnapshot = {
   id: bigint;
   warehouseId: bigint | null;
+  sourceInvoiceId: bigint | null;
   accountingDocument: {
     documentType: string;
     documentNumber: string;
@@ -372,6 +377,18 @@ export class SalesInvoiceService {
         }
       }
       const baseTotal = detailLines.reduce((sum, line) => sum.add(isCreditNote ? line.baseDebitAmount as Prisma.Decimal : line.baseCreditAmount as Prisma.Decimal), zero);
+      const postingLines: PostingLinePlan[] = [{
+        lineNumber: 1,
+        accountId: prepared.customer.receivableAccountId,
+        customerId: invoice.customerId,
+        description: invoice.accountingDocument.description,
+        currencyId: invoice.currencyId,
+        exchangeRate: invoice.exchangeRate,
+        debitAmount: isCreditNote ? zero : invoice.total,
+        creditAmount: isCreditNote ? invoice.total : zero,
+        baseDebitAmount: isCreditNote ? zero : baseTotal,
+        baseCreditAmount: isCreditNote ? baseTotal : zero,
+      }, ...detailLines];
       const result = await this.posting.postPlan(tx, {
         companyId: context.companyId,
         documentId: invoice.accountingDocumentId,
@@ -390,22 +407,58 @@ export class SalesInvoiceService {
               context.companyId,
               source.accountingDocumentId,
             );
+            await this.validateCreditItemQuantities(
+              postingTx,
+              context.companyId,
+              input.sourceInvoiceId!,
+              input.lines,
+              invoice.id,
+            );
             await this.receivables.applyCredit(postingTx, {
               companyId: context.companyId,
               sourceInvoiceId: input.sourceInvoiceId!,
               amount: prepared.calculation.total,
+              baseAmount: baseTotal,
               invalid: () => new SalesInvoiceError("INVALID_SOURCE_INVOICE"),
               overAllocation: () => new SalesInvoiceError("CREDIT_EXCEEDS_INVOICE"),
               conflict: () => new SalesInvoiceError("VERSION_CONFLICT"),
             });
           }
-          await this.applyStockMovement(
+          const stock = await this.applyStockMovement(
             postingTx,
             context,
             invoice,
             "POST",
             day(invoice.accountingDocument.documentDate),
           );
+          if (stock && stock.totalCostBase.gt(0)) {
+            const nextLineNumber = Math.max(...postingLines.map((line) => line.lineNumber)) + 1;
+            postingLines.push({
+              lineNumber: nextLineNumber,
+              accountId: isCreditNote
+                ? stock.inventoryAccountId
+                : stock.costOfGoodsSoldAccountId,
+              description: `تكلفة المخزون: ${invoice.accountingDocument.documentNumber}`,
+              currencyId: stock.baseCurrencyId,
+              exchangeRate: 1,
+              debitAmount: stock.totalCostBase,
+              creditAmount: zero,
+              baseDebitAmount: stock.totalCostBase,
+              baseCreditAmount: zero,
+            }, {
+              lineNumber: nextLineNumber + 1,
+              accountId: isCreditNote
+                ? stock.costOfGoodsSoldAccountId
+                : stock.inventoryAccountId,
+              description: `تكلفة المخزون: ${invoice.accountingDocument.documentNumber}`,
+              currencyId: stock.baseCurrencyId,
+              exchangeRate: 1,
+              debitAmount: zero,
+              creditAmount: stock.totalCostBase,
+              baseDebitAmount: zero,
+              baseCreditAmount: stock.totalCostBase,
+            });
+          }
         },
         afterEntries: async (postingTx, entries) => {
           const arLine = entries[0]?.lines.find((line) => line.lineNumber === 1);
@@ -422,6 +475,7 @@ export class SalesInvoiceService {
               currencyId: invoice.currencyId,
               dueDate: invoice.dueDate,
               originalAmount: invoice.total,
+              originalBaseAmount: baseTotal,
             });
           }
         },
@@ -429,20 +483,10 @@ export class SalesInvoiceService {
           entryNumber: 1,
           entryDate: invoice.accountingDocument.documentDate,
           description: invoice.accountingDocument.description,
-          lines: [{
-            lineNumber: 1,
-            accountId: prepared.customer.receivableAccountId,
-            customerId: invoice.customerId,
-            description: invoice.accountingDocument.description,
-            currencyId: invoice.currencyId,
-            exchangeRate: invoice.exchangeRate,
-            debitAmount: isCreditNote ? zero : invoice.total,
-            creditAmount: isCreditNote ? invoice.total : zero,
-            baseDebitAmount: isCreditNote ? zero : baseTotal,
-            baseCreditAmount: isCreditNote ? baseTotal : zero,
-          }, ...detailLines],
+          lines: postingLines,
         }],
       });
+      await archiveDocument(tx, context, invoice.accountingDocumentId);
       return { document: result.document, ids: result.entries.map((entry) => entry.id.toString()) };
     });
   }
@@ -454,6 +498,20 @@ export class SalesInvoiceService {
     if (!period) throw new SalesInvoiceError("PERIOD_CLOSED");
     const customer = await tx.customer.findFirst({ where: { companyId, code: first.customer_code!, isActive: true } });
     if (!customer) throw new SalesInvoiceError("INVALID_CUSTOMER");
+    const inventoryItemCodes = [...new Set(group.rows.flatMap((row) => row.values.inventory_item_code ? [row.values.inventory_item_code] : []))];
+    let importedInventory;
+    try {
+      importedInventory = await this.inventory.resolveImportedInvoiceSelection(tx, {
+        companyId,
+        warehouseCode: first.warehouse_code,
+        inventoryItemCodes,
+      });
+    } catch (error) {
+      if (error instanceof InventoryInvoiceSelectionError) {
+        throw new SalesInvoiceError(error.reason);
+      }
+      throw error;
+    }
     const companyCurrency = await tx.companyCurrency.findFirst({ where: { companyId, isActive: true, currency: { code: first.currency_code!, isActive: true } } });
     if (!companyCurrency) throw new SalesInvoiceError("INVALID_CURRENCY");
     let taxRateIds: Map<string, bigint>;
@@ -469,9 +527,9 @@ export class SalesInvoiceService {
       if (!account) throw new SalesInvoiceError("INVALID_ACCOUNT");
       const costCenter = row.values.cost_center_code ? await tx.costCenter.findFirst({ where: { companyId, code: row.values.cost_center_code, isActive: true } }) : null;
       if (row.values.cost_center_code && !costCenter) throw new SalesInvoiceError("INVALID_COST_CENTER");
-      lines.push({ description: row.values.line_description!, quantity: row.values.quantity!, unitPrice: row.values.unit_price!, discountAmount: row.values.discount_amount || "0", revenueAccountId: account.id, costCenterId: costCenter?.id ?? null, taxRateId: row.values.tax_code ? taxRateIds.get(row.values.tax_code)! : null });
+      lines.push({ inventoryItemId: row.values.inventory_item_code ? importedInventory.itemsByCode.get(row.values.inventory_item_code)!.id : null, description: row.values.line_description!, quantity: row.values.quantity!, unitPrice: row.values.unit_price!, discountAmount: row.values.discount_amount || "0", revenueAccountId: account.id, costCenterId: costCenter?.id ?? null, taxRateId: row.values.tax_code ? taxRateIds.get(row.values.tax_code)! : null });
     }
-    const input: SalesInvoiceInput = { documentType: "SALES_INVOICE", fiscalPeriodId: period.id, documentDate: first.document_date!, dueDate: first.due_date!, description: first.description!, customerId: customer.id, currencyId: companyCurrency.currencyId, exchangeRate: first.exchange_rate!, customerAddress: first.customer_address || null, notes: first.notes || null, lines };
+    const input: SalesInvoiceInput = { documentType: "SALES_INVOICE", fiscalPeriodId: period.id, documentDate: first.document_date!, dueDate: first.due_date!, description: first.description!, customerId: customer.id, warehouseId: importedInventory.warehouse?.id ?? null, currencyId: companyCurrency.currencyId, exchangeRate: first.exchange_rate!, customerAddress: first.customer_address || null, notes: first.notes || null, lines };
     this.validDate(period, input.documentDate);
     await this.prepare(tx, companyId, input);
     return input;
@@ -485,7 +543,7 @@ export class SalesInvoiceService {
     const documentNumber = await this.reserveInTransaction(tx, context.companyId, period.fiscalYearId, "SALES_INVOICE");
     const document = await tx.accountingDocument.create({ data: { companyId: context.companyId, fiscalPeriodId: input.fiscalPeriodId, documentType: "SALES_INVOICE", documentNumber, documentDate: asDate(input.documentDate), description: input.description, createdBy: context.userId } });
     const invoice = await tx.salesInvoice.create({
-      data: { companyId: context.companyId, accountingDocumentId: document.id, customerId: input.customerId, currencyId: input.currencyId, exchangeRate: decimal(input.exchangeRate), dueDate: asDate(input.dueDate), subtotal: prepared.calculation.subtotal, discountTotal: prepared.calculation.discountTotal, taxableTotal: prepared.calculation.taxableTotal, taxTotal: prepared.calculation.taxTotal, total: prepared.calculation.total, baseTotal: prepared.calculation.baseTotal, customerNameSnapshot: prepared.customer.nameAr, customerTaxLast4: prepared.customer.taxNumberLast4, customerAddressSnapshot: prepared.customerAddress, notes: input.notes ?? null, lines: { create: prepared.calculation.lines } },
+      data: { companyId: context.companyId, accountingDocumentId: document.id, customerId: input.customerId, warehouseId: prepared.inventory.warehouse?.id ?? null, currencyId: input.currencyId, exchangeRate: decimal(input.exchangeRate), dueDate: asDate(input.dueDate), subtotal: prepared.calculation.subtotal, discountTotal: prepared.calculation.discountTotal, taxableTotal: prepared.calculation.taxableTotal, taxTotal: prepared.calculation.taxTotal, total: prepared.calculation.total, baseTotal: prepared.calculation.baseTotal, customerNameSnapshot: prepared.customer.nameAr, customerTaxLast4: prepared.customer.taxNumberLast4, customerAddressSnapshot: prepared.customerAddress, warehouseCodeSnapshot: prepared.inventory.warehouse?.code ?? null, warehouseNameSnapshot: prepared.inventory.warehouse?.nameAr ?? null, notes: input.notes ?? null, lines: { create: prepared.calculation.lines } },
       include: this.include(),
     });
     await this.audit(tx, context, "SALES_INVOICE_CREATED", invoice.id, { documentType: "SALES_INVOICE", source: "DATA_IMPORT" });
@@ -536,6 +594,7 @@ export class SalesInvoiceService {
               companyId: context.companyId,
               sourceInvoiceId: invoice.sourceInvoiceId,
               amount: invoice.total,
+              baseAmount: invoice.baseTotal,
               invalid: () => new SalesInvoiceError("INVALID_SOURCE_INVOICE"),
               conflict: () => new SalesInvoiceError("VERSION_CONFLICT"),
             });
@@ -594,6 +653,7 @@ export class SalesInvoiceService {
     const paid = value.receivableItem ? value.receivableItem.receiptAllocations.filter((allocation: any) => allocation.receipt.accountingDocument.status === "POSTED").reduce((sum: Prisma.Decimal, allocation: any) => sum.add(allocation.allocatedAmount), decimal(0)) : decimal(0);
     const credited = value.creditNotes?.filter((note: any) => note.accountingDocument.status === "POSTED").reduce((sum: Prisma.Decimal, note: any) => sum.add(note.total), decimal(0)) ?? decimal(0);
     const outstanding = value.accountingDocument.documentType === "SALES_INVOICE" ? value.receivableItem?.outstandingAmount ?? value.total.sub(paid).sub(credited) : decimal(0);
+    const outstandingBase = value.accountingDocument.documentType === "SALES_INVOICE" ? value.receivableItem?.outstandingBaseAmount ?? value.baseTotal : decimal(0);
     return {
       id: value.id.toString(),
       document: documentJson(value.accountingDocument),
@@ -619,6 +679,7 @@ export class SalesInvoiceService {
       paidAmount: paid.toFixed(4),
       creditedAmount: credited.toFixed(4),
       outstandingAmount: outstanding.toFixed(4),
+      outstandingBaseAmount: outstandingBase.toFixed(4),
       settlementStatus: outstanding.lte(0) ? "PAID" : paid.gt(0) || credited.gt(0) ? "PARTIAL" : "OPEN",
       customerNameSnapshot: value.customerNameSnapshot,
       customerTaxMasked: value.customerTaxLast4 ? `****${value.customerTaxLast4}` : null,
@@ -743,8 +804,13 @@ export class SalesInvoiceService {
     }
     if (input.documentType === "SALES_CREDIT_NOTE") {
       const source = await tx.salesInvoice.findFirst({ where: { id: input.sourceInvoiceId!, companyId, customerId: input.customerId, accountingDocument: { documentType: "SALES_INVOICE", status: "POSTED" } } });
-      if (!source || source.currencyId !== input.currencyId) throw new SalesInvoiceError("INVALID_SOURCE_INVOICE");
+      if (
+        !source ||
+        source.currencyId !== input.currencyId ||
+        !source.exchangeRate.equals(decimal(input.exchangeRate))
+      ) throw new SalesInvoiceError("INVALID_SOURCE_INVOICE");
       await this.validateCreditLimit(tx, companyId, source.id, calculation.total, currentId);
+      await this.validateCreditItemQuantities(tx, companyId, source.id, input.lines, currentId);
     }
     const preferredAddress = customer.addresses.find((address) => address.addressType === "BILLING") ?? customer.addresses[0];
     const customerAddress = input.customerAddress ?? (preferredAddress ? [preferredAddress.line1, preferredAddress.line2, preferredAddress.city, preferredAddress.region, preferredAddress.postalCode].filter(Boolean).join("، ") : null);
@@ -768,6 +834,58 @@ export class SalesInvoiceService {
     if (!source.receivableItem) throw new SalesInvoiceError("INVALID_SOURCE_INVOICE");
     const reserved = await tx.salesInvoice.aggregate({ where: { companyId, sourceInvoiceId, ...(currentId ? { id: { not: currentId } } : {}), accountingDocument: { documentType: "SALES_CREDIT_NOTE", status: "DRAFT" } }, _sum: { total: true } });
     if (decimal(reserved._sum.total ?? 0).add(amount).gt(source.receivableItem.outstandingAmount)) throw new SalesInvoiceError("CREDIT_EXCEEDS_INVOICE");
+  }
+
+  private async validateCreditItemQuantities(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+    sourceInvoiceId: bigint,
+    lines: SalesInvoiceLineInput[],
+    currentId?: bigint,
+  ) {
+    const requested = this.inventoryQuantities(lines);
+    if (requested.size === 0) return;
+    const source = await tx.salesInvoice.findFirst({
+      where: {
+        id: sourceInvoiceId,
+        companyId,
+        accountingDocument: { documentType: "SALES_INVOICE", status: "POSTED" },
+      },
+      select: { lines: { select: { inventoryItemId: true, quantity: true } } },
+    });
+    if (!source) throw new SalesInvoiceError("INVALID_SOURCE_INVOICE");
+    const available = this.inventoryQuantities(source.lines);
+    const credits = await tx.salesInvoice.findMany({
+      where: {
+        companyId,
+        sourceInvoiceId,
+        ...(currentId ? { id: { not: currentId } } : {}),
+        accountingDocument: {
+          documentType: "SALES_CREDIT_NOTE",
+          status: { in: ["DRAFT", "POSTED"] },
+        },
+      },
+      select: { lines: { select: { inventoryItemId: true, quantity: true } } },
+    });
+    const alreadyCredited = this.inventoryQuantities(credits.flatMap((credit) => credit.lines));
+    for (const [itemId, quantity] of requested) {
+      const sourceQuantity = available.get(itemId);
+      if (!sourceQuantity || quantity.add(alreadyCredited.get(itemId) ?? 0).gt(sourceQuantity)) {
+        throw new SalesInvoiceError("INVALID_SOURCE_INVOICE");
+      }
+    }
+  }
+
+  private inventoryQuantities(
+    lines: Array<{ inventoryItemId?: bigint | null; quantity: Prisma.Decimal.Value }>,
+  ) {
+    const result = new Map<string, Prisma.Decimal>();
+    for (const line of lines) {
+      if (!line.inventoryItemId) continue;
+      const key = line.inventoryItemId.toString();
+      result.set(key, (result.get(key) ?? decimal(0)).add(line.quantity));
+    }
+    return result;
   }
 
   private async validAccount(tx: Prisma.TransactionClient, companyId: bigint, id: bigint) {
@@ -820,6 +938,7 @@ export class SalesInvoiceService {
         companyId: context.companyId,
         actorUserId: context.userId,
         invoiceId: invoice.id,
+        sourceInvoiceId: invoice.sourceInvoiceId,
         documentType: invoice.accountingDocument.documentType as "SALES_INVOICE" | "SALES_CREDIT_NOTE",
         sourceEvent,
         documentNumber: invoice.accountingDocument.documentNumber,
@@ -831,6 +950,15 @@ export class SalesInvoiceService {
       if (!(error instanceof InventoryMovementError)) throw error;
       if (error.reason === "INSUFFICIENT_STOCK") {
         throw new SalesInvoiceError("INSUFFICIENT_STOCK");
+      }
+      if (error.reason === "INVENTORY_VALUATION_REQUIRED") {
+        throw new SalesInvoiceError("INVENTORY_VALUATION_REQUIRED");
+      }
+      if (["INSUFFICIENT_INVENTORY_VALUE", "INVENTORY_VALUE_MISMATCH"].includes(error.reason)) {
+        throw new SalesInvoiceError("INVENTORY_VALUE_MISMATCH");
+      }
+      if (error.reason === "INVENTORY_ACCOUNTING_NOT_CONFIGURED") {
+        throw new SalesInvoiceError("INVENTORY_ACCOUNTING_NOT_CONFIGURED");
       }
       if (["INVALID_WAREHOUSE", "WAREHOUSE_INACTIVE"].includes(error.reason)) {
         throw new SalesInvoiceError("INVALID_WAREHOUSE");

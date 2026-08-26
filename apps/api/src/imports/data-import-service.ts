@@ -30,6 +30,7 @@ const invoiceLengths: Record<string, number> = {
   exchange_rate: 20, customer_address: 500, supplier_address: 500, notes: 1000,
   line_description: 500, quantity: 24, unit_price: 24, discount_amount: 24,
   account_code: 40, tax_code: 40, cost_center_code: 40,
+  warehouse_code: 40, inventory_item_code: 40,
 };
 const validDate = (value: string) => {
   if (!date.test(value)) return false;
@@ -76,7 +77,7 @@ function structuralRows(rows: DataImportRow[], type: DataImportTypeValue) {
 }
 
 function consistentGroup(group: DataImportInvoiceGroup, type: DataImportTypeValue) {
-  const fields = ["document_date", "due_date", "description", type === "SALES_INVOICES" ? "customer_code" : "supplier_code", "currency_code", "exchange_rate", type === "SALES_INVOICES" ? "customer_address" : "supplier_address", "notes", ...(type === "PURCHASE_INVOICES" ? ["supplier_invoice_number"] : [])];
+  const fields = ["document_date", "due_date", "description", type === "SALES_INVOICES" ? "customer_code" : "supplier_code", "warehouse_code", "currency_code", "exchange_rate", type === "SALES_INVOICES" ? "customer_address" : "supplier_address", "notes", ...(type === "PURCHASE_INVOICES" ? ["supplier_invoice_number"] : [])];
   const first = group.rows[0]!;
   return group.rows.slice(1).flatMap((row) => fields.filter((field) => row.values[field] !== first.values[field]).map((field) => error(row, field, "INCONSISTENT_INVOICE_VALUE")));
 }
@@ -86,6 +87,8 @@ function domainColumn(reason: string, type: DataImportTypeValue) {
   if (reason.includes("SUPPLIER")) return "supplier_code";
   if (reason.includes("CURRENCY")) return "currency_code";
   if (reason.includes("COST_CENTER")) return "cost_center_code";
+  if (reason.includes("WAREHOUSE")) return "warehouse_code";
+  if (reason.includes("INVENTORY_ITEM")) return "inventory_item_code";
   if (reason.includes("TAX")) return "tax_code";
   if (reason.includes("ACCOUNT")) return type === "CUSTOMERS" ? "receivable_account_code" : type === "SUPPLIERS" ? "payable_account_code" : "account_code";
   if (reason.includes("PERIOD") || reason.includes("DATE")) return "document_date";

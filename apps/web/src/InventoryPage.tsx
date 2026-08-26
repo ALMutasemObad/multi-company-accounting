@@ -17,7 +17,7 @@ export function InventoryPage({ notify }: { notify: Notice }) {
     <div className="section-tabs" role="tablist" aria-label={t("inventory.tabs.label")}>
       {(["warehouses", "balances", "movements", "units", "items"] as const).map((value) => <button key={value} type="button" role="tab" aria-selected={tab === value} className={tab === value ? "active" : ""} onClick={() => setTab(value)}>{t(`inventory.tabs.${value}`)}</button>)}
     </div>
-    {tab === "balances" && <BalancesPanel />}
+    {tab === "balances" && <BalancesPanel notify={notify} />}
     {tab === "movements" && <MovementsPanel notify={notify} />}
     {tab === "warehouses" && <WarehousesPanel notify={notify} />}
     {tab === "units" && <UnitsPanel notify={notify} />}
@@ -29,7 +29,7 @@ const movementTypes: InventoryMovementType[] = ["OPENING_BALANCE", "RECEIPT", "I
 const movementTypeLabel = (value: InventoryMovementType) => t(`inventory.movements.types.${value}`);
 const quantityLabel = (value: string) => Number(value).toLocaleString(undefined, { maximumFractionDigits: 6 });
 
-function BalancesPanel() {
+function BalancesPanel({ notify }: { notify: Notice }) {
   const [balances, setBalances] = useState<InventoryBalance[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [catalog, setCatalog] = useState<InventoryItem[]>([]);
@@ -40,6 +40,7 @@ function BalancesPanel() {
   const [nonZero, setNonZero] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [valuationBalance, setValuationBalance] = useState<InventoryBalance | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -69,9 +70,37 @@ function BalancesPanel() {
       <select aria-label={t("inventory.balances.item")} value={inventoryItemId} onChange={(event) => { setPage(1); setInventoryItemId(event.target.value); }}><option value="">{t("inventory.balances.allItems")}</option>{catalog.map((item) => <option key={item.id} value={item.id}>{item.code} — {localizedReferenceName(item)}</option>)}</select>
       <label className="checkbox-line"><input type="checkbox" checked={nonZero} onChange={(event) => { setPage(1); setNonZero(event.target.checked); }} />{t("inventory.balances.nonZero")}</label>
     </div>
-    {error ? <ErrorPanel error={error} retry={load} /> : loading ? <Spinner label={t("inventory.balances.loading")} /> : !balances.length ? <EmptyState title={t("inventory.balances.emptyTitle")} description={t("inventory.balances.emptyDescription")} /> : <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("inventory.balances.warehouse")}</th><th>{t("inventory.balances.item")}</th><th>{t("inventory.balances.onHand")}</th><th>{t("inventory.balances.movements")}</th><th>{t("inventory.balances.updatedAt")}</th></tr></thead><tbody>{balances.map((balance) => <tr key={balance.id}><td><strong>{localizedReferenceName(balance.warehouse)}</strong><small dir="ltr">{balance.warehouse.code}</small></td><td><strong>{localizedReferenceName(balance.inventoryItem)}</strong><small dir="ltr">{balance.inventoryItem.code}</small></td><td><strong dir="ltr">{quantityLabel(balance.onHand)}</strong> <span className="code-pill" dir="ltr">{balance.inventoryItem.unitOfMeasure.code}</span></td><td>{balance.movementCount}</td><td>{new Date(balance.updatedAt).toLocaleString()}</td></tr>)}</tbody></table></div>}
+    {error ? <ErrorPanel error={error} retry={load} /> : loading ? <Spinner label={t("inventory.balances.loading")} /> : !balances.length ? <EmptyState title={t("inventory.balances.emptyTitle")} description={t("inventory.balances.emptyDescription")} /> : <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("inventory.balances.warehouse")}</th><th>{t("inventory.balances.item")}</th><th>{t("inventory.balances.onHand")}</th><th>{t("inventory.balances.value")}</th><th>{t("inventory.balances.averageCost")}</th><th>{t("inventory.balances.valuationStatus")}</th><th>{t("inventory.actions")}</th></tr></thead><tbody>{balances.map((balance) => <tr key={balance.id}><td><strong>{localizedReferenceName(balance.warehouse)}</strong><small dir="ltr">{balance.warehouse.code}</small></td><td><strong>{localizedReferenceName(balance.inventoryItem)}</strong><small dir="ltr">{balance.inventoryItem.code}</small></td><td><strong dir="ltr">{quantityLabel(balance.onHand)}</strong> <span className="code-pill" dir="ltr">{balance.inventoryItem.unitOfMeasure.code}</span></td><td dir="ltr">{balance.isValuationInitialized ? Number(balance.inventoryValueBase).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : "—"}</td><td dir="ltr">{balance.isValuationInitialized ? Number(balance.averageUnitCostBase).toLocaleString(undefined, { maximumFractionDigits: 8 }) : "—"}</td><td><span className={`status-chip ${balance.isValuationInitialized ? "active" : "inactive"}`}>{t(balance.isValuationInitialized ? "inventory.balances.valued" : "inventory.balances.requiresValuation")}</span></td><td>{!balance.isValuationInitialized && <Button variant="ghost" onClick={() => setValuationBalance(balance)}>{t("inventory.balances.initializeValuation")}</Button>}</td></tr>)}</tbody></table></div>}
     <Pagination {...meta} page={page} onChange={setPage} />
+    {valuationBalance && <ValuationInitializationForm balance={valuationBalance} onClose={() => setValuationBalance(null)} onSaved={async () => { setValuationBalance(null); notify(t("inventory.balances.valuationInitialized")); await load(); }} />}
   </>;
+}
+
+function ValuationInitializationForm({ balance, onClose, onSaved }: { balance: InventoryBalance; onClose: () => void; onSaved: () => void }) {
+  const [unitCostBase, setUnitCostBase] = useState("");
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      await api(`/inventory-balances/${balance.id}/initialize-valuation`, {
+        method: "POST",
+        idempotencyKey: idempotencyKey("inventory-valuation", crypto.randomUUID()),
+        body: JSON.stringify({ version: balance.version, unitCostBase, reason: reason.trim() }),
+      });
+      onSaved();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t("inventory.balances.valuationError"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return <Modal title={t("inventory.balances.initializeValuation")} description={`${localizedReferenceName(balance.inventoryItem)} · ${localizedReferenceName(balance.warehouse)}`} onClose={onClose}><form className="document-form" onSubmit={submit}>{error && <div className="form-error" role="alert">{error}</div>}<div className="inline-notice neutral">{t("inventory.balances.valuationNotice", { quantity: quantityLabel(balance.onHand) })}</div><div className="form-grid"><label><span>{t("inventory.balances.unitCostBase")}</span><input dir="ltr" inputMode="decimal" value={unitCostBase} onChange={(event) => setUnitCostBase(event.target.value)} pattern="[0-9]{1,11}([.][0-9]{1,8})?" required /></label><label className="full"><span>{t("inventory.balances.valuationReason")}</span><textarea value={reason} onChange={(event) => setReason(event.target.value)} minLength={3} maxLength={500} rows={3} required /></label></div><FormActions saving={saving} onClose={onClose} /></form></Modal>;
 }
 
 function MovementsPanel({ notify }: { notify: Notice }) {
@@ -87,6 +116,7 @@ function MovementsPanel({ notify }: { notify: Notice }) {
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
   const [detail, setDetail] = useState<InventoryMovement | null>(null);
+  const [reversing, setReversing] = useState<InventoryMovement | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -125,12 +155,13 @@ function MovementsPanel({ notify }: { notify: Notice }) {
     {error ? <ErrorPanel error={error} retry={load} /> : loading ? <Spinner label={t("inventory.movements.loading")} /> : !movements.length ? <EmptyState title={t("inventory.movements.emptyTitle")} description={t("inventory.movements.emptyDescription")} action={warehouses.length && catalog.length ? <Button icon="plus" onClick={() => setCreating(true)}>{t("inventory.movements.create")}</Button> : undefined} /> : <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("inventory.movements.number")}</th><th>{t("inventory.movements.date")}</th><th>{t("inventory.movements.type")}</th><th>{t("inventory.movements.description")}</th><th>{t("inventory.movements.lineCount")}</th><th>{t("inventory.actions")}</th></tr></thead><tbody>{movements.map((movement) => <tr key={movement.id}><td><strong dir="ltr">{movement.movementNumber}</strong>{movement.externalReference && <small dir="ltr">{movement.externalReference}</small>}</td><td dir="ltr">{movement.movementDate}</td><td><span className="status-chip active">{movementTypeLabel(movement.movementType)}</span></td><td>{movement.description}</td><td>{movement.lineCount}</td><td><Button variant="ghost" onClick={() => void showDetail(movement.id)}>{t("inventory.movements.view")}</Button></td></tr>)}</tbody></table></div>}
     <Pagination {...meta} page={page} onChange={setPage} />
     {creating && <MovementForm warehouses={warehouses} catalog={catalog} onClose={() => setCreating(false)} onSaved={async () => { setCreating(false); notify(t("inventory.movements.created")); await load(); }} />}
-    {detail && <MovementDetail movement={detail} onClose={() => setDetail(null)} />}
+    {detail && <MovementDetail movement={detail} onClose={() => setDetail(null)} onReverse={() => { setDetail(null); setReversing(detail); }} />}
+    {reversing && <MovementReversalForm movement={reversing} onClose={() => setReversing(null)} onSaved={async () => { setReversing(null); notify(t("inventory.movements.reversed")); await load(); }} />}
   </>;
 }
 
-type MovementLineDraft = { inventoryItemId: string; fromWarehouseId: string; toWarehouseId: string; quantity: string };
-const emptyMovementLine = (): MovementLineDraft => ({ inventoryItemId: "", fromWarehouseId: "", toWarehouseId: "", quantity: "" });
+type MovementLineDraft = { inventoryItemId: string; fromWarehouseId: string; toWarehouseId: string; quantity: string; unitCostBase: string };
+const emptyMovementLine = (): MovementLineDraft => ({ inventoryItemId: "", fromWarehouseId: "", toWarehouseId: "", quantity: "", unitCostBase: "" });
 
 function MovementForm({ warehouses, catalog, onClose, onSaved }: { warehouses: Warehouse[]; catalog: InventoryItem[]; onClose: () => void; onSaved: () => void }) {
   const [movementType, setMovementType] = useState<InventoryMovementType>("RECEIPT");
@@ -157,6 +188,7 @@ function MovementForm({ warehouses, catalog, onClose, onSaved }: { warehouses: W
         lines: lines.map((line) => ({
           inventoryItemId: line.inventoryItemId,
           quantity: line.quantity,
+          ...(inbound ? { unitCostBase: line.unitCostBase } : {}),
           ...(!inbound ? { fromWarehouseId: line.fromWarehouseId } : {}),
           ...(!outbound ? { toWarehouseId: line.toWarehouseId } : {}),
         })),
@@ -170,11 +202,37 @@ function MovementForm({ warehouses, catalog, onClose, onSaved }: { warehouses: W
     }
   }
 
-  return <Modal title={t("inventory.movements.create")} description={t("inventory.movements.formDescription")} onClose={onClose}><form className="document-form" onSubmit={submit}>{error && <div className="form-error" role="alert">{error}</div>}<div className="form-grid"><label><span>{t("inventory.movements.type")}</span><select value={movementType} onChange={(event) => { setMovementType(event.target.value as InventoryMovementType); setLines([emptyMovementLine()]); }}>{movementTypes.map((value) => <option key={value} value={value}>{movementTypeLabel(value)}</option>)}</select></label><label><span>{t("inventory.movements.date")}</span><input type="date" value={movementDate} onChange={(event) => setMovementDate(event.target.value)} required /></label><label className="full"><span>{t("inventory.movements.description")}</span><input value={description} onChange={(event) => setDescription(event.target.value)} maxLength={500} required /></label><label className="full"><span>{t("inventory.movements.externalReference")}</span><input dir="ltr" value={externalReference} onChange={(event) => setExternalReference(event.target.value)} maxLength={100} /></label></div><div className="line-editor"><div className="line-editor-header"><h3>{t("inventory.movements.lines")}</h3><Button type="button" variant="secondary" icon="plus" onClick={() => setLines((current) => [...current, emptyMovementLine()])}>{t("inventory.movements.addLine")}</Button></div>{lines.map((line, index) => <div className="form-grid inventory-movement-line" key={index}><label><span>{t("inventory.balances.item")}</span><select value={line.inventoryItemId} onChange={(event) => updateLine(index, { inventoryItemId: event.target.value })} required><option value="">{t("inventory.movements.selectItem")}</option>{catalog.map((item) => <option key={item.id} value={item.id}>{item.code} — {localizedReferenceName(item)} ({item.unitOfMeasure.code})</option>)}</select></label>{!inbound && <label><span>{t("inventory.movements.fromWarehouse")}</span><select value={line.fromWarehouseId} onChange={(event) => updateLine(index, { fromWarehouseId: event.target.value })} required><option value="">{t("inventory.movements.selectWarehouse")}</option>{warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.code} — {localizedReferenceName(warehouse)}</option>)}</select></label>}{!outbound && <label><span>{t("inventory.movements.toWarehouse")}</span><select value={line.toWarehouseId} onChange={(event) => updateLine(index, { toWarehouseId: event.target.value })} required><option value="">{t("inventory.movements.selectWarehouse")}</option>{warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.code} — {localizedReferenceName(warehouse)}</option>)}</select></label>}<label><span>{t("inventory.movements.quantity")}</span><input dir="ltr" inputMode="decimal" value={line.quantity} onChange={(event) => updateLine(index, { quantity: event.target.value })} pattern="[0-9]{1,13}([.][0-9]{1,6})?" required /></label>{lines.length > 1 && <div className="form-actions"><Button type="button" variant="ghost" icon="ban" onClick={() => setLines((current) => current.filter((_, currentIndex) => currentIndex !== index))}>{t("inventory.movements.removeLine")}</Button></div>}</div>)}</div><div className="inline-notice neutral">{t("inventory.movements.immutableNotice")}</div><FormActions saving={saving} onClose={onClose} /></form></Modal>;
+  return <Modal title={t("inventory.movements.create")} description={t("inventory.movements.formDescription")} onClose={onClose}><form className="document-form" onSubmit={submit}>{error && <div className="form-error" role="alert">{error}</div>}<div className="form-grid"><label><span>{t("inventory.movements.type")}</span><select value={movementType} onChange={(event) => { setMovementType(event.target.value as InventoryMovementType); setLines([emptyMovementLine()]); }}>{movementTypes.map((value) => <option key={value} value={value}>{movementTypeLabel(value)}</option>)}</select></label><label><span>{t("inventory.movements.date")}</span><input type="date" value={movementDate} onChange={(event) => setMovementDate(event.target.value)} required /></label><label className="full"><span>{t("inventory.movements.description")}</span><input value={description} onChange={(event) => setDescription(event.target.value)} maxLength={500} required /></label><label className="full"><span>{t("inventory.movements.externalReference")}</span><input dir="ltr" value={externalReference} onChange={(event) => setExternalReference(event.target.value)} maxLength={100} /></label></div><div className="line-editor"><div className="line-editor-header"><h3>{t("inventory.movements.lines")}</h3><Button type="button" variant="secondary" icon="plus" onClick={() => setLines((current) => [...current, emptyMovementLine()])}>{t("inventory.movements.addLine")}</Button></div>{lines.map((line, index) => <div className="form-grid inventory-movement-line" key={index}><label><span>{t("inventory.balances.item")}</span><select value={line.inventoryItemId} onChange={(event) => updateLine(index, { inventoryItemId: event.target.value })} required><option value="">{t("inventory.movements.selectItem")}</option>{catalog.map((item) => <option key={item.id} value={item.id}>{item.code} — {localizedReferenceName(item)} ({item.unitOfMeasure.code})</option>)}</select></label>{!inbound && <label><span>{t("inventory.movements.fromWarehouse")}</span><select value={line.fromWarehouseId} onChange={(event) => updateLine(index, { fromWarehouseId: event.target.value })} required><option value="">{t("inventory.movements.selectWarehouse")}</option>{warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.code} — {localizedReferenceName(warehouse)}</option>)}</select></label>}{!outbound && <label><span>{t("inventory.movements.toWarehouse")}</span><select value={line.toWarehouseId} onChange={(event) => updateLine(index, { toWarehouseId: event.target.value })} required><option value="">{t("inventory.movements.selectWarehouse")}</option>{warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.code} — {localizedReferenceName(warehouse)}</option>)}</select></label>}<label><span>{t("inventory.movements.quantity")}</span><input dir="ltr" inputMode="decimal" value={line.quantity} onChange={(event) => updateLine(index, { quantity: event.target.value })} pattern="[0-9]{1,13}([.][0-9]{1,6})?" required /></label>{inbound && <label><span>{t("inventory.movements.unitCostBase")}</span><input dir="ltr" inputMode="decimal" value={line.unitCostBase} onChange={(event) => updateLine(index, { unitCostBase: event.target.value })} pattern="[0-9]{1,11}([.][0-9]{1,8})?" required /></label>}{lines.length > 1 && <div className="form-actions"><Button type="button" variant="ghost" icon="ban" onClick={() => setLines((current) => current.filter((_, currentIndex) => currentIndex !== index))}>{t("inventory.movements.removeLine")}</Button></div>}</div>)}</div><div className="inline-notice neutral">{t("inventory.movements.immutableNotice")}</div><FormActions saving={saving} onClose={onClose} /></form></Modal>;
 }
 
-function MovementDetail({ movement, onClose }: { movement: InventoryMovement; onClose: () => void }) {
-  return <Modal title={movement.movementNumber} description={`${movementTypeLabel(movement.movementType)} · ${movement.movementDate}`} onClose={onClose}><div className="detail-grid"><div><span>{t("inventory.movements.description")}</span><strong>{movement.description}</strong></div><div><span>{t("inventory.movements.externalReference")}</span><strong dir="ltr">{movement.externalReference || "—"}</strong></div><div><span>{t("inventory.movements.createdBy")}</span><strong>{movement.createdByName}</strong></div></div><div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>#</th><th>{t("inventory.balances.item")}</th><th>{t("inventory.movements.route")}</th><th>{t("inventory.movements.quantity")}</th></tr></thead><tbody>{movement.lines?.map((line) => <tr key={line.id}><td>{line.lineNumber}</td><td><strong>{line.inventoryItemName}</strong><small dir="ltr">{line.inventoryItemCode}</small></td><td>{line.fromWarehouseName || t("inventory.movements.externalSource")} → {line.toWarehouseName || t("inventory.movements.externalDestination")}</td><td><strong dir="ltr">{quantityLabel(line.quantity)}</strong> <span className="code-pill" dir="ltr">{line.unitOfMeasureCode}</span></td></tr>)}</tbody></table></div><div className="form-actions"><Button onClick={onClose}>{t("inventory.cancel")}</Button></div></Modal>;
+function MovementDetail({ movement, onClose, onReverse }: { movement: InventoryMovement; onClose: () => void; onReverse: () => void }) {
+  const canReverse = movement.source === null && movement.reversalOf === null && movement.status === "POSTED";
+  return <Modal title={movement.movementNumber} description={`${movementTypeLabel(movement.movementType)} · ${movement.movementDate}`} onClose={onClose}><div className="detail-grid"><div><span>{t("inventory.movements.description")}</span><strong>{movement.description}</strong></div><div><span>{t("inventory.movements.status")}</span><strong>{t(`inventory.movements.statuses.${movement.status}`)}</strong></div><div><span>{t("inventory.movements.externalReference")}</span><strong dir="ltr">{movement.externalReference || "—"}</strong></div><div><span>{t("inventory.movements.createdBy")}</span><strong>{movement.createdByName}</strong></div>{movement.accounting && <><div><span>{t("inventory.movements.accountingDocument")}</span><strong dir="ltr">{movement.accounting.documentNumber}</strong></div><div><span>{t("inventory.movements.offsetAccount")}</span><strong>{movement.accounting.offsetAccount ? `${movement.accounting.offsetAccount.code} — ${movement.accounting.offsetAccount.nameAr}` : "—"}</strong></div></>}{movement.reversalOf && <div><span>{t("inventory.movements.reversalOf")}</span><strong dir="ltr">{movement.reversalOf.movementNumber}</strong></div>}{movement.reversedBy && <div><span>{t("inventory.movements.reversedBy")}</span><strong dir="ltr">{movement.reversedBy.movementNumber}</strong></div>}</div><div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>#</th><th>{t("inventory.balances.item")}</th><th>{t("inventory.movements.route")}</th><th>{t("inventory.movements.quantity")}</th><th>{t("inventory.movements.unitCostBase")}</th><th>{t("inventory.movements.totalCostBase")}</th></tr></thead><tbody>{movement.lines?.map((line) => <tr key={line.id}><td>{line.lineNumber}</td><td><strong>{line.inventoryItemName}</strong><small dir="ltr">{line.inventoryItemCode}</small></td><td>{line.fromWarehouseName || t("inventory.movements.externalSource")} → {line.toWarehouseName || t("inventory.movements.externalDestination")}</td><td><strong dir="ltr">{quantityLabel(line.quantity)}</strong> <span className="code-pill" dir="ltr">{line.unitOfMeasureCode}</span></td><td dir="ltr">{line.isCostInitialized ? Number(line.unitCostBase).toLocaleString(undefined, { maximumFractionDigits: 8 }) : "—"}</td><td dir="ltr">{line.isCostInitialized ? Number(line.totalCostBase).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : "—"}</td></tr>)}</tbody></table></div><div className="form-actions">{canReverse && <Button variant="danger" icon="reverse" onClick={onReverse}>{t("inventory.movements.reverse")}</Button>}<Button onClick={onClose}>{t("inventory.cancel")}</Button></div></Modal>;
+}
+
+function MovementReversalForm({ movement, onClose, onSaved }: { movement: InventoryMovement; onClose: () => void; onSaved: () => void }) {
+  const [reversalDate, setReversalDate] = useState(new Date().toISOString().slice(0, 10));
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      await api(`/inventory-movements/${movement.id}/reverse`, {
+        method: "POST",
+        idempotencyKey: idempotencyKey("inventory-movement-reversal", crypto.randomUUID()),
+        body: JSON.stringify({ version: movement.version, reversalDate, reason: reason.trim() }),
+      });
+      onSaved();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t("inventory.movements.reverseError"));
+    } finally {
+      setSaving(false);
+    }
+  }
+  return <Modal title={t("inventory.movements.reverseTitle", { value1: movement.movementNumber })} description={t("inventory.movements.reverseDescription")} onClose={onClose}><form className="document-form" onSubmit={submit}>{error && <div className="form-error" role="alert">{error}</div>}<div className="inline-notice neutral">{t("inventory.movements.reverseNotice")}</div><div className="form-grid"><label><span>{t("inventory.movements.reversalDate")}</span><input type="date" value={reversalDate} onChange={(event) => setReversalDate(event.target.value)} required /></label><label className="full"><span>{t("inventory.movements.reversalReason")}</span><textarea value={reason} onChange={(event) => setReason(event.target.value)} minLength={3} maxLength={500} rows={3} required /></label></div><FormActions saving={saving} onClose={onClose} /></form></Modal>;
 }
 
 function WarehousesPanel({ notify }: { notify: Notice }) {

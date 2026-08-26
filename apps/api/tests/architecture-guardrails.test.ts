@@ -273,6 +273,7 @@ describe("Inventory ownership boundary guardrails", () => {
     expect(catalog).toContain('"UNIT_OF_MEASURE"');
     expect(catalog).toContain("interface InventoryInvoiceCatalogPort");
     expect(catalog).toContain("resolveInvoiceSelection(");
+    expect(catalog).toContain("resolveImportedInvoiceSelection(");
     expect(catalog).toContain("FOR UPDATE");
     expect(catalog).toContain("companyId: context.companyId, version: input.version");
     expect(catalog).toContain("version: { increment: 1 }");
@@ -289,7 +290,7 @@ describe("Inventory ownership boundary guardrails", () => {
     expect(purchases).toContain("this.stock.applyInvoiceStockMovement");
   });
 
-  it("keeps quantity movements immutable, company-scoped and outside Ledger costing", async () => {
+  it("keeps valued movements immutable and company-scoped while Ledger writes stay in PostingEngine", async () => {
     const [movements, router, schema, openapi] = await Promise.all([
       source("inventory/inventory-movement-service.ts"),
       source("inventory/inventory-movement-router.ts"),
@@ -302,12 +303,20 @@ describe("Inventory ownership boundary guardrails", () => {
     expect(movements).toContain('throw new InventoryMovementError("INSUFFICIENT_STOCK")');
     expect(movements).toContain("FOR UPDATE");
     expect(movements).toContain("companyId: context.companyId");
-    expect(movements).not.toMatch(/journalEntry|journalLine|PostingEngine|costOfGoods|inventoryValuation/iu);
+    expect(movements).not.toMatch(/\.(?:journalEntry|journalLine)\.(?:create|update|updateMany|delete|upsert)\s*\(/iu);
+    expect(movements).toContain("new PostingEngine()");
+    expect(movements).toContain("this.posting.postPlan");
+    expect(movements).toContain("this.posting.reverse");
+    expect(movements).toContain("averageUnitCostBase");
+    expect(movements).toContain("totalCostBase");
+    expect(movements).toContain('operation: "INITIALIZE_INVENTORY_VALUATION"');
     expect(router).toContain('router.post("/inventory-movements"');
+    expect(router).toContain('router.post("/inventory-movements/:movementId/reverse"');
     expect(router).not.toMatch(/router\.(?:patch|put|delete)\("\/inventory-movements/iu);
     expect(schema).toContain("model InventoryMovement");
     expect(schema).toContain("model InventoryBalance");
+    expect(schema).toContain("model InventoryValuationInitialization");
     expect(schema).toContain("@@unique([companyId, sourceType, sourceId, sourceEvent]");
-    expect(openapi).toContain("دفتر حركة كميًا غير قابل للتعديل");
+    expect(openapi).toContain("averageUnitCostBase");
   });
 });

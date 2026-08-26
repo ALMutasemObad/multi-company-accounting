@@ -1,4 +1,4 @@
-import { Prisma, type PrismaClient } from "@prisma/client";
+import { Prisma, type AccountingDocumentType, type PrismaClient } from "@prisma/client";
 import type { ActorContext } from "../users/user-service.js";
 import { buildStatementRows, decimalMoney, syntheticStatementRow, type AccountBalanceInput } from "./financial-statement-calculator.js";
 
@@ -8,7 +8,7 @@ export type IncomeStatementQuery = ReportRange & { compareDateFrom?: string | un
 export type LedgerQuery = ReportRange & { accountId?: bigint | undefined; customerId?: bigint | undefined; supplierId?: bigint | undefined; page: number; pageSize: number };
 export type LedgerExportQuery = Omit<LedgerQuery, "page" | "pageSize">;
 export type JournalReportQuery = ReportRange & {
-  documentType?: "MANUAL_JOURNAL" | "RECEIPT" | "PAYMENT" | "SALES_INVOICE" | "SALES_CREDIT_NOTE" | "PERIOD_CLOSE" | undefined;
+  documentType?: AccountingDocumentType | undefined;
   status?: "POSTED" | "REVERSED" | undefined;
   accountId?: bigint | undefined;
   search?: string | undefined;

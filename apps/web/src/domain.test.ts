@@ -89,6 +89,37 @@ describe("واجهة سند الصرف", () => {
     expect(errors).toEqual(["اختر عميلًا أو حسابًا مقابلًا فقط."]);
     expect(messageForError(undefined, "INVALID_CUSTOMER")).toContain("العميل");
   });
+
+  it("يلزم توزيع سند الطرف ويقبل السند المباشر إلى حساب", () => {
+    expect(validatePaymentDraft({
+      supplierId: "5",
+      counterAccountId: "",
+      amount: "50",
+      exchangeRate: "1",
+      allocations: [],
+    })).toEqual(["يجب توزيع سند الصرف المرتبط بالمورد بالكامل على التزام واحد أو أكثر."]);
+    expect(validateReceiptDraft({
+      customerId: "7",
+      counterAccountId: "",
+      amount: "50",
+      exchangeRate: "1",
+      allocations: [],
+    })).toEqual(["يجب توزيع سند القبض المرتبط بالعميل بالكامل على فاتورة واحدة أو أكثر."]);
+    expect(validatePaymentDraft({
+      supplierId: "",
+      counterAccountId: "9",
+      amount: "50",
+      exchangeRate: "1",
+      allocations: [],
+    })).toEqual([]);
+    expect(validateReceiptDraft({
+      customerId: "",
+      counterAccountId: "9",
+      amount: "50",
+      exchangeRate: "1",
+      allocations: [],
+    })).toEqual([]);
+  });
 });
 
 describe("السنوات المالية والقيود اليومية", () => {

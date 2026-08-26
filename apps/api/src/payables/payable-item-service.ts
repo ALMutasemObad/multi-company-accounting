@@ -3,6 +3,13 @@ import { Prisma } from "@prisma/client";
 export type PayableAllocationTarget = {
   payableItemId: bigint;
   allocatedAmount: Prisma.Decimal.Value;
+  carryingBaseAmount?: Prisma.Decimal.Value | null;
+};
+
+export type PayableSettlementAllocation = {
+  payableItemId: bigint;
+  allocatedAmount: Prisma.Decimal;
+  carryingBaseAmount: Prisma.Decimal;
 };
 
 type SettlementErrors = {
@@ -27,7 +34,7 @@ export interface PayableSettlementPort {
   applyPayment(
     tx: Prisma.TransactionClient,
     command: SettlementCommand,
-  ): Promise<void>;
+  ): Promise<PayableSettlementAllocation[]>;
   reversePayment(
     tx: Prisma.TransactionClient,
     command: SettlementCommand,
@@ -66,6 +73,9 @@ function statusFor(outstanding: Prisma.Decimal, original: Prisma.Decimal) {
   return "PARTIAL" as const;
 }
 
+const money = (value: Prisma.Decimal.Value) =>
+  new Prisma.Decimal(value).toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP);
+
 export class PayableItemService implements PayableSettlementPort {
   async validateDraftTargets(
     tx: Prisma.TransactionClient,
@@ -87,7 +97,7 @@ export class PayableItemService implements PayableSettlementPort {
       if (new Prisma.Decimal(allocation.allocatedAmount).gt(item.outstandingAmount))
         throw command.errors.overAllocation();
     }
-    await this.persistDelta(tx, command, items, "DECREASE");
+    return this.persistDecrease(tx, command, items);
   }
 
   async reversePayment(
@@ -96,7 +106,7 @@ export class PayableItemService implements PayableSettlementPort {
   ) {
     const items = await this.loadTargets(tx, command, true);
     this.validateRestore(items, command);
-    await this.persistDelta(tx, command, items, "RESTORE");
+    await this.persistRestore(tx, command, items);
   }
 
   createForInvoice(
@@ -108,14 +118,18 @@ export class PayableItemService implements PayableSettlementPort {
       currencyId: bigint;
       dueDate: Date;
       originalAmount: Prisma.Decimal.Value;
+      originalBaseAmount: Prisma.Decimal.Value;
     },
   ) {
     const originalAmount = new Prisma.Decimal(input.originalAmount);
+    const originalBaseAmount = money(input.originalBaseAmount);
     return tx.payableItem.create({
       data: {
         ...input,
         originalAmount,
         outstandingAmount: originalAmount,
+        originalBaseAmount,
+        outstandingBaseAmount: originalBaseAmount,
         status: "OPEN",
       },
     });
@@ -127,6 +141,7 @@ export class PayableItemService implements PayableSettlementPort {
       companyId: bigint;
       sourceInvoiceId: bigint;
       amount: Prisma.Decimal.Value;
+      baseAmount: Prisma.Decimal.Value;
       invalid: () => Error;
       overAllocation: () => Error;
       conflict: () => Error;
@@ -139,12 +154,20 @@ export class PayableItemService implements PayableSettlementPort {
       input.invalid,
     );
     const amount = new Prisma.Decimal(input.amount);
-    if (amount.lte(0) || item.status === "REVERSED") throw input.invalid();
+    const baseAmount = money(input.baseAmount);
+    if (amount.lte(0) || baseAmount.lte(0) || item.status === "REVERSED") throw input.invalid();
     if (amount.gt(item.outstandingAmount)) throw input.overAllocation();
+    if (
+      baseAmount.gt(item.outstandingBaseAmount) ||
+      (amount.equals(item.outstandingAmount) !== baseAmount.equals(item.outstandingBaseAmount))
+    ) {
+      throw input.invalid();
+    }
     await this.updateItem(
       tx,
       item,
       item.outstandingAmount.sub(amount),
+      item.outstandingBaseAmount.sub(baseAmount),
       input.conflict,
     );
   }
@@ -155,6 +178,7 @@ export class PayableItemService implements PayableSettlementPort {
       companyId: bigint;
       sourceInvoiceId: bigint;
       amount: Prisma.Decimal.Value;
+      baseAmount: Prisma.Decimal.Value;
       invalid: () => Error;
       conflict: () => Error;
     },
@@ -166,9 +190,15 @@ export class PayableItemService implements PayableSettlementPort {
       input.invalid,
     );
     const restored = item.outstandingAmount.add(input.amount);
-    if (item.status === "REVERSED" || restored.gt(item.originalAmount))
+    const restoredBase = item.outstandingBaseAmount.add(input.baseAmount);
+    if (
+      item.status === "REVERSED" ||
+      restored.gt(item.originalAmount) ||
+      restoredBase.gt(item.originalBaseAmount) ||
+      (restored.equals(item.originalAmount) !== restoredBase.equals(item.originalBaseAmount))
+    )
       throw input.invalid();
-    await this.updateItem(tx, item, restored, input.conflict);
+    await this.updateItem(tx, item, restored, restoredBase, input.conflict);
   }
 
   async reverseInvoice(
@@ -200,9 +230,11 @@ export class PayableItemService implements PayableSettlementPort {
         version: item.version,
         status: "OPEN",
         outstandingAmount: item.originalAmount,
+        outstandingBaseAmount: item.originalBaseAmount,
       },
       data: {
         outstandingAmount: new Prisma.Decimal(0),
+        outstandingBaseAmount: new Prisma.Decimal(0),
         status: "REVERSED",
         version: { increment: 1 },
       },
@@ -261,24 +293,31 @@ export class PayableItemService implements PayableSettlementPort {
     for (const allocation of command.allocations) {
       const item = byId.get(allocation.payableItemId.toString());
       const amount = new Prisma.Decimal(allocation.allocatedAmount);
+      const carryingBaseAmount = allocation.carryingBaseAmount == null
+        ? null
+        : money(allocation.carryingBaseAmount);
       if (
         !item ||
         amount.lte(0) ||
+        !carryingBaseAmount ||
+        carryingBaseAmount.lte(0) ||
         item.supplierId !== command.supplierId ||
         item.currencyId !== command.currencyId ||
         item.status === "REVERSED" ||
-        item.outstandingAmount.add(amount).gt(item.originalAmount)
+        item.outstandingAmount.add(amount).gt(item.originalAmount) ||
+        item.outstandingBaseAmount.add(carryingBaseAmount).gt(item.originalBaseAmount) ||
+        (item.outstandingAmount.add(amount).equals(item.originalAmount) !==
+          item.outstandingBaseAmount.add(carryingBaseAmount).equals(item.originalBaseAmount))
       ) {
         throw command.errors.invalid();
       }
     }
   }
 
-  private async persistDelta(
+  private async persistDecrease(
     tx: Prisma.TransactionClient,
     command: SettlementCommand,
     items: Awaited<ReturnType<PayableItemService["loadTargets"]>>,
-    direction: "DECREASE" | "RESTORE",
   ) {
     const allocations = new Map(
       command.allocations.map((allocation) => [
@@ -286,13 +325,56 @@ export class PayableItemService implements PayableSettlementPort {
         new Prisma.Decimal(allocation.allocatedAmount),
       ]),
     );
+    const results: PayableSettlementAllocation[] = [];
     for (const item of items) {
       const amount = allocations.get(item.id.toString())!;
-      const outstanding =
-        direction === "DECREASE"
-          ? item.outstandingAmount.sub(amount)
-          : item.outstandingAmount.add(amount);
-      await this.updateItem(tx, item, outstanding, command.errors.conflict);
+      const carryingBaseAmount = amount.equals(item.outstandingAmount)
+        ? item.outstandingBaseAmount
+        : money(item.outstandingBaseAmount.mul(amount).div(item.outstandingAmount));
+      if (
+        carryingBaseAmount.lte(0) ||
+        carryingBaseAmount.gt(item.outstandingBaseAmount) ||
+        (!amount.equals(item.outstandingAmount) && carryingBaseAmount.equals(item.outstandingBaseAmount))
+      ) {
+        throw command.errors.invalid();
+      }
+      await this.updateItem(
+        tx,
+        item,
+        item.outstandingAmount.sub(amount),
+        item.outstandingBaseAmount.sub(carryingBaseAmount),
+        command.errors.conflict,
+      );
+      results.push({
+        payableItemId: item.id,
+        allocatedAmount: amount,
+        carryingBaseAmount,
+      });
+    }
+    return results;
+  }
+
+  private async persistRestore(
+    tx: Prisma.TransactionClient,
+    command: SettlementCommand,
+    items: Awaited<ReturnType<PayableItemService["loadTargets"]>>,
+  ) {
+    const allocations = new Map(command.allocations.map((allocation) => [
+      allocation.payableItemId.toString(),
+      {
+        amount: new Prisma.Decimal(allocation.allocatedAmount),
+        carryingBaseAmount: money(allocation.carryingBaseAmount!),
+      },
+    ]));
+    for (const item of items) {
+      const allocation = allocations.get(item.id.toString())!;
+      await this.updateItem(
+        tx,
+        item,
+        item.outstandingAmount.add(allocation.amount),
+        item.outstandingBaseAmount.add(allocation.carryingBaseAmount),
+        command.errors.conflict,
+      );
     }
   }
 
@@ -304,8 +386,10 @@ export class PayableItemService implements PayableSettlementPort {
       version: number;
       status: "OPEN" | "PARTIAL" | "SETTLED" | "REVERSED";
       originalAmount: Prisma.Decimal;
+      originalBaseAmount: Prisma.Decimal;
     },
     outstandingAmount: Prisma.Decimal,
+    outstandingBaseAmount: Prisma.Decimal,
     conflict: () => Error,
   ) {
     const changed = await tx.payableItem.updateMany({
@@ -317,6 +401,7 @@ export class PayableItemService implements PayableSettlementPort {
       },
       data: {
         outstandingAmount,
+        outstandingBaseAmount,
         status: statusFor(outstandingAmount, item.originalAmount),
         version: { increment: 1 },
       },

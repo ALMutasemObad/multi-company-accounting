@@ -25,6 +25,9 @@ describe.runIf(enabled)("atomic data imports with MariaDB/MySQL", () => {
   let expenseId: bigint;
   let currencyCode: string;
   let foreignCompanyId: bigint;
+  let warehouseId: bigint;
+  let unitOfMeasureId: bigint;
+  let inventoryItemId: bigint;
   const context = () => ({ companyId, userId });
 
   beforeAll(async () => {
@@ -47,12 +50,18 @@ describe.runIf(enabled)("atomic data imports with MariaDB/MySQL", () => {
     await prisma!.customer.deleteMany({ where: { companyId, nameAr: { startsWith: "IT استيراد" } } });
     await prisma!.supplierAddress.deleteMany({ where: { companyId, supplier: { nameAr: { startsWith: "IT استيراد" } } } });
     await prisma!.supplier.deleteMany({ where: { companyId, nameAr: { startsWith: "IT استيراد" } } });
+    await prisma!.inventoryItem.deleteMany({ where: { companyId, code: "IT-IMPORT-ITEM" } });
+    await prisma!.unitOfMeasure.deleteMany({ where: { companyId, code: "ITIMP" } });
+    await prisma!.warehouse.deleteMany({ where: { companyId, code: "IT-IMPORT-WH" } });
     await prisma!.account.deleteMany({ where: { companyId, code: { startsWith: "IT-IMPORT-" } } });
     const types = Object.fromEntries((await prisma!.accountType.findMany()).map((value) => [value.code, value.id]));
     assetId = (await prisma!.account.create({ data: { companyId, accountTypeId: types.ASSET!, code: "IT-IMPORT-AR", nameAr: "ذمم استيراد", level: 1, allowsPosting: true } })).id;
     liabilityId = (await prisma!.account.create({ data: { companyId, accountTypeId: types.LIABILITY!, code: "IT-IMPORT-AP", nameAr: "دائنون استيراد", level: 1, allowsPosting: true } })).id;
     revenueId = (await prisma!.account.create({ data: { companyId, accountTypeId: types.REVENUE!, code: "IT-IMPORT-REV", nameAr: "إيراد استيراد", level: 1, allowsPosting: true } })).id;
     expenseId = (await prisma!.account.create({ data: { companyId, accountTypeId: types.EXPENSE!, code: "IT-IMPORT-EXP", nameAr: "مصروف استيراد", level: 1, allowsPosting: true } })).id;
+    warehouseId = (await prisma!.warehouse.create({ data: { companyId, code: "IT-IMPORT-WH", nameAr: "مستودع استيراد" } })).id;
+    unitOfMeasureId = (await prisma!.unitOfMeasure.create({ data: { companyId, code: "ITIMP", nameAr: "وحدة استيراد", decimalPlaces: 3 } })).id;
+    inventoryItemId = (await prisma!.inventoryItem.create({ data: { companyId, unitOfMeasureId, code: "IT-IMPORT-ITEM", nameAr: "صنف استيراد" } })).id;
     const company = await prisma!.company.findUniqueOrThrow({ where: { id: companyId }, include: { baseCurrency: true } });
     currencyCode = company.baseCurrency.code;
     await prisma!.company.deleteMany({ where: { organizationId: company.organizationId, code: "IT-IMPORT-OTHER" } });
@@ -83,6 +92,9 @@ describe.runIf(enabled)("atomic data imports with MariaDB/MySQL", () => {
     await prisma.customer.deleteMany({ where: { companyId, nameAr: { startsWith: "IT استيراد" } } });
     await prisma.supplierAddress.deleteMany({ where: { companyId, supplier: { nameAr: { startsWith: "IT استيراد" } } } });
     await prisma.supplier.deleteMany({ where: { companyId, nameAr: { startsWith: "IT استيراد" } } });
+    if (inventoryItemId) await prisma.inventoryItem.deleteMany({ where: { id: inventoryItemId, companyId } });
+    if (unitOfMeasureId) await prisma.unitOfMeasure.deleteMany({ where: { id: unitOfMeasureId, companyId } });
+    if (warehouseId) await prisma.warehouse.deleteMany({ where: { id: warehouseId, companyId } });
     await prisma.account.deleteMany({ where: { id: { in: [assetId, liabilityId, revenueId, expenseId].filter(Boolean) } } });
     if (foreignCompanyId) await prisma.company.deleteMany({ where: { id: foreignCompanyId } });
     await prisma.$disconnect();
@@ -124,22 +136,29 @@ describe.runIf(enabled)("atomic data imports with MariaDB/MySQL", () => {
     await service.commit(context(), supplierPreview.batch.id, "SUPPLIERS", "CSV", supplierFile, "it-import-supplier-key");
     const supplier = await prisma!.supplier.findFirstOrThrow({ where: { companyId, nameAr: "IT استيراد مورد" } });
 
-    const salesFile = csv("SALES_INVOICES", [{ invoice_key: "S-1", document_date: "2047-02-01", due_date: "2047-02-28", description: "IT فاتورة بيع مستوردة", customer_code: customer.code, currency_code: currencyCode, exchange_rate: "1.00000000", line_description: "خدمة", quantity: "2.0000", unit_price: "100.0000", discount_amount: "0.0000", account_code: "IT-IMPORT-REV" }]);
+    const salesFile = csv("SALES_INVOICES", [{ invoice_key: "S-1", document_date: "2047-02-01", due_date: "2047-02-28", description: "IT فاتورة بيع مستوردة", customer_code: customer.code, warehouse_code: "IT-IMPORT-WH", currency_code: currencyCode, exchange_rate: "1.00000000", inventory_item_code: "IT-IMPORT-ITEM", line_description: "صنف", quantity: "2.0000", unit_price: "100.0000", discount_amount: "0.0000", account_code: "IT-IMPORT-REV" }]);
     const salesPreview = await service.preview(context(), "SALES_INVOICES", "CSV", salesFile);
     const salesCommit = await service.commit(context(), salesPreview.batch.id, "SALES_INVOICES", "CSV", salesFile, "it-import-sales-key");
-    const sales = await prisma!.salesInvoice.findUniqueOrThrow({ where: { id: BigInt(salesCommit.createdIds[0]!) }, include: { accountingDocument: true } });
+    const sales = await prisma!.salesInvoice.findUniqueOrThrow({ where: { id: BigInt(salesCommit.createdIds[0]!) }, include: { accountingDocument: true, lines: true } });
     expect(sales.accountingDocument.status).toBe("DRAFT");
     expect(sales.total.toFixed(4)).toBe("200.0000");
+    expect(sales.warehouseId).toBe(warehouseId);
+    expect(sales.lines[0]!.inventoryItemId).toBe(inventoryItemId);
+
+    const missingWarehouseFile = csv("SALES_INVOICES", [{ invoice_key: "S-NO-WH", document_date: "2047-02-01", due_date: "2047-02-28", description: "IT صنف بلا مستودع", customer_code: customer.code, currency_code: currencyCode, exchange_rate: "1.00000000", inventory_item_code: "IT-IMPORT-ITEM", line_description: "صنف", quantity: "1.0000", unit_price: "1.0000", discount_amount: "0.0000", account_code: "IT-IMPORT-REV" }]);
+    expect((await service.preview(context(), "SALES_INVOICES", "CSV", missingWarehouseFile)).errors).toContainEqual({ row: 2, column: "warehouse_code", code: "WAREHOUSE_REQUIRED" });
 
     const invalidTaxFile = csv("SALES_INVOICES", [{ invoice_key: "S-TAX", document_date: "2047-02-01", due_date: "2047-02-28", description: "IT ضريبة غير صالحة", customer_code: customer.code, currency_code: currencyCode, exchange_rate: "1.00000000", line_description: "خدمة", quantity: "1.0000", unit_price: "1.0000", discount_amount: "0.0000", account_code: "IT-IMPORT-REV", tax_code: "NO-SUCH-TAX" }]);
     expect((await service.preview(context(), "SALES_INVOICES", "CSV", invalidTaxFile)).errors).toContainEqual({ row: 2, column: "tax_code", code: "INVALID_TAX_RATE" });
 
-    const purchaseFile = csv("PURCHASE_INVOICES", [{ invoice_key: "P-1", document_date: "2047-03-01", due_date: "2047-03-31", description: "IT فاتورة شراء مستوردة", supplier_code: supplier.code, supplier_invoice_number: "EXT-2047-1", currency_code: currencyCode, exchange_rate: "1.00000000", line_description: "مصروف", quantity: "1.0000", unit_price: "75.0000", discount_amount: "5.0000", account_code: "IT-IMPORT-EXP" }]);
+    const purchaseFile = csv("PURCHASE_INVOICES", [{ invoice_key: "P-1", document_date: "2047-03-01", due_date: "2047-03-31", description: "IT فاتورة شراء مستوردة", supplier_code: supplier.code, supplier_invoice_number: "EXT-2047-1", warehouse_code: "IT-IMPORT-WH", currency_code: currencyCode, exchange_rate: "1.00000000", inventory_item_code: "IT-IMPORT-ITEM", line_description: "صنف", quantity: "1.0000", unit_price: "75.0000", discount_amount: "5.0000", account_code: "IT-IMPORT-EXP" }]);
     const purchasePreview = await service.preview(context(), "PURCHASE_INVOICES", "CSV", purchaseFile);
     const purchaseCommit = await service.commit(context(), purchasePreview.batch.id, "PURCHASE_INVOICES", "CSV", purchaseFile, "it-import-purchase-key");
-    const purchase = await prisma!.purchaseInvoice.findUniqueOrThrow({ where: { id: BigInt(purchaseCommit.createdIds[0]!) }, include: { accountingDocument: true } });
+    const purchase = await prisma!.purchaseInvoice.findUniqueOrThrow({ where: { id: BigInt(purchaseCommit.createdIds[0]!) }, include: { accountingDocument: true, lines: true } });
     expect(purchase.accountingDocument.status).toBe("DRAFT");
     expect(purchase.total.toFixed(4)).toBe("70.0000");
+    expect(purchase.warehouseId).toBe(warehouseId);
+    expect(purchase.lines[0]!.inventoryItemId).toBe(inventoryItemId);
 
     const partialFile = csv("SALES_INVOICES", [
       { invoice_key: "GOOD", document_date: "2047-04-01", due_date: "2047-04-30", description: "IT good", customer_code: customer.code, currency_code: currencyCode, exchange_rate: "1.00000000", line_description: "خدمة", quantity: "1.0000", unit_price: "10.0000", discount_amount: "0.0000", account_code: "IT-IMPORT-REV" },

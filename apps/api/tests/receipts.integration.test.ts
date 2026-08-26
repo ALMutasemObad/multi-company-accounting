@@ -33,6 +33,7 @@ describe.runIf(enabled)(
     let cashBankId: bigint;
     let paymentMethodId: bigint;
     let receivableItemId: bigint;
+    let foreignCurrencyId: bigint | null = null;
     let agent: ReturnType<typeof request.agent>;
     let csrf = "";
     let receiptService: ReceiptService;
@@ -160,6 +161,15 @@ describe.runIf(enabled)(
         where: { companyId, name: "IT-RCP-2043" },
       });
       if (abandoned) await removeYear(abandoned.id);
+      const abandonedCurrency = await prisma!.currency.findFirst({
+        where: { scopeKey: `COMPANY:${companyId}`, code: "FXR" },
+      });
+      if (abandonedCurrency) {
+        await prisma!.companyCurrency.deleteMany({
+          where: { companyId, currencyId: abandonedCurrency.id },
+        });
+        await prisma!.currency.delete({ where: { id: abandonedCurrency.id } });
+      }
       await prisma!.customerAddress.deleteMany({
         where: { companyId, customer: { code: "IT-RCP-CUST" } },
       });
@@ -385,6 +395,8 @@ describe.runIf(enabled)(
           dueDate: new Date("2043-03-01"),
           originalAmount: "200.0000",
           outstandingAmount: "200.0000",
+          originalBaseAmount: "200.0000",
+          outstandingBaseAmount: "200.0000",
         },
       })).id;
     });
@@ -411,6 +423,12 @@ describe.runIf(enabled)(
         },
       });
       if (yearId) await removeYear(yearId);
+      if (foreignCurrencyId) {
+        await prisma.companyCurrency.deleteMany({
+          where: { companyId, currencyId: foreignCurrencyId },
+        });
+        await prisma.currency.delete({ where: { id: foreignCurrencyId } });
+      }
       await prisma.customerAddress.deleteMany({
         where: { companyId, customerId },
       });
@@ -559,6 +577,27 @@ describe.runIf(enabled)(
       invalidRate.exchangeRate = "2.00000000";
       await agent.post("/api/v1/receipts").set("X-CSRF-Token", csrf).send(invalidRate).expect(422);
       await agent.post("/api/v1/receipts").set("X-CSRF-Token", csrf).send({ ...apiPayload("IT-RCP duplicate counterparty"), counterAccountId: revenueId.toString() }).expect(400);
+      await agent
+        .post("/api/v1/receipts")
+        .set("X-CSRF-Token", csrf)
+        .send({ ...apiPayload("IT-RCP missing allocation"), allocations: [] })
+        .expect(422)
+        .expect(({ body }) => expect(body.reason).toBe("ALLOCATION_REQUIRED"));
+      const direct = await agent
+        .post("/api/v1/receipts")
+        .set("X-CSRF-Token", csrf)
+        .send({
+          ...apiPayload("IT-RCP direct account"),
+          customerId: null,
+          counterAccountId: revenueId.toString(),
+          allocations: [],
+        })
+        .expect(201);
+      await agent
+        .post(`/api/v1/receipts/${direct.body.id}/cancel`)
+        .set("X-CSRF-Token", csrf)
+        .send({ version: 0, reason: "IT-RCP direct account cleanup" })
+        .expect(200);
       const created = await agent
         .post("/api/v1/receipts")
         .set("X-CSRF-Token", csrf)
@@ -663,8 +702,156 @@ describe.runIf(enabled)(
           concurrent.map(
             (receipt) => receipt.accountingDocument.documentNumber,
           ),
-        ).size,
+      ).size,
       ).toBe(5);
+    }, 20_000);
+    it("records and exactly reverses a realized foreign-exchange loss", async () => {
+      await Promise.all([
+        prisma!.account.findFirstOrThrow({ where: { companyId, sourceTemplateCode: "SMALL_BUSINESS_GENERAL", sourceTemplateKey: "realized-fx-gain" } }),
+        prisma!.account.findFirstOrThrow({ where: { companyId, sourceTemplateCode: "SMALL_BUSINESS_GENERAL", sourceTemplateKey: "realized-fx-loss" } }),
+      ]);
+      const foreignCurrency = await prisma!.currency.create({
+        data: {
+          code: "FXR",
+          nameAr: "عملة فرق قبض اختبارية",
+          decimals: 2,
+          scope: "COMPANY",
+          scopeKey: `COMPANY:${companyId}`,
+          ownerCompanyId: companyId,
+        },
+      });
+      foreignCurrencyId = foreignCurrency.id;
+      await prisma!.companyCurrency.create({
+        data: { companyId, currencyId: foreignCurrency.id },
+      });
+      const invoice = await prisma!.accountingDocument.create({
+        data: {
+          companyId,
+          fiscalPeriodId: periodId,
+          documentType: "SALES_INVOICE",
+          documentNumber: "IT-RCP-FX-INVOICE",
+          documentDate: new Date("2043-05-01"),
+          description: "فاتورة عملة أجنبية مستهدفة",
+          status: "POSTED",
+          createdBy: userId,
+          postedBy: userId,
+          postedAt: new Date(),
+          salesInvoice: {
+            create: {
+              customerId,
+              currencyId: foreignCurrency.id,
+              exchangeRate: "1.30000000",
+              dueDate: new Date("2043-05-31"),
+              subtotal: "100.0000",
+              discountTotal: "0.0000",
+              taxableTotal: "100.0000",
+              taxTotal: "0.0000",
+              total: "100.0000",
+              baseTotal: "130.0000",
+              customerNameSnapshot: "عميل اختبار القبض",
+            },
+          },
+          journalEntries: {
+            create: [{
+              entryNumber: 1,
+              entryDate: new Date("2043-05-01"),
+              description: "فاتورة عملة أجنبية مستهدفة",
+              lines: {
+                create: [{
+                  lineNumber: 1,
+                  accountId: arId,
+                  customerId,
+                  currencyId: foreignCurrency.id,
+                  exchangeRate: "1.30000000",
+                  debitAmount: "100.0000",
+                  creditAmount: "0.0000",
+                  baseDebitAmount: "130.0000",
+                  baseCreditAmount: "0.0000",
+                }, {
+                  lineNumber: 2,
+                  accountId: revenueId,
+                  currencyId: foreignCurrency.id,
+                  exchangeRate: "1.30000000",
+                  debitAmount: "0.0000",
+                  creditAmount: "100.0000",
+                  baseDebitAmount: "0.0000",
+                  baseCreditAmount: "130.0000",
+                }],
+              },
+            }],
+          },
+        },
+        include: { salesInvoice: true },
+      });
+      const item = await prisma!.receivableItem.create({
+        data: {
+          companyId,
+          salesInvoiceId: invoice.salesInvoice!.id,
+          customerId,
+          currencyId: foreignCurrency.id,
+          dueDate: new Date("2043-05-31"),
+          originalAmount: "100.0000",
+          outstandingAmount: "100.0000",
+          originalBaseAmount: "130.0000",
+          outstandingBaseAmount: "130.0000",
+        },
+      });
+      const created = await agent
+        .post("/api/v1/receipts")
+        .set("X-CSRF-Token", csrf)
+        .send({
+          fiscalPeriodId: periodId.toString(),
+          documentDate: "2043-06-01",
+          description: "تحصيل بسعر صرف مختلف",
+          customerId: customerId.toString(),
+          cashBankAccountId: cashBankId.toString(),
+          paymentMethodId: paymentMethodId.toString(),
+          currencyId: foreignCurrency.id.toString(),
+          exchangeRate: "1.25000000",
+          amount: "100.0000",
+          counterpartyName: "عميل اختبار القبض",
+          allocations: [{
+            receivableItemId: item.id.toString(),
+            allocatedAmount: "100.0000",
+          }],
+        })
+        .expect(201);
+      await agent
+        .post(`/api/v1/receipts/${created.body.id}/post`)
+        .set("X-CSRF-Token", csrf)
+        .set("Idempotency-Key", "post-realized-fx-receipt")
+        .send({ version: 0 })
+        .expect(200);
+      const detail = await agent
+        .get(`/api/v1/receipts/${created.body.id}`)
+        .expect(200);
+      expect(detail.body.realizedFxBaseAmount).toBe("-5.0000");
+      expect(detail.body.allocations[0]).toMatchObject({
+        carryingBaseAmount: "130.0000",
+        settlementBaseAmount: "125.0000",
+        realizedFxBaseAmount: "-5.0000",
+      });
+      const entry = await prisma!.journalEntry.findFirstOrThrow({
+        where: { accountingDocumentId: BigInt(detail.body.document.id) },
+        include: { lines: { include: { account: true } } },
+      });
+      const arLine = entry.lines.find((line) => line.accountId === arId)!;
+      const lossLine = entry.lines.find((line) => line.account.sourceTemplateKey === "realized-fx-loss")!;
+      expect(arLine.exchangeRate.toFixed(8)).toBe("1.30000000");
+      expect(arLine.baseCreditAmount.toFixed(4)).toBe("130.0000");
+      expect(lossLine.baseDebitAmount.toFixed(4)).toBe("5.0000");
+      expect(entry.lines.reduce((sum, line) => sum + Number(line.baseDebitAmount), 0)).toBe(130);
+      expect(entry.lines.reduce((sum, line) => sum + Number(line.baseCreditAmount), 0)).toBe(130);
+      await agent
+        .post(`/api/v1/receipts/${created.body.id}/reverse`)
+        .set("X-CSRF-Token", csrf)
+        .set("Idempotency-Key", "reverse-realized-fx-receipt")
+        .send({ version: 1, reversalDate: "2043-06-02", reason: "عكس فرق العملة الاختباري" })
+        .expect(200);
+      const restored = await prisma!.receivableItem.findUniqueOrThrow({ where: { id: item.id } });
+      expect(restored.outstandingAmount.toFixed(4)).toBe("100.0000");
+      expect(restored.outstandingBaseAmount.toFixed(4)).toBe("130.0000");
+      expect(restored.status).toBe("OPEN");
     });
   },
 );

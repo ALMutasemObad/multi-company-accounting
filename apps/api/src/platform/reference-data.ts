@@ -76,6 +76,7 @@ export const permissionDefinitions = [
   ['sales_invoices.post', 'sales_invoices', 'ترحيل فواتير المبيعات والإشعارات الدائنة'],
   ['sales_invoices.cancel', 'sales_invoices', 'إلغاء مسودات فواتير المبيعات'],
   ['sales_invoices.reverse', 'sales_invoices', 'عكس فواتير المبيعات المرحلة'],
+  ['sales_invoices.print', 'sales_invoices', 'طباعة وأرشفة فواتير المبيعات والإشعارات الدائنة'],
   ['tax_rates.manage', 'sales_invoices', 'إدارة نسب ضريبة المبيعات'],
   ['reports.receivables.view', 'reports', 'عرض أرصدة العملاء وأعمار الديون'],
   ['purchase_invoices.view', 'purchase_invoices', 'عرض فواتير المشتريات والإشعارات المدينة'],

@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.20.0
+  version: 1.23.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -33,7 +33,7 @@ info:
 
     - يضيف كتالوج Inventory وحدات قياس دلالية وأصنافًا برموز ITM خادمية ثابتة، مع قفل يمنع ربط صنف نشط بوحدة معطلة.
 
-    - يضيف Inventory دفتر حركة كميًا غير قابل للتعديل وإسقاط أرصدة مقفلاً في المعاملة نفسها، مع منع المخزون السالب ومفاتيح Idempotency؛ ولا يدّعي تقييم المخزون أو تكلفة المبيعات في هذه المرحلة.
+    - يضيف Inventory دفتر حركة كميًا وقيميًا غير قابل للتعديل وإسقاط أرصدة مقفلاً في المعاملة نفسها وفق المتوسط المرجح المتحرك، مع منع المخزون السالب والقيمة غير المتسقة ومفاتيح Idempotency؛ وتستهلك الفواتير نتيجة التقييم لإكمال قيد المخزون وتكلفة المبيعات عبر PostingEngine.
 
     - OpenAPI هو العقد التنفيذي الموحد لأجسام JSON؛ تولد منه حراس Zod وأنواع الطلب والاستجابة وبصمة تغطية حتمية، وتفحص الاستجابات في بيئات التطوير والاختبار.
 
@@ -89,7 +89,7 @@ tags:
 - name: Treasury
   description: حسابات النقد والبنوك وطرق الدفع.
 - name: Inventory
-  description: المستودعات والبيانات الأساسية للمخزون؛ لا تنشئ هذه المرحلة قيودًا محاسبية.
+  description: المستودعات والكتالوج والحركات الكمية والقيمية؛ يملك Inventory التقييم ولا يكتب Ledger مباشرة، بينما تنشئ الفواتير قيود المخزون والتكلفة عبر PostingEngine.
 - name: Manual Journals
   description: القيود اليومية اليدوية ودورة الترحيل والعكس.
 - name: Receipts
@@ -4121,7 +4121,7 @@ paths:
       security: [{ SessionCookie: [] }]
     post:
       tags: [Inventory]
-      summary: إنشاء وترحيل حركة مخزون غير قابلة للتعديل
+      summary: إنشاء وترحيل حركة مخزون غير قابلة للتعديل مع أثرها المحاسبي عند اللزوم
       operationId: createInventoryMovement
       parameters:
       - $ref: '#/components/parameters/RequestId'
@@ -4133,13 +4133,47 @@ paths:
             schema: { $ref: '#/components/schemas/InventoryMovementCreateRequest' }
       responses:
         '201':
-          description: تم إنشاء الحركة وتحديث الأرصدة ذريًا
+          description: تم إنشاء الحركة وتحديث الأرصدة والقيد المحاسبي ذريًا؛ التحويل لا ينشئ قيدًا
           content:
             application/json:
               schema: { $ref: '#/components/schemas/InventoryMovement' }
         '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+      x-permission: inventory_movements.create
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /inventory-balances/{balanceId}/initialize-valuation:
+    post:
+      tags: [Inventory]
+      summary: تهيئة تقييم رصيد مخزون قديم لمرة واحدة
+      operationId: initializeInventoryBalanceValuation
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: balanceId
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[1-9][0-9]*$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InventoryValuationInitializationRequest' }
+      responses:
+        '200':
+          description: تم تثبيت تكلفة الرصيد التاريخي وتحديث قيمته
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InventoryBalance' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/BusinessRuleViolation' }
         '500': { $ref: '#/components/responses/InternalError' }
@@ -4171,6 +4205,40 @@ paths:
         '500': { $ref: '#/components/responses/InternalError' }
       x-permission: inventory_movements.view
       security: [{ SessionCookie: [] }]
+  /inventory-movements/{movementId}/reverse:
+    post:
+      tags: [Inventory]
+      summary: عكس حركة مخزون يدوية بحركة مقابلة وقيد عكسي ذري
+      operationId: reverseInventoryMovement
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: movementId
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[1-9][0-9]*$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InventoryMovementReverseRequest' }
+      responses:
+        '200':
+          description: تم عكس الحركة والمستند المحاسبي المرتبط بها داخل معاملة واحدة
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InventoryMovementReversalResult' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+      x-permission: inventory_movements.reverse
+      security: [{ SessionCookie: [], CsrfToken: [] }]
   /cash-bank-accounts:
     get:
       tags:
@@ -5071,6 +5139,25 @@ paths:
         '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
       x-permission: sales_invoices.reverse
       security: [{ SessionCookie: [], CsrfToken: [] }]
+  /sales-invoices/{invoiceId}/pdf:
+    get:
+      tags: [Sales Invoices]
+      summary: طباعة فاتورة المبيعات أو الإشعار الدائن من لقطة الترحيل التاريخية
+      operationId: printSalesInvoice
+      parameters:
+      - { name: invoiceId, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
+      responses:
+        '200':
+          description: ملف PDF عربي مبني على لقطة تاريخية ثابتة
+          headers:
+            X-Print-Archive-Id: { schema: { type: string } }
+            X-Print-Archive-Hash: { schema: { type: string } }
+          content:
+            application/pdf: { schema: { type: string, format: binary } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: sales_invoices.print
+      security: [{ SessionCookie: [] }]
   /purchase-invoices:
     get:
       tags: [Purchase Invoices]
@@ -8927,12 +9014,15 @@ components:
     InventoryBalance:
       type: object
       additionalProperties: false
-      required: [id, warehouse, inventoryItem, onHand, version, movementCount, updatedAt]
+      required: [id, warehouse, inventoryItem, onHand, inventoryValueBase, averageUnitCostBase, isValuationInitialized, version, movementCount, updatedAt]
       properties:
         id: { type: string, pattern: '^[1-9][0-9]*$' }
         warehouse: { $ref: '#/components/schemas/InventoryWarehouseReference' }
         inventoryItem: { $ref: '#/components/schemas/InventoryItemReference' }
         onHand: { type: string, pattern: '^[0-9]{1,13}\.[0-9]{6}$' }
+        inventoryValueBase: { type: string, pattern: '^[0-9]{1,15}\.[0-9]{4}$' }
+        averageUnitCostBase: { type: string, pattern: '^[0-9]{1,11}\.[0-9]{8}$' }
+        isValuationInitialized: { type: boolean }
         version: { type: integer, minimum: 0 }
         movementCount: { type: integer, minimum: 0 }
         updatedAt: { type: string, format: date-time }
@@ -8953,6 +9043,9 @@ components:
       - toWarehouseCode
       - toWarehouseName
       - quantity
+      - unitCostBase
+      - totalCostBase
+      - isCostInitialized
       properties:
         id: { type: string, pattern: '^[1-9][0-9]*$' }
         lineNumber: { type: integer, minimum: 1, maximum: 100 }
@@ -8967,6 +9060,9 @@ components:
         toWarehouseCode: { type: [string, 'null'], maxLength: 40 }
         toWarehouseName: { type: [string, 'null'], maxLength: 160 }
         quantity: { type: string, pattern: '^[0-9]{1,13}\.[0-9]{6}$' }
+        unitCostBase: { type: string, pattern: '^[0-9]{1,11}\.[0-9]{8}$' }
+        totalCostBase: { type: string, pattern: '^[0-9]{1,15}\.[0-9]{4}$' }
+        isCostInitialized: { type: boolean }
     InventoryMovementSource:
       type: object
       additionalProperties: false
@@ -8980,6 +9076,31 @@ components:
           type: string
           enum: [POST, REVERSE]
         documentNumber: { type: string, maxLength: 40 }
+    InventoryMovementReference:
+      type: object
+      additionalProperties: false
+      required: [id, movementNumber]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        movementNumber: { type: string, pattern: '^IMV-[0-9]+$', maxLength: 40 }
+    InventoryMovementAccounting:
+      type: object
+      additionalProperties: false
+      required: [documentNumber, status, version, offsetAccount]
+      properties:
+        documentNumber: { type: string, minLength: 1, maxLength: 60 }
+        status: { type: string, enum: [DRAFT, POSTED, REVERSED, CANCELLED] }
+        version: { type: integer, minimum: 0 }
+        offsetAccount:
+          oneOf:
+          - type: object
+            additionalProperties: false
+            required: [id, code, nameAr]
+            properties:
+              id: { type: string, pattern: '^[1-9][0-9]*$' }
+              code: { type: string, maxLength: 40 }
+              nameAr: { type: string, maxLength: 180 }
+          - { type: 'null' }
     InventoryMovement:
       type: object
       additionalProperties: false
@@ -8990,7 +9111,12 @@ components:
       - movementDate
       - description
       - externalReference
+      - status
+      - version
       - source
+      - accounting
+      - reversalOf
+      - reversedBy
       - createdByName
       - createdAt
       - lineCount
@@ -9001,9 +9127,23 @@ components:
         movementDate: { type: string, format: date }
         description: { type: string, minLength: 1, maxLength: 500 }
         externalReference: { type: [string, 'null'], maxLength: 100 }
+        status: { type: string, enum: [POSTED, REVERSED] }
+        version: { type: integer, minimum: 0 }
         source:
           oneOf:
           - { $ref: '#/components/schemas/InventoryMovementSource' }
+          - { type: 'null' }
+        accounting:
+          oneOf:
+          - { $ref: '#/components/schemas/InventoryMovementAccounting' }
+          - { type: 'null' }
+        reversalOf:
+          oneOf:
+          - { $ref: '#/components/schemas/InventoryMovementReference' }
+          - { type: 'null' }
+        reversedBy:
+          oneOf:
+          - { $ref: '#/components/schemas/InventoryMovementReference' }
           - { type: 'null' }
         createdByName: { type: string, maxLength: 160 }
         createdAt: { type: string, format: date-time }
@@ -9024,6 +9164,10 @@ components:
         quantity:
           type: string
           pattern: '^[0-9]{1,13}(?:\.[0-9]{1,6})?$'
+        unitCostBase:
+          type: [string, 'null']
+          pattern: '^[0-9]{1,11}(?:\.[0-9]{1,8})?$'
+          description: مطلوب للحركات الداخلة اليدوية، ويُشتق تلقائيًا للحركات الخارجة والتحويلات.
     InventoryMovementCreateRequest:
       type: object
       additionalProperties: false
@@ -9038,6 +9182,31 @@ components:
           minItems: 1
           maxItems: 100
           items: { $ref: '#/components/schemas/InventoryMovementLineCreateRequest' }
+    InventoryMovementReverseRequest:
+      type: object
+      additionalProperties: false
+      required: [version, reversalDate, reason]
+      properties:
+        version: { type: integer, minimum: 0 }
+        reversalDate: { type: string, format: date }
+        reason: { type: string, x-trim: true, minLength: 3, maxLength: 500 }
+    InventoryMovementReversalResult:
+      type: object
+      additionalProperties: false
+      required: [original, reversal]
+      properties:
+        original: { $ref: '#/components/schemas/InventoryMovement' }
+        reversal: { $ref: '#/components/schemas/InventoryMovement' }
+    InventoryValuationInitializationRequest:
+      type: object
+      additionalProperties: false
+      required: [version, unitCostBase, reason]
+      properties:
+        version: { type: integer, minimum: 0 }
+        unitCostBase:
+          type: string
+          pattern: '^[0-9]{1,11}(?:\.[0-9]{1,8})?$'
+        reason: { type: string, x-trim: true, minLength: 3, maxLength: 500 }
     CashBankAccountType:
       type: string
       enum:
@@ -9482,7 +9651,7 @@ components:
         lines: { type: array, minItems: 1, maxItems: 200, items: { $ref: '#/components/schemas/SalesInvoiceLineInput' } }
     SalesInvoice:
       type: object
-      required: [id, document, customerId, warehouseId, receivableItemId, settlementVersion, currencyId, dueDate, subtotal, discountTotal, taxTotal, total, baseTotal, paidAmount, creditedAmount, outstandingAmount, settlementStatus, lines]
+      required: [id, document, customerId, warehouseId, receivableItemId, settlementVersion, currencyId, dueDate, subtotal, discountTotal, taxTotal, total, baseTotal, paidAmount, creditedAmount, outstandingAmount, outstandingBaseAmount, settlementStatus, lines]
       properties:
         id: { type: string, pattern: '^[1-9][0-9]*$' }
         document: { $ref: '#/components/schemas/AccountingDocumentHeader' }
@@ -9503,6 +9672,7 @@ components:
         paidAmount: { type: string }
         creditedAmount: { type: string }
         outstandingAmount: { type: string }
+        outstandingBaseAmount: { type: string, description: الرصيد الدفتري المتبقي بعملة الأساس بعد التسويات والإشعارات المرحلة. }
         settlementStatus: { type: string, enum: [OPEN, PARTIAL, PAID] }
         lines:
           type: array
@@ -9568,7 +9738,7 @@ components:
         lines: { type: array, minItems: 1, maxItems: 200, items: { $ref: '#/components/schemas/PurchaseInvoiceLineInput' } }
     PurchaseInvoice:
       type: object
-      required: [id, document, supplierId, warehouseId, payableItemId, settlementVersion, currencyId, dueDate, subtotal, discountTotal, taxTotal, total, baseTotal, paidAmount, debitedAmount, outstandingAmount, settlementStatus, lines]
+      required: [id, document, supplierId, warehouseId, payableItemId, settlementVersion, currencyId, dueDate, subtotal, discountTotal, taxTotal, total, baseTotal, paidAmount, debitedAmount, outstandingAmount, outstandingBaseAmount, settlementStatus, lines]
       properties:
         id: { type: string, pattern: '^[1-9][0-9]*$' }
         document: { $ref: '#/components/schemas/AccountingDocumentHeader' }
@@ -9590,6 +9760,7 @@ components:
         paidAmount: { type: string }
         debitedAmount: { type: string }
         outstandingAmount: { type: string }
+        outstandingBaseAmount: { type: string, description: الرصيد الدفتري المتبقي بعملة الأساس بعد التسويات والإشعارات المرحلة. }
         settlementStatus: { type: string, enum: [OPEN, PARTIAL, PAID] }
         lines:
           type: array
@@ -9690,6 +9861,7 @@ components:
       type: string
       enum:
       - MANUAL_JOURNAL
+      - INVENTORY_ADJUSTMENT
       - RECEIPT
       - PAYMENT
       - SALES_INVOICE
@@ -10082,6 +10254,9 @@ components:
         - invoiceNumber
         - customerName
         - dueDate
+        - carryingBaseAmount
+        - settlementBaseAmount
+        - realizedFxBaseAmount
         properties:
           id:
             type: string
@@ -10091,6 +10266,18 @@ components:
           invoiceNumber: { type: string, maxLength: 60 }
           customerName: { type: string, maxLength: 200 }
           dueDate: { type: string, format: date }
+          carryingBaseAmount:
+            type: [string, 'null']
+            pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
+            description: القيمة الدفترية المسحوبة من الذمة بعملة الأساس؛ null للمسودة قبل الترحيل.
+          settlementBaseAmount:
+            type: [string, 'null']
+            pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
+            description: قيمة التحصيل بعملة الأساس وفق سعر صرف سند القبض؛ null للمسودة قبل الترحيل.
+          realizedFxBaseAmount:
+            type: [string, 'null']
+            pattern: ^-?(0|[1-9][0-9]{0,14})\.[0-9]{4}$
+            description: فرق العملة المحقق بعملة الأساس؛ موجب = ربح وسالب = خسارة.
     PaymentAllocationInput:
       type: object
       additionalProperties: false
@@ -10114,12 +10301,27 @@ components:
       - type: object
         required:
         - id
+        - carryingBaseAmount
+        - settlementBaseAmount
+        - realizedFxBaseAmount
         properties:
           id:
             type: string
             pattern: ^[1-9][0-9]*$
             example: '1001'
             description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
+          carryingBaseAmount:
+            type: [string, 'null']
+            pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
+            description: القيمة الدفترية المسحوبة من الذمة بعملة الأساس؛ null للمسودة قبل الترحيل.
+          settlementBaseAmount:
+            type: [string, 'null']
+            pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
+            description: قيمة الدفع بعملة الأساس وفق سعر صرف سند الدفع؛ null للمسودة قبل الترحيل.
+          realizedFxBaseAmount:
+            type: [string, 'null']
+            pattern: ^-?(0|[1-9][0-9]{0,14})\.[0-9]{4}$
+            description: فرق العملة المحقق بعملة الأساس؛ موجب = ربح وسالب = خسارة.
     ReceiptCreateRequest:
       type: object
       additionalProperties: false
@@ -10217,9 +10419,10 @@ components:
           maxLength: 1000
         allocations:
           type: array
+          description: إلزامية وغير فارغة عند ربط السند بعميل، ويجب أن يساوي مجموعها مبلغ السند؛ لا تستخدم مع الحساب المقابل المباشر.
           items:
             $ref: '#/components/schemas/ReceiptAllocationInput'
-      description: يجب إرسال أحد customerId أو counterAccountId فقط.
+      description: يجب إرسال أحد customerId أو counterAccountId فقط؛ سند العميل يتطلب توزيعات كاملة على عناصر الذمم.
       oneOf:
       - required:
         - customerId
@@ -10330,6 +10533,7 @@ components:
           maxLength: 1000
         allocations:
           type: array
+          description: عند بقاء السند مرتبطًا بعميل يجب أن تكون غير فارغة ومساوية لمبلغه؛ لا تستخدم مع الحساب المقابل المباشر.
           items:
             $ref: '#/components/schemas/ReceiptAllocationInput'
         version:
@@ -10348,6 +10552,7 @@ components:
       - exchangeRate
       - amount
       - baseAmount
+      - realizedFxBaseAmount
       - counterpartyNameSnapshot
       - allocations
       properties:
@@ -10402,6 +10607,10 @@ components:
           pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
           example: '1250.0000'
           description: قيمة مالية عشرية DECIMAL(19,4) كنص.
+        realizedFxBaseAmount:
+          type: string
+          pattern: ^-?(0|[1-9][0-9]{0,14})\.[0-9]{4}$
+          description: إجمالي فرق العملة المحقق بعملة الأساس؛ موجب = ربح وسالب = خسارة، وصفر قبل الترحيل أو عند عدم وجود فرق.
         referenceNumber:
           type:
           - string
@@ -10523,9 +10732,10 @@ components:
           maxLength: 1000
         allocations:
           type: array
+          description: إلزامية وغير فارغة عند ربط السند بمورد، ويجب أن يساوي مجموعها مبلغ السند؛ لا تستخدم مع الحساب المقابل المباشر.
           items:
             $ref: '#/components/schemas/PaymentAllocationInput'
-      description: يجب إرسال أحد supplierId أو counterAccountId فقط.
+      description: يجب إرسال أحد supplierId أو counterAccountId فقط؛ سند المورد يتطلب توزيعات كاملة على عناصر الذمم.
       oneOf:
       - required:
         - supplierId
@@ -10636,6 +10846,7 @@ components:
           maxLength: 1000
         allocations:
           type: array
+          description: عند بقاء السند مرتبطًا بمورد يجب أن تكون غير فارغة ومساوية لمبلغه؛ لا تستخدم مع الحساب المقابل المباشر.
           items:
             $ref: '#/components/schemas/PaymentAllocationInput'
         version:
@@ -10654,6 +10865,7 @@ components:
       - exchangeRate
       - amount
       - baseAmount
+      - realizedFxBaseAmount
       - counterpartyNameSnapshot
       - allocations
       properties:
@@ -10708,6 +10920,10 @@ components:
           pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
           example: '1250.0000'
           description: قيمة مالية عشرية DECIMAL(19,4) كنص.
+        realizedFxBaseAmount:
+          type: string
+          pattern: ^-?(0|[1-9][0-9]{0,14})\.[0-9]{4}$
+          description: إجمالي فرق العملة المحقق بعملة الأساس؛ موجب = ربح وسالب = خسارة، وصفر قبل الترحيل أو عند عدم وجود فرق.
         referenceNumber:
           type:
           - string

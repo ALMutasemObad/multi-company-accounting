@@ -80,6 +80,11 @@ export type InventoryInvoiceSelection = {
   items: Map<string, InvoiceInventoryItemReference>;
 };
 
+export type ImportedInventoryInvoiceSelection = {
+  warehouse: InvoiceWarehouseReference | null;
+  itemsByCode: Map<string, InvoiceInventoryItemReference>;
+};
+
 export interface InventoryInvoiceCatalogPort {
   resolveInvoiceSelection(
     tx: Prisma.TransactionClient,
@@ -89,6 +94,14 @@ export interface InventoryInvoiceCatalogPort {
       inventoryItemIds: bigint[];
     },
   ): Promise<InventoryInvoiceSelection>;
+  resolveImportedInvoiceSelection(
+    tx: Prisma.TransactionClient,
+    input: {
+      companyId: bigint;
+      warehouseCode?: string | null | undefined;
+      inventoryItemCodes: string[];
+    },
+  ): Promise<ImportedInventoryInvoiceSelection>;
 }
 
 export function inventoryQuantityFitsUnit(
@@ -349,6 +362,53 @@ export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
     return {
       warehouse,
       items: new Map(items.map((item) => [item.id.toString(), item])),
+    };
+  }
+
+  async resolveImportedInvoiceSelection(
+    tx: Prisma.TransactionClient,
+    input: {
+      companyId: bigint;
+      warehouseCode?: string | null | undefined;
+      inventoryItemCodes: string[];
+    },
+  ): Promise<ImportedInventoryInvoiceSelection> {
+    const uniqueItemCodes = [...new Set(input.inventoryItemCodes)];
+    if (uniqueItemCodes.length > 0 && !input.warehouseCode) {
+      throw new InventoryInvoiceSelectionError("WAREHOUSE_REQUIRED");
+    }
+    const warehouse = input.warehouseCode
+      ? await tx.warehouse.findFirst({
+          where: { companyId: input.companyId, code: input.warehouseCode, isActive: true },
+          select: { id: true, code: true, nameAr: true },
+        })
+      : null;
+    if (input.warehouseCode && !warehouse) {
+      throw new InventoryInvoiceSelectionError("INVALID_WAREHOUSE");
+    }
+    const items = uniqueItemCodes.length === 0
+      ? []
+      : await tx.inventoryItem.findMany({
+          where: {
+            companyId: input.companyId,
+            code: { in: uniqueItemCodes },
+            isActive: true,
+            unitOfMeasure: { isActive: true },
+          },
+          select: {
+            id: true,
+            code: true,
+            nameAr: true,
+            description: true,
+            unitOfMeasure: { select: { code: true, decimalPlaces: true } },
+          },
+        });
+    if (items.length !== uniqueItemCodes.length) {
+      throw new InventoryInvoiceSelectionError("INVALID_INVENTORY_ITEM");
+    }
+    return {
+      warehouse,
+      itemsByCode: new Map(items.map((item) => [item.code, item])),
     };
   }
 

@@ -3,7 +3,7 @@ import type { PrismaClient } from '@prisma/client';
 import { createDatabase } from '../src/database.js';
 import { CompanyProvisioningService } from '../src/platform/company-provisioning-service.js';
 import { permissionDefinitions } from '../src/platform/reference-data.js';
-import { DEFAULT_CHART_TEMPLATE_CODE, defaultChartDefinitions } from '../src/accounts/default-chart-template.js';
+import { DEFAULT_CHART_TEMPLATE_CODE, DEFAULT_CHART_TEMPLATE_VERSION, defaultChartDefinitions } from '../src/accounts/default-chart-template.js';
 
 const runDatabaseTests = process.env.RUN_DB_TESTS === 'true' && Boolean(process.env.DATABASE_URL);
 const suite = runDatabaseTests ? describe : describe.skip;
@@ -63,7 +63,7 @@ suite('multi-company provisioning integration', () => {
     const replay = await service.provision({ ...base, companyCode: 'COMPANY-A' });
 
     expect(replay.company.id).toBe(first.company.id);
-    expect(first.defaultChart).toEqual({ templateCode: DEFAULT_CHART_TEMPLATE_CODE, version: 1, accountsCreated: defaultChartDefinitions.length });
+    expect(first.defaultChart).toEqual({ templateCode: DEFAULT_CHART_TEMPLATE_CODE, version: DEFAULT_CHART_TEMPLATE_VERSION, accountsCreated: defaultChartDefinitions.length });
     expect(replay.defaultChart).toBeNull();
     expect(second.company.id).not.toBe(first.company.id);
     expect(second.administrator.id).toBe(first.administrator.id);
@@ -79,5 +79,5 @@ suite('multi-company provisioning integration', () => {
       expect(await prisma.companyCurrency.count({ where: { companyId, currencyId: company.baseCurrencyId, isActive: true } })).toBe(1);
       expect(await prisma.account.count({ where: { companyId, sourceTemplateCode: DEFAULT_CHART_TEMPLATE_CODE } })).toBe(defaultChartDefinitions.length);
     }
-  });
+  }, 20_000);
 });

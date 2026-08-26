@@ -7,7 +7,7 @@ import type { PrintSnapshot } from "./print-types.js";
 export class PrintError extends Error { constructor(public readonly reason: "NOT_FOUND" | "DOCUMENT_NOT_PRINTABLE" | "ARCHIVE_INTEGRITY_FAILED") { super(reason); } }
 export class PrintService {
   constructor(private readonly prisma: PrismaClient) {}
-  async print(context: ActorContext, kind: "RECEIPT" | "PAYMENT" | "MANUAL_JOURNAL" | "PURCHASE_INVOICE", entityId: bigint) {
+  async print(context: ActorContext, kind: "RECEIPT" | "PAYMENT" | "MANUAL_JOURNAL" | "PURCHASE_INVOICE" | "SALES_INVOICE", entityId: bigint) {
     const documentId = await this.resolveDocument(context, kind, entityId);
     let archive;
     try {
@@ -29,9 +29,15 @@ export class PrintService {
     });
     return { buffer, filename: `${kind.toLowerCase()}-${snapshot.document.number}.pdf`, archive: { id: updated.id.toString(), hash: updated.snapshotHash, printCount: updated.printCount, archivedAt: updated.createdAt.toISOString(), lastPrintedAt: updated.lastPrintedAt?.toISOString() ?? null } };
   }
-  private async resolveDocument(context: ActorContext, kind: "RECEIPT" | "PAYMENT" | "MANUAL_JOURNAL" | "PURCHASE_INVOICE", entityId: bigint) {
+  private async resolveDocument(context: ActorContext, kind: "RECEIPT" | "PAYMENT" | "MANUAL_JOURNAL" | "PURCHASE_INVOICE" | "SALES_INVOICE", entityId: bigint) {
     if (kind === "MANUAL_JOURNAL") { const row = await this.prisma.accountingDocument.findFirst({ where: { id: entityId, companyId: context.companyId, documentType: kind }, select: { id: true } }); if (!row) throw new PrintError("NOT_FOUND"); return row.id; }
-    const row = kind === "RECEIPT" ? await this.prisma.receipt.findFirst({ where: { id: entityId, companyId: context.companyId }, select: { accountingDocumentId: true } }) : kind === "PAYMENT" ? await this.prisma.payment.findFirst({ where: { id: entityId, companyId: context.companyId }, select: { accountingDocumentId: true } }) : await this.prisma.purchaseInvoice.findFirst({ where: { id: entityId, companyId: context.companyId }, select: { accountingDocumentId: true } });
+    const row = kind === "RECEIPT"
+      ? await this.prisma.receipt.findFirst({ where: { id: entityId, companyId: context.companyId }, select: { accountingDocumentId: true } })
+      : kind === "PAYMENT"
+        ? await this.prisma.payment.findFirst({ where: { id: entityId, companyId: context.companyId }, select: { accountingDocumentId: true } })
+        : kind === "PURCHASE_INVOICE"
+          ? await this.prisma.purchaseInvoice.findFirst({ where: { id: entityId, companyId: context.companyId }, select: { accountingDocumentId: true } })
+          : await this.prisma.salesInvoice.findFirst({ where: { id: entityId, companyId: context.companyId }, select: { accountingDocumentId: true } });
     if (!row) throw new PrintError("NOT_FOUND"); return row.accountingDocumentId;
   }
 }

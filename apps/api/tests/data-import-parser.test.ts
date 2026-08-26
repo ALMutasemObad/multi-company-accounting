@@ -24,6 +24,27 @@ describe("data import file boundary", () => {
     const parsed = await parseImportFile(base64(workbook), "XLSX", "SUPPLIERS");
     expect(parsed.rows[0]?.values.payable_account_code).toBe("210100");
     expect(parsed.rows[0]?.values.name_ar).toBe("مورد");
+    expect(importHeaders.SALES_INVOICES).toEqual(expect.arrayContaining(["warehouse_code", "inventory_item_code"]));
+  });
+
+  it("keeps prior invoice templates compatible when inventory columns are absent", async () => {
+    const headers = importHeaders.SALES_INVOICES.filter((header) => !["warehouse_code", "inventory_item_code"].includes(header));
+    const values = headers.map((header) => ({
+      invoice_key: "LEGACY-1",
+      document_date: "2026-08-22",
+      due_date: "2026-08-22",
+      description: "فاتورة قديمة",
+      customer_code: "CUS-000001",
+      currency_code: "SAR",
+      exchange_rate: "1.00000000",
+      line_description: "خدمة",
+      quantity: "1.0000",
+      unit_price: "1.0000",
+      discount_amount: "0.0000",
+      account_code: "4110",
+    } as Record<string, string>)[header] ?? "");
+    const parsed = await parseImportFile(base64(csv(headers, values)), "CSV", "SALES_INVOICES");
+    expect(parsed.rows[0]?.values.inventory_item_code).toBeUndefined();
   });
 
   it("rejects formulas before a workbook parser can return cached values", async () => {
