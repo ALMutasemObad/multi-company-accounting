@@ -334,6 +334,25 @@ describe("Treasury ownership boundary guardrails", () => {
   });
 });
 
+describe("Reporting ownership boundary guardrails", () => {
+  it("keeps indirect cash-flow reads behind Ledger and Treasury query ports", async () => {
+    const [service, ledgerAdapter, treasuryAdapter, calculator] = await Promise.all([
+      source("reports/cash-flow-service.ts"),
+      source("reports/adapters/prisma-cash-flow-ledger-query-adapter.ts"),
+      source("treasury/cash-flow-account-adapter.ts"),
+      source("reports/cash-flow-calculator.ts"),
+    ]);
+
+    expect(service).toContain("CashFlowLedgerQueryPort");
+    expect(service).toContain("TreasuryCashAccountQueryPort");
+    expect(service).not.toMatch(/\.(?:account|journalEntry|journalLine|cashBankAccount)\.(?:find|groupBy|aggregate|create|update|delete)/u);
+    expect(ledgerAdapter).toContain("implements CashFlowLedgerQueryPort");
+    expect(ledgerAdapter).toContain("documentType: { not: \"PERIOD_CLOSE\" }");
+    expect(treasuryAdapter).toContain("implements TreasuryCashAccountQueryPort");
+    expect(calculator).not.toMatch(/\.(?:account|journalEntry|journalLine|cashBankAccount)\./u);
+  });
+});
+
 describe("Inventory ownership boundary guardrails", () => {
   it("keeps warehouse and catalog writes inside the Inventory context", async () => {
     const [inventory, catalog, sales, purchases, imports] = await Promise.all([

@@ -11,13 +11,15 @@ import { api,
 import { formatMoney } from "./domain";
 import { currentYearRange,
   accountStatementQuery,
-  monthLabel,
   trialBalanceCsv,
   type AccountStatementSubjectType } from "./reporting";
 import type { Account,
+  CashFlowMapping,
+  CashFlowMappingClassification,
+  CashFlowReportLine,
   Customer,
-  DashboardReport,
   FinancialPositionReport,
+  IndirectCashFlowReport,
   IncomeStatementReport,
   JournalReport,
   LedgerReport,
@@ -31,6 +33,7 @@ import { Button,
   Pagination,
   Spinner,
   PageHeader,
+  Modal,
 } from "./ui";
 
 type Tab = "cash" | "trial" | "journal" | "ledger" | "position" | "income";
@@ -55,7 +58,8 @@ export function ReportsPage() {
   const [statementPage, setStatementPage] = useState(1);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [applied, setApplied] = useState({ dateFrom: initial.dateFrom, dateTo: initial.dateTo, compareEnabled: false, compareDateFrom: previousYear(initial.dateFrom), compareDateTo: previousYear(initial.dateTo), includeZeroBalances: false, journalDocumentType: "", journalStatus: "", journalAccountId: "", journalSearch: "", statementSubjectType: "customer" as AccountStatementSubjectType, statementSubjectId: "" });
-  const [cashFlow, setCashFlow] = useState<DashboardReport | null>(null);
+  const [cashFlow, setCashFlow] = useState<IndirectCashFlowReport | null>(null);
+  const [mappingOpen, setMappingOpen] = useState(false);
   const [trial, setTrial] = useState<TrialBalanceReport | null>(null);
   const [position, setPosition] = useState<FinancialPositionReport | null>(null);
   const [income, setIncome] = useState<IncomeStatementReport | null>(null);
@@ -68,7 +72,7 @@ export function ReportsPage() {
   const load = useCallback(async () => {
     setLoading(true); setError(""); setLedger(null);
     try {
-      if (tab === "cash") setCashFlow(await api<DashboardReport>(`/reports/dashboard?${rangeQuery(applied)}`));
+      if (tab === "cash") setCashFlow(await api<IndirectCashFlowReport>(`/reports/cash-flow?${rangeQuery(applied)}`));
       if (tab === "trial") setTrial(await api<TrialBalanceReport>(`/reports/trial-balance?${rangeQuery(applied)}`));
       if (tab === "journal") {
         const query = new URLSearchParams({ dateFrom: applied.dateFrom, dateTo: applied.dateTo, page: String(journalPage), pageSize: "25" });
@@ -138,6 +142,9 @@ export function ReportsPage() {
     const query = accountStatementQuery({ subjectType: applied.statementSubjectType, subjectId: applied.statementSubjectId, dateFrom: applied.dateFrom, dateTo: applied.dateTo });
     await downloadFile(`/reports/ledger/${format}?${query}`, `account-statement-${applied.dateFrom}-${applied.dateTo}.${format}`);
   }
+  async function exportCashFlow(format: "csv" | "xlsx" | "pdf") {
+    await downloadFile(`/reports/cash-flow/export/${format}?${rangeQuery(applied)}`, `cash-flow-${applied.dateFrom}-${applied.dateTo}.${format}`);
+  }
 
   const comparisonInvalid = (tab === "position" || tab === "income") && compareEnabled && (!compareDateFrom || !compareDateTo || compareDateFrom > compareDateTo);
   const invalid = !dateFrom || !dateTo || dateFrom > dateTo || comparisonInvalid || (tab === "ledger" && !statementSubjectId);
@@ -177,7 +184,7 @@ export function ReportsPage() {
     </div>
     {loading && !hasData ? <Spinner label={t("pages.reports.034")} /> : error && !hasData ? <div className="error-panel" role="alert"><h3>{t("pages.reports.035")}</h3><p>{error}</p><Button onClick={() => void load()}>{t("pages.accounts.030")}</Button></div> : <>
       {error && <div className="inline-notice">{error}</div>}
-      {tab === "cash" && <CashFlowView report={cashFlow} />}
+      {tab === "cash" && <CashFlowView report={cashFlow} onExport={(format) => void exportCashFlow(format)} onConfigure={() => setMappingOpen(true)} onLedger={(id) => void openLedger(id)} />}
       {tab === "trial" && <TrialBalanceView report={trial} onDownload={downloadTrialCsv} />}
       {tab === "journal" && <JournalReportView report={journal} onExport={() => void exportJournal()} onPageChange={setJournalPage} />}
       {tab === "ledger" && (ledger ? <LedgerView report={ledger} onExport={(format) => void exportAccountStatement(format)} onPageChange={setStatementPage} /> : <EmptyState title={t("accountStatement.emptyTitle")} description={t("accountStatement.emptyDescription")} />)}
@@ -186,14 +193,56 @@ export function ReportsPage() {
       {ledgerLoading && <Spinner label={t("pages.reports.037")} />}
       {tab !== "ledger" && ledger && <LedgerView report={ledger} onClose={() => setLedger(null)} />}
     </>}
+    {mappingOpen && <CashFlowMappingModal onClose={() => setMappingOpen(false)} onChanged={() => void load()} />}
   </section>;
 }
 
-function CashFlowView({ report }: { report: DashboardReport | null }) {
-  return <article className="panel report-section"><header><div><h2>{t("pages.reports.006")}</h2><p>{t("pages.reports.038")}</p></div></header>
-    {report?.cashFlow.length ? <div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("pages.reports.039")}</th><th>{t("pages.dashboard.025")}</th><th>{t("pages.dashboard.026")}</th><th>{t("pages.reports.042")}</th></tr></thead><tbody>{report.cashFlow.map((row) => <tr key={row.month}><td>{monthLabel(row.month)}</td><td className="money-cell positive-text">{formatMoney(row.receipts)}</td><td className="money-cell negative-text">{formatMoney(row.payments)}</td><td className={`money-cell ${Number(row.net) >= 0 ? "positive-text" : "negative-text"}`}>{formatMoney(row.net)}</td></tr>)}</tbody></table></div> : <EmptyState title={t("pages.dashboard.023")} description={t("pages.reports.044")} />}
-  </article>;
+function CashFlowView({ report, onExport, onConfigure, onLedger }: { report: IndirectCashFlowReport | null; onExport: (format: "csv" | "xlsx" | "pdf") => void; onConfigure: () => void; onLedger: (id: string) => void }) {
+  if (!report) return null;
+  return <>
+    <div className="metric-grid statement-metrics cash-flow-metrics"><Metric label={t("cashFlow.openingCash")} value={report.cash.opening} /><Metric label={t("cashFlow.netChange")} value={report.cash.netChange} tone={moneyTone(report.cash.netChange)} /><Metric label={t("cashFlow.closingCash")} value={report.cash.closing} /><Metric label={t("cashFlow.difference")} value={report.cash.difference} tone={report.cash.reconciled ? "positive" : "negative"} /></div>
+    <article className="panel report-section cash-flow-report"><header><div><h2>{t("cashFlow.title")}</h2><p>{t("cashFlow.description")}</p></div><div className="report-export-actions"><Button variant="secondary" onClick={onConfigure}>{t("cashFlow.configure")}</Button><ExportActions onExport={onExport} /></div></header>
+      <div className={`cash-flow-reconciliation ${report.cash.reconciled ? "ready" : "blocked"}`}><strong>{report.cash.reconciled ? t("cashFlow.reconciled") : t("cashFlow.notReconciled")}</strong><span>{t("cashFlow.difference")}: {formatMoney(report.cash.difference)} {report.baseCurrency.code}</span></div>
+      {report.mapping.cashAccountCount === 0 && <div className="inline-notice" role="alert">{t("cashFlow.noCashAccounts")}</div>}
+      {report.mapping.unmappedAccounts.length > 0 && <div className="inline-notice" role="alert">{t("cashFlow.mappingIncomplete", { value1: report.mapping.unmappedAccounts.length })}</div>}
+      <CashFlowSection title={t("cashFlow.operating")} rows={[{ accountId: "NET-INCOME", code: "", nameAr: t("cashFlow.netIncome"), nameEn: null, amount: report.sections.operating.netIncome }, ...report.sections.operating.adjustments, ...report.sections.operating.workingCapital]} totalLabel={t("cashFlow.operatingTotal")} total={report.sections.operating.total} onLedger={onLedger} />
+      <CashFlowSection title={t("cashFlow.investing")} rows={report.sections.investing.rows} totalLabel={t("cashFlow.investingTotal")} total={report.sections.investing.total} onLedger={onLedger} />
+      <CashFlowSection title={t("cashFlow.financing")} rows={report.sections.financing.rows} totalLabel={t("cashFlow.financingTotal")} total={report.sections.financing.total} onLedger={onLedger} />
+    </article>
+  </>;
 }
+
+function CashFlowSection({ title, rows, totalLabel, total, onLedger }: { title: string; rows: CashFlowReportLine[]; totalLabel: string; total: string; onLedger: (id: string) => void }) {
+  return <section className="cash-flow-section"><h3>{title}</h3>{rows.length ? <div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={title}><table className="data-table"><thead><tr><th>{t("cashFlow.account")}</th><th>{t("pages.reports.084")}</th></tr></thead><tbody>{rows.map((row) => <tr key={row.accountId}><td>{row.accountId === "NET-INCOME" ? <strong>{row.nameAr}</strong> : <button className="account-drilldown" onClick={() => onLedger(row.accountId)}><span className="code-pill">{row.code}</span>{localizedReferenceName(row)}</button>}</td><td className={`money-cell ${moneyTone(row.amount)}-text`}>{formatMoney(row.amount)}</td></tr>)}</tbody><tfoot><tr className="statement-total-row"><th>{totalLabel}</th><th>{formatMoney(total)}</th></tr></tfoot></table></div> : <EmptyState title={title} description={t("cashFlow.emptySection")} />}</section>;
+}
+
+function CashFlowMappingModal({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
+  const [rows, setRows] = useState<CashFlowMapping[]>([]);
+  const [drafts, setDrafts] = useState<Record<string, CashFlowMappingClassification>>({});
+  const [loading, setLoading] = useState(true);
+  const [savingId, setSavingId] = useState("");
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  useEffect(() => { void api<{ data: CashFlowMapping[] }>("/reports/cash-flow/mappings").then((result) => setRows(result.data)).catch((cause) => setError(cause instanceof Error ? cause.message : t("pages.reports.001"))).finally(() => setLoading(false)); }, []);
+  async function save(row: CashFlowMapping) {
+    const classification = drafts[row.accountId] ?? (row.classification === "CASH_AND_CASH_EQUIVALENTS" || row.classification == null ? undefined : row.classification);
+    if (!classification) return;
+    setSavingId(row.accountId); setError(""); setSuccess("");
+    try {
+      const saved = await api<CashFlowMapping>(`/reports/cash-flow/mappings/${row.accountId}`, { method: "PUT", body: JSON.stringify({ classification, version: row.version }) });
+      setRows((current) => current.map((item) => item.accountId === saved.accountId ? saved : item));
+      setDrafts((current) => { const next = { ...current }; delete next[row.accountId]; return next; });
+      setSuccess(t("cashFlow.saved")); onChanged();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : t("pages.reports.001")); }
+    finally { setSavingId(""); }
+  }
+  return <Modal title={t("cashFlow.mappingTitle")} description={t("cashFlow.mappingDescription")} onClose={onClose} wide>{loading ? <Spinner /> : <>{error && <div className="form-error" role="alert">{error}</div>}{success && <div className="inline-notice neutral">{success}</div>}<div className="data-table-wrap cash-flow-mapping-table" role="region" tabIndex={0} aria-label={t("cashFlow.mappingTitle")}><table className="data-table"><thead><tr><th>{t("cashFlow.account")}</th><th>{t("cashFlow.classification")}</th><th>{t("cashFlow.source")}</th><th>{t("pages.accounts.047")}</th></tr></thead><tbody>{rows.map((row) => { const options = mappingOptions(row); const value = drafts[row.accountId] ?? row.classification ?? options[0]!; return <tr key={row.accountId}><td><span className="code-pill">{row.code}</span>{localizedReferenceName(row)}</td><td><select aria-label={`${t("cashFlow.classification")}: ${localizedReferenceName(row)}`} value={value} disabled={!row.editable || savingId === row.accountId} onChange={(event) => setDrafts((current) => ({ ...current, [row.accountId]: event.target.value as CashFlowMappingClassification }))}>{row.classification === "CASH_AND_CASH_EQUIVALENTS" && <option value="CASH_AND_CASH_EQUIVALENTS">{classificationLabel("CASH_AND_CASH_EQUIVALENTS")}</option>}{options.map((classification) => <option key={classification} value={classification}>{classificationLabel(classification)}</option>)}</select></td><td>{sourceLabel(row.source)}</td><td><Button variant="secondary" disabled={!row.editable || !drafts[row.accountId] || savingId === row.accountId} onClick={() => void save(row)}>{savingId === row.accountId ? t("cashFlow.saving") : t("cashFlow.save")}</Button></td></tr>; })}</tbody></table></div></>}</Modal>;
+}
+
+const mappingOptions = (row: CashFlowMapping): CashFlowMappingClassification[] => row.accountClass === "REVENUE" || row.accountClass === "EXPENSE" ? ["NET_INCOME", "OPERATING_ADJUSTMENT"] : ["OPERATING_WORKING_CAPITAL", "INVESTING", "FINANCING", "EXCLUDED"];
+const classificationLabel = (value: CashFlowMapping["classification"] | "UNMAPPED") => ({ CASH_AND_CASH_EQUIVALENTS: t("cashFlow.classifications.CASH_AND_CASH_EQUIVALENTS"), NET_INCOME: t("cashFlow.classifications.NET_INCOME"), OPERATING_ADJUSTMENT: t("cashFlow.classifications.OPERATING_ADJUSTMENT"), OPERATING_WORKING_CAPITAL: t("cashFlow.classifications.OPERATING_WORKING_CAPITAL"), INVESTING: t("cashFlow.classifications.INVESTING"), FINANCING: t("cashFlow.classifications.FINANCING"), EXCLUDED: t("cashFlow.classifications.EXCLUDED"), UNMAPPED: t("cashFlow.classifications.UNMAPPED") }[value ?? "UNMAPPED"]);
+const sourceLabel = (value: CashFlowMapping["source"]) => ({ TREASURY: t("cashFlow.sources.TREASURY"), EXPLICIT: t("cashFlow.sources.EXPLICIT"), TEMPLATE: t("cashFlow.sources.TEMPLATE"), SYSTEM: t("cashFlow.sources.SYSTEM"), UNMAPPED: t("cashFlow.sources.UNMAPPED") }[value]);
+const moneyTone = (value: string) => value.startsWith("-") ? "negative" : "positive";
 function TrialBalanceView({ report, onDownload }: { report: TrialBalanceReport | null; onDownload: () => void }) {
   return <article className="panel report-section"><header><div><h2>{t("pages.reports.007")}</h2><p>{t("pages.reports.045")}</p></div><Button variant="secondary" onClick={onDownload} disabled={!report?.data.length}>{t("pages.reports.046")}</Button></header>
     {report?.data.length ? <div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("pages.reports.047")}</th><th>{t("pages.reports.048")}</th><th>{t("pages.reports.049")}</th><th>{t("pages.manual-journals.060")}</th><th>{t("pages.manual-journals.061")}</th><th>{t("pages.reports.052")}</th></tr></thead><tbody>{report.data.map((row) => <tr key={row.accountId}><td><span className="code-pill">{row.code}</span></td><td>{localizedReferenceName(row)}</td><td>{classLabel(row.accountClass)}</td><td className="money-cell">{formatMoney(row.debit)}</td><td className="money-cell">{formatMoney(row.credit)}</td><td className="money-cell">{formatMoney(row.balance)}</td></tr>)}</tbody><tfoot><tr><th colSpan={3}>{t("pages.purchase-invoices.041")}</th><th>{formatMoney(report.totals.debit)}</th><th>{formatMoney(report.totals.credit)}</th><th>{formatMoney(Number(report.totals.debit) - Number(report.totals.credit))}</th></tr></tfoot></table></div> : <EmptyState title={t("pages.reports.054")} description={t("pages.reports.055")} />}

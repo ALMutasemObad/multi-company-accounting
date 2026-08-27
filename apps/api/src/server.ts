@@ -47,6 +47,9 @@ import { TreasuryFinancialCloseReadinessAdapter } from './treasury/financial-clo
 import { InventoryFinancialCloseReadinessAdapter } from './inventory/financial-close-readiness-adapter.js';
 import { CompanyCurrencyFinancialCloseReadinessAdapter } from './companies/financial-close-readiness-adapter.js';
 import { SettlementFinancialCloseReadinessAdapter } from './reports/financial-close-readiness-adapter.js';
+import { CashFlowService } from './reports/cash-flow-service.js';
+import { PrismaCashFlowLedgerQueryAdapter } from './reports/adapters/prisma-cash-flow-ledger-query-adapter.js';
+import { TreasuryCashFlowAccountAdapter } from './treasury/cash-flow-account-adapter.js';
 
 const config = loadConfig();
 if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required to start the API');
@@ -159,6 +162,7 @@ const app = createApp(config, {
   suppliers,
   payments: new PaymentService(database, treasury),
   reports: new ReportService(database),
+  cashFlow: new CashFlowService(database, new PrismaCashFlowLedgerQueryAdapter(), new TreasuryCashFlowAccountAdapter()),
   taxes,
   salesInvoices,
   purchaseInvoices,

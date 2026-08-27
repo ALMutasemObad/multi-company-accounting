@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { financialPositionTable, journalReportToCsv, ledgerReportTable, tableToCsv, tableToPdf, tableToXlsx } from "../src/reports/financial-statement-exporter.js";
+import { financialPositionTable, indirectCashFlowTable, journalReportToCsv, ledgerReportTable, tableToCsv, tableToPdf, tableToXlsx } from "../src/reports/financial-statement-exporter.js";
 
 const report = {
   company: { name: "الشركة التجريبية" }, baseCurrency: { code: "SAR", nameAr: "ريال سعودي" }, asOf: "2026-08-11", comparisonAsOf: null,
@@ -45,5 +45,23 @@ describe("financial statement exports", () => {
     expect(tableToXlsx(table, "كشف الحساب").includes(Buffer.from("xl/worksheets/sheet1.xml"))).toBe(true);
     const pdf = await tableToPdf(table, "كشف الحساب", "الشركة التجريبية");
     expect(pdf.subarray(0, 4).toString()).toBe("%PDF");
+  });
+  it("exports the indirect cash-flow reconciliation in every supported format", async () => {
+    const table = indirectCashFlowTable({
+      company: { name: "الشركة التجريبية" },
+      baseCurrency: { code: "SAR", nameAr: "ريال سعودي" },
+      range: { dateFrom: "2026-01-01", dateTo: "2026-12-31" },
+      sections: {
+        operating: { netIncome: "80.0000", adjustments: [], adjustmentsTotal: "0.0000", workingCapital: [{ code: "1210", nameAr: "الذمم", amount: "-40.0000" }], workingCapitalTotal: "-40.0000", total: "40.0000" },
+        investing: { rows: [], total: "0.0000" },
+        financing: { rows: [], total: "0.0000" },
+      },
+      cash: { opening: "100.0000", calculatedNetChange: "40.0000", closing: "140.0000", difference: "0.0000", reconciled: true },
+    });
+    const csv = tableToCsv(table).toString("utf8");
+    expect(csv).toContain("قائمة التدفق النقدي بالطريقة غير المباشرة");
+    expect(csv).toContain("مطابقة الرصيد النقدي: متطابق");
+    expect(tableToXlsx(table, "التدفق النقدي").subarray(0, 4).toString("hex")).toBe("504b0304");
+    expect((await tableToPdf(table, "التدفق النقدي", "الشركة التجريبية")).subarray(0, 4).toString()).toBe("%PDF");
   });
 });

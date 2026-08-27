@@ -735,6 +735,34 @@ export type DashboardReport = {
   recentActivity: RecentActivity[];
 };
 
+export type CashFlowMappingClassification = "NET_INCOME" | "OPERATING_ADJUSTMENT" | "OPERATING_WORKING_CAPITAL" | "INVESTING" | "FINANCING" | "EXCLUDED";
+export type EffectiveCashFlowClassification = CashFlowMappingClassification | "CASH_AND_CASH_EQUIVALENTS";
+export type CashFlowMapping = {
+  accountId: string;
+  code: string;
+  nameAr: string;
+  nameEn: string | null;
+  accountClass: "ASSET" | "LIABILITY" | "EQUITY" | "REVENUE" | "EXPENSE";
+  normalBalance: "DEBIT" | "CREDIT";
+  classification: EffectiveCashFlowClassification | null;
+  source: "TREASURY" | "EXPLICIT" | "TEMPLATE" | "SYSTEM" | "UNMAPPED";
+  version: number;
+  editable: boolean;
+};
+export type CashFlowReportLine = { accountId: string; code: string; nameAr: string; nameEn: string | null; amount: string };
+export type IndirectCashFlowReport = {
+  range: { dateFrom: string; dateTo: string };
+  company: { name: string };
+  baseCurrency: { id: string; code: string; nameAr: string; decimals: number };
+  sections: {
+    operating: { netIncome: string; adjustments: CashFlowReportLine[]; adjustmentsTotal: string; workingCapital: CashFlowReportLine[]; workingCapitalTotal: string; total: string };
+    investing: { rows: CashFlowReportLine[]; total: string };
+    financing: { rows: CashFlowReportLine[]; total: string };
+  };
+  cash: { opening: string; netChange: string; closing: string; calculatedNetChange: string; calculatedClosing: string; difference: string; reconciled: boolean };
+  mapping: { complete: boolean; cashAccountCount: number; unmappedAccounts: Array<{ accountId: string; code: string; nameAr: string; nameEn: string | null; change: string }> };
+};
+
 export type TrialBalanceRow = {
   accountId: string;
   code: string;

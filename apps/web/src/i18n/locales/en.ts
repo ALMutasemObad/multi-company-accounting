@@ -5,12 +5,14 @@ import { enEvents } from "./en-events";
 import { enPageOverrides } from "./en-page-overrides";
 import { enReconciliation } from "./reconciliation";
 import { enFinancialClose } from "./financial-close";
+import { enCashFlow } from "./cash-flow";
 
 export const en = {
   ...enDomain,
   ...enEvents,
   ...enReconciliation,
   ...enFinancialClose,
+  ...enCashFlow,
   "language.label": "Language",
   "branding.name": "Multi-company accounting system",
   "branding.shortName": "Accounting platform",

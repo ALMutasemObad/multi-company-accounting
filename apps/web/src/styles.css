@@ -797,6 +797,17 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", "Noto Sans Devanaga
 .statement-net small { color: var(--muted); }
 .statement-net.positive strong { color: var(--success); }
 .statement-net.negative strong { color: var(--danger); }
+.cash-flow-metrics .metric-card:last-child { border-color: #d7e4de; }
+.cash-flow-report > header .report-export-actions { flex-wrap: wrap; justify-content: flex-end; }
+.cash-flow-reconciliation { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 22px 18px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; }
+.cash-flow-reconciliation.ready { background: #edf8f2; color: var(--success); }
+.cash-flow-reconciliation.blocked { background: #fff6eb; color: #925b12; }
+.cash-flow-reconciliation span { font-size: .85rem; }
+.cash-flow-section { padding: 0 22px 22px; }
+.cash-flow-section + .cash-flow-section { border-top: 1px solid var(--line); padding-top: 22px; }
+.cash-flow-section h3 { margin-bottom: 12px; }
+.cash-flow-mapping-table select { min-width: 230px; }
+.cash-flow-mapping-table td:first-child { min-width: 230px; }
 .ledger-panel { margin-top: 22px; border: 1px solid #b9cec5; }
 .journal-report-table td:nth-child(4) { min-width: 220px; }
 .balance-indicator { display: inline-flex; padding: 5px 9px; border-radius: 999px; font-size: .72rem; font-weight: 800; white-space: nowrap; }
@@ -918,6 +929,8 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", "Noto Sans Devanaga
   .modal-backdrop { padding: 0; place-items: stretch; }
   .modal, .modal.wide { min-height: 100vh; border-radius: 0; }
   .modal-header, .form-grid { padding-inline: 18px; }
+  .cash-flow-reconciliation { align-items: flex-start; flex-direction: column; margin-inline: 16px; }
+  .cash-flow-section { padding-inline: 16px; }
   .financial-close-workspace { padding-inline: 18px; }
   .close-readiness-banner, .close-pack-note { align-items: stretch; flex-direction: column; }
   .close-run-badge { text-align: start; }

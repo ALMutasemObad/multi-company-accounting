@@ -19,15 +19,15 @@ export class ReportError extends Error { constructor(public readonly reason: "NO
 
 type CashMovement = { documentDate: Date; baseAmount: Prisma.Decimal };
 const asDate = (value: string) => new Date(`${value}T00:00:00.000Z`);
-const money = (value: number) => value.toFixed(4);
+const money = (value: Prisma.Decimal.Value) => new Prisma.Decimal(value).toFixed(4);
 
 export function monthlyCashFlow(receipts: CashMovement[], payments: CashMovement[]) {
-  const months = new Map<string, { receipts: number; payments: number }>();
+  const months = new Map<string, { receipts: Prisma.Decimal; payments: Prisma.Decimal }>();
   const add = (items: CashMovement[], field: "receipts" | "payments") => {
     for (const item of items) {
       const month = item.documentDate.toISOString().slice(0, 7);
-      const current = months.get(month) ?? { receipts: 0, payments: 0 };
-      current[field] += Number(item.baseAmount);
+      const current = months.get(month) ?? { receipts: new Prisma.Decimal(0), payments: new Prisma.Decimal(0) };
+      current[field] = current[field].add(item.baseAmount);
       months.set(month, current);
     }
   };
@@ -37,7 +37,7 @@ export function monthlyCashFlow(receipts: CashMovement[], payments: CashMovement
     month,
     receipts: money(values.receipts),
     payments: money(values.payments),
-    net: money(values.receipts - values.payments),
+    net: money(values.receipts.sub(values.payments)),
   }));
 }
 
@@ -75,8 +75,8 @@ export class ReportService {
     });
     const receipts = movements(receiptRows);
     const payments = movements(paymentRows);
-    const receiptsTotal = receipts.reduce((sum, row) => sum + Number(row.baseAmount), 0);
-    const paymentsTotal = payments.reduce((sum, row) => sum + Number(row.baseAmount), 0);
+    const receiptsTotal = receipts.reduce((sum, row) => sum.add(row.baseAmount), new Prisma.Decimal(0));
+    const paymentsTotal = payments.reduce((sum, row) => sum.add(row.baseAmount), new Prisma.Decimal(0));
     const recentActivity = [
       ...recentReceipts.map((row) => this.activityJson("RECEIPT", row)),
       ...recentPayments.map((row) => this.activityJson("PAYMENT", row)),
@@ -84,7 +84,7 @@ export class ReportService {
     return {
       range,
       baseCurrency: { ...company.baseCurrency, id: company.baseCurrency.id.toString() },
-      metrics: { receipts: money(receiptsTotal), payments: money(paymentsTotal), netCashFlow: money(receiptsTotal - paymentsTotal), activeSuppliers: suppliers, activeCustomers: customers, draftDocuments: draftPayments + draftReceipts },
+      metrics: { receipts: money(receiptsTotal), payments: money(paymentsTotal), netCashFlow: money(receiptsTotal.sub(paymentsTotal)), activeSuppliers: suppliers, activeCustomers: customers, draftDocuments: draftPayments + draftReceipts },
       cashFlow: monthlyCashFlow(receipts, payments),
       recentActivity,
     };
@@ -101,11 +101,11 @@ export class ReportService {
     const accountById = new Map(accounts.map((account) => [account.id.toString(), account]));
     const data = rows.map((row) => {
       const account = accountById.get(row.accountId.toString())!;
-      const debit = Number(row._sum.baseDebitAmount ?? 0);
-      const credit = Number(row._sum.baseCreditAmount ?? 0);
-      return { accountId: row.accountId.toString(), code: account.code, nameAr: account.nameAr, accountClass: account.accountType.class, debit: money(debit), credit: money(credit), balance: money(debit - credit) };
+      const debit = new Prisma.Decimal(row._sum.baseDebitAmount ?? 0);
+      const credit = new Prisma.Decimal(row._sum.baseCreditAmount ?? 0);
+      return { accountId: row.accountId.toString(), code: account.code, nameAr: account.nameAr, accountClass: account.accountType.class, debit: money(debit), credit: money(credit), balance: money(debit.sub(credit)) };
     });
-    return { range, data, totals: { debit: money(data.reduce((sum, row) => sum + Number(row.debit), 0)), credit: money(data.reduce((sum, row) => sum + Number(row.credit), 0)) } };
+    return { range, data, totals: { debit: money(data.reduce((sum, row) => sum.add(row.debit), new Prisma.Decimal(0))), credit: money(data.reduce((sum, row) => sum.add(row.credit), new Prisma.Decimal(0))) } };
   }
 
   async journalReport(context: ActorContext, input: JournalReportQuery) {

@@ -88,6 +88,17 @@ function responseFor(url, method) {
       { id: "payment-1", type: "PAYMENT", documentNumber: "PAY-2026-0031", documentDate: "2026-08-19", status: "DRAFT", description: "دفعة مورد", counterpartyName: "مؤسسة الإمداد", amount: "18750.00" },
     ],
   };
+  if (pathname === "/reports/cash-flow") return {
+    range: { dateFrom: "2026-01-01", dateTo: "2026-12-31" }, company: { name: company.name }, baseCurrency: currency,
+    sections: {
+      operating: { netIncome: "185000.0000", adjustments: [{ accountId: "5410", code: "5410", nameAr: "مصروف الإهلاك", nameEn: "Depreciation expense", amount: "15000.0000" }], adjustmentsTotal: "15000.0000", workingCapital: [{ accountId: "1130", code: "1130", nameAr: "ذمم العملاء", nameEn: "Accounts receivable", amount: "-24000.0000" }, { accountId: "2110", code: "2110", nameAr: "ذمم الموردين", nameEn: "Accounts payable", amount: "9000.0000" }], workingCapitalTotal: "-15000.0000", total: "185000.0000" },
+      investing: { rows: [{ accountId: "1210", code: "1210", nameAr: "الأجهزة والمعدات", nameEn: "Equipment", amount: "-45000.0000" }], total: "-45000.0000" },
+      financing: { rows: [{ accountId: "2210", code: "2210", nameAr: "القروض", nameEn: "Loans", amount: "30000.0000" }], total: "30000.0000" },
+    },
+    cash: { opening: "80000.0000", netChange: "170000.0000", closing: "250000.0000", calculatedNetChange: "170000.0000", calculatedClosing: "250000.0000", difference: "0.0000", reconciled: true },
+    mapping: { complete: true, cashAccountCount: 2, unmappedAccounts: [] },
+  };
+  if (pathname === "/reports/cash-flow/mappings") return { data: [] };
   if (pathname === "/reports/trial-balance") return { range: { dateFrom: "2026-01-01", dateTo: "2026-12-31" }, data: [], totals: { debit: "0.00", credit: "0.00" } };
   if (pathname === "/reports/journal") return { range: { dateFrom: "2026-01-01", dateTo: "2026-12-31" }, data: [], meta, totals: { debit: "0.00", credit: "0.00" } };
   if (pathname === "/reports/financial-position") return { asOf: "2026-08-21", comparisonAsOf: null, company: { name: company.name }, baseCurrency: currency, sections: { assets: zeroSection, liabilities: zeroSection, equity: zeroSection }, currentEarnings: "0.00", totals: { assets: "0.00", liabilities: "0.00", equity: "0.00" }, reconciliation: { leftSide: "0.00", rightSide: "0.00", difference: "0.00", balanced: true } };

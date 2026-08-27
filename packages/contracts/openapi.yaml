@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.26.0
+  version: 1.27.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -6612,6 +6612,71 @@ paths:
       x-permission: payments.print
       security:
       - SessionCookie: []
+  /reports/cash-flow:
+    get:
+      tags: [Reports]
+      summary: قائمة التدفق النقدي بالطريقة غير المباشرة
+      operationId: getIndirectCashFlow
+      parameters:
+      - { name: dateFrom, in: query, required: true, schema: { type: string, format: date } }
+      - { name: dateTo, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        '200': { description: القائمة مع فحص مطابقة النقد والتصنيفات الناقصة, content: { application/json: { schema: { $ref: '#/components/schemas/IndirectCashFlowReport' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-permission: reports.cash_flow.view
+      security: [{ SessionCookie: [] }]
+  /reports/cash-flow/mappings:
+    get:
+      tags: [Reports]
+      summary: تصنيفات حسابات قائمة التدفق النقدي
+      operationId: listCashFlowMappings
+      responses:
+        '200': { description: التصنيفات الفعلية ومصدر كل تصنيف, content: { application/json: { schema: { $ref: '#/components/schemas/CashFlowMappingListResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: reports.cash_flow.view
+      security: [{ SessionCookie: [] }]
+  /reports/cash-flow/mappings/{accountId}:
+    put:
+      tags: [Reports]
+      summary: تحديث تصنيف حساب في قائمة التدفق النقدي
+      operationId: updateCashFlowMapping
+      parameters:
+      - { name: accountId, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateCashFlowMappingRequest' }
+      responses:
+        '200': { description: التصنيف المحدث, content: { application/json: { schema: { $ref: '#/components/schemas/CashFlowMapping' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: reports.cash_flow.manage
+      security: [{ SessionCookie: [] }]
+  /reports/cash-flow/export/{format}:
+    get:
+      tags: [Reports]
+      summary: تصدير قائمة التدفق النقدي غير المباشرة
+      operationId: exportIndirectCashFlow
+      parameters:
+      - { name: format, in: path, required: true, schema: { type: string, enum: [csv, xlsx, pdf] } }
+      - { name: dateFrom, in: query, required: true, schema: { type: string, format: date } }
+      - { name: dateTo, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        '200': { description: ملف قائمة التدفق النقدي }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: reports.financial_statements.export
+      security: [{ SessionCookie: [] }]
   /reports/dashboard:
     get:
       tags:
@@ -12118,6 +12183,139 @@ components:
     SignedAmount:
       type: string
       pattern: '^-?(0|[1-9][0-9]{0,14})\.[0-9]{4}$'
+    CashFlowMappingClassification:
+      type: string
+      enum: [NET_INCOME, OPERATING_ADJUSTMENT, OPERATING_WORKING_CAPITAL, INVESTING, FINANCING, EXCLUDED]
+    EffectiveCashFlowClassification:
+      type: string
+      enum: [CASH_AND_CASH_EQUIVALENTS, NET_INCOME, OPERATING_ADJUSTMENT, OPERATING_WORKING_CAPITAL, INVESTING, FINANCING, EXCLUDED]
+    CashFlowMappingSource:
+      type: string
+      enum: [TREASURY, EXPLICIT, TEMPLATE, SYSTEM, UNMAPPED]
+    UpdateCashFlowMappingRequest:
+      type: object
+      additionalProperties: false
+      required: [classification, version]
+      properties:
+        classification: { $ref: '#/components/schemas/CashFlowMappingClassification' }
+        version: { type: integer, minimum: 0 }
+    CashFlowMapping:
+      type: object
+      additionalProperties: false
+      required: [accountId, code, nameAr, nameEn, accountClass, normalBalance, classification, source, version, editable]
+      properties:
+        accountId: { $ref: '#/components/schemas/Id' }
+        code: { type: string }
+        nameAr: { type: string }
+        nameEn: { type: [string, 'null'] }
+        accountClass: { type: string, enum: [ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE] }
+        normalBalance: { type: string, enum: [DEBIT, CREDIT] }
+        classification:
+          oneOf:
+          - { $ref: '#/components/schemas/EffectiveCashFlowClassification' }
+          - { type: 'null' }
+        source: { $ref: '#/components/schemas/CashFlowMappingSource' }
+        version: { type: integer, minimum: 0 }
+        editable: { type: boolean }
+    CashFlowMappingListResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/CashFlowMapping' }
+    CashFlowLine:
+      type: object
+      additionalProperties: false
+      required: [accountId, code, nameAr, nameEn, amount]
+      properties:
+        accountId: { $ref: '#/components/schemas/Id' }
+        code: { type: string }
+        nameAr: { type: string }
+        nameEn: { type: [string, 'null'] }
+        amount: { $ref: '#/components/schemas/SignedAmount' }
+    IndirectCashFlowReport:
+      type: object
+      additionalProperties: false
+      required: [range, company, baseCurrency, sections, cash, mapping]
+      properties:
+        range: { $ref: '#/components/schemas/ReportRange' }
+        company:
+          type: object
+          additionalProperties: false
+          required: [name]
+          properties: { name: { type: string } }
+        baseCurrency:
+          type: object
+          additionalProperties: false
+          required: [id, code, nameAr, decimals]
+          properties:
+            id: { $ref: '#/components/schemas/Id' }
+            code: { type: string, pattern: '^[A-Z]{3}$' }
+            nameAr: { type: string }
+            decimals: { type: integer, minimum: 0, maximum: 8 }
+        sections:
+          type: object
+          additionalProperties: false
+          required: [operating, investing, financing]
+          properties:
+            operating:
+              type: object
+              additionalProperties: false
+              required: [netIncome, adjustments, adjustmentsTotal, workingCapital, workingCapitalTotal, total]
+              properties:
+                netIncome: { $ref: '#/components/schemas/SignedAmount' }
+                adjustments: { type: array, items: { $ref: '#/components/schemas/CashFlowLine' } }
+                adjustmentsTotal: { $ref: '#/components/schemas/SignedAmount' }
+                workingCapital: { type: array, items: { $ref: '#/components/schemas/CashFlowLine' } }
+                workingCapitalTotal: { $ref: '#/components/schemas/SignedAmount' }
+                total: { $ref: '#/components/schemas/SignedAmount' }
+            investing:
+              type: object
+              additionalProperties: false
+              required: [rows, total]
+              properties:
+                rows: { type: array, items: { $ref: '#/components/schemas/CashFlowLine' } }
+                total: { $ref: '#/components/schemas/SignedAmount' }
+            financing:
+              type: object
+              additionalProperties: false
+              required: [rows, total]
+              properties:
+                rows: { type: array, items: { $ref: '#/components/schemas/CashFlowLine' } }
+                total: { $ref: '#/components/schemas/SignedAmount' }
+        cash:
+          type: object
+          additionalProperties: false
+          required: [opening, netChange, closing, calculatedNetChange, calculatedClosing, difference, reconciled]
+          properties:
+            opening: { $ref: '#/components/schemas/SignedAmount' }
+            netChange: { $ref: '#/components/schemas/SignedAmount' }
+            closing: { $ref: '#/components/schemas/SignedAmount' }
+            calculatedNetChange: { $ref: '#/components/schemas/SignedAmount' }
+            calculatedClosing: { $ref: '#/components/schemas/SignedAmount' }
+            difference: { $ref: '#/components/schemas/SignedAmount' }
+            reconciled: { type: boolean }
+        mapping:
+          type: object
+          additionalProperties: false
+          required: [complete, cashAccountCount, unmappedAccounts]
+          properties:
+            complete: { type: boolean }
+            cashAccountCount: { type: integer, minimum: 0 }
+            unmappedAccounts:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [accountId, code, nameAr, nameEn, change]
+                properties:
+                  accountId: { $ref: '#/components/schemas/Id' }
+                  code: { type: string }
+                  nameAr: { type: string }
+                  nameEn: { type: [string, 'null'] }
+                  change: { $ref: '#/components/schemas/SignedAmount' }
     CashFlowMonth:
       type: object
       required: [month, receipts, payments, net]

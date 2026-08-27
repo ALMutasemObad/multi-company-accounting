@@ -1,10 +1,12 @@
 import type { ar } from "./ar";
 import { hiReconciliation } from "./reconciliation";
 import { hiFinancialClose } from "./financial-close";
+import { hiCashFlow } from "./cash-flow";
 
 export const hi = {
   ...hiReconciliation,
   ...hiFinancialClose,
+  ...hiCashFlow,
   "referencePicker.loading": "खोज जारी है…",
   "referencePicker.empty": "कोई मिलता-जुलता परिणाम नहीं मिला।",
   "referencePicker.more": "और परिणाम लोड करें",

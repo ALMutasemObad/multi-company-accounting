@@ -66,6 +66,43 @@ export function incomeStatementTable(report: ExportReport & { range: { dateFrom:
   return rows;
 }
 
+export function indirectCashFlowTable(report: {
+  company: { name: string };
+  baseCurrency: { code: string; nameAr: string };
+  range: { dateFrom: string; dateTo: string };
+  sections: {
+    operating: { netIncome: string; adjustments: Array<{ code: string; nameAr: string; amount: string }>; adjustmentsTotal: string; workingCapital: Array<{ code: string; nameAr: string; amount: string }>; workingCapitalTotal: string; total: string };
+    investing: { rows: Array<{ code: string; nameAr: string; amount: string }>; total: string };
+    financing: { rows: Array<{ code: string; nameAr: string; amount: string }>; total: string };
+  };
+  cash: { opening: string; calculatedNetChange: string; closing: string; difference: string; reconciled: boolean };
+}) {
+  const rows: Cell[][] = [
+    [{ value: report.company.name, style: 1 }],
+    [{ value: "قائمة التدفق النقدي بالطريقة غير المباشرة", style: 1 }],
+    [{ value: `من ${report.range.dateFrom} إلى ${report.range.dateTo}` }, { value: `العملة: ${report.baseCurrency.code}` }],
+    [{ value: "البند", style: 2 }, { value: "المبلغ", style: 2 }],
+    [{ value: "التدفقات من الأنشطة التشغيلية", style: 3 }],
+    [{ value: "صافي الربح أو الخسارة" }, { value: report.sections.operating.netIncome, numeric: true, style: 4 }],
+    ...report.sections.operating.adjustments.map((row) => [{ value: `${row.code} - ${row.nameAr}` }, { value: row.amount, numeric: true, style: 4 }]),
+    [{ value: "إجمالي التعديلات غير النقدية", style: 3 }, { value: report.sections.operating.adjustmentsTotal, numeric: true, style: 5 }],
+    ...report.sections.operating.workingCapital.map((row) => [{ value: `${row.code} - ${row.nameAr}` }, { value: row.amount, numeric: true, style: 4 }]),
+    [{ value: "إجمالي تغيرات رأس المال العامل", style: 3 }, { value: report.sections.operating.workingCapitalTotal, numeric: true, style: 5 }],
+    [{ value: "صافي النقد من الأنشطة التشغيلية", style: 3 }, { value: report.sections.operating.total, numeric: true, style: 5 }],
+    [{ value: "التدفقات من الأنشطة الاستثمارية", style: 3 }],
+    ...report.sections.investing.rows.map((row) => [{ value: `${row.code} - ${row.nameAr}` }, { value: row.amount, numeric: true, style: 4 }]),
+    [{ value: "صافي النقد من الأنشطة الاستثمارية", style: 3 }, { value: report.sections.investing.total, numeric: true, style: 5 }],
+    [{ value: "التدفقات من الأنشطة التمويلية", style: 3 }],
+    ...report.sections.financing.rows.map((row) => [{ value: `${row.code} - ${row.nameAr}` }, { value: row.amount, numeric: true, style: 4 }]),
+    [{ value: "صافي النقد من الأنشطة التمويلية", style: 3 }, { value: report.sections.financing.total, numeric: true, style: 5 }],
+    [{ value: "النقد أول الفترة", style: 3 }, { value: report.cash.opening, numeric: true, style: 5 }],
+    [{ value: "صافي التغير المحسوب", style: 3 }, { value: report.cash.calculatedNetChange, numeric: true, style: 5 }],
+    [{ value: "النقد آخر الفترة", style: 3 }, { value: report.cash.closing, numeric: true, style: 5 }],
+    [{ value: report.cash.reconciled ? "مطابقة الرصيد النقدي: متطابق" : "مطابقة الرصيد النقدي: تحتاج مراجعة", style: 3 }, { value: report.cash.difference, numeric: true, style: 5 }],
+  ];
+  return rows;
+}
+
 export function ledgerReportTable(report: {
   company: { name: string };
   baseCurrency: { code: string; nameAr: string };
@@ -110,7 +147,7 @@ export function tableToXlsx(rows: Cell[][], sheetName: string) {
     return cell.numeric && cell.value !== "" ? `<c r="${ref}" s="${cell.style ?? 0}" t="n"><v>${xml(cell.value)}</v></c>` : `<c r="${ref}" s="${cell.style ?? 0}" t="inlineStr"><is><t xml:space="preserve">${xml(cell.value)}</t></is></c>`;
   }).join("")}</row>`).join("");
   const columnCount = Math.max(1, ...rows.map((row) => row.length));
-  const columnWidths = columnCount === 7 ? [14, 20, 42, 16, 16, 18, 18] : [42, ...Array.from({ length: columnCount - 1 }, () => 18)];
+  const columnWidths = columnCount === 7 ? [14, 20, 42, 16, 16, 18, 18] : columnCount === 2 ? [72, 20] : [42, ...Array.from({ length: columnCount - 1 }, () => 18)];
   const columns = columnWidths.map((width, index) => `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`).join("");
   const files: Record<string, string> = {
     "[Content_Types].xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`,
@@ -132,7 +169,7 @@ export function tableToPdf(rows: Cell[][], title: string, companyName: string): 
     const pageHeader = () => { pdf.rect(0, 0, 842, 75).fill("#173f34"); pdf.font("ArabicBold").fontSize(17).fillColor("#ffffff").text(arabicSafe(companyName), 36, 18, { width: 770, align: "right", features: ["rtla"] }); pdf.font("Arabic").fontSize(10).fillColor("#d6e7df").text(arabicSafe(title), 36, 47, { width: 770, align: "right", features: ["rtla"] }); pdf.y = 92; };
     pageHeader();
     const columnCount = Math.max(1, ...rows.map((row) => row.length));
-    const widths = columnCount === 7 ? [80, 100, 250, 80, 80, 90, 90] : [370, 100, 100, 100, 100];
+    const widths = columnCount === 7 ? [80, 100, 250, 80, 80, 90, 90] : columnCount === 2 ? [600, 170] : [370, 100, 100, 100, 100];
     for (let rowIndex = 3; rowIndex < rows.length; rowIndex += 1) {
       if (pdf.y > 530) { pdf.addPage(); pageHeader(); }
       const row = rows[rowIndex]!; const y = pdf.y; const isHeader = rowIndex === 3; const isSection = row[0]?.style === 3;

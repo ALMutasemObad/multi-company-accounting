@@ -74,6 +74,8 @@ export const permissionDefinitions = [
   ['reports.financial_statements.export', 'reports', 'تصدير القوائم المالية'],
   ['reports.journal.view', 'reports', 'عرض تقرير دفتر اليومية'],
   ['reports.journal.export', 'reports', 'تصدير تقرير دفتر اليومية'],
+  ['reports.cash_flow.view', 'reports', 'عرض قائمة التدفق النقدي بالطريقة غير المباشرة'],
+  ['reports.cash_flow.manage', 'reports', 'إدارة تصنيف حسابات قائمة التدفق النقدي'],
   ['sales_invoices.view', 'sales_invoices', 'عرض فواتير المبيعات والإشعارات الدائنة'],
   ['sales_invoices.create', 'sales_invoices', 'إنشاء فواتير المبيعات والإشعارات الدائنة'],
   ['sales_invoices.update', 'sales_invoices', 'تعديل فواتير المبيعات والإشعارات الدائنة'],

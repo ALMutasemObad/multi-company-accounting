@@ -1,8 +1,10 @@
 import { Router, type ErrorRequestHandler, type Request } from "express";
 import { z, ZodError } from "zod";
 import type { AuthService } from "../auth/auth-service.js";
+import { openApiRequestBodySchemas as bodies } from "../generated/openapi-request-guards.js";
+import { CashFlowError, type CashFlowService } from "./cash-flow-service.js";
 import { ReportError, ReportService } from "./report-service.js";
-import { financialPositionTable, incomeStatementTable, journalReportToCsv, ledgerReportTable, tableToCsv, tableToPdf, tableToXlsx } from "./financial-statement-exporter.js";
+import { financialPositionTable, incomeStatementTable, indirectCashFlowTable, journalReportToCsv, ledgerReportTable, tableToCsv, tableToPdf, tableToXlsx } from "./financial-statement-exporter.js";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const id = z.string().regex(/^[1-9]\d*$/).transform(BigInt);
@@ -28,9 +30,9 @@ const journalQuery = query.and(z.object({
 function sid(request: Request) {
   return Object.fromEntries((request.headers.cookie ?? "").split(";").map((value) => value.trim().split("=", 2)).filter(([key, value]) => key && value)).sid;
 }
-export function createReportRouter(auth: AuthService, service: ReportService) {
+export function createReportRouter(auth: AuthService, service: ReportService, cashFlow?: CashFlowService) {
   const router = Router();
-  const authorize = (request: Request, permission: string) => auth.authorize({ sid: sid(request), permission, requireCsrf: false });
+  const authorize = (request: Request, permission: string, requireCsrf = false) => auth.authorize({ sid: sid(request), csrfToken: request.header("X-CSRF-Token") ?? undefined, permission, requireCsrf });
   router.get("/reports/dashboard", async (request, response) => {
     const context = await authorize(request, "dashboard.view");
     response.json(await service.dashboard(context, query.parse(request.query)));
@@ -39,6 +41,32 @@ export function createReportRouter(auth: AuthService, service: ReportService) {
     const context = await authorize(request, "reports.trial_balance.view");
     response.json(await service.trialBalance(context, query.parse(request.query)));
   });
+  if (cashFlow) {
+    router.get("/reports/cash-flow", async (request, response) => {
+      const context = await authorize(request, "reports.cash_flow.view");
+      response.json(await cashFlow.cashFlow(context, query.parse(request.query)));
+    });
+    router.get("/reports/cash-flow/mappings", async (request, response) => {
+      const context = await authorize(request, "reports.cash_flow.view");
+      response.json(await cashFlow.listMappings(context));
+    });
+    router.put("/reports/cash-flow/mappings/:accountId", async (request, response) => {
+      const context = await authorize(request, "reports.cash_flow.manage", true);
+      response.json(await cashFlow.updateMapping(context, id.parse(request.params.accountId), bodies.updateCashFlowMapping.parse(request.body)));
+    });
+    router.get("/reports/cash-flow/export/:format", async (request, response) => {
+      const context = await authorize(request, "reports.financial_statements.export");
+      const format = z.enum(["csv", "xlsx", "pdf"]).parse(request.params.format);
+      const parameters = query.parse(request.query);
+      const report = await cashFlow.cashFlow(context, parameters);
+      const table = indirectCashFlowTable(report);
+      const content = format === "csv" ? tableToCsv(table) : format === "xlsx" ? tableToXlsx(table, "التدفق النقدي") : await tableToPdf(table, `قائمة التدفق النقدي من ${report.range.dateFrom} إلى ${report.range.dateTo}`, report.company.name);
+      await service.recordExport(context, "INDIRECT_CASH_FLOW", format.toUpperCase(), parameters);
+      response.setHeader("Content-Type", format === "csv" ? "text/csv; charset=utf-8" : format === "xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/pdf");
+      response.setHeader("Content-Disposition", `attachment; filename="cash-flow-${report.range.dateFrom}-${report.range.dateTo}.${format}"`);
+      response.send(content);
+    });
+  }
   router.get("/reports/journal", async (request, response) => {
     const context = await authorize(request, "reports.journal.view");
     response.json(await service.journalReport(context, journalQuery.parse(request.query)));
@@ -114,6 +142,11 @@ export function createReportRouter(auth: AuthService, service: ReportService) {
     }
     if (error instanceof ReportError) {
       response.status(404).json({ status: 404, code: error.reason });
+      return;
+    }
+    if (error instanceof CashFlowError) {
+      const status = error.reason === "NOT_FOUND" ? 404 : error.reason === "VERSION_CONFLICT" ? 409 : 422;
+      response.status(status).json({ status, code: "BUSINESS_RULE_VIOLATION", reason: error.reason });
       return;
     }
     next(error);

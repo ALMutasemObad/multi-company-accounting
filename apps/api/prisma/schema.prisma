@@ -40,6 +40,15 @@ enum FinancialCloseRunStatus {
   CLOSED
 }
 
+enum CashFlowMappingClassification {
+  NET_INCOME
+  OPERATING_ADJUSTMENT
+  OPERATING_WORKING_CAPITAL
+  INVESTING
+  FINANCING
+  EXCLUDED
+}
+
 enum AccountingDocumentType {
   MANUAL_JOURNAL
   INVENTORY_ADJUSTMENT
@@ -317,6 +326,7 @@ model Company {
   bankReconciliationSessions        BankReconciliationSession[]
   bankReconciliationMatches         BankReconciliationMatch[]
   financialCloseRuns                FinancialCloseRun[]
+  cashFlowAccountMappings           CashFlowAccountMapping[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -362,6 +372,8 @@ model User {
   financialCloseRunsReviewed        FinancialCloseRun[]                 @relation("FinancialCloseRunReviewedBy")
   financialCloseRunsReturned        FinancialCloseRun[]                 @relation("FinancialCloseRunReturnedBy")
   financialCloseRunsClosed          FinancialCloseRun[]                 @relation("FinancialCloseRunClosedBy")
+  cashFlowMappingsCreated           CashFlowAccountMapping[]             @relation("CashFlowMappingCreatedBy")
+  cashFlowMappingsUpdated           CashFlowAccountMapping[]             @relation("CashFlowMappingUpdatedBy")
 
   @@map("users")
 }
@@ -1054,12 +1066,35 @@ model Account {
   salesInvoiceLines        SalesInvoiceLine[]    @relation("SalesRevenueAccount")
   purchaseInvoiceLines     PurchaseInvoiceLine[] @relation("PurchaseDebitAccount")
   inventoryOffsetMovements InventoryMovement[]   @relation("InventoryMovementOffsetAccount")
+  cashFlowMappings         CashFlowAccountMapping[]
 
   @@unique([companyId, code])
   @@unique([companyId, sourceTemplateCode, sourceTemplateKey])
   @@unique([id, companyId])
   @@index([parentAccountId, companyId])
   @@map("accounts")
+}
+
+model CashFlowAccountMapping {
+  id             BigInt                        @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId      BigInt                        @map("company_id") @db.UnsignedBigInt
+  accountId      BigInt                        @map("account_id") @db.UnsignedBigInt
+  classification CashFlowMappingClassification
+  version        Int                           @default(0) @db.UnsignedInt
+  createdById    BigInt                        @map("created_by_id") @db.UnsignedBigInt
+  updatedById    BigInt                        @map("updated_by_id") @db.UnsignedBigInt
+  createdAt      DateTime                      @default(now()) @map("created_at")
+  updatedAt      DateTime                      @updatedAt @map("updated_at")
+  company        Company                       @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  account        Account                       @relation(fields: [accountId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  createdBy      User                          @relation("CashFlowMappingCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy      User                          @relation("CashFlowMappingUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([companyId, accountId])
+  @@index([companyId, classification, accountId])
+  @@index([createdById, createdAt])
+  @@index([updatedById, updatedAt])
+  @@map("cash_flow_account_mappings")
 }
 
 model CostCenter {

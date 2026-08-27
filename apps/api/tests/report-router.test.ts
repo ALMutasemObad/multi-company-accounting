@@ -23,10 +23,13 @@ describe("report routes", () => {
     const journalReport = vi.fn().mockResolvedValue({ data: [], meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 }, totals: { debit: "0.0000", credit: "0.0000" } });
     const journalReportExport = vi.fn().mockResolvedValue({ data: [], total: 0, truncated: false });
     const recordExport = vi.fn().mockResolvedValue(undefined);
+    const cashFlow = vi.fn().mockResolvedValue({ range: { dateFrom: "2026-01-01", dateTo: "2026-12-31" }, company: { name: "شركة الاختبار" }, baseCurrency: { id: "1", code: "SAR", nameAr: "ريال سعودي", decimals: 2 }, sections: { operating: { netIncome: "0.0000", adjustments: [], adjustmentsTotal: "0.0000", workingCapital: [], workingCapitalTotal: "0.0000", total: "0.0000" }, investing: { rows: [], total: "0.0000" }, financing: { rows: [], total: "0.0000" } }, cash: { opening: "0.0000", netChange: "0.0000", closing: "0.0000", calculatedNetChange: "0.0000", calculatedClosing: "0.0000", difference: "0.0000", reconciled: false }, mapping: { complete: false, cashAccountCount: 0, unmappedAccounts: [] } });
+    const listMappings = vi.fn().mockResolvedValue({ data: [] });
+    const updateMapping = vi.fn().mockResolvedValue({ accountId: "12", code: "1210", nameAr: "معدات", nameEn: null, accountClass: "ASSET", normalBalance: "DEBIT", classification: "INVESTING", source: "EXPLICIT", version: 1, editable: true });
     const app = express();
     app.use(express.json());
-    app.use("/api/v1", createReportRouter({ authorize } as any, { dashboard, trialBalance, financialPosition, incomeStatement, ledger, ledgerExport, journalReport, journalReportExport, recordExport } as any));
-    return { app, authorize, dashboard, trialBalance, financialPosition, incomeStatement, ledger, ledgerExport, journalReport, journalReportExport, recordExport };
+    app.use("/api/v1", createReportRouter({ authorize } as any, { dashboard, trialBalance, financialPosition, incomeStatement, ledger, ledgerExport, journalReport, journalReportExport, recordExport } as any, { cashFlow, listMappings, updateMapping } as any));
+    return { app, authorize, dashboard, trialBalance, financialPosition, incomeStatement, ledger, ledgerExport, journalReport, journalReportExport, recordExport, cashFlow, listMappings, updateMapping };
   }
 
   it("requires the dedicated dashboard permission and forwards the company context", async () => {
@@ -34,6 +37,18 @@ describe("report routes", () => {
     await request(app).get("/api/v1/reports/dashboard?dateFrom=2026-01-01&dateTo=2026-12-31").set("Cookie", "sid=test-session").expect(200);
     expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ sid: "test-session", permission: "dashboard.view" }));
     expect(dashboard).toHaveBeenCalledWith({ userId: 1n, companyId: 2n }, { dateFrom: "2026-01-01", dateTo: "2026-12-31" });
+  });
+
+  it("serves indirect cash flow and protects mapping changes with dedicated permissions and CSRF", async () => {
+    const { app, authorize, cashFlow, listMappings, updateMapping } = fixture();
+    await request(app).get("/api/v1/reports/cash-flow?dateFrom=2026-01-01&dateTo=2026-12-31").expect(200);
+    await request(app).get("/api/v1/reports/cash-flow/mappings").expect(200);
+    await request(app).put("/api/v1/reports/cash-flow/mappings/12").set("X-CSRF-Token", "csrf").send({ classification: "INVESTING", version: 0 }).expect(200);
+    expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ permission: "reports.cash_flow.view", requireCsrf: false }));
+    expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ permission: "reports.cash_flow.manage", requireCsrf: true, csrfToken: "csrf" }));
+    expect(cashFlow).toHaveBeenCalledWith({ userId: 1n, companyId: 2n }, { dateFrom: "2026-01-01", dateTo: "2026-12-31" });
+    expect(listMappings).toHaveBeenCalled();
+    expect(updateMapping).toHaveBeenCalledWith({ userId: 1n, companyId: 2n }, 12n, { classification: "INVESTING", version: 0 });
   });
 
   it("rejects report ranges longer than 366 days", async () => {
