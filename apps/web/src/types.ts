@@ -963,3 +963,53 @@ export type DataImportType = "CUSTOMERS" | "SUPPLIERS" | "SALES_INVOICES" | "PUR
 export type DataImportFormat = "CSV" | "XLSX";
 export type DataImportBatch = { id: string; importType: DataImportType; sourceFormat: DataImportFormat; rowCount: number; validRowCount: number; errorRowCount: number; status: "PREVIEWED" | "COMMITTED" | "EXPIRED"; expiresAt: string; committedAt: string | null; createdAt: string };
 export type DataImportPreview = { batch: DataImportBatch; errors: Array<{ row: number; column: string; code: string }> };
+
+export type ProfessionalProjectKind = "LEGAL_MATTER" | "CONSULTING_ENGAGEMENT" | "PROFESSIONAL_PROJECT";
+export type ProfessionalProjectBillingModel = "TIME_AND_MATERIALS" | "FIXED_FEE" | "NON_BILLABLE";
+export type ProfessionalProjectStatus = "ACTIVE" | "ON_HOLD" | "COMPLETED" | "CANCELLED";
+export type ProfessionalProjectMemberRole = "MANAGER" | "PROFESSIONAL" | "REVIEWER";
+export type ProfessionalCustomerOption = { id: string; code: string; nameAr: string; nameEn: string | null };
+export type ProfessionalPerson = { id: string; displayName: string; nameEn: string | null };
+export type ProfessionalProject = {
+  id: string;
+  code: string;
+  customer: ProfessionalCustomerOption;
+  nameAr: string;
+  nameEn: string | null;
+  kind: ProfessionalProjectKind;
+  billingModel: ProfessionalProjectBillingModel;
+  status: ProfessionalProjectStatus;
+  startDate: string;
+  targetEndDate: string | null;
+  description: string | null;
+  memberCount: number;
+  trackedMinutes: number;
+  billableMinutes: number;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};
+export type ProfessionalProjectMember = {
+  user: ProfessionalPerson;
+  role: ProfessionalProjectMemberRole;
+  isActive: boolean;
+  version: number;
+  assignedAt: string;
+  unassignedAt: string | null;
+};
+export type ProfessionalTimeEntry = {
+  id: string;
+  project: { id: string; code: string; nameAr: string; nameEn: string | null };
+  user: ProfessionalPerson;
+  workDate: string;
+  minutes: number;
+  isBillable: boolean;
+  description: string;
+  editable: boolean;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};
+export type ProfessionalTimeEntryList = ListResponse<ProfessionalTimeEntry> & {
+  summary: { trackedMinutes: number; billableMinutes: number; nonBillableMinutes: number };
+};

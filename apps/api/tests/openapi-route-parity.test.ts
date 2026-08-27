@@ -27,6 +27,7 @@ import { createInventoryMovementRouter } from '../src/inventory/inventory-moveme
 import { createBankReconciliationRouter } from '../src/treasury/reconciliation/reconciliation-router.js';
 import { createPosRouter } from '../src/pos/pos-router.js';
 import { createApprovalRouter } from '../src/approvals/approval-router.js';
+import { createProfessionalProjectRouter } from '../src/projects/professional-project-router.js';
 
 type RouteLayer = {
   route?: {
@@ -47,6 +48,7 @@ const routers = [
   { prefix: '', router: createSecurityEventRouter(stub, stub) },
   { prefix: '', router: createFiscalRouter(stub, stub, stub) },
   { prefix: '', router: createApprovalRouter(stub, stub) },
+  { prefix: '', router: createProfessionalProjectRouter(stub, stub) },
   { prefix: '', router: createAccountRouter(stub, stub) },
   { prefix: '', router: createManualJournalRouter(stub, stub) },
   { prefix: '', router: createReceiptReferenceRouter(stub, stub) },

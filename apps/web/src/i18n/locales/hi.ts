@@ -6,6 +6,7 @@ import { hiTaxSummary } from "./tax-summary";
 import { hiCostCenterActivity } from "./cost-center-activity";
 import { hiPos } from "./pos";
 import { hiApprovals } from "./approvals";
+import { hiProfessionalProjects } from "./professional-projects";
 
 export const hi = {
   ...hiReconciliation,
@@ -15,6 +16,7 @@ export const hi = {
   ...hiCostCenterActivity,
   ...hiPos,
   ...hiApprovals,
+  ...hiProfessionalProjects,
   "referencePicker.loading": "खोज जारी है…",
   "referencePicker.empty": "कोई मिलता-जुलता परिणाम नहीं मिला।",
   "referencePicker.more": "और परिणाम लोड करें",

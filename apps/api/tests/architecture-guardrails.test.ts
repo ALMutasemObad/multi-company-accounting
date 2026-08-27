@@ -117,6 +117,14 @@ describe("core accounting architecture guardrails", () => {
     expect(approval).toContain("await port.reject");
   });
 
+  it("keeps professional projects behind customer and people ports and away from financial facts", async () => {
+    const service = await source("projects/professional-project-service.ts");
+    expect(service).not.toMatch(/\.(?:customer|user|userCompany|salesInvoice|accountingDocument|journalEntry|journalLine)\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
+    expect(service).toContain("this.customers.findInCompany");
+    expect(service).toContain("this.people.findActiveInCompany");
+    expect(service).not.toContain("PostingEngine");
+  });
+
   it("keeps open-source bank file parsers behind Treasury adapters", async () => {
     const sources = await allTypeScriptSources();
     const parserImport = /from\s+["'](?:csv-parse(?:\/sync)?|fast-xml-parser)["']/u;

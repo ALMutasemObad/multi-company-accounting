@@ -28,6 +28,7 @@ related:
 | طريقة الدفع الخاصة بالشركة | الشركة + نوع الكيان، مع تفرد عمومي للحقل | `PM-{companyId}-` | `PM-42-000001` | Treasury |
 | معدل الضريبة | الشركة + نوع الكيان | `TAX-` | `TAX-000001` | Tax Configuration |
 | الدور المخصص | الشركة + نوع الكيان | `ROL-` | `ROL-000001` | Identity & Access |
+| المشروع/القضية المهنية | الشركة + نوع الكيان | `PRJ-` | `PRJ-000001` | Professional Services & Projects |
 
 - **يجب** أن يولد الخادم الرمز؛ لا يقبل API الرمز في طلب الإنشاء أو التعديل.
 - **يجب** أن يكون الرمز فريدًا داخل الشركة وغير قابل للتعديل بعد الإنشاء.
@@ -71,7 +72,7 @@ related:
 | الطبقة | المرجع |
 |---|---|
 | مخطط البيانات | `apps/api/prisma/schema.prisma` — `MasterDataCodeSequence` |
-| الترحيل | `20260822150000_auto_master_data_codes` ثم `20260822210000_expand_auto_codes_and_password_reset` |
+| الترحيل | `20260822150000_auto_master_data_codes` ثم `20260822210000_expand_auto_codes_and_password_reset` ثم `20260827180000_professional_projects_time` للمشاريع المهنية |
 | الحجز الذري | `apps/api/src/platform/master-data-code-service.ts` |
 | العملاء | `apps/api/src/receipts/reference-service.ts` و`reference-router.ts` |
 | الخزينة وطرق الدفع | `apps/api/src/treasury/treasury-service.ts` و`treasury-router.ts` |

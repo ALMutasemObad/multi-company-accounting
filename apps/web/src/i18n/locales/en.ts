@@ -10,6 +10,7 @@ import { enTaxSummary } from "./tax-summary";
 import { enCostCenterActivity } from "./cost-center-activity";
 import { enPos } from "./pos";
 import { enApprovals } from "./approvals";
+import { enProfessionalProjects } from "./professional-projects";
 
 export const en = {
   ...enDomain,
@@ -21,6 +22,7 @@ export const en = {
   ...enCostCenterActivity,
   ...enPos,
   ...enApprovals,
+  ...enProfessionalProjects,
   "language.label": "Language",
   "branding.name": "Multi-company accounting system",
   "branding.shortName": "Accounting platform",

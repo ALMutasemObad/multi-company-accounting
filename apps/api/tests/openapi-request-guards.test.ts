@@ -22,10 +22,10 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 213, requestBodies: 108, responseBodies: 1429 });
-    expect(guardedOpenApiOperations).toHaveLength(108);
+    expect(openApiContractCoverage).toEqual({ operations: 226, requestBodies: 116, responseBodies: 1505 });
+    expect(guardedOpenApiOperations).toHaveLength(116);
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
-      'login', 'createUser', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'initializeInventoryBalanceValuation', 'reverseInventoryMovement', 'previewDataImport', 'commitDataImport', 'previewBankStatement', 'commitBankStatementImport', 'createBankReconciliationSession', 'generateBankReconciliationSuggestions', 'approveBankReconciliationMatch', 'createManualBankReconciliationMatch', 'releaseBankReconciliationMatch', 'classifyBankStatementLine', 'closeBankReconciliationSession', 'startFinancialCloseRun', 'refreshFinancialCloseRun', 'createApprovalRequest', 'approveApprovalRequest', 'rejectApprovalRequest', 'returnFinancialCloseRun', 'updateCashFlowMapping',
+      'login', 'createUser', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'initializeInventoryBalanceValuation', 'reverseInventoryMovement', 'previewDataImport', 'commitDataImport', 'previewBankStatement', 'commitBankStatementImport', 'createBankReconciliationSession', 'generateBankReconciliationSuggestions', 'approveBankReconciliationMatch', 'createManualBankReconciliationMatch', 'releaseBankReconciliationMatch', 'classifyBankStatementLine', 'closeBankReconciliationSession', 'startFinancialCloseRun', 'refreshFinancialCloseRun', 'createApprovalRequest', 'approveApprovalRequest', 'rejectApprovalRequest', 'createProfessionalProject', 'assignProfessionalProjectMember', 'createProfessionalTimeEntry', 'returnFinancialCloseRun', 'updateCashFlowMapping',
     ]));
   });
 
@@ -107,6 +107,22 @@ describe('generated OpenAPI request guards', () => {
       reversalDate: '2026-08-25',
       reason: '  تصحيح حركة خاطئة  ',
     })).toEqual({ version: 0, reversalDate: '2026-08-25', reason: 'تصحيح حركة خاطئة' });
+  });
+
+  it('validates professional project and personal time commands', () => {
+    expect(openApiRequestBodySchemas.createProfessionalProject.parse({
+      customerId: '12',
+      nameAr: '  قضية استشارية  ',
+      kind: 'LEGAL_MATTER',
+      billingModel: 'TIME_AND_MATERIALS',
+      startDate: '2057-08-27',
+    })).toMatchObject({ customerId: 12n, nameAr: 'قضية استشارية' });
+    expect(openApiRequestBodySchemas.createProfessionalProject.safeParse({
+      code: 'MANUAL', customerId: '12', nameAr: 'قضية', kind: 'LEGAL_MATTER', billingModel: 'FIXED_FEE', startDate: '2057-08-27',
+    }).success).toBe(false);
+    expect(openApiRequestBodySchemas.createProfessionalTimeEntry.safeParse({
+      projectId: '5aa8b232-356c-4d55-8b89-f27d44d1678d', workDate: '2057-08-27', minutes: 1441, isBillable: true, description: 'عمل',
+    }).success).toBe(false);
   });
 
   it('enforces the password-reset boundary from OpenAPI', () => {

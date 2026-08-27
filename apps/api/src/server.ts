@@ -58,6 +58,9 @@ import { PosService } from './pos/pos-service.js';
 import { PrismaPosSaleQueryAdapter } from './pos/adapters/prisma-pos-sale-query-adapter.js';
 import { ApprovalService } from './approvals/approval-service.js';
 import { FinancialCloseApprovalAdapter } from './fiscal/financial-close-approval-adapter.js';
+import { ProfessionalProjectService } from './projects/professional-project-service.js';
+import { ProfessionalCustomerAdapter } from './sales/professional-customer-adapter.js';
+import { ProfessionalPeopleAdapter } from './users/professional-people-adapter.js';
 
 const config = loadConfig();
 if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required to start the API');
@@ -150,6 +153,11 @@ const financialClose = new FinancialCloseService(database, {
 const approvals = new ApprovalService(database, {
   FINANCIAL_CLOSE_RUN: new FinancialCloseApprovalAdapter(financialClose),
 });
+const professionalProjects = new ProfessionalProjectService(
+  database,
+  new ProfessionalCustomerAdapter(database),
+  new ProfessionalPeopleAdapter(database),
+);
 const app = createApp(config, {
   readiness: new DatabaseReadinessService(database, config.READINESS_TIMEOUT_MS),
   metrics: operationalMetrics,
@@ -164,6 +172,7 @@ const app = createApp(config, {
   fiscal,
   financialClose,
   approvals,
+  professionalProjects,
   accounts: new AccountService(database),
   journals: new ManualJournalService(database),
   receiptReferences,

@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.31.0
+  version: 1.32.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -30,6 +30,8 @@ info:
     - يملك Treasury حسابات النقد والبنوك وطرق الدفع؛ تستهلك حركات القبض والصرف TreasuryInstrumentPort وتحمل تعديلات المراجع version متفائلًا.
 
     - يملك محرك الموافقات طلب الموافقة والقرار فقط؛ أول تطبيق يفرض Maker/Checker على مراجعة إقفال الفترة، بينما يبقى Fiscal مالك دورة الإقفال وCore Accounting مالك Ledger.
+
+    - يملك سياق Professional Services المشاريع والقضايا المهنية وإسناد أعضائها وسجلات الوقت فقط؛ يقرأ العملاء والأشخاص عبر منافذ مالكيهم ولا ينشئ فاتورة أو قيداً أو يكرر حقائق Sales أو Ledger.
 
     - تبدأ رحلة Inventory بإدارة المستودعات المعزولة حسب الشركة، مع رموز خادمية ثابتة ونسخ متفائلة، دون أثر على الأستاذ في هذه المرحلة.
 
@@ -82,6 +84,8 @@ tags:
   description: السنوات والفترات المالية وتسلسلات المستندات.
 - name: Approvals
   description: طلبات وقرارات الموافقة المشتركة؛ لا يملك المحرك حالات المستندات أو آثارها المالية.
+- name: Professional Projects
+  description: المشاريع والقضايا والاستشارات المهنية وأعضاؤها وسجلات الوقت؛ الفوترة والرواتب وأموال الأمانات خارج هذه الشريحة.
 - name: Accounts
   description: دليل الحسابات ومراكز التكلفة.
 - name: Data Imports
@@ -1907,6 +1911,265 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/BusinessRuleViolation' }
       x-permission: fiscal_periods.close
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /professional-projects/customer-options:
+    get:
+      tags: [Professional Projects]
+      summary: مرجع العملاء النشطين للمشاريع المهنية
+      operationId: listProfessionalProjectCustomerOptions
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Search'
+      responses:
+        '200': { description: العملاء النشطون داخل الشركة, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalCustomerOptionList' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: professional_projects.view
+      security: [{ SessionCookie: [] }]
+  /professional-projects/member-options:
+    get:
+      tags: [Professional Projects]
+      summary: مرجع الأشخاص النشطين القابلين للإسناد
+      operationId: listProfessionalProjectMemberOptions
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Search'
+      responses:
+        '200': { description: مستخدمو الشركة النشطون, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalPersonList' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: professional_projects.view
+      security: [{ SessionCookie: [] }]
+  /professional-projects:
+    get:
+      tags: [Professional Projects]
+      summary: عرض المشاريع والقضايا المهنية
+      operationId: listProfessionalProjects
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - $ref: '#/components/parameters/Search'
+      - { name: status, in: query, schema: { $ref: '#/components/schemas/ProfessionalProjectStatus' } }
+      - { name: kind, in: query, schema: { $ref: '#/components/schemas/ProfessionalProjectKind' } }
+      - { name: customerId, in: query, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200': { description: قائمة معزولة حسب الشركة, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalProjectListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: professional_projects.view
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [Professional Projects]
+      summary: إنشاء مشروع أو قضية مهنية
+      operationId: createProfessionalProject
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateProfessionalProjectRequest' } } }
+      responses:
+        '201': { description: أنشئ المشروع وأسند المنشئ مديراً ذرياً, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalProjectResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: professional_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /professional-projects/{professionalProjectId}:
+    get:
+      tags: [Professional Projects]
+      summary: عرض المشروع وأعضائه
+      operationId: getProfessionalProject
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: professionalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: المشروع وأعضاؤه, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalProjectDetailResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: professional_projects.view
+      security: [{ SessionCookie: [] }]
+    patch:
+      tags: [Professional Projects]
+      summary: تعديل بيانات مشروع مهني مفتوح
+      operationId: updateProfessionalProject
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: professionalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/UpdateProfessionalProjectRequest' } } }
+      responses:
+        '200': { description: المشروع المحدث, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalProjectResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: professional_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /professional-projects/{professionalProjectId}/transition:
+    post:
+      tags: [Professional Projects]
+      summary: نقل حالة مشروع مهني بسبب موثق
+      operationId: transitionProfessionalProject
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: professionalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/TransitionProfessionalProjectRequest' } } }
+      responses:
+        '200': { description: المشروع بعد الانتقال, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalProjectResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: professional_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /professional-projects/{professionalProjectId}/members:
+    post:
+      tags: [Professional Projects]
+      summary: إسناد عضو أو إعادة تفعيله في المشروع
+      operationId: assignProfessionalProjectMember
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: professionalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AssignProfessionalProjectMemberRequest' } } }
+      responses:
+        '200': { description: العضو المسند ونسخة المشروع, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalProjectMemberMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: professional_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /professional-projects/{professionalProjectId}/members/{userId}/unassign:
+    post:
+      tags: [Professional Projects]
+      summary: إنهاء إسناد عضو مع إبقاء التاريخ وسجلات الوقت
+      operationId: unassignProfessionalProjectMember
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: professionalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: userId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/UnassignProfessionalProjectMemberRequest' } } }
+      responses:
+        '200': { description: انتهى الإسناد, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalProjectMemberUnassignResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: professional_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /professional-time-entries:
+    get:
+      tags: [Professional Projects]
+      summary: عرض سجل الوقت المهني وملخص الدقائق
+      operationId: listProfessionalTimeEntries
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - { name: projectId, in: query, schema: { type: string, format: uuid } }
+      - { name: userId, in: query, schema: { $ref: '#/components/schemas/Id' } }
+      - { name: dateFrom, in: query, schema: { type: string, format: date } }
+      - { name: dateTo, in: query, schema: { type: string, format: date } }
+      - { name: billable, in: query, schema: { type: boolean } }
+      responses:
+        '200': { description: سجل الوقت المعزول حسب الشركة, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalTimeEntryListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: professional_time.view
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [Professional Projects]
+      summary: تسجيل وقت المستخدم الحالي على مشروع نشط
+      operationId: createProfessionalTimeEntry
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateProfessionalTimeEntryRequest' } } }
+      responses:
+        '201': { description: سجل الوقت, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalTimeEntryResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: professional_time.log
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /professional-time-entries/{professionalTimeEntryId}:
+    patch:
+      tags: [Professional Projects]
+      summary: تعديل سجل الوقت الشخصي
+      operationId: updateProfessionalTimeEntry
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: professionalTimeEntryId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/UpdateProfessionalTimeEntryRequest' } } }
+      responses:
+        '200': { description: السجل المحدث, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalTimeEntryResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: professional_time.log
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+    delete:
+      tags: [Professional Projects]
+      summary: حذف سجل الوقت الشخصي مع سبب مدقق
+      operationId: deleteProfessionalTimeEntry
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: professionalTimeEntryId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/DeleteProfessionalTimeEntryRequest' } } }
+      responses:
+        '200': { description: نتيجة الحذف, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalTimeEntryDeleteResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+      x-permission: professional_time.log
       security: [{ SessionCookie: [], CsrfToken: [] }]
   /approval-requests:
     get:
@@ -13073,6 +13336,258 @@ components:
               id: { $ref: '#/components/schemas/Id' }
               name: { type: string }
           - type: 'null'
+    ProfessionalProjectKind:
+      type: string
+      enum: [LEGAL_MATTER, CONSULTING_ENGAGEMENT, PROFESSIONAL_PROJECT]
+    ProfessionalProjectBillingModel:
+      type: string
+      enum: [TIME_AND_MATERIALS, FIXED_FEE, NON_BILLABLE]
+    ProfessionalProjectStatus:
+      type: string
+      enum: [ACTIVE, ON_HOLD, COMPLETED, CANCELLED]
+    ProfessionalProjectMemberRole:
+      type: string
+      enum: [MANAGER, PROFESSIONAL, REVIEWER]
+    ProfessionalCustomerOption:
+      type: object
+      required: [id, code, nameAr, nameEn]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        code: { type: string, maxLength: 40 }
+        nameAr: { type: string, maxLength: 200 }
+        nameEn: { type: [string, 'null'], maxLength: 200 }
+    ProfessionalCustomerOptionList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/ProfessionalCustomerOption' }
+    ProfessionalPerson:
+      type: object
+      required: [id, displayName, nameEn]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        displayName: { type: string, maxLength: 160 }
+        nameEn: { type: [string, 'null'], maxLength: 160 }
+    ProfessionalPersonList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/ProfessionalPerson' }
+    ProfessionalProjectReference:
+      type: object
+      required: [id, code, nameAr, nameEn]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string, maxLength: 40 }
+        nameAr: { type: string, maxLength: 200 }
+        nameEn: { type: [string, 'null'], maxLength: 200 }
+    ProfessionalProject:
+      type: object
+      required:
+      - id
+      - code
+      - customer
+      - nameAr
+      - nameEn
+      - kind
+      - billingModel
+      - status
+      - startDate
+      - targetEndDate
+      - description
+      - memberCount
+      - trackedMinutes
+      - billableMinutes
+      - version
+      - createdAt
+      - updatedAt
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string, maxLength: 40, readOnly: true }
+        customer: { $ref: '#/components/schemas/ProfessionalCustomerOption' }
+        nameAr: { type: string, maxLength: 200 }
+        nameEn: { type: [string, 'null'], maxLength: 200 }
+        kind: { $ref: '#/components/schemas/ProfessionalProjectKind' }
+        billingModel: { $ref: '#/components/schemas/ProfessionalProjectBillingModel' }
+        status: { $ref: '#/components/schemas/ProfessionalProjectStatus' }
+        startDate: { type: string, format: date }
+        targetEndDate: { type: [string, 'null'], format: date }
+        description: { type: [string, 'null'], maxLength: 1000 }
+        memberCount: { type: integer, minimum: 0 }
+        trackedMinutes: { type: integer, minimum: 0 }
+        billableMinutes: { type: integer, minimum: 0 }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ProfessionalProjectMember:
+      type: object
+      required: [user, role, isActive, version, assignedAt, unassignedAt]
+      properties:
+        user: { $ref: '#/components/schemas/ProfessionalPerson' }
+        role: { $ref: '#/components/schemas/ProfessionalProjectMemberRole' }
+        isActive: { type: boolean }
+        version: { type: integer, minimum: 0 }
+        assignedAt: { type: string, format: date-time }
+        unassignedAt: { type: [string, 'null'], format: date-time }
+    ProfessionalProjectResponse:
+      type: object
+      required: [project]
+      properties:
+        project: { $ref: '#/components/schemas/ProfessionalProject' }
+    ProfessionalProjectDetailResponse:
+      type: object
+      required: [project, members]
+      properties:
+        project: { $ref: '#/components/schemas/ProfessionalProject' }
+        members:
+          type: array
+          items: { $ref: '#/components/schemas/ProfessionalProjectMember' }
+    ProfessionalProjectListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/ProfessionalProject' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    CreateProfessionalProjectRequest:
+      type: object
+      additionalProperties: false
+      required: [customerId, nameAr, kind, billingModel, startDate]
+      properties:
+        customerId: { $ref: '#/components/schemas/Id' }
+        nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 200 }
+        nameEn: { type: [string, 'null'], x-trim: true, maxLength: 200 }
+        kind: { $ref: '#/components/schemas/ProfessionalProjectKind' }
+        billingModel: { $ref: '#/components/schemas/ProfessionalProjectBillingModel' }
+        startDate: { type: string, format: date }
+        targetEndDate: { type: [string, 'null'], format: date }
+        description: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
+    UpdateProfessionalProjectRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      minProperties: 2
+      properties:
+        version: { type: integer, minimum: 0 }
+        customerId: { $ref: '#/components/schemas/Id' }
+        nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 200 }
+        nameEn: { type: [string, 'null'], x-trim: true, maxLength: 200 }
+        kind: { $ref: '#/components/schemas/ProfessionalProjectKind' }
+        billingModel: { $ref: '#/components/schemas/ProfessionalProjectBillingModel' }
+        startDate: { type: string, format: date }
+        targetEndDate: { type: [string, 'null'], format: date }
+        description: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
+    TransitionProfessionalProjectRequest:
+      type: object
+      additionalProperties: false
+      required: [version, status, reason]
+      properties:
+        version: { type: integer, minimum: 0 }
+        status: { $ref: '#/components/schemas/ProfessionalProjectStatus' }
+        reason: { type: string, x-trim: true, minLength: 3, maxLength: 500 }
+    AssignProfessionalProjectMemberRequest:
+      type: object
+      additionalProperties: false
+      required: [projectVersion, userId, role]
+      properties:
+        projectVersion: { type: integer, minimum: 0 }
+        userId: { $ref: '#/components/schemas/Id' }
+        role: { $ref: '#/components/schemas/ProfessionalProjectMemberRole' }
+    UnassignProfessionalProjectMemberRequest:
+      type: object
+      additionalProperties: false
+      required: [projectVersion, memberVersion, reason]
+      properties:
+        projectVersion: { type: integer, minimum: 0 }
+        memberVersion: { type: integer, minimum: 0 }
+        reason: { type: string, x-trim: true, minLength: 3, maxLength: 500 }
+    ProfessionalProjectMemberMutationResponse:
+      type: object
+      required: [member, projectVersion]
+      properties:
+        member: { $ref: '#/components/schemas/ProfessionalProjectMember' }
+        projectVersion: { type: integer, minimum: 0 }
+    ProfessionalProjectMemberUnassignResponse:
+      type: object
+      required: [unassigned, projectVersion, memberVersion]
+      properties:
+        unassigned: { type: boolean, const: true }
+        projectVersion: { type: integer, minimum: 0 }
+        memberVersion: { type: integer, minimum: 0 }
+    ProfessionalTimeEntry:
+      type: object
+      required: [id, project, user, workDate, minutes, isBillable, description, editable, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        project: { $ref: '#/components/schemas/ProfessionalProjectReference' }
+        user: { $ref: '#/components/schemas/ProfessionalPerson' }
+        workDate: { type: string, format: date }
+        minutes: { type: integer, minimum: 1, maximum: 1440 }
+        isBillable: { type: boolean }
+        description: { type: string, minLength: 1, maxLength: 1000 }
+        editable: { type: boolean }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ProfessionalTimeEntrySummary:
+      type: object
+      required: [trackedMinutes, billableMinutes, nonBillableMinutes]
+      properties:
+        trackedMinutes: { type: integer, minimum: 0 }
+        billableMinutes: { type: integer, minimum: 0 }
+        nonBillableMinutes: { type: integer, minimum: 0 }
+    ProfessionalTimeEntryListResponse:
+      type: object
+      required: [data, meta, summary]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/ProfessionalTimeEntry' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+        summary: { $ref: '#/components/schemas/ProfessionalTimeEntrySummary' }
+    ProfessionalTimeEntryResponse:
+      type: object
+      required: [timeEntry]
+      properties:
+        timeEntry: { $ref: '#/components/schemas/ProfessionalTimeEntry' }
+    CreateProfessionalTimeEntryRequest:
+      type: object
+      additionalProperties: false
+      required: [projectId, workDate, minutes, isBillable, description]
+      properties:
+        projectId: { type: string, format: uuid }
+        workDate: { type: string, format: date }
+        minutes: { type: integer, minimum: 1, maximum: 1440 }
+        isBillable: { type: boolean }
+        description: { type: string, x-trim: true, minLength: 1, maxLength: 1000 }
+    UpdateProfessionalTimeEntryRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      minProperties: 2
+      properties:
+        version: { type: integer, minimum: 0 }
+        workDate: { type: string, format: date }
+        minutes: { type: integer, minimum: 1, maximum: 1440 }
+        isBillable: { type: boolean }
+        description: { type: string, x-trim: true, minLength: 1, maxLength: 1000 }
+    DeleteProfessionalTimeEntryRequest:
+      type: object
+      additionalProperties: false
+      required: [version, reason]
+      properties:
+        version: { type: integer, minimum: 0 }
+        reason: { type: string, x-trim: true, minLength: 3, maxLength: 500 }
+    ProfessionalTimeEntryDeleteResponse:
+      type: object
+      required: [deleted]
+      properties:
+        deleted: { type: boolean, const: true }
     ReasonRequest:
       type: object
       additionalProperties: false

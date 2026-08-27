@@ -9,7 +9,8 @@ export type MasterDataEntityType =
   | "INVENTORY_ITEM"
   | "PAYMENT_METHOD"
   | "TAX_RATE"
-  | "CUSTOM_ROLE";
+  | "CUSTOM_ROLE"
+  | "PROFESSIONAL_PROJECT";
 
 const defaults: Record<
   MasterDataEntityType,
@@ -30,6 +31,7 @@ const defaults: Record<
   },
   TAX_RATE: { prefix: "TAX-", padding: 6 },
   CUSTOM_ROLE: { prefix: "ROL-", padding: 6 },
+  PROFESSIONAL_PROJECT: { prefix: "PRJ-", padding: 6 },
 };
 
 type ReservedSequenceRow = {
