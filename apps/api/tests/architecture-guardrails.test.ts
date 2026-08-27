@@ -366,6 +366,23 @@ describe("Reporting ownership boundary guardrails", () => {
     expect(adapter).not.toMatch(/\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
     expect(calculator).not.toMatch(/\.(?:salesInvoice|purchaseInvoice|taxRate)\./u);
   });
+
+  it("keeps cost-center activity derived from Ledger behind a company-scoped query port", async () => {
+    const [service, adapter, calculator] = await Promise.all([
+      source("reports/cost-center-activity-service.ts"),
+      source("reports/adapters/prisma-cost-center-activity-ledger-query-adapter.ts"),
+      source("reports/cost-center-activity-calculator.ts"),
+    ]);
+
+    expect(service).toContain("CostCenterActivityLedgerQueryPort");
+    expect(service).not.toMatch(/\.(?:journalEntry|journalLine|account|costCenter)\.(?:find|groupBy|aggregate|create|update|delete)/u);
+    expect(adapter).toContain("implements CostCenterActivityLedgerQueryPort");
+    expect(adapter).toContain("companyId,");
+    expect(adapter).toContain('status: { in: ["POSTED", "REVERSED"] }');
+    expect(adapter).not.toMatch(/\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
+    expect(calculator).toContain("Prisma.Decimal");
+    expect(calculator).not.toMatch(/\.(?:journalEntry|journalLine|account|costCenter)\.(?:find|groupBy|aggregate|create|update|delete)/u);
+  });
 });
 
 describe("Inventory ownership boundary guardrails", () => {

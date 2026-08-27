@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { financialPositionTable, indirectCashFlowTable, journalReportToCsv, ledgerReportTable, tableToCsv, tableToPdf, tableToXlsx, taxSummaryTable } from "../src/reports/financial-statement-exporter.js";
+import { costCenterActivityTable, financialPositionTable, indirectCashFlowTable, journalReportToCsv, ledgerReportTable, tableToCsv, tableToPdf, tableToXlsx, taxSummaryTable } from "../src/reports/financial-statement-exporter.js";
 
 const report = {
   company: { name: "الشركة التجريبية" }, baseCurrency: { code: "SAR", nameAr: "ريال سعودي" }, asOf: "2026-08-11", comparisonAsOf: null,
@@ -76,5 +76,18 @@ describe("financial statement exports", () => {
     expect(csv).toContain('"صافي الضريبة المستحقة","9.0000"');
     expect(tableToXlsx(table, "ملخص الضريبة").subarray(0, 4).toString("hex")).toBe("504b0304");
     expect((await tableToPdf(table, "ملخص الضريبة", "الشركة التجريبية")).subarray(0, 4).toString()).toBe("%PDF");
+  });
+  it("exports cost-center account detail and period totals in every supported format", async () => {
+    const table = costCenterActivityTable({
+      company: { name: "الشركة التجريبية" }, baseCurrency: { code: "SAR", nameAr: "ريال سعودي" },
+      range: { dateFrom: "2026-01-01", dateTo: "2026-12-31" },
+      data: [{ costCenter: { code: "CC-001", nameAr: "المشروع الأول" }, accounts: [{ code: "5100", nameAr: "مصروف المشروع", movementLineCount: 2, debit: "20.3000", credit: "0.0000", net: "20.3000" }], totals: { movementLineCount: 2, debit: "20.3000", credit: "0.0000", net: "20.3000" } }],
+      totals: { costCenterCount: 1, accountCount: 1, movementLineCount: 2, debit: "20.3000", credit: "0.0000", net: "20.3000" },
+    });
+    const csv = tableToCsv(table).toString("utf8");
+    expect(csv).toContain("حركة مراكز التكلفة الفعلية");
+    expect(csv).toContain("إجمالي الفترة");
+    expect(tableToXlsx(table, "حركة مراكز التكلفة").subarray(0, 4).toString("hex")).toBe("504b0304");
+    expect((await tableToPdf(table, "حركة مراكز التكلفة", "الشركة التجريبية")).subarray(0, 4).toString()).toBe("%PDF");
   });
 });

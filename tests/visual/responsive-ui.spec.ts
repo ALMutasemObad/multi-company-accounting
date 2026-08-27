@@ -298,7 +298,7 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
     await waitForStableInterface(page, { name: 'reports', path: '', ready: '.workspace-page', kind: 'workspace' });
 
     const tabs = page.locator('.report-tabs button');
-    await expect(tabs).toHaveCount(7);
+    await expect(tabs).toHaveCount(8);
     await tabs.nth(1).click();
     await expect(tabs.nth(1)).toHaveClass(/\bactive\b/u);
     await expect(page.locator('.workspace-page .loading')).toHaveCount(0);
@@ -307,6 +307,29 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
     await auditCurrentInterface(page, locale, 'tax-summary');
 
     expect.soft(runtimeErrors, `${locale} tax summary runtime errors`).toEqual([]);
+  });
+
+  test(`${locale}: cost-center activity report stays responsive and readable`, async ({ page }) => {
+    const runtimeErrors: string[] = [];
+    page.on('pageerror', (error) => runtimeErrors.push(error.message));
+    await configureLocale(page, locale);
+    await page.goto('/?qa=reports#reports');
+    await waitForStableInterface(page, { name: 'reports', path: '', ready: '.workspace-page', kind: 'workspace' });
+
+    const tabs = page.locator('.report-tabs button');
+    await expect(tabs).toHaveCount(8);
+    await tabs.nth(2).click();
+    await expect(tabs.nth(2)).toHaveClass(/\bactive\b/u);
+    await expect(page.locator('.workspace-page .loading')).toHaveCount(0);
+    await expect(page.locator('.cost-center-activity-report')).toBeVisible();
+    await expect(page.locator('.cost-center-activity-table tbody tr')).toHaveCount(7);
+    await auditCurrentInterface(page, locale, 'cost-center-activity');
+    await page.locator('.account-drilldown').first().click();
+    await expect(page.locator('.ledger-panel')).toBeVisible();
+    await expect(page.locator('.ledger-panel')).toContainText('CC-000001');
+    await auditCurrentInterface(page, locale, 'cost-center-ledger');
+
+    expect.soft(runtimeErrors, `${locale} cost-center activity runtime errors`).toEqual([]);
   });
 
   test(`${locale}: sales and purchase invoice editors stay contained and accessible`, async ({ page }) => {

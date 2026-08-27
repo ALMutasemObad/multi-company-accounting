@@ -7,6 +7,7 @@ import { enReconciliation } from "./reconciliation";
 import { enFinancialClose } from "./financial-close";
 import { enCashFlow } from "./cash-flow";
 import { enTaxSummary } from "./tax-summary";
+import { enCostCenterActivity } from "./cost-center-activity";
 
 export const en = {
   ...enDomain,
@@ -15,6 +16,7 @@ export const en = {
   ...enFinancialClose,
   ...enCashFlow,
   ...enTaxSummary,
+  ...enCostCenterActivity,
   "language.label": "Language",
   "branding.name": "Multi-company accounting system",
   "branding.shortName": "Accounting platform",

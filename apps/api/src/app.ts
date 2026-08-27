@@ -27,6 +27,7 @@ import { createPaymentRouter } from './payments/payment-router.js';
 import type { ReportService } from './reports/report-service.js';
 import type { CashFlowService } from './reports/cash-flow-service.js';
 import type { TaxSummaryService } from './reports/tax-summary-service.js';
+import type { CostCenterActivityService } from './reports/cost-center-activity-service.js';
 import { createReportRouter } from './reports/report-router.js';
 import type { CompanyService } from './companies/company-service.js';
 import { createCompanyRouter } from './companies/company-router.js';
@@ -116,7 +117,7 @@ function clientRequestProblem(error: unknown): ClientRequestProblem | undefined 
   return undefined;
 }
 
-export function createApp(config: AppConfig, services: { readiness?: ReadinessCheck; metrics?: OperationalMetrics; auth?: AuthService; registration?: RegistrationService; passwordReset?: PasswordResetService; users?: UserService; companies?: CompanyService; printing?: PrintService; audit?: AuditService; security?: SecurityEventService; fiscal?: FiscalService; financialClose?: FinancialCloseService; accounts?: AccountService; journals?: ManualJournalService; receiptReferences?: ReceiptReferenceService; treasury?: TreasuryService; bankReconciliation?: BankReconciliationService; inventory?: InventoryService; inventoryCatalog?: InventoryCatalogService; inventoryMovements?: InventoryMovementService; receipts?: ReceiptService; suppliers?: SupplierReferenceService; payments?: PaymentService; reports?: ReportService; cashFlow?: CashFlowService; taxSummary?: TaxSummaryService; taxes?: TaxService; salesInvoices?: SalesInvoiceService; purchaseInvoices?: PurchaseInvoiceService; dataImports?: DataImportService } = {}) {
+export function createApp(config: AppConfig, services: { readiness?: ReadinessCheck; metrics?: OperationalMetrics; auth?: AuthService; registration?: RegistrationService; passwordReset?: PasswordResetService; users?: UserService; companies?: CompanyService; printing?: PrintService; audit?: AuditService; security?: SecurityEventService; fiscal?: FiscalService; financialClose?: FinancialCloseService; accounts?: AccountService; journals?: ManualJournalService; receiptReferences?: ReceiptReferenceService; treasury?: TreasuryService; bankReconciliation?: BankReconciliationService; inventory?: InventoryService; inventoryCatalog?: InventoryCatalogService; inventoryMovements?: InventoryMovementService; receipts?: ReceiptService; suppliers?: SupplierReferenceService; payments?: PaymentService; reports?: ReportService; cashFlow?: CashFlowService; taxSummary?: TaxSummaryService; costCenterActivity?: CostCenterActivityService; taxes?: TaxService; salesInvoices?: SalesInvoiceService; purchaseInvoices?: PurchaseInvoiceService; dataImports?: DataImportService } = {}) {
   const app = express();
   const metrics = services.metrics ?? operationalMetrics;
 
@@ -218,7 +219,7 @@ export function createApp(config: AppConfig, services: { readiness?: ReadinessCh
   if (services.auth && services.taxes) app.use('/api/v1', createTaxRouter(services.auth, services.taxes));
   if (services.auth && services.salesInvoices) app.use('/api/v1', createSalesInvoiceRouter(services.auth, services.salesInvoices));
   if (services.auth && services.purchaseInvoices) app.use('/api/v1', createPurchaseInvoiceRouter(services.auth, services.purchaseInvoices));
-  if (services.auth && services.reports) app.use('/api/v1', createReportRouter(services.auth, services.reports, services.cashFlow, services.taxSummary));
+  if (services.auth && services.reports) app.use('/api/v1', createReportRouter(services.auth, services.reports, services.cashFlow, services.taxSummary, services.costCenterActivity));
   if (services.auth && services.dataImports) app.use('/api/v1', createDataImportRouter(services.auth, services.dataImports));
 
   if (config.NODE_ENV === 'production' || config.SERVE_WEB_ASSETS) {

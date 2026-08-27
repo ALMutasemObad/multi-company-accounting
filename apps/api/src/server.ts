@@ -52,6 +52,8 @@ import { PrismaCashFlowLedgerQueryAdapter } from './reports/adapters/prisma-cash
 import { TreasuryCashFlowAccountAdapter } from './treasury/cash-flow-account-adapter.js';
 import { TaxSummaryService } from './reports/tax-summary-service.js';
 import { PrismaTaxSummaryQueryAdapter } from './reports/adapters/prisma-tax-summary-query-adapter.js';
+import { CostCenterActivityService } from './reports/cost-center-activity-service.js';
+import { PrismaCostCenterActivityLedgerQueryAdapter } from './reports/adapters/prisma-cost-center-activity-ledger-query-adapter.js';
 
 const config = loadConfig();
 if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required to start the API');
@@ -166,6 +168,7 @@ const app = createApp(config, {
   reports: new ReportService(database),
   cashFlow: new CashFlowService(database, new PrismaCashFlowLedgerQueryAdapter(), new TreasuryCashFlowAccountAdapter()),
   taxSummary: new TaxSummaryService(database, new PrismaTaxSummaryQueryAdapter()),
+  costCenterActivity: new CostCenterActivityService(database, new PrismaCostCenterActivityLedgerQueryAdapter()),
   taxes,
   salesInvoices,
   purchaseInvoices,

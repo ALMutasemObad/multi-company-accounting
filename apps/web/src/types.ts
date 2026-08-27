@@ -785,6 +785,28 @@ export type TaxSummaryReport = {
   }>;
 };
 
+export type CostCenterActivityReport = {
+  range: { dateFrom: string; dateTo: string };
+  filter: { costCenterId: string | null; basis: "POSTED_LEDGER" };
+  company: { name: string };
+  baseCurrency: { id: string; code: string; nameAr: string; decimals: number };
+  data: Array<{
+    costCenter: { id: string; parentId: string | null; code: string; nameAr: string; nameEn: string | null };
+    accounts: Array<{
+      accountId: string;
+      code: string;
+      nameAr: string;
+      nameEn: string | null;
+      movementLineCount: number;
+      debit: string;
+      credit: string;
+      net: string;
+    }>;
+    totals: { movementLineCount: number; debit: string; credit: string; net: string };
+  }>;
+  totals: { costCenterCount: number; accountCount: number; movementLineCount: number; debit: string; credit: string; net: string };
+};
+
 export type TrialBalanceRow = {
   accountId: string;
   code: string;
@@ -867,6 +889,7 @@ export type LedgerReport = {
   company: { name: string };
   baseCurrency: { id: string; code: string; nameAr: string; decimals: number };
   subject: { id: string; code: string; nameAr: string; nameEn: string | null; type: "ACCOUNT" | "CUSTOMER" | "SUPPLIER" };
+  costCenter: { id: string; code: string; nameAr: string; nameEn: string | null } | null;
   range: { dateFrom: string; dateTo: string };
   openingDebit: string;
   openingCredit: string;

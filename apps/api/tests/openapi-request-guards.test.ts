@@ -22,7 +22,7 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 205, requestBodies: 105, responseBodies: 1385 });
+    expect(openApiContractCoverage).toEqual({ operations: 207, requestBodies: 105, responseBodies: 1395 });
     expect(guardedOpenApiOperations).toHaveLength(105);
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
       'login', 'createUser', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'initializeInventoryBalanceValuation', 'reverseInventoryMovement', 'previewDataImport', 'commitDataImport', 'previewBankStatement', 'commitBankStatementImport', 'createBankReconciliationSession', 'generateBankReconciliationSuggestions', 'approveBankReconciliationMatch', 'createManualBankReconciliationMatch', 'releaseBankReconciliationMatch', 'classifyBankStatementLine', 'closeBankReconciliationSession', 'startFinancialCloseRun', 'refreshFinancialCloseRun', 'reviewFinancialCloseRun', 'returnFinancialCloseRun', 'updateCashFlowMapping',

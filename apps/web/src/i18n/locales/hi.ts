@@ -3,12 +3,14 @@ import { hiReconciliation } from "./reconciliation";
 import { hiFinancialClose } from "./financial-close";
 import { hiCashFlow } from "./cash-flow";
 import { hiTaxSummary } from "./tax-summary";
+import { hiCostCenterActivity } from "./cost-center-activity";
 
 export const hi = {
   ...hiReconciliation,
   ...hiFinancialClose,
   ...hiCashFlow,
   ...hiTaxSummary,
+  ...hiCostCenterActivity,
   "referencePicker.loading": "खोज जारी है…",
   "referencePicker.empty": "कोई मिलता-जुलता परिणाम नहीं मिला।",
   "referencePicker.more": "और परिणाम लोड करें",

@@ -3,12 +3,14 @@ import { urReconciliation } from "./reconciliation";
 import { urFinancialClose } from "./financial-close";
 import { urCashFlow } from "./cash-flow";
 import { urTaxSummary } from "./tax-summary";
+import { urCostCenterActivity } from "./cost-center-activity";
 
 export const ur = {
   ...urReconciliation,
   ...urFinancialClose,
   ...urCashFlow,
   ...urTaxSummary,
+  ...urCostCenterActivity,
   "referencePicker.loading": "تلاش جاری ہے…",
   "referencePicker.empty": "کوئی مماثل نتیجہ نہیں ملا۔",
   "referencePicker.more": "مزید نتائج لوڈ کریں",

@@ -58,7 +58,7 @@ const routers = [
   { prefix: '', router: createTaxRouter(stub, stub) },
   { prefix: '', router: createSalesInvoiceRouter(stub, stub) },
   { prefix: '', router: createPurchaseInvoiceRouter(stub, stub) },
-  { prefix: '', router: createReportRouter(stub, stub, stub, stub) },
+  { prefix: '', router: createReportRouter(stub, stub, stub, stub, stub) },
   { prefix: '', router: createDataImportRouter(stub, stub) },
 ] as const;
 

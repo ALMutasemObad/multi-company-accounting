@@ -109,12 +109,35 @@ function responseFor(url, method) {
       { usage: "INPUT", documentType: "PURCHASE_INVOICE", status: "POSTED", taxRateId: "tax-input-qa", taxCode: "VAT-IN-15", taxNameAr: "ضريبة المدخلات 15%", rate: "15.0000", documentCount: 17, taxableBase: "360000.0000", taxBase: "54000.0000" },
     ],
   };
+  if (pathname === "/reports/cost-centers") return {
+    range: { dateFrom: "2026-01-01", dateTo: "2026-12-31" },
+    filter: { costCenterId: null, basis: "POSTED_LEDGER" },
+    company: { name: company.name }, baseCurrency: currency,
+    data: [
+      {
+        costCenter: { id: "cost-center-operations", code: "CC-000001", nameAr: "العمليات", nameEn: "Operations" },
+        accounts: [
+          { accountId: "account-rent", code: "5210", nameAr: "مصروف الإيجار", nameEn: "Rent expense", movementLineCount: 12, debit: "120000.0000", credit: "0.0000", net: "120000.0000" },
+          { accountId: "account-maintenance", code: "5230", nameAr: "مصروف الصيانة", nameEn: "Maintenance expense", movementLineCount: 8, debit: "42000.0000", credit: "5000.0000", net: "37000.0000" },
+        ],
+        totals: { movementLineCount: 20, debit: "162000.0000", credit: "5000.0000", net: "157000.0000" },
+      },
+      {
+        costCenter: { id: "cost-center-sales", code: "CC-000002", nameAr: "المبيعات", nameEn: "Sales" },
+        accounts: [
+          { accountId: "account-marketing", code: "5310", nameAr: "مصروف التسويق", nameEn: "Marketing expense", movementLineCount: 9, debit: "68000.0000", credit: "3000.0000", net: "65000.0000" },
+        ],
+        totals: { movementLineCount: 9, debit: "68000.0000", credit: "3000.0000", net: "65000.0000" },
+      },
+    ],
+    totals: { costCenterCount: 2, accountCount: 3, movementLineCount: 29, debit: "230000.0000", credit: "8000.0000", net: "222000.0000" },
+  };
   if (pathname === "/reports/cash-flow/mappings") return { data: [] };
   if (pathname === "/reports/trial-balance") return { range: { dateFrom: "2026-01-01", dateTo: "2026-12-31" }, data: [], totals: { debit: "0.00", credit: "0.00" } };
   if (pathname === "/reports/journal") return { range: { dateFrom: "2026-01-01", dateTo: "2026-12-31" }, data: [], meta, totals: { debit: "0.00", credit: "0.00" } };
   if (pathname === "/reports/financial-position") return { asOf: "2026-08-21", comparisonAsOf: null, company: { name: company.name }, baseCurrency: currency, sections: { assets: zeroSection, liabilities: zeroSection, equity: zeroSection }, currentEarnings: "0.00", totals: { assets: "0.00", liabilities: "0.00", equity: "0.00" }, reconciliation: { leftSide: "0.00", rightSide: "0.00", difference: "0.00", balanced: true } };
   if (pathname === "/reports/income-statement") return { range: { dateFrom: "2026-01-01", dateTo: "2026-12-31" }, comparisonRange: null, company: { name: company.name }, baseCurrency: currency, sections: { revenues: zeroSection, expenses: zeroSection }, totals: { revenues: "0.00", expenses: "0.00", netIncome: "0.00", comparisonNetIncome: null } };
-  if (pathname === "/reports/ledger") return { company: { name: company.name }, baseCurrency: currency, subject: { id: "customer-qa", code: "CUS-000001", nameAr: "شركة الأفق", nameEn: "Horizon Company", type: "CUSTOMER" }, range: { dateFrom: "2026-01-01", dateTo: "2026-12-31" }, openingDebit: "12500.00", openingCredit: "0.00", data: [{ id: "ledger-line-1", date: "2026-08-10", documentId: "invoice-qa", documentNumber: "SI-2026-0041", documentType: "SALES_INVOICE", status: "POSTED", description: "فاتورة توريد تجريبية", debit: "45000.00", credit: "0.00", runningDebit: "57500.00", runningCredit: "0.00" }, { id: "ledger-line-2", date: "2026-08-20", documentId: "receipt-qa", documentNumber: "REC-2026-0042", documentType: "RECEIPT", status: "POSTED", description: "تحصيل دفعة فاتورة", debit: "0.00", credit: "30000.00", runningDebit: "27500.00", runningCredit: "0.00" }], meta: { ...meta, total: 2, totalPages: 1 }, closingDebit: "27500.00", closingCredit: "0.00" };
+  if (pathname === "/reports/ledger") return { company: { name: company.name }, baseCurrency: currency, subject: { id: "customer-qa", code: "CUS-000001", nameAr: "شركة الأفق", nameEn: "Horizon Company", type: "CUSTOMER" }, costCenter: url.searchParams.get("costCenterId") ? { id: "cost-center-operations", code: "CC-000001", nameAr: "العمليات", nameEn: "Operations" } : null, range: { dateFrom: "2026-01-01", dateTo: "2026-12-31" }, openingDebit: "12500.00", openingCredit: "0.00", data: [{ id: "ledger-line-1", date: "2026-08-10", documentId: "invoice-qa", documentNumber: "SI-2026-0041", documentType: "SALES_INVOICE", status: "POSTED", description: "فاتورة توريد تجريبية", debit: "45000.00", credit: "0.00", runningDebit: "57500.00", runningCredit: "0.00" }, { id: "ledger-line-2", date: "2026-08-20", documentId: "receipt-qa", documentNumber: "REC-2026-0042", documentType: "RECEIPT", status: "POSTED", description: "تحصيل دفعة فاتورة", debit: "0.00", credit: "30000.00", runningDebit: "27500.00", runningCredit: "0.00" }], meta: { ...meta, total: 2, totalPages: 1 }, closingDebit: "27500.00", closingCredit: "0.00" };
   if (pathname === "/reports/payables-aging" || pathname === "/reports/receivables-aging") return { asOf: "2026-08-21", baseCurrency: currency, data: [], totals: { current: "0.00", days1To30: "0.00", days31To60: "0.00", days61To90: "0.00", daysOver90: "0.00", total: "0.00" } };
   if (pathname === "/units-of-measure") return list([
     { id: "unit-ea", code: "EA", nameAr: "حبة", nameEn: "Each", decimalPlaces: 0, isActive: true, version: 0 },

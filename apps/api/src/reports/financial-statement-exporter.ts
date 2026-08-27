@@ -136,6 +136,56 @@ export function taxSummaryTable(report: {
   ] satisfies Cell[][];
 }
 
+export function costCenterActivityTable(report: {
+  company: { name: string };
+  baseCurrency: { code: string; nameAr: string };
+  range: { dateFrom: string; dateTo: string };
+  data: Array<{
+    costCenter: { code: string; nameAr: string };
+    accounts: Array<{ code: string; nameAr: string; movementLineCount: number; debit: string; credit: string; net: string }>;
+    totals: { movementLineCount: number; debit: string; credit: string; net: string };
+  }>;
+  totals: { costCenterCount: number; accountCount: number; movementLineCount: number; debit: string; credit: string; net: string };
+}) {
+  const rows: Cell[][] = [
+    [{ value: report.company.name, style: 1 }],
+    [{ value: "تقرير حركة مراكز التكلفة الفعلية", style: 1 }],
+    [{ value: `من ${report.range.dateFrom} إلى ${report.range.dateTo}` }, { value: `العملة: ${report.baseCurrency.code}` }],
+    ["رمز مركز التكلفة", "مركز التكلفة", "رمز الحساب", "الحساب", "عدد الحركات", "مدين", "دائن", "الصافي"].map((value) => ({ value, style: 2 })),
+  ];
+  for (const center of report.data) {
+    for (const account of center.accounts) rows.push([
+      { value: center.costCenter.code },
+      { value: center.costCenter.nameAr },
+      { value: account.code },
+      { value: account.nameAr },
+      { value: String(account.movementLineCount), numeric: true, style: 4 },
+      { value: account.debit, numeric: true, style: 4 },
+      { value: account.credit, numeric: true, style: 4 },
+      { value: account.net, numeric: true, style: 4 },
+    ]);
+    rows.push([
+      { value: `إجمالي ${center.costCenter.code} - ${center.costCenter.nameAr}`, style: 3 },
+      { value: "" }, { value: "" }, { value: "" },
+      { value: String(center.totals.movementLineCount), numeric: true, style: 5 },
+      { value: center.totals.debit, numeric: true, style: 5 },
+      { value: center.totals.credit, numeric: true, style: 5 },
+      { value: center.totals.net, numeric: true, style: 5 },
+    ]);
+  }
+  rows.push([
+    { value: "إجمالي الفترة", style: 3 },
+    { value: `${report.totals.costCenterCount} مركز` },
+    { value: `${report.totals.accountCount} حساب` },
+    { value: "" },
+    { value: String(report.totals.movementLineCount), numeric: true, style: 5 },
+    { value: report.totals.debit, numeric: true, style: 5 },
+    { value: report.totals.credit, numeric: true, style: 5 },
+    { value: report.totals.net, numeric: true, style: 5 },
+  ]);
+  return rows;
+}
+
 export function ledgerReportTable(report: {
   company: { name: string };
   baseCurrency: { code: string; nameAr: string };

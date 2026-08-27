@@ -15,6 +15,7 @@ describe("report routes", () => {
       company: { name: "شركة الاختبار" },
       baseCurrency: { id: "1", code: "SAR", nameAr: "ريال سعودي", decimals: 2 },
       subject: { id: "12", code: "CUS-000012", nameAr: "عميل الاختبار", nameEn: null, type: "CUSTOMER" },
+      costCenter: null,
       range: { dateFrom: "2026-01-01", dateTo: "2026-08-11" },
       openingDebit: "0.0000", openingCredit: "0.0000", data: [],
       meta: { page: 1, pageSize: 10_000, total: 0, totalPages: 0 },
@@ -31,10 +32,16 @@ describe("report routes", () => {
       company: { name: "شركة الاختبار" }, baseCurrency: { id: "1", code: "SAR", nameAr: "ريال سعودي", decimals: 2 },
       totals: { outputTaxable: "100.0000", outputTax: "15.0000", inputTaxable: "40.0000", inputTax: "6.0000", netTaxDue: "9.0000", documentCount: 2 }, rows: [],
     });
+    const activity = vi.fn().mockResolvedValue({
+      range: { dateFrom: "2026-01-01", dateTo: "2026-12-31" }, filter: { costCenterId: null, basis: "POSTED_LEDGER" },
+      company: { name: "شركة الاختبار" }, baseCurrency: { id: "1", code: "SAR", nameAr: "ريال سعودي", decimals: 2 },
+      data: [{ costCenter: { id: "31", parentId: null, code: "CC-001", nameAr: "مشروع الاختبار", nameEn: null }, accounts: [{ accountId: "12", code: "5100", nameAr: "مصروف", nameEn: null, movementLineCount: 1, debit: "10.0000", credit: "0.0000", net: "10.0000" }], totals: { movementLineCount: 1, debit: "10.0000", credit: "0.0000", net: "10.0000" } }],
+      totals: { costCenterCount: 1, accountCount: 1, movementLineCount: 1, debit: "10.0000", credit: "0.0000", net: "10.0000" },
+    });
     const app = express();
     app.use(express.json());
-    app.use("/api/v1", createReportRouter({ authorize } as any, { dashboard, trialBalance, financialPosition, incomeStatement, ledger, ledgerExport, journalReport, journalReportExport, recordExport } as any, { cashFlow, listMappings, updateMapping } as any, { summary } as any));
-    return { app, authorize, dashboard, trialBalance, financialPosition, incomeStatement, ledger, ledgerExport, journalReport, journalReportExport, recordExport, cashFlow, listMappings, updateMapping, summary };
+    app.use("/api/v1", createReportRouter({ authorize } as any, { dashboard, trialBalance, financialPosition, incomeStatement, ledger, ledgerExport, journalReport, journalReportExport, recordExport } as any, { cashFlow, listMappings, updateMapping } as any, { summary } as any, { activity } as any));
+    return { app, authorize, dashboard, trialBalance, financialPosition, incomeStatement, ledger, ledgerExport, journalReport, journalReportExport, recordExport, cashFlow, listMappings, updateMapping, summary, activity };
   }
 
   it("requires the dedicated dashboard permission and forwards the company context", async () => {
@@ -67,6 +74,17 @@ describe("report routes", () => {
     expect(recordExport).toHaveBeenCalledWith({ userId: 1n, companyId: 2n }, "TAX_SUMMARY", "CSV", { dateFrom: "2026-01-01", dateTo: "2026-12-31" });
   });
 
+  it("serves and audits cost-center activity exports with dedicated permissions", async () => {
+    const { app, authorize, activity, recordExport } = fixture();
+    await request(app).get("/api/v1/reports/cost-centers?dateFrom=2026-01-01&dateTo=2026-12-31&costCenterId=31").expect(200);
+    const exported = await request(app).get("/api/v1/reports/cost-centers/export/csv?dateFrom=2026-01-01&dateTo=2026-12-31&costCenterId=31").expect(200);
+    expect(exported.headers["content-type"]).toContain("text/csv");
+    expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ permission: "reports.cost_centers.view", requireCsrf: false }));
+    expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ permission: "reports.cost_centers.export", requireCsrf: false }));
+    expect(activity).toHaveBeenCalledWith({ userId: 1n, companyId: 2n }, { dateFrom: "2026-01-01", dateTo: "2026-12-31", costCenterId: 31n });
+    expect(recordExport).toHaveBeenCalledWith({ userId: 1n, companyId: 2n }, "COST_CENTER_ACTIVITY", "CSV", { dateFrom: "2026-01-01", dateTo: "2026-12-31", costCenterId: 31n });
+  });
+
   it("rejects report ranges longer than 366 days", async () => {
     const { app, trialBalance } = fixture();
     await request(app).get("/api/v1/reports/trial-balance?dateFrom=2025-01-01&dateTo=2026-12-31").expect(400);
@@ -78,6 +96,7 @@ describe("report routes", () => {
     await request(app).get("/api/v1/reports/financial-position?asOf=2026-08-11").expect(200);
     await request(app).get("/api/v1/reports/income-statement?dateFrom=2026-01-01&dateTo=2026-08-11").expect(200);
     await request(app).get("/api/v1/reports/ledger?accountId=1&dateFrom=2026-01-01&dateTo=2026-08-11").expect(200);
+    await request(app).get("/api/v1/reports/ledger?accountId=1&costCenterId=31&dateFrom=2026-01-01&dateTo=2026-08-11").expect(200);
     expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ permission: "reports.financial_position.view" }));
     expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ permission: "reports.income_statement.view" }));
     expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ permission: "reports.ledger.view" }));
@@ -88,6 +107,7 @@ describe("report routes", () => {
     const { app, incomeStatement, ledger } = fixture();
     await request(app).get("/api/v1/reports/income-statement?dateFrom=2026-01-01&dateTo=2026-08-11&compareDateFrom=2025-01-01").expect(400);
     await request(app).get("/api/v1/reports/ledger?accountId=1&customerId=2&dateFrom=2026-01-01&dateTo=2026-08-11").expect(400);
+    await request(app).get("/api/v1/reports/ledger?customerId=2&costCenterId=31&dateFrom=2026-01-01&dateTo=2026-08-11").expect(400);
     expect(incomeStatement).not.toHaveBeenCalled(); expect(ledger).not.toHaveBeenCalled();
   });
 

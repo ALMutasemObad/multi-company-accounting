@@ -813,6 +813,14 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", "Noto Sans Devanaga
 .tax-summary-basis strong { color: var(--green-800); }
 .tax-summary-basis span { max-width: 560px; color: var(--muted); font-size: .85rem; text-align: end; }
 .tax-summary-table { min-width: 980px; }
+.cost-center-report-filter { min-width: min(320px, 100%); flex: 1; }
+.cost-center-activity-metrics .metric-card:last-child { border-color: #d7e4de; }
+.cost-center-activity-basis { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin: 0 22px 18px; padding: 14px 16px; border: 1px solid #d7e4de; border-radius: 12px; background: #f5f9f7; }
+.cost-center-activity-basis strong { color: var(--green-800); }
+.cost-center-activity-basis span { color: var(--muted); font-size: .85rem; }
+.cost-center-activity-table { min-width: 760px; }
+.cost-center-activity-table .statement-section-row th { padding: 13px 16px; background: #e8f1ed; color: var(--green-800); text-align: start; }
+.cost-center-activity-table .statement-total-row th { padding: 13px 16px; border-top: 1px solid #cddbd5; background: #f5f8f6; text-align: start; }
 .status-badge.tax-output { background: #e3f2e9; color: #256b4d; }
 .status-badge.tax-input { background: #e8effb; color: #315f99; }
 .ledger-panel { margin-top: 22px; border: 1px solid #b9cec5; }
@@ -940,6 +948,7 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", "Noto Sans Devanaga
   .cash-flow-section { padding-inline: 16px; }
   .tax-summary-basis { flex-direction: column; margin-inline: 16px; }
   .tax-summary-basis span { text-align: start; }
+  .cost-center-activity-basis { align-items: flex-start; flex-direction: column; margin-inline: 16px; }
   .financial-close-workspace { padding-inline: 18px; }
   .close-readiness-banner, .close-pack-note { align-items: stretch; flex-direction: column; }
   .close-run-badge { text-align: start; }

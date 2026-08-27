@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.28.0
+  version: 1.29.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -6713,6 +6713,43 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
       x-permission: reports.financial_statements.export
       security: [{ SessionCookie: [] }]
+  /reports/cost-centers:
+    get:
+      tags: [Reports]
+      summary: حركة مراكز التكلفة الفعلية حسب الفترة والحساب
+      operationId: getCostCenterActivity
+      description: قراءة مشتقة من أسطر دفتر الأستاذ المرحلة والمعكوسة والمسندة إلى مركز تكلفة، مجمعة بعملة الأساس حسب مركز التكلفة والحساب.
+      parameters:
+      - { name: dateFrom, in: query, required: true, schema: { type: string, format: date } }
+      - { name: dateTo, in: query, required: true, schema: { type: string, format: date } }
+      - { name: costCenterId, in: query, required: false, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
+      responses:
+        '200': { description: الحركة الفعلية وإجماليات الفترة, content: { application/json: { schema: { $ref: '#/components/schemas/CostCenterActivityReport' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-permission: reports.cost_centers.view
+      security: [{ SessionCookie: [] }]
+  /reports/cost-centers/export/{format}:
+    get:
+      tags: [Reports]
+      summary: تصدير حركة مراكز التكلفة الفعلية
+      operationId: exportCostCenterActivity
+      parameters:
+      - { name: format, in: path, required: true, schema: { type: string, enum: [csv, xlsx, pdf] } }
+      - { name: dateFrom, in: query, required: true, schema: { type: string, format: date } }
+      - { name: dateTo, in: query, required: true, schema: { type: string, format: date } }
+      - { name: costCenterId, in: query, required: false, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
+      responses:
+        '200': { description: ملف تقرير حركة مراكز التكلفة }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: reports.cost_centers.export
+      security: [{ SessionCookie: [] }]
   /reports/dashboard:
     get:
       tags:
@@ -6951,6 +6988,12 @@ paths:
           pattern: ^[1-9][0-9]*$
           example: '1001'
           description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
+      - name: costCenterId
+        in: query
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+          description: مرشح اختياري لكشف حساب الأستاذ فقط؛ يجب أن ينتمي مركز التكلفة إلى الشركة الحالية.
       - name: dateFrom
         in: query
         required: true
@@ -7001,6 +7044,12 @@ paths:
           type: string
           pattern: ^[1-9][0-9]*$
           description: معرّف المورد.
+      - name: costCenterId
+        in: query
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+          description: مرشح اختياري عند تصدير كشف حساب الأستاذ، ولا يقبل مع العميل أو المورد.
       - name: dateFrom
         in: query
         required: true
@@ -12105,6 +12154,7 @@ components:
       - company
       - baseCurrency
       - subject
+      - costCenter
       - range
       - openingDebit
       - openingCredit
@@ -12128,6 +12178,17 @@ components:
             decimals: { type: integer, minimum: 0, maximum: 8 }
         subject:
           $ref: '#/components/schemas/LedgerReportSubject'
+        costCenter:
+          oneOf:
+          - type: object
+            additionalProperties: false
+            required: [id, code, nameAr, nameEn]
+            properties:
+              id: { $ref: '#/components/schemas/Id' }
+              code: { type: string }
+              nameAr: { type: string }
+              nameEn: { type: [string, 'null'] }
+          - type: 'null'
         range:
           $ref: '#/components/schemas/ReportRange'
         openingDebit:
@@ -12423,6 +12484,94 @@ components:
         rows:
           type: array
           items: { $ref: '#/components/schemas/TaxSummaryRow' }
+    CostCenterActivityAccount:
+      type: object
+      additionalProperties: false
+      required: [accountId, code, nameAr, nameEn, movementLineCount, debit, credit, net]
+      properties:
+        accountId: { $ref: '#/components/schemas/Id' }
+        code: { type: string, maxLength: 40 }
+        nameAr: { type: string, maxLength: 180 }
+        nameEn: { type: [string, 'null'], maxLength: 180 }
+        movementLineCount: { type: integer, minimum: 1 }
+        debit: { $ref: '#/components/schemas/Amount' }
+        credit: { $ref: '#/components/schemas/Amount' }
+        net: { $ref: '#/components/schemas/SignedAmount' }
+    CostCenterActivityGroup:
+      type: object
+      additionalProperties: false
+      required: [costCenter, accounts, totals]
+      properties:
+        costCenter:
+          type: object
+          additionalProperties: false
+          required: [id, parentId, code, nameAr, nameEn]
+          properties:
+            id: { $ref: '#/components/schemas/Id' }
+            parentId:
+              oneOf:
+              - { $ref: '#/components/schemas/Id' }
+              - { type: 'null' }
+            code: { type: string, maxLength: 40 }
+            nameAr: { type: string, maxLength: 160 }
+            nameEn: { type: [string, 'null'], maxLength: 160 }
+        accounts:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/CostCenterActivityAccount' }
+        totals:
+          type: object
+          additionalProperties: false
+          required: [movementLineCount, debit, credit, net]
+          properties:
+            movementLineCount: { type: integer, minimum: 1 }
+            debit: { $ref: '#/components/schemas/Amount' }
+            credit: { $ref: '#/components/schemas/Amount' }
+            net: { $ref: '#/components/schemas/SignedAmount' }
+    CostCenterActivityReport:
+      type: object
+      additionalProperties: false
+      required: [range, filter, company, baseCurrency, data, totals]
+      properties:
+        range: { $ref: '#/components/schemas/ReportRange' }
+        filter:
+          type: object
+          additionalProperties: false
+          required: [costCenterId, basis]
+          properties:
+            costCenterId:
+              oneOf:
+              - { $ref: '#/components/schemas/Id' }
+              - { type: 'null' }
+            basis: { type: string, enum: [POSTED_LEDGER] }
+        company:
+          type: object
+          additionalProperties: false
+          required: [name]
+          properties: { name: { type: string } }
+        baseCurrency:
+          type: object
+          additionalProperties: false
+          required: [id, code, nameAr, decimals]
+          properties:
+            id: { $ref: '#/components/schemas/Id' }
+            code: { type: string, pattern: '^[A-Z]{3}$' }
+            nameAr: { type: string }
+            decimals: { type: integer, minimum: 0, maximum: 8 }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/CostCenterActivityGroup' }
+        totals:
+          type: object
+          additionalProperties: false
+          required: [costCenterCount, accountCount, movementLineCount, debit, credit, net]
+          properties:
+            costCenterCount: { type: integer, minimum: 0 }
+            accountCount: { type: integer, minimum: 0 }
+            movementLineCount: { type: integer, minimum: 0 }
+            debit: { $ref: '#/components/schemas/Amount' }
+            credit: { $ref: '#/components/schemas/Amount' }
+            net: { $ref: '#/components/schemas/SignedAmount' }
     CashFlowMonth:
       type: object
       required: [month, receipts, payments, net]
