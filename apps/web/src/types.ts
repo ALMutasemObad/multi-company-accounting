@@ -101,6 +101,152 @@ export type CashBankAccount = {
   version: number;
 };
 
+export type BankReconciliationRolloutStage = "OFF" | "SHADOW" | "REVIEW" | "CLOSE";
+export type BankReconciliationCapabilities = {
+  enabled: boolean;
+  stage: BankReconciliationRolloutStage;
+  canImport: boolean;
+  canSuggest: boolean;
+  canReview: boolean;
+  canClose: boolean;
+};
+export type BankStatementFormat = "CSV" | "CAMT053";
+export type BankStatementDirection = "CREDIT" | "DEBIT";
+export type BankStatementCsvProfile = {
+  delimiter: "," | ";" | "\t";
+  dateFormat: "YYYY-MM-DD" | "DD/MM/YYYY" | "MM/DD/YYYY";
+  decimalSeparator: "." | ",";
+  thousandsSeparator?: "," | "." | " ";
+  defaultCurrency: string;
+  accountIdentifier?: string;
+  positiveAmountDirection?: BankStatementDirection;
+  columns: {
+    bookingDate: string;
+    valueDate?: string;
+    amount?: string;
+    debit?: string;
+    credit?: string;
+    currency?: string;
+    externalId?: string;
+    reference?: string;
+    description?: string;
+  };
+};
+export type BankStatementFileRequest = {
+  cashBankAccountId: string;
+  format: BankStatementFormat;
+  contentBase64: string;
+  fileName?: string;
+  csvProfile?: BankStatementCsvProfile;
+  expectedAccountIdentifier?: string;
+  expectedCurrency?: string;
+};
+export type BankStatementPreviewLine = {
+  sourceRowNumber: number;
+  bookingDate: string;
+  valueDate: string | null;
+  amount: string;
+  direction: BankStatementDirection;
+  currency: string;
+  fingerprintSha256: string;
+  externalId: string | null;
+  reference: string | null;
+  description: string | null;
+};
+export type NormalizedBankStatementPreview = {
+  format: BankStatementFormat;
+  sourceHashSha256: string;
+  statementId: string | null;
+  accountIdentifierMasked: string | null;
+  currency: string;
+  periodStart: string | null;
+  periodEnd: string | null;
+  openingBalance: string | null;
+  closingBalance: string | null;
+  netMovement: string;
+  ignoredEntryCount: number;
+  sourceTimeZoneOffsets: string[];
+  lines: BankStatementPreviewLine[];
+};
+export type BankReconciliationCashAccountReference = { id: string; code: string; nameAr: string };
+export type BankStatementImport = {
+  id: string;
+  cashBankAccount: BankReconciliationCashAccountReference;
+  format: BankStatementFormat;
+  sourceHashSha256: string;
+  statementId: string | null;
+  accountIdentifierMasked: string | null;
+  currency: string;
+  periodStart: string;
+  periodEnd: string;
+  openingBalance: string | null;
+  closingBalance: string | null;
+  netMovement: string;
+  lineCount: number;
+  ignoredEntryCount: number;
+  status: "COMMITTED" | "CANCELLED";
+  version: number;
+  committedAt: string;
+  cancelledAt: string | null;
+  createdAt: string;
+};
+export type BankStatementLineClassification = "PENDING_TRANSACTION" | "BANK_FEE" | "BANK_INTEREST" | "BANK_ERROR" | "NEEDS_ACCOUNTING_DOCUMENT";
+export type BankStatementLine = BankStatementPreviewLine & {
+  id: string;
+  classification: BankStatementLineClassification | null;
+  classificationNote: string | null;
+  classifiedAt: string | null;
+  version: number;
+};
+export type BankReconciliationBookMovement = {
+  key: string;
+  occurredOn: string;
+  amount: string;
+  currency: string;
+  reference: string | null;
+  documentType: string;
+  documentNumber: string;
+  matched?: boolean;
+};
+export type BankReconciliationMatch = {
+  id: string;
+  bankStatementLineId: string;
+  bookMovement: BankReconciliationBookMovement;
+  status: "PROPOSED" | "APPROVED" | "RELEASED";
+  source: "SUGGESTED" | "MANUAL";
+  rule: "EXACT_REFERENCE_AMOUNT_CURRENCY" | "EXACT_AMOUNT_CURRENCY_DATE" | "MANUAL";
+  score: number;
+  version: number;
+  approvedAt: string | null;
+  releasedAt: string | null;
+  releaseReason: string | null;
+  createdAt: string;
+};
+export type BankReconciliationSession = {
+  id: string;
+  statementImportId: string;
+  cashBankAccount: BankReconciliationCashAccountReference;
+  dateFrom: string;
+  dateTo: string;
+  currency: string;
+  bankOpeningBalance: string | null;
+  bankClosingBalance: string | null;
+  bankNetMovement: string;
+  bookOpeningBalance: string;
+  bookClosingBalance: string;
+  bookNetMovement: string;
+  difference: string;
+  status: "OPEN" | "CLOSED";
+  version: number;
+  closedAt: string | null;
+  closingExplanation: string | null;
+  createdAt: string;
+};
+export type BankReconciliationSessionDetail = BankReconciliationSession & {
+  lines: BankStatementLine[];
+  matches: BankReconciliationMatch[];
+};
+
 export type Warehouse = {
   id: string;
   code: string;

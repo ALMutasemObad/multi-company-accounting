@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { Router, type ErrorRequestHandler, type Request } from "express";
 import { z, ZodError } from "zod";
 import type { AuthService } from "../../auth/auth-service.js";
+import { AuthError } from "../../auth/auth-service.js";
 import { openApiRequestBodySchemas as bodies } from "../../generated/openapi-request-guards.js";
 import { BankStatementParseError } from "./bank-statement-parser.js";
 import {
@@ -9,6 +10,7 @@ import {
   type BankStatementFileInput,
   BankReconciliationService,
 } from "./reconciliation-service.js";
+import { BankReconciliationRolloutPolicy, type BankReconciliationRolloutStage } from "./reconciliation-rollout.js";
 
 const bigintId = z.string().regex(/^[1-9][0-9]*$/u).transform(BigInt);
 const uuid = z.string().uuid();
@@ -42,6 +44,7 @@ function fileInput(input: {
 export function createBankReconciliationRouter(
   auth: AuthService,
   service: BankReconciliationService,
+  rollout: BankReconciliationRolloutPolicy = new BankReconciliationRolloutPolicy(true, "*", "CLOSE"),
 ) {
   const router = Router();
   const authorize = (request: Request, permission: string, csrf: boolean) =>
@@ -52,9 +55,49 @@ export function createBankReconciliationRouter(
       requireCsrf: csrf,
     });
   const key = (request: Request) => idempotencyKey.parse(request.header("Idempotency-Key"));
+  const stagedAuthorize = async (
+    request: Request,
+    permission: string,
+    csrf: boolean,
+    stage: Exclude<BankReconciliationRolloutStage, "OFF">,
+  ) => {
+    const context = await authorize(request, permission, csrf);
+    rollout.require(context.companyId, stage);
+    return context;
+  };
+  const hasPermission = async (request: Request, permission: string) => {
+    try {
+      await authorize(request, permission, false);
+      return true;
+    } catch (error) {
+      if (error instanceof AuthError && error.reason === "FORBIDDEN") return false;
+      throw error;
+    }
+  };
+
+  router.get("/bank-reconciliation/capabilities", async (request, response) => {
+    const context = await authorize(request, "bank_reconciliation.view", false);
+    const capability = rollout.capability(context.companyId);
+    const [canImport, canSuggest, canReview, canClose] = capability.enabled
+      ? await Promise.all([
+          hasPermission(request, "bank_reconciliation.import"),
+          hasPermission(request, "bank_reconciliation.review"),
+          hasPermission(request, "bank_reconciliation.review"),
+          hasPermission(request, "bank_reconciliation.close"),
+        ])
+      : [false, false, false, false];
+    response.json({
+      enabled: capability.enabled,
+      stage: capability.stage,
+      canImport: capability.stage !== "OFF" && canImport,
+      canSuggest: capability.stage !== "OFF" && canSuggest,
+      canReview: ["REVIEW", "CLOSE"].includes(capability.stage) && canReview,
+      canClose: capability.stage === "CLOSE" && canClose,
+    });
+  });
 
   router.get("/bank-statement-imports", async (request, response) => {
-    const context = await authorize(request, "bank_reconciliation.view", false);
+    const context = await stagedAuthorize(request, "bank_reconciliation.view", false, "SHADOW");
     const input = page.parse(request.query);
     const result = await service.listImports(context, input);
     response.json({
@@ -68,14 +111,14 @@ export function createBankReconciliationRouter(
   });
 
   router.post("/bank-statement-imports/preview", async (request, response) => {
-    const context = await authorize(request, "bank_reconciliation.import", true);
+    const context = await stagedAuthorize(request, "bank_reconciliation.import", true, "SHADOW");
     response.json(await service.preview(context, fileInput(
       bodies.previewBankStatement.parse(request.body),
     )));
   });
 
   router.post("/bank-statement-imports", async (request, response) => {
-    const context = await authorize(request, "bank_reconciliation.import", true);
+    const context = await stagedAuthorize(request, "bank_reconciliation.import", true, "SHADOW");
     response.status(201).json(await service.commitImport(
       context,
       fileInput(bodies.commitBankStatementImport.parse(request.body)),
@@ -84,12 +127,12 @@ export function createBankReconciliationRouter(
   });
 
   router.get("/bank-statement-imports/:importId", async (request, response) => {
-    const context = await authorize(request, "bank_reconciliation.view", false);
+    const context = await stagedAuthorize(request, "bank_reconciliation.view", false, "SHADOW");
     response.json(await service.getImport(context, uuid.parse(request.params.importId)));
   });
 
   router.get("/bank-reconciliation/sessions", async (request, response) => {
-    const context = await authorize(request, "bank_reconciliation.view", false);
+    const context = await stagedAuthorize(request, "bank_reconciliation.view", false, "SHADOW");
     const input = page.extend({ status: z.enum(["OPEN", "CLOSED"]).optional() }).parse(request.query);
     const result = await service.listSessions(context, input);
     response.json({
@@ -104,7 +147,7 @@ export function createBankReconciliationRouter(
   });
 
   router.post("/bank-reconciliation/sessions", async (request, response) => {
-    const context = await authorize(request, "bank_reconciliation.review", true);
+    const context = await stagedAuthorize(request, "bank_reconciliation.review", true, "SHADOW");
     response.status(201).json(await service.createSession(
       context,
       bodies.createBankReconciliationSession.parse(request.body),
@@ -113,17 +156,17 @@ export function createBankReconciliationRouter(
   });
 
   router.get("/bank-reconciliation/sessions/:sessionId", async (request, response) => {
-    const context = await authorize(request, "bank_reconciliation.view", false);
+    const context = await stagedAuthorize(request, "bank_reconciliation.view", false, "SHADOW");
     response.json(await service.getSession(context, uuid.parse(request.params.sessionId)));
   });
 
   router.get("/bank-reconciliation/sessions/:sessionId/book-movements", async (request, response) => {
-    const context = await authorize(request, "bank_reconciliation.view", false);
+    const context = await stagedAuthorize(request, "bank_reconciliation.view", false, "SHADOW");
     response.json({ data: await service.listBookMovements(context, uuid.parse(request.params.sessionId)) });
   });
 
   router.post("/bank-reconciliation/sessions/:sessionId/suggestions", async (request, response) => {
-    const context = await authorize(request, "bank_reconciliation.review", true);
+    const context = await stagedAuthorize(request, "bank_reconciliation.review", true, "SHADOW");
     response.json(await service.generateSuggestions(
       context,
       uuid.parse(request.params.sessionId),
@@ -133,7 +176,7 @@ export function createBankReconciliationRouter(
   });
 
   router.post("/bank-reconciliation/sessions/:sessionId/matches/manual", async (request, response) => {
-    const context = await authorize(request, "bank_reconciliation.review", true);
+    const context = await stagedAuthorize(request, "bank_reconciliation.review", true, "REVIEW");
     response.status(201).json(await service.manualMatch(
       context,
       uuid.parse(request.params.sessionId),
@@ -143,7 +186,7 @@ export function createBankReconciliationRouter(
   });
 
   router.post("/bank-reconciliation/sessions/:sessionId/matches/:matchId/approve", async (request, response) => {
-    const context = await authorize(request, "bank_reconciliation.review", true);
+    const context = await stagedAuthorize(request, "bank_reconciliation.review", true, "REVIEW");
     response.json(await service.approveSuggestion(
       context,
       uuid.parse(request.params.sessionId),
@@ -154,7 +197,7 @@ export function createBankReconciliationRouter(
   });
 
   router.post("/bank-reconciliation/sessions/:sessionId/matches/:matchId/release", async (request, response) => {
-    const context = await authorize(request, "bank_reconciliation.review", true);
+    const context = await stagedAuthorize(request, "bank_reconciliation.review", true, "REVIEW");
     response.json(await service.releaseMatch(
       context,
       uuid.parse(request.params.sessionId),
@@ -165,7 +208,7 @@ export function createBankReconciliationRouter(
   });
 
   router.post("/bank-reconciliation/sessions/:sessionId/lines/:lineId/classify", async (request, response) => {
-    const context = await authorize(request, "bank_reconciliation.review", true);
+    const context = await stagedAuthorize(request, "bank_reconciliation.review", true, "REVIEW");
     response.json(await service.classifyLine(
       context,
       uuid.parse(request.params.sessionId),
@@ -176,7 +219,7 @@ export function createBankReconciliationRouter(
   });
 
   router.post("/bank-reconciliation/sessions/:sessionId/close", async (request, response) => {
-    const context = await authorize(request, "bank_reconciliation.close", true);
+    const context = await stagedAuthorize(request, "bank_reconciliation.close", true, "CLOSE");
     response.json(await service.closeSession(
       context,
       uuid.parse(request.params.sessionId),
@@ -206,9 +249,14 @@ export function createBankReconciliationRouter(
             ].includes(reason)
             ? 409
             : 422;
-      response.status(status).json({
-        status,
-        code: status === 409 ? "CONFLICT" : "BUSINESS_RULE_VIOLATION",
+      const code = reason === "FEATURE_NOT_AVAILABLE"
+        ? "FORBIDDEN"
+        : status === 409
+          ? "CONFLICT"
+          : "BUSINESS_RULE_VIOLATION";
+      response.status(reason === "FEATURE_NOT_AVAILABLE" ? 403 : status).json({
+        status: reason === "FEATURE_NOT_AVAILABLE" ? 403 : status,
+        code,
         reason,
         ...(error instanceof BankStatementParseError && error.sourceRowNumber !== undefined
           ? { sourceRowNumber: error.sourceRowNumber }

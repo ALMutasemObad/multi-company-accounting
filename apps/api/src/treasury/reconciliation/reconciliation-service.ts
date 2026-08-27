@@ -33,7 +33,8 @@ export type BankReconciliationErrorReason =
   | "MATCH_FACT_CHANGED"
   | "AMOUNT_OR_CURRENCY_MISMATCH"
   | "UNRESOLVED_LINES"
-  | "CLOSING_EXPLANATION_REQUIRED";
+  | "CLOSING_EXPLANATION_REQUIRED"
+  | "FEATURE_NOT_AVAILABLE";
 
 export class BankReconciliationError extends Error {
   constructor(public readonly reason: BankReconciliationErrorReason) {

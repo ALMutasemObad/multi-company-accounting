@@ -1,6 +1,8 @@
 import type { ar } from "./ar";
+import { urReconciliation } from "./reconciliation";
 
 export const ur = {
+  ...urReconciliation,
   "referencePicker.loading": "تلاش جاری ہے…",
   "referencePicker.empty": "کوئی مماثل نتیجہ نہیں ملا۔",
   "referencePicker.more": "مزید نتائج لوڈ کریں",

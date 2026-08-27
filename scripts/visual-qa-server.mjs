@@ -43,6 +43,10 @@ function responseFor(url, method) {
     { id: "currency-usd", code: "USD", nameAr: "دولار أمريكي", nameEn: "US Dollar", decimals: 2, isBase: false, isCustom: false, isEnabled: false, latestExchangeRate: null, latestExchangeRateDate: null },
   ] };
   if (pathname === "/exchange-rates") return list([{ id: "rate-yer", currency: { id: "currency-yer", code: "YER", nameAr: "ريال يمني", nameEn: "Yemeni Rial" }, rateDate: "2026-08-21", rate: "0.00610000", source: "Visual QA", updatedAt: "2026-08-21T12:00:00.000Z", updatedBy: { id: "user-qa", displayName: "مدير النظام" } }]);
+  if (pathname === "/bank-reconciliation/capabilities") return { enabled: true, stage: "CLOSE", canImport: true, canSuggest: true, canReview: true, canClose: true };
+  if (pathname === "/cash-bank-accounts") return list([{ id: "bank-qa", ledgerAccountId: "account-bank-qa", code: "CB-000001", nameAr: "الحساب البنكي التجريبي", nameEn: "Demo bank account", accountType: "BANK", bankName: "Jowar Test Bank", accountNumberMasked: "****2042", ibanMasked: null, isActive: true, version: 0 }]);
+  if (pathname === "/bank-statement-imports") return list([]);
+  if (pathname === "/bank-reconciliation/sessions") return list([]);
   if (pathname === "/audit-logs/options") return { actions: ["CREATE", "UPDATE"], entityTypes: ["COMPANY", "CURRENCY"], users: [{ id: "user-qa", name: "مدير النظام", email: "qa@example.test" }] };
   if (pathname === "/security-events/options") return { eventTypes: ["LOGIN_SUCCEEDED", "LOGIN_FAILED"], users: [{ id: "user-qa", name: "مدير النظام", email: "qa@example.test" }] };
   if (pathname === "/security-events/summary") return { last24Hours: { info: 3, warning: 1, high: 0, critical: 0 }, unacknowledgedAlerts: 1, latestCriticalAt: null };

@@ -1,7 +1,7 @@
 ---
 title: "Bank Reconciliation Backend"
-status: "phase 2 implemented locally"
-version: "1.0"
+status: "phase 2 implemented locally — phase 3 UI completed separately"
+version: "1.1"
 last_updated: "2026-08-27"
 related:
   - "HYBRID_MODULE_EXECUTION_PLAN_AR.md"
@@ -9,13 +9,14 @@ related:
   - "TREASURY_CONTEXT_OWNERSHIP_AR.md"
   - "CONCURRENCY_DEADLOCK_DEADLINE_POLICY_AR.md"
   - "OPENAPI_EXECUTABLE_CONTRACTS_AR.md"
+  - "BANK_RECONCILIATION_UI_ROLLOUT_AR.md"
 ---
 
 # Backend المطابقة البنكية 1:1
 
 ## 1. القرار والنطاق
 
-تنفذ المرحلة 2 Backend المطابقة البنكية داخل `Treasury` فقط، خلف `BANK_RECONCILIATION_ENABLED=false` افتراضيًا. تشمل المعاينة والاستيراد والجلسات والاقتراحات والربط اليدوي والاعتماد والفك والتصنيف والإقفال. لا تشمل واجهة مستخدم أو رابط تنقل أو تصدير تقرير أو إطلاقًا تدريجيًا أو نشرًا؛ هذه من المرحلة 3.
+تنفذ المرحلة 2 Backend المطابقة البنكية داخل `Treasury` فقط، خلف `BANK_RECONCILIATION_ENABLED=false` افتراضيًا. تشمل المعاينة والاستيراد والجلسات والاقتراحات والربط اليدوي والاعتماد والفك والتصنيف والإقفال. توثق واجهة المستخدم والتصدير والإطلاق التدريجي المنفذة لاحقًا في [عقد واجهة المطابقة والإطلاق التدريجي](BANK_RECONCILIATION_UI_ROLLOUT_AR.md).
 
 المبدأ الحاكم: القارئ ومحرك المطابقة ومنسق الجلسة لا يكتبون `AccountingDocument` أو `JournalEntry` أو `JournalLine`. يقرأ Adapter محلي القيود المرحلة عبر `ReconciliationLedgerQueryPort`. إذا كشف المستخدم رسمًا أو فائدة أو حركة ناقصة تحتاج أثرًا محاسبيًا، ينشئ المستند من خدمة Receipt/Payment/Manual Journal الحالية، ويظل `PostingEngine` الكاتب الوحيد للـLedger؛ بعدها يعاد توليد الاقتراح أو ينفذ الربط اليدوي.
 

@@ -1,6 +1,8 @@
 import type { ar } from "./ar";
+import { hiReconciliation } from "./reconciliation";
 
 export const hi = {
+  ...hiReconciliation,
   "referencePicker.loading": "खोज जारी है…",
   "referencePicker.empty": "कोई मिलता-जुलता परिणाम नहीं मिला।",
   "referencePicker.more": "और परिणाम लोड करें",

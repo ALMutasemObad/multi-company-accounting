@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.24.0
+  version: 1.25.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -4739,6 +4739,19 @@ paths:
         '422': { $ref: '#/components/responses/BusinessRuleViolation' }
       x-permission: bank_reconciliation.review
       security: [{ SessionCookie: [], CsrfToken: [] }]
+  /bank-reconciliation/capabilities:
+    get:
+      tags: [Bank Reconciliation]
+      summary: عرض إتاحة المطابقة البنكية للشركة الحالية
+      operationId: getBankReconciliationCapabilities
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200': { description: نجاح, content: { application/json: { schema: { $ref: '#/components/schemas/BankReconciliationCapabilities' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: bank_reconciliation.view
+      security: [{ SessionCookie: [] }]
   /bank-reconciliation/sessions/{sessionId}:
     get:
       tags: [Bank Reconciliation]
@@ -9631,6 +9644,20 @@ components:
     BankReconciliationSessionStatus:
       type: string
       enum: [OPEN, CLOSED]
+    BankReconciliationRolloutStage:
+      type: string
+      enum: [OFF, SHADOW, REVIEW, CLOSE]
+    BankReconciliationCapabilities:
+      type: object
+      additionalProperties: false
+      required: [enabled, stage, canImport, canSuggest, canReview, canClose]
+      properties:
+        enabled: { type: boolean }
+        stage: { $ref: '#/components/schemas/BankReconciliationRolloutStage' }
+        canImport: { type: boolean }
+        canSuggest: { type: boolean }
+        canReview: { type: boolean }
+        canClose: { type: boolean }
     BankReconciliationSessionCreateRequest:
       type: object
       additionalProperties: false

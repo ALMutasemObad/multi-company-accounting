@@ -28,6 +28,9 @@ describe('production configuration', () => {
     expect(config.AUTH_RATE_LIMIT_MAX).toBe(20);
     expect(config.REGISTRATION_RATE_LIMIT_MAX).toBe(5);
     expect(config.PASSWORD_RESET_ENABLED).toBe(false);
+    expect(config.BANK_RECONCILIATION_ENABLED).toBe(false);
+    expect(config.BANK_RECONCILIATION_COMPANY_IDS).toBe('');
+    expect(config.BANK_RECONCILIATION_ROLLOUT_STAGE).toBe('OFF');
     expect(config.READINESS_TIMEOUT_MS).toBe(3_000);
     expect(config.OUTBOX_MAX_ATTEMPTS).toBe(8);
     expect(config.OUTBOX_LEASE_MS).toBe(30_000);
@@ -66,6 +69,22 @@ describe('production configuration', () => {
       REGISTRATION_TOKEN_SECRET: 'test-registration-token-secret-1234567890',
     });
     expect(config.REGISTRATION_EMAIL_MODE).toBe('resend');
+  });
+
+  it('requires an explicit production company allowlist for bank reconciliation', () => {
+    const production = {
+      NODE_ENV: 'production',
+      DATABASE_URL: 'mysql://runtime:secret@db.internal/mcap',
+      WEB_ORIGIN: 'https://finance.example.com',
+      SESSION_COOKIE_SECURE: 'true',
+      TRUST_PROXY: 'true',
+      SELF_REGISTRATION_ENABLED: 'false',
+      BANK_RECONCILIATION_ENABLED: 'true',
+      BANK_RECONCILIATION_ROLLOUT_STAGE: 'SHADOW',
+    } as const;
+    expect(() => loadConfig(production)).toThrow(/BANK_RECONCILIATION_COMPANY_IDS|allowlist/);
+    expect(() => loadConfig({ ...production, BANK_RECONCILIATION_COMPANY_IDS: '*' })).toThrow(/Wildcard/);
+    expect(loadConfig({ ...production, BANK_RECONCILIATION_COMPANY_IDS: '42' }).BANK_RECONCILIATION_ROLLOUT_STAGE).toBe('SHADOW');
   });
 
   it('requires a real email provider and token secret when password reset is enabled', () => {

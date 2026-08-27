@@ -3,10 +3,12 @@ import { enPages } from "./en-pages";
 import { enDomain } from "./en-domain";
 import { enEvents } from "./en-events";
 import { enPageOverrides } from "./en-page-overrides";
+import { enReconciliation } from "./reconciliation";
 
 export const en = {
   ...enDomain,
   ...enEvents,
+  ...enReconciliation,
   "language.label": "Language",
   "branding.name": "Multi-company accounting system",
   "branding.shortName": "Accounting platform",

@@ -1,10 +1,12 @@
 import { arPages } from "./ar-pages";
 import { arDomain } from "./ar-domain";
 import { arEvents } from "./ar-events";
+import { arReconciliation } from "./reconciliation";
 
 export const ar = {
   ...arDomain,
   ...arEvents,
+  ...arReconciliation,
   "language.label": "اللغة",
   "branding.name": "النظام المحاسبي متعدد الشركات",
   "branding.shortName": "منصة المحاسبة",

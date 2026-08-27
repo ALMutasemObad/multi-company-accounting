@@ -72,6 +72,7 @@ import type { InventoryMovementService } from './inventory/inventory-movement-se
 import { createInventoryMovementRouter } from './inventory/inventory-movement-router.js';
 import type { BankReconciliationService } from './treasury/reconciliation/reconciliation-service.js';
 import { createBankReconciliationRouter } from './treasury/reconciliation/reconciliation-router.js';
+import { BankReconciliationRolloutPolicy } from './treasury/reconciliation/reconciliation-rollout.js';
 
 type ClientRequestProblem = {
   status: number;
@@ -196,7 +197,15 @@ export function createApp(config: AppConfig, services: { readiness?: ReadinessCh
   if (services.auth && services.journals) app.use('/api/v1', createManualJournalRouter(services.auth, services.journals));
   if (services.auth && services.receiptReferences) app.use('/api/v1', createReceiptReferenceRouter(services.auth, services.receiptReferences));
   if (services.auth && services.treasury) app.use('/api/v1', createTreasuryRouter(services.auth, services.treasury));
-  if (services.auth && services.bankReconciliation) app.use('/api/v1', createBankReconciliationRouter(services.auth, services.bankReconciliation));
+  if (services.auth && services.bankReconciliation) app.use('/api/v1', createBankReconciliationRouter(
+    services.auth,
+    services.bankReconciliation,
+    new BankReconciliationRolloutPolicy(
+      config.BANK_RECONCILIATION_ENABLED ?? false,
+      config.BANK_RECONCILIATION_COMPANY_IDS ?? '',
+      config.BANK_RECONCILIATION_ROLLOUT_STAGE ?? 'OFF',
+    ),
+  ));
   if (services.auth && services.inventory) app.use('/api/v1', createInventoryRouter(services.auth, services.inventory));
   if (services.auth && services.inventoryCatalog) app.use('/api/v1', createInventoryCatalogRouter(services.auth, services.inventoryCatalog));
   if (services.auth && services.inventoryMovements) app.use('/api/v1', createInventoryMovementRouter(services.auth, services.inventoryMovements));

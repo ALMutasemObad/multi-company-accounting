@@ -242,6 +242,23 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
     expect.soft(runtimeErrors, `${locale} inventory catalog runtime errors`).toEqual([]);
   });
 
+  test(`${locale}: bank reconciliation upload workspace stays responsive`, async ({ page }) => {
+    const runtimeErrors: string[] = [];
+    page.on('pageerror', (error) => runtimeErrors.push(error.message));
+    await configureLocale(page, locale);
+    await page.goto('/?qa=treasury#treasury');
+    await waitForStableInterface(page, { name: 'treasury', path: '', ready: '.workspace-page', kind: 'workspace' });
+
+    const tabs = page.locator('.workspace-page > .section-tabs button');
+    await expect(tabs).toHaveCount(3);
+    await tabs.nth(2).click();
+    await expect(page.locator('.reconciliation-workspace')).toBeVisible();
+    await expect(page.locator('.reconciliation-workspace .loading')).toHaveCount(0);
+    await auditCurrentInterface(page, locale, 'bank-reconciliation');
+
+    expect.soft(runtimeErrors, `${locale} bank reconciliation runtime errors`).toEqual([]);
+  });
+
   test(`${locale}: sales and purchase invoice editors stay contained and accessible`, async ({ page }) => {
     const runtimeErrors: string[] = [];
     page.on('pageerror', (error) => runtimeErrors.push(error.message));
