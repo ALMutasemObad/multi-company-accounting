@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.30.0
+  version: 1.31.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -28,6 +28,8 @@ info:
     - يملك Tax نسب الضرائب وحساباتها وسياسة التقريب؛ تحمل تعديلات النسب version متفائلًا لمنع فقد تحديثات المبيعات والمشتريات.
 
     - يملك Treasury حسابات النقد والبنوك وطرق الدفع؛ تستهلك حركات القبض والصرف TreasuryInstrumentPort وتحمل تعديلات المراجع version متفائلًا.
+
+    - يملك محرك الموافقات طلب الموافقة والقرار فقط؛ أول تطبيق يفرض Maker/Checker على مراجعة إقفال الفترة، بينما يبقى Fiscal مالك دورة الإقفال وCore Accounting مالك Ledger.
 
     - تبدأ رحلة Inventory بإدارة المستودعات المعزولة حسب الشركة، مع رموز خادمية ثابتة ونسخ متفائلة، دون أثر على الأستاذ في هذه المرحلة.
 
@@ -78,6 +80,8 @@ tags:
   description: ملخص تشغيلي مشتق حسب الشركة والصلاحيات.
 - name: Fiscal
   description: السنوات والفترات المالية وتسلسلات المستندات.
+- name: Approvals
+  description: طلبات وقرارات الموافقة المشتركة؛ لا يملك المحرك حالات المستندات أو آثارها المالية.
 - name: Accounts
   description: دليل الحسابات ومراكز التكلفة.
 - name: Data Imports
@@ -1904,20 +1908,38 @@ paths:
         '422': { $ref: '#/components/responses/BusinessRuleViolation' }
       x-permission: fiscal_periods.close
       security: [{ SessionCookie: [], CsrfToken: [] }]
-  /financial-close-runs/{closeRunId}/review:
+  /approval-requests:
+    get:
+      tags: [Approvals]
+      summary: عرض صندوق طلبات الموافقة للشركة الحالية
+      operationId: listApprovalRequests
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - { name: status, in: query, schema: { $ref: '#/components/schemas/ApprovalRequestStatus' } }
+      - { name: subjectType, in: query, schema: { $ref: '#/components/schemas/ApprovalSubjectType' } }
+      - { name: subjectId, in: query, schema: { type: string, minLength: 1, maxLength: 80 } }
+      responses:
+        '200': { description: قائمة معزولة حسب الشركة, content: { application/json: { schema: { $ref: '#/components/schemas/ApprovalRequestListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: approvals.view
+      security: [{ SessionCookie: [] }]
     post:
-      tags: [Fiscal]
-      summary: اعتماد مراجعة حزمة الإقفال
-      operationId: reviewFinancialCloseRun
+      tags: [Approvals]
+      summary: إرسال موضوع إلى محرك الموافقات
+      description: يتطلب إذن المالك الموافق لنوع الموضوع؛ أول نوع مدعوم هو إقفال الفترة ويتطلب fiscal_periods.close.
+      operationId: createApprovalRequest
       parameters:
       - $ref: '#/components/parameters/RequestId'
       - $ref: '#/components/parameters/IdempotencyKey'
-      - { name: closeRunId, in: path, required: true, schema: { type: string, format: uuid } }
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/FinancialCloseRunVersionRequest' } } }
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateApprovalRequest' } } }
       responses:
-        '200': { description: تم اعتماد المراجعة, content: { application/json: { schema: { $ref: '#/components/schemas/FinancialCloseRunResponse' } } } }
+        '201': { description: أنشئ طلب مع تثبيت لقطة الموضوع ذريًا, content: { application/json: { schema: { $ref: '#/components/schemas/ApprovalRequestResponse' } } } }
         '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -1926,6 +1948,69 @@ paths:
         '422': { $ref: '#/components/responses/BusinessRuleViolation' }
       x-permission: fiscal_periods.close
       security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /approval-requests/{approvalRequestId}:
+    get:
+      tags: [Approvals]
+      summary: عرض طلب موافقة وقراره
+      operationId: getApprovalRequest
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: approvalRequestId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: الطلب, content: { application/json: { schema: { $ref: '#/components/schemas/ApprovalRequestResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: approvals.view
+      security: [{ SessionCookie: [] }]
+  /approval-requests/{approvalRequestId}/approve:
+    post:
+      tags: [Approvals]
+      summary: اعتماد طلب موافقة بواسطة Checker مستقل
+      operationId: approveApprovalRequest
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: approvalRequestId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ApprovalRequestVersionRequest' } } }
+      responses:
+        '200': { description: سجل القرار وطبق انتقال الموضوع ذريًا, content: { application/json: { schema: { $ref: '#/components/schemas/ApprovalRequestResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: approvals.decide
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /approval-requests/{approvalRequestId}/reject:
+    post:
+      tags: [Approvals]
+      summary: رفض طلب موافقة مع سبب إلزامي
+      operationId: rejectApprovalRequest
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: approvalRequestId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RejectApprovalRequest' } } }
+      responses:
+        '200': { description: سجل الرفض وأعاد الموضوع لمالكه ذريًا, content: { application/json: { schema: { $ref: '#/components/schemas/ApprovalRequestResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: approvals.decide
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
   /financial-close-runs/{closeRunId}/return:
     post:
       tags: [Fiscal]
@@ -8634,7 +8719,7 @@ components:
             $ref: '#/components/schemas/FinancialCloseChecklistItem'
     FinancialCloseRunStatus:
       type: string
-      enum: [PREPARING, REVIEWED, CLOSED]
+      enum: [PREPARING, AWAITING_APPROVAL, REVIEWED, CLOSED]
     FinancialCloseRun:
       type: object
       additionalProperties: false
@@ -8741,6 +8826,143 @@ components:
           oneOf:
           - $ref: '#/components/schemas/FinancialCloseRun'
           - type: 'null'
+    ApprovalSubjectType:
+      type: string
+      enum: [FINANCIAL_CLOSE_RUN]
+    ApprovalRequestStatus:
+      type: string
+      enum: [PENDING, APPROVED, REJECTED, CANCELLED]
+    ApprovalDecisionType:
+      type: string
+      enum: [APPROVE, REJECT]
+    ApprovalPerson:
+      type: object
+      additionalProperties: false
+      required: [id, displayName]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 160
+    ApprovalDecision:
+      type: object
+      additionalProperties: false
+      required: [type, actor, reason, decidedAt]
+      properties:
+        type:
+          $ref: '#/components/schemas/ApprovalDecisionType'
+        actor:
+          $ref: '#/components/schemas/ApprovalPerson'
+        reason:
+          type: [string, 'null']
+          maxLength: 500
+        decidedAt:
+          type: string
+          format: date-time
+    ApprovalRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - subjectType
+      - subjectId
+      - subjectVersion
+      - subjectSnapshotHashSha256
+      - status
+      - makerCheckerRequired
+      - requestedBy
+      - decision
+      - version
+      - createdAt
+      - updatedAt
+      properties:
+        id: { type: string, format: uuid }
+        subjectType:
+          $ref: '#/components/schemas/ApprovalSubjectType'
+        subjectId:
+          type: string
+          minLength: 1
+          maxLength: 80
+        subjectVersion:
+          type: integer
+          minimum: 0
+        subjectSnapshotHashSha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        status:
+          $ref: '#/components/schemas/ApprovalRequestStatus'
+        makerCheckerRequired:
+          type: boolean
+          const: true
+        requestedBy:
+          $ref: '#/components/schemas/ApprovalPerson'
+        decision:
+          oneOf:
+          - $ref: '#/components/schemas/ApprovalDecision'
+          - type: 'null'
+        version:
+          type: integer
+          minimum: 0
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ApprovalRequestResponse:
+      type: object
+      additionalProperties: false
+      required: [approvalRequest]
+      properties:
+        approvalRequest:
+          $ref: '#/components/schemas/ApprovalRequest'
+    ApprovalRequestListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApprovalRequest'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    CreateApprovalRequest:
+      type: object
+      additionalProperties: false
+      required: [subjectType, subjectId, subjectVersion]
+      properties:
+        subjectType:
+          $ref: '#/components/schemas/ApprovalSubjectType'
+        subjectId:
+          type: string
+          format: uuid
+        subjectVersion:
+          type: integer
+          minimum: 0
+    ApprovalRequestVersionRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version:
+          type: integer
+          minimum: 0
+    RejectApprovalRequest:
+      type: object
+      additionalProperties: false
+      required: [version, reason]
+      properties:
+        version:
+          type: integer
+          minimum: 0
+        reason:
+          type: string
+          x-trim: true
+          minLength: 10
+          maxLength: 500
     ReopenPeriodRequest:
       type: object
       additionalProperties: false

@@ -11,6 +11,11 @@ export const arFinancialClose = {
   "financialClose.start": "بدء دورة الإقفال",
   "financialClose.refresh": "إعادة الفحص",
   "financialClose.review": "اعتماد المراجعة",
+  "financialClose.submitApproval": "إرسال للموافقة",
+  "financialClose.submitSuccess": "أرسلت حزمة الإقفال إلى مراجع مستقل.",
+  "financialClose.awaitingApproval": "بانتظار الموافقة",
+  "financialClose.awaitingApprovalDescription": "حزمة الإقفال مجمدة وتنتظر قرار Checker مستقل.",
+  "financialClose.openApprovals": "فتح صندوق الموافقات",
   "financialClose.finalize": "إقفال الفترة نهائيًا",
   "financialClose.return": "إعادة للتحضير",
   "financialClose.returnReason": "سبب الإعادة (10 أحرف على الأقل)",
@@ -60,6 +65,11 @@ export const enFinancialClose = {
   "financialClose.start": "Start close cycle",
   "financialClose.refresh": "Run checks again",
   "financialClose.review": "Approve review",
+  "financialClose.submitApproval": "Submit for approval",
+  "financialClose.submitSuccess": "The close pack was sent to an independent checker.",
+  "financialClose.awaitingApproval": "Awaiting approval",
+  "financialClose.awaitingApprovalDescription": "The close pack is sealed and awaits an independent checker decision.",
+  "financialClose.openApprovals": "Open approval inbox",
   "financialClose.finalize": "Close period",
   "financialClose.return": "Return to preparation",
   "financialClose.returnReason": "Return reason (at least 10 characters)",
@@ -96,5 +106,20 @@ export const enFinancialClose = {
   "errors.RETAINED_EARNINGS_ACCOUNT_NOT_CONFIGURED": "Retained earnings account 3300 is not ready for annual close.",
 } as const satisfies Record<keyof typeof arFinancialClose, string>;
 
-export const urFinancialClose = enFinancialClose;
-export const hiFinancialClose = enFinancialClose;
+export const urFinancialClose = {
+  ...enFinancialClose,
+  "financialClose.submitApproval": "منظوری کے لیے بھیجیں",
+  "financialClose.submitSuccess": "اختتامی پیک آزاد جانچ کنندہ کو بھیج دیا گیا۔",
+  "financialClose.awaitingApproval": "منظوری کا منتظر",
+  "financialClose.awaitingApprovalDescription": "اختتامی پیک محفوظ ہے اور آزاد جانچ کنندہ کے فیصلے کا منتظر ہے۔",
+  "financialClose.openApprovals": "منظوری ان باکس کھولیں",
+} as const satisfies Record<keyof typeof arFinancialClose, string>;
+
+export const hiFinancialClose = {
+  ...enFinancialClose,
+  "financialClose.submitApproval": "अनुमोदन के लिए भेजें",
+  "financialClose.submitSuccess": "समापन पैक स्वतंत्र जाँचकर्ता को भेज दिया गया।",
+  "financialClose.awaitingApproval": "अनुमोदन की प्रतीक्षा",
+  "financialClose.awaitingApprovalDescription": "समापन पैक सुरक्षित है और स्वतंत्र जाँचकर्ता के निर्णय की प्रतीक्षा में है।",
+  "financialClose.openApprovals": "अनुमोदन इनबॉक्स खोलें",
+} as const satisfies Record<keyof typeof arFinancialClose, string>;

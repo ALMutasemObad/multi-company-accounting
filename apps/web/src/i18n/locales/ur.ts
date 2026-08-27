@@ -5,6 +5,7 @@ import { urCashFlow } from "./cash-flow";
 import { urTaxSummary } from "./tax-summary";
 import { urCostCenterActivity } from "./cost-center-activity";
 import { urPos } from "./pos";
+import { urApprovals } from "./approvals";
 
 export const ur = {
   ...urReconciliation,
@@ -13,6 +14,7 @@ export const ur = {
   ...urTaxSummary,
   ...urCostCenterActivity,
   ...urPos,
+  ...urApprovals,
   "referencePicker.loading": "تلاش جاری ہے…",
   "referencePicker.empty": "کوئی مماثل نتیجہ نہیں ملا۔",
   "referencePicker.more": "مزید نتائج لوڈ کریں",

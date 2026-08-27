@@ -1,7 +1,7 @@
 ---
 title: "Bounded Context Map"
 status: "accepted target architecture"
-version: "1.8"
+version: "1.9"
 last_updated: "2026-08-27"
 ---
 
@@ -28,6 +28,7 @@ last_updated: "2026-08-27"
 | Treasury | النقد والبنوك وطرق الدفع وحركات القبض والصرف وتخصيصاتها ولقطات التسوية واستيراد كشوف البنك والمطابقة 1:1 | `CashBankAccount`, `PaymentMethod`, `Receipt`, `ReceiptAllocation`, `Payment`, `PaymentAllocation`, `BankStatementImport`, `BankStatementLine`, `BankReconciliationSession`, `BankReconciliationMatch` | تستخدم التخصيصات منافذ AR/AP و`PostingEngine`؛ وتقرأ المطابقة الحركات المرحلة عبر Query Port فقط ولا تكتب Ledger |
 | Inventory | المستودعات والكتالوج ودفتر الحركة الكمي والقيمي والأرصدة وتقييم المتوسط | `Warehouse`, `UnitOfMeasure`, `InventoryItem`, `InventoryMovementSequence`, `InventoryMovement`, `InventoryMovementLine`, `InventoryBalance`, `InventoryValuationInitialization` | يكشف منفذي اختيار الفاتورة وتطبيق أثرها؛ يعيد حقائق تقييم للفواتير، وينشئ رأس `INVENTORY_ADJUSTMENT` للحركة اليدوية ثم يفوض إنشاء/عكس أسطر Ledger إلى `PostingEngine` |
 | Point of Sale | تنسيق البيع النقدي الحضوري وربط نتيجة الـCheckout | `PosSale` فقط | Process Manager؛ لا يملك بنودًا أو مبالغ أو فاتورة أو حركة مخزون/نقد أو قيدًا، ويستدعي منافذ Sales وTreasury الحالية |
+| Approvals | تنسيق طلبات وقرارات Maker/Checker المشتركة | `ApprovalRequest`, `ApprovalDecision` | يربط الموضوع ونسخته وبصمته فقط؛ يطبق المالك انتقال الموضوع عبر `ApprovalSubjectPort` ولا يملك حالته أو أثره المالي |
 | Tax | معدلات الضرائب وربط حساباتها والحساب والتقريب | `TaxRate` | يكشف `TaxQuotePort` للمبيعات والمشتريات ويملك النسخ المتفائلة |
 | Printing & Document Output | اللقطات التاريخية والتوليد | `DocumentPrintArchive` | يقرأ عبر Document Snapshot Port |
 | Reporting | التقارير والقوائم وRead Models | لا يملك حقائق مالية تشغيلية | قراءة فقط، ويمكنه امتلاك projections مستقبلًا |
@@ -54,6 +55,7 @@ Sales/Purchases ──────> Tax Configuration query port
 Data Import ──────────> Sales/AR, Purchases/AP application ports
 Sales/Purchases ─────> Inventory catalog and invoice-stock application ports
 POS ─────────────────> Sales cash-checkout and Treasury receipt application ports
+Approvals ───────────> owning context approval-subject application ports
 All operational contexts ──> Audit append port
 
 Reporting <────────── read/query ports or dedicated read models
@@ -92,6 +94,8 @@ Printing  <────────── immutable document snapshot port
 
 وفي 27 أغسطس اعتمدت أول شريحة POS كمنسق رفيع لبيع نقدي وفق [ADR-004](ADR-004-pos-cash-sale-orchestration.md): يملك `PosSale` رابط النتيجة فقط، ويفوض الفاتورة والمخزون والتحصيل والترحيل إلى المالكين الحاليين داخل معاملة واحدة، ولا يخزن بنودًا أو مبالغ أو يكتب Ledger.
 
+ثم أضيف سياق Approvals وفق [ADR-005](ADR-005-shared-approval-engine.md): يملك طلب الموافقة والقرار فقط، ويستدعي `FinancialCloseApprovalAdapter` لتغيير تشغيل الإقفال داخل المعاملة. لا يقرأ أو يكتب Ledger أو يكرر حزمة الإقفال؛ يخزن بصمتها ونسخة الموضوع فقط، وتفرض الشريحة الأولى Checker مستقلًا.
+
 الاستثناءات التالية ما زالت موجودة ولا تعد نمطًا مسموحًا للنسخ:
 
 - `CompanyService` يفحص جداول عدة Contexts مباشرة عند تعطيل العملات.
@@ -111,6 +115,7 @@ Printing  <────────── immutable document snapshot port
 | `PayableSettlement` | تخصيص الدفع إلى عناصر الذمم وعدم تجاوز Outstanding |
 | `AccountingDocument` | الحالة والنسخة والترحيل والعكس والارتباط بالقيود |
 | `FiscalPeriod` | الإغلاق وإعادة الفتح والترتيب الزمني |
+| `ApprovalRequest` | طلبًا نشطًا واحدًا لكل موضوع، وفصل Maker/Checker، وقرارًا نهائيًا immutable |
 | `ChartOfAccounts`/`Account` | صلاحية الترحيل والبنية الهرمية |
 
 لا يشترط أن تتحول جميعها إلى Classes كبيرة؛ المطلوب أن تكون invariants والملكية ومداخل التغيير واضحة ومختبرة.

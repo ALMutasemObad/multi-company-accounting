@@ -498,6 +498,15 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", "Noto Sans Devanaga
 .close-checklist article strong { font-size: .84rem; }
 .close-checklist article small, .close-checked-at { color: var(--muted); font-size: .74rem; }
 .close-checked-at { margin: -5px 2px 0; }
+.approvals-toolbar label { display: grid; gap: .35rem; min-width: min(100%, 15rem); }
+.approvals-toolbar label > span { color: var(--muted); font-size: .78rem; font-weight: 700; }
+.approvals-table td { vertical-align: top; }
+.approvals-table td > small, .approval-reference { display: block; margin-top: .3rem; color: var(--muted); font-size: .72rem; }
+.approval-reference { direction: ltr; max-width: 18rem; overflow-wrap: anywhere; }
+.status-chip.pending { background: #fff3d8; color: #805b00; }
+.status-chip.approved { background: #dff4e8; color: #17633b; }
+.status-chip.rejected { background: #fde5e1; color: #8b2f24; }
+.status-chip.cancelled { background: #eceff2; color: #4d5965; }
 .close-empty-note, .close-pack-note { padding: 13px 15px; border: 1px dashed #b7ccc3; border-radius: 11px; background: #f7faf8; color: var(--muted); font-size: .82rem; }
 .close-pack-note { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-style: solid; color: #276148; }
 .close-pack-note code { direction: ltr; padding: 4px 7px; border-radius: 7px; background: #e5f0ea; font-size: .72rem; }

@@ -26,6 +26,7 @@ import { createInventoryCatalogRouter } from '../src/inventory/inventory-catalog
 import { createInventoryMovementRouter } from '../src/inventory/inventory-movement-router.js';
 import { createBankReconciliationRouter } from '../src/treasury/reconciliation/reconciliation-router.js';
 import { createPosRouter } from '../src/pos/pos-router.js';
+import { createApprovalRouter } from '../src/approvals/approval-router.js';
 
 type RouteLayer = {
   route?: {
@@ -45,6 +46,7 @@ const routers = [
   { prefix: '', router: createAuditRouter(stub, stub) },
   { prefix: '', router: createSecurityEventRouter(stub, stub) },
   { prefix: '', router: createFiscalRouter(stub, stub, stub) },
+  { prefix: '', router: createApprovalRouter(stub, stub) },
   { prefix: '', router: createAccountRouter(stub, stub) },
   { prefix: '', router: createManualJournalRouter(stub, stub) },
   { prefix: '', router: createReceiptReferenceRouter(stub, stub) },

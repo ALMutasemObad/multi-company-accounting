@@ -56,14 +56,6 @@ export function createFiscalRouter(auth: AuthService, fiscal: FiscalService, fin
         idempotencyKey: idempotencyKey(request),
       }));
     });
-    router.post('/financial-close-runs/:closeRunId/review', async (request, response) => {
-      const context = await authorize(request, 'fiscal_periods.close', true);
-      const body = bodies.reviewFinancialCloseRun.parse(request.body);
-      response.json(await financialClose.reviewRun(context, publicId.parse(request.params.closeRunId), {
-        version: body.version,
-        idempotencyKey: idempotencyKey(request),
-      }));
-    });
     router.post('/financial-close-runs/:closeRunId/return', async (request, response) => {
       const context = await authorize(request, 'fiscal_periods.close', true);
       const body = bodies.returnFinancialCloseRun.parse(request.body);

@@ -22,10 +22,10 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 209, requestBodies: 106, responseBodies: 1406 });
-    expect(guardedOpenApiOperations).toHaveLength(106);
+    expect(openApiContractCoverage).toEqual({ operations: 213, requestBodies: 108, responseBodies: 1429 });
+    expect(guardedOpenApiOperations).toHaveLength(108);
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
-      'login', 'createUser', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'initializeInventoryBalanceValuation', 'reverseInventoryMovement', 'previewDataImport', 'commitDataImport', 'previewBankStatement', 'commitBankStatementImport', 'createBankReconciliationSession', 'generateBankReconciliationSuggestions', 'approveBankReconciliationMatch', 'createManualBankReconciliationMatch', 'releaseBankReconciliationMatch', 'classifyBankStatementLine', 'closeBankReconciliationSession', 'startFinancialCloseRun', 'refreshFinancialCloseRun', 'reviewFinancialCloseRun', 'returnFinancialCloseRun', 'updateCashFlowMapping',
+      'login', 'createUser', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'initializeInventoryBalanceValuation', 'reverseInventoryMovement', 'previewDataImport', 'commitDataImport', 'previewBankStatement', 'commitBankStatementImport', 'createBankReconciliationSession', 'generateBankReconciliationSuggestions', 'approveBankReconciliationMatch', 'createManualBankReconciliationMatch', 'releaseBankReconciliationMatch', 'classifyBankStatementLine', 'closeBankReconciliationSession', 'startFinancialCloseRun', 'refreshFinancialCloseRun', 'createApprovalRequest', 'approveApprovalRequest', 'rejectApprovalRequest', 'returnFinancialCloseRun', 'updateCashFlowMapping',
     ]));
   });
 
@@ -250,7 +250,13 @@ describe('generated OpenAPI request guards', () => {
 
   it('validates financial close workflow command bodies', () => {
     expect(openApiRequestBodySchemas.startFinancialCloseRun.parse({ version: 3 })).toEqual({ version: 3 });
-    expect(openApiRequestBodySchemas.reviewFinancialCloseRun.parse({ version: 1 })).toEqual({ version: 1 });
+    expect(openApiRequestBodySchemas.createApprovalRequest.parse({
+      subjectType: 'FINANCIAL_CLOSE_RUN',
+      subjectId: '37e9cfd7-fde1-4d9e-a5d5-3193390c38bd',
+      subjectVersion: 1,
+    })).toMatchObject({ subjectType: 'FINANCIAL_CLOSE_RUN', subjectVersion: 1 });
+    expect(openApiRequestBodySchemas.approveApprovalRequest.parse({ version: 1 })).toEqual({ version: 1 });
+    expect(openApiRequestBodySchemas.rejectApprovalRequest.parse({ version: 1, reason: 'حزمة تحتاج إلى مراجعة إضافية' })).toMatchObject({ version: 1 });
     expect(openApiRequestBodySchemas.returnFinancialCloseRun.parse({ version: 2, reason: 'إعادة موثقة للتحضير' })).toEqual({ version: 2, reason: 'إعادة موثقة للتحضير' });
     expect(openApiRequestBodySchemas.closeFiscalPeriod.parse({
       version: 4,

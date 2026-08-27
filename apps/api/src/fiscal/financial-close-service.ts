@@ -180,43 +180,119 @@ export class FinancialCloseService {
     });
   }
 
-  async reviewRun(
+  async requestApprovalInTransaction(
+    tx: Prisma.TransactionClient,
     context: ActorContext,
     publicId: string,
-    input: { version: number; idempotencyKey: string },
+    expectedVersion: number,
   ) {
-    return this.executeCommand(context, "REVIEW_FINANCIAL_CLOSE", input.idempotencyKey, {
-      publicId, version: input.version,
-    }, async (tx) => {
-      const run = await this.lockRun(tx, context.companyId, publicId);
-      if (run.version !== input.version) throw new FinancialCloseError("VERSION_CONFLICT");
-      if (run.status !== "PREPARING") throw new FinancialCloseError("INVALID_STATE");
-      const readiness = await this.evaluateReadiness(tx, context.companyId, run.fiscalPeriodId, run.fiscalPeriod);
-      if (!readiness.ready) throw new FinancialCloseError("NOT_READY");
-      const closePack = await this.closePack(tx, context.companyId, run.fiscalPeriod, readiness);
-      const next = transitionFinancialClose("PREPARING", "REVIEW");
-      const now = new Date();
-      const changed = await tx.financialCloseRun.updateMany({
-        where: { id: run.id, companyId: context.companyId, version: input.version, status: "PREPARING" },
-        data: {
-          status: this.persistedState(next),
-          checklistSnapshot: readiness as unknown as Prisma.InputJsonObject,
-          checklistHashSha256: hashValue(readinessFacts(readiness)),
-          closePackSnapshot: closePack.snapshot,
-          closePackHashSha256: closePack.hash,
-          reviewedById: context.userId,
-          reviewedAt: now,
-          returnedById: null,
-          returnedAt: null,
-          returnReason: null,
-          version: { increment: 1 },
-        },
-      });
-      if (changed.count !== 1) throw new FinancialCloseError("VERSION_CONFLICT");
-      const updated = await tx.financialCloseRun.findUniqueOrThrow({ where: { id: run.id } });
-      await this.audit(tx, context, "FINANCIAL_CLOSE_RUN_REVIEWED", run.publicId, { closePackHashSha256: closePack.hash.toString("hex") });
-      return { run: serializeRun(updated) };
+    const run = await this.lockRun(tx, context.companyId, publicId);
+    if (run.version !== expectedVersion) throw new FinancialCloseError("VERSION_CONFLICT");
+    if (run.status !== "PREPARING") throw new FinancialCloseError("INVALID_STATE");
+    const readiness = await this.evaluateReadiness(tx, context.companyId, run.fiscalPeriodId, run.fiscalPeriod);
+    if (!readiness.ready) throw new FinancialCloseError("NOT_READY");
+    const closePack = await this.closePack(tx, context.companyId, run.fiscalPeriod, readiness);
+    const next = transitionFinancialClose("PREPARING", "SUBMIT");
+    const changed = await tx.financialCloseRun.updateMany({
+      where: { id: run.id, companyId: context.companyId, version: expectedVersion, status: "PREPARING" },
+      data: {
+        status: this.persistedState(next),
+        checklistSnapshot: readiness as unknown as Prisma.InputJsonObject,
+        checklistHashSha256: hashValue(readinessFacts(readiness)),
+        closePackSnapshot: closePack.snapshot,
+        closePackHashSha256: closePack.hash,
+        reviewedById: null,
+        reviewedAt: null,
+        returnedById: null,
+        returnedAt: null,
+        returnReason: null,
+        version: { increment: 1 },
+      },
     });
+    if (changed.count !== 1) throw new FinancialCloseError("VERSION_CONFLICT");
+    await this.audit(tx, context, "FINANCIAL_CLOSE_APPROVAL_REQUESTED", run.publicId, {
+      closePackHashSha256: closePack.hash.toString("hex"),
+    });
+    return {
+      subjectId: run.publicId,
+      subjectVersion: expectedVersion + 1,
+      subjectSnapshotHashSha256: closePack.hash,
+    };
+  }
+
+  async approveInTransaction(
+    tx: Prisma.TransactionClient,
+    context: ActorContext,
+    input: { subjectId: string; subjectVersion: number; subjectSnapshotHashSha256: Uint8Array },
+  ) {
+    const run = await this.lockRun(tx, context.companyId, input.subjectId);
+    if (run.version !== input.subjectVersion) throw new FinancialCloseError("VERSION_CONFLICT");
+    if (run.status !== "AWAITING_APPROVAL") throw new FinancialCloseError("INVALID_STATE");
+    if (!run.closePackHashSha256 || !Buffer.from(run.closePackHashSha256).equals(Buffer.from(input.subjectSnapshotHashSha256))) {
+      throw new FinancialCloseError("CHECKLIST_CHANGED");
+    }
+    const readiness = await this.evaluateReadiness(tx, context.companyId, run.fiscalPeriodId, run.fiscalPeriod);
+    if (!readiness.ready) throw new FinancialCloseError("NOT_READY");
+    const closePack = await this.closePack(tx, context.companyId, run.fiscalPeriod, readiness);
+    if (!closePack.hash.equals(Buffer.from(input.subjectSnapshotHashSha256))) {
+      throw new FinancialCloseError("CHECKLIST_CHANGED");
+    }
+    const next = transitionFinancialClose("AWAITING_APPROVAL", "APPROVE");
+    const now = new Date();
+    const changed = await tx.financialCloseRun.updateMany({
+      where: {
+        id: run.id,
+        companyId: context.companyId,
+        version: input.subjectVersion,
+        status: "AWAITING_APPROVAL",
+      },
+      data: {
+        status: this.persistedState(next),
+        checklistSnapshot: readiness as unknown as Prisma.InputJsonObject,
+        checklistHashSha256: hashValue(readinessFacts(readiness)),
+        reviewedById: context.userId,
+        reviewedAt: now,
+        version: { increment: 1 },
+      },
+    });
+    if (changed.count !== 1) throw new FinancialCloseError("VERSION_CONFLICT");
+    await this.audit(tx, context, "FINANCIAL_CLOSE_APPROVAL_GRANTED", run.publicId, {
+      closePackHashSha256: closePack.hash.toString("hex"),
+    });
+  }
+
+  async rejectInTransaction(
+    tx: Prisma.TransactionClient,
+    context: ActorContext,
+    input: { subjectId: string; subjectVersion: number; subjectSnapshotHashSha256: Uint8Array; reason: string },
+  ) {
+    const run = await this.lockRun(tx, context.companyId, input.subjectId);
+    if (run.version !== input.subjectVersion) throw new FinancialCloseError("VERSION_CONFLICT");
+    if (run.status !== "AWAITING_APPROVAL") throw new FinancialCloseError("INVALID_STATE");
+    if (!run.closePackHashSha256 || !Buffer.from(run.closePackHashSha256).equals(Buffer.from(input.subjectSnapshotHashSha256))) {
+      throw new FinancialCloseError("CHECKLIST_CHANGED");
+    }
+    const next = transitionFinancialClose("AWAITING_APPROVAL", "REJECT");
+    const now = new Date();
+    const changed = await tx.financialCloseRun.updateMany({
+      where: {
+        id: run.id,
+        companyId: context.companyId,
+        version: input.subjectVersion,
+        status: "AWAITING_APPROVAL",
+      },
+      data: {
+        status: this.persistedState(next),
+        closePackSnapshot: Prisma.DbNull,
+        closePackHashSha256: null,
+        returnedById: context.userId,
+        returnedAt: now,
+        returnReason: input.reason,
+        version: { increment: 1 },
+      },
+    });
+    if (changed.count !== 1) throw new FinancialCloseError("VERSION_CONFLICT");
+    await this.audit(tx, context, "FINANCIAL_CLOSE_APPROVAL_REJECTED", run.publicId, { reason: input.reason });
   }
 
   async returnRun(

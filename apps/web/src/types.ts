@@ -113,7 +113,7 @@ export type FinancialCloseRun = {
   id: string;
   periodId: string;
   cycle: number;
-  status: "PREPARING" | "REVIEWED" | "CLOSED";
+  status: "PREPARING" | "AWAITING_APPROVAL" | "REVIEWED" | "CLOSED";
   checklist: FinancialCloseReadiness;
   checklistHashSha256: string;
   closePack: Record<string, unknown> | null;
@@ -123,6 +123,26 @@ export type FinancialCloseRun = {
   reviewedAt: string | null;
   closedAt: string | null;
   version: number;
+  updatedAt: string;
+};
+
+export type ApprovalRequest = {
+  id: string;
+  subjectType: "FINANCIAL_CLOSE_RUN";
+  subjectId: string;
+  subjectVersion: number;
+  subjectSnapshotHashSha256: string;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+  makerCheckerRequired: true;
+  requestedBy: { id: string; displayName: string };
+  decision: {
+    type: "APPROVE" | "REJECT";
+    actor: { id: string; displayName: string };
+    reason: string | null;
+    decidedAt: string;
+  } | null;
+  version: number;
+  createdAt: string;
   updatedAt: string;
 };
 

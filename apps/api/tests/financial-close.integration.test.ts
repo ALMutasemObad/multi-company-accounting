@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ApprovalError, ApprovalService } from "../src/approvals/approval-service.js";
 import { CompanyCurrencyFinancialCloseReadinessAdapter } from "../src/companies/financial-close-readiness-adapter.js";
 import { createDatabase } from "../src/database.js";
 import { FinancialCloseError, FinancialCloseService } from "../src/fiscal/financial-close-service.js";
+import { FinancialCloseApprovalAdapter } from "../src/fiscal/financial-close-approval-adapter.js";
 import { parseOpenApiResponseBody } from "../src/generated/openapi-request-guards.js";
 import { InventoryFinancialCloseReadinessAdapter } from "../src/inventory/financial-close-readiness-adapter.js";
 import { SettlementFinancialCloseReadinessAdapter } from "../src/reports/financial-close-readiness-adapter.js";
@@ -12,8 +14,10 @@ const prisma = enabled ? createDatabase(process.env.DATABASE_URL!) : null;
 
 describe.runIf(enabled)("reviewed financial close workflow with MariaDB", () => {
   let service: FinancialCloseService;
+  let approvals: ApprovalService;
   let companyId: bigint;
   let userId: bigint;
+  let checkerUserId: bigint;
   let periodId: bigint;
   let assetAccountId: bigint;
   let revenueAccountId: bigint;
@@ -22,10 +26,13 @@ describe.runIf(enabled)("reviewed financial close workflow with MariaDB", () => 
   let baseCurrencyId: bigint;
 
   const context = () => ({ companyId, userId });
+  const checkerContext = () => ({ companyId, userId: checkerUserId });
 
   async function cleanupCompany(targetCompanyId: bigint) {
     await prisma!.idempotencyRecord.deleteMany({ where: { companyId: targetCompanyId } });
     await prisma!.auditLog.deleteMany({ where: { companyId: targetCompanyId } });
+    await prisma!.approvalDecision.deleteMany({ where: { companyId: targetCompanyId } });
+    await prisma!.approvalRequest.deleteMany({ where: { companyId: targetCompanyId } });
     await prisma!.financialCloseRun.deleteMany({ where: { companyId: targetCompanyId } });
     await prisma!.journalLine.deleteMany({ where: { companyId: targetCompanyId } });
     await prisma!.journalEntry.updateMany({ where: { companyId: targetCompanyId }, data: { reversalOfJournalEntryId: null } });
@@ -85,6 +92,14 @@ describe.runIf(enabled)("reviewed financial close workflow with MariaDB", () => 
     const leakedCompanies = await prisma!.company.findMany({ where: { name: { startsWith: "FINANCIAL-CLOSE-IT-" } }, select: { id: true } });
     for (const leaked of leakedCompanies) await cleanupCompany(leaked.id);
     userId = user.id;
+    const checker = await prisma!.user.create({
+      data: {
+        emailNormalized: `financial-close-checker-${Date.now()}@example.test`,
+        passwordHash: "integration-test-only",
+        displayName: "مراجع إقفال مستقل",
+      },
+    });
+    checkerUserId = checker.id;
     baseCurrencyId = seedCompany.baseCurrencyId;
     const company = await prisma!.company.create({
       data: {
@@ -129,12 +144,16 @@ describe.runIf(enabled)("reviewed financial close workflow with MariaDB", () => 
       currencies: new CompanyCurrencyFinancialCloseReadinessAdapter(),
       settlements: new SettlementFinancialCloseReadinessAdapter(),
     });
+    approvals = new ApprovalService(prisma!, {
+      FINANCIAL_CLOSE_RUN: new FinancialCloseApprovalAdapter(service),
+    });
     await createPostedDocument("FC-IT-001", "200.0000", "70.0000");
   });
 
   afterAll(async () => {
     if (!prisma || !companyId) return;
     await cleanupCompany(companyId);
+    await prisma.user.delete({ where: { id: checkerUserId } });
     await prisma.$disconnect();
   });
 
@@ -152,10 +171,61 @@ describe.runIf(enabled)("reviewed financial close workflow with MariaDB", () => 
     expect(started.run.status).toBe("PREPARING");
     expect(() => parseOpenApiResponseBody("startFinancialCloseRun", 201, started)).not.toThrow();
 
-    let reviewed = await service.reviewRun(context(), started.run.id, { version: started.run.version, idempotencyKey: "fc-review-first" });
+    const [submitted, submissionReplay] = await Promise.all([
+      approvals.request(context(), {
+        subjectType: "FINANCIAL_CLOSE_RUN",
+        subjectId: started.run.id,
+        subjectVersion: started.run.version,
+        idempotencyKey: "fc-approval-submit-concurrent",
+      }),
+      approvals.request(context(), {
+        subjectType: "FINANCIAL_CLOSE_RUN",
+        subjectId: started.run.id,
+        subjectVersion: started.run.version,
+        idempotencyKey: "fc-approval-submit-concurrent",
+      }),
+    ]);
+    expect(submissionReplay).toEqual(submitted);
+    expect(submitted.approvalRequest.status).toBe("PENDING");
+    expect(() => parseOpenApiResponseBody("createApprovalRequest", 201, submitted)).not.toThrow();
+    expect((await service.currentRun(context(), periodId))?.status).toBe("AWAITING_APPROVAL");
+    await expect(approvals.request(context(), {
+      subjectType: "FINANCIAL_CLOSE_RUN",
+      subjectId: started.run.id,
+      subjectVersion: started.run.version + 1,
+      idempotencyKey: "fc-approval-submit-concurrent",
+    })).rejects.toEqual(new ApprovalError("IDEMPOTENCY_MISMATCH"));
+
+    await expect(approvals.approve(context(), submitted.approvalRequest.id, {
+      version: submitted.approvalRequest.version,
+      idempotencyKey: "fc-maker-cannot-approve",
+    })).rejects.toEqual(new ApprovalError("MAKER_CHECKER_VIOLATION"));
+
+    const rejected = await approvals.reject(checkerContext(), submitted.approvalRequest.id, {
+      version: submitted.approvalRequest.version,
+      reason: "الحزمة تحتاج إلى مراجعة إضافية قبل الإقفال",
+      idempotencyKey: "fc-checker-rejects-first",
+    });
+    expect(rejected.approvalRequest).toMatchObject({ status: "REJECTED", decision: { type: "REJECT" } });
+    expect(() => parseOpenApiResponseBody("rejectApprovalRequest", 200, rejected)).not.toThrow();
+
+    const preparingAfterReject = await service.currentRun(context(), periodId);
+    expect(preparingAfterReject?.status).toBe("PREPARING");
+    const secondSubmission = await approvals.request(context(), {
+      subjectType: "FINANCIAL_CLOSE_RUN",
+      subjectId: started.run.id,
+      subjectVersion: preparingAfterReject!.version,
+      idempotencyKey: "fc-approval-submit-second",
+    });
+    const approved = await approvals.approve(checkerContext(), secondSubmission.approvalRequest.id, {
+      version: secondSubmission.approvalRequest.version,
+      idempotencyKey: "fc-checker-approve-second",
+    });
+    expect(approved.approvalRequest).toMatchObject({ status: "APPROVED", decision: { type: "APPROVE" } });
+    expect(() => parseOpenApiResponseBody("approveApprovalRequest", 200, approved)).not.toThrow();
+    let reviewed = { run: (await service.currentRun(context(), periodId))! };
     expect(reviewed.run.status).toBe("REVIEWED");
     expect(reviewed.run.closePackHashSha256).toMatch(/^[a-f0-9]{64}$/u);
-    expect(() => parseOpenApiResponseBody("reviewFinancialCloseRun", 200, reviewed)).not.toThrow();
 
     await createPostedDocument("FC-IT-002", "20.0000", "0.0000");
     await expect(service.closePeriod(context(), periodId, {
@@ -170,10 +240,17 @@ describe.runIf(enabled)("reviewed financial close workflow with MariaDB", () => 
       reason: "تغيرت بيانات الإيراد بعد المراجعة",
       idempotencyKey: "fc-return-after-change",
     });
-    reviewed = await service.reviewRun(context(), returned.run.id, {
-      version: returned.run.version,
-      idempotencyKey: "fc-review-second",
+    const finalSubmission = await approvals.request(context(), {
+      subjectType: "FINANCIAL_CLOSE_RUN",
+      subjectId: returned.run.id,
+      subjectVersion: returned.run.version,
+      idempotencyKey: "fc-approval-submit-final",
     });
+    await approvals.approve(checkerContext(), finalSubmission.approvalRequest.id, {
+      version: finalSubmission.approvalRequest.version,
+      idempotencyKey: "fc-approval-approve-final",
+    });
+    reviewed = { run: (await service.currentRun(context(), periodId))! };
     const closed = await service.closePeriod(context(), periodId, {
       periodVersion: 0,
       closeRunId: reviewed.run.id,
@@ -214,5 +291,7 @@ describe.runIf(enabled)("reviewed financial close workflow with MariaDB", () => 
   it("does not disclose the close run across companies", async () => {
     const otherCompany = await prisma!.company.findFirstOrThrow({ where: { id: { not: companyId } } });
     await expect(service.currentRun({ userId, companyId: otherCompany.id }, periodId)).rejects.toEqual(new FinancialCloseError("NOT_FOUND"));
+    const request = await prisma!.approvalRequest.findFirstOrThrow({ where: { companyId } });
+    await expect(approvals.get({ userId, companyId: otherCompany.id }, request.publicId)).rejects.toEqual(new ApprovalError("NOT_FOUND"));
   });
 });

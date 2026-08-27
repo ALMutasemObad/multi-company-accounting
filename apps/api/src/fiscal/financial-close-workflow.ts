@@ -1,51 +1,36 @@
-import { createMachine, initialTransition, transition } from "xstate";
+import {
+  createXStateWorkflowStatePort,
+  InvalidWorkflowTransitionError,
+} from "../approvals/workflow-state-port.js";
 
-export type FinancialCloseWorkflowState = "OPEN" | "PREPARING" | "REVIEWED" | "CLOSED";
-export type FinancialCloseWorkflowEvent = "PREPARE" | "REVIEW" | "RETURN" | "CLOSE" | "REOPEN";
+export type FinancialCloseWorkflowState = "OPEN" | "PREPARING" | "AWAITING_APPROVAL" | "REVIEWED" | "CLOSED";
+export type FinancialCloseWorkflowEvent = "PREPARE" | "SUBMIT" | "APPROVE" | "REJECT" | "RETURN" | "CLOSE" | "REOPEN";
 
-const workflow = createMachine({
+const workflow = createXStateWorkflowStatePort<FinancialCloseWorkflowState, FinancialCloseWorkflowEvent>({
   id: "financial-close",
-  initial: "open",
-  states: {
-    open: { on: { PREPARE: "preparing" } },
-    preparing: { on: { REVIEW: "reviewed" } },
-    reviewed: { on: { RETURN: "preparing", CLOSE: "closed" } },
-    closed: { on: { REOPEN: "open" } },
+  initial: "OPEN",
+  states: ["OPEN", "PREPARING", "AWAITING_APPROVAL", "REVIEWED", "CLOSED"],
+  transitions: {
+    OPEN: { PREPARE: "PREPARING" },
+    PREPARING: { SUBMIT: "AWAITING_APPROVAL" },
+    AWAITING_APPROVAL: { APPROVE: "REVIEWED", REJECT: "PREPARING" },
+    REVIEWED: { RETURN: "PREPARING", CLOSE: "CLOSED" },
+    CLOSED: { REOPEN: "OPEN" },
   },
 });
 
-const localToMachine = {
-  OPEN: "open",
-  PREPARING: "preparing",
-  REVIEWED: "reviewed",
-  CLOSED: "closed",
-} as const satisfies Record<FinancialCloseWorkflowState, string>;
-
-const machineToLocal = {
-  open: "OPEN",
-  preparing: "PREPARING",
-  reviewed: "REVIEWED",
-  closed: "CLOSED",
-} as const satisfies Record<string, FinancialCloseWorkflowState>;
-
-export class InvalidFinancialCloseTransitionError extends Error {
-  constructor(
-    public readonly state: FinancialCloseWorkflowState,
-    public readonly event: FinancialCloseWorkflowEvent,
-  ) {
-    super(`Financial close cannot apply ${event} from ${state}`);
-  }
-}
+export class InvalidFinancialCloseTransitionError extends InvalidWorkflowTransitionError<FinancialCloseWorkflowState, FinancialCloseWorkflowEvent> {}
 
 export function transitionFinancialClose(
   state: FinancialCloseWorkflowState,
   event: FinancialCloseWorkflowEvent,
 ): FinancialCloseWorkflowState {
-  const machineState = state === "OPEN"
-    ? initialTransition(workflow)[0]
-    : workflow.resolveState({ value: localToMachine[state], context: {} });
-  const next = transition(workflow, machineState, { type: event })[0];
-  const value = machineToLocal[String(next.value) as keyof typeof machineToLocal];
-  if (!value || value === state) throw new InvalidFinancialCloseTransitionError(state, event);
-  return value;
+  try {
+    return workflow.transition(state, event);
+  } catch (error) {
+    if (error instanceof InvalidWorkflowTransitionError) {
+      throw new InvalidFinancialCloseTransitionError("financial-close", state, event);
+    }
+    throw error;
+  }
 }

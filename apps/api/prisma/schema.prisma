@@ -36,8 +36,25 @@ enum FiscalPeriodStatus {
 
 enum FinancialCloseRunStatus {
   PREPARING
+  AWAITING_APPROVAL
   REVIEWED
   CLOSED
+}
+
+enum ApprovalSubjectType {
+  FINANCIAL_CLOSE_RUN
+}
+
+enum ApprovalRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum ApprovalDecisionType {
+  APPROVE
+  REJECT
 }
 
 enum CashFlowMappingClassification {
@@ -326,6 +343,8 @@ model Company {
   bankReconciliationSessions        BankReconciliationSession[]
   bankReconciliationMatches         BankReconciliationMatch[]
   financialCloseRuns                FinancialCloseRun[]
+  approvalRequests                  ApprovalRequest[]
+  approvalDecisions                 ApprovalDecision[]
   cashFlowAccountMappings           CashFlowAccountMapping[]
   posSales                          PosSale[]
 
@@ -373,6 +392,8 @@ model User {
   financialCloseRunsReviewed        FinancialCloseRun[]                @relation("FinancialCloseRunReviewedBy")
   financialCloseRunsReturned        FinancialCloseRun[]                @relation("FinancialCloseRunReturnedBy")
   financialCloseRunsClosed          FinancialCloseRun[]                @relation("FinancialCloseRunClosedBy")
+  approvalRequestsCreated           ApprovalRequest[]                   @relation("ApprovalRequestCreatedBy")
+  approvalDecisionsMade             ApprovalDecision[]                  @relation("ApprovalDecisionMadeBy")
   cashFlowMappingsCreated           CashFlowAccountMapping[]           @relation("CashFlowMappingCreatedBy")
   cashFlowMappingsUpdated           CashFlowAccountMapping[]           @relation("CashFlowMappingUpdatedBy")
   posSalesCompleted                 PosSale[]                          @relation("PosSaleCompletedBy")
@@ -872,6 +893,52 @@ model FinancialCloseRun {
   @@index([returnedById, returnedAt])
   @@index([closedById, closedAt])
   @@map("financial_close_runs")
+}
+
+model ApprovalRequest {
+  id                       BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId                 String                @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId                BigInt                @map("company_id") @db.UnsignedBigInt
+  subjectType              ApprovalSubjectType  @map("subject_type")
+  subjectId                String                @map("subject_id") @db.VarChar(80)
+  subjectVersion           Int                   @map("subject_version") @db.UnsignedInt
+  subjectSnapshotHashSha256 Bytes                @map("subject_snapshot_hash_sha256") @db.Binary(32)
+  status                   ApprovalRequestStatus @default(PENDING)
+  requestedById            BigInt                @map("requested_by_id") @db.UnsignedBigInt
+  makerCheckerRequired     Boolean               @default(true) @map("maker_checker_required")
+  activeSubjectKey         String?               @map("active_subject_key") @db.VarChar(160)
+  version                  Int                   @default(0) @db.UnsignedInt
+  createdAt                DateTime              @default(now()) @map("created_at")
+  updatedAt                DateTime              @updatedAt @map("updated_at")
+  company                  Company               @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  requestedBy              User                  @relation("ApprovalRequestCreatedBy", fields: [requestedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  decisions                ApprovalDecision[]
+
+  @@unique([id, companyId])
+  @@unique([companyId, activeSubjectKey])
+  @@index([companyId, status, createdAt])
+  @@index([companyId, subjectType, subjectId, createdAt])
+  @@index([requestedById, createdAt])
+  @@map("approval_requests")
+}
+
+model ApprovalDecision {
+  id                BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId         BigInt               @map("company_id") @db.UnsignedBigInt
+  approvalRequestId BigInt               @unique @map("approval_request_id") @db.UnsignedBigInt
+  decision          ApprovalDecisionType
+  actorUserId       BigInt               @map("actor_user_id") @db.UnsignedBigInt
+  reason            String?              @db.VarChar(500)
+  decidedAt         DateTime             @default(now()) @map("decided_at")
+  createdAt         DateTime             @default(now()) @map("created_at")
+  company           Company              @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  approvalRequest   ApprovalRequest      @relation(fields: [approvalRequestId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  actor             User                 @relation("ApprovalDecisionMadeBy", fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([id, companyId])
+  @@index([companyId, decidedAt])
+  @@index([actorUserId, decidedAt])
+  @@map("approval_decisions")
 }
 
 model DocumentSequence {

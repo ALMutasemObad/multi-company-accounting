@@ -56,6 +56,8 @@ import { CostCenterActivityService } from './reports/cost-center-activity-servic
 import { PrismaCostCenterActivityLedgerQueryAdapter } from './reports/adapters/prisma-cost-center-activity-ledger-query-adapter.js';
 import { PosService } from './pos/pos-service.js';
 import { PrismaPosSaleQueryAdapter } from './pos/adapters/prisma-pos-sale-query-adapter.js';
+import { ApprovalService } from './approvals/approval-service.js';
+import { FinancialCloseApprovalAdapter } from './fiscal/financial-close-approval-adapter.js';
 
 const config = loadConfig();
 if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required to start the API');
@@ -145,6 +147,9 @@ const financialClose = new FinancialCloseService(database, {
   currencies: new CompanyCurrencyFinancialCloseReadinessAdapter(),
   settlements: new SettlementFinancialCloseReadinessAdapter(),
 });
+const approvals = new ApprovalService(database, {
+  FINANCIAL_CLOSE_RUN: new FinancialCloseApprovalAdapter(financialClose),
+});
 const app = createApp(config, {
   readiness: new DatabaseReadinessService(database, config.READINESS_TIMEOUT_MS),
   metrics: operationalMetrics,
@@ -158,6 +163,7 @@ const app = createApp(config, {
   security: new SecurityEventService(database),
   fiscal,
   financialClose,
+  approvals,
   accounts: new AccountService(database),
   journals: new ManualJournalService(database),
   receiptReferences,

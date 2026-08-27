@@ -26,12 +26,13 @@ const SecurityEventsPage = lazy(() => import("./SecurityEventsPage").then((modul
 const CompanySettingsPage = lazy(() => import("./CompanySettingsPage").then((module) => ({ default: module.CompanySettingsPage })));
 const DataImportsPage = lazy(() => import("./DataImportsPage").then((module) => ({ default: module.DataImportsPage })));
 const PosPage = lazy(() => import("./PosPage").then((module) => ({ default: module.PosPage })));
+const ApprovalsPage = lazy(() => import("./ApprovalsPage").then((module) => ({ default: module.ApprovalsPage })));
 
-type View = "dashboard" | "pos" | "customers" | "sales" | "receipts" | "suppliers" | "purchases" | "payments" | "journals" | "fiscal" | "accounts" | "treasury" | "inventory" | "reports" | "imports" | "admin" | "audit" | "security" | "settings";
+type View = "dashboard" | "pos" | "customers" | "sales" | "receipts" | "suppliers" | "purchases" | "payments" | "journals" | "fiscal" | "approvals" | "accounts" | "treasury" | "inventory" | "reports" | "imports" | "admin" | "audit" | "security" | "settings";
 
 const viewFromHash = (): View => {
   const value = location.hash.slice(1);
-  return ["dashboard", "pos", "customers", "sales", "receipts", "suppliers", "purchases", "payments", "journals", "fiscal", "accounts", "treasury", "inventory", "reports", "imports", "admin", "audit", "security", "settings"].includes(value) ? value as View : "dashboard";
+  return ["dashboard", "pos", "customers", "sales", "receipts", "suppliers", "purchases", "payments", "journals", "fiscal", "approvals", "accounts", "treasury", "inventory", "reports", "imports", "admin", "audit", "security", "settings"].includes(value) ? value as View : "dashboard";
 };
 
 const navigationItems: Array<{ view: View; icon: Parameters<typeof Icon>[0]["name"]; label: TranslationKey }> = [
@@ -45,6 +46,7 @@ const navigationItems: Array<{ view: View; icon: Parameters<typeof Icon>[0]["nam
   { view: "payments", icon: "payments", label: "nav.payments" },
   { view: "journals", icon: "journal", label: "nav.journals" },
   { view: "fiscal", icon: "calendar", label: "nav.fiscal" },
+  { view: "approvals", icon: "check", label: "nav.approvals" },
   { view: "accounts", icon: "accounts", label: "nav.accounts" },
   { view: "treasury", icon: "treasury", label: "nav.treasury" },
   { view: "inventory", icon: "inventory", label: "nav.inventory" },
@@ -71,6 +73,7 @@ const viewTitleKey: Record<View, TranslationKey> = {
   payments: "nav.payments",
   journals: "nav.journals",
   fiscal: "view.fiscal",
+  approvals: "view.approvals",
   accounts: "view.accounts",
   treasury: "nav.treasury",
   inventory: "nav.inventory",
@@ -281,6 +284,7 @@ export default function App() {
             {view === "payments" && <PaymentsPage notify={notify} />}
             {view === "journals" && <ManualJournalsPage notify={notify} />}
             {view === "fiscal" && <FiscalPage notify={notify} />}
+            {view === "approvals" && <ApprovalsPage notify={notify} />}
             {view === "accounts" && <AccountsPage notify={notify} />}
             {view === "treasury" && <TreasuryPage notify={notify} />}
             {view === "inventory" && <InventoryPage notify={notify} />}

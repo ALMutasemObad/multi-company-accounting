@@ -7,6 +7,7 @@ import { arCashFlow } from "./cash-flow";
 import { arTaxSummary } from "./tax-summary";
 import { arCostCenterActivity } from "./cost-center-activity";
 import { arPos } from "./pos";
+import { arApprovals } from "./approvals";
 
 export const ar = {
   ...arDomain,
@@ -17,6 +18,7 @@ export const ar = {
   ...arTaxSummary,
   ...arCostCenterActivity,
   ...arPos,
+  ...arApprovals,
   "language.label": "اللغة",
   "branding.name": "النظام المحاسبي متعدد الشركات",
   "branding.shortName": "منصة المحاسبة",

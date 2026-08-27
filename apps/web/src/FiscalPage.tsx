@@ -112,10 +112,24 @@ function CloseWorkspace({ period, notify, onClose, onClosed }: { period: FiscalP
   }, [period.id]);
   useEffect(() => { void loadClose(); }, [loadClose]);
 
-  async function updateRun(operation: "start" | "refresh" | "review" | "return") {
+  async function updateRun(operation: "start" | "refresh" | "submit" | "return") {
     if (!readiness) return;
     setWorking(operation); setError("");
     try {
+      if (operation === "submit") {
+        await api("/approval-requests", {
+          method: "POST",
+          idempotencyKey: idempotencyKey("financial-close-approval", run!.id),
+          body: JSON.stringify({
+            subjectType: "FINANCIAL_CLOSE_RUN",
+            subjectId: run!.id,
+            subjectVersion: run!.version,
+          }),
+        });
+        await loadClose();
+        notify(t("financialClose.submitSuccess"));
+        return;
+      }
       const path = operation === "start"
         ? `/fiscal-periods/${period.id}/close-run`
         : `/financial-close-runs/${run!.id}/${operation}`;
@@ -150,8 +164,14 @@ function CloseWorkspace({ period, notify, onClose, onClosed }: { period: FiscalP
     finally { setWorking(""); }
   }
 
-  const visibleReadiness = run?.status === "REVIEWED" ? run.checklist : readiness;
-  const statusLabel = run?.status === "CLOSED" ? t("financialClose.closed") : run?.status === "REVIEWED" ? t("financialClose.reviewed") : t("financialClose.preparing");
+  const visibleReadiness = run?.status === "REVIEWED" || run?.status === "AWAITING_APPROVAL" ? run.checklist : readiness;
+  const statusLabel = run?.status === "CLOSED"
+    ? t("financialClose.closed")
+    : run?.status === "REVIEWED"
+      ? t("financialClose.reviewed")
+      : run?.status === "AWAITING_APPROVAL"
+        ? t("financialClose.awaitingApproval")
+        : t("financialClose.preparing");
   return <Modal title={`${t("financialClose.title")} — ${period.name}`} description={t("financialClose.description")} onClose={onClose} wide>
     <div className="financial-close-workspace">
       {loading ? <Spinner label={t("financialClose.loading")} /> : error && !visibleReadiness ? <div className="error-panel" role="alert"><p>{error}</p><Button variant="secondary" onClick={() => void loadClose()}>{t("common.retry")}</Button></div> : <>
@@ -169,12 +189,13 @@ function CloseWorkspace({ period, notify, onClose, onClosed }: { period: FiscalP
           </div>
           <p className="close-checked-at">{t("financialClose.checkedAt", { value1: new Date(visibleReadiness.checkedAt).toLocaleString(activeIntlLocale()) })}</p>
           {!run && <div className="close-empty-note">{t("financialClose.noRun")}</div>}
+          {run?.status === "AWAITING_APPROVAL" && <div className="close-empty-note">{t("financialClose.awaitingApprovalDescription")} <a href="#approvals">{t("financialClose.openApprovals")}</a></div>}
           {run?.closePack && <div className="close-pack-note"><strong>{t("financialClose.snapshot")}</strong><code>{run.closePackHashSha256?.slice(0, 12)}</code></div>}
           {returning && <div className="close-return-panel"><label><span>{t("financialClose.returnReason")}</span><textarea value={returnReason} onChange={(event) => setReturnReason(event.target.value)} rows={3} /></label><div className="row-actions"><Button variant="ghost" onClick={() => setReturning(false)}>{t("financialClose.cancelReturn")}</Button><Button variant="danger" disabled={returnReason.trim().length < 10 || Boolean(working)} onClick={() => void updateRun("return")}>{t("financialClose.confirmReturn")}</Button></div></div>}
           <div className="form-actions close-actions">
             <Button variant="ghost" onClick={onClose}>{t("common.close")}</Button>
             {!run && <Button disabled={Boolean(working)} onClick={() => void updateRun("start")}>{working ? t("common.loading") : t("financialClose.start")}</Button>}
-            {run?.status === "PREPARING" && <><Button variant="secondary" disabled={Boolean(working)} onClick={() => void updateRun("refresh")}>{t("financialClose.refresh")}</Button><Button disabled={!visibleReadiness.ready || Boolean(working)} onClick={() => void updateRun("review")}>{t("financialClose.review")}</Button></>}
+            {run?.status === "PREPARING" && <><Button variant="secondary" disabled={Boolean(working)} onClick={() => void updateRun("refresh")}>{t("financialClose.refresh")}</Button><Button disabled={!visibleReadiness.ready || Boolean(working)} onClick={() => void updateRun("submit")}>{t("financialClose.submitApproval")}</Button></>}
             {run?.status === "REVIEWED" && <><Button variant="secondary" disabled={Boolean(working)} onClick={() => setReturning(true)}>{t("financialClose.return")}</Button><Button disabled={Boolean(working)} onClick={() => void finalizeClose()}>{t("financialClose.finalize")}</Button></>}
           </div>
         </>}

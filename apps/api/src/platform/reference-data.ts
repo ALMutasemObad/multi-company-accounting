@@ -23,6 +23,8 @@ export const permissionDefinitions = [
   ['fiscal_periods.view', 'fiscal', 'عرض السنوات والفترات المالية'],
   ['fiscal_periods.manage', 'fiscal', 'إدارة السنوات والفترات المالية'],
   ['fiscal_periods.close', 'fiscal', 'إغلاق فترة مالية'],
+  ['approvals.view', 'approvals', 'عرض طلبات وقرارات الموافقة'],
+  ['approvals.decide', 'approvals', 'اعتماد أو رفض طلبات الموافقة'],
   ['fiscal_periods.reopen', 'fiscal', 'إعادة فتح فترة مالية'],
   ['accounts.view', 'accounts', 'عرض دليل الحسابات'],
   ['accounts.create', 'accounts', 'إنشاء حساب'],

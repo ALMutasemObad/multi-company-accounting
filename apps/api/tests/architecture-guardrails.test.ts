@@ -100,13 +100,21 @@ describe("core accounting architecture guardrails", () => {
     expect(notice).toContain("Copyright (c) 2015 David Khourshid");
   });
 
-  it("keeps XState isolated to the financial-close transition adapter", async () => {
+  it("keeps XState isolated behind the shared workflow-state adapter", async () => {
     const sources = await allTypeScriptSources();
     const importers = sources
       .filter(({ content }) => /from\s+["']xstate["']/u.test(content))
       .map(({ path }) => path)
       .sort();
-    expect(importers).toEqual(["fiscal/financial-close-workflow.ts"]);
+    expect(importers).toEqual(["approvals/workflow-state-port.ts"]);
+  });
+
+  it("keeps the approval engine away from owner facts and Ledger writes", async () => {
+    const approval = await source("approvals/approval-service.ts");
+    expect(approval).not.toMatch(/\.(?:journalEntry|journalLine|accountingDocument|financialCloseRun)\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
+    expect(approval).toContain("this.ports[input.subjectType].request");
+    expect(approval).toContain("await port.approve");
+    expect(approval).toContain("await port.reject");
   });
 
   it("keeps open-source bank file parsers behind Treasury adapters", async () => {
