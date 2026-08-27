@@ -290,6 +290,25 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
     expect.soft(runtimeErrors, `${locale} financial close runtime errors`).toEqual([]);
   });
 
+  test(`${locale}: tax summary report stays responsive and readable`, async ({ page }) => {
+    const runtimeErrors: string[] = [];
+    page.on('pageerror', (error) => runtimeErrors.push(error.message));
+    await configureLocale(page, locale);
+    await page.goto('/?qa=reports#reports');
+    await waitForStableInterface(page, { name: 'reports', path: '', ready: '.workspace-page', kind: 'workspace' });
+
+    const tabs = page.locator('.report-tabs button');
+    await expect(tabs).toHaveCount(7);
+    await tabs.nth(1).click();
+    await expect(tabs.nth(1)).toHaveClass(/\bactive\b/u);
+    await expect(page.locator('.workspace-page .loading')).toHaveCount(0);
+    await expect(page.locator('.tax-summary-report')).toBeVisible();
+    await expect(page.locator('.tax-summary-table tbody tr')).toHaveCount(3);
+    await auditCurrentInterface(page, locale, 'tax-summary');
+
+    expect.soft(runtimeErrors, `${locale} tax summary runtime errors`).toEqual([]);
+  });
+
   test(`${locale}: sales and purchase invoice editors stay contained and accessible`, async ({ page }) => {
     const runtimeErrors: string[] = [];
     page.on('pageerror', (error) => runtimeErrors.push(error.message));

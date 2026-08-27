@@ -763,6 +763,28 @@ export type IndirectCashFlowReport = {
   mapping: { complete: boolean; cashAccountCount: number; unmappedAccounts: Array<{ accountId: string; code: string; nameAr: string; nameEn: string | null; change: string }> };
 };
 
+export type TaxSummaryStatus = "POSTED" | "REVERSED" | "DRAFT" | "CANCELLED";
+export type TaxSummaryDocumentType = "SALES_INVOICE" | "SALES_CREDIT_NOTE" | "PURCHASE_INVOICE" | "PURCHASE_DEBIT_NOTE";
+export type TaxSummaryReport = {
+  range: { dateFrom: string; dateTo: string };
+  filter: { status: TaxSummaryStatus | null; basis: "LEDGER" | "STATUS_FILTER" };
+  company: { name: string };
+  baseCurrency: { id: string; code: string; nameAr: string; decimals: number };
+  totals: { outputTaxable: string; outputTax: string; inputTaxable: string; inputTax: string; netTaxDue: string; documentCount: number };
+  rows: Array<{
+    usage: "OUTPUT" | "INPUT";
+    documentType: TaxSummaryDocumentType;
+    status: TaxSummaryStatus;
+    taxRateId: string | null;
+    taxCode: string | null;
+    taxNameAr: string | null;
+    rate: string;
+    documentCount: number;
+    taxableBase: string;
+    taxBase: string;
+  }>;
+};
+
 export type TrialBalanceRow = {
   accountId: string;
   code: string;

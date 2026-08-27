@@ -4,6 +4,7 @@ import { arEvents } from "./ar-events";
 import { arReconciliation } from "./reconciliation";
 import { arFinancialClose } from "./financial-close";
 import { arCashFlow } from "./cash-flow";
+import { arTaxSummary } from "./tax-summary";
 
 export const ar = {
   ...arDomain,
@@ -11,6 +12,7 @@ export const ar = {
   ...arReconciliation,
   ...arFinancialClose,
   ...arCashFlow,
+  ...arTaxSummary,
   "language.label": "اللغة",
   "branding.name": "النظام المحاسبي متعدد الشركات",
   "branding.shortName": "منصة المحاسبة",

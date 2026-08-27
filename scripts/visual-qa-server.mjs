@@ -98,6 +98,17 @@ function responseFor(url, method) {
     cash: { opening: "80000.0000", netChange: "170000.0000", closing: "250000.0000", calculatedNetChange: "170000.0000", calculatedClosing: "250000.0000", difference: "0.0000", reconciled: true },
     mapping: { complete: true, cashAccountCount: 2, unmappedAccounts: [] },
   };
+  if (pathname === "/reports/tax-summary") return {
+    range: { dateFrom: "2026-01-01", dateTo: "2026-12-31" },
+    filter: { status: null, basis: "LEDGER" },
+    company: { name: company.name }, baseCurrency: currency,
+    totals: { outputTaxable: "640000.0000", outputTax: "96000.0000", inputTaxable: "360000.0000", inputTax: "54000.0000", netTaxDue: "42000.0000", documentCount: 58 },
+    rows: [
+      { usage: "OUTPUT", documentType: "SALES_INVOICE", status: "POSTED", taxRateId: "tax-output-qa", taxCode: "VAT-15", taxNameAr: "ضريبة المخرجات 15%", rate: "15.0000", documentCount: 37, taxableBase: "700000.0000", taxBase: "105000.0000" },
+      { usage: "OUTPUT", documentType: "SALES_CREDIT_NOTE", status: "POSTED", taxRateId: "tax-output-qa", taxCode: "VAT-15", taxNameAr: "ضريبة المخرجات 15%", rate: "15.0000", documentCount: 4, taxableBase: "-60000.0000", taxBase: "-9000.0000" },
+      { usage: "INPUT", documentType: "PURCHASE_INVOICE", status: "POSTED", taxRateId: "tax-input-qa", taxCode: "VAT-IN-15", taxNameAr: "ضريبة المدخلات 15%", rate: "15.0000", documentCount: 17, taxableBase: "360000.0000", taxBase: "54000.0000" },
+    ],
+  };
   if (pathname === "/reports/cash-flow/mappings") return { data: [] };
   if (pathname === "/reports/trial-balance") return { range: { dateFrom: "2026-01-01", dateTo: "2026-12-31" }, data: [], totals: { debit: "0.00", credit: "0.00" } };
   if (pathname === "/reports/journal") return { range: { dateFrom: "2026-01-01", dateTo: "2026-12-31" }, data: [], meta, totals: { debit: "0.00", credit: "0.00" } };

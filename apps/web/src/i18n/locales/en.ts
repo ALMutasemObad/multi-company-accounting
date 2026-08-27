@@ -6,6 +6,7 @@ import { enPageOverrides } from "./en-page-overrides";
 import { enReconciliation } from "./reconciliation";
 import { enFinancialClose } from "./financial-close";
 import { enCashFlow } from "./cash-flow";
+import { enTaxSummary } from "./tax-summary";
 
 export const en = {
   ...enDomain,
@@ -13,6 +14,7 @@ export const en = {
   ...enReconciliation,
   ...enFinancialClose,
   ...enCashFlow,
+  ...enTaxSummary,
   "language.label": "Language",
   "branding.name": "Multi-company accounting system",
   "branding.shortName": "Accounting platform",

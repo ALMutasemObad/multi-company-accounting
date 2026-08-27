@@ -351,6 +351,21 @@ describe("Reporting ownership boundary guardrails", () => {
     expect(treasuryAdapter).toContain("implements TreasuryCashAccountQueryPort");
     expect(calculator).not.toMatch(/\.(?:account|journalEntry|journalLine|cashBankAccount)\./u);
   });
+
+  it("keeps tax-summary invoice reads behind a company-scoped query port", async () => {
+    const [service, adapter, calculator] = await Promise.all([
+      source("reports/tax-summary-service.ts"),
+      source("reports/adapters/prisma-tax-summary-query-adapter.ts"),
+      source("reports/tax-summary-calculator.ts"),
+    ]);
+
+    expect(service).toContain("TaxSummaryQueryPort");
+    expect(service).not.toMatch(/\.(?:salesInvoice|purchaseInvoice|taxRate)\.(?:find|groupBy|aggregate|create|update|delete)/u);
+    expect(adapter).toContain("implements TaxSummaryQueryPort");
+    expect(adapter).toContain("where: { companyId");
+    expect(adapter).not.toMatch(/\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
+    expect(calculator).not.toMatch(/\.(?:salesInvoice|purchaseInvoice|taxRate)\./u);
+  });
 });
 
 describe("Inventory ownership boundary guardrails", () => {

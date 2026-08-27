@@ -50,6 +50,8 @@ import { SettlementFinancialCloseReadinessAdapter } from './reports/financial-cl
 import { CashFlowService } from './reports/cash-flow-service.js';
 import { PrismaCashFlowLedgerQueryAdapter } from './reports/adapters/prisma-cash-flow-ledger-query-adapter.js';
 import { TreasuryCashFlowAccountAdapter } from './treasury/cash-flow-account-adapter.js';
+import { TaxSummaryService } from './reports/tax-summary-service.js';
+import { PrismaTaxSummaryQueryAdapter } from './reports/adapters/prisma-tax-summary-query-adapter.js';
 
 const config = loadConfig();
 if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required to start the API');
@@ -163,6 +165,7 @@ const app = createApp(config, {
   payments: new PaymentService(database, treasury),
   reports: new ReportService(database),
   cashFlow: new CashFlowService(database, new PrismaCashFlowLedgerQueryAdapter(), new TreasuryCashFlowAccountAdapter()),
+  taxSummary: new TaxSummaryService(database, new PrismaTaxSummaryQueryAdapter()),
   taxes,
   salesInvoices,
   purchaseInvoices,

@@ -26,10 +26,15 @@ describe("report routes", () => {
     const cashFlow = vi.fn().mockResolvedValue({ range: { dateFrom: "2026-01-01", dateTo: "2026-12-31" }, company: { name: "شركة الاختبار" }, baseCurrency: { id: "1", code: "SAR", nameAr: "ريال سعودي", decimals: 2 }, sections: { operating: { netIncome: "0.0000", adjustments: [], adjustmentsTotal: "0.0000", workingCapital: [], workingCapitalTotal: "0.0000", total: "0.0000" }, investing: { rows: [], total: "0.0000" }, financing: { rows: [], total: "0.0000" } }, cash: { opening: "0.0000", netChange: "0.0000", closing: "0.0000", calculatedNetChange: "0.0000", calculatedClosing: "0.0000", difference: "0.0000", reconciled: false }, mapping: { complete: false, cashAccountCount: 0, unmappedAccounts: [] } });
     const listMappings = vi.fn().mockResolvedValue({ data: [] });
     const updateMapping = vi.fn().mockResolvedValue({ accountId: "12", code: "1210", nameAr: "معدات", nameEn: null, accountClass: "ASSET", normalBalance: "DEBIT", classification: "INVESTING", source: "EXPLICIT", version: 1, editable: true });
+    const summary = vi.fn().mockResolvedValue({
+      range: { dateFrom: "2026-01-01", dateTo: "2026-12-31" }, filter: { status: null, basis: "LEDGER" },
+      company: { name: "شركة الاختبار" }, baseCurrency: { id: "1", code: "SAR", nameAr: "ريال سعودي", decimals: 2 },
+      totals: { outputTaxable: "100.0000", outputTax: "15.0000", inputTaxable: "40.0000", inputTax: "6.0000", netTaxDue: "9.0000", documentCount: 2 }, rows: [],
+    });
     const app = express();
     app.use(express.json());
-    app.use("/api/v1", createReportRouter({ authorize } as any, { dashboard, trialBalance, financialPosition, incomeStatement, ledger, ledgerExport, journalReport, journalReportExport, recordExport } as any, { cashFlow, listMappings, updateMapping } as any));
-    return { app, authorize, dashboard, trialBalance, financialPosition, incomeStatement, ledger, ledgerExport, journalReport, journalReportExport, recordExport, cashFlow, listMappings, updateMapping };
+    app.use("/api/v1", createReportRouter({ authorize } as any, { dashboard, trialBalance, financialPosition, incomeStatement, ledger, ledgerExport, journalReport, journalReportExport, recordExport } as any, { cashFlow, listMappings, updateMapping } as any, { summary } as any));
+    return { app, authorize, dashboard, trialBalance, financialPosition, incomeStatement, ledger, ledgerExport, journalReport, journalReportExport, recordExport, cashFlow, listMappings, updateMapping, summary };
   }
 
   it("requires the dedicated dashboard permission and forwards the company context", async () => {
@@ -49,6 +54,17 @@ describe("report routes", () => {
     expect(cashFlow).toHaveBeenCalledWith({ userId: 1n, companyId: 2n }, { dateFrom: "2026-01-01", dateTo: "2026-12-31" });
     expect(listMappings).toHaveBeenCalled();
     expect(updateMapping).toHaveBeenCalledWith({ userId: 1n, companyId: 2n }, 12n, { classification: "INVESTING", version: 0 });
+  });
+
+  it("serves and exports the tax summary with dedicated permissions", async () => {
+    const { app, authorize, summary, recordExport } = fixture();
+    await request(app).get("/api/v1/reports/tax-summary?dateFrom=2026-01-01&dateTo=2026-12-31&status=POSTED").expect(200);
+    const exported = await request(app).get("/api/v1/reports/tax-summary/export/csv?dateFrom=2026-01-01&dateTo=2026-12-31").expect(200);
+    expect(exported.headers["content-type"]).toContain("text/csv");
+    expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ permission: "reports.tax_summary.view", requireCsrf: false }));
+    expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ permission: "reports.financial_statements.export", requireCsrf: false }));
+    expect(summary).toHaveBeenCalledWith({ userId: 1n, companyId: 2n }, { dateFrom: "2026-01-01", dateTo: "2026-12-31", status: "POSTED" });
+    expect(recordExport).toHaveBeenCalledWith({ userId: 1n, companyId: 2n }, "TAX_SUMMARY", "CSV", { dateFrom: "2026-01-01", dateTo: "2026-12-31" });
   });
 
   it("rejects report ranges longer than 366 days", async () => {

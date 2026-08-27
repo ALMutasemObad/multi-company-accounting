@@ -3,8 +3,9 @@ import { z, ZodError } from "zod";
 import type { AuthService } from "../auth/auth-service.js";
 import { openApiRequestBodySchemas as bodies } from "../generated/openapi-request-guards.js";
 import { CashFlowError, type CashFlowService } from "./cash-flow-service.js";
+import { TaxSummaryError, type TaxSummaryService } from "./tax-summary-service.js";
 import { ReportError, ReportService } from "./report-service.js";
-import { financialPositionTable, incomeStatementTable, indirectCashFlowTable, journalReportToCsv, ledgerReportTable, tableToCsv, tableToPdf, tableToXlsx } from "./financial-statement-exporter.js";
+import { financialPositionTable, incomeStatementTable, indirectCashFlowTable, journalReportToCsv, ledgerReportTable, tableToCsv, tableToPdf, tableToXlsx, taxSummaryTable } from "./financial-statement-exporter.js";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const id = z.string().regex(/^[1-9]\d*$/).transform(BigInt);
@@ -12,6 +13,7 @@ const queryBoolean = z.preprocess((value) => value === "true" ? true : value ===
 const query = z.object({ dateFrom: isoDate, dateTo: isoDate })
   .refine((value) => value.dateFrom <= value.dateTo, { message: "dateFrom must be before or equal to dateTo" })
   .refine((value) => (Date.parse(`${value.dateTo}T00:00:00Z`) - Date.parse(`${value.dateFrom}T00:00:00Z`)) / 86_400_000 <= 365, { message: "Report range cannot exceed 366 days" });
+const taxSummaryQuery = query.and(z.object({ status: z.enum(["POSTED", "REVERSED", "DRAFT", "CANCELLED"]).optional() }));
 const financialPositionQuery = z.object({ asOf: isoDate, compareAsOf: isoDate.optional(), includeZeroBalances: queryBoolean });
 const incomeStatementQuery = z.object({ dateFrom: isoDate, dateTo: isoDate, compareDateFrom: isoDate.optional(), compareDateTo: isoDate.optional(), includeZeroBalances: queryBoolean })
   .refine((value) => value.dateFrom <= value.dateTo, { message: "dateFrom must be before or equal to dateTo" })
@@ -30,7 +32,7 @@ const journalQuery = query.and(z.object({
 function sid(request: Request) {
   return Object.fromEntries((request.headers.cookie ?? "").split(";").map((value) => value.trim().split("=", 2)).filter(([key, value]) => key && value)).sid;
 }
-export function createReportRouter(auth: AuthService, service: ReportService, cashFlow?: CashFlowService) {
+export function createReportRouter(auth: AuthService, service: ReportService, cashFlow?: CashFlowService, taxSummary?: TaxSummaryService) {
   const router = Router();
   const authorize = (request: Request, permission: string, requireCsrf = false) => auth.authorize({ sid: sid(request), csrfToken: request.header("X-CSRF-Token") ?? undefined, permission, requireCsrf });
   router.get("/reports/dashboard", async (request, response) => {
@@ -64,6 +66,24 @@ export function createReportRouter(auth: AuthService, service: ReportService, ca
       await service.recordExport(context, "INDIRECT_CASH_FLOW", format.toUpperCase(), parameters);
       response.setHeader("Content-Type", format === "csv" ? "text/csv; charset=utf-8" : format === "xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/pdf");
       response.setHeader("Content-Disposition", `attachment; filename="cash-flow-${report.range.dateFrom}-${report.range.dateTo}.${format}"`);
+      response.send(content);
+    });
+  }
+  if (taxSummary) {
+    router.get("/reports/tax-summary", async (request, response) => {
+      const context = await authorize(request, "reports.tax_summary.view");
+      response.json(await taxSummary.summary(context, taxSummaryQuery.parse(request.query)));
+    });
+    router.get("/reports/tax-summary/export/:format", async (request, response) => {
+      const context = await authorize(request, "reports.financial_statements.export");
+      const format = z.enum(["csv", "xlsx", "pdf"]).parse(request.params.format);
+      const parameters = taxSummaryQuery.parse(request.query);
+      const report = await taxSummary.summary(context, parameters);
+      const table = taxSummaryTable(report);
+      const content = format === "csv" ? tableToCsv(table) : format === "xlsx" ? tableToXlsx(table, "ملخص الضريبة") : await tableToPdf(table, `ملخص الضريبة من ${report.range.dateFrom} إلى ${report.range.dateTo}`, report.company.name);
+      await service.recordExport(context, "TAX_SUMMARY", format.toUpperCase(), parameters);
+      response.setHeader("Content-Type", format === "csv" ? "text/csv; charset=utf-8" : format === "xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/pdf");
+      response.setHeader("Content-Disposition", `attachment; filename="tax-summary-${report.range.dateFrom}-${report.range.dateTo}.${format}"`);
       response.send(content);
     });
   }
@@ -147,6 +167,10 @@ export function createReportRouter(auth: AuthService, service: ReportService, ca
     if (error instanceof CashFlowError) {
       const status = error.reason === "NOT_FOUND" ? 404 : error.reason === "VERSION_CONFLICT" ? 409 : 422;
       response.status(status).json({ status, code: "BUSINESS_RULE_VIOLATION", reason: error.reason });
+      return;
+    }
+    if (error instanceof TaxSummaryError) {
+      response.status(404).json({ status: 404, code: error.reason });
       return;
     }
     next(error);

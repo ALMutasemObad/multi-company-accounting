@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { financialPositionTable, indirectCashFlowTable, journalReportToCsv, ledgerReportTable, tableToCsv, tableToPdf, tableToXlsx } from "../src/reports/financial-statement-exporter.js";
+import { financialPositionTable, indirectCashFlowTable, journalReportToCsv, ledgerReportTable, tableToCsv, tableToPdf, tableToXlsx, taxSummaryTable } from "../src/reports/financial-statement-exporter.js";
 
 const report = {
   company: { name: "الشركة التجريبية" }, baseCurrency: { code: "SAR", nameAr: "ريال سعودي" }, asOf: "2026-08-11", comparisonAsOf: null,
@@ -63,5 +63,18 @@ describe("financial statement exports", () => {
     expect(csv).toContain("مطابقة الرصيد النقدي: متطابق");
     expect(tableToXlsx(table, "التدفق النقدي").subarray(0, 4).toString("hex")).toBe("504b0304");
     expect((await tableToPdf(table, "التدفق النقدي", "الشركة التجريبية")).subarray(0, 4).toString()).toBe("%PDF");
+  });
+  it("exports a tax summary with its ledger basis and reconciliation totals", async () => {
+    const table = taxSummaryTable({
+      company: { name: "الشركة التجريبية" }, baseCurrency: { code: "SAR", nameAr: "ريال سعودي" },
+      range: { dateFrom: "2026-01-01", dateTo: "2026-12-31" }, filter: { status: null, basis: "LEDGER" },
+      totals: { outputTaxable: "100.0000", outputTax: "15.0000", inputTaxable: "40.0000", inputTax: "6.0000", netTaxDue: "9.0000", documentCount: 2 },
+      rows: [{ usage: "OUTPUT", documentType: "SALES_INVOICE", status: "POSTED", taxCode: "VAT-15", taxNameAr: "ضريبة 15%", rate: "15.0000", documentCount: 1, taxableBase: "100.0000", taxBase: "15.0000" }],
+    });
+    const csv = tableToCsv(table).toString("utf8");
+    expect(csv).toContain("الأثر المرحل والعكس");
+    expect(csv).toContain('"صافي الضريبة المستحقة","9.0000"');
+    expect(tableToXlsx(table, "ملخص الضريبة").subarray(0, 4).toString("hex")).toBe("504b0304");
+    expect((await tableToPdf(table, "ملخص الضريبة", "الشركة التجريبية")).subarray(0, 4).toString()).toBe("%PDF");
   });
 });

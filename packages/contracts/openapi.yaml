@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.27.0
+  version: 1.28.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -6677,6 +6677,42 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
       x-permission: reports.financial_statements.export
       security: [{ SessionCookie: [] }]
+  /reports/tax-summary:
+    get:
+      tags: [Reports]
+      summary: ملخص الضريبة الداخلي المحايد للدولة
+      operationId: getTaxSummary
+      description: يعرض الأثر الضريبي بعملة الأساس حسب ضريبة المخرجات والمدخلات ونوع المستند وحالة حركة الترحيل. لا يمثل إقرارًا ضريبيًا خاصًا بدولة.
+      parameters:
+      - { name: dateFrom, in: query, required: true, schema: { type: string, format: date } }
+      - { name: dateTo, in: query, required: true, schema: { type: string, format: date } }
+      - { name: status, in: query, required: false, schema: { $ref: '#/components/schemas/TaxSummaryStatus' } }
+      responses:
+        '200': { description: ملخص الضريبة وتفاصيله, content: { application/json: { schema: { $ref: '#/components/schemas/TaxSummaryReport' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-permission: reports.tax_summary.view
+      security: [{ SessionCookie: [] }]
+  /reports/tax-summary/export/{format}:
+    get:
+      tags: [Reports]
+      summary: تصدير ملخص الضريبة الداخلي المحايد للدولة
+      operationId: exportTaxSummary
+      parameters:
+      - { name: format, in: path, required: true, schema: { type: string, enum: [csv, xlsx, pdf] } }
+      - { name: dateFrom, in: query, required: true, schema: { type: string, format: date } }
+      - { name: dateTo, in: query, required: true, schema: { type: string, format: date } }
+      - { name: status, in: query, required: false, schema: { $ref: '#/components/schemas/TaxSummaryStatus' } }
+      responses:
+        '200': { description: ملف ملخص الضريبة }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: reports.financial_statements.export
+      security: [{ SessionCookie: [] }]
   /reports/dashboard:
     get:
       tags:
@@ -12316,6 +12352,77 @@ components:
                   nameAr: { type: string }
                   nameEn: { type: [string, 'null'] }
                   change: { $ref: '#/components/schemas/SignedAmount' }
+    TaxSummaryStatus:
+      type: string
+      enum: [POSTED, REVERSED, DRAFT, CANCELLED]
+    TaxSummaryUsage:
+      type: string
+      enum: [OUTPUT, INPUT]
+    TaxSummaryDocumentType:
+      type: string
+      enum: [SALES_INVOICE, SALES_CREDIT_NOTE, PURCHASE_INVOICE, PURCHASE_DEBIT_NOTE]
+    TaxSummaryRow:
+      type: object
+      additionalProperties: false
+      required: [usage, documentType, status, taxRateId, taxCode, taxNameAr, rate, documentCount, taxableBase, taxBase]
+      properties:
+        usage: { $ref: '#/components/schemas/TaxSummaryUsage' }
+        documentType: { $ref: '#/components/schemas/TaxSummaryDocumentType' }
+        status: { $ref: '#/components/schemas/TaxSummaryStatus' }
+        taxRateId:
+          oneOf:
+          - { $ref: '#/components/schemas/Id' }
+          - { type: 'null' }
+        taxCode: { type: [string, 'null'], maxLength: 40 }
+        taxNameAr: { type: [string, 'null'], maxLength: 120 }
+        rate: { type: string, pattern: '^(?:0|[1-9][0-9]{0,2})\.[0-9]{4}$' }
+        documentCount: { type: integer, minimum: 0 }
+        taxableBase: { $ref: '#/components/schemas/SignedAmount' }
+        taxBase: { $ref: '#/components/schemas/SignedAmount' }
+    TaxSummaryReport:
+      type: object
+      additionalProperties: false
+      required: [range, filter, company, baseCurrency, totals, rows]
+      properties:
+        range: { $ref: '#/components/schemas/ReportRange' }
+        filter:
+          type: object
+          additionalProperties: false
+          required: [status, basis]
+          properties:
+            status:
+              oneOf:
+              - { $ref: '#/components/schemas/TaxSummaryStatus' }
+              - { type: 'null' }
+            basis: { type: string, enum: [LEDGER, STATUS_FILTER] }
+        company:
+          type: object
+          additionalProperties: false
+          required: [name]
+          properties: { name: { type: string } }
+        baseCurrency:
+          type: object
+          additionalProperties: false
+          required: [id, code, nameAr, decimals]
+          properties:
+            id: { $ref: '#/components/schemas/Id' }
+            code: { type: string, pattern: '^[A-Z]{3}$' }
+            nameAr: { type: string }
+            decimals: { type: integer, minimum: 0, maximum: 8 }
+        totals:
+          type: object
+          additionalProperties: false
+          required: [outputTaxable, outputTax, inputTaxable, inputTax, netTaxDue, documentCount]
+          properties:
+            outputTaxable: { $ref: '#/components/schemas/SignedAmount' }
+            outputTax: { $ref: '#/components/schemas/SignedAmount' }
+            inputTaxable: { $ref: '#/components/schemas/SignedAmount' }
+            inputTax: { $ref: '#/components/schemas/SignedAmount' }
+            netTaxDue: { $ref: '#/components/schemas/SignedAmount' }
+            documentCount: { type: integer, minimum: 0 }
+        rows:
+          type: array
+          items: { $ref: '#/components/schemas/TaxSummaryRow' }
     CashFlowMonth:
       type: object
       required: [month, receipts, payments, net]

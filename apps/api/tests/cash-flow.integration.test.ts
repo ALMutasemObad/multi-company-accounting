@@ -110,7 +110,10 @@ describe.runIf(enabled)("indirect cash-flow report with MariaDB", () => {
       prisma!.account.create({ data: { companyId, accountTypeId: revenueType.id, code: "4110", nameAr: "إيراد الاختبار", level: 1, allowsPosting: true } }),
       prisma!.account.create({ data: { companyId, accountTypeId: expenseType.id, code: "5110", nameAr: "مصروف الاختبار", level: 1, allowsPosting: true } }),
     ]);
-    [cashAccountId, receivableAccountId, , revenueAccountId, expenseAccountId] = accounts.map((account) => account.id);
+    cashAccountId = accounts[0]!.id;
+    receivableAccountId = accounts[1]!.id;
+    revenueAccountId = accounts[3]!.id;
+    expenseAccountId = accounts[4]!.id;
     await prisma!.cashBankAccount.create({
       data: { companyId, ledgerAccountId: cashAccountId, accountType: "CASH", code: "CASH-IT", nameAr: "صندوق الاختبار" },
     });

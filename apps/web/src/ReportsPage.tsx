@@ -26,6 +26,8 @@ import type { Account,
   StatementRow,
   StatementSection,
   Supplier,
+  TaxSummaryReport,
+  TaxSummaryStatus,
   TrialBalanceReport } from "./types";
 import { ReferenceCombobox } from "./ReferenceCombobox";
 import { Button,
@@ -36,7 +38,7 @@ import { Button,
   Modal,
 } from "./ui";
 
-type Tab = "cash" | "trial" | "journal" | "ledger" | "position" | "income";
+type Tab = "cash" | "tax" | "trial" | "journal" | "ledger" | "position" | "income";
 
 export function ReportsPage() {
   const initial = currentYearRange();
@@ -47,6 +49,7 @@ export function ReportsPage() {
   const [compareDateFrom, setCompareDateFrom] = useState(previousYear(initial.dateFrom));
   const [compareDateTo, setCompareDateTo] = useState(previousYear(initial.dateTo));
   const [includeZeroBalances, setIncludeZeroBalances] = useState(false);
+  const [taxStatus, setTaxStatus] = useState<"" | TaxSummaryStatus>("");
   const [journalDocumentType, setJournalDocumentType] = useState("");
   const [journalStatus, setJournalStatus] = useState("");
   const [journalAccountId, setJournalAccountId] = useState("");
@@ -57,9 +60,10 @@ export function ReportsPage() {
   const [statementSubjectLabel, setStatementSubjectLabel] = useState("");
   const [statementPage, setStatementPage] = useState(1);
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [applied, setApplied] = useState({ dateFrom: initial.dateFrom, dateTo: initial.dateTo, compareEnabled: false, compareDateFrom: previousYear(initial.dateFrom), compareDateTo: previousYear(initial.dateTo), includeZeroBalances: false, journalDocumentType: "", journalStatus: "", journalAccountId: "", journalSearch: "", statementSubjectType: "customer" as AccountStatementSubjectType, statementSubjectId: "" });
+  const [applied, setApplied] = useState({ dateFrom: initial.dateFrom, dateTo: initial.dateTo, compareEnabled: false, compareDateFrom: previousYear(initial.dateFrom), compareDateTo: previousYear(initial.dateTo), includeZeroBalances: false, taxStatus: "" as "" | TaxSummaryStatus, journalDocumentType: "", journalStatus: "", journalAccountId: "", journalSearch: "", statementSubjectType: "customer" as AccountStatementSubjectType, statementSubjectId: "" });
   const [cashFlow, setCashFlow] = useState<IndirectCashFlowReport | null>(null);
   const [mappingOpen, setMappingOpen] = useState(false);
+  const [taxSummary, setTaxSummary] = useState<TaxSummaryReport | null>(null);
   const [trial, setTrial] = useState<TrialBalanceReport | null>(null);
   const [position, setPosition] = useState<FinancialPositionReport | null>(null);
   const [income, setIncome] = useState<IncomeStatementReport | null>(null);
@@ -73,6 +77,11 @@ export function ReportsPage() {
     setLoading(true); setError(""); setLedger(null);
     try {
       if (tab === "cash") setCashFlow(await api<IndirectCashFlowReport>(`/reports/cash-flow?${rangeQuery(applied)}`));
+      if (tab === "tax") {
+        const parameters = new URLSearchParams({ dateFrom: applied.dateFrom, dateTo: applied.dateTo });
+        if (applied.taxStatus) parameters.set("status", applied.taxStatus);
+        setTaxSummary(await api<TaxSummaryReport>(`/reports/tax-summary?${parameters}`));
+      }
       if (tab === "trial") setTrial(await api<TrialBalanceReport>(`/reports/trial-balance?${rangeQuery(applied)}`));
       if (tab === "journal") {
         const query = new URLSearchParams({ dateFrom: applied.dateFrom, dateTo: applied.dateTo, page: String(journalPage), pageSize: "25" });
@@ -105,7 +114,7 @@ export function ReportsPage() {
   }, [accounts, applied, journalPage, statementPage, tab]);
   useEffect(() => { void load(); }, [load]);
 
-  function applyFilters() { setJournalPage(1); setStatementPage(1); setApplied({ dateFrom, dateTo, compareEnabled, compareDateFrom, compareDateTo, includeZeroBalances, journalDocumentType, journalStatus, journalAccountId, journalSearch: journalSearch.trim(), statementSubjectType, statementSubjectId }); }
+  function applyFilters() { setJournalPage(1); setStatementPage(1); setApplied({ dateFrom, dateTo, compareEnabled, compareDateFrom, compareDateTo, includeZeroBalances, taxStatus, journalDocumentType, journalStatus, journalAccountId, journalSearch: journalSearch.trim(), statementSubjectType, statementSubjectId }); }
   function downloadTrialCsv() {
     if (!trial) return;
     const blob = new Blob(["\uFEFF", trialBalanceCsv(trial.data)], { type: "text/csv;charset=utf-8" });
@@ -145,14 +154,20 @@ export function ReportsPage() {
   async function exportCashFlow(format: "csv" | "xlsx" | "pdf") {
     await downloadFile(`/reports/cash-flow/export/${format}?${rangeQuery(applied)}`, `cash-flow-${applied.dateFrom}-${applied.dateTo}.${format}`);
   }
+  async function exportTaxSummary(format: "csv" | "xlsx" | "pdf") {
+    const parameters = new URLSearchParams({ dateFrom: applied.dateFrom, dateTo: applied.dateTo });
+    if (applied.taxStatus) parameters.set("status", applied.taxStatus);
+    await downloadFile(`/reports/tax-summary/export/${format}?${parameters}`, `tax-summary-${applied.dateFrom}-${applied.dateTo}.${format}`);
+  }
 
   const comparisonInvalid = (tab === "position" || tab === "income") && compareEnabled && (!compareDateFrom || !compareDateTo || compareDateFrom > compareDateTo);
   const invalid = !dateFrom || !dateTo || dateFrom > dateTo || comparisonInvalid || (tab === "ledger" && !statementSubjectId);
-  const hasData = tab === "cash" ? cashFlow : tab === "trial" ? trial : tab === "journal" ? journal : tab === "ledger" ? ledger : tab === "position" ? position : income;
+  const hasData = tab === "cash" ? cashFlow : tab === "tax" ? taxSummary : tab === "trial" ? trial : tab === "journal" ? journal : tab === "ledger" ? ledger : tab === "position" ? position : income;
   return <section className="workspace-page reports-page">
     <PageHeader kicker={t("pages.reports.003")} title={t("pages.reports.004")} description={t("pages.reports.005")} />
     <div className="section-tabs report-tabs" role="tablist">
       <button className={tab === "cash" ? "active" : ""} onClick={() => setTab("cash")}>{t("pages.reports.006")}</button>
+      <button className={tab === "tax" ? "active" : ""} onClick={() => setTab("tax")}>{t("taxSummary.tab")}</button>
       <button className={tab === "trial" ? "active" : ""} onClick={() => setTab("trial")}>{t("pages.reports.007")}</button>
       <button className={tab === "journal" ? "active" : ""} onClick={() => setTab("journal")}>{t("pages.reports.008")}</button>
       <button className={tab === "ledger" ? "active" : ""} onClick={() => setTab("ledger")}>{t("accountStatement.tab")}</button>
@@ -166,6 +181,7 @@ export function ReportsPage() {
       {compareEnabled && tab === "income" && <label><span>{t("pages.reports.015")}</span><input type="date" value={compareDateFrom} onChange={(event) => setCompareDateFrom(event.target.value)} /></label>}
       {compareEnabled && (tab === "position" || tab === "income") && <label><span>{tab === "position" ? t("pages.reports.016") : t("pages.reports.017")}</span><input type="date" value={compareDateTo} onChange={(event) => setCompareDateTo(event.target.value)} /></label>}
       {(tab === "position" || tab === "income") && <label className="check-field inline-check"><input type="checkbox" checked={includeZeroBalances} onChange={(event) => setIncludeZeroBalances(event.target.checked)} /><span>{t("pages.reports.018")}</span></label>}
+      {tab === "tax" && <label><span>{t("taxSummary.statusFilter")}</span><select value={taxStatus} onChange={(event) => setTaxStatus(event.target.value as "" | TaxSummaryStatus)}><option value="">{t("taxSummary.allLedger")}</option><option value="POSTED">{t("status.POSTED")}</option><option value="REVERSED">{t("status.REVERSED")}</option><option value="DRAFT">{t("status.DRAFT")}</option><option value="CANCELLED">{t("status.CANCELLED")}</option></select></label>}
       {tab === "journal" && <>
         <label><span>{t("pages.purchase-invoices.023")}</span><select value={journalDocumentType} onChange={(event) => setJournalDocumentType(event.target.value)}><option value="">{t("pages.reports.020")}</option><option value="MANUAL_JOURNAL">{t("pages.reports.021")}</option><option value="INVENTORY_ADJUSTMENT">{t("pages.reports.025")}</option><option value="RECEIPT">{t("pages.reports.022")}</option><option value="PAYMENT">{t("pages.reports.023")}</option><option value="SALES_INVOICE">{t("pages.sales-invoices.025")}</option><option value="SALES_CREDIT_NOTE">{t("pages.sales-invoices.015")}</option><option value="PURCHASE_INVOICE">{t("pages.purchase-invoices.025")}</option><option value="PURCHASE_DEBIT_NOTE">{t("pages.purchase-invoices.015")}</option><option value="PERIOD_CLOSE">{t("pages.reports.024")}</option></select></label>
         <label><span>{t("pages.accounts.043")}</span><select value={journalStatus} onChange={(event) => setJournalStatus(event.target.value)}><option value="">{t("pages.reports.026")}</option><option value="POSTED">{t("pages.dashboard.045")}</option><option value="REVERSED">{t("pages.dashboard.047")}</option></select></label>
@@ -185,6 +201,7 @@ export function ReportsPage() {
     {loading && !hasData ? <Spinner label={t("pages.reports.034")} /> : error && !hasData ? <div className="error-panel" role="alert"><h3>{t("pages.reports.035")}</h3><p>{error}</p><Button onClick={() => void load()}>{t("pages.accounts.030")}</Button></div> : <>
       {error && <div className="inline-notice">{error}</div>}
       {tab === "cash" && <CashFlowView report={cashFlow} onExport={(format) => void exportCashFlow(format)} onConfigure={() => setMappingOpen(true)} onLedger={(id) => void openLedger(id)} />}
+      {tab === "tax" && <TaxSummaryView report={taxSummary} onExport={(format) => void exportTaxSummary(format)} />}
       {tab === "trial" && <TrialBalanceView report={trial} onDownload={downloadTrialCsv} />}
       {tab === "journal" && <JournalReportView report={journal} onExport={() => void exportJournal()} onPageChange={setJournalPage} />}
       {tab === "ledger" && (ledger ? <LedgerView report={ledger} onExport={(format) => void exportAccountStatement(format)} onPageChange={setStatementPage} /> : <EmptyState title={t("accountStatement.emptyTitle")} description={t("accountStatement.emptyDescription")} />)}
@@ -211,6 +228,21 @@ function CashFlowView({ report, onExport, onConfigure, onLedger }: { report: Ind
     </article>
   </>;
 }
+
+function TaxSummaryView({ report, onExport }: { report: TaxSummaryReport | null; onExport: (format: "csv" | "xlsx" | "pdf") => void }) {
+  if (!report) return null;
+  return <>
+    <div className="metric-grid statement-metrics tax-summary-metrics"><Metric label={t("taxSummary.outputTax")} value={report.totals.outputTax} tone={moneyTone(report.totals.outputTax)} /><Metric label={t("taxSummary.inputTax")} value={report.totals.inputTax} tone={moneyTone(report.totals.inputTax)} /><Metric label={t("taxSummary.netTaxDue")} value={report.totals.netTaxDue} tone={moneyTone(report.totals.netTaxDue)} /><article className="metric-card"><span>{t("taxSummary.documents")}</span><strong>{report.totals.documentCount}</strong><small>{t("taxSummary.documents")}</small></article></div>
+    <article className="panel report-section tax-summary-report"><header><div><h2>{t("taxSummary.title")}</h2><p>{t("taxSummary.description")}</p></div><ExportActions onExport={onExport} /></header>
+      <div className="tax-summary-basis"><strong>{report.filter.basis === "LEDGER" ? t("taxSummary.ledgerBasis") : `${t("taxSummary.statusFilter")}: ${taxStatusLabel(report.filter.status!)}`}</strong><span>{t("taxSummary.jurisdictionNotice")}</span></div>
+      {report.rows.length ? <div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("taxSummary.title")}><table className="data-table tax-summary-table"><thead><tr><th>{t("taxSummary.usage")}</th><th>{t("taxSummary.documentType")}</th><th>{t("taxSummary.status")}</th><th>{t("taxSummary.taxRate")}</th><th>{t("taxSummary.rate")}</th><th>{t("taxSummary.documents")}</th><th>{t("taxSummary.taxableBase")}</th><th>{t("taxSummary.taxBase")}</th></tr></thead><tbody>{report.rows.map((row) => <tr key={`${row.usage}-${row.documentType}-${row.status}-${row.taxRateId ?? "none"}-${row.rate}`}><td><span className={`status-badge tax-${row.usage.toLowerCase()}`}>{taxUsageLabel(row.usage)}</span></td><td>{taxDocumentTypeLabel(row.documentType)}</td><td>{taxStatusLabel(row.status)}</td><td>{row.taxCode ? <><span className="code-pill">{row.taxCode}</span>{row.taxNameAr}</> : t("taxSummary.noTax")}</td><td className="money-cell">{formatMoney(row.rate)}%</td><td>{row.documentCount}</td><td className={`money-cell ${moneyTone(row.taxableBase)}-text`}>{formatMoney(row.taxableBase)}</td><td className={`money-cell ${moneyTone(row.taxBase)}-text`}>{formatMoney(row.taxBase)}</td></tr>)}</tbody></table></div> : <EmptyState title={t("taxSummary.title")} description={t("taxSummary.empty")} />}
+    </article>
+  </>;
+}
+
+const taxUsageLabel = (value: TaxSummaryReport["rows"][number]["usage"]) => value === "OUTPUT" ? t("taxSummary.usage.OUTPUT") : t("taxSummary.usage.INPUT");
+const taxStatusLabel = (value: TaxSummaryStatus) => ({ POSTED: t("status.POSTED"), REVERSED: t("status.REVERSED"), DRAFT: t("status.DRAFT"), CANCELLED: t("status.CANCELLED") }[value]);
+const taxDocumentTypeLabel = (value: TaxSummaryReport["rows"][number]["documentType"]) => ({ SALES_INVOICE: t("taxSummary.documentType.SALES_INVOICE"), SALES_CREDIT_NOTE: t("taxSummary.documentType.SALES_CREDIT_NOTE"), PURCHASE_INVOICE: t("taxSummary.documentType.PURCHASE_INVOICE"), PURCHASE_DEBIT_NOTE: t("taxSummary.documentType.PURCHASE_DEBIT_NOTE") }[value]);
 
 function CashFlowSection({ title, rows, totalLabel, total, onLedger }: { title: string; rows: CashFlowReportLine[]; totalLabel: string; total: string; onLedger: (id: string) => void }) {
   return <section className="cash-flow-section"><h3>{title}</h3>{rows.length ? <div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={title}><table className="data-table"><thead><tr><th>{t("cashFlow.account")}</th><th>{t("pages.reports.084")}</th></tr></thead><tbody>{rows.map((row) => <tr key={row.accountId}><td>{row.accountId === "NET-INCOME" ? <strong>{row.nameAr}</strong> : <button className="account-drilldown" onClick={() => onLedger(row.accountId)}><span className="code-pill">{row.code}</span>{localizedReferenceName(row)}</button>}</td><td className={`money-cell ${moneyTone(row.amount)}-text`}>{formatMoney(row.amount)}</td></tr>)}</tbody><tfoot><tr className="statement-total-row"><th>{totalLabel}</th><th>{formatMoney(total)}</th></tr></tfoot></table></div> : <EmptyState title={title} description={t("cashFlow.emptySection")} />}</section>;
