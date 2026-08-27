@@ -25,16 +25,18 @@ const AuditLogsPage = lazy(() => import("./AuditLogsPage").then((module) => ({ d
 const SecurityEventsPage = lazy(() => import("./SecurityEventsPage").then((module) => ({ default: module.SecurityEventsPage })));
 const CompanySettingsPage = lazy(() => import("./CompanySettingsPage").then((module) => ({ default: module.CompanySettingsPage })));
 const DataImportsPage = lazy(() => import("./DataImportsPage").then((module) => ({ default: module.DataImportsPage })));
+const PosPage = lazy(() => import("./PosPage").then((module) => ({ default: module.PosPage })));
 
-type View = "dashboard" | "customers" | "sales" | "receipts" | "suppliers" | "purchases" | "payments" | "journals" | "fiscal" | "accounts" | "treasury" | "inventory" | "reports" | "imports" | "admin" | "audit" | "security" | "settings";
+type View = "dashboard" | "pos" | "customers" | "sales" | "receipts" | "suppliers" | "purchases" | "payments" | "journals" | "fiscal" | "accounts" | "treasury" | "inventory" | "reports" | "imports" | "admin" | "audit" | "security" | "settings";
 
 const viewFromHash = (): View => {
   const value = location.hash.slice(1);
-  return ["dashboard", "customers", "sales", "receipts", "suppliers", "purchases", "payments", "journals", "fiscal", "accounts", "treasury", "inventory", "reports", "imports", "admin", "audit", "security", "settings"].includes(value) ? value as View : "dashboard";
+  return ["dashboard", "pos", "customers", "sales", "receipts", "suppliers", "purchases", "payments", "journals", "fiscal", "accounts", "treasury", "inventory", "reports", "imports", "admin", "audit", "security", "settings"].includes(value) ? value as View : "dashboard";
 };
 
 const navigationItems: Array<{ view: View; icon: Parameters<typeof Icon>[0]["name"]; label: TranslationKey }> = [
   { view: "dashboard", icon: "dashboard", label: "nav.dashboard" },
+  { view: "pos", icon: "wallet", label: "nav.pos" },
   { view: "customers", icon: "customers", label: "nav.customers" },
   { view: "sales", icon: "document", label: "nav.sales" },
   { view: "receipts", icon: "receipts", label: "nav.receipts" },
@@ -60,6 +62,7 @@ const viewTitleKey: Record<View, TranslationKey> = {
   security: "nav.security",
   settings: "nav.settings",
   dashboard: "nav.dashboard",
+  pos: "nav.pos",
   customers: "nav.customers",
   sales: "view.sales",
   receipts: "nav.receipts",
@@ -269,6 +272,7 @@ export default function App() {
         <main id="main-content" className="content" tabIndex={-1}>
           <Suspense fallback={<div className="loading"><Spinner /><span>{t("app.loadingModule")}</span></div>}>
             {view === "dashboard" && <DashboardPage onNavigate={navigate} />}
+            {view === "pos" && <PosPage notify={notify} />}
             {view === "customers" && <CustomersPage notify={notify} />}
             {view === "sales" && <SalesInvoicesPage notify={notify} />}
             {view === "receipts" && <ReceiptsPage notify={notify} />}

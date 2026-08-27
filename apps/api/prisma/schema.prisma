@@ -327,6 +327,7 @@ model Company {
   bankReconciliationMatches         BankReconciliationMatch[]
   financialCloseRuns                FinancialCloseRun[]
   cashFlowAccountMappings           CashFlowAccountMapping[]
+  posSales                          PosSale[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -368,12 +369,13 @@ model User {
   bankReconciliationSessionsClosed  BankReconciliationSession[]        @relation("BankReconciliationSessionClosedBy")
   bankReconciliationMatchesApproved BankReconciliationMatch[]          @relation("BankReconciliationMatchApprovedBy")
   bankReconciliationMatchesReleased BankReconciliationMatch[]          @relation("BankReconciliationMatchReleasedBy")
-  financialCloseRunsStarted         FinancialCloseRun[]                 @relation("FinancialCloseRunStartedBy")
-  financialCloseRunsReviewed        FinancialCloseRun[]                 @relation("FinancialCloseRunReviewedBy")
-  financialCloseRunsReturned        FinancialCloseRun[]                 @relation("FinancialCloseRunReturnedBy")
-  financialCloseRunsClosed          FinancialCloseRun[]                 @relation("FinancialCloseRunClosedBy")
-  cashFlowMappingsCreated           CashFlowAccountMapping[]             @relation("CashFlowMappingCreatedBy")
-  cashFlowMappingsUpdated           CashFlowAccountMapping[]             @relation("CashFlowMappingUpdatedBy")
+  financialCloseRunsStarted         FinancialCloseRun[]                @relation("FinancialCloseRunStartedBy")
+  financialCloseRunsReviewed        FinancialCloseRun[]                @relation("FinancialCloseRunReviewedBy")
+  financialCloseRunsReturned        FinancialCloseRun[]                @relation("FinancialCloseRunReturnedBy")
+  financialCloseRunsClosed          FinancialCloseRun[]                @relation("FinancialCloseRunClosedBy")
+  cashFlowMappingsCreated           CashFlowAccountMapping[]           @relation("CashFlowMappingCreatedBy")
+  cashFlowMappingsUpdated           CashFlowAccountMapping[]           @relation("CashFlowMappingUpdatedBy")
+  posSalesCompleted                 PosSale[]                          @relation("PosSaleCompletedBy")
 
   @@map("users")
 }
@@ -831,35 +833,35 @@ model FiscalPeriod {
 }
 
 model FinancialCloseRun {
-  id                    BigInt                  @id @default(autoincrement()) @db.UnsignedBigInt
-  publicId              String                  @unique @default(uuid()) @map("public_id") @db.Char(36)
-  companyId             BigInt                  @map("company_id") @db.UnsignedBigInt
-  fiscalPeriodId        BigInt                  @map("fiscal_period_id") @db.UnsignedBigInt
-  cycle                 Int                     @db.UnsignedSmallInt
-  status                FinancialCloseRunStatus @default(PREPARING)
-  checklistSnapshot     Json                    @map("checklist_snapshot")
-  checklistHashSha256   Bytes                   @map("checklist_hash_sha256") @db.Binary(32)
-  closePackSnapshot     Json?                   @map("close_pack_snapshot")
-  closePackHashSha256   Bytes?                  @map("close_pack_hash_sha256") @db.Binary(32)
-  closeDocumentId       BigInt?                 @map("close_document_id") @db.UnsignedBigInt
-  startedById           BigInt                  @map("started_by_id") @db.UnsignedBigInt
-  reviewedById          BigInt?                 @map("reviewed_by_id") @db.UnsignedBigInt
-  reviewedAt            DateTime?               @map("reviewed_at")
-  returnedById          BigInt?                 @map("returned_by_id") @db.UnsignedBigInt
-  returnedAt            DateTime?               @map("returned_at")
-  returnReason          String?                 @map("return_reason") @db.VarChar(500)
-  closedById            BigInt?                 @map("closed_by_id") @db.UnsignedBigInt
-  closedAt              DateTime?               @map("closed_at")
-  version               Int                     @default(0) @db.UnsignedInt
-  createdAt             DateTime                @default(now()) @map("created_at")
-  updatedAt             DateTime                @updatedAt @map("updated_at")
-  company               Company                 @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  fiscalPeriod          FiscalPeriod            @relation(fields: [fiscalPeriodId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
-  startedBy             User                    @relation("FinancialCloseRunStartedBy", fields: [startedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  reviewedBy            User?                   @relation("FinancialCloseRunReviewedBy", fields: [reviewedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  returnedBy            User?                   @relation("FinancialCloseRunReturnedBy", fields: [returnedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  closedBy              User?                   @relation("FinancialCloseRunClosedBy", fields: [closedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  closeDocument         AccountingDocument?     @relation(fields: [closeDocumentId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  id                  BigInt                  @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId            String                  @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId           BigInt                  @map("company_id") @db.UnsignedBigInt
+  fiscalPeriodId      BigInt                  @map("fiscal_period_id") @db.UnsignedBigInt
+  cycle               Int                     @db.UnsignedSmallInt
+  status              FinancialCloseRunStatus @default(PREPARING)
+  checklistSnapshot   Json                    @map("checklist_snapshot")
+  checklistHashSha256 Bytes                   @map("checklist_hash_sha256") @db.Binary(32)
+  closePackSnapshot   Json?                   @map("close_pack_snapshot")
+  closePackHashSha256 Bytes?                  @map("close_pack_hash_sha256") @db.Binary(32)
+  closeDocumentId     BigInt?                 @map("close_document_id") @db.UnsignedBigInt
+  startedById         BigInt                  @map("started_by_id") @db.UnsignedBigInt
+  reviewedById        BigInt?                 @map("reviewed_by_id") @db.UnsignedBigInt
+  reviewedAt          DateTime?               @map("reviewed_at")
+  returnedById        BigInt?                 @map("returned_by_id") @db.UnsignedBigInt
+  returnedAt          DateTime?               @map("returned_at")
+  returnReason        String?                 @map("return_reason") @db.VarChar(500)
+  closedById          BigInt?                 @map("closed_by_id") @db.UnsignedBigInt
+  closedAt            DateTime?               @map("closed_at")
+  version             Int                     @default(0) @db.UnsignedInt
+  createdAt           DateTime                @default(now()) @map("created_at")
+  updatedAt           DateTime                @updatedAt @map("updated_at")
+  company             Company                 @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  fiscalPeriod        FiscalPeriod            @relation(fields: [fiscalPeriodId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  startedBy           User                    @relation("FinancialCloseRunStartedBy", fields: [startedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  reviewedBy          User?                   @relation("FinancialCloseRunReviewedBy", fields: [reviewedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  returnedBy          User?                   @relation("FinancialCloseRunReturnedBy", fields: [returnedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  closedBy            User?                   @relation("FinancialCloseRunClosedBy", fields: [closedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  closeDocument       AccountingDocument?     @relation(fields: [closeDocumentId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
 
   @@unique([id, companyId])
   @@unique([fiscalPeriodId, cycle])
@@ -1036,36 +1038,36 @@ model AccountType {
 }
 
 model Account {
-  id                       BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
-  companyId                BigInt                @map("company_id") @db.UnsignedBigInt
-  accountTypeId            BigInt                @map("account_type_id") @db.UnsignedBigInt
-  parentAccountId          BigInt?               @map("parent_account_id") @db.UnsignedBigInt
-  code                     String                @db.VarChar(40)
-  nameAr                   String                @map("name_ar") @db.VarChar(180)
-  nameEn                   String?               @map("name_en") @db.VarChar(180)
-  level                    Int                   @db.UnsignedTinyInt
-  allowsPosting            Boolean               @map("allows_posting")
-  isControlAccount         Boolean               @default(false) @map("is_control_account")
-  isActive                 Boolean               @default(true) @map("is_active")
-  sourceTemplateCode       String?               @map("source_template_code") @db.VarChar(80)
-  sourceTemplateKey        String?               @map("source_template_key") @db.VarChar(80)
-  createdAt                DateTime              @default(now()) @map("created_at")
-  updatedAt                DateTime              @updatedAt @map("updated_at")
-  company                  Company               @relation(fields: [companyId], references: [id])
-  accountType              AccountType           @relation(fields: [accountTypeId], references: [id])
-  parent                   Account?              @relation("AccountTree", fields: [parentAccountId, companyId], references: [id, companyId])
-  children                 Account[]             @relation("AccountTree")
+  id                       BigInt                   @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId                BigInt                   @map("company_id") @db.UnsignedBigInt
+  accountTypeId            BigInt                   @map("account_type_id") @db.UnsignedBigInt
+  parentAccountId          BigInt?                  @map("parent_account_id") @db.UnsignedBigInt
+  code                     String                   @db.VarChar(40)
+  nameAr                   String                   @map("name_ar") @db.VarChar(180)
+  nameEn                   String?                  @map("name_en") @db.VarChar(180)
+  level                    Int                      @db.UnsignedTinyInt
+  allowsPosting            Boolean                  @map("allows_posting")
+  isControlAccount         Boolean                  @default(false) @map("is_control_account")
+  isActive                 Boolean                  @default(true) @map("is_active")
+  sourceTemplateCode       String?                  @map("source_template_code") @db.VarChar(80)
+  sourceTemplateKey        String?                  @map("source_template_key") @db.VarChar(80)
+  createdAt                DateTime                 @default(now()) @map("created_at")
+  updatedAt                DateTime                 @updatedAt @map("updated_at")
+  company                  Company                  @relation(fields: [companyId], references: [id])
+  accountType              AccountType              @relation(fields: [accountTypeId], references: [id])
+  parent                   Account?                 @relation("AccountTree", fields: [parentAccountId, companyId], references: [id, companyId])
+  children                 Account[]                @relation("AccountTree")
   journalLines             JournalLine[]
   customers                Customer[]
   cashBankAccounts         CashBankAccount[]
-  receiptCounterAccounts   Receipt[]             @relation("ReceiptCounterAccount")
+  receiptCounterAccounts   Receipt[]                @relation("ReceiptCounterAccount")
   suppliers                Supplier[]
-  paymentCounterAccounts   Payment[]             @relation("PaymentCounterAccount")
-  outputTaxRates           TaxRate[]             @relation("OutputTaxAccount")
-  inputTaxRates            TaxRate[]             @relation("InputTaxAccount")
-  salesInvoiceLines        SalesInvoiceLine[]    @relation("SalesRevenueAccount")
-  purchaseInvoiceLines     PurchaseInvoiceLine[] @relation("PurchaseDebitAccount")
-  inventoryOffsetMovements InventoryMovement[]   @relation("InventoryMovementOffsetAccount")
+  paymentCounterAccounts   Payment[]                @relation("PaymentCounterAccount")
+  outputTaxRates           TaxRate[]                @relation("OutputTaxAccount")
+  inputTaxRates            TaxRate[]                @relation("InputTaxAccount")
+  salesInvoiceLines        SalesInvoiceLine[]       @relation("SalesRevenueAccount")
+  purchaseInvoiceLines     PurchaseInvoiceLine[]    @relation("PurchaseDebitAccount")
+  inventoryOffsetMovements InventoryMovement[]      @relation("InventoryMovementOffsetAccount")
   cashFlowMappings         CashFlowAccountMapping[]
 
   @@unique([companyId, code])
@@ -1430,6 +1432,7 @@ model Receipt {
   paymentMethod               PaymentMethod       @relation(fields: [paymentMethodId], references: [id])
   currency                    Currency            @relation(fields: [currencyId], references: [id])
   allocations                 ReceiptAllocation[]
+  posSale                     PosSale?            @relation("PosSaleReceipt")
 
   @@unique([id, companyId])
   @@unique([accountingDocumentId, companyId])
@@ -1512,6 +1515,7 @@ model SalesInvoice {
   receivableItem          ReceivableItem?
   currency                Currency           @relation(fields: [currencyId], references: [id])
   lines                   SalesInvoiceLine[]
+  posSale                 PosSale?           @relation("PosSaleInvoice")
 
   @@unique([id, companyId])
   @@unique([accountingDocumentId, companyId])
@@ -1520,6 +1524,27 @@ model SalesInvoice {
   @@index([companyId, warehouseId])
   @@index([sourceInvoiceId, companyId])
   @@map("sales_invoices")
+}
+
+model PosSale {
+  id             BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId      BigInt       @map("company_id") @db.UnsignedBigInt
+  salesInvoiceId BigInt       @unique @map("sales_invoice_id") @db.UnsignedBigInt
+  receiptId      BigInt       @unique @map("receipt_id") @db.UnsignedBigInt
+  completedById  BigInt       @map("completed_by_id") @db.UnsignedBigInt
+  completedAt    DateTime     @default(now()) @map("completed_at")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  company        Company      @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  salesInvoice   SalesInvoice @relation("PosSaleInvoice", fields: [salesInvoiceId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  receipt        Receipt      @relation("PosSaleReceipt", fields: [receiptId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  completedBy    User         @relation("PosSaleCompletedBy", fields: [completedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([id, companyId])
+  @@unique([salesInvoiceId, companyId])
+  @@unique([receiptId, companyId])
+  @@index([companyId, completedAt, id])
+  @@index([completedById, completedAt])
+  @@map("pos_sales")
 }
 
 model ReceivableItem {

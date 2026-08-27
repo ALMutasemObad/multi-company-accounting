@@ -448,3 +448,35 @@ describe("Inventory ownership boundary guardrails", () => {
     expect(openapi).toContain("averageUnitCostBase");
   });
 });
+
+describe("POS orchestration boundary guardrails", () => {
+  it("owns only the immutable POS link and delegates financial facts to current owners", async () => {
+    const [service, queryAdapter, sales, receipts, schema, migration, openapi] = await Promise.all([
+      source("pos/pos-service.ts"),
+      source("pos/adapters/prisma-pos-sale-query-adapter.ts"),
+      source("sales/sales-invoice-service.ts"),
+      source("receipts/receipt-service.ts"),
+      projectFile("apps/api/prisma/schema.prisma"),
+      projectFile("apps/api/prisma/migrations/20260827130000_pos_cash_sale_vertical_slice/migration.sql"),
+      projectFile("packages/contracts/openapi.yaml"),
+    ]);
+    const directForeignWrite = /\.(?:salesInvoice|salesInvoiceLine|receipt|receiptAllocation|inventoryMovement|inventoryMovementLine|inventoryBalance|journalEntry|journalLine)\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u;
+
+    expect(service).toContain("PosSalesCheckoutPort");
+    expect(service).toContain("PosReceiptCheckoutPort");
+    expect(service).toContain("this.sales.checkoutInTransaction");
+    expect(service).toContain("this.receipts.captureInTransaction");
+    expect(service).not.toMatch(directForeignWrite);
+    expect(service).not.toContain("PostingEngine");
+    expect(queryAdapter).toContain("where = { companyId: context.companyId }");
+    expect(queryAdapter).not.toMatch(/\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
+    expect(sales).toContain("checkoutInTransaction(");
+    expect(receipts).toContain("captureInTransaction(");
+    expect(schema).toContain("model PosSale");
+    expect(migration).toContain("FOREIGN KEY (`sales_invoice_id`, `company_id`)");
+    expect(migration).toContain("FOREIGN KEY (`receipt_id`, `company_id`)");
+    expect(migration).toContain("WHERE `roles`.`code` = 'ADMINISTRATOR'");
+    expect(openapi).toContain("operationId: completePosCheckout");
+    expect(openapi).toContain("x-permission: pos.checkout");
+  });
+});

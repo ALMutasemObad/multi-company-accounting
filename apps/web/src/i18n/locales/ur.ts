@@ -4,6 +4,7 @@ import { urFinancialClose } from "./financial-close";
 import { urCashFlow } from "./cash-flow";
 import { urTaxSummary } from "./tax-summary";
 import { urCostCenterActivity } from "./cost-center-activity";
+import { urPos } from "./pos";
 
 export const ur = {
   ...urReconciliation,
@@ -11,6 +12,7 @@ export const ur = {
   ...urCashFlow,
   ...urTaxSummary,
   ...urCostCenterActivity,
+  ...urPos,
   "referencePicker.loading": "تلاش جاری ہے…",
   "referencePicker.empty": "کوئی مماثل نتیجہ نہیں ملا۔",
   "referencePicker.more": "مزید نتائج لوڈ کریں",

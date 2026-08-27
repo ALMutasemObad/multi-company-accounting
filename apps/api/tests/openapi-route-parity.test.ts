@@ -25,6 +25,7 @@ import { createInventoryRouter } from '../src/inventory/inventory-router.js';
 import { createInventoryCatalogRouter } from '../src/inventory/inventory-catalog-router.js';
 import { createInventoryMovementRouter } from '../src/inventory/inventory-movement-router.js';
 import { createBankReconciliationRouter } from '../src/treasury/reconciliation/reconciliation-router.js';
+import { createPosRouter } from '../src/pos/pos-router.js';
 
 type RouteLayer = {
   route?: {
@@ -60,6 +61,7 @@ const routers = [
   { prefix: '', router: createPurchaseInvoiceRouter(stub, stub) },
   { prefix: '', router: createReportRouter(stub, stub, stub, stub, stub) },
   { prefix: '', router: createDataImportRouter(stub, stub) },
+  { prefix: '', router: createPosRouter(stub, stub) },
 ] as const;
 
 function normalizePath(path: string) {

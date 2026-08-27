@@ -4,6 +4,7 @@ import { hiFinancialClose } from "./financial-close";
 import { hiCashFlow } from "./cash-flow";
 import { hiTaxSummary } from "./tax-summary";
 import { hiCostCenterActivity } from "./cost-center-activity";
+import { hiPos } from "./pos";
 
 export const hi = {
   ...hiReconciliation,
@@ -11,6 +12,7 @@ export const hi = {
   ...hiCashFlow,
   ...hiTaxSummary,
   ...hiCostCenterActivity,
+  ...hiPos,
   "referencePicker.loading": "खोज जारी है…",
   "referencePicker.empty": "कोई मिलता-जुलता परिणाम नहीं मिला।",
   "referencePicker.more": "और परिणाम लोड करें",

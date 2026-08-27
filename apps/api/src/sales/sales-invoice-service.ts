@@ -91,6 +91,28 @@ export type SalesInvoiceInput = {
 
 export type SalesInvoiceUpdate = { version: number } & Partial<SalesInvoiceInput>;
 
+export type PosSalesCheckoutResult = {
+  invoiceId: bigint;
+  documentId: bigint;
+  documentNumber: string;
+  documentStatus: string;
+  customerId: bigint;
+  customerName: string;
+  currencyId: bigint;
+  total: Prisma.Decimal;
+  baseTotal: Prisma.Decimal;
+  receivableItemId: bigint;
+  journalEntryIds: string[];
+};
+
+export interface PosSalesCheckoutPort {
+  checkoutInTransaction(
+    tx: Prisma.TransactionClient,
+    context: ActorContext,
+    input: SalesInvoiceInput,
+  ): Promise<PosSalesCheckoutResult>;
+}
+
 type SalesInvoiceStockSnapshot = {
   id: bigint;
   warehouseId: bigint | null;
@@ -337,7 +359,23 @@ export class SalesInvoiceService {
   }
 
   post(context: ActorContext, id: bigint, version: number, key: string) {
-    return this.command(context, id, "POST_SALES_INVOICE", key, JSON.stringify({ id: id.toString(), version }), async (tx, invoice) => {
+    return this.command(
+      context,
+      id,
+      "POST_SALES_INVOICE",
+      key,
+      JSON.stringify({ id: id.toString(), version }),
+      (tx, invoice) => this.postInTransaction(tx, context, id, version, invoice),
+    );
+  }
+
+  private async postInTransaction(
+    tx: Prisma.TransactionClient,
+    context: ActorContext,
+    id: bigint,
+    version: number,
+    invoice: any,
+  ) {
       const input = this.inputFrom(invoice);
       const prepared = await this.prepare(tx, context.companyId, input, invoice.id);
 
@@ -488,7 +526,37 @@ export class SalesInvoiceService {
       });
       await archiveDocument(tx, context, invoice.accountingDocumentId);
       return { document: result.document, ids: result.entries.map((entry) => entry.id.toString()) };
+  }
+
+  async checkoutInTransaction(
+    tx: Prisma.TransactionClient,
+    context: ActorContext,
+    input: SalesInvoiceInput,
+  ): Promise<PosSalesCheckoutResult> {
+    if (input.documentType !== "SALES_INVOICE") {
+      throw new SalesInvoiceError("INVALID_STATE");
+    }
+    const invoice = await this.createDraftInTransaction(tx, context, input, "POS");
+    const posted = await this.postInTransaction(tx, context, invoice.id, 0, invoice);
+    await this.audit(tx, context, "POST_SALES_INVOICE", invoice.id, { source: "POS" });
+    const receivableItem = await tx.receivableItem.findUnique({
+      where: { salesInvoiceId: invoice.id },
+      select: { id: true },
     });
+    if (!receivableItem) throw new SalesInvoiceError("INVALID_STATE");
+    return {
+      invoiceId: invoice.id,
+      documentId: posted.document.id,
+      documentNumber: posted.document.documentNumber,
+      documentStatus: posted.document.status,
+      customerId: invoice.customerId,
+      customerName: invoice.customerNameSnapshot,
+      currencyId: invoice.currencyId,
+      total: invoice.total,
+      baseTotal: invoice.baseTotal,
+      receivableItemId: receivableItem.id,
+      journalEntryIds: posted.ids,
+    };
   }
 
   async resolveImportedDraft(tx: Prisma.TransactionClient, companyId: bigint, group: DataImportInvoiceGroup): Promise<SalesInvoiceInput> {
@@ -535,7 +603,12 @@ export class SalesInvoiceService {
     return input;
   }
 
-  async createImportedDraft(tx: Prisma.TransactionClient, context: ActorContext, input: SalesInvoiceInput) {
+  private async createDraftInTransaction(
+    tx: Prisma.TransactionClient,
+    context: ActorContext,
+    input: SalesInvoiceInput,
+    source: "DATA_IMPORT" | "POS",
+  ) {
     const period = await tx.fiscalPeriod.findFirst({ where: { id: input.fiscalPeriodId, companyId: context.companyId } });
     if (!period || period.status === "CLOSED") throw new SalesInvoiceError("PERIOD_CLOSED");
     this.validDate(period, input.documentDate);
@@ -546,8 +619,12 @@ export class SalesInvoiceService {
       data: { companyId: context.companyId, accountingDocumentId: document.id, customerId: input.customerId, warehouseId: prepared.inventory.warehouse?.id ?? null, currencyId: input.currencyId, exchangeRate: decimal(input.exchangeRate), dueDate: asDate(input.dueDate), subtotal: prepared.calculation.subtotal, discountTotal: prepared.calculation.discountTotal, taxableTotal: prepared.calculation.taxableTotal, taxTotal: prepared.calculation.taxTotal, total: prepared.calculation.total, baseTotal: prepared.calculation.baseTotal, customerNameSnapshot: prepared.customer.nameAr, customerTaxLast4: prepared.customer.taxNumberLast4, customerAddressSnapshot: prepared.customerAddress, warehouseCodeSnapshot: prepared.inventory.warehouse?.code ?? null, warehouseNameSnapshot: prepared.inventory.warehouse?.nameAr ?? null, notes: input.notes ?? null, lines: { create: prepared.calculation.lines } },
       include: this.include(),
     });
-    await this.audit(tx, context, "SALES_INVOICE_CREATED", invoice.id, { documentType: "SALES_INVOICE", source: "DATA_IMPORT" });
+    await this.audit(tx, context, "SALES_INVOICE_CREATED", invoice.id, { documentType: "SALES_INVOICE", source });
     return invoice;
+  }
+
+  async createImportedDraft(tx: Prisma.TransactionClient, context: ActorContext, input: SalesInvoiceInput) {
+    return this.createDraftInTransaction(tx, context, input, "DATA_IMPORT");
   }
 
   async cancel(context: ActorContext, id: bigint, version: number, reason: string) {

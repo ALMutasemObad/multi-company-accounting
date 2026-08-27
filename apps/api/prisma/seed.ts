@@ -100,6 +100,8 @@ try {
     ['warehouses.manage', 'inventory', 'إدارة المستودعات'],
     ['inventory_catalog.view', 'inventory', 'عرض وحدات القياس وكتالوج الأصناف'],
     ['inventory_catalog.manage', 'inventory', 'إدارة وحدات القياس وكتالوج الأصناف'],
+    ['pos.view', 'pos', 'عرض شاشة نقاط البيع والمبيعات النقدية'],
+    ['pos.checkout', 'pos', 'تنفيذ بيع نقدي كامل عبر نقاط البيع'],
     ['inventory_movements.view', 'inventory', 'عرض أرصدة وحركات المخزون'],
     ['inventory_movements.create', 'inventory', 'إنشاء حركات المخزون'],
     ['inventory_movements.reverse', 'inventory', 'عكس حركات المخزون اليدوية'],

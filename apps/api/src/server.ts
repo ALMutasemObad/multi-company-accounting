@@ -54,6 +54,8 @@ import { TaxSummaryService } from './reports/tax-summary-service.js';
 import { PrismaTaxSummaryQueryAdapter } from './reports/adapters/prisma-tax-summary-query-adapter.js';
 import { CostCenterActivityService } from './reports/cost-center-activity-service.js';
 import { PrismaCostCenterActivityLedgerQueryAdapter } from './reports/adapters/prisma-cost-center-activity-ledger-query-adapter.js';
+import { PosService } from './pos/pos-service.js';
+import { PrismaPosSaleQueryAdapter } from './pos/adapters/prisma-pos-sale-query-adapter.js';
 
 const config = loadConfig();
 if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required to start the API');
@@ -133,6 +135,8 @@ const inventoryCatalog = new InventoryCatalogService(database);
 const inventoryMovements = new InventoryMovementService(database);
 const salesInvoices = new SalesInvoiceService(database, taxes, inventoryCatalog, inventoryMovements);
 const purchaseInvoices = new PurchaseInvoiceService(database, taxes, inventoryCatalog, inventoryMovements);
+const receipts = new ReceiptService(database, treasury);
+const pos = new PosService(database, salesInvoices, receipts, new PrismaPosSaleQueryAdapter(database));
 const dataImports = new DataImportService(database, receiptReferences, suppliers, salesInvoices, purchaseInvoices, outboxAppender);
 const fiscal = new FiscalService(database);
 const financialClose = new FinancialCloseService(database, {
@@ -162,7 +166,7 @@ const app = createApp(config, {
   inventory: new InventoryService(database),
   inventoryCatalog,
   inventoryMovements,
-  receipts: new ReceiptService(database, treasury),
+  receipts,
   suppliers,
   payments: new PaymentService(database, treasury),
   reports: new ReportService(database),
@@ -173,6 +177,7 @@ const app = createApp(config, {
   salesInvoices,
   purchaseInvoices,
   dataImports,
+  pos,
 });
 
 const server = app.listen(config.PORT, () => {

@@ -1039,6 +1039,40 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", "Noto Sans Devanaga
 :root[dir="ltr"] .sidebar nav button, :root[dir="ltr"] .company-grid button { text-align: start; }
 :root[dir="ltr"] .sidebar nav button.active { box-shadow: inset 3px 0 var(--gold); }
 
+.pos-layout { display: grid; gap: 20px; }
+.pos-checkout-form, .pos-history { overflow: hidden; }
+.pos-checkout-form > header, .pos-history > header { padding: 20px 24px; border-bottom: 1px solid var(--line); }
+.pos-checkout-form > header p, .pos-history > header p { margin: 4px 0 0; color: var(--muted); font-size: .8rem; }
+.pos-reference-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; padding: 22px 24px; }
+.pos-reference-grid .pos-description { grid-column: span 2; }
+.pos-lines { display: grid; gap: 14px; margin: 0 24px; padding: 18px; border: 1px solid var(--line); border-radius: 16px; }
+.pos-lines legend { padding-inline: 8px; color: var(--green-700); font-weight: 700; }
+.pos-line { display: grid; grid-template-columns: auto minmax(200px, 1.6fr) repeat(3, minmax(110px, .65fr)) minmax(190px, 1.25fr) minmax(150px, 1fr) auto; align-items: end; gap: 10px; padding: 14px; border-radius: 14px; background: var(--surface-soft); }
+.pos-line .line-index { align-self: center; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 999px; background: var(--green-700); color: #fff; font-weight: 700; }
+.pos-line label { min-width: 0; }
+.pos-line input { width: 100%; }
+.pos-checkout-footer { display: grid; grid-template-columns: minmax(240px, 1fr) auto auto; align-items: end; gap: 18px; padding: 22px 24px; }
+.pos-checkout-footer textarea { width: 100%; resize: vertical; }
+.pos-total { display: grid; min-width: 150px; padding: 10px 16px; border-radius: 13px; background: #edf5f1; }
+.pos-total span { color: var(--muted); font-size: .72rem; }
+.pos-total strong { color: var(--green-800); font-size: 1.35rem; }
+.pos-statuses { display: flex; flex-wrap: wrap; gap: 8px; }
+.pos-statuses > span { display: grid; gap: 3px; }
+.pos-statuses small { color: var(--muted); font-size: .65rem; }
+
+@media (max-width: 1180px) {
+  .pos-reference-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pos-line { grid-template-columns: auto repeat(3, minmax(120px, 1fr)); }
+  .pos-line .pos-item, .pos-line .pos-revenue, .pos-line .pos-tax { grid-column: span 2; }
+}
+
+@media (max-width: 680px) {
+  .pos-reference-grid, .pos-line, .pos-checkout-footer { grid-template-columns: 1fr; }
+  .pos-reference-grid .pos-description, .pos-line .pos-item, .pos-line .pos-revenue, .pos-line .pos-tax { grid-column: auto; }
+  .pos-lines { margin-inline: 14px; padding: 12px; }
+  .pos-checkout-footer { align-items: stretch; }
+}
+
 @media (max-width: 780px) {
   :root[dir="ltr"] .sidebar { transform: translateX(-105%); }
   :root[dir="ltr"] .sidebar.open { transform: translateX(0); }

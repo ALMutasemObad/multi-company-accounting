@@ -1,7 +1,7 @@
 ---
 title: "Bounded Context Map"
 status: "accepted target architecture"
-version: "1.7"
+version: "1.8"
 last_updated: "2026-08-27"
 ---
 
@@ -27,6 +27,7 @@ last_updated: "2026-08-27"
 | Purchases & Accounts Payable | المورد والفاتورة والذمة وسياسة تسوية السداد | `Supplier`, `SupplierAddress`, `PurchaseInvoice`, `PurchaseInvoiceLine`, `PayableItem` | يكشف `PayableSettlementPort` ولا ينشئ Journal Lines مباشرة |
 | Treasury | النقد والبنوك وطرق الدفع وحركات القبض والصرف وتخصيصاتها ولقطات التسوية واستيراد كشوف البنك والمطابقة 1:1 | `CashBankAccount`, `PaymentMethod`, `Receipt`, `ReceiptAllocation`, `Payment`, `PaymentAllocation`, `BankStatementImport`, `BankStatementLine`, `BankReconciliationSession`, `BankReconciliationMatch` | تستخدم التخصيصات منافذ AR/AP و`PostingEngine`؛ وتقرأ المطابقة الحركات المرحلة عبر Query Port فقط ولا تكتب Ledger |
 | Inventory | المستودعات والكتالوج ودفتر الحركة الكمي والقيمي والأرصدة وتقييم المتوسط | `Warehouse`, `UnitOfMeasure`, `InventoryItem`, `InventoryMovementSequence`, `InventoryMovement`, `InventoryMovementLine`, `InventoryBalance`, `InventoryValuationInitialization` | يكشف منفذي اختيار الفاتورة وتطبيق أثرها؛ يعيد حقائق تقييم للفواتير، وينشئ رأس `INVENTORY_ADJUSTMENT` للحركة اليدوية ثم يفوض إنشاء/عكس أسطر Ledger إلى `PostingEngine` |
+| Point of Sale | تنسيق البيع النقدي الحضوري وربط نتيجة الـCheckout | `PosSale` فقط | Process Manager؛ لا يملك بنودًا أو مبالغ أو فاتورة أو حركة مخزون/نقد أو قيدًا، ويستدعي منافذ Sales وTreasury الحالية |
 | Tax | معدلات الضرائب وربط حساباتها والحساب والتقريب | `TaxRate` | يكشف `TaxQuotePort` للمبيعات والمشتريات ويملك النسخ المتفائلة |
 | Printing & Document Output | اللقطات التاريخية والتوليد | `DocumentPrintArchive` | يقرأ عبر Document Snapshot Port |
 | Reporting | التقارير والقوائم وRead Models | لا يملك حقائق مالية تشغيلية | قراءة فقط، ويمكنه امتلاك projections مستقبلًا |
@@ -52,6 +53,7 @@ Registration/Onboarding ──> Treasury setup port
 Sales/Purchases ──────> Tax Configuration query port
 Data Import ──────────> Sales/AR, Purchases/AP application ports
 Sales/Purchases ─────> Inventory catalog and invoice-stock application ports
+POS ─────────────────> Sales cash-checkout and Treasury receipt application ports
 All operational contexts ──> Audit append port
 
 Reporting <────────── read/query ports or dedicated read models
@@ -87,6 +89,8 @@ Printing  <────────── immutable document snapshot port
 ## 6. حالة النقل والاستثناءات الانتقالية
 
 اكتمل في 22 أغسطس 2026 نقل إنشاء وعكس `JournalEntry/JournalLine` إلى `PostingEngine`، واستبدلت عقود التخصيص `targetJournalLineId` بـ`ReceivableItemId/PayableItemId`، ونقل CRUD والحساب الضريبي إلى وحدة `Tax`، ونقل CRUD الصناديق وطرق الدفع وسياسة أداة الحركة إلى وحدة `Treasury`. أضيف `Data Import` كسياق داعم يملك `DataImportBatch` فقط ويستدعي منافذ المالكين لإنشاء بياناتهم؛ لا يكتب Ledger ولا يخزن الملف. وفي 24 و25 أغسطس بدأت رحلة Inventory بسياق مستقل يملك `Warehouse`، ثم توسعت إلى الكتالوج وربط تأليف الفواتير ودفتر حركة immutable، ثم رُبط ترحيل وعكس فواتير الأصناف بحركة ذرية عبر `InventoryInvoiceStockPort` مع تفرد مصدر ومنع المخزون السالب. وفي 26 أغسطس أضيف تقييم المتوسط المرجح المتحرك وقيمة الرصيد والتكلفة التاريخية للعكس والمرتجعات؛ يعيد Inventory حقائق التقييم للفواتير، وتبني Sales/Purchases قيود المخزون وCOGS التي يكتبها `PostingEngine`. وأغلقت لاحقًا فجوة الحركة اليدوية: ينشئ Inventory رأس `INVENTORY_ADJUSTMENT` ويطلب من `PostingEngine` قيد الزيادة أو النقص أو عكسه التاريخي، من دون كتابة مباشرة لأسطر Ledger. وفي 27 أغسطس أضيف Backend المطابقة البنكية داخل Treasury: يملك وارد الكشف وخطوطه والجلسة وسجل الربط، ويقرأ الحركات المرحلة من Core Accounting عبر `ReconciliationLedgerQueryPort` من دون كتابة Ledger؛ إنشاء الحركة المفقودة يبقى أمرًا منفصلًا في خدمات المستندات الحالية و`PostingEngine`. لا توجد بعد واجهة مطابقة أو أذونات استلام وتسليم مستقلة؛ الفاتورة المرحلة هي مستند الكمية والقيمة الانتقالي. يبقى رابط سطر الذمة على الفاتورة أثرًا داخليًا لـCore Accounting ولا يعبر عقدًا عامًا. التفاصيل في [عناصر الذمم وعقد التسوية](AR_AP_SETTLEMENT_ITEMS_AR.md) و[ملكية Tax](TAX_CONTEXT_OWNERSHIP_AR.md) و[ملكية Treasury](TREASURY_CONTEXT_OWNERSHIP_AR.md) و[Backend المطابقة البنكية](BANK_RECONCILIATION_BACKEND_AR.md) و[سياق الاستيراد](DATA_IMPORT_CONTEXT_AR.md) و[أساس Inventory](INVENTORY_CONTEXT_FOUNDATION_AR.md).
+
+وفي 27 أغسطس اعتمدت أول شريحة POS كمنسق رفيع لبيع نقدي وفق [ADR-004](ADR-004-pos-cash-sale-orchestration.md): يملك `PosSale` رابط النتيجة فقط، ويفوض الفاتورة والمخزون والتحصيل والترحيل إلى المالكين الحاليين داخل معاملة واحدة، ولا يخزن بنودًا أو مبالغ أو يكتب Ledger.
 
 الاستثناءات التالية ما زالت موجودة ولا تعد نمطًا مسموحًا للنسخ:
 

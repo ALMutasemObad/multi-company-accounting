@@ -735,6 +735,46 @@ export type DashboardReport = {
   recentActivity: RecentActivity[];
 };
 
+export type PosSale = {
+  id: string;
+  completedAt: string;
+  completedBy: { id: string; displayName: string };
+  invoice: {
+    id: string;
+    documentNumber: string;
+    documentDate: string;
+    status: "DRAFT" | "POSTED" | "CANCELLED" | "REVERSED";
+    customerName: string;
+    total: string;
+    baseTotal: string;
+  };
+  receipt: {
+    id: string;
+    documentNumber: string;
+    status: "DRAFT" | "POSTED" | "CANCELLED" | "REVERSED";
+  };
+};
+
+export type PosCheckoutResult = {
+  id: string;
+  completedAt: string;
+  invoice: {
+    id: string;
+    documentNumber: string;
+    status: "POSTED";
+    customerName: string;
+    total: string;
+    baseTotal: string;
+    generatedJournalEntryIds: string[];
+  };
+  receipt: {
+    id: string;
+    documentNumber: string;
+    status: "POSTED";
+    generatedJournalEntryIds: string[];
+  };
+};
+
 export type CashFlowMappingClassification = "NET_INCOME" | "OPERATING_ADJUSTMENT" | "OPERATING_WORKING_CAPITAL" | "INVESTING" | "FINANCING" | "EXCLUDED";
 export type EffectiveCashFlowClassification = CashFlowMappingClassification | "CASH_AND_CASH_EQUIVALENTS";
 export type CashFlowMapping = {

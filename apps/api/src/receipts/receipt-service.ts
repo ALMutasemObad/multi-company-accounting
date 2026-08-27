@@ -72,6 +72,20 @@ export type ReceiptInput = {
   allocations?: AllocationInput[] | undefined;
 };
 export type ReceiptUpdate = { version: number } & Partial<ReceiptInput>;
+export type PosReceiptCheckoutResult = {
+  receiptId: bigint;
+  documentId: bigint;
+  documentNumber: string;
+  documentStatus: string;
+  journalEntryIds: string[];
+};
+export interface PosReceiptCheckoutPort {
+  captureInTransaction(
+    tx: Prisma.TransactionClient,
+    context: ActorContext,
+    input: ReceiptInput,
+  ): Promise<PosReceiptCheckoutResult>;
+}
 const date = (v: string) => new Date(`${v}T00:00:00.000Z`);
 const last4 = (v?: string | null) =>
   v ? v.replace(/\s/g, "").slice(-4) : null;
@@ -323,7 +337,16 @@ export class ReceiptService {
       "POST_RECEIPT",
       key,
       JSON.stringify({ id: id.toString(), version }),
-      async (tx, receipt) => {
+      (tx, receipt) => this.postInTransaction(tx, context, id, version, receipt),
+    );
+  }
+  private async postInTransaction(
+    tx: Prisma.TransactionClient,
+    context: ActorContext,
+    id: bigint,
+    version: number,
+    receipt: any,
+  ) {
         const prepared = await this.prepare(
           tx,
           context.companyId,
@@ -408,8 +431,62 @@ export class ReceiptService {
           document: result.document,
           ids: result.entries.map((entry) => entry.id.toString()),
         };
-      },
+  }
+  private async createDraftInTransaction(
+    tx: Prisma.TransactionClient,
+    context: ActorContext,
+    input: ReceiptInput,
+  ) {
+    const period = await tx.fiscalPeriod.findFirst({
+      where: { id: input.fiscalPeriodId, companyId: context.companyId },
+    });
+    if (!period || period.status === "CLOSED") throw new ReceiptError("PERIOD_CLOSED");
+    this.validDate(period, input.documentDate);
+    const prepared = await this.prepare(tx, context.companyId, input);
+    const documentNumber = await this.reserveInTransaction(
+      tx,
+      context.companyId,
+      period.fiscalYearId,
+      "RECEIPT",
     );
+    const document = await tx.accountingDocument.create({
+      data: {
+        companyId: context.companyId,
+        fiscalPeriodId: input.fiscalPeriodId,
+        documentType: "RECEIPT",
+        documentNumber,
+        documentDate: date(input.documentDate),
+        description: input.description,
+        createdBy: context.userId,
+      },
+    });
+    const { cashBankLedgerAccountId: _cash, counterLedgerAccountId: _counter, ...receiptData } = prepared;
+    const receipt = await tx.receipt.create({
+      data: {
+        companyId: context.companyId,
+        accountingDocumentId: document.id,
+        ...receiptData,
+      },
+      include: this.include(),
+    });
+    await this.audit(tx, context, "RECEIPT_CREATED", receipt.id, { source: "POS" });
+    return receipt;
+  }
+  async captureInTransaction(
+    tx: Prisma.TransactionClient,
+    context: ActorContext,
+    input: ReceiptInput,
+  ): Promise<PosReceiptCheckoutResult> {
+    const receipt = await this.createDraftInTransaction(tx, context, input);
+    const posted = await this.postInTransaction(tx, context, receipt.id, 0, receipt);
+    await this.audit(tx, context, "POST_RECEIPT", receipt.id, { source: "POS" });
+    return {
+      receiptId: receipt.id,
+      documentId: posted.document.id,
+      documentNumber: posted.document.documentNumber,
+      documentStatus: posted.document.status,
+      journalEntryIds: posted.ids,
+    };
   }
   async cancel(
     context: ActorContext,
