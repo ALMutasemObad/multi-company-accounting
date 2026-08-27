@@ -3,6 +3,7 @@ import {
   type PrismaClient,
   type ProfessionalProject,
   type ProfessionalProjectMember,
+  type ProfessionalProjectTask,
   type ProfessionalTimeEntry,
   type ProfessionalTimesheet,
 } from "@prisma/client";
@@ -27,7 +28,12 @@ export type ProfessionalProjectFailureReason =
   | "USER_NOT_FOUND"
   | "MEMBER_NOT_FOUND"
   | "MEMBER_INACTIVE"
+  | "MEMBER_HAS_OPEN_TASKS"
   | "PROJECT_INACTIVE"
+  | "PROJECT_PLAN_INCOMPLETE"
+  | "PROJECT_PLAN_OUTSIDE_DATES"
+  | "TASK_NOT_FOUND"
+  | "TASK_INACTIVE"
   | "INVALID_TRANSITION"
   | "INVALID_DATE_RANGE"
   | "VERSION_CONFLICT"
@@ -57,8 +63,9 @@ type ProjectStatus = "ACTIVE" | "ON_HOLD" | "COMPLETED" | "CANCELLED";
 type MemberRole = "MANAGER" | "PROFESSIONAL" | "REVIEWER";
 type TimesheetStatus = "OPEN" | "AWAITING_APPROVAL" | "APPROVED";
 type TimeEntryWithProject = Prisma.ProfessionalTimeEntryGetPayload<{
-  include: { member: { include: { project: true } } };
+  include: { member: { include: { project: true } }; task: true };
 }>;
+type TimeEntryTaskReference = Pick<ProfessionalProjectTask, "publicId" | "titleAr" | "titleEn" | "status">;
 
 type ProjectStats = { memberCount: number; trackedMinutes: number; billableMinutes: number };
 type TimesheetStats = { entryCount: number; trackedMinutes: number; billableMinutes: number };
@@ -121,6 +128,7 @@ function timesheetSnapshot(entries: TimeEntryWithProject[]) {
     id: entry.publicId,
     version: entry.version,
     projectId: entry.member.project.publicId,
+    ...(entry.task ? { taskId: entry.task.publicId } : {}),
     workDate: dateString(entry.workDate),
     minutes: entry.minutes,
     isBillable: entry.isBillable,
@@ -171,6 +179,7 @@ function memberJson(member: ProfessionalProjectMember, person: ProfessionalPerso
 
 function timeEntryJson(
   entry: ProfessionalTimeEntry,
+  task: TimeEntryTaskReference | null,
   project: Pick<ProfessionalProject, "publicId" | "code" | "nameAr" | "nameEn">,
   person: ProfessionalPersonReference,
   editable: boolean,
@@ -183,6 +192,12 @@ function timeEntryJson(
       nameAr: project.nameAr,
       nameEn: project.nameEn,
     },
+    task: task ? {
+      id: task.publicId,
+      titleAr: task.titleAr,
+      titleEn: task.titleEn,
+      status: task.status,
+    } : null,
     user: personJson(person),
     workDate: dateString(entry.workDate),
     minutes: entry.minutes,
@@ -396,6 +411,7 @@ export class ProfessionalProjectService {
       timesheet: timesheetJson(result.timesheet, employee, stats, editable),
       entries: result.entries.map((entry) => timeEntryJson(
         entry,
+        entry.task,
         entry.member.project,
         person,
         editable && entry.member.isActive && entry.member.project.status === "ACTIVE",
@@ -497,8 +513,7 @@ export class ProfessionalProjectService {
     description?: string | null;
   }) {
     return this.transactions.execute({ operation: "UPDATE_PROFESSIONAL_PROJECT", companyId: context.companyId }, async (tx) => {
-      const project = await tx.professionalProject.findFirst({ where: { publicId, companyId: context.companyId } });
-      if (!project) throw new ProfessionalProjectError("NOT_FOUND");
+      const project = await this.lockProject(tx, context.companyId, publicId);
       if (project.version !== input.version) throw new ProfessionalProjectError("VERSION_CONFLICT");
       if (!["ACTIVE", "ON_HOLD"].includes(project.status)) throw new ProfessionalProjectError("PROJECT_INACTIVE");
       const customer = await this.requireCustomer(tx, context.companyId, input.customerId ?? project.customerId);
@@ -511,6 +526,12 @@ export class ProfessionalProjectService {
         ? project.targetEndDate
         : input.targetEndDate ? asDate(input.targetEndDate) : null;
       if (targetEndDate && targetEndDate < startDate) throw new ProfessionalProjectError("INVALID_DATE_RANGE");
+      const narrowsStart = startDate > project.startDate;
+      const narrowsEnd = targetEndDate !== null
+        && (project.targetEndDate === null || targetEndDate < project.targetEndDate);
+      if (narrowsStart || narrowsEnd) {
+        await this.assertProjectPlanWithinDates(tx, context.companyId, project.id, startDate, targetEndDate);
+      }
       const changed = await tx.professionalProject.updateMany({
         where: { id: project.id, companyId: context.companyId, version: input.version },
         data: {
@@ -540,10 +561,12 @@ export class ProfessionalProjectService {
     idempotencyKey: string;
   }) {
     return this.executeCommand(context, "TRANSITION_PROFESSIONAL_PROJECT", input.idempotencyKey, { publicId, ...input }, 200, async (tx) => {
-      const project = await tx.professionalProject.findFirst({ where: { publicId, companyId: context.companyId } });
-      if (!project) throw new ProfessionalProjectError("NOT_FOUND");
+      const project = await this.lockProject(tx, context.companyId, publicId);
       if (project.version !== input.version) throw new ProfessionalProjectError("VERSION_CONFLICT");
       if (!transitionTable[project.status].includes(input.status)) throw new ProfessionalProjectError("INVALID_TRANSITION");
+      if (input.status === "COMPLETED") {
+        await this.assertProjectPlanComplete(tx, context.companyId, project.id);
+      }
       const changed = await tx.professionalProject.updateMany({
         where: { id: project.id, companyId: context.companyId, version: input.version, status: project.status },
         data: { status: input.status, updatedById: context.userId, version: { increment: 1 } },
@@ -620,6 +643,16 @@ export class ProfessionalProjectService {
       if (!member) throw new ProfessionalProjectError("MEMBER_NOT_FOUND");
       if (!member.isActive) throw new ProfessionalProjectError("MEMBER_INACTIVE");
       if (member.version !== input.memberVersion) throw new ProfessionalProjectError("VERSION_CONFLICT");
+      const openTask = await tx.professionalProjectTask.findFirst({
+        where: {
+          companyId: context.companyId,
+          projectId: project.id,
+          assigneeUserId: userId,
+          status: { in: ["TODO", "IN_PROGRESS"] },
+        },
+        select: { id: true },
+      });
+      if (openTask) throw new ProfessionalProjectError("MEMBER_HAS_OPEN_TASKS");
       if (member.role === "MANAGER") {
         const managers = await tx.professionalProjectMember.count({ where: { projectId: project.id, companyId: context.companyId, role: "MANAGER", isActive: true } });
         if (managers <= 1) throw new ProfessionalProjectError("LAST_MANAGER");
@@ -673,7 +706,7 @@ export class ProfessionalProjectService {
       const [rows, total, sums] = await Promise.all([
         tx.professionalTimeEntry.findMany({
           where,
-          include: { member: { include: { project: true } } },
+          include: { member: { include: { project: true } }, task: true },
           orderBy: [{ workDate: "desc" }, { id: "desc" }],
           skip: (input.page - 1) * input.pageSize,
           take: input.pageSize,
@@ -701,6 +734,7 @@ export class ProfessionalProjectService {
     return {
       data: result.rows.map((row) => timeEntryJson(
         row,
+        row.task,
         row.member.project,
         peopleMap.get(row.userId)!,
         row.userId === context.userId
@@ -713,15 +747,16 @@ export class ProfessionalProjectService {
     };
   }
 
-  createTimeEntry(context: ActorContext, input: {
+  async createTimeEntry(context: ActorContext, input: {
     projectId: string;
+    taskId?: string | null;
     workDate: string;
     minutes: number;
     isBillable: boolean;
     description: string;
     idempotencyKey: string;
   }) {
-    return this.executeCommand(context, "CREATE_PROFESSIONAL_TIME_ENTRY", input.idempotencyKey, input, 201, async (tx) => {
+    const response = await this.executeCommand(context, "CREATE_PROFESSIONAL_TIME_ENTRY", input.idempotencyKey, input, 201, async (tx) => {
       await this.lockActiveTimesheetOwner(tx, context);
       await this.assertTimesheetPeriodsOpen(tx, context.companyId, context.userId, [weekStart(asDate(input.workDate))]);
       const project = await tx.professionalProject.findFirst({ where: { publicId: input.projectId, companyId: context.companyId } });
@@ -730,12 +765,14 @@ export class ProfessionalProjectService {
       const member = await tx.professionalProjectMember.findFirst({ where: { projectId: project.id, userId: context.userId, companyId: context.companyId } });
       if (!member) throw new ProfessionalProjectError("MEMBER_NOT_FOUND");
       if (!member.isActive) throw new ProfessionalProjectError("MEMBER_INACTIVE");
+      const task = await this.requireTimeTask(tx, context.companyId, project.id, input.taskId);
       const person = await this.people.findActiveInCompany(tx, context.companyId, context.userId);
       if (!person) throw new ProfessionalProjectError("USER_NOT_FOUND");
       const entry = await tx.professionalTimeEntry.create({
         data: {
           companyId: context.companyId,
           projectId: project.id,
+          taskId: task?.id ?? null,
           userId: context.userId,
           workDate: asDate(input.workDate),
           minutes: input.minutes,
@@ -745,16 +782,22 @@ export class ProfessionalProjectService {
       });
       await this.audit(tx, context, "PROFESSIONAL_TIME_ENTRY_CREATED", "PROFESSIONAL_TIME_ENTRY", entry.publicId, {
         projectId: project.publicId,
+        taskId: task?.publicId ?? null,
         workDate: input.workDate,
         minutes: input.minutes,
         isBillable: input.isBillable,
       });
-      return { timeEntry: timeEntryJson(entry, project, person, true) };
+      return { timeEntry: timeEntryJson(entry, task, project, person, true) };
     });
+    return {
+      ...response,
+      timeEntry: { ...response.timeEntry, task: response.timeEntry.task ?? null },
+    };
   }
 
   updateTimeEntry(context: ActorContext, publicId: string, input: {
     version: number;
+    taskId?: string | null;
     workDate?: string;
     minutes?: number;
     isBillable?: boolean;
@@ -764,12 +807,15 @@ export class ProfessionalProjectService {
       await this.lockActiveTimesheetOwner(tx, context);
       const entry = await tx.professionalTimeEntry.findFirst({
         where: { publicId, companyId: context.companyId, userId: context.userId },
-        include: { member: { include: { project: true } } },
+        include: { member: { include: { project: true } }, task: true },
       });
       if (!entry) throw new ProfessionalProjectError("NOT_FOUND");
       if (entry.version !== input.version) throw new ProfessionalProjectError("VERSION_CONFLICT");
       if (!entry.member.isActive) throw new ProfessionalProjectError("MEMBER_INACTIVE");
       this.assertTimeAllowed(entry.member.project, input.isBillable ?? entry.isBillable);
+      const task = input.taskId === undefined
+        ? entry.task
+        : await this.requireTimeTask(tx, context.companyId, entry.projectId, input.taskId);
       await this.assertTimesheetPeriodsOpen(tx, context.companyId, context.userId, [
         weekStart(entry.workDate),
         weekStart(input.workDate ? asDate(input.workDate) : entry.workDate),
@@ -777,6 +823,7 @@ export class ProfessionalProjectService {
       const changed = await tx.professionalTimeEntry.updateMany({
         where: { id: entry.id, companyId: context.companyId, userId: context.userId, version: input.version },
         data: {
+          ...(input.taskId !== undefined ? { taskId: task?.id ?? null } : {}),
           ...(input.workDate !== undefined ? { workDate: asDate(input.workDate) } : {}),
           ...(input.minutes !== undefined ? { minutes: input.minutes } : {}),
           ...(input.isBillable !== undefined ? { isBillable: input.isBillable } : {}),
@@ -785,11 +832,13 @@ export class ProfessionalProjectService {
         },
       });
       if (changed.count !== 1) throw new ProfessionalProjectError("VERSION_CONFLICT");
-      const updated = await tx.professionalTimeEntry.findUniqueOrThrow({ where: { id: entry.id } });
+      const updated = await tx.professionalTimeEntry.findUniqueOrThrow({ where: { id: entry.id }, include: { task: true } });
       const person = await this.people.findActiveInCompany(tx, context.companyId, context.userId);
       if (!person) throw new ProfessionalProjectError("USER_NOT_FOUND");
-      await this.audit(tx, context, "PROFESSIONAL_TIME_ENTRY_UPDATED", "PROFESSIONAL_TIME_ENTRY", publicId);
-      return { timeEntry: timeEntryJson(updated, entry.member.project, person, true) };
+      await this.audit(tx, context, "PROFESSIONAL_TIME_ENTRY_UPDATED", "PROFESSIONAL_TIME_ENTRY", publicId, {
+        taskId: updated.task?.publicId ?? null,
+      });
+      return { timeEntry: timeEntryJson(updated, updated.task, entry.member.project, person, true) };
     });
   }
 
@@ -988,6 +1037,27 @@ export class ProfessionalProjectService {
     return employee;
   }
 
+  private async requireTimeTask(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+    projectId: bigint,
+    taskPublicId: string | null | undefined,
+  ) {
+    if (taskPublicId === null || taskPublicId === undefined) return null;
+    const rows = await tx.$queryRaw<Array<{ id: bigint }>>`
+      SELECT id FROM professional_project_tasks
+      WHERE public_id=${taskPublicId} AND company_id=${companyId} AND project_id=${projectId}
+      FOR UPDATE`;
+    if (rows.length !== 1) throw new ProfessionalProjectError("TASK_NOT_FOUND");
+    const task = await tx.professionalProjectTask.findFirst({
+      where: { id: rows[0]!.id, companyId, projectId },
+      select: { id: true, publicId: true, titleAr: true, titleEn: true, status: true },
+    });
+    if (!task) throw new ProfessionalProjectError("TASK_NOT_FOUND");
+    if (!["TODO", "IN_PROGRESS"].includes(task.status)) throw new ProfessionalProjectError("TASK_INACTIVE");
+    return task;
+  }
+
   private loadTimesheetEntries(
     tx: Prisma.TransactionClient,
     timesheet: Pick<ProfessionalTimesheet, "companyId" | "userId" | "periodStart" | "periodEnd">,
@@ -998,7 +1068,7 @@ export class ProfessionalProjectService {
         userId: timesheet.userId,
         workDate: { gte: timesheet.periodStart, lte: timesheet.periodEnd },
       },
-      include: { member: { include: { project: true } } },
+      include: { member: { include: { project: true } }, task: true },
       orderBy: [{ id: "asc" }],
     });
   }
@@ -1041,11 +1111,75 @@ export class ProfessionalProjectService {
   }
 
   private async mutableProject(tx: Prisma.TransactionClient, companyId: bigint, publicId: string, version: number) {
-    const project = await tx.professionalProject.findFirst({ where: { publicId, companyId } });
-    if (!project) throw new ProfessionalProjectError("NOT_FOUND");
+    const project = await this.lockProject(tx, companyId, publicId);
     if (project.version !== version) throw new ProfessionalProjectError("VERSION_CONFLICT");
     if (!["ACTIVE", "ON_HOLD"].includes(project.status)) throw new ProfessionalProjectError("PROJECT_INACTIVE");
     return project;
+  }
+
+  private async lockProject(tx: Prisma.TransactionClient, companyId: bigint, publicId: string) {
+    const rows = await tx.$queryRaw<Array<{ id: bigint }>>`
+      SELECT id FROM professional_projects
+      WHERE public_id=${publicId} AND company_id=${companyId}
+      FOR UPDATE`;
+    if (rows.length !== 1) throw new ProfessionalProjectError("NOT_FOUND");
+    return tx.professionalProject.findFirstOrThrow({ where: { id: rows[0]!.id, companyId } });
+  }
+
+  private async assertProjectPlanComplete(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+    projectId: bigint,
+  ) {
+    const [stage, task] = await Promise.all([
+      tx.professionalProjectStage.findFirst({
+        where: { companyId, projectId, status: { notIn: ["COMPLETED", "CANCELLED"] } },
+        select: { id: true },
+      }),
+      tx.professionalProjectTask.findFirst({
+        where: { companyId, projectId, status: { notIn: ["COMPLETED", "CANCELLED"] } },
+        select: { id: true },
+      }),
+    ]);
+    if (stage || task) throw new ProfessionalProjectError("PROJECT_PLAN_INCOMPLETE");
+  }
+
+  private async assertProjectPlanWithinDates(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+    projectId: bigint,
+    startDate: Date,
+    targetEndDate: Date | null,
+  ) {
+    const stageOutsideDates: Prisma.ProfessionalProjectStageWhereInput[] = [
+      { plannedStartDate: { lt: startDate } },
+      { targetEndDate: { lt: startDate } },
+    ];
+    const taskOutsideDates: Prisma.ProfessionalProjectTaskWhereInput[] = [
+      { plannedStartDate: { lt: startDate } },
+      { dueDate: { lt: startDate } },
+    ];
+    if (targetEndDate) {
+      stageOutsideDates.push(
+        { plannedStartDate: { gt: targetEndDate } },
+        { targetEndDate: { gt: targetEndDate } },
+      );
+      taskOutsideDates.push(
+        { plannedStartDate: { gt: targetEndDate } },
+        { dueDate: { gt: targetEndDate } },
+      );
+    }
+    const [stage, task] = await Promise.all([
+      tx.professionalProjectStage.findFirst({
+        where: { companyId, projectId, OR: stageOutsideDates },
+        select: { id: true },
+      }),
+      tx.professionalProjectTask.findFirst({
+        where: { companyId, projectId, OR: taskOutsideDates },
+        select: { id: true },
+      }),
+    ]);
+    if (stage || task) throw new ProfessionalProjectError("PROJECT_PLAN_OUTSIDE_DATES");
   }
 
   private async requireCustomer(tx: Prisma.TransactionClient, companyId: bigint, customerId: bigint, requireActive = true) {

@@ -155,7 +155,7 @@ export function createProfessionalProjectRouter(auth: AuthService, projects: Pro
       return;
     }
     if (error instanceof ProfessionalProjectError) {
-      const status = ["NOT_FOUND", "CUSTOMER_NOT_FOUND", "USER_NOT_FOUND", "MEMBER_NOT_FOUND", "NOT_TIMESHEET_OWNER"].includes(error.reason)
+      const status = ["NOT_FOUND", "CUSTOMER_NOT_FOUND", "USER_NOT_FOUND", "MEMBER_NOT_FOUND", "NOT_TIMESHEET_OWNER", "TASK_NOT_FOUND"].includes(error.reason)
         ? 404
         : ["VERSION_CONFLICT", "IDEMPOTENCY_MISMATCH", "IDEMPOTENCY_IN_PROGRESS"].includes(error.reason)
           ? 409

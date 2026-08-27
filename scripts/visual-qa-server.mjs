@@ -35,6 +35,121 @@ const closeReadiness = {
     "RETAINED_EARNINGS_READY",
   ].map((code) => ({ code, status: "PASS", count: 0, details: [] })),
 };
+const professionalProjectId = "b1af217e-7c7b-43bb-b15f-61184df1d6b9";
+const professionalStageId = "44b23a51-b68c-4e35-a252-d577c3021c2a";
+const professionalResearchTaskId = "49e2bc47-bf40-4bf7-a40a-3408b77cfba5";
+const professionalDraftTaskId = "8ff14e20-5f22-4e6e-909b-bc0385144d49";
+const professionalCustomer = { id: "41", code: "CUS-000041", nameAr: "شركة الريادة للاستشارات", nameEn: "Pioneer Consulting" };
+const professionalManager = { id: "7", displayName: "سارة المستشار", nameEn: "Sarah Consultant" };
+const professionalProject = {
+  id: professionalProjectId,
+  code: "PRJ-000041",
+  customer: professionalCustomer,
+  nameAr: "استشارة إعادة هيكلة الشركة",
+  nameEn: "Corporate restructuring advisory",
+  kind: "CONSULTING_ENGAGEMENT",
+  billingModel: "TIME_AND_MATERIALS",
+  status: "ACTIVE",
+  startDate: "2026-08-01",
+  targetEndDate: "2026-10-31",
+  description: "تحليل الهيكل الحالي وصياغة التوصيات وخطة التنفيذ.",
+  memberCount: 1,
+  trackedMinutes: 210,
+  billableMinutes: 210,
+  version: 0,
+  createdAt: "2026-08-01T08:00:00.000Z",
+  updatedAt: "2026-08-27T10:00:00.000Z",
+};
+const professionalTasks = [
+  {
+    id: professionalResearchTaskId,
+    stageId: professionalStageId,
+    sequence: 1,
+    titleAr: "تحليل الوضع الحالي",
+    titleEn: "Current-state analysis",
+    description: "مراجعة المستندات ومقابلة أصحاب المصلحة.",
+    status: "IN_PROGRESS",
+    assigneeUserId: professionalManager.id,
+    estimatedMinutes: 360,
+    plannedStartDate: "2026-08-03",
+    dueDate: "2026-08-31",
+    completedAt: null,
+    version: 1,
+    actualMinutes: 210,
+    approvedMinutes: 150,
+  },
+  {
+    id: professionalDraftTaskId,
+    stageId: professionalStageId,
+    sequence: 2,
+    titleAr: "صياغة مذكرة التوصيات",
+    titleEn: "Draft recommendations",
+    description: "صياغة الخيارات والتوصيات التنفيذية.",
+    status: "TODO",
+    assigneeUserId: professionalManager.id,
+    estimatedMinutes: 300,
+    plannedStartDate: "2026-09-01",
+    dueDate: "2026-09-20",
+    completedAt: null,
+    version: 0,
+    actualMinutes: 0,
+    approvedMinutes: 0,
+  },
+];
+const professionalPlan = {
+  projectId: professionalProjectId,
+  planningVersion: 4,
+  summary: {
+    timeBudgetMinutes: 2400,
+    estimatedMinutes: 660,
+    actualMinutes: 210,
+    approvedMinutes: 150,
+    allocatedActualMinutes: 210,
+    unallocatedActualMinutes: 0,
+    remainingBudgetMinutes: 2190,
+    overBudgetMinutes: 0,
+    taskCounts: { TODO: 1, IN_PROGRESS: 1, COMPLETED: 0, CANCELLED: 0 },
+  },
+  stages: [{
+    id: professionalStageId,
+    sequence: 1,
+    nameAr: "التحليل والتوصيات",
+    nameEn: "Analysis and recommendations",
+    description: "مرحلة إغلاق الفهم وتقديم الرأي المهني.",
+    status: "IN_PROGRESS",
+    plannedStartDate: "2026-08-03",
+    targetEndDate: "2026-09-20",
+    version: 1,
+    summary: {
+      estimatedMinutes: 660,
+      actualMinutes: 210,
+      approvedMinutes: 150,
+      taskCounts: { TODO: 1, IN_PROGRESS: 1, COMPLETED: 0, CANCELLED: 0 },
+    },
+    tasks: professionalTasks,
+  }],
+  dependencies: [{
+    id: "6c2d61ed-8e4e-4b0c-baa9-7997145394b1",
+    predecessorTaskId: professionalResearchTaskId,
+    successorTaskId: professionalDraftTaskId,
+    isActive: true,
+    version: 0,
+  }],
+};
+const professionalTimeEntry = {
+  id: "cbcc08ff-99bc-40c4-8757-bc90016584e3",
+  project: { id: professionalProjectId, code: professionalProject.code, nameAr: professionalProject.nameAr, nameEn: professionalProject.nameEn },
+  task: { id: professionalResearchTaskId, titleAr: professionalTasks[0].titleAr, titleEn: professionalTasks[0].titleEn, status: professionalTasks[0].status },
+  user: professionalManager,
+  workDate: "2026-08-27",
+  minutes: 210,
+  isBillable: true,
+  description: "مراجعة حزمة مستندات الحوكمة وتحليل الملاحظات.",
+  editable: true,
+  version: 0,
+  createdAt: "2026-08-27T10:00:00.000Z",
+  updatedAt: "2026-08-27T10:00:00.000Z",
+};
 
 function list(data = []) {
   return { data, meta: { ...meta, total: data.length, totalPages: data.length ? 1 : 0 } };
@@ -46,7 +161,26 @@ function responseFor(url, method) {
   if (pathname === "/auth/companies") return { data: [company] };
   if (pathname === "/auth/context" || pathname === "/auth/logout") return null;
   if (pathname === "/companies/current") return company;
+  if (pathname === "/professional-projects/customer-options") return { data: [professionalCustomer] };
+  if (pathname === "/professional-projects/member-options") return { data: [professionalManager] };
+  if (pathname === "/professional-projects") return list([professionalProject]);
+  if (pathname === "/professional-projects/" + professionalProjectId + "/plan") return professionalPlan;
+  if (pathname === "/professional-projects/" + professionalProjectId) return {
+    project: professionalProject,
+    members: [{ user: professionalManager, role: "MANAGER", isActive: true, version: 0, assignedAt: "2026-08-01T08:00:00.000Z", unassignedAt: null }],
+  };
+  if (pathname === "/professional-time-entries") return {
+    data: [professionalTimeEntry],
+    meta: { ...meta, total: 1, totalPages: 1 },
+    summary: { trackedMinutes: 210, billableMinutes: 210, nonBillableMinutes: 0 },
+  };
+  if (pathname === "/professional-timesheets") return list([]);
+  if (pathname === "/professional-service-contracts") return { data: [] };
+  if (pathname === "/professional-service-rates") return { data: [] };
+  if (pathname === "/professional-billing-runs") return { data: [] };
+  if (pathname === "/professional-billing/currency-options") return { data: [currency] };
   if (pathname === "/fiscal-years") return list([{ id: "1001", name: "السنة المالية 2026", startDate: "2026-01-01", endDate: "2026-12-31", status: "OPEN", periods: [fiscalPeriod] }]);
+  if (pathname === "/fiscal-periods") return list([fiscalPeriod]);
   if (pathname === `/fiscal-periods/${fiscalPeriod.id}/close-readiness`) return closeReadiness;
   if (pathname === `/fiscal-periods/${fiscalPeriod.id}/close-run`) return { run: null };
   if (pathname === "/settings") return { data: [{ key: "accounting.manual_journal_maker_checker_enabled", value: true }] };

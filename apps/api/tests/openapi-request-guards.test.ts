@@ -22,10 +22,10 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 254, requestBodies: 131, responseBodies: 1666 });
-    expect(guardedOpenApiOperations).toHaveLength(131);
+    expect(openApiContractCoverage).toEqual({ operations: 264, requestBodies: 140, responseBodies: 1735 });
+    expect(guardedOpenApiOperations).toHaveLength(140);
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
-      'login', 'createUser', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'initializeInventoryBalanceValuation', 'reverseInventoryMovement', 'previewDataImport', 'commitDataImport', 'previewBankStatement', 'commitBankStatementImport', 'createBankReconciliationSession', 'generateBankReconciliationSuggestions', 'approveBankReconciliationMatch', 'createManualBankReconciliationMatch', 'releaseBankReconciliationMatch', 'classifyBankStatementLine', 'closeBankReconciliationSession', 'startFinancialCloseRun', 'refreshFinancialCloseRun', 'createApprovalRequest', 'approveApprovalRequest', 'rejectApprovalRequest', 'createProfessionalProject', 'assignProfessionalProjectMember', 'createProfessionalTimeEntry', 'createProfessionalTimesheet', 'createProfessionalServiceContract', 'endProfessionalServiceContract', 'createProfessionalServiceRate', 'endProfessionalServiceRate', 'createProfessionalBillingRun', 'createHrDepartment', 'updateHrDepartment', 'createHrPosition', 'updateHrPosition', 'createEmployee', 'updateEmployee', 'transitionEmployee', 'createEmploymentContract', 'endEmploymentContract', 'returnFinancialCloseRun', 'updateCashFlowMapping',
+      'login', 'createUser', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'initializeInventoryBalanceValuation', 'reverseInventoryMovement', 'previewDataImport', 'commitDataImport', 'previewBankStatement', 'commitBankStatementImport', 'createBankReconciliationSession', 'generateBankReconciliationSuggestions', 'approveBankReconciliationMatch', 'createManualBankReconciliationMatch', 'releaseBankReconciliationMatch', 'classifyBankStatementLine', 'closeBankReconciliationSession', 'startFinancialCloseRun', 'refreshFinancialCloseRun', 'createApprovalRequest', 'approveApprovalRequest', 'rejectApprovalRequest', 'createProfessionalProject', 'assignProfessionalProjectMember', 'createProfessionalTimeEntry', 'createProfessionalTimesheet', 'createProfessionalServiceContract', 'endProfessionalServiceContract', 'createProfessionalServiceRate', 'endProfessionalServiceRate', 'createProfessionalBillingRun', 'updateProfessionalProjectTimeBudget', 'createProfessionalProjectStage', 'updateProfessionalProjectStage', 'transitionProfessionalProjectStage', 'createProfessionalProjectTask', 'updateProfessionalProjectTask', 'transitionProfessionalProjectTask', 'createProfessionalProjectTaskDependency', 'removeProfessionalProjectTaskDependency', 'createHrDepartment', 'updateHrDepartment', 'createHrPosition', 'updateHrPosition', 'createEmployee', 'updateEmployee', 'transitionEmployee', 'createEmploymentContract', 'endEmploymentContract', 'returnFinancialCloseRun', 'updateCashFlowMapping',
     ]));
   });
 
@@ -162,6 +162,100 @@ describe('generated OpenAPI request guards', () => {
       exchangeRate: '1',
       revenueAccountId: '9',
     }).success).toBe(false);
+  });
+
+  it('validates professional planning commands and the derived plan response', () => {
+    const stageId = '5aa8b232-356c-4d55-8b89-f27d44d1678d';
+    const predecessorTaskId = '74d5c65e-3381-4aba-a3ae-0b61409375f6';
+    const successorTaskId = 'a4bb7408-9423-4fa3-81d5-3d34ea7f6a12';
+    expect(openApiRequestBodySchemas.updateProfessionalProjectTimeBudget.parse({
+      planningVersion: 2, timeBudgetMinutes: null,
+    })).toEqual({ planningVersion: 2, timeBudgetMinutes: null });
+    expect(openApiRequestBodySchemas.updateProfessionalProjectTimeBudget.safeParse({
+      planningVersion: 2, timeBudgetMinutes: 0,
+    }).success).toBe(false);
+    expect(openApiRequestBodySchemas.updateProfessionalProjectTimeBudget.parse({
+      planningVersion: 2, timeBudgetMinutes: 4294967295,
+    })).toEqual({ planningVersion: 2, timeBudgetMinutes: 4294967295 });
+    expect(openApiRequestBodySchemas.updateProfessionalProjectTimeBudget.safeParse({
+      planningVersion: 2, timeBudgetMinutes: 4294967296,
+    }).success).toBe(false);
+    expect(openApiRequestBodySchemas.createProfessionalProjectStage.parse({
+      planningVersion: 2, nameAr: '  البحث والتحليل  ', plannedStartDate: null, targetEndDate: '2057-09-30',
+    })).toEqual({ planningVersion: 2, nameAr: 'البحث والتحليل', plannedStartDate: null, targetEndDate: '2057-09-30' });
+    expect(openApiRequestBodySchemas.createProfessionalProjectTask.parse({
+      planningVersion: 3, titleAr: '  إعداد المذكرة  ', assigneeUserId: '7', estimatedMinutes: 240,
+      plannedStartDate: null, dueDate: null,
+    })).toMatchObject({ planningVersion: 3, titleAr: 'إعداد المذكرة', assigneeUserId: 7n, estimatedMinutes: 240 });
+    expect(openApiRequestBodySchemas.createProfessionalProjectTaskDependency.parse({
+      planningVersion: 4, predecessorTaskId, successorTaskId,
+    })).toEqual({ planningVersion: 4, predecessorTaskId, successorTaskId });
+    expect(openApiRequestBodySchemas.transitionProfessionalProjectTask.safeParse({
+      planningVersion: 4, version: 0, status: 'BLOCKED', reason: 'سبب غير صالح',
+    }).success).toBe(false);
+    expect(openApiRequestBodySchemas.updateProfessionalProjectStage.safeParse({
+      planningVersion: 4, version: 0,
+    }).success).toBe(false);
+    expect(openApiRequestBodySchemas.createProfessionalProjectTask.safeParse({
+      planningVersion: 4, titleAr: 'مهمة', assigneeUserId: '7', estimatedMinutes: 0,
+    }).success).toBe(false);
+    expect(openApiRequestBodySchemas.createProfessionalProjectTask.safeParse({
+      planningVersion: 4, titleAr: 'مهمة', assigneeUserId: '7', estimatedMinutes: 4294967296,
+    }).success).toBe(false);
+    expect(openApiRequestBodySchemas.updateProfessionalProjectTask.safeParse({
+      planningVersion: 4, version: 0, estimatedMinutes: 4294967296,
+    }).success).toBe(false);
+
+    expect(parseOpenApiResponseBody('getProfessionalProjectPlan', 200, {
+      projectId: stageId,
+      planningVersion: 5,
+      summary: {
+        timeBudgetMinutes: 1200,
+        estimatedMinutes: 480,
+        actualMinutes: 90,
+        approvedMinutes: 60,
+        allocatedActualMinutes: 90,
+        unallocatedActualMinutes: 0,
+        remainingBudgetMinutes: 1110,
+        overBudgetMinutes: 0,
+        taskCounts: { TODO: 1, IN_PROGRESS: 1, COMPLETED: 0, CANCELLED: 0 },
+      },
+      stages: [{
+        id: stageId,
+        sequence: 1,
+        nameAr: 'البحث والتحليل',
+        nameEn: null,
+        description: null,
+        status: 'IN_PROGRESS',
+        plannedStartDate: null,
+        targetEndDate: '2057-09-30',
+        version: 1,
+        summary: {
+          estimatedMinutes: 480,
+          actualMinutes: 90,
+          approvedMinutes: 60,
+          taskCounts: { TODO: 1, IN_PROGRESS: 1, COMPLETED: 0, CANCELLED: 0 },
+        },
+        tasks: [{
+          id: predecessorTaskId,
+          stageId,
+          sequence: 1,
+          titleAr: 'إعداد المذكرة',
+          titleEn: null,
+          description: null,
+          status: 'IN_PROGRESS',
+          assigneeUserId: '7',
+          estimatedMinutes: 240,
+          plannedStartDate: null,
+          dueDate: null,
+          completedAt: null,
+          version: 1,
+          actualMinutes: 90,
+          approvedMinutes: 60,
+        }],
+      }],
+      dependencies: [{ id: successorTaskId, predecessorTaskId, successorTaskId, isActive: true, version: 0 }],
+    })).toMatchObject({ planningVersion: 5, stages: [{ tasks: [{ assigneeUserId: '7' }] }] });
   });
 
   it('validates HR foundation commands and keeps master-data codes server-owned', () => {

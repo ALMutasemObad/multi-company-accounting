@@ -27,6 +27,9 @@ function contractApp(mode: "valid" | "legacy-problem" | "invalid" | "missing-sch
     }
     response.json({ csrfToken: "x".repeat(32), expiresAt: "2026-08-22T12:00:00.000Z" });
   });
+  app.get("/api/v1/professional-projects/:professionalProjectId/plan", (_request, response) => {
+    response.json({ invalid: true });
+  });
   const errors: ErrorRequestHandler = (error, _request, response, next) => {
     if (!(error instanceof OpenApiResponseContractError)) {
       next(error);
@@ -64,6 +67,16 @@ describe("OpenAPI response contract validator", () => {
     const response = await request(contractApp("invalid")).get("/api/v1/auth/csrf").expect(500);
     expect(response.body).toMatchObject({
       operationId: "getCsrfToken", contractStatus: 200, reason: "INVALID_BODY",
+    });
+    expect(response.body.issueCount).toBeGreaterThan(0);
+  });
+
+  it("validates parameterized Express routes against their OpenAPI path templates", async () => {
+    const response = await request(contractApp("valid"))
+      .get("/api/v1/professional-projects/00000000-0000-4000-8000-000000000001/plan")
+      .expect(500);
+    expect(response.body).toMatchObject({
+      operationId: "getProfessionalProjectPlan", contractStatus: 200, reason: "INVALID_BODY",
     });
     expect(response.body.issueCount).toBeGreaterThan(0);
   });

@@ -997,9 +997,73 @@ export type ProfessionalProjectMember = {
   assignedAt: string;
   unassignedAt: string | null;
 };
+export type ProfessionalProjectStageStatus = "PLANNED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+export type ProfessionalProjectTaskStatus = "TODO" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+export type ProfessionalProjectTaskCounts = Record<ProfessionalProjectTaskStatus, number>;
+export type ProfessionalProjectPlanSummary = {
+  timeBudgetMinutes: number | null;
+  estimatedMinutes: number;
+  actualMinutes: number;
+  approvedMinutes: number;
+  allocatedActualMinutes: number;
+  unallocatedActualMinutes: number;
+  remainingBudgetMinutes: number | null;
+  overBudgetMinutes: number;
+  taskCounts: ProfessionalProjectTaskCounts;
+};
+export type ProfessionalProjectTask = {
+  id: string;
+  stageId: string;
+  sequence: number;
+  titleAr: string;
+  titleEn: string | null;
+  description: string | null;
+  status: ProfessionalProjectTaskStatus;
+  assigneeUserId: string;
+  estimatedMinutes: number;
+  plannedStartDate: string | null;
+  dueDate: string | null;
+  completedAt: string | null;
+  version: number;
+  actualMinutes: number;
+  approvedMinutes: number;
+};
+export type ProfessionalProjectStage = {
+  id: string;
+  sequence: number;
+  nameAr: string;
+  nameEn: string | null;
+  description: string | null;
+  status: ProfessionalProjectStageStatus;
+  plannedStartDate: string | null;
+  targetEndDate: string | null;
+  version: number;
+  summary: {
+    estimatedMinutes: number;
+    actualMinutes: number;
+    approvedMinutes: number;
+    taskCounts: ProfessionalProjectTaskCounts;
+  };
+  tasks: ProfessionalProjectTask[];
+};
+export type ProfessionalProjectTaskDependency = {
+  id: string;
+  predecessorTaskId: string;
+  successorTaskId: string;
+  isActive: boolean;
+  version: number;
+};
+export type ProfessionalProjectPlan = {
+  projectId: string;
+  planningVersion: number;
+  summary: ProfessionalProjectPlanSummary;
+  stages: ProfessionalProjectStage[];
+  dependencies: ProfessionalProjectTaskDependency[];
+};
 export type ProfessionalTimeEntry = {
   id: string;
   project: { id: string; code: string; nameAr: string; nameEn: string | null };
+  task: { id: string; titleAr: string; titleEn: string | null; status: ProfessionalProjectTaskStatus } | null;
   user: ProfessionalPerson;
   workDate: string;
   minutes: number;

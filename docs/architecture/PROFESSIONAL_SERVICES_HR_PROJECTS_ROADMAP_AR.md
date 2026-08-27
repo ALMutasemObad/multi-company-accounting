@@ -1,7 +1,7 @@
 ---
 title: "Professional Services, HR, and Projects Roadmap"
-status: "approved sequencing; phases A through D1 complete locally; phase E next"
-version: "1.3"
+status: "approved sequencing; phases A through E1 complete locally; E2 deferred"
+version: "1.4"
 date: "2026-08-27"
 related:
   - "ADR-006-professional-services-projects-priority.md"
@@ -10,6 +10,8 @@ related:
   - "ADR-007-human-resources-foundation.md"
   - "ADR-008-professional-timesheets-approval.md"
   - "ADR-009-professional-service-billing.md"
+  - "ADR-010-professional-project-planning.md"
+  - "PROFESSIONAL_PROJECT_PLANNING_SLICE_AR.md"
 ---
 
 # خارطة خدمات الشركات المهنية والموارد البشرية والمشاريع
@@ -24,7 +26,8 @@ related:
 | B | أساس HR | ملف موظف، رقم وظيفي، قسم، منصب، عقد/حالة عمل غير مالي | Identity reference only | منفذة محليًا |
 | C | Timesheets والموافقة | فترة وقت immutable عند الإرسال وقرار Maker/Checker | A + Approvals + B | منفذة محليًا |
 | D | العقود والأسعار وفوترة الخدمات | أسعار مؤرخة ولقطة تسعير وفاتورة عبر Sales port | C + Sales + Tax | D1 منفذة محليًا |
-| E | تخطيط المشروع والمصروفات | مهام/معالم/ميزانية وقت ومصروفات معتمدة | B/C + Expenses/Approvals | مخططة |
+| E1 | تخطيط المشروع وميزانية الوقت | مراحل ومهام واعتماديات ومسؤول ومخطط/فعلي | A + C | منفذة محليًا |
+| E2 | مصروفات المشروع | تكلفة مورد ومطالبة موظف وربط مرجعي بعد الاعتماد | Expenses + Purchases/Treasury/Approvals | مؤجلة حتى ADR ملكية |
 | F | خصائص المكتب القانوني | تعارض مصالح، مواعيد، تصنيف مستندات وقيود وصول | A + Security/Audit | تحتاج قرارات نطاق |
 | G | أموال العملاء/الأمانات | حسابات منفصلة، تسوية، منع الاعتراف كإيراد وضبط صلاحيات | Treasury + Ledger + Reconciliation | ADR مستقل إلزامي |
 | H | الرواتب | دورة أجور واستقطاعات وترحيل ودفع وإلغاء | B + jurisdiction محدد | مؤجلة عمدًا |
@@ -72,10 +75,25 @@ related:
 
 ## المرحلة E — إدارة المشروع العملية
 
-- Work breakdown صغير: مراحل ومهام واعتماديات وتقدير ساعات ومسؤول.
-- ميزانية وقت ومقارنة مخطط/فعلي، دون دفتر مالي موازٍ.
-- مصروفات المشروع تطلب من موديول المصروفات وتربط مرجعيًا بعد اعتمادها.
-- تنبيهات المواعيد عبر Outbox بعد commit، لا Scheduler خفي داخل الطلب.
+### E1 — تخطيط المشروع وميزانية الوقت
+
+نُفذت [E1 وفق ADR-010](ADR-010-professional-project-planning.md) قبل المصروفات، لأن الخطة تعيد استخدام المشروع والفريق والوقت الحاليين وتغلق دورة تشغيلية بلا أثر مالي، بينما لا يوجد حتى الآن مالك لمطالبة المصروف أو العهدة.
+
+- يملك سياق المشاريع `ProfessionalProjectStage/ProfessionalProjectTask/ProfessionalTaskDependency`، ويظل `ProfessionalProject` جذر الخطة عبر `planningVersion` ويحمل `timeBudgetMinutes` الاختيارية.
+- تحمل المهمة تقدير دقائق ومسؤولًا من أعضاء المشروع النشطين، وتشتق تقديرات المرحلة والمشروع من المهام. تدعم الاعتمادية الأولى Finish-to-Start وتمنع self-reference والعبور بين المشاريع والدورات.
+- يرتبط `ProfessionalTimeEntry` اختياريًا بمهمة من المشروع والشركة نفسيهما. تبقى الفعلية مشتقة من سجل الوقت ولا تخزن في الخطة، ويظهر الوقت غير المرتبط كمجموعة غير مخططة.
+- لا تضيف E1 اعتماد Baseline أو مبالغ مالية أو Ledger أو حدث Outbox؛ لا يوجد مستهلك تنبيه يبرر حدثًا غير مستخدم.
+- تشمل بوابة الإغلاق Migration 55 وOpenAPI والواجهة والترجمات الأربع والعزل والتزامن وDAG والعكس المحروس وفق [خطة الشريحة](PROFESSIONAL_PROJECT_PLANNING_SLICE_AR.md).
+
+### E2 — مصروفات المشروع المؤجلة
+
+لا يمثل PurchaseInvoice مطالبة موظف، ولا يمثل CostCenter مشروعًا، ولا يملك Approvals حقيقة المصروف. تحتاج E2 إلى ADR يفصل:
+
+1. فاتورة مورد من Purchases منسوبة إلى مشروع عبر Port يملكه السياق المصدر.
+2. مطالبة موظف أو عهدته عبر Aggregate `Expenses` جديد ثم Approvals وTreasury/AP.
+3. المصروف القابل لإعادة الفوترة للعميل عبر Sales وTax ولقطة مصدر immutable.
+
+لا تكتب Projects في PurchaseInvoice أو Payment، ولا يمثل Employee كمورد، ولا تبدأ E2 حتى تثبت الملكية والحالات وسياسة الضريبة والتسوية والعكس.
 
 ## المرحلة F — احتياجات شركات المحاماة
 
@@ -83,6 +101,8 @@ related:
 - **Matter deadlines:** موعد، منطقة زمنية، مصدر، مسؤول، وإقرار/إكمال؛ التنبيه أثر Outbox.
 - **Document metadata:** تصنيف ووصف وRetention وقيود وصول؛ تخزين الملفات نفسه يحتاج قرار تخزين وتشفير وفيروسات منفصلًا.
 - **Ethical walls:** صلاحيات على مستوى القضية قد تتجاوز RBAC الشركة العام، وتحتاج نموذج وصول واختبارات تسرب قبل التنفيذ.
+
+تعامل الجدران الأخلاقية كشرط إطلاق للبيانات القانونية الحساسة: صلاحية `professional_projects.view` الحالية معزولة بالشركة لكنها ليست وصولًا على مستوى القضية. لا تعد عناوين ووصف مهام E1 آمنة لمحتوى سري لمجرد ارتباطها بعضو أو مسؤول.
 
 ## المرحلة G — أموال العملاء والأمانات
 
@@ -100,4 +120,5 @@ related:
 - لا كتابة مباشرة إلى Ledger؛ كل أثر محاسبي يمر عبر مالك المستند ثم `PostingEngine`.
 - لا تكرار للعميل أو المستخدم أو الفاتورة أو قرار الموافقة أو حركة الخزينة.
 - كل علاقة بين الشركات تحمل `companyId`، وكل أمر قابل للإعادة يملك Idempotency، وكل تعديل متنافس يملك version.
+- لا يكتب Outbox Event بلا مستهلك متعاقد عليه وعقد versioned وسياسة فشل وإعادة محاولة؛ سجل Audit ليس بديلًا عن Integration Event والعكس صحيح.
 - لا نشر أو Push قبل طلب صريح وبوابات الإصدار الكاملة.

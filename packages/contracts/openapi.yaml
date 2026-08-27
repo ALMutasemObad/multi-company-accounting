@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.35.0
+  version: 1.36.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -2091,6 +2091,222 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/BusinessRuleViolation' }
       x-permission: professional_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /professional-projects/{professionalProjectId}/plan:
+    get:
+      tags: [Professional Projects]
+      summary: عرض خطة المشروع وموازنة الوقت والفعل المشتق
+      operationId: getProfessionalProjectPlan
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: professionalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: الخطة المعزولة حسب الشركة مع المراحل والمهام والاعتماديات, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalProjectPlanResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: professional_planning.view
+      security: [{ SessionCookie: [] }]
+  /professional-projects/{professionalProjectId}/time-budget:
+    patch:
+      tags: [Professional Projects]
+      summary: تحديث موازنة وقت المشروع بنسخة تخطيط متفائلة
+      operationId: updateProfessionalProjectTimeBudget
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: professionalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/UpdateProfessionalProjectTimeBudgetRequest' } } }
+      responses:
+        '200': { description: الموازنة ونسخة التخطيط المحدثة, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalProjectPlanBudgetMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: professional_planning.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /professional-projects/{professionalProjectId}/stages:
+    post:
+      tags: [Professional Projects]
+      summary: إضافة مرحلة مرتبة بخادم النظام إلى خطة المشروع
+      operationId: createProfessionalProjectStage
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: professionalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateProfessionalProjectStageRequest' } } }
+      responses:
+        '201': { description: المرحلة المنشأة ونسخة التخطيط, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalProjectStageMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: professional_planning.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /professional-project-stages/{professionalProjectStageId}:
+    patch:
+      tags: [Professional Projects]
+      summary: تعديل بيانات مرحلة مخططة دون إعادة ترتيبها
+      operationId: updateProfessionalProjectStage
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: professionalProjectStageId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/UpdateProfessionalProjectStageRequest' } } }
+      responses:
+        '200': { description: المرحلة المحدثة ونسخة التخطيط, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalProjectStageMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: professional_planning.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /professional-project-stages/{professionalProjectStageId}/transition:
+    post:
+      tags: [Professional Projects]
+      summary: نقل حالة مرحلة بسبب موثق
+      operationId: transitionProfessionalProjectStage
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: professionalProjectStageId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/TransitionProfessionalProjectStageRequest' } } }
+      responses:
+        '200': { description: المرحلة بعد الانتقال ونسخة التخطيط, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalProjectStageMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: professional_planning.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /professional-project-stages/{professionalProjectStageId}/tasks:
+    post:
+      tags: [Professional Projects]
+      summary: إضافة مهمة مرتبة ومسندة إلى مرحلة المشروع
+      operationId: createProfessionalProjectTask
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: professionalProjectStageId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateProfessionalProjectTaskRequest' } } }
+      responses:
+        '201': { description: المهمة المنشأة ونسخة التخطيط, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalProjectTaskMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: professional_planning.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /professional-project-tasks/{professionalProjectTaskId}:
+    patch:
+      tags: [Professional Projects]
+      summary: تعديل نطاق مهمة أو مسؤولها أو تقديرها
+      operationId: updateProfessionalProjectTask
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: professionalProjectTaskId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/UpdateProfessionalProjectTaskRequest' } } }
+      responses:
+        '200': { description: المهمة المحدثة ونسخة التخطيط, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalProjectTaskMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: professional_planning.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /professional-project-tasks/{professionalProjectTaskId}/transition:
+    post:
+      tags: [Professional Projects]
+      summary: نقل حالة مهمة مع فرض اكتمال السوابق
+      operationId: transitionProfessionalProjectTask
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: professionalProjectTaskId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/TransitionProfessionalProjectTaskRequest' } } }
+      responses:
+        '200': { description: المهمة بعد الانتقال ونسخة التخطيط, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalProjectTaskMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: professional_tasks.progress
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /professional-project-task-dependencies:
+    post:
+      tags: [Professional Projects]
+      summary: إضافة اعتمادية حتمية بين مهمتين في المشروع نفسه
+      operationId: createProfessionalProjectTaskDependency
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateProfessionalProjectTaskDependencyRequest' } } }
+      responses:
+        '201': { description: الاعتمادية المنشأة ونسخة التخطيط, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalProjectTaskDependencyMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: professional_planning.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /professional-project-task-dependencies/{professionalProjectTaskDependencyId}/remove:
+    post:
+      tags: [Professional Projects]
+      summary: إزالة اعتمادية مع إبقاء تاريخها وسبب الإزالة
+      operationId: removeProfessionalProjectTaskDependency
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: professionalProjectTaskDependencyId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RemoveProfessionalProjectTaskDependencyRequest' } } }
+      responses:
+        '200': { description: الاعتمادية غير الفعالة ونسخة التخطيط, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalProjectTaskDependencyMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: professional_planning.manage
       security: [{ SessionCookie: [], CsrfToken: [] }]
       x-idempotency-scope: user + company + operation + key
   /professional-time-entries:
@@ -6449,6 +6665,7 @@ paths:
       responses:
         '200': { description: تم الترحيل, content: { application/json: { schema: { $ref: '#/components/schemas/DocumentCommandResult' } } } }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
         '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
         '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
       x-permission: sales_invoices.post
@@ -14060,12 +14277,253 @@ components:
         unassigned: { type: boolean, const: true }
         projectVersion: { type: integer, minimum: 0 }
         memberVersion: { type: integer, minimum: 0 }
+    ProfessionalProjectStageStatus:
+      type: string
+      enum: [PLANNED, IN_PROGRESS, COMPLETED, CANCELLED]
+    ProfessionalProjectTaskStatus:
+      type: string
+      enum: [TODO, IN_PROGRESS, COMPLETED, CANCELLED]
+    ProfessionalProjectTaskCounts:
+      type: object
+      additionalProperties: false
+      required: [TODO, IN_PROGRESS, COMPLETED, CANCELLED]
+      properties:
+        TODO: { type: integer, minimum: 0 }
+        IN_PROGRESS: { type: integer, minimum: 0 }
+        COMPLETED: { type: integer, minimum: 0 }
+        CANCELLED: { type: integer, minimum: 0 }
+    ProfessionalProjectPlanSummary:
+      type: object
+      additionalProperties: false
+      required: [timeBudgetMinutes, estimatedMinutes, actualMinutes, approvedMinutes, allocatedActualMinutes, unallocatedActualMinutes, remainingBudgetMinutes, overBudgetMinutes, taskCounts]
+      properties:
+        timeBudgetMinutes: { type: [integer, 'null'], minimum: 1, maximum: 4294967295 }
+        estimatedMinutes: { type: integer, minimum: 0 }
+        actualMinutes: { type: integer, minimum: 0 }
+        approvedMinutes: { type: integer, minimum: 0 }
+        allocatedActualMinutes: { type: integer, minimum: 0 }
+        unallocatedActualMinutes: { type: integer, minimum: 0 }
+        remainingBudgetMinutes: { type: [integer, 'null'], minimum: 0 }
+        overBudgetMinutes: { type: integer, minimum: 0 }
+        taskCounts: { $ref: '#/components/schemas/ProfessionalProjectTaskCounts' }
+    ProfessionalProjectStageSummary:
+      type: object
+      additionalProperties: false
+      required: [estimatedMinutes, actualMinutes, approvedMinutes, taskCounts]
+      properties:
+        estimatedMinutes: { type: integer, minimum: 0 }
+        actualMinutes: { type: integer, minimum: 0 }
+        approvedMinutes: { type: integer, minimum: 0 }
+        taskCounts: { $ref: '#/components/schemas/ProfessionalProjectTaskCounts' }
+    ProfessionalProjectTask:
+      type: object
+      additionalProperties: false
+      required: [id, stageId, sequence, titleAr, titleEn, description, status, assigneeUserId, estimatedMinutes, plannedStartDate, dueDate, completedAt, version, actualMinutes, approvedMinutes]
+      properties:
+        id: { type: string, format: uuid }
+        stageId: { type: string, format: uuid }
+        sequence: { type: integer, minimum: 1, readOnly: true }
+        titleAr: { type: string, minLength: 1, maxLength: 200 }
+        titleEn: { type: [string, 'null'], maxLength: 200 }
+        description: { type: [string, 'null'], maxLength: 1000 }
+        status: { $ref: '#/components/schemas/ProfessionalProjectTaskStatus' }
+        assigneeUserId: { $ref: '#/components/schemas/Id' }
+        estimatedMinutes: { type: integer, minimum: 1, maximum: 4294967295 }
+        plannedStartDate: { type: [string, 'null'], format: date }
+        dueDate: { type: [string, 'null'], format: date }
+        completedAt: { type: [string, 'null'], format: date-time, readOnly: true }
+        version: { type: integer, minimum: 0 }
+        actualMinutes: { type: integer, minimum: 0, readOnly: true }
+        approvedMinutes: { type: integer, minimum: 0, readOnly: true }
+    ProfessionalProjectStage:
+      type: object
+      additionalProperties: false
+      required: [id, sequence, nameAr, nameEn, description, status, plannedStartDate, targetEndDate, version, summary, tasks]
+      properties:
+        id: { type: string, format: uuid }
+        sequence: { type: integer, minimum: 1, readOnly: true }
+        nameAr: { type: string, minLength: 1, maxLength: 200 }
+        nameEn: { type: [string, 'null'], maxLength: 200 }
+        description: { type: [string, 'null'], maxLength: 1000 }
+        status: { $ref: '#/components/schemas/ProfessionalProjectStageStatus' }
+        plannedStartDate: { type: [string, 'null'], format: date }
+        targetEndDate: { type: [string, 'null'], format: date }
+        version: { type: integer, minimum: 0 }
+        summary: { $ref: '#/components/schemas/ProfessionalProjectStageSummary' }
+        tasks:
+          type: array
+          items: { $ref: '#/components/schemas/ProfessionalProjectTask' }
+    ProfessionalProjectTaskDependency:
+      type: object
+      additionalProperties: false
+      required: [id, predecessorTaskId, successorTaskId, isActive, version]
+      properties:
+        id: { type: string, format: uuid }
+        predecessorTaskId: { type: string, format: uuid }
+        successorTaskId: { type: string, format: uuid }
+        isActive: { type: boolean }
+        version: { type: integer, minimum: 0 }
+    ProfessionalProjectPlanResponse:
+      type: object
+      additionalProperties: false
+      required: [projectId, planningVersion, summary, stages, dependencies]
+      properties:
+        projectId: { type: string, format: uuid }
+        planningVersion: { type: integer, minimum: 0 }
+        summary: { $ref: '#/components/schemas/ProfessionalProjectPlanSummary' }
+        stages:
+          type: array
+          items: { $ref: '#/components/schemas/ProfessionalProjectStage' }
+        dependencies:
+          type: array
+          items: { $ref: '#/components/schemas/ProfessionalProjectTaskDependency' }
+    ProfessionalProjectPlanBudget:
+      type: object
+      additionalProperties: false
+      required: [projectId, timeBudgetMinutes]
+      properties:
+        projectId: { type: string, format: uuid }
+        timeBudgetMinutes: { type: [integer, 'null'], minimum: 1, maximum: 4294967295 }
+    ProfessionalProjectPlanBudgetMutationResponse:
+      type: object
+      additionalProperties: false
+      required: [project, planningVersion]
+      properties:
+        project: { $ref: '#/components/schemas/ProfessionalProjectPlanBudget' }
+        planningVersion: { type: integer, minimum: 0 }
+    ProfessionalProjectStageMutationResponse:
+      type: object
+      additionalProperties: false
+      required: [stage, planningVersion]
+      properties:
+        stage: { $ref: '#/components/schemas/ProfessionalProjectStage' }
+        planningVersion: { type: integer, minimum: 0 }
+    ProfessionalProjectTaskMutationResponse:
+      type: object
+      additionalProperties: false
+      required: [task, planningVersion]
+      properties:
+        task: { $ref: '#/components/schemas/ProfessionalProjectTask' }
+        planningVersion: { type: integer, minimum: 0 }
+    ProfessionalProjectTaskDependencyMutationResponse:
+      type: object
+      additionalProperties: false
+      required: [dependency, planningVersion]
+      properties:
+        dependency: { $ref: '#/components/schemas/ProfessionalProjectTaskDependency' }
+        planningVersion: { type: integer, minimum: 0 }
+    UpdateProfessionalProjectTimeBudgetRequest:
+      type: object
+      additionalProperties: false
+      required: [planningVersion, timeBudgetMinutes]
+      properties:
+        planningVersion: { type: integer, minimum: 0 }
+        timeBudgetMinutes: { type: [integer, 'null'], minimum: 1, maximum: 4294967295 }
+    CreateProfessionalProjectStageRequest:
+      type: object
+      additionalProperties: false
+      required: [planningVersion, nameAr]
+      properties:
+        planningVersion: { type: integer, minimum: 0 }
+        nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 200 }
+        nameEn: { type: [string, 'null'], x-trim: true, maxLength: 200 }
+        description: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
+        plannedStartDate: { type: [string, 'null'], format: date }
+        targetEndDate: { type: [string, 'null'], format: date }
+    UpdateProfessionalProjectStageRequest:
+      type: object
+      additionalProperties: false
+      required: [planningVersion, version]
+      minProperties: 3
+      properties:
+        planningVersion: { type: integer, minimum: 0 }
+        version: { type: integer, minimum: 0 }
+        nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 200 }
+        nameEn: { type: [string, 'null'], x-trim: true, maxLength: 200 }
+        description: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
+        plannedStartDate: { type: [string, 'null'], format: date }
+        targetEndDate: { type: [string, 'null'], format: date }
+    TransitionProfessionalProjectStageRequest:
+      type: object
+      additionalProperties: false
+      required: [planningVersion, version, status, reason]
+      properties:
+        planningVersion: { type: integer, minimum: 0 }
+        version: { type: integer, minimum: 0 }
+        status: { $ref: '#/components/schemas/ProfessionalProjectStageStatus' }
+        reason: { type: string, x-trim: true, minLength: 3, maxLength: 500 }
+    CreateProfessionalProjectTaskRequest:
+      type: object
+      additionalProperties: false
+      required: [planningVersion, titleAr, assigneeUserId, estimatedMinutes]
+      properties:
+        planningVersion: { type: integer, minimum: 0 }
+        titleAr: { type: string, x-trim: true, minLength: 1, maxLength: 200 }
+        titleEn: { type: [string, 'null'], x-trim: true, maxLength: 200 }
+        description: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
+        assigneeUserId: { $ref: '#/components/schemas/Id' }
+        estimatedMinutes: { type: integer, minimum: 1, maximum: 4294967295 }
+        plannedStartDate: { type: [string, 'null'], format: date }
+        dueDate: { type: [string, 'null'], format: date }
+    UpdateProfessionalProjectTaskRequest:
+      type: object
+      additionalProperties: false
+      required: [planningVersion, version]
+      minProperties: 3
+      properties:
+        planningVersion: { type: integer, minimum: 0 }
+        version: { type: integer, minimum: 0 }
+        titleAr: { type: string, x-trim: true, minLength: 1, maxLength: 200 }
+        titleEn: { type: [string, 'null'], x-trim: true, maxLength: 200 }
+        description: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
+        assigneeUserId: { $ref: '#/components/schemas/Id' }
+        estimatedMinutes: { type: integer, minimum: 1, maximum: 4294967295 }
+        plannedStartDate: { type: [string, 'null'], format: date }
+        dueDate: { type: [string, 'null'], format: date }
+    TransitionProfessionalProjectTaskRequest:
+      type: object
+      additionalProperties: false
+      required: [planningVersion, version, status, reason]
+      properties:
+        planningVersion: { type: integer, minimum: 0 }
+        version: { type: integer, minimum: 0 }
+        status: { $ref: '#/components/schemas/ProfessionalProjectTaskStatus' }
+        reason: { type: string, x-trim: true, minLength: 3, maxLength: 500 }
+    CreateProfessionalProjectTaskDependencyRequest:
+      type: object
+      additionalProperties: false
+      required: [planningVersion, predecessorTaskId, successorTaskId]
+      properties:
+        planningVersion: { type: integer, minimum: 0 }
+        predecessorTaskId: { type: string, format: uuid }
+        successorTaskId: { type: string, format: uuid }
+    RemoveProfessionalProjectTaskDependencyRequest:
+      type: object
+      additionalProperties: false
+      required: [planningVersion, version, reason]
+      properties:
+        planningVersion: { type: integer, minimum: 0 }
+        version: { type: integer, minimum: 0 }
+        reason: { type: string, x-trim: true, minLength: 3, maxLength: 500 }
+    ProfessionalProjectTaskReference:
+      type: object
+      additionalProperties: false
+      required: [id, titleAr, titleEn, status]
+      properties:
+        id: { type: string, format: uuid }
+        titleAr: { type: string, maxLength: 200 }
+        titleEn: { type: [string, 'null'], maxLength: 200 }
+        status: { $ref: '#/components/schemas/ProfessionalProjectTaskStatus' }
     ProfessionalTimeEntry:
       type: object
-      required: [id, project, user, workDate, minutes, isBillable, description, editable, version, createdAt, updatedAt]
+      required: [id, project, task, user, workDate, minutes, isBillable, description, editable, version, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
         project: { $ref: '#/components/schemas/ProfessionalProjectReference' }
+        task:
+          oneOf:
+          - { $ref: '#/components/schemas/ProfessionalProjectTaskReference' }
+          - { type: 'null' }
         user: { $ref: '#/components/schemas/ProfessionalPerson' }
         workDate: { type: string, format: date }
         minutes: { type: integer, minimum: 1, maximum: 1440 }
@@ -14102,6 +14560,7 @@ components:
       required: [projectId, workDate, minutes, isBillable, description]
       properties:
         projectId: { type: string, format: uuid }
+        taskId: { type: [string, 'null'], format: uuid }
         workDate: { type: string, format: date }
         minutes: { type: integer, minimum: 1, maximum: 1440 }
         isBillable: { type: boolean }
@@ -14113,6 +14572,7 @@ components:
       minProperties: 2
       properties:
         version: { type: integer, minimum: 0 }
+        taskId: { type: [string, 'null'], format: uuid }
         workDate: { type: string, format: date }
         minutes: { type: integer, minimum: 1, maximum: 1440 }
         isBillable: { type: boolean }

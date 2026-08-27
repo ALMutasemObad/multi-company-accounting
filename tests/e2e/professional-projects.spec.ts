@@ -13,9 +13,24 @@ test("creates a legal matter, approves time, configures rates, and posts profess
   let contractCreated = false;
   let rateCreated = false;
   let billingCreated = false;
+  let timeBudgetMinutes: number | null = null;
+  let planningVersion = 0;
+  let stageCreated = false;
+  let createdTaskCount = 0;
+  let dependencyCreated = false;
+  let loggedTaskId: string | null = null;
+  let stageNameEn = "Analysis and advice";
+  let stageVersion = 0;
+  let researchTaskTitleEn = "Initial research";
+  let researchTaskEstimatedMinutes = 180;
+  let researchTaskVersion = 0;
   const contractId = "7f31e91e-38fd-4b0c-9acb-4481e533cf41";
   const rateId = "9c6bb86d-8c9d-437e-9774-74584f425163";
   const billingRunId = "a4bb7408-9423-4fa3-81d5-3d34ea7f6a12";
+  const stageId = "44b23a51-b68c-4e35-a252-d577c3021c2a";
+  const researchTaskId = "49e2bc47-bf40-4bf7-a40a-3408b77cfba5";
+  const draftingTaskId = "8ff14e20-5f22-4e6e-909b-bc0385144d49";
+  const dependencyId = "6c2d61ed-8e4e-4b0c-baa9-7997145394b1";
   const currency = { id: "2", code: "SAR", nameAr: "الريال السعودي", decimals: 2 };
   const contract = () => ({
     id: contractId,
@@ -78,9 +93,73 @@ test("creates a legal matter, approves time, configures rates, and posts profess
     createdAt: "2026-08-27T12:00:00.000Z",
     updatedAt: "2026-08-27T12:00:00.000Z",
   });
+  const task = (id: string, sequence: number, titleAr: string, titleEn: string) => ({
+    id,
+    stageId,
+    sequence,
+    titleAr,
+    titleEn: id === researchTaskId ? researchTaskTitleEn : titleEn,
+    description: null,
+    status: "TODO",
+    assigneeUserId: manager.id,
+    estimatedMinutes: id === researchTaskId ? researchTaskEstimatedMinutes : 240,
+    plannedStartDate: null,
+    dueDate: null,
+    completedAt: null,
+    version: id === researchTaskId ? researchTaskVersion : 0,
+    actualMinutes: id === loggedTaskId && timeRecorded ? 90 : 0,
+    approvedMinutes: id === loggedTaskId && timesheetApproved ? 90 : 0,
+  });
+  const stage = () => {
+    const tasks = [
+      ...(createdTaskCount >= 1 ? [task(researchTaskId, 1, "بحث أولي", "Initial research")] : []),
+      ...(createdTaskCount >= 2 ? [task(draftingTaskId, 2, "صياغة الرأي", "Draft advice")] : []),
+    ];
+    return {
+      id: stageId,
+      sequence: 1,
+      nameAr: "التحليل والمشورة",
+      nameEn: stageNameEn,
+      description: null,
+      status: "PLANNED",
+      plannedStartDate: null,
+      targetEndDate: null,
+      version: stageVersion,
+      summary: {
+        estimatedMinutes: tasks.reduce((sum, item) => sum + item.estimatedMinutes, 0),
+        actualMinutes: timeRecorded ? 90 : 0,
+        approvedMinutes: timesheetApproved ? 90 : 0,
+        taskCounts: { TODO: tasks.length, IN_PROGRESS: 0, COMPLETED: 0, CANCELLED: 0 },
+      },
+      tasks,
+    };
+  };
+  const plan = () => {
+    const stages = stageCreated ? [stage()] : [];
+    const estimatedMinutes = stages.reduce((sum, item) => sum + item.summary.estimatedMinutes, 0);
+    const actualMinutes = timeRecorded ? 90 : 0;
+    return {
+      projectId,
+      planningVersion,
+      summary: {
+        timeBudgetMinutes,
+        estimatedMinutes,
+        actualMinutes,
+        approvedMinutes: timesheetApproved ? actualMinutes : 0,
+        allocatedActualMinutes: loggedTaskId ? actualMinutes : 0,
+        unallocatedActualMinutes: loggedTaskId ? 0 : actualMinutes,
+        remainingBudgetMinutes: timeBudgetMinutes === null ? null : Math.max(0, timeBudgetMinutes - actualMinutes),
+        overBudgetMinutes: timeBudgetMinutes === null ? 0 : Math.max(0, actualMinutes - timeBudgetMinutes),
+        taskCounts: { TODO: createdTaskCount, IN_PROGRESS: 0, COMPLETED: 0, CANCELLED: 0 },
+      },
+      stages,
+      dependencies: dependencyCreated ? [{ id: dependencyId, predecessorTaskId: researchTaskId, successorTaskId: draftingTaskId, isActive: true, version: 0 }] : [],
+    };
+  };
   const timeEntry = () => ({
     id: entryId,
     project: { id: projectId, code: "PRJ-000001", nameAr: project().nameAr, nameEn: project().nameEn },
+    task: loggedTaskId ? { id: loggedTaskId, titleAr: "بحث أولي", titleEn: researchTaskTitleEn, status: "TODO" } : null,
     user: manager,
     workDate: "2026-08-27",
     minutes: 90,
@@ -130,11 +209,55 @@ test("creates a legal matter, approves time, configures rates, and posts profess
       return json({ project: project() }, 201);
     }
     if (path === "/professional-projects") return json({ data: created ? [project()] : [], meta: meta(created ? 1 : 0) });
+    if (path === `/professional-projects/${projectId}/plan`) return json(plan());
+    if (path === `/professional-projects/${projectId}/time-budget` && method === "PATCH") {
+      const body = request.postDataJSON() as { timeBudgetMinutes: number | null };
+      timeBudgetMinutes = body.timeBudgetMinutes;
+      planningVersion += 1;
+      return json({ project: { projectId, timeBudgetMinutes }, planningVersion });
+    }
+    if (path === `/professional-projects/${projectId}/stages` && method === "POST") {
+      stageCreated = true;
+      planningVersion += 1;
+      return json({ stage: stage(), planningVersion }, 201);
+    }
+    if (path === `/professional-project-stages/${stageId}` && method === "PATCH") {
+      const body = request.postDataJSON() as { planningVersion: number; version: number; nameEn: string | null };
+      expect(body).toMatchObject({ planningVersion, version: stageVersion });
+      stageNameEn = body.nameEn ?? stageNameEn;
+      stageVersion += 1;
+      planningVersion += 1;
+      return json({ stage: stage(), planningVersion });
+    }
+    if (path === `/professional-project-stages/${stageId}/tasks` && method === "POST") {
+      createdTaskCount += 1;
+      planningVersion += 1;
+      const createdTask = createdTaskCount === 1
+        ? task(researchTaskId, 1, "بحث أولي", "Initial research")
+        : task(draftingTaskId, 2, "صياغة الرأي", "Draft advice");
+      return json({ task: createdTask, planningVersion }, 201);
+    }
+    if (path === `/professional-project-tasks/${researchTaskId}` && method === "PATCH") {
+      const body = request.postDataJSON() as { planningVersion: number; version: number; titleEn: string | null; estimatedMinutes: number };
+      expect(body).toMatchObject({ planningVersion, version: researchTaskVersion });
+      researchTaskTitleEn = body.titleEn ?? researchTaskTitleEn;
+      researchTaskEstimatedMinutes = body.estimatedMinutes;
+      researchTaskVersion += 1;
+      planningVersion += 1;
+      return json({ task: task(researchTaskId, 1, "بحث أولي", researchTaskTitleEn), planningVersion });
+    }
+    if (path === "/professional-project-task-dependencies" && method === "POST") {
+      dependencyCreated = true;
+      planningVersion += 1;
+      return json({ dependency: { id: dependencyId, predecessorTaskId: researchTaskId, successorTaskId: draftingTaskId, isActive: true, version: 0 }, planningVersion }, 201);
+    }
     if (path === `/professional-projects/${projectId}`) return json({
       project: project(),
       members: [{ user: manager, role: "MANAGER", isActive: true, version: 0, assignedAt: "2026-08-27T12:00:00.000Z", unassignedAt: null }],
     });
     if (path === "/professional-time-entries" && method === "POST") {
+      const body = request.postDataJSON() as { taskId: string | null };
+      loggedTaskId = body.taskId;
       timeRecorded = true;
       return json({ timeEntry: timeEntry() }, 201);
     }
@@ -184,12 +307,59 @@ test("creates a legal matter, approves time, configures rates, and posts profess
 
   await expect(page.getByRole("heading", { name: "Legal advisory matter" })).toBeVisible();
   await expect(page.getByText("Project Manager").first()).toBeVisible();
-  await page.getByLabel("Minutes").fill("90");
-  await page.getByLabel("Work description").fill("Initial legal research");
-  await page.getByRole("button", { name: "Log time" }).click();
 
-  await expect(page.getByText("Initial legal research")).toBeVisible();
-  await expect(page.getByText("1h 30m").first()).toBeVisible();
+  const planPanel = page.locator(".professional-plan-panel");
+  await expect(planPanel.getByRole("heading", { name: "Project plan" })).toBeVisible();
+  await planPanel.getByLabel("Budget in minutes").fill("1200");
+  await planPanel.getByRole("button", { name: "Save budget" }).click();
+  await expect(planPanel.getByText("20h 0m").first()).toBeVisible();
+
+  await planPanel.getByLabel("Arabic name").fill("التحليل والمشورة");
+  await planPanel.getByLabel("English name").fill("Analysis and advice");
+  await planPanel.getByRole("button", { name: "Add stage" }).click();
+  await expect(planPanel.locator(".professional-stage-row")).toContainText("Analysis and advice");
+
+  await planPanel.locator(".professional-stage-row").getByRole("button", { name: "Edit" }).click();
+  const stageDialog = page.getByRole("dialog", { name: "Edit stage" });
+  await stageDialog.getByLabel("English name").fill("Advisory analysis");
+  await stageDialog.getByRole("button", { name: "Save changes" }).click();
+  await expect(planPanel.locator(".professional-stage-row")).toContainText("Advisory analysis");
+
+  await planPanel.getByLabel("Task title in Arabic").fill("بحث أولي");
+  await planPanel.getByLabel("Task title in English").fill("Initial research");
+  await planPanel.getByLabel("Assignee").selectOption(manager.id);
+  await planPanel.getByLabel("Estimate in minutes").fill("180");
+  await planPanel.getByRole("button", { name: "Add task" }).click();
+  await expect(planPanel.locator(".professional-task-row")).toContainText("Initial research");
+
+  await planPanel.locator(".professional-task-row").getByRole("button", { name: "Edit" }).click();
+  const taskDialog = page.getByRole("dialog", { name: "Edit task" });
+  await taskDialog.getByLabel("Task title in English").fill("Legal research");
+  await taskDialog.getByLabel("Estimate in minutes").fill("200");
+  await taskDialog.getByRole("button", { name: "Save changes" }).click();
+  await expect(planPanel.locator(".professional-task-row")).toContainText("Legal research");
+
+  await planPanel.getByLabel("Task title in Arabic").fill("صياغة الرأي");
+  await planPanel.getByLabel("Task title in English").fill("Draft advice");
+  await planPanel.getByLabel("Assignee").selectOption(manager.id);
+  await planPanel.getByLabel("Estimate in minutes").fill("240");
+  await planPanel.getByRole("button", { name: "Add task" }).click();
+  await expect(planPanel.locator(".professional-task-row")).toHaveCount(2);
+
+  await planPanel.getByLabel("Predecessor task").selectOption(researchTaskId);
+  await planPanel.getByLabel("Successor task").selectOption(draftingTaskId);
+  await planPanel.getByRole("button", { name: "Add dependency" }).click();
+  await expect(planPanel.getByText("Legal research → Draft advice", { exact: true })).toBeVisible();
+
+  const timePanel = page.locator(".professional-time-panel");
+  await timePanel.getByLabel("Minutes").fill("90");
+  await timePanel.getByLabel("Task (optional)").selectOption(researchTaskId);
+  await timePanel.getByLabel("Work description").fill("Initial legal research");
+  await timePanel.getByRole("button", { name: "Log time" }).click();
+
+  await expect(timePanel.getByText("Initial legal research")).toBeVisible();
+  await expect(timePanel.getByRole("cell", { name: "Legal research", exact: true })).toBeVisible();
+  await expect(timePanel.getByText("1h 30m").first()).toBeVisible();
 
   await page.getByLabel("Week start (Sunday)").fill("2026-08-23");
   await page.getByRole("button", { name: "Create week" }).click();

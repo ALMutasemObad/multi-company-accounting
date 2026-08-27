@@ -280,6 +280,20 @@ enum ProfessionalCommercialTermStatus {
   ENDED
 }
 
+enum ProfessionalProjectStageStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum ProfessionalProjectTaskStatus {
+  TODO
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
 enum HrEmploymentType {
   FULL_TIME
   PART_TIME
@@ -411,6 +425,9 @@ model Company {
   posSales                          PosSale[]
   professionalProjects              ProfessionalProject[]
   professionalProjectMembers        ProfessionalProjectMember[]
+  professionalProjectStages         ProfessionalProjectStage[]
+  professionalProjectTasks          ProfessionalProjectTask[]
+  professionalTaskDependencies      ProfessionalTaskDependency[]
   professionalTimeEntries           ProfessionalTimeEntry[]
   professionalTimesheets            ProfessionalTimesheet[]
   professionalTimesheetSubmissions  ProfessionalTimesheetSubmission[]
@@ -491,6 +508,13 @@ model User {
   professionalRatesCreated          ProfessionalServiceRate[]          @relation("ProfessionalRateCreatedBy")
   professionalRatesUpdated          ProfessionalServiceRate[]          @relation("ProfessionalRateUpdatedBy")
   professionalBillingRunsCreated    ProfessionalBillingRun[]           @relation("ProfessionalBillingRunCreatedBy")
+  professionalStagesCreated         ProfessionalProjectStage[]         @relation("ProfessionalProjectStageCreatedBy")
+  professionalStagesUpdated         ProfessionalProjectStage[]         @relation("ProfessionalProjectStageUpdatedBy")
+  professionalTasksCreated          ProfessionalProjectTask[]          @relation("ProfessionalProjectTaskCreatedBy")
+  professionalTasksUpdated          ProfessionalProjectTask[]          @relation("ProfessionalProjectTaskUpdatedBy")
+  professionalDependenciesCreated   ProfessionalTaskDependency[]       @relation("ProfessionalTaskDependencyCreatedBy")
+  professionalDependenciesUpdated   ProfessionalTaskDependency[]       @relation("ProfessionalTaskDependencyUpdatedBy")
+  professionalDependenciesRemoved   ProfessionalTaskDependency[]       @relation("ProfessionalTaskDependencyRemovedBy")
 
   @@map("users")
 }
@@ -1337,31 +1361,36 @@ model CustomerAddress {
 }
 
 model ProfessionalProject {
-  id               BigInt                          @id @default(autoincrement()) @db.UnsignedBigInt
-  publicId         String                          @unique @default(uuid()) @map("public_id") @db.Char(36)
-  companyId        BigInt                          @map("company_id") @db.UnsignedBigInt
-  customerId       BigInt                          @map("customer_id") @db.UnsignedBigInt
-  code             String                          @db.VarChar(40)
-  nameAr           String                          @map("name_ar") @db.VarChar(200)
-  nameEn           String?                         @map("name_en") @db.VarChar(200)
-  kind             ProfessionalProjectKind
-  billingModel     ProfessionalProjectBillingModel @map("billing_model")
-  status           ProfessionalProjectStatus       @default(ACTIVE)
-  startDate        DateTime                        @map("start_date") @db.Date
-  targetEndDate    DateTime?                       @map("target_end_date") @db.Date
-  description      String?                         @db.VarChar(1000)
-  version          Int                             @default(0) @db.UnsignedInt
-  createdById      BigInt                          @map("created_by_id") @db.UnsignedBigInt
-  updatedById      BigInt                          @map("updated_by_id") @db.UnsignedBigInt
-  createdAt        DateTime                        @default(now()) @map("created_at")
-  updatedAt        DateTime                        @updatedAt @map("updated_at")
-  company          Company                         @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  customer         Customer                        @relation(fields: [customerId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
-  createdBy        User                            @relation("ProfessionalProjectCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  updatedBy        User                            @relation("ProfessionalProjectUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  members          ProfessionalProjectMember[]
-  serviceContracts ProfessionalServiceContract[]
-  billingRuns      ProfessionalBillingRun[]
+  id                BigInt                          @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId          String                          @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId         BigInt                          @map("company_id") @db.UnsignedBigInt
+  customerId        BigInt                          @map("customer_id") @db.UnsignedBigInt
+  code              String                          @db.VarChar(40)
+  nameAr            String                          @map("name_ar") @db.VarChar(200)
+  nameEn            String?                         @map("name_en") @db.VarChar(200)
+  kind              ProfessionalProjectKind
+  billingModel      ProfessionalProjectBillingModel @map("billing_model")
+  status            ProfessionalProjectStatus       @default(ACTIVE)
+  startDate         DateTime                        @map("start_date") @db.Date
+  targetEndDate     DateTime?                       @map("target_end_date") @db.Date
+  timeBudgetMinutes Int?                            @map("time_budget_minutes") @db.UnsignedInt
+  planningVersion   Int                             @default(0) @map("planning_version") @db.UnsignedInt
+  description       String?                         @db.VarChar(1000)
+  version           Int                             @default(0) @db.UnsignedInt
+  createdById       BigInt                          @map("created_by_id") @db.UnsignedBigInt
+  updatedById       BigInt                          @map("updated_by_id") @db.UnsignedBigInt
+  createdAt         DateTime                        @default(now()) @map("created_at")
+  updatedAt         DateTime                        @updatedAt @map("updated_at")
+  company           Company                         @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  customer          Customer                        @relation(fields: [customerId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  createdBy         User                            @relation("ProfessionalProjectCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy         User                            @relation("ProfessionalProjectUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  members           ProfessionalProjectMember[]
+  stages            ProfessionalProjectStage[]
+  tasks             ProfessionalProjectTask[]
+  taskDependencies  ProfessionalTaskDependency[]
+  serviceContracts  ProfessionalServiceContract[]
+  billingRuns       ProfessionalBillingRun[]
 
   @@unique([companyId, code])
   @@unique([id, companyId])
@@ -1371,25 +1400,26 @@ model ProfessionalProject {
 }
 
 model ProfessionalProjectMember {
-  id           BigInt                        @id @default(autoincrement()) @db.UnsignedBigInt
-  companyId    BigInt                        @map("company_id") @db.UnsignedBigInt
-  projectId    BigInt                        @map("project_id") @db.UnsignedBigInt
-  userId       BigInt                        @map("user_id") @db.UnsignedBigInt
-  role         ProfessionalProjectMemberRole
-  isActive     Boolean                       @default(true) @map("is_active")
-  version      Int                           @default(0) @db.UnsignedInt
-  assignedById BigInt                        @map("assigned_by_id") @db.UnsignedBigInt
-  updatedById  BigInt                        @map("updated_by_id") @db.UnsignedBigInt
-  assignedAt   DateTime                      @default(now()) @map("assigned_at")
-  unassignedAt DateTime?                     @map("unassigned_at")
-  createdAt    DateTime                      @default(now()) @map("created_at")
-  updatedAt    DateTime                      @updatedAt @map("updated_at")
-  company      Company                       @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  project      ProfessionalProject           @relation(fields: [projectId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
-  assignment   UserCompany                   @relation(fields: [userId, companyId], references: [userId, companyId], onDelete: Restrict, onUpdate: Restrict)
-  assignedBy   User                          @relation("ProfessionalProjectMemberAssignedBy", fields: [assignedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  updatedBy    User                          @relation("ProfessionalProjectMemberUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  timeEntries  ProfessionalTimeEntry[]
+  id            BigInt                        @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId     BigInt                        @map("company_id") @db.UnsignedBigInt
+  projectId     BigInt                        @map("project_id") @db.UnsignedBigInt
+  userId        BigInt                        @map("user_id") @db.UnsignedBigInt
+  role          ProfessionalProjectMemberRole
+  isActive      Boolean                       @default(true) @map("is_active")
+  version       Int                           @default(0) @db.UnsignedInt
+  assignedById  BigInt                        @map("assigned_by_id") @db.UnsignedBigInt
+  updatedById   BigInt                        @map("updated_by_id") @db.UnsignedBigInt
+  assignedAt    DateTime                      @default(now()) @map("assigned_at")
+  unassignedAt  DateTime?                     @map("unassigned_at")
+  createdAt     DateTime                      @default(now()) @map("created_at")
+  updatedAt     DateTime                      @updatedAt @map("updated_at")
+  company       Company                       @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  project       ProfessionalProject           @relation(fields: [projectId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  assignment    UserCompany                   @relation(fields: [userId, companyId], references: [userId, companyId], onDelete: Restrict, onUpdate: Restrict)
+  assignedBy    User                          @relation("ProfessionalProjectMemberAssignedBy", fields: [assignedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy     User                          @relation("ProfessionalProjectMemberUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  timeEntries   ProfessionalTimeEntry[]
+  assignedTasks ProfessionalProjectTask[]
 
   @@unique([projectId, userId])
   @@unique([projectId, userId, companyId])
@@ -1404,6 +1434,7 @@ model ProfessionalTimeEntry {
   publicId          String                         @unique @default(uuid()) @map("public_id") @db.Char(36)
   companyId         BigInt                         @map("company_id") @db.UnsignedBigInt
   projectId         BigInt                         @map("project_id") @db.UnsignedBigInt
+  taskId            BigInt?                        @map("task_id") @db.UnsignedBigInt
   userId            BigInt                         @map("user_id") @db.UnsignedBigInt
   workDate          DateTime                       @map("work_date") @db.Date
   minutes           Int                            @db.UnsignedSmallInt
@@ -1414,13 +1445,115 @@ model ProfessionalTimeEntry {
   updatedAt         DateTime                       @updatedAt @map("updated_at")
   company           Company                        @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   member            ProfessionalProjectMember      @relation(fields: [projectId, userId, companyId], references: [projectId, userId, companyId], onDelete: Restrict, onUpdate: Restrict)
+  task              ProfessionalProjectTask?       @relation(fields: [taskId, projectId, companyId], references: [id, projectId, companyId], onDelete: Restrict, onUpdate: Restrict)
   billingSourceLine ProfessionalBillingSourceLine?
 
   @@unique([id, companyId])
   @@index([companyId, workDate, id])
   @@index([projectId, workDate, id])
   @@index([companyId, userId, workDate])
+  @@index([companyId, taskId, workDate, id])
   @@map("professional_time_entries")
+}
+
+model ProfessionalProjectStage {
+  id               BigInt                         @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId         String                         @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId        BigInt                         @map("company_id") @db.UnsignedBigInt
+  projectId        BigInt                         @map("project_id") @db.UnsignedBigInt
+  sequence         Int                            @db.UnsignedInt
+  nameAr           String                         @map("name_ar") @db.VarChar(200)
+  nameEn           String?                        @map("name_en") @db.VarChar(200)
+  description      String?                        @db.VarChar(1000)
+  status           ProfessionalProjectStageStatus @default(PLANNED)
+  plannedStartDate DateTime?                      @map("planned_start_date") @db.Date
+  targetEndDate    DateTime?                      @map("target_end_date") @db.Date
+  version          Int                            @default(0) @db.UnsignedInt
+  createdById      BigInt                         @map("created_by_id") @db.UnsignedBigInt
+  updatedById      BigInt                         @map("updated_by_id") @db.UnsignedBigInt
+  createdAt        DateTime                       @default(now()) @map("created_at")
+  updatedAt        DateTime                       @updatedAt @map("updated_at")
+  company          Company                        @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  project          ProfessionalProject            @relation(fields: [projectId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  createdBy        User                           @relation("ProfessionalProjectStageCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy        User                           @relation("ProfessionalProjectStageUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  tasks            ProfessionalProjectTask[]
+
+  @@unique([projectId, sequence])
+  @@unique([id, companyId])
+  @@unique([id, projectId, companyId])
+  @@index([companyId, projectId, status, sequence])
+  @@map("professional_project_stages")
+}
+
+model ProfessionalProjectTask {
+  id               BigInt                        @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId         String                        @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId        BigInt                        @map("company_id") @db.UnsignedBigInt
+  projectId        BigInt                        @map("project_id") @db.UnsignedBigInt
+  stageId          BigInt                        @map("stage_id") @db.UnsignedBigInt
+  sequence         Int                           @db.UnsignedInt
+  titleAr          String                        @map("title_ar") @db.VarChar(200)
+  titleEn          String?                       @map("title_en") @db.VarChar(200)
+  description      String?                       @db.VarChar(1000)
+  status           ProfessionalProjectTaskStatus @default(TODO)
+  assigneeUserId   BigInt                        @map("assignee_user_id") @db.UnsignedBigInt
+  estimatedMinutes Int                           @map("estimated_minutes") @db.UnsignedInt
+  plannedStartDate DateTime?                     @map("planned_start_date") @db.Date
+  dueDate          DateTime?                     @map("due_date") @db.Date
+  completedAt      DateTime?                     @map("completed_at")
+  version          Int                           @default(0) @db.UnsignedInt
+  createdById      BigInt                        @map("created_by_id") @db.UnsignedBigInt
+  updatedById      BigInt                        @map("updated_by_id") @db.UnsignedBigInt
+  createdAt        DateTime                      @default(now()) @map("created_at")
+  updatedAt        DateTime                      @updatedAt @map("updated_at")
+  company          Company                       @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  project          ProfessionalProject           @relation(fields: [projectId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  stage            ProfessionalProjectStage      @relation(fields: [stageId, projectId, companyId], references: [id, projectId, companyId], onDelete: Restrict, onUpdate: Restrict)
+  assignee         ProfessionalProjectMember     @relation(fields: [projectId, assigneeUserId, companyId], references: [projectId, userId, companyId], onDelete: Restrict, onUpdate: Restrict)
+  createdBy        User                          @relation("ProfessionalProjectTaskCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy        User                          @relation("ProfessionalProjectTaskUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  timeEntries      ProfessionalTimeEntry[]
+  dependencies     ProfessionalTaskDependency[]  @relation("ProfessionalTaskDependencySuccessor")
+  dependents       ProfessionalTaskDependency[]  @relation("ProfessionalTaskDependencyPredecessor")
+
+  @@unique([stageId, sequence])
+  @@unique([id, companyId])
+  @@unique([id, projectId, companyId])
+  @@index([companyId, projectId, status, stageId, sequence])
+  @@index([companyId, assigneeUserId, status, dueDate])
+  @@map("professional_project_tasks")
+}
+
+model ProfessionalTaskDependency {
+  id              BigInt                  @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId        String                  @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId       BigInt                  @map("company_id") @db.UnsignedBigInt
+  projectId       BigInt                  @map("project_id") @db.UnsignedBigInt
+  taskId          BigInt                  @map("task_id") @db.UnsignedBigInt
+  dependsOnTaskId BigInt                  @map("depends_on_task_id") @db.UnsignedBigInt
+  isActive        Boolean                 @default(true) @map("is_active")
+  version         Int                     @default(0) @db.UnsignedInt
+  removalReason   String?                 @map("removal_reason") @db.VarChar(500)
+  removedById     BigInt?                 @map("removed_by_id") @db.UnsignedBigInt
+  removedAt       DateTime?               @map("removed_at")
+  createdById     BigInt                  @map("created_by_id") @db.UnsignedBigInt
+  updatedById     BigInt                  @map("updated_by_id") @db.UnsignedBigInt
+  createdAt       DateTime                @default(now()) @map("created_at")
+  updatedAt       DateTime                @updatedAt @map("updated_at")
+  company         Company                 @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  project         ProfessionalProject     @relation(fields: [projectId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  task            ProfessionalProjectTask @relation("ProfessionalTaskDependencySuccessor", fields: [taskId, projectId, companyId], references: [id, projectId, companyId], onDelete: Restrict, onUpdate: Restrict)
+  dependsOnTask   ProfessionalProjectTask @relation("ProfessionalTaskDependencyPredecessor", fields: [dependsOnTaskId, projectId, companyId], references: [id, projectId, companyId], onDelete: Restrict, onUpdate: Restrict)
+  createdBy       User                    @relation("ProfessionalTaskDependencyCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy       User                    @relation("ProfessionalTaskDependencyUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  removedBy       User?                   @relation("ProfessionalTaskDependencyRemovedBy", fields: [removedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([taskId, dependsOnTaskId])
+  @@unique([id, companyId])
+  @@index([companyId, projectId, isActive, taskId], map: "professional_task_dependencies_successor_idx")
+  @@index([companyId, projectId, isActive, dependsOnTaskId], map: "professional_task_dependencies_predecessor_idx")
+  @@map("professional_task_dependencies")
 }
 
 model ProfessionalTimesheet {

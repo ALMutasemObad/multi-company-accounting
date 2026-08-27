@@ -1,5 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
-import { api, idempotencyKey } from "./api";
+import { api, ApiError, idempotencyKey } from "./api";
 import { formatMoney, toMoney, toRate } from "./domain";
 import { localizedReferenceName, useI18n } from "./i18n";
 import { ReferenceCombobox } from "./ReferenceCombobox";
@@ -12,10 +12,15 @@ import type {
   ProfessionalBillingRun,
   ProfessionalCustomerOption,
   ProfessionalPerson,
+  ProfessionalProjectPlan,
   ProfessionalProject,
   ProfessionalProjectMember,
   ProfessionalProjectMemberRole,
+  ProfessionalProjectStage,
+  ProfessionalProjectStageStatus,
   ProfessionalProjectStatus,
+  ProfessionalProjectTask,
+  ProfessionalProjectTaskStatus,
   ProfessionalServiceContract,
   ProfessionalServiceRate,
   ProfessionalTimeEntry,
@@ -55,6 +60,12 @@ export function ProfessionalProjectsPage({ notify }: { notify: Notice }) {
   const [timesheetPage, setTimesheetPage] = useState(1);
   const [customers, setCustomers] = useState<ProfessionalCustomerOption[]>([]);
   const [people, setPeople] = useState<ProfessionalPerson[]>([]);
+  const [plan, setPlan] = useState<ProfessionalProjectPlan | null>(null);
+  const [planLoading, setPlanLoading] = useState(false);
+  const [planningUnavailable, setPlanningUnavailable] = useState(false);
+  const [selectedPlanStageId, setSelectedPlanStageId] = useState("");
+  const [editingStage, setEditingStage] = useState<ProfessionalProjectStage | null>(null);
+  const [editingTask, setEditingTask] = useState<ProfessionalProjectTask | null>(null);
   const [contracts, setContracts] = useState<ProfessionalServiceContract[]>([]);
   const [rates, setRates] = useState<ProfessionalServiceRate[]>([]);
   const [billingRuns, setBillingRuns] = useState<ProfessionalBillingRun[]>([]);
@@ -117,6 +128,35 @@ export function ProfessionalProjectsPage({ notify }: { notify: Notice }) {
     }
   }, [notify, selectedId, t, timePage]);
 
+  const loadPlan = useCallback(async () => {
+    if (!selectedId) {
+      setPlan(null);
+      setPlanningUnavailable(false);
+      setSelectedPlanStageId("");
+      return;
+    }
+    setPlanLoading(true);
+    try {
+      const result = await api<ProfessionalProjectPlan>(`/professional-projects/${selectedId}/plan`);
+      setPlan(result);
+      setPlanningUnavailable(false);
+      setSelectedPlanStageId((current) => result.stages.some((stage) => stage.id === current)
+        ? current
+        : result.stages[0]?.id ?? "");
+    } catch (cause) {
+      setPlan(null);
+      setSelectedPlanStageId("");
+      if (cause instanceof ApiError && cause.status === 403) {
+        setPlanningUnavailable(true);
+      } else {
+        setPlanningUnavailable(false);
+        notify(cause instanceof Error ? cause.message : t("professional.planLoadError"), "error");
+      }
+    } finally {
+      setPlanLoading(false);
+    }
+  }, [notify, selectedId, t]);
+
   const loadTimesheets = useCallback(async () => {
     try {
       const result = await api<ListResponse<ProfessionalTimesheet>>(`/professional-timesheets?scope=MY&page=${timesheetPage}&pageSize=10`);
@@ -172,7 +212,12 @@ export function ProfessionalProjectsPage({ notify }: { notify: Notice }) {
   }, [notify, selectedContractId, t]);
 
   useEffect(() => { void loadProjects(); }, [loadProjects]);
+  useEffect(() => {
+    setEditingStage(null);
+    setEditingTask(null);
+  }, [selectedId]);
   useEffect(() => { void Promise.all([loadDetail(), loadTime(), loadCommercial()]); }, [loadCommercial, loadDetail, loadTime]);
+  useEffect(() => { void loadPlan(); }, [loadPlan]);
   useEffect(() => { void loadRates(); }, [loadRates]);
   useEffect(() => { void loadTimesheets(); }, [loadTimesheets]);
   useEffect(() => {
@@ -204,10 +249,243 @@ export function ProfessionalProjectsPage({ notify }: { notify: Notice }) {
     hours: Math.floor(minutes / 60),
     minutes: minutes % 60,
   });
+  const planningTasks = plan?.stages.flatMap((stage) => stage.tasks) ?? [];
+  const taskName = (task: ProfessionalProjectTask) => localizedReferenceName({ nameAr: task.titleAr, nameEn: task.titleEn });
+  const taskById = (taskId: string) => planningTasks.find((task) => task.id === taskId);
 
   async function refreshAll() {
     await loadProjects();
-    await Promise.all([loadDetail(), loadTime(), loadTimesheets(), loadCommercial(), loadRates()]);
+    await Promise.all([loadDetail(), loadTime(), loadTimesheets(), loadCommercial(), loadRates(), loadPlan()]);
+  }
+
+  async function updateTimeBudget(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!plan) return;
+    const data = new FormData(event.currentTarget);
+    const rawBudget = String(data.get("timeBudgetMinutes") ?? "").trim();
+    setWorking(true);
+    try {
+      await api(`/professional-projects/${plan.projectId}/time-budget`, {
+        method: "PATCH",
+        body: JSON.stringify({ planningVersion: plan.planningVersion, timeBudgetMinutes: rawBudget ? Number(rawBudget) : null }),
+      });
+      notify(t("professional.timeBudgetSaved"));
+      await loadPlan();
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : t("professional.planError"), "error");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function createStage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!plan) return;
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const optional = (name: string) => String(data.get(name) ?? "").trim() || null;
+    setWorking(true);
+    try {
+      await api(`/professional-projects/${plan.projectId}/stages`, {
+        method: "POST",
+        idempotencyKey: idempotencyKey("professional-stage", crypto.randomUUID()),
+        body: JSON.stringify({
+          planningVersion: plan.planningVersion,
+          nameAr: String(data.get("nameAr") ?? ""),
+          nameEn: optional("nameEn"),
+          description: optional("description"),
+          plannedStartDate: optional("plannedStartDate"),
+          targetEndDate: optional("targetEndDate"),
+        }),
+      });
+      form.reset();
+      notify(t("professional.stageCreated"));
+      await loadPlan();
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : t("professional.planError"), "error");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function createTask(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!plan) return;
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const stageId = String(data.get("stageId") ?? "");
+    const optional = (name: string) => String(data.get(name) ?? "").trim() || null;
+    setWorking(true);
+    try {
+      await api(`/professional-project-stages/${stageId}/tasks`, {
+        method: "POST",
+        idempotencyKey: idempotencyKey("professional-task", crypto.randomUUID()),
+        body: JSON.stringify({
+          planningVersion: plan.planningVersion,
+          titleAr: String(data.get("titleAr") ?? ""),
+          titleEn: optional("titleEn"),
+          description: optional("description"),
+          assigneeUserId: String(data.get("assigneeUserId") ?? ""),
+          estimatedMinutes: Number(data.get("estimatedMinutes")),
+          plannedStartDate: optional("plannedStartDate"),
+          dueDate: optional("dueDate"),
+        }),
+      });
+      form.reset();
+      setSelectedPlanStageId(stageId);
+      notify(t("professional.taskCreated"));
+      await loadPlan();
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : t("professional.planError"), "error");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function updateStage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!plan || !editingStage) return;
+    const data = new FormData(event.currentTarget);
+    const optional = (name: string) => String(data.get(name) ?? "").trim() || null;
+    setWorking(true);
+    try {
+      await api("/professional-project-stages/" + editingStage.id, {
+        method: "PATCH",
+        body: JSON.stringify({
+          planningVersion: plan.planningVersion,
+          version: editingStage.version,
+          nameAr: String(data.get("nameAr") ?? ""),
+          nameEn: optional("nameEn"),
+          description: optional("description"),
+          plannedStartDate: optional("plannedStartDate"),
+          targetEndDate: optional("targetEndDate"),
+        }),
+      });
+      setEditingStage(null);
+      notify(t("professional.stageUpdated"));
+      await loadPlan();
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : t("professional.planError"), "error");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function updateTask(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!plan || !editingTask) return;
+    const data = new FormData(event.currentTarget);
+    const optional = (name: string) => String(data.get(name) ?? "").trim() || null;
+    setWorking(true);
+    try {
+      await api("/professional-project-tasks/" + editingTask.id, {
+        method: "PATCH",
+        body: JSON.stringify({
+          planningVersion: plan.planningVersion,
+          version: editingTask.version,
+          titleAr: String(data.get("titleAr") ?? ""),
+          titleEn: optional("titleEn"),
+          description: optional("description"),
+          assigneeUserId: String(data.get("assigneeUserId") ?? ""),
+          estimatedMinutes: Number(data.get("estimatedMinutes")),
+          plannedStartDate: optional("plannedStartDate"),
+          dueDate: optional("dueDate"),
+        }),
+      });
+      setEditingTask(null);
+      notify(t("professional.taskUpdated"));
+      await loadPlan();
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : t("professional.planError"), "error");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function createDependency(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!plan) return;
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    setWorking(true);
+    try {
+      await api("/professional-project-task-dependencies", {
+        method: "POST",
+        idempotencyKey: idempotencyKey("professional-dependency", crypto.randomUUID()),
+        body: JSON.stringify({
+          planningVersion: plan.planningVersion,
+          predecessorTaskId: String(data.get("predecessorTaskId") ?? ""),
+          successorTaskId: String(data.get("successorTaskId") ?? ""),
+        }),
+      });
+      form.reset();
+      notify(t("professional.dependencyCreated"));
+      await loadPlan();
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : t("professional.planError"), "error");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function removeDependency(dependencyId: string, version: number) {
+    if (!plan) return;
+    const reason = window.prompt(t("professional.planReasonPrompt"))?.trim();
+    if (!reason) return;
+    setWorking(true);
+    try {
+      await api(`/professional-project-task-dependencies/${dependencyId}/remove`, {
+        method: "POST",
+        idempotencyKey: idempotencyKey("professional-dependency-remove", crypto.randomUUID()),
+        body: JSON.stringify({ planningVersion: plan.planningVersion, version, reason }),
+      });
+      notify(t("professional.dependencyRemoved"));
+      await loadPlan();
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : t("professional.planError"), "error");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function transitionStage(stage: ProfessionalProjectStage, status: ProfessionalProjectStageStatus) {
+    if (!plan) return;
+    const reason = window.prompt(t("professional.planReasonPrompt"))?.trim();
+    if (!reason) return;
+    setWorking(true);
+    try {
+      await api(`/professional-project-stages/${stage.id}/transition`, {
+        method: "POST",
+        idempotencyKey: idempotencyKey("professional-stage-transition", crypto.randomUUID()),
+        body: JSON.stringify({ planningVersion: plan.planningVersion, version: stage.version, status, reason }),
+      });
+      notify(t("professional.stageTransitioned"));
+      await loadPlan();
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : t("professional.planError"), "error");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function transitionTask(task: ProfessionalProjectTask, status: ProfessionalProjectTaskStatus) {
+    if (!plan) return;
+    const reason = window.prompt(t("professional.planReasonPrompt"))?.trim();
+    if (!reason) return;
+    setWorking(true);
+    try {
+      await api(`/professional-project-tasks/${task.id}/transition`, {
+        method: "POST",
+        idempotencyKey: idempotencyKey("professional-task-transition", crypto.randomUUID()),
+        body: JSON.stringify({ planningVersion: plan.planningVersion, version: task.version, status, reason }),
+      });
+      notify(t("professional.taskTransitioned"));
+      await loadPlan();
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : t("professional.planError"), "error");
+    } finally {
+      setWorking(false);
+    }
   }
 
   async function createTimesheet(event: FormEvent<HTMLFormElement>) {
@@ -357,6 +635,7 @@ export function ProfessionalProjectsPage({ notify }: { notify: Notice }) {
         idempotencyKey: idempotencyKey("professional-time", crypto.randomUUID()),
         body: JSON.stringify({
           projectId: detail.project.id,
+          taskId: String(data.get("taskId") ?? "") || null,
           workDate: String(data.get("workDate") ?? ""),
           minutes: Number(data.get("minutes")),
           isBillable: data.get("isBillable") === "on",
@@ -578,16 +857,82 @@ export function ProfessionalProjectsPage({ notify }: { notify: Notice }) {
         </aside>}
       </div>}
 
+    {detail && !planningUnavailable && <article className="panel professional-plan-panel">
+      <header><div><h2>{t("professional.planTitle")}</h2><p>{t("professional.planDescription")}</p></div></header>
+      {planLoading ? <Spinner label={t("professional.planLoading")} /> : plan && <>
+        <div className="professional-plan-summary" aria-label={t("professional.planSummary")}>
+          <div><span>{t("professional.timeBudget")}</span><strong>{plan.summary.timeBudgetMinutes === null ? t("professional.notSet") : formatDuration(plan.summary.timeBudgetMinutes)}</strong></div>
+          <div><span>{t("professional.estimatedTime")}</span><strong>{formatDuration(plan.summary.estimatedMinutes)}</strong></div>
+          <div><span>{t("professional.actualTime")}</span><strong>{formatDuration(plan.summary.actualMinutes)}</strong><small>{t("professional.approvedTimeValue", { duration: formatDuration(plan.summary.approvedMinutes) })}</small></div>
+          <div className={plan.summary.overBudgetMinutes > 0 ? "over-budget" : ""}><span>{plan.summary.overBudgetMinutes > 0 ? t("professional.overBudget") : t("professional.remainingBudget")}</span><strong>{formatDuration(plan.summary.overBudgetMinutes > 0 ? plan.summary.overBudgetMinutes : plan.summary.remainingBudgetMinutes ?? 0)}</strong><small>{t("professional.unallocatedTimeValue", { duration: formatDuration(plan.summary.unallocatedActualMinutes) })}</small></div>
+        </div>
+
+        <div className="professional-plan-forms">
+          <section>
+            <h3>{t("professional.timeBudget")}</h3>
+            <form key={`budget-${plan.planningVersion}`} className="professional-plan-form compact" onSubmit={updateTimeBudget}>
+              <label><span>{t("professional.budgetMinutes")}</span><input name="timeBudgetMinutes" type="number" min={1} defaultValue={plan.summary.timeBudgetMinutes ?? ""} placeholder={t("professional.notSet")} /></label>
+              <Button type="submit" disabled={working}>{t("professional.saveBudget")}</Button>
+            </form>
+          </section>
+          <section>
+            <h3>{t("professional.newStage")}</h3>
+            <form className="professional-plan-form" onSubmit={createStage}>
+              <label><span>{t("professional.nameAr")}</span><input name="nameAr" maxLength={200} required /></label>
+              <label><span>{t("professional.nameEn")}</span><input name="nameEn" maxLength={200} dir="ltr" /></label>
+              <label><span>{t("professional.plannedStart")}</span><input name="plannedStartDate" type="date" /></label>
+              <label><span>{t("professional.targetEndDate")}</span><input name="targetEndDate" type="date" /></label>
+              <label className="full-span"><span>{t("professional.stageDescription")}</span><input name="description" maxLength={1000} /></label>
+              <Button type="submit" icon="plus" disabled={working}>{t("professional.createStage")}</Button>
+            </form>
+          </section>
+          <section>
+            <h3>{t("professional.newTask")}</h3>
+            {plan.stages.length === 0 ? <p className="muted">{t("professional.stageRequired")}</p> : <form className="professional-plan-form" onSubmit={createTask}>
+              <label><span>{t("professional.stage")}</span><select name="stageId" value={selectedPlanStageId} onChange={(event) => setSelectedPlanStageId(event.target.value)} required>{plan.stages.map((stage) => <option key={stage.id} value={stage.id}>{stage.sequence}. {localizedReferenceName(stage)}</option>)}</select></label>
+              <label><span>{t("professional.taskTitleAr")}</span><input name="titleAr" maxLength={200} required /></label>
+              <label><span>{t("professional.taskTitleEn")}</span><input name="titleEn" maxLength={200} dir="ltr" /></label>
+              <label><span>{t("professional.assignee")}</span><select name="assigneeUserId" required defaultValue=""><option value="" />{detail.members.filter((member) => member.isActive).map((member) => <option key={member.user.id} value={member.user.id}>{member.user.displayName}</option>)}</select></label>
+              <label><span>{t("professional.estimatedMinutes")}</span><input name="estimatedMinutes" type="number" min={1} defaultValue={60} required /></label>
+              <label><span>{t("professional.plannedStart")}</span><input name="plannedStartDate" type="date" /></label>
+              <label><span>{t("professional.dueDate")}</span><input name="dueDate" type="date" /></label>
+              <label className="full-span"><span>{t("professional.taskDescription")}</span><input name="description" maxLength={1000} /></label>
+              <Button type="submit" icon="plus" disabled={working}>{t("professional.createTask")}</Button>
+            </form>}
+          </section>
+          <section>
+            <h3>{t("professional.dependencies")}</h3>
+            {planningTasks.length < 2 ? <p className="muted">{t("professional.dependenciesNeedTasks")}</p> : <form className="professional-plan-form compact" onSubmit={createDependency}>
+              <label><span>{t("professional.predecessorTask")}</span><select name="predecessorTaskId" required defaultValue=""><option value="" />{planningTasks.map((task) => <option key={task.id} value={task.id}>{taskName(task)}</option>)}</select></label>
+              <label><span>{t("professional.successorTask")}</span><select name="successorTaskId" required defaultValue=""><option value="" />{planningTasks.map((task) => <option key={task.id} value={task.id}>{taskName(task)}</option>)}</select></label>
+              <Button type="submit" icon="plus" disabled={working}>{t("professional.addDependency")}</Button>
+            </form>}
+            {plan.dependencies.length > 0 && <ul className="professional-dependencies">{plan.dependencies.map((dependency) => <li key={dependency.id} className={dependency.isActive ? "" : "inactive"}><span>{taskById(dependency.predecessorTaskId) ? taskName(taskById(dependency.predecessorTaskId)!) : dependency.predecessorTaskId} → {taskById(dependency.successorTaskId) ? taskName(taskById(dependency.successorTaskId)!) : dependency.successorTaskId}</span>{dependency.isActive ? <Button variant="ghost" disabled={working} onClick={() => void removeDependency(dependency.id, dependency.version)}>{t("professional.removeDependency")}</Button> : <small>{t("professional.removed")}</small>}</li>)}</ul>}
+          </section>
+        </div>
+
+        {plan.stages.length === 0 ? <EmptyState title={t("professional.noStages")} description={t("professional.noStagesDescription")} /> : <div className="data-table-wrap flat professional-plan-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}>
+          <table className="data-table professional-plan-table"><thead><tr><th>{t("professional.workItem")}</th><th>{t("professional.assignee")}</th><th>{t("professional.plannedDates")}</th><th>{t("professional.estimatedTime")}</th><th>{t("professional.actualApproved")}</th><th>{t("professional.statusLabel")}</th><th>{t("professional.actions")}</th></tr></thead>
+            {plan.stages.map((stage) => <tbody key={stage.id}>
+              <tr className="professional-stage-row"><td><strong>{stage.sequence}. {localizedReferenceName(stage)}</strong><small>{stage.description}</small></td><td>—</td><td>{stage.plannedStartDate ?? "—"}<small>{stage.targetEndDate ? t("professional.toDate", { date: stage.targetEndDate }) : ""}</small></td><td>{formatDuration(stage.summary.estimatedMinutes)}</td><td>{formatDuration(stage.summary.actualMinutes)}<small>{t("professional.approvedTimeValue", { duration: formatDuration(stage.summary.approvedMinutes) })}</small></td><td><span className={`status-chip ${stage.status.toLowerCase()}`}>{t(`professional.stageStatus.${stage.status}`)}</span></td><td><div className="inline-actions">{!(["COMPLETED", "CANCELLED"] as ProfessionalProjectStageStatus[]).includes(stage.status) && <Button variant="ghost" icon="edit" disabled={working} onClick={() => setEditingStage(stage)}>{t("professional.edit")}</Button>}{stage.status === "PLANNED" && <Button variant="ghost" disabled={working} onClick={() => void transitionStage(stage, "IN_PROGRESS")}>{t("professional.start")}</Button>}{stage.status === "IN_PROGRESS" && <Button variant="ghost" disabled={working} onClick={() => void transitionStage(stage, "COMPLETED")}>{t("professional.complete")}</Button>}{!(["COMPLETED", "CANCELLED"] as ProfessionalProjectStageStatus[]).includes(stage.status) && <Button variant="ghost" disabled={working} onClick={() => void transitionStage(stage, "CANCELLED")}>{t("professional.cancel")}</Button>}</div></td></tr>
+              {stage.tasks.map((task) => <tr key={task.id} className="professional-task-row"><td><span>{stage.sequence}.{task.sequence} {taskName(task)}</span><small>{task.description}</small></td><td>{personName(task.assigneeUserId)}</td><td>{task.plannedStartDate ?? "—"}<small>{task.dueDate ? t("professional.toDate", { date: task.dueDate }) : ""}</small></td><td>{formatDuration(task.estimatedMinutes)}</td><td>{formatDuration(task.actualMinutes)}<small>{t("professional.approvedTimeValue", { duration: formatDuration(task.approvedMinutes) })}</small></td><td><span className={`status-chip ${task.status.toLowerCase()}`}>{t(`professional.taskStatus.${task.status}`)}</span></td><td><div className="inline-actions">{!(["COMPLETED", "CANCELLED"] as ProfessionalProjectTaskStatus[]).includes(task.status) && <Button variant="ghost" icon="edit" disabled={working} onClick={() => setEditingTask(task)}>{t("professional.edit")}</Button>}{task.status === "TODO" && <Button variant="ghost" disabled={working} onClick={() => void transitionTask(task, "IN_PROGRESS")}>{t("professional.start")}</Button>}{task.status === "IN_PROGRESS" && <Button variant="ghost" disabled={working} onClick={() => void transitionTask(task, "COMPLETED")}>{t("professional.complete")}</Button>}{!(["COMPLETED", "CANCELLED"] as ProfessionalProjectTaskStatus[]).includes(task.status) && <Button variant="ghost" disabled={working} onClick={() => void transitionTask(task, "CANCELLED")}>{t("professional.cancel")}</Button>}</div></td></tr>)}
+            </tbody>)}
+          </table>
+        </div>}
+      </>}
+    </article>}
+
     {detail && <article className="panel professional-time-panel">
       <header><div><h2>{t("professional.timeEntries")}</h2><p>{t("professional.timeDescription")}</p></div><div className="professional-time-summary"><span>{t("professional.totalTime")} <strong>{formatDuration(timeSummary.trackedMinutes)}</strong></span><span>{t("professional.billableTime")} <strong>{formatDuration(timeSummary.billableMinutes)}</strong></span></div></header>
       {detail.project.status === "ACTIVE" && <form className="professional-time-form" onSubmit={logTime}>
         <label><span>{t("professional.workDate")}</span><input name="workDate" type="date" defaultValue={today()} required /></label>
         <label><span>{t("professional.minutes")}</span><input name="minutes" type="number" min={1} max={1440} defaultValue={60} required /></label>
+        <label><span>{t("professional.taskOptional")}</span><select name="taskId" defaultValue=""><option value="">{t("professional.unallocatedTask")}</option>{planningTasks.filter((task) => task.status === "TODO" || task.status === "IN_PROGRESS").map((task) => <option key={task.id} value={task.id}>{taskName(task)}</option>)}</select></label>
         <label className="professional-time-description"><span>{t("professional.workDescription")}</span><input name="description" minLength={1} maxLength={1000} required /></label>
         <label className="checkbox-row"><input name="isBillable" type="checkbox" defaultChecked={detail.project.billingModel !== "NON_BILLABLE"} disabled={detail.project.billingModel === "NON_BILLABLE"} /><span>{t("professional.billable")}</span></label>
         <Button type="submit" icon="plus" disabled={working}>{t("professional.logTime")}</Button>
       </form>}
-      {timeEntries.length === 0 ? <EmptyState title={t("professional.timeEmptyTitle")} description={t("professional.timeEmptyDescription")} /> : <><div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("professional.workDate")}</th><th>{t("professional.person")}</th><th>{t("professional.workDescription")}</th><th>{t("professional.time")}</th><th>{t("professional.billable")}</th><th>{t("professional.actions")}</th></tr></thead><tbody>{timeEntries.map((entry) => <tr key={entry.id}><td>{entry.workDate}</td><td>{entry.user.displayName}</td><td>{entry.description}</td><td>{formatDuration(entry.minutes)}</td><td>{entry.isBillable ? t("professional.yes") : t("professional.no")}</td><td>{entry.editable ? <Button variant="ghost" icon="trash" disabled={working} onClick={() => void deleteTime(entry)}>{t("professional.deleteTime")}</Button> : <span className="muted">{t("professional.readOnly")}</span>}</td></tr>)}</tbody></table></div><Pagination {...timeMeta} page={timePage} onChange={setTimePage} /></>}
+      {timeEntries.length === 0 ? <EmptyState title={t("professional.timeEmptyTitle")} description={t("professional.timeEmptyDescription")} /> : <><div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("professional.workDate")}</th><th>{t("professional.person")}</th><th>{t("professional.task")}</th><th>{t("professional.workDescription")}</th><th>{t("professional.time")}</th><th>{t("professional.billable")}</th><th>{t("professional.actions")}</th></tr></thead><tbody>{timeEntries.map((entry) => <tr key={entry.id}><td>{entry.workDate}</td><td>{entry.user.displayName}</td><td>{entry.task ? localizedReferenceName({ nameAr: entry.task.titleAr, nameEn: entry.task.titleEn }) : t("professional.unallocatedTask")}</td><td>{entry.description}</td><td>{formatDuration(entry.minutes)}</td><td>{entry.isBillable ? t("professional.yes") : t("professional.no")}</td><td>{entry.editable ? <Button variant="ghost" icon="trash" disabled={working} onClick={() => void deleteTime(entry)}>{t("professional.deleteTime")}</Button> : <span className="muted">{t("professional.readOnly")}</span>}</td></tr>)}</tbody></table></div><Pagination {...timeMeta} page={timePage} onChange={setTimePage} /></>}
     </article>}
 
     {detail?.project.billingModel === "TIME_AND_MATERIALS" && <article className="panel professional-commercial-panel">
@@ -664,6 +1009,30 @@ export function ProfessionalProjectsPage({ notify }: { notify: Notice }) {
         <Pagination {...timesheetMeta} page={timesheetPage} onChange={setTimesheetPage} />
       </>}
     </article>
+
+    {editingStage && <Modal title={t("professional.editStageTitle")} description={t("professional.editStageDescription")} onClose={() => setEditingStage(null)} wide>
+      <form key={editingStage.id + "-" + editingStage.version} className="modal-form form-grid" onSubmit={updateStage}>
+        <label><span>{t("professional.nameAr")}</span><input name="nameAr" maxLength={200} defaultValue={editingStage.nameAr} required /></label>
+        <label><span>{t("professional.nameEn")}</span><input name="nameEn" maxLength={200} dir="ltr" defaultValue={editingStage.nameEn ?? ""} /></label>
+        <label><span>{t("professional.plannedStart")}</span><input name="plannedStartDate" type="date" defaultValue={editingStage.plannedStartDate ?? ""} /></label>
+        <label><span>{t("professional.targetEndDate")}</span><input name="targetEndDate" type="date" defaultValue={editingStage.targetEndDate ?? ""} /></label>
+        <label className="full-span"><span>{t("professional.stageDescription")}</span><textarea name="description" rows={3} maxLength={1000} defaultValue={editingStage.description ?? ""} /></label>
+        <div className="modal-actions full-span"><Button type="button" variant="secondary" onClick={() => setEditingStage(null)}>{t("common.cancel")}</Button><Button type="submit" disabled={working}>{working ? t("common.saving") : t("professional.saveChanges")}</Button></div>
+      </form>
+    </Modal>}
+
+    {editingTask && detail && <Modal title={t("professional.editTaskTitle")} description={t("professional.editTaskDescription")} onClose={() => setEditingTask(null)} wide>
+      <form key={editingTask.id + "-" + editingTask.version} className="modal-form form-grid" onSubmit={updateTask}>
+        <label><span>{t("professional.taskTitleAr")}</span><input name="titleAr" maxLength={200} defaultValue={editingTask.titleAr} required /></label>
+        <label><span>{t("professional.taskTitleEn")}</span><input name="titleEn" maxLength={200} dir="ltr" defaultValue={editingTask.titleEn ?? ""} /></label>
+        <label><span>{t("professional.assignee")}</span><select name="assigneeUserId" required defaultValue={editingTask.assigneeUserId}>{detail.members.filter((member) => member.isActive).map((member) => <option key={member.user.id} value={member.user.id}>{member.user.displayName}</option>)}</select></label>
+        <label><span>{t("professional.estimatedMinutes")}</span><input name="estimatedMinutes" type="number" min={1} defaultValue={editingTask.estimatedMinutes} required /></label>
+        <label><span>{t("professional.plannedStart")}</span><input name="plannedStartDate" type="date" defaultValue={editingTask.plannedStartDate ?? ""} /></label>
+        <label><span>{t("professional.dueDate")}</span><input name="dueDate" type="date" defaultValue={editingTask.dueDate ?? ""} /></label>
+        <label className="full-span"><span>{t("professional.taskDescription")}</span><textarea name="description" rows={3} maxLength={1000} defaultValue={editingTask.description ?? ""} /></label>
+        <div className="modal-actions full-span"><Button type="button" variant="secondary" onClick={() => setEditingTask(null)}>{t("common.cancel")}</Button><Button type="submit" disabled={working}>{working ? t("common.saving") : t("professional.saveChanges")}</Button></div>
+      </form>
+    </Modal>}
 
     {createOpen && <Modal title={t("professional.createTitle")} description={t("professional.createDescription")} onClose={() => setCreateOpen(false)} wide>
       <form className="modal-form form-grid" onSubmit={createProject}>

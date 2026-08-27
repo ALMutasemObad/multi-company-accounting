@@ -1,7 +1,7 @@
 ---
 title: "Bounded Context Map"
 status: "accepted target architecture"
-version: "2.2"
+version: "2.3"
 last_updated: "2026-08-27"
 ---
 
@@ -29,7 +29,7 @@ last_updated: "2026-08-27"
 | Inventory | المستودعات والكتالوج ودفتر الحركة الكمي والقيمي والأرصدة وتقييم المتوسط | `Warehouse`, `UnitOfMeasure`, `InventoryItem`, `InventoryMovementSequence`, `InventoryMovement`, `InventoryMovementLine`, `InventoryBalance`, `InventoryValuationInitialization` | يكشف منفذي اختيار الفاتورة وتطبيق أثرها؛ يعيد حقائق تقييم للفواتير، وينشئ رأس `INVENTORY_ADJUSTMENT` للحركة اليدوية ثم يفوض إنشاء/عكس أسطر Ledger إلى `PostingEngine` |
 | Point of Sale | تنسيق البيع النقدي الحضوري وربط نتيجة الـCheckout | `PosSale` فقط | Process Manager؛ لا يملك بنودًا أو مبالغ أو فاتورة أو حركة مخزون/نقد أو قيدًا، ويستدعي منافذ Sales وTreasury الحالية |
 | Approvals | تنسيق طلبات وقرارات Maker/Checker المشتركة | `ApprovalRequest`, `ApprovalDecision` | يربط الموضوع ونسخته وبصمته فقط؛ يطبق المالك انتقال الموضوع عبر `ApprovalSubjectPort` ولا يملك حالته أو أثره المالي |
-| Professional Services & Projects | القضايا والتكليفات والمشاريع المهنية، فرقها، الوقت المعتمد، والعقود والأسعار ومصدر الفوترة | `ProfessionalProject`, `ProfessionalProjectMember`, `ProfessionalTimeEntry`, `ProfessionalTimesheet`, `ProfessionalTimesheetSubmission`, `ProfessionalServiceContract`, `ProfessionalServiceRate`, `ProfessionalBillingRun`, `ProfessionalBillingSourceLine` | يقرأ العميل والفاتورة من Sales والشخص من Identity والموظف من HR والعملة من Tenant عبر Ports؛ لا يملك حقائق الفاتورة أو الذمة أو الضريبة أو القيد |
+| Professional Services & Projects | القضايا والتكليفات والمشاريع المهنية، فرقها، خطة المراحل والمهام، الوقت المعتمد، والعقود والأسعار ومصدر الفوترة | `ProfessionalProject`, `ProfessionalProjectMember`, `ProfessionalProjectStage`, `ProfessionalProjectTask`, `ProfessionalTaskDependency`, `ProfessionalTimeEntry`, `ProfessionalTimesheet`, `ProfessionalTimesheetSubmission`, `ProfessionalServiceContract`, `ProfessionalServiceRate`, `ProfessionalBillingRun`, `ProfessionalBillingSourceLine` | يملك ميزانية دقائق المشروع والخطة فقط وتشتق التقديرات من المهام والفعلية من الوقت؛ يقرأ العميل والفاتورة من Sales والشخص من Identity والموظف من HR والعملة من Tenant عبر Ports، ولا يملك المصروف أو حقائق الفاتورة أو الذمة أو الضريبة أو القيد |
 | Human Resources | الهيكل التنظيمي وهوية الموظف وحالة العمل والعقد غير المالي | `HrDepartment`, `HrPosition`, `Employee`, `EmploymentContract` | الموظف مستقل عن `User` ويرتبط اختياريًا بعضوية الشركة عبر Identity Port؛ لا يملك رواتب أو بيانات بنكية أو قرار موافقة أو وقت مشروع |
 | Tax | معدلات الضرائب وربط حساباتها والحساب والتقريب | `TaxRate` | يكشف `TaxQuotePort` للمبيعات والمشتريات ويملك النسخ المتفائلة |
 | Printing & Document Output | اللقطات التاريخية والتوليد | `DocumentPrintArchive` | يقرأ عبر Document Snapshot Port |
@@ -94,6 +94,8 @@ Printing  <────────── immutable document snapshot port
 
 يتم عبر Transactional Outbox وفق ADR-003.
 
+لا ينشأ Outbox Event لمجرد احتمال وجود تنبيه مستقبلي. يلزم مستهلك معروف وعقد حدث versioned وسياسة Claim/Retry/Dead-letter/Retention قبل كتابة الحدث؛ وإلا يقتصر التغيير على حالة المالك و`AuditLog` داخل المعاملة.
+
 ## 6. حالة النقل والاستثناءات الانتقالية
 
 اكتمل في 22 أغسطس 2026 نقل إنشاء وعكس `JournalEntry/JournalLine` إلى `PostingEngine`، واستبدلت عقود التخصيص `targetJournalLineId` بـ`ReceivableItemId/PayableItemId`، ونقل CRUD والحساب الضريبي إلى وحدة `Tax`، ونقل CRUD الصناديق وطرق الدفع وسياسة أداة الحركة إلى وحدة `Treasury`. أضيف `Data Import` كسياق داعم يملك `DataImportBatch` فقط ويستدعي منافذ المالكين لإنشاء بياناتهم؛ لا يكتب Ledger ولا يخزن الملف. وفي 24 و25 أغسطس بدأت رحلة Inventory بسياق مستقل يملك `Warehouse`، ثم توسعت إلى الكتالوج وربط تأليف الفواتير ودفتر حركة immutable، ثم رُبط ترحيل وعكس فواتير الأصناف بحركة ذرية عبر `InventoryInvoiceStockPort` مع تفرد مصدر ومنع المخزون السالب. وفي 26 أغسطس أضيف تقييم المتوسط المرجح المتحرك وقيمة الرصيد والتكلفة التاريخية للعكس والمرتجعات؛ يعيد Inventory حقائق التقييم للفواتير، وتبني Sales/Purchases قيود المخزون وCOGS التي يكتبها `PostingEngine`. وأغلقت لاحقًا فجوة الحركة اليدوية: ينشئ Inventory رأس `INVENTORY_ADJUSTMENT` ويطلب من `PostingEngine` قيد الزيادة أو النقص أو عكسه التاريخي، من دون كتابة مباشرة لأسطر Ledger. وفي 27 أغسطس أضيف Backend المطابقة البنكية داخل Treasury: يملك وارد الكشف وخطوطه والجلسة وسجل الربط، ويقرأ الحركات المرحلة من Core Accounting عبر `ReconciliationLedgerQueryPort` من دون كتابة Ledger؛ إنشاء الحركة المفقودة يبقى أمرًا منفصلًا في خدمات المستندات الحالية و`PostingEngine`. لا توجد بعد واجهة مطابقة أو أذونات استلام وتسليم مستقلة؛ الفاتورة المرحلة هي مستند الكمية والقيمة الانتقالي. يبقى رابط سطر الذمة على الفاتورة أثرًا داخليًا لـCore Accounting ولا يعبر عقدًا عامًا. التفاصيل في [عناصر الذمم وعقد التسوية](AR_AP_SETTLEMENT_ITEMS_AR.md) و[ملكية Tax](TAX_CONTEXT_OWNERSHIP_AR.md) و[ملكية Treasury](TREASURY_CONTEXT_OWNERSHIP_AR.md) و[Backend المطابقة البنكية](BANK_RECONCILIATION_BACKEND_AR.md) و[سياق الاستيراد](DATA_IMPORT_CONTEXT_AR.md) و[أساس Inventory](INVENTORY_CONTEXT_FOUNDATION_AR.md).
@@ -109,6 +111,8 @@ Printing  <────────── immutable document snapshot port
 ثم أضيفت فترة Timesheet الأسبوعية وفق [ADR-008](ADR-008-professional-timesheets-approval.md): يملك سياق المشاريع حالة الفترة ومحاولات إرسالها immutable، ويقرأ الموظف النشط عبر HR port، ويرسل `PROFESSIONAL_TIMESHEET` إلى Approvals. يحتفظ Approvals بالطلب والقرار وحدهما، ولا تنسخ الفترة قرار Checker أو حقائق الوقت الخام.
 
 ثم أضيفت أول شريحة فوترة خدمات وفق [ADR-009](ADR-009-professional-service-billing.md): يملك السياق عقد الخدمة وسعر الساعة المؤرخ ومرجع مصدر الوقت والسعر المستخدم، ويستدعي `ProfessionalBillingSalesPort` لإنشاء وترحيل فاتورة Sales عادية داخل المعاملة نفسها. لا ينسخ رقم الفاتورة أو إجماليها أو ضريبتها أو الذمة أو القيد؛ تُقرأ هذه الحقائق من Sales عبر Query Port، ويبقى `PostingEngine` كاتب Ledger الوحيد.
+
+ثم نُفذت E1 محليًا لتخطيط المشاريع وفق [ADR-010](ADR-010-professional-project-planning.md): يظل `ProfessionalProject` جذر الخطة ويفصل `planningVersion` عن نسخة حقول المشروع، ويملك المراحل والمهام واعتمادياتها وميزانية الدقائق. يرتبط الوقت اختياريًا بالمهمة، وتبقى الفعلية مشتقة من `ProfessionalTimeEntry` بلا عمود مجموع موازٍ. لا تضيف الشريحة اتصالًا بـPurchases أو Approvals أو Ledger ولا Outbox بلا مستهلك. تبقى مصروفات E2 بلا مالك منفذ وتحتاج قرارًا يفصل مطالبة الموظف عن فاتورة المورد والدفع وإعادة الفوترة، ويظل F1/Ethical Wall شرط إطلاق قبل استخدام أوصاف قانونية حساسة.
 
 الاستثناءات التالية ما زالت موجودة ولا تعد نمطًا مسموحًا للنسخ:
 
@@ -130,7 +134,7 @@ Printing  <────────── immutable document snapshot port
 | `AccountingDocument` | الحالة والنسخة والترحيل والعكس والارتباط بالقيود |
 | `FiscalPeriod` | الإغلاق وإعادة الفتح والترتيب الزمني |
 | `ApprovalRequest` | طلبًا نشطًا واحدًا لكل موضوع، وفصل Maker/Checker، وقرارًا نهائيًا immutable |
-| `ProfessionalProject` | هوية العمل والعميل المرجعي والنوع ونموذج الفوترة والحالة والتواريخ والفريق والوقت المنسوب إليه |
+| `ProfessionalProject` | هوية العمل والعميل المرجعي والنوع ونموذج الفوترة والحالة والتواريخ والفريق، ومراجعة الخطة `planningVersion` وتماسك مراحلها ومهامها واعتمادياتها والوقت المنسوب إليها |
 | `ProfessionalTimesheet` | أسبوع الموظف، ثبات إدخالاته أثناء المراجعة وبعد الاعتماد، وتسلسل لقطات الإرسال |
 | `ProfessionalServiceContract` | عملة وشروط السداد وفترة سريان تجارية واحدة غير متداخلة لكل مشروع وقت ومواد |
 | `ProfessionalBillingRun` | استخدام وقت معتمد مرة واحدة وربطه بفاتورة Sales مع تثبيت مصدر الوقت والسعر دون نسخ حقائقها المالية |

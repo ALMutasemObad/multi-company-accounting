@@ -24,7 +24,8 @@ function normalizedOpenApiPath(request: Request) {
   const routePath = typeof request.route?.path === "string" ? request.route.path : undefined;
   if (!routePath) return undefined;
   const mountedPath = `${request.baseUrl}${routePath === "/" ? "" : routePath}`;
-  const withoutPrefix = mountedPath.replace(/^\/api\/v1(?=\/|$)/u, "");
+  const openApiPath = mountedPath.replace(/:([A-Za-z0-9_]+)/gu, "{$1}");
+  const withoutPrefix = openApiPath.replace(/^\/api\/v1(?=\/|$)/u, "");
   return withoutPrefix || "/";
 }
 

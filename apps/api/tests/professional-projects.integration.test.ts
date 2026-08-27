@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDatabase } from "../src/database.js";
 import {
@@ -462,6 +463,64 @@ describe.runIf(enabled)("professional projects and time with MariaDB", () => {
       reason: "لا يجوز قطع العقد قبل إنهاء السعر المفتوح",
       idempotencyKey: "it-professional-contract-end-with-open-rate",
     })).rejects.toMatchObject({ reason: "TERM_IN_USE" });
+  });
+
+  it("keeps legacy unassigned time snapshots approvable after task linkage", async () => {
+    const entryInput = {
+      projectId,
+      workDate: "2057-09-03",
+      minutes: 45,
+      isBillable: true,
+      description: "إدخال وقت قديم بلا مهمة",
+      idempotencyKey: "it-professional-legacy-snapshot-entry",
+    };
+    const createdEntry = await service.createTimeEntry(memberContext(), entryInput);
+    const { task: legacyTask, ...legacyTimeEntry } = createdEntry.timeEntry;
+    expect(legacyTask).toBeNull();
+    const keyHash = createHash("sha256").update(entryInput.idempotencyKey, "utf8").digest();
+    const idempotencyWhere = {
+      companyId_userId_operation_keyHash: {
+        companyId,
+        userId: memberUserId,
+        operation: "CREATE_PROFESSIONAL_TIME_ENTRY",
+        keyHash,
+      },
+    };
+    const idempotency = await prisma!.idempotencyRecord.findUniqueOrThrow({ where: idempotencyWhere });
+    const legacyFingerprint = createHash("sha256").update(JSON.stringify(entryInput), "utf8").digest();
+    expect(Buffer.from(idempotency.requestFingerprint)).toEqual(legacyFingerprint);
+    await prisma!.idempotencyRecord.update({
+      where: idempotencyWhere,
+      data: { responseBody: { timeEntry: legacyTimeEntry } },
+    });
+    const legacyReplay = await service.createTimeEntry(memberContext(), entryInput);
+    expect(legacyReplay.timeEntry).toEqual({ ...legacyTimeEntry, task: null });
+    const createdTimesheet = await service.createTimesheet(memberContext(), {
+      periodStart: "2057-09-02",
+      idempotencyKey: "it-professional-legacy-snapshot-timesheet",
+    });
+    const legacyHash = createHash("sha256").update(JSON.stringify([{
+      id: createdEntry.timeEntry.id,
+      version: createdEntry.timeEntry.version,
+      projectId,
+      workDate: entryInput.workDate,
+      minutes: entryInput.minutes,
+      isBillable: entryInput.isBillable,
+      description: entryInput.description,
+    }]), "utf8").digest();
+    const requested = await prisma!.$transaction((tx) => service.requestTimesheetApprovalInTransaction(
+      tx,
+      memberContext(),
+      createdTimesheet.timesheet.id,
+      0,
+    ));
+    expect(Buffer.from(requested.subjectSnapshotHashSha256)).toEqual(legacyHash);
+    await prisma!.$transaction((tx) => service.approveTimesheetInTransaction(tx, context(), {
+      subjectId: createdTimesheet.timesheet.id,
+      subjectVersion: requested.subjectVersion,
+      subjectSnapshotHashSha256: legacyHash,
+    }));
+    expect((await service.getTimesheet(memberContext(), createdTimesheet.timesheet.id)).timesheet.status).toBe("APPROVED");
   });
 
   it("keeps company data isolated and preserves the last active manager", async () => {
