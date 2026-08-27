@@ -1,7 +1,7 @@
 ---
 title: "Bounded Context Map"
 status: "accepted target architecture"
-version: "2.1"
+version: "2.2"
 last_updated: "2026-08-27"
 ---
 
@@ -29,7 +29,7 @@ last_updated: "2026-08-27"
 | Inventory | المستودعات والكتالوج ودفتر الحركة الكمي والقيمي والأرصدة وتقييم المتوسط | `Warehouse`, `UnitOfMeasure`, `InventoryItem`, `InventoryMovementSequence`, `InventoryMovement`, `InventoryMovementLine`, `InventoryBalance`, `InventoryValuationInitialization` | يكشف منفذي اختيار الفاتورة وتطبيق أثرها؛ يعيد حقائق تقييم للفواتير، وينشئ رأس `INVENTORY_ADJUSTMENT` للحركة اليدوية ثم يفوض إنشاء/عكس أسطر Ledger إلى `PostingEngine` |
 | Point of Sale | تنسيق البيع النقدي الحضوري وربط نتيجة الـCheckout | `PosSale` فقط | Process Manager؛ لا يملك بنودًا أو مبالغ أو فاتورة أو حركة مخزون/نقد أو قيدًا، ويستدعي منافذ Sales وTreasury الحالية |
 | Approvals | تنسيق طلبات وقرارات Maker/Checker المشتركة | `ApprovalRequest`, `ApprovalDecision` | يربط الموضوع ونسخته وبصمته فقط؛ يطبق المالك انتقال الموضوع عبر `ApprovalSubjectPort` ولا يملك حالته أو أثره المالي |
-| Professional Services & Projects | القضايا والتكليفات والمشاريع المهنية، فرقها، والوقت الخام وفترات اعتماده | `ProfessionalProject`, `ProfessionalProjectMember`, `ProfessionalTimeEntry`, `ProfessionalTimesheet`, `ProfessionalTimesheetSubmission` | يقرأ العميل من Sales والشخص من Identity والموظف من HR عبر Ports؛ يملك حالة ثبات الفترة ولقطة عضوية الإدخالات فقط، ولا يملك فاتورة أو تسعيرًا أو قرار موافقة أو قيدًا |
+| Professional Services & Projects | القضايا والتكليفات والمشاريع المهنية، فرقها، الوقت المعتمد، والعقود والأسعار ومصدر الفوترة | `ProfessionalProject`, `ProfessionalProjectMember`, `ProfessionalTimeEntry`, `ProfessionalTimesheet`, `ProfessionalTimesheetSubmission`, `ProfessionalServiceContract`, `ProfessionalServiceRate`, `ProfessionalBillingRun`, `ProfessionalBillingSourceLine` | يقرأ العميل والفاتورة من Sales والشخص من Identity والموظف من HR والعملة من Tenant عبر Ports؛ لا يملك حقائق الفاتورة أو الذمة أو الضريبة أو القيد |
 | Human Resources | الهيكل التنظيمي وهوية الموظف وحالة العمل والعقد غير المالي | `HrDepartment`, `HrPosition`, `Employee`, `EmploymentContract` | الموظف مستقل عن `User` ويرتبط اختياريًا بعضوية الشركة عبر Identity Port؛ لا يملك رواتب أو بيانات بنكية أو قرار موافقة أو وقت مشروع |
 | Tax | معدلات الضرائب وربط حساباتها والحساب والتقريب | `TaxRate` | يكشف `TaxQuotePort` للمبيعات والمشتريات ويملك النسخ المتفائلة |
 | Printing & Document Output | اللقطات التاريخية والتوليد | `DocumentPrintArchive` | يقرأ عبر Document Snapshot Port |
@@ -60,6 +60,7 @@ POS ─────────────────> Sales cash-checkout and
 Approvals ───────────> owning context approval-subject application ports
 Professional Projects ──> Sales customer query port and Identity people query port
 Professional Projects ──> Human Resources employee query port
+Professional Projects ──> Tenant currency query port and Sales professional-billing application/query port
 Human Resources ────────> Identity membership query port
 All operational contexts ──> Audit append port
 
@@ -101,11 +102,13 @@ Printing  <────────── immutable document snapshot port
 
 ثم أضيف سياق Approvals وفق [ADR-005](ADR-005-shared-approval-engine.md): يملك طلب الموافقة والقرار فقط، ويستدعي `FinancialCloseApprovalAdapter` لتغيير تشغيل الإقفال داخل المعاملة. لا يقرأ أو يكتب Ledger أو يكرر حزمة الإقفال؛ يخزن بصمتها ونسخة الموضوع فقط، وتفرض الشريحة الأولى Checker مستقلًا.
 
-وأضيف سياق Professional Services & Projects وفق [ADR-006](ADR-006-professional-services-projects-priority.md): يملك المشروع المهني وعضويته وسجل الوقت الشخصي الخام، ويربط القضية أو التكليف بعميل Sales وبأعضاء Identity عبر منفذين يملكهـما السياقان المصدران. لا يكتب في العميل أو المستخدم أو الفاتورة أو المخزون أو الخزينة أو Ledger. يبقى اعتماد الوقت والفوترة وخصائص المكتب القانوني مراحل لاحقة مستقلة موثقة في [خارطة الخدمات المهنية](PROFESSIONAL_SERVICES_HR_PROJECTS_ROADMAP_AR.md).
+وأضيف سياق Professional Services & Projects وفق [ADR-006](ADR-006-professional-services-projects-priority.md): يملك المشروع المهني وعضويته وسجل الوقت الشخصي الخام، ويربط القضية أو التكليف بعميل Sales وبأعضاء Identity عبر منفذين يملكهما السياقان المصدران. لا يكتب في العميل أو المستخدم أو المخزون أو الخزينة أو Ledger.
 
 ثم أضيف سياق Human Resources وفق [ADR-007](ADR-007-human-resources-foundation.md): يملك الأقسام والمناصب والموظف والعقد المؤرخ غير المالي. يظل `Employee` هوية عمل مستقلة عن `User`، ويتحقق من الرابط الاختياري بعضوية الشركة عبر `HrIdentityPort` دون تحديث Identity. لا يكتب HR في المشاريع أو الموافقات أو الفواتير أو المخزون أو الخزينة أو Ledger، وتبقى الرواتب والإجازات والبيانات الحساسة خارج الشريحة.
 
 ثم أضيفت فترة Timesheet الأسبوعية وفق [ADR-008](ADR-008-professional-timesheets-approval.md): يملك سياق المشاريع حالة الفترة ومحاولات إرسالها immutable، ويقرأ الموظف النشط عبر HR port، ويرسل `PROFESSIONAL_TIMESHEET` إلى Approvals. يحتفظ Approvals بالطلب والقرار وحدهما، ولا تنسخ الفترة قرار Checker أو حقائق الوقت الخام.
+
+ثم أضيفت أول شريحة فوترة خدمات وفق [ADR-009](ADR-009-professional-service-billing.md): يملك السياق عقد الخدمة وسعر الساعة المؤرخ ومرجع مصدر الوقت والسعر المستخدم، ويستدعي `ProfessionalBillingSalesPort` لإنشاء وترحيل فاتورة Sales عادية داخل المعاملة نفسها. لا ينسخ رقم الفاتورة أو إجماليها أو ضريبتها أو الذمة أو القيد؛ تُقرأ هذه الحقائق من Sales عبر Query Port، ويبقى `PostingEngine` كاتب Ledger الوحيد.
 
 الاستثناءات التالية ما زالت موجودة ولا تعد نمطًا مسموحًا للنسخ:
 
@@ -129,6 +132,8 @@ Printing  <────────── immutable document snapshot port
 | `ApprovalRequest` | طلبًا نشطًا واحدًا لكل موضوع، وفصل Maker/Checker، وقرارًا نهائيًا immutable |
 | `ProfessionalProject` | هوية العمل والعميل المرجعي والنوع ونموذج الفوترة والحالة والتواريخ والفريق والوقت المنسوب إليه |
 | `ProfessionalTimesheet` | أسبوع الموظف، ثبات إدخالاته أثناء المراجعة وبعد الاعتماد، وتسلسل لقطات الإرسال |
+| `ProfessionalServiceContract` | عملة وشروط السداد وفترة سريان تجارية واحدة غير متداخلة لكل مشروع وقت ومواد |
+| `ProfessionalBillingRun` | استخدام وقت معتمد مرة واحدة وربطه بفاتورة Sales مع تثبيت مصدر الوقت والسعر دون نسخ حقائقها المالية |
 | `Employee` | الهوية الوظيفية داخل الشركة، الإسناد التنظيمي، سلسلة المدير، حالة العمل والعقد النشط الواحد |
 | `ChartOfAccounts`/`Account` | صلاحية الترحيل والبنية الهرمية |
 

@@ -22,10 +22,10 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 244, requestBodies: 126, responseBodies: 1606 });
-    expect(guardedOpenApiOperations).toHaveLength(126);
+    expect(openApiContractCoverage).toEqual({ operations: 254, requestBodies: 131, responseBodies: 1666 });
+    expect(guardedOpenApiOperations).toHaveLength(131);
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
-      'login', 'createUser', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'initializeInventoryBalanceValuation', 'reverseInventoryMovement', 'previewDataImport', 'commitDataImport', 'previewBankStatement', 'commitBankStatementImport', 'createBankReconciliationSession', 'generateBankReconciliationSuggestions', 'approveBankReconciliationMatch', 'createManualBankReconciliationMatch', 'releaseBankReconciliationMatch', 'classifyBankStatementLine', 'closeBankReconciliationSession', 'startFinancialCloseRun', 'refreshFinancialCloseRun', 'createApprovalRequest', 'approveApprovalRequest', 'rejectApprovalRequest', 'createProfessionalProject', 'assignProfessionalProjectMember', 'createProfessionalTimeEntry', 'createProfessionalTimesheet', 'createHrDepartment', 'updateHrDepartment', 'createHrPosition', 'updateHrPosition', 'createEmployee', 'updateEmployee', 'transitionEmployee', 'createEmploymentContract', 'endEmploymentContract', 'returnFinancialCloseRun', 'updateCashFlowMapping',
+      'login', 'createUser', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'initializeInventoryBalanceValuation', 'reverseInventoryMovement', 'previewDataImport', 'commitDataImport', 'previewBankStatement', 'commitBankStatementImport', 'createBankReconciliationSession', 'generateBankReconciliationSuggestions', 'approveBankReconciliationMatch', 'createManualBankReconciliationMatch', 'releaseBankReconciliationMatch', 'classifyBankStatementLine', 'closeBankReconciliationSession', 'startFinancialCloseRun', 'refreshFinancialCloseRun', 'createApprovalRequest', 'approveApprovalRequest', 'rejectApprovalRequest', 'createProfessionalProject', 'assignProfessionalProjectMember', 'createProfessionalTimeEntry', 'createProfessionalTimesheet', 'createProfessionalServiceContract', 'endProfessionalServiceContract', 'createProfessionalServiceRate', 'endProfessionalServiceRate', 'createProfessionalBillingRun', 'createHrDepartment', 'updateHrDepartment', 'createHrPosition', 'updateHrPosition', 'createEmployee', 'updateEmployee', 'transitionEmployee', 'createEmploymentContract', 'endEmploymentContract', 'returnFinancialCloseRun', 'updateCashFlowMapping',
     ]));
   });
 
@@ -122,6 +122,45 @@ describe('generated OpenAPI request guards', () => {
     }).success).toBe(false);
     expect(openApiRequestBodySchemas.createProfessionalTimeEntry.safeParse({
       projectId: '5aa8b232-356c-4d55-8b89-f27d44d1678d', workDate: '2057-08-27', minutes: 1441, isBillable: true, description: 'عمل',
+    }).success).toBe(false);
+  });
+
+  it('validates professional contracts, rates, and billing commands', () => {
+    expect(openApiRequestBodySchemas.createProfessionalServiceContract.parse({
+      projectId: '5aa8b232-356c-4d55-8b89-f27d44d1678d',
+      currencyId: '12',
+      contractReference: '  RET-2026-01  ',
+      effectiveFrom: '2057-08-27',
+      paymentTermsDays: 30,
+    })).toMatchObject({ currencyId: 12n, contractReference: 'RET-2026-01' });
+    expect(openApiRequestBodySchemas.createProfessionalServiceRate.parse({
+      contractId: '5aa8b232-356c-4d55-8b89-f27d44d1678d',
+      userId: '7',
+      hourlyRate: '450.0000',
+      effectiveFrom: '2057-08-27',
+    })).toMatchObject({ userId: 7n, hourlyRate: '450.0000' });
+    expect(openApiRequestBodySchemas.createProfessionalBillingRun.parse({
+      projectId: '5aa8b232-356c-4d55-8b89-f27d44d1678d',
+      contractId: '74d5c65e-3381-4aba-a3ae-0b61409375f6',
+      contractVersion: 0,
+      sourceDateFrom: '2057-08-27',
+      sourceDateTo: '2057-08-31',
+      fiscalPeriodId: '3',
+      documentDate: '2057-08-31',
+      exchangeRate: '1.00000000',
+      revenueAccountId: '9',
+      costCenterId: null,
+    })).toMatchObject({ fiscalPeriodId: 3n, revenueAccountId: 9n, costCenterId: null });
+    expect(openApiRequestBodySchemas.createProfessionalBillingRun.safeParse({
+      projectId: '5aa8b232-356c-4d55-8b89-f27d44d1678d',
+      contractId: '74d5c65e-3381-4aba-a3ae-0b61409375f6',
+      contractVersion: 0,
+      sourceDateFrom: '2057-08-27',
+      sourceDateTo: '2057-08-31',
+      fiscalPeriodId: '3',
+      documentDate: '2057-08-31',
+      exchangeRate: '1',
+      revenueAccountId: '9',
     }).success).toBe(false);
   });
 
@@ -286,6 +325,23 @@ describe('generated OpenAPI request guards', () => {
       status: 'invalid', service: 'mcap-finance-api',
     })).toThrow();
     expect(parseOpenApiResponseBody('getCurrentFinancialCloseRun', 200, { run: null })).toEqual({ run: null });
+    expect(parseOpenApiResponseBody('createProfessionalBillingRun', 201, {
+      run: {
+        id: '74d5c65e-3381-4aba-a3ae-0b61409375f6',
+        project: { id: '5aa8b232-356c-4d55-8b89-f27d44d1678d', code: 'PRJ-000001', nameAr: 'قضية', nameEn: null },
+        contract: { id: 'db98e719-b9f2-443a-adb2-58ae58128c38', contractReference: 'RET-1' },
+        contractVersion: 0,
+        sourceDateFrom: '2057-08-27',
+        sourceDateTo: '2057-08-27',
+        sourceEntryCount: 1,
+        sourceMinutes: 60,
+        invoice: {
+          id: '11', documentId: '12', documentNumber: 'SINV-000001', status: 'POSTED',
+          currency: { id: '2', code: 'SAR', nameAr: 'الريال' }, total: '450.0000', baseTotal: '450.0000',
+        },
+        createdAt: '2057-08-27T12:00:00.000Z',
+      },
+    })).toMatchObject({ run: { sourceEntryCount: 1, invoice: { status: 'POSTED' } } });
   });
 
   it('validates financial close workflow command bodies', () => {

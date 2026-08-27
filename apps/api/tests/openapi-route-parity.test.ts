@@ -28,6 +28,7 @@ import { createBankReconciliationRouter } from '../src/treasury/reconciliation/r
 import { createPosRouter } from '../src/pos/pos-router.js';
 import { createApprovalRouter } from '../src/approvals/approval-router.js';
 import { createProfessionalProjectRouter } from '../src/projects/professional-project-router.js';
+import { createProfessionalBillingRouter } from '../src/projects/professional-billing-router.js';
 import { createHrRouter } from '../src/hr/hr-router.js';
 
 type RouteLayer = {
@@ -50,6 +51,7 @@ const routers = [
   { prefix: '', router: createFiscalRouter(stub, stub, stub) },
   { prefix: '', router: createApprovalRouter(stub, stub) },
   { prefix: '', router: createProfessionalProjectRouter(stub, stub) },
+  { prefix: '', router: createProfessionalBillingRouter(stub, stub) },
   { prefix: '', router: createHrRouter(stub, stub) },
   { prefix: '', router: createAccountRouter(stub, stub) },
   { prefix: '', router: createManualJournalRouter(stub, stub) },

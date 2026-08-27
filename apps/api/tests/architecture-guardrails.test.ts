@@ -127,6 +127,27 @@ describe("core accounting architecture guardrails", () => {
     expect(service).not.toContain("PostingEngine");
   });
 
+  it("keeps professional billing provenance in Projects and delegates invoice and Ledger facts", async () => {
+    const [billing, salesPort, sales, schema] = await Promise.all([
+      source("projects/professional-billing-service.ts"),
+      source("sales/professional-billing-sales-port.ts"),
+      source("sales/sales-invoice-service.ts"),
+      projectFile("apps/api/prisma/schema.prisma"),
+    ]);
+    const directForeignWrite = /\.(?:salesInvoice|salesInvoiceLine|receivableItem|accountingDocument|journalEntry|journalLine|taxRate|inventoryMovement)\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u;
+
+    expect(billing).toContain("ProfessionalBillingSalesPort");
+    expect(billing).toContain("this.sales.createAndPostProfessionalBillingInvoice");
+    expect(billing).toContain("this.sales.listProfessionalBillingInvoiceReferences");
+    expect(billing).not.toMatch(directForeignWrite);
+    expect(billing).not.toContain("PostingEngine");
+    expect(salesPort).toContain("createAndPostProfessionalBillingInvoice");
+    expect(sales).toContain("implements ProfessionalBillingSalesPort");
+    expect(sales).toContain("this.posting.postPlan");
+    expect(schema).toContain("model ProfessionalBillingSourceLine");
+    expect(schema).not.toMatch(/model ProfessionalBillingRun[\s\S]{0,1600}\b(?:total|taxAmount|outstandingAmount|journalEntryId)\b/u);
+  });
+
   it("keeps HR identity behind its port and away from IAM and financial writes", async () => {
     const service = await source("hr/hr-service.ts");
     expect(service).not.toMatch(/\.(?:user|userCompany|professionalProject|professionalTimeEntry|salesInvoice|purchaseInvoice|accountingDocument|journalEntry|journalLine|inventoryMovement|posSale)\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);

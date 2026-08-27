@@ -9,6 +9,9 @@ import { ProfessionalPeopleAdapter } from "../src/users/professional-people-adap
 import { ProfessionalEmployeeAdapter } from "../src/hr/professional-employee-adapter.js";
 import { ApprovalService } from "../src/approvals/approval-service.js";
 import { ProfessionalTimesheetApprovalAdapter } from "../src/projects/professional-timesheet-approval-adapter.js";
+import { ProfessionalBillingService } from "../src/projects/professional-billing-service.js";
+import { ProfessionalBillingCurrencyAdapter } from "../src/companies/professional-billing-currency-adapter.js";
+import { SalesInvoiceService } from "../src/sales/sales-invoice-service.js";
 
 const enabled = process.env.RUN_DB_TESTS === "true" && Boolean(process.env.DATABASE_URL);
 const prisma = enabled ? createDatabase(process.env.DATABASE_URL!) : null;
@@ -16,11 +19,14 @@ const prisma = enabled ? createDatabase(process.env.DATABASE_URL!) : null;
 describe.runIf(enabled)("professional projects and time with MariaDB", () => {
   let service: ProfessionalProjectService;
   let approvals: ApprovalService;
+  let billing: ProfessionalBillingService;
   let companyId: bigint;
   let userId: bigint;
   let memberUserId: bigint;
   let customerId: bigint;
   let accountId: bigint;
+  let revenueAccountId: bigint;
+  let billingPeriodId: bigint;
   let foreignOrganizationId: bigint;
   let foreignCompanyId: bigint;
   let foreignAccountId: bigint;
@@ -32,6 +38,30 @@ describe.runIf(enabled)("professional projects and time with MariaDB", () => {
   const memberContext = () => ({ companyId, userId: memberUserId });
 
   async function cleanMainRows() {
+    const projects = await prisma!.professionalProject.findMany({ where: { companyId, nameAr: { startsWith: "IT-PRO-" } }, select: { id: true } });
+    const ids = projects.map(({ id }) => id);
+    if (ids.length) {
+      await prisma!.professionalBillingSourceLine.deleteMany({ where: { companyId, billingRun: { projectId: { in: ids } } } });
+      await prisma!.professionalBillingRun.deleteMany({ where: { companyId, projectId: { in: ids } } });
+      await prisma!.professionalServiceRate.deleteMany({ where: { companyId, contract: { projectId: { in: ids } } } });
+      await prisma!.professionalServiceContract.deleteMany({ where: { companyId, projectId: { in: ids } } });
+    }
+    const staleBillingYear = await prisma!.fiscalYear.findFirst({ where: { companyId, name: "IT-PRO-2057" } });
+    if (staleBillingYear) {
+      const documentWhere = { companyId, fiscalPeriod: { fiscalYearId: staleBillingYear.id } };
+      const invoiceWhere = { companyId, accountingDocument: { fiscalPeriod: { fiscalYearId: staleBillingYear.id } } };
+      await prisma!.receivableItem.deleteMany({ where: { companyId, salesInvoice: { accountingDocument: { fiscalPeriod: { fiscalYearId: staleBillingYear.id } } } } });
+      await prisma!.salesInvoice.updateMany({ where: invoiceWhere, data: { arJournalLineId: null } });
+      await prisma!.journalLine.deleteMany({ where: { companyId, journalEntry: { accountingDocument: { fiscalPeriod: { fiscalYearId: staleBillingYear.id } } } } });
+      await prisma!.journalEntry.deleteMany({ where: { companyId, accountingDocument: { fiscalPeriod: { fiscalYearId: staleBillingYear.id } } } });
+      await prisma!.salesInvoiceLine.deleteMany({ where: { companyId, salesInvoice: { accountingDocument: { fiscalPeriod: { fiscalYearId: staleBillingYear.id } } } } });
+      await prisma!.salesInvoice.deleteMany({ where: invoiceWhere });
+      await prisma!.documentPrintArchive.deleteMany({ where: { companyId, accountingDocument: { fiscalPeriod: { fiscalYearId: staleBillingYear.id } } } });
+      await prisma!.accountingDocument.deleteMany({ where: documentWhere });
+      await prisma!.documentSequence.deleteMany({ where: { companyId, fiscalYearId: staleBillingYear.id } });
+      await prisma!.fiscalPeriod.deleteMany({ where: { companyId, fiscalYearId: staleBillingYear.id } });
+      await prisma!.fiscalYear.delete({ where: { id: staleBillingYear.id } });
+    }
     const testMember = await prisma!.user.findUnique({ where: { emailNormalized: "professional.member@mcap.local" }, select: { id: true } });
     const testTimesheets = testMember ? await prisma!.professionalTimesheet.findMany({
       where: { companyId, userId: testMember.id },
@@ -52,6 +82,11 @@ describe.runIf(enabled)("professional projects and time with MariaDB", () => {
           "REQUEST_APPROVAL",
           "APPROVE_APPROVAL",
           "REJECT_APPROVAL",
+          "CREATE_PROFESSIONAL_SERVICE_CONTRACT",
+          "CREATE_PROFESSIONAL_SERVICE_RATE",
+          "END_PROFESSIONAL_SERVICE_CONTRACT",
+          "END_PROFESSIONAL_SERVICE_RATE",
+          "CREATE_PROFESSIONAL_BILLING_RUN",
         ] },
       },
     });
@@ -59,16 +94,14 @@ describe.runIf(enabled)("professional projects and time with MariaDB", () => {
     await prisma!.approvalRequest.deleteMany({ where: { companyId, subjectType: "PROFESSIONAL_TIMESHEET", subjectId: { in: testTimesheetPublicIds } } });
     await prisma!.professionalTimesheetSubmission.deleteMany({ where: { companyId, timesheetId: { in: testTimesheetIds } } });
     await prisma!.professionalTimesheet.deleteMany({ where: { companyId, id: { in: testTimesheetIds } } });
-    await prisma!.auditLog.deleteMany({ where: { companyId, entityType: { in: ["PROFESSIONAL_PROJECT", "PROFESSIONAL_TIME_ENTRY", "PROFESSIONAL_TIMESHEET", "APPROVAL_REQUEST"] } } });
-    const projects = await prisma!.professionalProject.findMany({ where: { companyId, nameAr: { startsWith: "IT-PRO-" } }, select: { id: true } });
-    const ids = projects.map(({ id }) => id);
+    await prisma!.auditLog.deleteMany({ where: { companyId, entityType: { in: ["PROFESSIONAL_PROJECT", "PROFESSIONAL_TIME_ENTRY", "PROFESSIONAL_TIMESHEET", "PROFESSIONAL_SERVICE_CONTRACT", "PROFESSIONAL_SERVICE_RATE", "PROFESSIONAL_BILLING_RUN", "SALES_INVOICE", "APPROVAL_REQUEST"] } } });
     if (ids.length) {
       await prisma!.professionalTimeEntry.deleteMany({ where: { companyId, projectId: { in: ids } } });
       await prisma!.professionalProjectMember.deleteMany({ where: { companyId, projectId: { in: ids } } });
       await prisma!.professionalProject.deleteMany({ where: { companyId, id: { in: ids } } });
     }
     await prisma!.customer.deleteMany({ where: { companyId, code: "IT-PRO-CUSTOMER" } });
-    await prisma!.account.deleteMany({ where: { companyId, code: "IT-PRO-AR" } });
+    await prisma!.account.deleteMany({ where: { companyId, code: { in: ["IT-PRO-AR", "IT-PRO-REVENUE"] } } });
     await prisma!.employee.deleteMany({ where: { companyId, employeeNumber: "IT-PRO-EMPLOYEE" } });
   }
 
@@ -111,6 +144,10 @@ describe.runIf(enabled)("professional projects and time with MariaDB", () => {
     accountId = (await prisma!.account.create({
       data: { companyId, accountTypeId: assetType.id, code: "IT-PRO-AR", nameAr: "ذمم عميل مهني اختباري", level: 1, allowsPosting: true },
     })).id;
+    const revenueType = await prisma!.accountType.findFirstOrThrow({ where: { class: "REVENUE" } });
+    revenueAccountId = (await prisma!.account.create({
+      data: { companyId, accountTypeId: revenueType.id, code: "IT-PRO-REVENUE", nameAr: "إيراد خدمات مهنية اختباري", level: 1, allowsPosting: true },
+    })).id;
     customerId = (await prisma!.customer.create({
       data: { companyId, receivableAccountId: accountId, code: "IT-PRO-CUSTOMER", nameAr: "عميل مهني اختباري" },
     })).id;
@@ -133,6 +170,18 @@ describe.runIf(enabled)("professional projects and time with MariaDB", () => {
       data: { companyId: foreignCompanyId, receivableAccountId: foreignAccountId, code: "IT-PRO-F-CUSTOMER", nameAr: "عميل شركة أخرى" },
     })).id;
 
+    const billingYear = await prisma!.fiscalYear.create({
+      data: {
+        companyId,
+        name: "IT-PRO-2057",
+        startDate: new Date("2057-01-01T00:00:00.000Z"),
+        endDate: new Date("2057-12-31T00:00:00.000Z"),
+        periods: { create: { periodNumber: 1, name: "فترة الخدمات المهنية الاختبارية", startDate: new Date("2057-01-01T00:00:00.000Z"), endDate: new Date("2057-12-31T00:00:00.000Z") } },
+      },
+      include: { periods: true },
+    });
+    billingPeriodId = billingYear.periods[0]!.id;
+
     service = new ProfessionalProjectService(
       prisma!,
       new ProfessionalCustomerAdapter(prisma!),
@@ -147,6 +196,11 @@ describe.runIf(enabled)("professional projects and time with MariaDB", () => {
       },
       PROFESSIONAL_TIMESHEET: new ProfessionalTimesheetApprovalAdapter(service),
     });
+    billing = new ProfessionalBillingService(
+      prisma!,
+      new ProfessionalBillingCurrencyAdapter(prisma!),
+      new SalesInvoiceService(prisma!),
+    );
   });
 
   afterAll(async () => {
@@ -322,6 +376,92 @@ describe.runIf(enabled)("professional projects and time with MariaDB", () => {
     expect((await service.getTimesheet(memberContext(), created.timesheet.id)).timesheet).toMatchObject({ status: "APPROVED", version: 4 });
     await expect(service.updateTimeEntry(memberContext(), timeEntryId, { version: 1, minutes: 135 }))
       .rejects.toMatchObject({ reason: "TIMESHEET_LOCKED" });
+  });
+
+  it("prices approved time once and atomically posts the Sales invoice and Ledger entry", async () => {
+    const currencyId = (await prisma!.company.findUniqueOrThrow({ where: { id: companyId } })).baseCurrencyId;
+    const contractInput = {
+      projectId,
+      currencyId,
+      contractReference: "IT-PRO-RET-2057",
+      effectiveFrom: "2057-08-27",
+      paymentTermsDays: 30,
+      idempotencyKey: "it-professional-contract-create-0001",
+    };
+    const [contractCreated, contractReplayed] = await Promise.all([
+      billing.createContract(context(), contractInput),
+      billing.createContract(context(), contractInput),
+    ]);
+    expect(contractReplayed).toEqual(contractCreated);
+    const contract = contractCreated.contract;
+    await expect(billing.createContract(context(), {
+      ...contractInput,
+      contractReference: "IT-PRO-OVERLAP",
+      idempotencyKey: "it-professional-contract-overlap",
+    })).rejects.toMatchObject({ reason: "CONTRACT_OVERLAP" });
+
+    const rateCreated = await billing.createRate(context(), {
+      contractId: contract.id,
+      userId: memberUserId,
+      hourlyRate: "60.0000",
+      effectiveFrom: "2057-08-27",
+      idempotencyKey: "it-professional-rate-create-0001",
+    });
+    expect(rateCreated.rate).toMatchObject({ userId: memberUserId.toString(), hourlyRate: "60.0000" });
+    await expect(billing.createRate(context(), {
+      contractId: contract.id,
+      userId: memberUserId,
+      hourlyRate: "75.0000",
+      effectiveFrom: "2057-08-27",
+      idempotencyKey: "it-professional-rate-overlap",
+    })).rejects.toMatchObject({ reason: "RATE_OVERLAP" });
+    expect((await billing.listContracts({ companyId: foreignCompanyId, userId }, {})).data).toEqual([]);
+
+    const runInput = {
+      projectId,
+      contractId: contract.id,
+      contractVersion: contract.version,
+      sourceDateFrom: "2057-08-27",
+      sourceDateTo: "2057-08-27",
+      fiscalPeriodId: billingPeriodId,
+      documentDate: "2057-08-31",
+      exchangeRate: "1.00000000",
+      revenueAccountId,
+      costCenterId: null,
+      taxRateId: null,
+      idempotencyKey: "it-professional-billing-create-0001",
+    };
+    const [created, replayed] = await Promise.all([
+      billing.createRun(context(), runInput),
+      billing.createRun(context(), runInput),
+    ]);
+    expect(replayed).toEqual(created);
+    expect(created.run).toMatchObject({
+      sourceEntryCount: 1,
+      sourceMinutes: 130,
+      invoice: { status: "POSTED", total: "130.0000", baseTotal: "130.0000" },
+    });
+    const invoiceId = BigInt(created.run.invoice.id);
+    const invoice = await prisma!.salesInvoice.findFirstOrThrow({
+      where: { id: invoiceId, companyId },
+      include: { accountingDocument: true, receivableItem: true },
+    });
+    expect(invoice.accountingDocument.status).toBe("POSTED");
+    expect(invoice.receivableItem?.outstandingAmount.toFixed(4)).toBe("130.0000");
+    expect(await prisma!.professionalBillingRun.count({ where: { companyId, project: { publicId: projectId } } })).toBe(1);
+    expect(await prisma!.professionalBillingSourceLine.count({ where: { companyId, billingRun: { project: { publicId: projectId } } } })).toBe(1);
+    expect(await prisma!.journalEntry.count({ where: { companyId, accountingDocumentId: invoice.accountingDocumentId } })).toBe(1);
+
+    await expect(billing.createRun(context(), {
+      ...runInput,
+      idempotencyKey: "it-professional-billing-already-used",
+    })).rejects.toMatchObject({ reason: "ALREADY_BILLED" });
+    await expect(billing.endContract(context(), contract.id, {
+      version: contract.version,
+      effectiveTo: "2057-08-27",
+      reason: "لا يجوز قطع العقد قبل إنهاء السعر المفتوح",
+      idempotencyKey: "it-professional-contract-end-with-open-rate",
+    })).rejects.toMatchObject({ reason: "TERM_IN_USE" });
   });
 
   it("keeps company data isolated and preserves the last active manager", async () => {

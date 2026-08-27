@@ -1038,6 +1038,57 @@ export type ProfessionalTimesheet = {
   createdAt: string;
   updatedAt: string;
 };
+export type ProfessionalBillingCurrency = { id: string; code: string; nameAr: string; decimals: number };
+export type ProfessionalCommercialTermStatus = "ACTIVE" | "ENDED";
+export type ProfessionalServiceContract = {
+  id: string;
+  projectId: string;
+  currency: ProfessionalBillingCurrency;
+  contractReference: string | null;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  paymentTermsDays: number;
+  status: ProfessionalCommercialTermStatus;
+  endReason: string | null;
+  endedAt: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};
+export type ProfessionalServiceRate = {
+  id: string;
+  contractId: string;
+  userId: string;
+  hourlyRate: string;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  status: ProfessionalCommercialTermStatus;
+  endReason: string | null;
+  endedAt: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};
+export type ProfessionalBillingRun = {
+  id: string;
+  project: { id: string; code: string; nameAr: string; nameEn: string | null };
+  contract: { id: string; contractReference: string | null };
+  contractVersion: number;
+  sourceDateFrom: string;
+  sourceDateTo: string;
+  sourceEntryCount: number;
+  sourceMinutes: number;
+  invoice: {
+    id: string;
+    documentId: string;
+    documentNumber: string;
+    status: "POSTED" | "REVERSED";
+    currency: { id: string; code: string; nameAr: string };
+    total: string;
+    baseTotal: string;
+  };
+  createdAt: string;
+};
 
 export type HrEmploymentType = "FULL_TIME" | "PART_TIME" | "CONTRACTOR" | "INTERN";
 export type HrEmploymentStatus = "ACTIVE" | "ON_LEAVE" | "TERMINATED";

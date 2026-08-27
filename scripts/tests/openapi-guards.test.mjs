@@ -10,8 +10,8 @@ import {
 } from "../generate-openapi-guards.mjs";
 
 test("generated OpenAPI guards are committed and current", () => {
-  assert.equal(guardedOperationIds.length, 126);
-  assert.equal(responseOperationIds.length, 244);
+  assert.equal(guardedOperationIds.length, 131);
+  assert.equal(responseOperationIds.length, 254);
   assert.ok(guardedOperationIds.includes("createManualJournal"));
   assert.ok(guardedOperationIds.includes("createReceipt"));
   assert.ok(guardedOperationIds.includes("updatePaymentMethod"));
@@ -32,6 +32,9 @@ test("generated OpenAPI guards are committed and current", () => {
   assert.ok(guardedOperationIds.includes("createProfessionalProject"));
   assert.ok(guardedOperationIds.includes("createProfessionalTimeEntry"));
   assert.ok(guardedOperationIds.includes("createProfessionalTimesheet"));
+  assert.ok(guardedOperationIds.includes("createProfessionalServiceContract"));
+  assert.ok(guardedOperationIds.includes("createProfessionalServiceRate"));
+  assert.ok(guardedOperationIds.includes("createProfessionalBillingRun"));
   assert.ok(guardedOperationIds.includes("createEmployee"));
   assert.ok(guardedOperationIds.includes("transitionEmployee"));
   assert.ok(guardedOperationIds.includes("createEmploymentContract"));
@@ -54,7 +57,7 @@ test("guard generation reflects request constraints from the contract", () => {
 
 test("guard generation covers request transforms and response schemas", () => {
   const generated = buildGeneratedSource();
-  assert.match(generated, /openApiContractCoverage = \{ operations: 244, requestBodies: 126, responseBodies: 1606 \}/u);
+  assert.match(generated, /openApiContractCoverage = \{ operations: 254, requestBodies: 131, responseBodies: 1666 \}/u);
   assert.match(generated, /"receivableItemId": z\.string\(\).*\.transform\(\(value\) => BigInt\(value\)\)/u);
   assert.match(generated, /export const openApiResponseBodySchemas = \{/u);
 });

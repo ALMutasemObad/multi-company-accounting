@@ -1,17 +1,27 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { api, idempotencyKey } from "./api";
+import { formatMoney, toMoney, toRate } from "./domain";
 import { localizedReferenceName, useI18n } from "./i18n";
+import { ReferenceCombobox } from "./ReferenceCombobox";
 import type {
+  Account,
+  CostCenter,
+  FiscalPeriod,
   ListResponse,
+  ProfessionalBillingCurrency,
+  ProfessionalBillingRun,
   ProfessionalCustomerOption,
   ProfessionalPerson,
   ProfessionalProject,
   ProfessionalProjectMember,
   ProfessionalProjectMemberRole,
   ProfessionalProjectStatus,
+  ProfessionalServiceContract,
+  ProfessionalServiceRate,
   ProfessionalTimeEntry,
   ProfessionalTimeEntryList,
   ProfessionalTimesheet,
+  TaxRate,
 } from "./types";
 import { Button, EmptyState, Modal, PageHeader, Pagination, Spinner } from "./ui";
 
@@ -45,6 +55,18 @@ export function ProfessionalProjectsPage({ notify }: { notify: Notice }) {
   const [timesheetPage, setTimesheetPage] = useState(1);
   const [customers, setCustomers] = useState<ProfessionalCustomerOption[]>([]);
   const [people, setPeople] = useState<ProfessionalPerson[]>([]);
+  const [contracts, setContracts] = useState<ProfessionalServiceContract[]>([]);
+  const [rates, setRates] = useState<ProfessionalServiceRate[]>([]);
+  const [billingRuns, setBillingRuns] = useState<ProfessionalBillingRun[]>([]);
+  const [billingCurrencies, setBillingCurrencies] = useState<ProfessionalBillingCurrency[]>([]);
+  const [periods, setPeriods] = useState<FiscalPeriod[]>([]);
+  const [selectedContractId, setSelectedContractId] = useState("");
+  const [revenueAccountId, setRevenueAccountId] = useState("");
+  const [revenueAccountLabel, setRevenueAccountLabel] = useState("");
+  const [costCenterId, setCostCenterId] = useState("");
+  const [costCenterLabel, setCostCenterLabel] = useState("");
+  const [taxRateId, setTaxRateId] = useState("");
+  const [taxRateLabel, setTaxRateLabel] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [working, setWorking] = useState(false);
@@ -105,8 +127,53 @@ export function ProfessionalProjectsPage({ notify }: { notify: Notice }) {
     }
   }, [notify, t, timesheetPage]);
 
+  const loadCommercial = useCallback(async () => {
+    if (!selectedId) {
+      setContracts([]);
+      setBillingRuns([]);
+      setSelectedContractId("");
+      return;
+    }
+    const [contractResult, runResult] = await Promise.allSettled([
+      api<{ data: ProfessionalServiceContract[] }>(`/professional-service-contracts?projectId=${selectedId}`),
+      api<{ data: ProfessionalBillingRun[] }>(`/professional-billing-runs?projectId=${selectedId}`),
+    ]);
+    if (contractResult.status === "fulfilled") {
+      setContracts(contractResult.value.data);
+      setSelectedContractId((current) => contractResult.value.data.some((contract) => contract.id === current)
+        ? current
+        : contractResult.value.data.find((contract) => contract.status === "ACTIVE")?.id
+          ?? contractResult.value.data[0]?.id
+          ?? "");
+    } else {
+      setContracts([]);
+      setSelectedContractId("");
+    }
+    if (runResult.status === "fulfilled") {
+      setBillingRuns(runResult.value.data);
+    } else {
+      setBillingRuns([]);
+    }
+    if (contractResult.status === "rejected" && runResult.status === "rejected") {
+      notify(contractResult.reason instanceof Error ? contractResult.reason.message : t("professional.commercialLoadError"), "error");
+    }
+  }, [notify, selectedId, t]);
+
+  const loadRates = useCallback(async () => {
+    if (!selectedContractId) {
+      setRates([]);
+      return;
+    }
+    try {
+      setRates((await api<{ data: ProfessionalServiceRate[] }>(`/professional-service-rates?contractId=${selectedContractId}`)).data);
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : t("professional.commercialLoadError"), "error");
+    }
+  }, [notify, selectedContractId, t]);
+
   useEffect(() => { void loadProjects(); }, [loadProjects]);
-  useEffect(() => { void Promise.all([loadDetail(), loadTime()]); }, [loadDetail, loadTime]);
+  useEffect(() => { void Promise.all([loadDetail(), loadTime(), loadCommercial()]); }, [loadCommercial, loadDetail, loadTime]);
+  useEffect(() => { void loadRates(); }, [loadRates]);
   useEffect(() => { void loadTimesheets(); }, [loadTimesheets]);
   useEffect(() => {
     void Promise.all([
@@ -116,6 +183,21 @@ export function ProfessionalProjectsPage({ notify }: { notify: Notice }) {
       setCustomers(customerResult.data);
       setPeople(peopleResult.data);
     }).catch((cause) => notify(cause instanceof Error ? cause.message : t("professional.optionsError"), "error"));
+
+    void Promise.allSettled([
+      api<{ data: ProfessionalBillingCurrency[] }>("/professional-billing/currency-options"),
+      api<ListResponse<FiscalPeriod>>("/fiscal-periods?page=1&pageSize=100"),
+    ]).then(([currencyResult, periodResult]) => {
+      if (currencyResult.status === "fulfilled") {
+        setBillingCurrencies(currencyResult.value.data);
+      }
+      if (periodResult.status === "fulfilled") {
+        setPeriods(periodResult.value.data.filter((period) => period.status !== "CLOSED"));
+      }
+      if (currencyResult.status === "rejected" && periodResult.status === "rejected") {
+        notify(currencyResult.reason instanceof Error ? currencyResult.reason.message : t("professional.optionsError"), "error");
+      }
+    });
   }, [notify, t]);
 
   const formatDuration = (minutes: number) => t("professional.duration", {
@@ -125,7 +207,7 @@ export function ProfessionalProjectsPage({ notify }: { notify: Notice }) {
 
   async function refreshAll() {
     await loadProjects();
-    await Promise.all([loadDetail(), loadTime(), loadTimesheets()]);
+    await Promise.all([loadDetail(), loadTime(), loadTimesheets(), loadCommercial(), loadRates()]);
   }
 
   async function createTimesheet(event: FormEvent<HTMLFormElement>) {
@@ -309,6 +391,144 @@ export function ProfessionalProjectsPage({ notify }: { notify: Notice }) {
     }
   }
 
+  async function createContract(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!detail) return;
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    setWorking(true);
+    try {
+      const result = await api<{ contract: ProfessionalServiceContract }>("/professional-service-contracts", {
+        method: "POST",
+        idempotencyKey: idempotencyKey("professional-contract", crypto.randomUUID()),
+        body: JSON.stringify({
+          projectId: detail.project.id,
+          currencyId: String(data.get("currencyId") ?? ""),
+          contractReference: String(data.get("contractReference") ?? "").trim() || null,
+          effectiveFrom: String(data.get("effectiveFrom") ?? ""),
+          effectiveTo: String(data.get("effectiveTo") ?? "") || null,
+          paymentTermsDays: Number(data.get("paymentTermsDays")),
+        }),
+      });
+      form.reset();
+      setSelectedContractId(result.contract.id);
+      notify(t("professional.contractCreated"));
+      await loadCommercial();
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : t("professional.contractError"), "error");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function endContract(contract: ProfessionalServiceContract) {
+    const effectiveTo = window.prompt(t("professional.endDatePrompt"), today());
+    if (!effectiveTo) return;
+    const reason = window.prompt(t("professional.endReasonPrompt"))?.trim();
+    if (!reason || reason.length < 3) return;
+    setWorking(true);
+    try {
+      await api(`/professional-service-contracts/${contract.id}/end`, {
+        method: "POST",
+        idempotencyKey: idempotencyKey("professional-contract-end", crypto.randomUUID()),
+        body: JSON.stringify({ version: contract.version, effectiveTo, reason }),
+      });
+      notify(t("professional.contractEnded"));
+      await loadCommercial();
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : t("professional.contractError"), "error");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function createRate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedContractId) return;
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    setWorking(true);
+    try {
+      await api("/professional-service-rates", {
+        method: "POST",
+        idempotencyKey: idempotencyKey("professional-rate", crypto.randomUUID()),
+        body: JSON.stringify({
+          contractId: selectedContractId,
+          userId: String(data.get("userId") ?? ""),
+          hourlyRate: toMoney(String(data.get("hourlyRate") ?? "")),
+          effectiveFrom: String(data.get("effectiveFrom") ?? ""),
+          effectiveTo: String(data.get("effectiveTo") ?? "") || null,
+        }),
+      });
+      form.reset();
+      notify(t("professional.rateCreated"));
+      await loadRates();
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : t("professional.rateError"), "error");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function endRate(rate: ProfessionalServiceRate) {
+    const effectiveTo = window.prompt(t("professional.endDatePrompt"), today());
+    if (!effectiveTo) return;
+    const reason = window.prompt(t("professional.endReasonPrompt"))?.trim();
+    if (!reason || reason.length < 3) return;
+    setWorking(true);
+    try {
+      await api(`/professional-service-rates/${rate.id}/end`, {
+        method: "POST",
+        idempotencyKey: idempotencyKey("professional-rate-end", crypto.randomUUID()),
+        body: JSON.stringify({ version: rate.version, effectiveTo, reason }),
+      });
+      notify(t("professional.rateEnded"));
+      await loadRates();
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : t("professional.rateError"), "error");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function createBillingRun(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!detail) return;
+    const contract = contracts.find((item) => item.id === selectedContractId);
+    if (!contract) return;
+    if (!window.confirm(t("professional.billingConfirm"))) return;
+    const data = new FormData(event.currentTarget);
+    setWorking(true);
+    try {
+      await api("/professional-billing-runs", {
+        method: "POST",
+        idempotencyKey: idempotencyKey("professional-billing", crypto.randomUUID()),
+        body: JSON.stringify({
+          projectId: detail.project.id,
+          contractId: contract.id,
+          contractVersion: contract.version,
+          sourceDateFrom: String(data.get("sourceDateFrom") ?? ""),
+          sourceDateTo: String(data.get("sourceDateTo") ?? ""),
+          fiscalPeriodId: String(data.get("fiscalPeriodId") ?? ""),
+          documentDate: String(data.get("documentDate") ?? ""),
+          exchangeRate: toRate(String(data.get("exchangeRate") ?? "")),
+          revenueAccountId,
+          costCenterId: costCenterId || null,
+          taxRateId: taxRateId || null,
+        }),
+      });
+      notify(t("professional.billingCreated"));
+      await Promise.all([loadCommercial(), loadTime()]);
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : t("professional.billingError"), "error");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  const selectedContract = contracts.find((contract) => contract.id === selectedContractId) ?? null;
+  const personName = (userId: string) => people.find((person) => person.id === userId)?.displayName ?? userId;
+
   return <section className="workspace-page professional-workspace">
     <PageHeader
       kicker={t("professional.kicker")}
@@ -368,6 +588,55 @@ export function ProfessionalProjectsPage({ notify }: { notify: Notice }) {
         <Button type="submit" icon="plus" disabled={working}>{t("professional.logTime")}</Button>
       </form>}
       {timeEntries.length === 0 ? <EmptyState title={t("professional.timeEmptyTitle")} description={t("professional.timeEmptyDescription")} /> : <><div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("professional.workDate")}</th><th>{t("professional.person")}</th><th>{t("professional.workDescription")}</th><th>{t("professional.time")}</th><th>{t("professional.billable")}</th><th>{t("professional.actions")}</th></tr></thead><tbody>{timeEntries.map((entry) => <tr key={entry.id}><td>{entry.workDate}</td><td>{entry.user.displayName}</td><td>{entry.description}</td><td>{formatDuration(entry.minutes)}</td><td>{entry.isBillable ? t("professional.yes") : t("professional.no")}</td><td>{entry.editable ? <Button variant="ghost" icon="trash" disabled={working} onClick={() => void deleteTime(entry)}>{t("professional.deleteTime")}</Button> : <span className="muted">{t("professional.readOnly")}</span>}</td></tr>)}</tbody></table></div><Pagination {...timeMeta} page={timePage} onChange={setTimePage} /></>}
+    </article>}
+
+    {detail?.project.billingModel === "TIME_AND_MATERIALS" && <article className="panel professional-commercial-panel">
+      <header><div><h2>{t("professional.commercialTitle")}</h2><p>{t("professional.commercialDescription")}</p></div></header>
+      <div className="professional-commercial-grid">
+        <section className="professional-commercial-section">
+          <h3>{t("professional.contracts")}</h3>
+          <form className="professional-commercial-form" onSubmit={createContract}>
+            <label><span>{t("professional.currency")}</span><select name="currencyId" required defaultValue=""><option value="" />{billingCurrencies.map((currency) => <option key={currency.id} value={currency.id}>{currency.code} — {currency.nameAr}</option>)}</select></label>
+            <label><span>{t("professional.contractReference")}</span><input name="contractReference" maxLength={120} /></label>
+            <label><span>{t("professional.effectiveFrom")}</span><input name="effectiveFrom" type="date" defaultValue={detail.project.startDate} required /></label>
+            <label><span>{t("professional.effectiveTo")}</span><input name="effectiveTo" type="date" /></label>
+            <label><span>{t("professional.paymentTerms")}</span><input name="paymentTermsDays" type="number" min={0} max={365} defaultValue={30} required /></label>
+            <Button type="submit" icon="plus" disabled={working}>{t("professional.createContract")}</Button>
+          </form>
+          {contracts.length === 0 ? <p className="muted professional-commercial-empty">{t("professional.noContracts")}</p> : <div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("professional.contractReference")}</th><th>{t("professional.currency")}</th><th>{t("professional.effectivePeriod")}</th><th>{t("professional.statusLabel")}</th><th>{t("professional.actions")}</th></tr></thead><tbody>{contracts.map((contract) => <tr key={contract.id} className={contract.id === selectedContractId ? "selected-row" : ""}><td><button type="button" className="text-link strong" onClick={() => setSelectedContractId(contract.id)}>{contract.contractReference || t("professional.unreferencedContract")}</button></td><td>{contract.currency.code}</td><td>{contract.effectiveFrom}<small>{contract.effectiveTo ? t("professional.toDate", { date: contract.effectiveTo }) : t("professional.openEnded")}</small></td><td><span className={`status-chip ${contract.status.toLowerCase()}`}>{t(`professional.termStatus.${contract.status}`)}</span></td><td>{contract.status === "ACTIVE" ? <Button variant="ghost" disabled={working} onClick={() => void endContract(contract)}>{t("professional.end")}</Button> : <span className="muted">{contract.endReason}</span>}</td></tr>)}</tbody></table></div>}
+        </section>
+
+        <section className="professional-commercial-section">
+          <h3>{t("professional.rates")}</h3>
+          {selectedContract ? <>
+            <form className="professional-commercial-form" onSubmit={createRate}>
+              <label><span>{t("professional.person")}</span><select name="userId" required defaultValue=""><option value="" />{detail.members.filter((member) => member.isActive).map((member) => <option key={member.user.id} value={member.user.id}>{member.user.displayName}</option>)}</select></label>
+              <label><span>{t("professional.hourlyRate")}</span><input name="hourlyRate" dir="ltr" inputMode="decimal" placeholder="0.0000" required /></label>
+              <label><span>{t("professional.effectiveFrom")}</span><input name="effectiveFrom" type="date" defaultValue={selectedContract.effectiveFrom} required /></label>
+              <label><span>{t("professional.effectiveTo")}</span><input name="effectiveTo" type="date" /></label>
+              <Button type="submit" icon="plus" disabled={working || selectedContract.status !== "ACTIVE"}>{t("professional.createRate")}</Button>
+            </form>
+            {rates.length === 0 ? <p className="muted professional-commercial-empty">{t("professional.noRates")}</p> : <div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("professional.person")}</th><th>{t("professional.hourlyRate")}</th><th>{t("professional.effectivePeriod")}</th><th>{t("professional.statusLabel")}</th><th>{t("professional.actions")}</th></tr></thead><tbody>{rates.map((rate) => <tr key={rate.id}><td>{personName(rate.userId)}</td><td className="money-cell">{formatMoney(rate.hourlyRate)} {selectedContract.currency.code}</td><td>{rate.effectiveFrom}<small>{rate.effectiveTo ? t("professional.toDate", { date: rate.effectiveTo }) : t("professional.openEnded")}</small></td><td><span className={`status-chip ${rate.status.toLowerCase()}`}>{t(`professional.termStatus.${rate.status}`)}</span></td><td>{rate.status === "ACTIVE" ? <Button variant="ghost" disabled={working} onClick={() => void endRate(rate)}>{t("professional.end")}</Button> : <span className="muted">{rate.endReason}</span>}</td></tr>)}</tbody></table></div>}
+          </> : <p className="muted professional-commercial-empty">{t("professional.selectContract")}</p>}
+        </section>
+      </div>
+
+      <section className="professional-billing-section">
+        <header><div><h3>{t("professional.billingRuns")}</h3><p>{t("professional.billingDescription")}</p></div></header>
+        {selectedContract && <form className="professional-billing-form" onSubmit={createBillingRun}>
+          <label><span>{t("professional.contractReference")}</span><select value={selectedContractId} onChange={(event) => setSelectedContractId(event.target.value)} required>{contracts.map((contract) => <option key={contract.id} value={contract.id}>{contract.contractReference || contract.id} — {contract.currency.code}</option>)}</select></label>
+          <label><span>{t("professional.sourceFrom")}</span><input name="sourceDateFrom" type="date" defaultValue={selectedContract.effectiveFrom} required /></label>
+          <label><span>{t("professional.sourceTo")}</span><input name="sourceDateTo" type="date" defaultValue={today()} required /></label>
+          <label><span>{t("professional.fiscalPeriod")}</span><select name="fiscalPeriodId" required defaultValue=""><option value="" />{periods.map((period) => <option key={period.id} value={period.id}>{period.name} — {period.startDate} / {period.endDate}</option>)}</select></label>
+          <label><span>{t("professional.documentDate")}</span><input name="documentDate" type="date" defaultValue={today()} required /></label>
+          <label><span>{t("professional.exchangeRate")}</span><input name="exchangeRate" dir="ltr" inputMode="decimal" defaultValue="1.00000000" required /></label>
+          <label><span>{t("professional.revenueAccount")}</span><ReferenceCombobox<Account> endpoint="/accounts?active=true&allowsPosting=true&accountClasses=REVENUE" value={revenueAccountId} selectedLabel={revenueAccountLabel} onChange={(account) => { setRevenueAccountId(account?.id ?? ""); setRevenueAccountLabel(account ? `${account.code} — ${localizedReferenceName(account)}` : ""); }} optionLabel={(account) => `${account.code} — ${localizedReferenceName(account)}`} placeholder={t("professional.revenueAccount")} searchLabel={t("professional.revenueAccount")} required /></label>
+          <label><span>{t("professional.costCenter")}</span><ReferenceCombobox<CostCenter> endpoint="/cost-centers?active=true" value={costCenterId} selectedLabel={costCenterLabel} onChange={(center) => { setCostCenterId(center?.id ?? ""); setCostCenterLabel(center ? `${center.code} — ${localizedReferenceName(center)}` : ""); }} optionLabel={(center) => `${center.code} — ${localizedReferenceName(center)}`} placeholder={t("professional.optional")} searchLabel={t("professional.costCenter")} optionalLabel={t("professional.optional")} /></label>
+          <label><span>{t("professional.taxRate")}</span><ReferenceCombobox<TaxRate> endpoint="/tax-rates?activeOnly=true" value={taxRateId} selectedLabel={taxRateLabel} onChange={(tax) => { setTaxRateId(tax?.id ?? ""); setTaxRateLabel(tax ? `${localizedReferenceName(tax)} (${Number(tax.rate)}%)` : ""); }} optionLabel={(tax) => `${localizedReferenceName(tax)} (${Number(tax.rate)}%)`} optionDisabled={(tax) => !tax.isReady} placeholder={t("professional.optional")} searchLabel={t("professional.taxRate")} optionalLabel={t("professional.optional")} /></label>
+          <Button type="submit" icon="check" disabled={working || !revenueAccountId}>{working ? t("common.saving") : t("professional.createBillingRun")}</Button>
+        </form>}
+        {billingRuns.length === 0 ? <p className="muted professional-commercial-empty">{t("professional.noBillingRuns")}</p> : <div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("professional.invoice")}</th><th>{t("professional.sourcePeriod")}</th><th>{t("professional.entries")}</th><th>{t("professional.time")}</th><th>{t("professional.total")}</th><th>{t("professional.statusLabel")}</th></tr></thead><tbody>{billingRuns.map((run) => <tr key={run.id}><td dir="ltr"><strong>{run.invoice.documentNumber}</strong></td><td>{run.sourceDateFrom}<small>{t("professional.toDate", { date: run.sourceDateTo })}</small></td><td>{run.sourceEntryCount}</td><td>{formatDuration(run.sourceMinutes)}</td><td className="money-cell">{formatMoney(run.invoice.total)} {run.invoice.currency.code}</td><td><span className={`status-chip ${run.invoice.status.toLowerCase()}`}>{run.invoice.status}</span></td></tr>)}</tbody></table></div>}
+      </section>
     </article>}
 
     <article className="panel professional-timesheet-panel">

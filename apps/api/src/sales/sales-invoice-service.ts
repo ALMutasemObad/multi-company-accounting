@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import {
   lockAccountingDocument,
+  lockFiscalPeriod,
   PostingEngine,
   type PostingFailureReason,
   type PostingLinePlan,
@@ -25,6 +26,11 @@ import { calculateTaxDocument, TaxCalculationError } from "../tax/tax-calculator
 import { TaxError, TaxService, type TaxQuotePort } from "../tax/tax-service.js";
 import type { ActorContext } from "../users/user-service.js";
 import type { DataImportInvoiceGroup } from "../imports/data-import-types.js";
+import type {
+  ProfessionalBillingInvoiceInput,
+  ProfessionalBillingInvoiceReference,
+  ProfessionalBillingSalesPort,
+} from "./professional-billing-sales-port.js";
 
 export type SalesInvoiceErrorReason =
   | "NOT_FOUND"
@@ -149,7 +155,7 @@ const documentJson = (value: any) => ({
   reversedByDocumentId: value.reversedByDocumentId?.toString() ?? null,
 });
 
-export class SalesInvoiceService {
+export class SalesInvoiceService implements ProfessionalBillingSalesPort {
   private readonly fiscal: FiscalService;
   private readonly posting = new PostingEngine();
   private readonly receivables = new ReceivableItemService();
@@ -607,7 +613,7 @@ export class SalesInvoiceService {
     tx: Prisma.TransactionClient,
     context: ActorContext,
     input: SalesInvoiceInput,
-    source: "DATA_IMPORT" | "POS",
+    source: "DATA_IMPORT" | "POS" | "PROFESSIONAL_BILLING",
   ) {
     const period = await tx.fiscalPeriod.findFirst({ where: { id: input.fiscalPeriodId, companyId: context.companyId } });
     if (!period || period.status === "CLOSED") throw new SalesInvoiceError("PERIOD_CLOSED");
@@ -625,6 +631,78 @@ export class SalesInvoiceService {
 
   async createImportedDraft(tx: Prisma.TransactionClient, context: ActorContext, input: SalesInvoiceInput) {
     return this.createDraftInTransaction(tx, context, input, "DATA_IMPORT");
+  }
+
+  async lockProfessionalBillingPeriod(
+    tx: Prisma.TransactionClient,
+    context: ActorContext,
+    fiscalPeriodId: bigint,
+    documentDate: string,
+  ) {
+    if (!await lockFiscalPeriod(tx, context.companyId, fiscalPeriodId)) {
+      throw new SalesInvoiceError("PERIOD_CLOSED");
+    }
+    const period = await tx.fiscalPeriod.findFirst({
+      where: { id: fiscalPeriodId, companyId: context.companyId },
+    });
+    if (!period || period.status === "CLOSED") throw new SalesInvoiceError("PERIOD_CLOSED");
+    this.validDate(period, documentDate);
+  }
+
+  async createAndPostProfessionalBillingInvoice(
+    tx: Prisma.TransactionClient,
+    context: ActorContext,
+    input: ProfessionalBillingInvoiceInput,
+  ): Promise<ProfessionalBillingInvoiceReference> {
+    const invoice = await this.createDraftInTransaction(tx, context, {
+      ...input,
+      documentType: "SALES_INVOICE",
+      warehouseId: null,
+      sourceInvoiceId: null,
+      customerAddress: null,
+      notes: null,
+      lines: input.lines.map((line) => ({
+        ...line,
+        inventoryItemId: null,
+        discountAmount: "0.0000",
+      })),
+    }, "PROFESSIONAL_BILLING");
+    const posted = await this.postInTransaction(tx, context, invoice.id, 0, invoice);
+    await this.audit(tx, context, "POST_SALES_INVOICE", invoice.id, { source: "PROFESSIONAL_BILLING" });
+    const currency = await tx.currency.findUniqueOrThrow({
+      where: { id: invoice.currencyId },
+      select: { id: true, code: true, nameAr: true },
+    });
+    return {
+      invoiceId: invoice.id,
+      documentId: posted.document.id,
+      documentNumber: posted.document.documentNumber,
+      documentStatus: "POSTED",
+      currency,
+      total: invoice.total.toFixed(4),
+      baseTotal: invoice.baseTotal.toFixed(4),
+    };
+  }
+
+  async listProfessionalBillingInvoiceReferences(
+    companyId: bigint,
+    invoiceIds: bigint[],
+  ): Promise<ProfessionalBillingInvoiceReference[]> {
+    if (invoiceIds.length === 0) return [];
+    const invoices = await this.prisma.salesInvoice.findMany({
+      where: { companyId, id: { in: invoiceIds } },
+      include: { accountingDocument: true, currency: { select: { id: true, code: true, nameAr: true } } },
+      orderBy: [{ id: "asc" }],
+    });
+    return invoices.map((invoice) => ({
+      invoiceId: invoice.id,
+      documentId: invoice.accountingDocumentId,
+      documentNumber: invoice.accountingDocument.documentNumber,
+      documentStatus: invoice.accountingDocument.status as "POSTED" | "REVERSED",
+      currency: invoice.currency,
+      total: invoice.total.toFixed(4),
+      baseTotal: invoice.baseTotal.toFixed(4),
+    }));
   }
 
   async cancel(context: ActorContext, id: bigint, version: number, reason: string) {

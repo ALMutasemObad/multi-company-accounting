@@ -1,13 +1,15 @@
 ---
 title: "Professional Services, HR, and Projects Roadmap"
-status: "approved sequencing; phases A, B, and C complete locally; phase D next"
-version: "1.2"
+status: "approved sequencing; phases A through D1 complete locally; phase E next"
+version: "1.3"
 date: "2026-08-27"
 related:
   - "ADR-006-professional-services-projects-priority.md"
   - "PROFESSIONAL_PROJECTS_TIME_SLICE_AR.md"
   - "ADR-005-shared-approval-engine.md"
   - "ADR-007-human-resources-foundation.md"
+  - "ADR-008-professional-timesheets-approval.md"
+  - "ADR-009-professional-service-billing.md"
 ---
 
 # خارطة خدمات الشركات المهنية والموارد البشرية والمشاريع
@@ -21,7 +23,7 @@ related:
 | A | المشاريع/القضايا والوقت الشخصي | مشروع مرتبط بعميل، فريق، وقت خام، حالات وتدقيق | Sales customers + Identity users | منفذة محليًا |
 | B | أساس HR | ملف موظف، رقم وظيفي، قسم، منصب، عقد/حالة عمل غير مالي | Identity reference only | منفذة محليًا |
 | C | Timesheets والموافقة | فترة وقت immutable عند الإرسال وقرار Maker/Checker | A + Approvals + B | منفذة محليًا |
-| D | العقود والأسعار وفوترة الخدمات | أسعار مؤرخة ولقطة تسعير وفاتورة عبر Sales port | C + Sales + Tax | التالية |
+| D | العقود والأسعار وفوترة الخدمات | أسعار مؤرخة ولقطة تسعير وفاتورة عبر Sales port | C + Sales + Tax | D1 منفذة محليًا |
 | E | تخطيط المشروع والمصروفات | مهام/معالم/ميزانية وقت ومصروفات معتمدة | B/C + Expenses/Approvals | مخططة |
 | F | خصائص المكتب القانوني | تعارض مصالح، مواعيد، تصنيف مستندات وقيود وصول | A + Security/Audit | تحتاج قرارات نطاق |
 | G | أموال العملاء/الأمانات | حسابات منفصلة، تسوية، منع الاعتراف كإيراد وضبط صلاحيات | Treasury + Ledger + Reconciliation | ADR مستقل إلزامي |
@@ -56,9 +58,17 @@ related:
 
 - عقد خدمات مؤرخ ونموذج فوترة: وقت ومواد، مبلغ ثابت، أو مراحل.
 - Rate card حسب الموظف/الدور/المشروع والعملة، مع صلاحيات حساسة.
-- لقطة سعر عند اعتماد الوقت حتى لا تغير الأسعار التاريخية الفاتورة.
+- لقطة سعر عند تنفيذ الفوترة، بعد اعتماد الوقت، حتى لا تغير الأسعار اللاحقة مصدر الفاتورة التاريخي.
 - أمر فوترة يمر إلى Sales عبر Port ويولد `SalesInvoice` عادية؛ لا يملك سياق المشاريع Invoice أو Receivable أو Tax quote أو Journal.
 - الدفعات المقدمة التجارية تعالج بتصميم عقد/خزينة واضح؛ أمانات العملاء القانونية لا تخلط بها.
+
+### النطاق المنفذ D1
+
+- عقد واحد فعّال غير متداخل لمشروع `TIME_AND_MATERIALS`، بعملة ومرجع خارجي اختياري وشروط سداد وفترة سريان.
+- سعر ساعة مؤرخ لكل عضو نشط، غير متداخل وواقع بالكامل ضمن فترة العقد.
+- أمر واحد يختار حتى 200 إدخال قابل للفوترة ضمن Timesheet معتمد، ويثبت معرف/نسخة الوقت والسعر والدقائق وسعر الساعة المستخدم.
+- إنشاء وترحيل `SalesInvoice` عادية ذريًا عبر `ProfessionalBillingSalesPort`؛ لا يحتفظ سياق المشاريع برقم الفاتورة أو الإجمالي أو الضريبة أو الذمة أو القيد.
+- التصحيح المالي عبر عكس/إشعار Sales الحالي. لا إعادة فوترة تلقائية في D1، وتبقى المبلغ الثابت والمراحل والمصروفات والدفعات المقدمة خارج هذه الشريحة.
 
 ## المرحلة E — إدارة المشروع العملية
 

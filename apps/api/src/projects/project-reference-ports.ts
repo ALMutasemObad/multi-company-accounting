@@ -62,3 +62,25 @@ export interface ProfessionalEmployeePort {
     userIds: bigint[],
   ): Promise<Array<ProfessionalEmployeeReference & { userId: bigint }>>;
 }
+
+export type ProfessionalBillingCurrencyReference = {
+  id: bigint;
+  code: string;
+  nameAr: string;
+  decimals: number;
+};
+
+export interface ProfessionalBillingCurrencyPort {
+  findInCompany(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+    currencyId: bigint,
+  ): Promise<ProfessionalBillingCurrencyReference | null>;
+  findEnabledInCompany(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+    currencyId: bigint,
+  ): Promise<ProfessionalBillingCurrencyReference | null>;
+  listInCompany(companyId: bigint): Promise<ProfessionalBillingCurrencyReference[]>;
+  listEnabledInCompany(companyId: bigint): Promise<ProfessionalBillingCurrencyReference[]>;
+}

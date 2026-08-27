@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.34.0
+  version: 1.35.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -31,7 +31,7 @@ info:
 
     - يملك محرك الموافقات طلب الموافقة والقرار فقط؛ أول تطبيق يفرض Maker/Checker على مراجعة إقفال الفترة، بينما يبقى Fiscal مالك دورة الإقفال وCore Accounting مالك Ledger.
 
-    - يملك سياق Professional Services المشاريع والقضايا المهنية وإسناد أعضائها وسجلات الوقت فقط؛ يقرأ العملاء والأشخاص عبر منافذ مالكيهم ولا ينشئ فاتورة أو قيداً أو يكرر حقائق Sales أو Ledger.
+    - يملك سياق Professional Services المشاريع والقضايا المهنية وإسناد أعضائها وسجلات الوقت والعقود والأسعار ومصدر الفوترة؛ ينشئ ويرحل فاتورة مبيعات عادية ذرياً عبر منفذ Sales، ولا يكرر حقائق الفاتورة أو الذمم أو Ledger.
 
     - يملك Human Resources الأقسام والمناصب والموظفين والعقود غير المالية؛ Employee مستقل عن User ويرتبط بعضوية Identity اختياريًا عبر منفذ قراءة فقط، ولا تشمل الشريحة الرواتب أو التعويضات.
 
@@ -87,7 +87,7 @@ tags:
 - name: Approvals
   description: طلبات وقرارات الموافقة المشتركة؛ لا يملك المحرك حالات المستندات أو آثارها المالية.
 - name: Professional Projects
-  description: المشاريع والقضايا والاستشارات المهنية وأعضاؤها وسجلات الوقت؛ الفوترة والرواتب وأموال الأمانات خارج هذه الشريحة.
+  description: المشاريع والقضايا والاستشارات المهنية وأعضاؤها وسجلات الوقت والعقود والأسعار ومصدر فوترة الوقت المعتمد؛ تبقى حقائق الفاتورة والذمم لدى Sales والقيود لدى Core Accounting.
 - name: Human Resources
   description: الهيكل والموظفون والعقود غير المالية؛ الرواتب والهوية الوطنية والحسابات البنكية خارج هذه الشريحة.
 - name: Accounts
@@ -2231,6 +2231,195 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
       x-permission: professional_timesheets.view
+      security: [{ SessionCookie: [] }]
+  /professional-billing/currency-options:
+    get:
+      tags: [Professional Projects]
+      summary: عرض العملات المفعلة المتاحة لعقود الخدمات المهنية
+      operationId: listProfessionalBillingCurrencyOptions
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200': { description: العملات المفعلة داخل الشركة, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalBillingCurrencyList' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: professional_contracts.view
+      security: [{ SessionCookie: [] }]
+  /professional-service-contracts:
+    get:
+      tags: [Professional Projects]
+      summary: عرض عقود الخدمات المهنية المؤرخة
+      operationId: listProfessionalServiceContracts
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: projectId, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: العقود المعزولة حسب الشركة, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalServiceContractList' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: professional_contracts.view
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [Professional Projects]
+      summary: إنشاء عقد خدمات مهني فعّال ضمن مشروع وقت ومواد
+      operationId: createProfessionalServiceContract
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateProfessionalServiceContractRequest' } } }
+      responses:
+        '201': { description: العقد المنشأ, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalServiceContractResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: professional_contracts.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /professional-service-contracts/{professionalServiceContractId}/end:
+    post:
+      tags: [Professional Projects]
+      summary: إنهاء عقد خدمات مهني بسبب موثق
+      operationId: endProfessionalServiceContract
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: professionalServiceContractId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/EndProfessionalServiceContractRequest' } } }
+      responses:
+        '200': { description: العقد المنتهي, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalServiceContractResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: professional_contracts.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /professional-service-rates:
+    get:
+      tags: [Professional Projects]
+      summary: عرض أسعار أعضاء عقد خدمات مهني
+      operationId: listProfessionalServiceRates
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: contractId, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: الأسعار المؤرخة للعقد, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalServiceRateList' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: professional_rates.view
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [Professional Projects]
+      summary: إنشاء سعر ساعة مؤرخ لعضو في المشروع
+      operationId: createProfessionalServiceRate
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateProfessionalServiceRateRequest' } } }
+      responses:
+        '201': { description: السعر المنشأ, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalServiceRateResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: professional_rates.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /professional-service-rates/{professionalServiceRateId}/end:
+    post:
+      tags: [Professional Projects]
+      summary: إنهاء سعر ساعة مهني بسبب موثق
+      operationId: endProfessionalServiceRate
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: professionalServiceRateId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/EndProfessionalServiceRateRequest' } } }
+      responses:
+        '200': { description: السعر المنتهي, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalServiceRateResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: professional_rates.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /professional-billing-runs:
+    get:
+      tags: [Professional Projects]
+      summary: عرض دفعات فوترة الوقت المهني للمشروع
+      operationId: listProfessionalBillingRuns
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: projectId, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: دفعات الفوترة ومراجع الفواتير المملوكة للمبيعات, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalBillingRunList' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: professional_billing.view
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [Professional Projects]
+      summary: فوترة الوقت المهني المعتمد وإنشاء وترحيل فاتورة مبيعات ذرياً
+      operationId: createProfessionalBillingRun
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateProfessionalBillingRunRequest' } } }
+      responses:
+        '201': { description: دفعة الفوترة والفاتورة المرحلة, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalBillingRunResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+      x-permission: professional_billing.execute
+      x-additional-permissions: [sales_invoices.create, sales_invoices.post]
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /professional-billing-runs/{professionalBillingRunId}:
+    get:
+      tags: [Professional Projects]
+      summary: عرض دفعة فوترة ومصادر الوقت والأسعار المثبتة
+      operationId: getProfessionalBillingRun
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: professionalBillingRunId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: دفعة الفوترة ومصادرها, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalBillingRunDetailResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: professional_billing.view
       security: [{ SessionCookie: [] }]
   /hr/departments:
     get:
@@ -14022,6 +14211,228 @@ components:
       required: [periodStart]
       properties:
         periodStart: { type: string, format: date }
+    ProfessionalCommercialTermStatus:
+      type: string
+      enum: [ACTIVE, ENDED]
+    ProfessionalBillingCurrency:
+      type: object
+      additionalProperties: false
+      required: [id, code, nameAr, decimals]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        code: { type: string, maxLength: 3 }
+        nameAr: { type: string, maxLength: 100 }
+        decimals: { type: integer, minimum: 0, maximum: 6 }
+    ProfessionalBillingCurrencyList:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/ProfessionalBillingCurrency' }
+    ProfessionalServiceContract:
+      type: object
+      additionalProperties: false
+      required: [id, projectId, currency, contractReference, effectiveFrom, effectiveTo, paymentTermsDays, status, endReason, endedAt, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        currency: { $ref: '#/components/schemas/ProfessionalBillingCurrency' }
+        contractReference: { type: [string, 'null'], maxLength: 120 }
+        effectiveFrom: { type: string, format: date }
+        effectiveTo: { type: [string, 'null'], format: date }
+        paymentTermsDays: { type: integer, minimum: 0, maximum: 365 }
+        status: { $ref: '#/components/schemas/ProfessionalCommercialTermStatus' }
+        endReason: { type: [string, 'null'], maxLength: 500 }
+        endedAt: { type: [string, 'null'], format: date-time }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ProfessionalServiceContractList:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/ProfessionalServiceContract' }
+    ProfessionalServiceContractResponse:
+      type: object
+      additionalProperties: false
+      required: [contract]
+      properties:
+        contract: { $ref: '#/components/schemas/ProfessionalServiceContract' }
+    CreateProfessionalServiceContractRequest:
+      type: object
+      additionalProperties: false
+      required: [projectId, currencyId, effectiveFrom, paymentTermsDays]
+      properties:
+        projectId: { type: string, format: uuid }
+        currencyId: { $ref: '#/components/schemas/Id' }
+        contractReference: { type: [string, 'null'], x-trim: true, maxLength: 120 }
+        effectiveFrom: { type: string, format: date }
+        effectiveTo: { type: [string, 'null'], format: date }
+        paymentTermsDays: { type: integer, minimum: 0, maximum: 365 }
+    EndProfessionalServiceContractRequest:
+      type: object
+      additionalProperties: false
+      required: [version, effectiveTo, reason]
+      properties:
+        version: { type: integer, minimum: 0 }
+        effectiveTo: { type: string, format: date }
+        reason: { type: string, x-trim: true, minLength: 3, maxLength: 500 }
+    ProfessionalServiceRate:
+      type: object
+      additionalProperties: false
+      required: [id, contractId, userId, hourlyRate, effectiveFrom, effectiveTo, status, endReason, endedAt, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        contractId: { type: string, format: uuid }
+        userId: { $ref: '#/components/schemas/Id' }
+        hourlyRate: { type: string, pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        effectiveFrom: { type: string, format: date }
+        effectiveTo: { type: [string, 'null'], format: date }
+        status: { $ref: '#/components/schemas/ProfessionalCommercialTermStatus' }
+        endReason: { type: [string, 'null'], maxLength: 500 }
+        endedAt: { type: [string, 'null'], format: date-time }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ProfessionalServiceRateList:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/ProfessionalServiceRate' }
+    ProfessionalServiceRateResponse:
+      type: object
+      additionalProperties: false
+      required: [rate]
+      properties:
+        rate: { $ref: '#/components/schemas/ProfessionalServiceRate' }
+    CreateProfessionalServiceRateRequest:
+      type: object
+      additionalProperties: false
+      required: [contractId, userId, hourlyRate, effectiveFrom]
+      properties:
+        contractId: { type: string, format: uuid }
+        userId: { $ref: '#/components/schemas/Id' }
+        hourlyRate: { type: string, pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        effectiveFrom: { type: string, format: date }
+        effectiveTo: { type: [string, 'null'], format: date }
+    EndProfessionalServiceRateRequest:
+      type: object
+      additionalProperties: false
+      required: [version, effectiveTo, reason]
+      properties:
+        version: { type: integer, minimum: 0 }
+        effectiveTo: { type: string, format: date }
+        reason: { type: string, x-trim: true, minLength: 3, maxLength: 500 }
+    ProfessionalBillingInvoiceReference:
+      type: object
+      additionalProperties: false
+      required: [id, documentId, documentNumber, status, currency, total, baseTotal]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        documentId: { $ref: '#/components/schemas/Id' }
+        documentNumber: { type: string, maxLength: 40 }
+        status: { type: string, enum: [POSTED, REVERSED] }
+        currency:
+          type: object
+          additionalProperties: false
+          required: [id, code, nameAr]
+          properties:
+            id: { $ref: '#/components/schemas/Id' }
+            code: { type: string, maxLength: 3 }
+            nameAr: { type: string, maxLength: 100 }
+        total: { type: string, pattern: '^-?(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        baseTotal: { type: string, pattern: '^-?(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+    ProfessionalBillingRunContractReference:
+      type: object
+      additionalProperties: false
+      required: [id, contractReference]
+      properties:
+        id: { type: string, format: uuid }
+        contractReference: { type: [string, 'null'], maxLength: 120 }
+    ProfessionalBillingRun:
+      type: object
+      additionalProperties: false
+      required: [id, project, contract, contractVersion, sourceDateFrom, sourceDateTo, sourceEntryCount, sourceMinutes, invoice, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        project: { $ref: '#/components/schemas/ProfessionalProjectReference' }
+        contract: { $ref: '#/components/schemas/ProfessionalBillingRunContractReference' }
+        contractVersion: { type: integer, minimum: 0 }
+        sourceDateFrom: { type: string, format: date }
+        sourceDateTo: { type: string, format: date }
+        sourceEntryCount: { type: integer, minimum: 1, maximum: 200 }
+        sourceMinutes: { type: integer, minimum: 1 }
+        invoice: { $ref: '#/components/schemas/ProfessionalBillingInvoiceReference' }
+        createdAt: { type: string, format: date-time }
+    ProfessionalBillingRunList:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/ProfessionalBillingRun' }
+    ProfessionalBillingRunResponse:
+      type: object
+      additionalProperties: false
+      required: [run]
+      properties:
+        run: { $ref: '#/components/schemas/ProfessionalBillingRun' }
+    ProfessionalBillingSourceLine:
+      type: object
+      additionalProperties: false
+      required: [timeEntryId, timeEntryVersion, userId, workDate, description, minutes, serviceRateId, serviceRateVersion, hourlyRate]
+      properties:
+        timeEntryId: { type: string, format: uuid }
+        timeEntryVersion: { type: integer, minimum: 0 }
+        userId: { $ref: '#/components/schemas/Id' }
+        workDate: { type: string, format: date }
+        description: { type: string, maxLength: 1000 }
+        minutes: { type: integer, minimum: 1, maximum: 1440 }
+        serviceRateId: { type: string, format: uuid }
+        serviceRateVersion: { type: integer, minimum: 0 }
+        hourlyRate: { type: string, pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+    ProfessionalBillingRunDetailResponse:
+      type: object
+      additionalProperties: false
+      required: [run, sourceLines]
+      properties:
+        run: { $ref: '#/components/schemas/ProfessionalBillingRun' }
+        sourceLines:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items: { $ref: '#/components/schemas/ProfessionalBillingSourceLine' }
+    CreateProfessionalBillingRunRequest:
+      type: object
+      additionalProperties: false
+      required: [projectId, contractId, contractVersion, sourceDateFrom, sourceDateTo, fiscalPeriodId, documentDate, exchangeRate, revenueAccountId]
+      properties:
+        projectId: { type: string, format: uuid }
+        contractId: { type: string, format: uuid }
+        contractVersion: { type: integer, minimum: 0 }
+        sourceDateFrom: { type: string, format: date }
+        sourceDateTo: { type: string, format: date }
+        fiscalPeriodId: { $ref: '#/components/schemas/Id' }
+        documentDate: { type: string, format: date }
+        exchangeRate: { type: string, pattern: '^[0-9]{1,11}\.[0-9]{8}$' }
+        revenueAccountId: { $ref: '#/components/schemas/Id' }
+        costCenterId:
+          oneOf:
+          - $ref: '#/components/schemas/Id'
+          - type: 'null'
+        taxRateId:
+          oneOf:
+          - $ref: '#/components/schemas/Id'
+          - type: 'null'
     HrEmploymentType:
       type: string
       enum: [FULL_TIME, PART_TIME, CONTRACTOR, INTERN]

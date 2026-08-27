@@ -275,6 +275,11 @@ enum ProfessionalTimesheetStatus {
   APPROVED
 }
 
+enum ProfessionalCommercialTermStatus {
+  ACTIVE
+  ENDED
+}
+
 enum HrEmploymentType {
   FULL_TIME
   PART_TIME
@@ -409,6 +414,10 @@ model Company {
   professionalTimeEntries           ProfessionalTimeEntry[]
   professionalTimesheets            ProfessionalTimesheet[]
   professionalTimesheetSubmissions  ProfessionalTimesheetSubmission[]
+  professionalServiceContracts      ProfessionalServiceContract[]
+  professionalServiceRates          ProfessionalServiceRate[]
+  professionalBillingRuns           ProfessionalBillingRun[]
+  professionalBillingSourceLines    ProfessionalBillingSourceLine[]
   hrDepartments                     HrDepartment[]
   hrPositions                       HrPosition[]
   employees                         Employee[]
@@ -477,6 +486,11 @@ model User {
   employmentContractsUpdated        EmploymentContract[]               @relation("EmploymentContractUpdatedBy")
   employmentContractsEnded          EmploymentContract[]               @relation("EmploymentContractEndedBy")
   professionalTimesheetSubmissions  ProfessionalTimesheetSubmission[]  @relation("ProfessionalTimesheetSubmittedBy")
+  professionalContractsCreated      ProfessionalServiceContract[]      @relation("ProfessionalContractCreatedBy")
+  professionalContractsUpdated      ProfessionalServiceContract[]      @relation("ProfessionalContractUpdatedBy")
+  professionalRatesCreated          ProfessionalServiceRate[]          @relation("ProfessionalRateCreatedBy")
+  professionalRatesUpdated          ProfessionalServiceRate[]          @relation("ProfessionalRateUpdatedBy")
+  professionalBillingRunsCreated    ProfessionalBillingRun[]           @relation("ProfessionalBillingRunCreatedBy")
 
   @@map("users")
 }
@@ -767,14 +781,15 @@ model BankReconciliationMatch {
 }
 
 model CompanyCurrency {
-  companyId  BigInt                @map("company_id") @db.UnsignedBigInt
-  currencyId BigInt                @map("currency_id") @db.UnsignedBigInt
-  isActive   Boolean               @default(true) @map("is_active")
-  createdAt  DateTime              @default(now()) @map("created_at")
-  updatedAt  DateTime              @updatedAt @map("updated_at")
-  company    Company               @relation(fields: [companyId], references: [id])
-  currency   Currency              @relation(fields: [currencyId], references: [id])
-  rates      CompanyExchangeRate[]
+  companyId                    BigInt                        @map("company_id") @db.UnsignedBigInt
+  currencyId                   BigInt                        @map("currency_id") @db.UnsignedBigInt
+  isActive                     Boolean                       @default(true) @map("is_active")
+  createdAt                    DateTime                      @default(now()) @map("created_at")
+  updatedAt                    DateTime                      @updatedAt @map("updated_at")
+  company                      Company                       @relation(fields: [companyId], references: [id])
+  currency                     Currency                      @relation(fields: [currencyId], references: [id])
+  rates                        CompanyExchangeRate[]
+  professionalServiceContracts ProfessionalServiceContract[]
 
   @@id([companyId, currencyId])
   @@index([currencyId])
@@ -810,6 +825,7 @@ model UserCompany {
   roles                          UserCompanyRole[]
   professionalProjectMemberships ProfessionalProjectMember[]
   professionalTimesheets         ProfessionalTimesheet[]
+  professionalServiceRates       ProfessionalServiceRate[]
   employee                       Employee?
 
   @@id([userId, companyId])
@@ -1321,29 +1337,31 @@ model CustomerAddress {
 }
 
 model ProfessionalProject {
-  id            BigInt                          @id @default(autoincrement()) @db.UnsignedBigInt
-  publicId      String                          @unique @default(uuid()) @map("public_id") @db.Char(36)
-  companyId     BigInt                          @map("company_id") @db.UnsignedBigInt
-  customerId    BigInt                          @map("customer_id") @db.UnsignedBigInt
-  code          String                          @db.VarChar(40)
-  nameAr        String                          @map("name_ar") @db.VarChar(200)
-  nameEn        String?                         @map("name_en") @db.VarChar(200)
-  kind          ProfessionalProjectKind
-  billingModel  ProfessionalProjectBillingModel @map("billing_model")
-  status        ProfessionalProjectStatus       @default(ACTIVE)
-  startDate     DateTime                        @map("start_date") @db.Date
-  targetEndDate DateTime?                       @map("target_end_date") @db.Date
-  description   String?                         @db.VarChar(1000)
-  version       Int                             @default(0) @db.UnsignedInt
-  createdById   BigInt                          @map("created_by_id") @db.UnsignedBigInt
-  updatedById   BigInt                          @map("updated_by_id") @db.UnsignedBigInt
-  createdAt     DateTime                        @default(now()) @map("created_at")
-  updatedAt     DateTime                        @updatedAt @map("updated_at")
-  company       Company                         @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  customer      Customer                        @relation(fields: [customerId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
-  createdBy     User                            @relation("ProfessionalProjectCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  updatedBy     User                            @relation("ProfessionalProjectUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  members       ProfessionalProjectMember[]
+  id               BigInt                          @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId         String                          @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId        BigInt                          @map("company_id") @db.UnsignedBigInt
+  customerId       BigInt                          @map("customer_id") @db.UnsignedBigInt
+  code             String                          @db.VarChar(40)
+  nameAr           String                          @map("name_ar") @db.VarChar(200)
+  nameEn           String?                         @map("name_en") @db.VarChar(200)
+  kind             ProfessionalProjectKind
+  billingModel     ProfessionalProjectBillingModel @map("billing_model")
+  status           ProfessionalProjectStatus       @default(ACTIVE)
+  startDate        DateTime                        @map("start_date") @db.Date
+  targetEndDate    DateTime?                       @map("target_end_date") @db.Date
+  description      String?                         @db.VarChar(1000)
+  version          Int                             @default(0) @db.UnsignedInt
+  createdById      BigInt                          @map("created_by_id") @db.UnsignedBigInt
+  updatedById      BigInt                          @map("updated_by_id") @db.UnsignedBigInt
+  createdAt        DateTime                        @default(now()) @map("created_at")
+  updatedAt        DateTime                        @updatedAt @map("updated_at")
+  company          Company                         @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  customer         Customer                        @relation(fields: [customerId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  createdBy        User                            @relation("ProfessionalProjectCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy        User                            @relation("ProfessionalProjectUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  members          ProfessionalProjectMember[]
+  serviceContracts ProfessionalServiceContract[]
+  billingRuns      ProfessionalBillingRun[]
 
   @@unique([companyId, code])
   @@unique([id, companyId])
@@ -1382,20 +1400,21 @@ model ProfessionalProjectMember {
 }
 
 model ProfessionalTimeEntry {
-  id          BigInt                    @id @default(autoincrement()) @db.UnsignedBigInt
-  publicId    String                    @unique @default(uuid()) @map("public_id") @db.Char(36)
-  companyId   BigInt                    @map("company_id") @db.UnsignedBigInt
-  projectId   BigInt                    @map("project_id") @db.UnsignedBigInt
-  userId      BigInt                    @map("user_id") @db.UnsignedBigInt
-  workDate    DateTime                  @map("work_date") @db.Date
-  minutes     Int                       @db.UnsignedSmallInt
-  isBillable  Boolean                   @default(true) @map("is_billable")
-  description String                    @db.VarChar(1000)
-  version     Int                       @default(0) @db.UnsignedInt
-  createdAt   DateTime                  @default(now()) @map("created_at")
-  updatedAt   DateTime                  @updatedAt @map("updated_at")
-  company     Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  member      ProfessionalProjectMember @relation(fields: [projectId, userId, companyId], references: [projectId, userId, companyId], onDelete: Restrict, onUpdate: Restrict)
+  id                BigInt                         @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId          String                         @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId         BigInt                         @map("company_id") @db.UnsignedBigInt
+  projectId         BigInt                         @map("project_id") @db.UnsignedBigInt
+  userId            BigInt                         @map("user_id") @db.UnsignedBigInt
+  workDate          DateTime                       @map("work_date") @db.Date
+  minutes           Int                            @db.UnsignedSmallInt
+  isBillable        Boolean                        @default(true) @map("is_billable")
+  description       String                         @db.VarChar(1000)
+  version           Int                            @default(0) @db.UnsignedInt
+  createdAt         DateTime                       @default(now()) @map("created_at")
+  updatedAt         DateTime                       @updatedAt @map("updated_at")
+  company           Company                        @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  member            ProfessionalProjectMember      @relation(fields: [projectId, userId, companyId], references: [projectId, userId, companyId], onDelete: Restrict, onUpdate: Restrict)
+  billingSourceLine ProfessionalBillingSourceLine?
 
   @@unique([id, companyId])
   @@index([companyId, workDate, id])
@@ -1448,6 +1467,117 @@ model ProfessionalTimesheetSubmission {
   @@index([companyId, submittedAt, id])
   @@index([submittedById, submittedAt])
   @@map("professional_timesheet_submissions")
+}
+
+model ProfessionalServiceContract {
+  id                BigInt                           @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId          String                           @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId         BigInt                           @map("company_id") @db.UnsignedBigInt
+  projectId         BigInt                           @map("project_id") @db.UnsignedBigInt
+  currencyId        BigInt                           @map("currency_id") @db.UnsignedBigInt
+  contractReference String?                          @map("contract_reference") @db.VarChar(120)
+  effectiveFrom     DateTime                         @map("effective_from") @db.Date
+  effectiveTo       DateTime?                        @map("effective_to") @db.Date
+  paymentTermsDays  Int                              @default(0) @map("payment_terms_days") @db.UnsignedSmallInt
+  status            ProfessionalCommercialTermStatus @default(ACTIVE)
+  endReason         String?                          @map("end_reason") @db.VarChar(500)
+  endedAt           DateTime?                        @map("ended_at")
+  version           Int                              @default(0) @db.UnsignedInt
+  createdById       BigInt                           @map("created_by_id") @db.UnsignedBigInt
+  updatedById       BigInt                           @map("updated_by_id") @db.UnsignedBigInt
+  createdAt         DateTime                         @default(now()) @map("created_at")
+  updatedAt         DateTime                         @updatedAt @map("updated_at")
+  company           Company                          @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  project           ProfessionalProject              @relation(fields: [projectId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  companyCurrency   CompanyCurrency                  @relation(fields: [companyId, currencyId], references: [companyId, currencyId], onDelete: Restrict, onUpdate: Restrict)
+  createdBy         User                             @relation("ProfessionalContractCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy         User                             @relation("ProfessionalContractUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  rates             ProfessionalServiceRate[]
+  billingRuns       ProfessionalBillingRun[]
+
+  @@unique([id, companyId])
+  @@index([companyId, projectId, effectiveFrom, effectiveTo])
+  @@index([companyId, status, effectiveFrom])
+  @@map("professional_service_contracts")
+}
+
+model ProfessionalServiceRate {
+  id             BigInt                           @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId       String                           @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId      BigInt                           @map("company_id") @db.UnsignedBigInt
+  contractId     BigInt                           @map("contract_id") @db.UnsignedBigInt
+  userId         BigInt                           @map("user_id") @db.UnsignedBigInt
+  hourlyRate     Decimal                          @map("hourly_rate") @db.Decimal(19, 4)
+  effectiveFrom  DateTime                         @map("effective_from") @db.Date
+  effectiveTo    DateTime?                        @map("effective_to") @db.Date
+  status         ProfessionalCommercialTermStatus @default(ACTIVE)
+  endReason      String?                          @map("end_reason") @db.VarChar(500)
+  endedAt        DateTime?                        @map("ended_at")
+  version        Int                              @default(0) @db.UnsignedInt
+  createdById    BigInt                           @map("created_by_id") @db.UnsignedBigInt
+  updatedById    BigInt                           @map("updated_by_id") @db.UnsignedBigInt
+  createdAt      DateTime                         @default(now()) @map("created_at")
+  updatedAt      DateTime                         @updatedAt @map("updated_at")
+  company        Company                          @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  contract       ProfessionalServiceContract      @relation(fields: [contractId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  assignment     UserCompany                      @relation(fields: [userId, companyId], references: [userId, companyId], onDelete: Restrict, onUpdate: Restrict)
+  createdBy      User                             @relation("ProfessionalRateCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy      User                             @relation("ProfessionalRateUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  billingSources ProfessionalBillingSourceLine[]
+
+  @@unique([id, companyId])
+  @@index([companyId, contractId, userId, effectiveFrom, effectiveTo])
+  @@index([companyId, userId, status])
+  @@map("professional_service_rates")
+}
+
+model ProfessionalBillingRun {
+  id              BigInt                          @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId        String                          @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId       BigInt                          @map("company_id") @db.UnsignedBigInt
+  projectId       BigInt                          @map("project_id") @db.UnsignedBigInt
+  contractId      BigInt                          @map("contract_id") @db.UnsignedBigInt
+  contractVersion Int                             @map("contract_version") @db.UnsignedInt
+  salesInvoiceId  BigInt                          @unique @map("sales_invoice_id") @db.UnsignedBigInt
+  sourceDateFrom  DateTime                        @map("source_date_from") @db.Date
+  sourceDateTo    DateTime                        @map("source_date_to") @db.Date
+  createdById     BigInt                          @map("created_by_id") @db.UnsignedBigInt
+  createdAt       DateTime                        @default(now()) @map("created_at")
+  company         Company                         @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  project         ProfessionalProject             @relation(fields: [projectId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  contract        ProfessionalServiceContract     @relation(fields: [contractId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  salesInvoice    SalesInvoice                    @relation(fields: [salesInvoiceId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  createdBy       User                            @relation("ProfessionalBillingRunCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sourceLines     ProfessionalBillingSourceLine[]
+
+  @@unique([id, companyId])
+  @@unique([salesInvoiceId, companyId])
+  @@index([companyId, projectId, createdAt, id])
+  @@index([companyId, contractId, sourceDateFrom, sourceDateTo])
+  @@map("professional_billing_runs")
+}
+
+model ProfessionalBillingSourceLine {
+  id                 BigInt                  @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId          BigInt                  @map("company_id") @db.UnsignedBigInt
+  billingRunId       BigInt                  @map("billing_run_id") @db.UnsignedBigInt
+  timeEntryId        BigInt                  @unique @map("time_entry_id") @db.UnsignedBigInt
+  timeEntryVersion   Int                     @map("time_entry_version") @db.UnsignedInt
+  serviceRateId      BigInt                  @map("service_rate_id") @db.UnsignedBigInt
+  serviceRateVersion Int                     @map("service_rate_version") @db.UnsignedInt
+  minutes            Int                     @db.UnsignedSmallInt
+  hourlyRateSnapshot Decimal                 @map("hourly_rate_snapshot") @db.Decimal(19, 4)
+  createdAt          DateTime                @default(now()) @map("created_at")
+  company            Company                 @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  billingRun         ProfessionalBillingRun  @relation(fields: [billingRunId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  timeEntry          ProfessionalTimeEntry   @relation(fields: [timeEntryId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  serviceRate        ProfessionalServiceRate @relation(fields: [serviceRateId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([id, companyId])
+  @@unique([timeEntryId, companyId])
+  @@index([companyId, billingRunId, id])
+  @@index([companyId, serviceRateId])
+  @@map("professional_billing_source_lines")
 }
 
 model HrDepartment {
@@ -1888,39 +2018,40 @@ model TaxRate {
 }
 
 model SalesInvoice {
-  id                      BigInt             @id @default(autoincrement()) @db.UnsignedBigInt
-  companyId               BigInt             @map("company_id") @db.UnsignedBigInt
-  accountingDocumentId    BigInt             @unique @map("accounting_document_id") @db.UnsignedBigInt
-  customerId              BigInt             @map("customer_id") @db.UnsignedBigInt
-  warehouseId             BigInt?            @map("warehouse_id") @db.UnsignedBigInt
-  sourceInvoiceId         BigInt?            @map("source_invoice_id") @db.UnsignedBigInt
-  arJournalLineId         BigInt?            @unique @map("ar_journal_line_id") @db.UnsignedBigInt
-  currencyId              BigInt             @map("currency_id") @db.UnsignedBigInt
-  exchangeRate            Decimal            @map("exchange_rate") @db.Decimal(19, 8)
-  dueDate                 DateTime           @map("due_date") @db.Date
-  subtotal                Decimal            @db.Decimal(19, 4)
-  discountTotal           Decimal            @map("discount_total") @db.Decimal(19, 4)
-  taxableTotal            Decimal            @map("taxable_total") @db.Decimal(19, 4)
-  taxTotal                Decimal            @map("tax_total") @db.Decimal(19, 4)
-  total                   Decimal            @db.Decimal(19, 4)
-  baseTotal               Decimal            @map("base_total") @db.Decimal(19, 4)
-  customerNameSnapshot    String             @map("customer_name_snapshot") @db.VarChar(200)
-  customerTaxLast4        String?            @map("customer_tax_last4") @db.VarChar(4)
-  customerAddressSnapshot String?            @map("customer_address_snapshot") @db.VarChar(500)
-  warehouseCodeSnapshot   String?            @map("warehouse_code_snapshot") @db.VarChar(40)
-  warehouseNameSnapshot   String?            @map("warehouse_name_snapshot") @db.VarChar(160)
-  notes                   String?            @db.VarChar(1000)
-  company                 Company            @relation(fields: [companyId], references: [id])
-  accountingDocument      AccountingDocument @relation(fields: [accountingDocumentId, companyId], references: [id, companyId])
-  customer                Customer           @relation(fields: [customerId, companyId], references: [id, companyId])
-  warehouse               Warehouse?         @relation(fields: [warehouseId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
-  sourceInvoice           SalesInvoice?      @relation("SalesCreditNotes", fields: [sourceInvoiceId, companyId], references: [id, companyId])
-  creditNotes             SalesInvoice[]     @relation("SalesCreditNotes")
-  arJournalLine           JournalLine?       @relation("SalesInvoiceArLine", fields: [arJournalLineId, companyId], references: [id, companyId])
+  id                      BigInt                  @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId               BigInt                  @map("company_id") @db.UnsignedBigInt
+  accountingDocumentId    BigInt                  @unique @map("accounting_document_id") @db.UnsignedBigInt
+  customerId              BigInt                  @map("customer_id") @db.UnsignedBigInt
+  warehouseId             BigInt?                 @map("warehouse_id") @db.UnsignedBigInt
+  sourceInvoiceId         BigInt?                 @map("source_invoice_id") @db.UnsignedBigInt
+  arJournalLineId         BigInt?                 @unique @map("ar_journal_line_id") @db.UnsignedBigInt
+  currencyId              BigInt                  @map("currency_id") @db.UnsignedBigInt
+  exchangeRate            Decimal                 @map("exchange_rate") @db.Decimal(19, 8)
+  dueDate                 DateTime                @map("due_date") @db.Date
+  subtotal                Decimal                 @db.Decimal(19, 4)
+  discountTotal           Decimal                 @map("discount_total") @db.Decimal(19, 4)
+  taxableTotal            Decimal                 @map("taxable_total") @db.Decimal(19, 4)
+  taxTotal                Decimal                 @map("tax_total") @db.Decimal(19, 4)
+  total                   Decimal                 @db.Decimal(19, 4)
+  baseTotal               Decimal                 @map("base_total") @db.Decimal(19, 4)
+  customerNameSnapshot    String                  @map("customer_name_snapshot") @db.VarChar(200)
+  customerTaxLast4        String?                 @map("customer_tax_last4") @db.VarChar(4)
+  customerAddressSnapshot String?                 @map("customer_address_snapshot") @db.VarChar(500)
+  warehouseCodeSnapshot   String?                 @map("warehouse_code_snapshot") @db.VarChar(40)
+  warehouseNameSnapshot   String?                 @map("warehouse_name_snapshot") @db.VarChar(160)
+  notes                   String?                 @db.VarChar(1000)
+  company                 Company                 @relation(fields: [companyId], references: [id])
+  accountingDocument      AccountingDocument      @relation(fields: [accountingDocumentId, companyId], references: [id, companyId])
+  customer                Customer                @relation(fields: [customerId, companyId], references: [id, companyId])
+  warehouse               Warehouse?              @relation(fields: [warehouseId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  sourceInvoice           SalesInvoice?           @relation("SalesCreditNotes", fields: [sourceInvoiceId, companyId], references: [id, companyId])
+  creditNotes             SalesInvoice[]          @relation("SalesCreditNotes")
+  arJournalLine           JournalLine?            @relation("SalesInvoiceArLine", fields: [arJournalLineId, companyId], references: [id, companyId])
   receivableItem          ReceivableItem?
-  currency                Currency           @relation(fields: [currencyId], references: [id])
+  currency                Currency                @relation(fields: [currencyId], references: [id])
   lines                   SalesInvoiceLine[]
-  posSale                 PosSale?           @relation("PosSaleInvoice")
+  posSale                 PosSale?                @relation("PosSaleInvoice")
+  professionalBillingRun  ProfessionalBillingRun?
 
   @@unique([id, companyId])
   @@unique([accountingDocumentId, companyId])
