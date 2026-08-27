@@ -1,12 +1,14 @@
 import { expect, test } from "@playwright/test";
 
-test("creates a legal matter and records personal professional time", async ({ page }) => {
+test("creates a legal matter, records time, and submits its weekly timesheet", async ({ page }) => {
   const projectId = "b1af217e-7c7b-43bb-b15f-61184df1d6b9";
   const entryId = "cbcc08ff-99bc-40c4-8757-bc90016584e3";
   const customer = { id: "41", code: "CUS-000041", nameAr: "شركة العميل التجريبية", nameEn: "Example Client" };
   const manager = { id: "7", displayName: "Project Manager", nameEn: "Project Manager" };
   let created = false;
   let timeRecorded = false;
+  let timesheetCreated = false;
+  let timesheetSubmitted = false;
 
   const project = () => ({
     id: projectId,
@@ -40,6 +42,24 @@ test("creates a legal matter and records personal professional time", async ({ p
     createdAt: "2026-08-27T12:05:00.000Z",
     updatedAt: "2026-08-27T12:05:00.000Z",
   });
+  const timesheet = () => ({
+    id: "f3b5105d-c2f9-4b62-84ee-4e5bfb59b249",
+    employee: { id: "f5c6c0a0-824d-45f8-8c37-b24f15c8bff6", employeeNumber: "EMP-000001", nameAr: "مدير المشروع", nameEn: "Project Manager", status: "ACTIVE" },
+    periodStart: "2026-08-23",
+    periodEnd: "2026-08-29",
+    status: timesheetSubmitted ? "AWAITING_APPROVAL" : "OPEN",
+    entryCount: timeRecorded ? 1 : 0,
+    trackedMinutes: timeRecorded ? 90 : 0,
+    billableMinutes: timeRecorded ? 90 : 0,
+    nonBillableMinutes: 0,
+    activeSubmissionNumber: timesheetSubmitted ? 1 : null,
+    activeSnapshotHashSha256: timesheetSubmitted ? "a".repeat(64) : null,
+    submittedAt: timesheetSubmitted ? "2026-08-27T12:10:00.000Z" : null,
+    editable: !timesheetSubmitted,
+    version: timesheetSubmitted ? 1 : 0,
+    createdAt: "2026-08-27T12:08:00.000Z",
+    updatedAt: "2026-08-27T12:08:00.000Z",
+  });
   const meta = (total: number) => ({ page: 1, pageSize: 25, total, totalPages: total ? 1 : 0 });
 
   await page.addInitScript(() => localStorage.setItem("mcap.locale", "en"));
@@ -71,6 +91,15 @@ test("creates a legal matter and records personal professional time", async ({ p
       meta: meta(timeRecorded ? 1 : 0),
       summary: { trackedMinutes: timeRecorded ? 90 : 0, billableMinutes: timeRecorded ? 90 : 0, nonBillableMinutes: 0 },
     });
+    if (path === "/professional-timesheets" && method === "POST") {
+      timesheetCreated = true;
+      return json({ timesheet: timesheet() }, 201);
+    }
+    if (path === "/professional-timesheets") return json({ data: timesheetCreated ? [timesheet()] : [], meta: meta(timesheetCreated ? 1 : 0) });
+    if (path === "/approval-requests" && method === "POST") {
+      timesheetSubmitted = true;
+      return json({ approvalRequest: { id: crypto.randomUUID() } }, 201);
+    }
     if (method === "GET") return json({ data: [], meta: meta(0) });
     return route.fulfill({ status: 204, body: "" });
   });
@@ -94,4 +123,11 @@ test("creates a legal matter and records personal professional time", async ({ p
 
   await expect(page.getByText("Initial legal research")).toBeVisible();
   await expect(page.getByText("1h 30m").first()).toBeVisible();
+
+  await page.getByLabel("Week start (Sunday)").fill("2026-08-23");
+  await page.getByRole("button", { name: "Create week" }).click();
+  await expect(page.getByText("2026-08-23")).toBeVisible();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Submit for approval" }).click();
+  await expect(page.getByText("Awaiting approval")).toBeVisible();
 });

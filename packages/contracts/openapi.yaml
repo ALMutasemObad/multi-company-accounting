@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.33.0
+  version: 1.34.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -2175,6 +2175,63 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
       x-permission: professional_time.log
       security: [{ SessionCookie: [], CsrfToken: [] }]
+  /professional-timesheets:
+    get:
+      tags: [Professional Projects]
+      summary: عرض فترات الوقت الأسبوعية
+      operationId: listProfessionalTimesheets
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - { name: scope, in: query, schema: { type: string, enum: [MY, ALL], default: MY } }
+      - { name: status, in: query, schema: { $ref: '#/components/schemas/ProfessionalTimesheetStatus' } }
+      - { name: dateFrom, in: query, schema: { type: string, format: date } }
+      - { name: dateTo, in: query, schema: { type: string, format: date } }
+      responses:
+        '200': { description: فترات معزولة حسب الشركة, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalTimesheetListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: professional_timesheets.view
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [Professional Projects]
+      summary: إنشاء فترة أسبوعية للمستخدم الحالي
+      operationId: createProfessionalTimesheet
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateProfessionalTimesheetRequest' } } }
+      responses:
+        '201': { description: الفترة الأسبوعية, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalTimesheetResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: professional_timesheets.submit
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /professional-timesheets/{professionalTimesheetId}:
+    get:
+      tags: [Professional Projects]
+      summary: عرض فترة أسبوعية وإدخالاتها
+      operationId: getProfessionalTimesheet
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: professionalTimesheetId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: الفترة وإدخالاتها, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalTimesheetDetailResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: professional_timesheets.view
+      security: [{ SessionCookie: [] }]
   /hr/departments:
     get:
       tags: [Human Resources]
@@ -2485,7 +2542,7 @@ paths:
     post:
       tags: [Approvals]
       summary: إرسال موضوع إلى محرك الموافقات
-      description: يتطلب إذن المالك الموافق لنوع الموضوع؛ أول نوع مدعوم هو إقفال الفترة ويتطلب fiscal_periods.close.
+      description: يتطلب إذن المالك الموافق لنوع الموضوع؛ الإقفال المالي يتطلب fiscal_periods.close والجدول الزمني يتطلب professional_timesheets.submit.
       operationId: createApprovalRequest
       parameters:
       - $ref: '#/components/parameters/RequestId'
@@ -2501,7 +2558,10 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/BusinessRuleViolation' }
-      x-permission: fiscal_periods.close
+      x-permission: subject-owner
+      x-permission-by-subject:
+        FINANCIAL_CLOSE_RUN: fiscal_periods.close
+        PROFESSIONAL_TIMESHEET: professional_timesheets.submit
       security: [{ SessionCookie: [], CsrfToken: [] }]
       x-idempotency-scope: user + company + operation + key
   /approval-requests/{approvalRequestId}:
@@ -9383,7 +9443,7 @@ components:
           - type: 'null'
     ApprovalSubjectType:
       type: string
-      enum: [FINANCIAL_CLOSE_RUN]
+      enum: [FINANCIAL_CLOSE_RUN, PROFESSIONAL_TIMESHEET]
     ApprovalRequestStatus:
       type: string
       enum: [PENDING, APPROVED, REJECTED, CANCELLED]
@@ -13880,6 +13940,88 @@ components:
       required: [deleted]
       properties:
         deleted: { type: boolean, const: true }
+    ProfessionalTimesheetStatus:
+      type: string
+      enum: [OPEN, AWAITING_APPROVAL, APPROVED]
+    ProfessionalEmployeeReference:
+      type: object
+      additionalProperties: false
+      required: [id, employeeNumber, nameAr, nameEn, status]
+      properties:
+        id: { type: string, format: uuid }
+        employeeNumber: { type: string, maxLength: 40 }
+        nameAr: { type: string, maxLength: 160 }
+        nameEn: { type: [string, 'null'], maxLength: 160 }
+        status: { $ref: '#/components/schemas/HrEmploymentStatus' }
+    ProfessionalTimesheet:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - employee
+      - periodStart
+      - periodEnd
+      - status
+      - entryCount
+      - trackedMinutes
+      - billableMinutes
+      - nonBillableMinutes
+      - activeSubmissionNumber
+      - activeSnapshotHashSha256
+      - submittedAt
+      - editable
+      - version
+      - createdAt
+      - updatedAt
+      properties:
+        id: { type: string, format: uuid }
+        employee: { $ref: '#/components/schemas/ProfessionalEmployeeReference' }
+        periodStart: { type: string, format: date }
+        periodEnd: { type: string, format: date }
+        status: { $ref: '#/components/schemas/ProfessionalTimesheetStatus' }
+        entryCount: { type: integer, minimum: 0 }
+        trackedMinutes: { type: integer, minimum: 0 }
+        billableMinutes: { type: integer, minimum: 0 }
+        nonBillableMinutes: { type: integer, minimum: 0 }
+        activeSubmissionNumber: { type: [integer, 'null'], minimum: 1 }
+        activeSnapshotHashSha256:
+          type: [string, 'null']
+          pattern: '^[a-f0-9]{64}$'
+        submittedAt: { type: [string, 'null'], format: date-time }
+        editable: { type: boolean }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ProfessionalTimesheetResponse:
+      type: object
+      additionalProperties: false
+      required: [timesheet]
+      properties:
+        timesheet: { $ref: '#/components/schemas/ProfessionalTimesheet' }
+    ProfessionalTimesheetListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/ProfessionalTimesheet' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    ProfessionalTimesheetDetailResponse:
+      type: object
+      additionalProperties: false
+      required: [timesheet, entries]
+      properties:
+        timesheet: { $ref: '#/components/schemas/ProfessionalTimesheet' }
+        entries:
+          type: array
+          items: { $ref: '#/components/schemas/ProfessionalTimeEntry' }
+    CreateProfessionalTimesheetRequest:
+      type: object
+      additionalProperties: false
+      required: [periodStart]
+      properties:
+        periodStart: { type: string, format: date }
     HrEmploymentType:
       type: string
       enum: [FULL_TIME, PART_TIME, CONTRACTOR, INTERN]

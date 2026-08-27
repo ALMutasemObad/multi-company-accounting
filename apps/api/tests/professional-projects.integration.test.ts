@@ -6,12 +6,16 @@ import {
 } from "../src/projects/professional-project-service.js";
 import { ProfessionalCustomerAdapter } from "../src/sales/professional-customer-adapter.js";
 import { ProfessionalPeopleAdapter } from "../src/users/professional-people-adapter.js";
+import { ProfessionalEmployeeAdapter } from "../src/hr/professional-employee-adapter.js";
+import { ApprovalService } from "../src/approvals/approval-service.js";
+import { ProfessionalTimesheetApprovalAdapter } from "../src/projects/professional-timesheet-approval-adapter.js";
 
 const enabled = process.env.RUN_DB_TESTS === "true" && Boolean(process.env.DATABASE_URL);
 const prisma = enabled ? createDatabase(process.env.DATABASE_URL!) : null;
 
 describe.runIf(enabled)("professional projects and time with MariaDB", () => {
   let service: ProfessionalProjectService;
+  let approvals: ApprovalService;
   let companyId: bigint;
   let userId: bigint;
   let memberUserId: bigint;
@@ -28,6 +32,13 @@ describe.runIf(enabled)("professional projects and time with MariaDB", () => {
   const memberContext = () => ({ companyId, userId: memberUserId });
 
   async function cleanMainRows() {
+    const testMember = await prisma!.user.findUnique({ where: { emailNormalized: "professional.member@mcap.local" }, select: { id: true } });
+    const testTimesheets = testMember ? await prisma!.professionalTimesheet.findMany({
+      where: { companyId, userId: testMember.id },
+      select: { id: true, publicId: true },
+    }) : [];
+    const testTimesheetIds = testTimesheets.map((row) => row.id);
+    const testTimesheetPublicIds = testTimesheets.map((row) => row.publicId);
     await prisma!.idempotencyRecord.deleteMany({
       where: {
         companyId,
@@ -37,10 +48,18 @@ describe.runIf(enabled)("professional projects and time with MariaDB", () => {
           "UNASSIGN_PROFESSIONAL_PROJECT_MEMBER",
           "TRANSITION_PROFESSIONAL_PROJECT",
           "CREATE_PROFESSIONAL_TIME_ENTRY",
+          "CREATE_PROFESSIONAL_TIMESHEET",
+          "REQUEST_APPROVAL",
+          "APPROVE_APPROVAL",
+          "REJECT_APPROVAL",
         ] },
       },
     });
-    await prisma!.auditLog.deleteMany({ where: { companyId, entityType: { in: ["PROFESSIONAL_PROJECT", "PROFESSIONAL_TIME_ENTRY"] } } });
+    await prisma!.approvalDecision.deleteMany({ where: { companyId, approvalRequest: { subjectType: "PROFESSIONAL_TIMESHEET", subjectId: { in: testTimesheetPublicIds } } } });
+    await prisma!.approvalRequest.deleteMany({ where: { companyId, subjectType: "PROFESSIONAL_TIMESHEET", subjectId: { in: testTimesheetPublicIds } } });
+    await prisma!.professionalTimesheetSubmission.deleteMany({ where: { companyId, timesheetId: { in: testTimesheetIds } } });
+    await prisma!.professionalTimesheet.deleteMany({ where: { companyId, id: { in: testTimesheetIds } } });
+    await prisma!.auditLog.deleteMany({ where: { companyId, entityType: { in: ["PROFESSIONAL_PROJECT", "PROFESSIONAL_TIME_ENTRY", "PROFESSIONAL_TIMESHEET", "APPROVAL_REQUEST"] } } });
     const projects = await prisma!.professionalProject.findMany({ where: { companyId, nameAr: { startsWith: "IT-PRO-" } }, select: { id: true } });
     const ids = projects.map(({ id }) => id);
     if (ids.length) {
@@ -50,6 +69,7 @@ describe.runIf(enabled)("professional projects and time with MariaDB", () => {
     }
     await prisma!.customer.deleteMany({ where: { companyId, code: "IT-PRO-CUSTOMER" } });
     await prisma!.account.deleteMany({ where: { companyId, code: "IT-PRO-AR" } });
+    await prisma!.employee.deleteMany({ where: { companyId, employeeNumber: "IT-PRO-EMPLOYEE" } });
   }
 
   beforeAll(async () => {
@@ -72,6 +92,19 @@ describe.runIf(enabled)("professional projects and time with MariaDB", () => {
       where: { userId_companyId: { userId: memberUserId, companyId } },
       update: { isActive: true },
       create: { userId: memberUserId, companyId },
+    });
+    await prisma!.employee.create({
+      data: {
+        companyId,
+        userId: memberUserId,
+        employeeNumber: "IT-PRO-EMPLOYEE",
+        nameAr: "موظف مشروع اختباري",
+        nameEn: "Test Project Employee",
+        employmentType: "FULL_TIME",
+        hireDate: new Date("2057-01-01T00:00:00.000Z"),
+        createdById: userId,
+        updatedById: userId,
+      },
     });
 
     const assetType = await prisma!.accountType.findFirstOrThrow({ where: { class: "ASSET" } });
@@ -104,7 +137,16 @@ describe.runIf(enabled)("professional projects and time with MariaDB", () => {
       prisma!,
       new ProfessionalCustomerAdapter(prisma!),
       new ProfessionalPeopleAdapter(prisma!),
+      new ProfessionalEmployeeAdapter(prisma!),
     );
+    approvals = new ApprovalService(prisma!, {
+      FINANCIAL_CLOSE_RUN: {
+        request: async () => { throw new Error("unused financial-close approval port"); },
+        approve: async () => { throw new Error("unused financial-close approval port"); },
+        reject: async () => { throw new Error("unused financial-close approval port"); },
+      },
+      PROFESSIONAL_TIMESHEET: new ProfessionalTimesheetApprovalAdapter(service),
+    });
   });
 
   afterAll(async () => {
@@ -199,6 +241,89 @@ describe.runIf(enabled)("professional projects and time with MariaDB", () => {
       .rejects.toMatchObject({ reason: "BILLABLE_NOT_ALLOWED" });
   });
 
+  it("freezes a weekly timesheet through maker-checker, reopens on rejection, and retains submission history", async () => {
+    await expect(service.createTimesheet(memberContext(), {
+      periodStart: "2057-08-27",
+      idempotencyKey: "it-professional-timesheet-invalid-week",
+    })).rejects.toMatchObject({ reason: "INVALID_PERIOD_START" });
+
+    const input = {
+      periodStart: "2057-08-26",
+      idempotencyKey: "it-professional-timesheet-create-0001",
+    };
+    const [created, replayed] = await Promise.all([
+      service.createTimesheet(memberContext(), input),
+      service.createTimesheet(memberContext(), input),
+    ]);
+    expect(replayed).toEqual(created);
+    expect(created.timesheet).toMatchObject({ status: "OPEN", entryCount: 1, trackedMinutes: 125, version: 0 });
+    expect((await service.listTimesheets(memberContext(), { page: 1, pageSize: 25, scope: "MY" })).data).toHaveLength(1);
+    expect((await service.listTimesheets({ companyId: foreignCompanyId, userId }, { page: 1, pageSize: 25, scope: "ALL" })).data).toEqual([]);
+
+    const firstSubmit = {
+      subjectType: "PROFESSIONAL_TIMESHEET",
+      subjectId: created.timesheet.id,
+      subjectVersion: 0,
+      idempotencyKey: "it-professional-timesheet-submit-0001",
+    } as const;
+    const [firstRequest, replayedRequest] = await Promise.all([
+      approvals.request(memberContext(), firstSubmit),
+      approvals.request(memberContext(), firstSubmit),
+    ]);
+    expect(replayedRequest).toEqual(firstRequest);
+    expect(firstRequest.approvalRequest.status).toBe("PENDING");
+    expect(await prisma!.professionalTimesheetSubmission.count({ where: { companyId } })).toBe(1);
+    expect((await service.getTimesheet(memberContext(), created.timesheet.id)).timesheet.status).toBe("AWAITING_APPROVAL");
+
+    await expect(service.createTimeEntry(memberContext(), {
+      projectId,
+      workDate: "2057-08-28",
+      minutes: 30,
+      isBillable: true,
+      description: "إدخال يجب أن يمنعه تجميد الأسبوع",
+      idempotencyKey: "it-professional-timesheet-locked-entry",
+    })).rejects.toMatchObject({ reason: "TIMESHEET_LOCKED" });
+    await expect(approvals.approve(memberContext(), firstRequest.approvalRequest.id, {
+      version: 0,
+      idempotencyKey: "it-professional-timesheet-maker-approve",
+    })).rejects.toMatchObject({ reason: "MAKER_CHECKER_VIOLATION" });
+
+    const rejected = await approvals.reject(context(), firstRequest.approvalRequest.id, {
+      version: 0,
+      reason: "يلزم استكمال وصف العمل قبل الاعتماد",
+      idempotencyKey: "it-professional-timesheet-reject-0001",
+    });
+    expect(rejected.approvalRequest.status).toBe("REJECTED");
+    expect((await service.getTimesheet(memberContext(), created.timesheet.id)).timesheet).toMatchObject({ status: "OPEN", version: 2 });
+
+    const updated = await service.updateTimeEntry(memberContext(), timeEntryId, {
+      version: 0,
+      minutes: 130,
+      description: "بحث وتحليل مهني اختباري مستكمل",
+    });
+    expect(updated.timeEntry.version).toBe(1);
+    const secondRequest = await approvals.request(memberContext(), {
+      subjectType: "PROFESSIONAL_TIMESHEET",
+      subjectId: created.timesheet.id,
+      subjectVersion: 2,
+      idempotencyKey: "it-professional-timesheet-submit-0002",
+    });
+    expect(await prisma!.professionalTimesheetSubmission.count({ where: { companyId } })).toBe(2);
+    expect(secondRequest.approvalRequest.subjectSnapshotHashSha256).not.toBe(firstRequest.approvalRequest.subjectSnapshotHashSha256);
+
+    const decisions = await Promise.allSettled([
+      approvals.approve(context(), secondRequest.approvalRequest.id, { version: 0, idempotencyKey: "it-professional-timesheet-approve-0002-a" }),
+      approvals.approve(context(), secondRequest.approvalRequest.id, { version: 0, idempotencyKey: "it-professional-timesheet-approve-0002-b" }),
+    ]);
+    expect(decisions.filter((decision) => decision.status === "fulfilled")).toHaveLength(1);
+    expect(decisions.filter((decision) => decision.status === "rejected")).toHaveLength(1);
+    const approved = decisions.find((decision) => decision.status === "fulfilled")!.value;
+    expect(approved.approvalRequest.status).toBe("APPROVED");
+    expect((await service.getTimesheet(memberContext(), created.timesheet.id)).timesheet).toMatchObject({ status: "APPROVED", version: 4 });
+    await expect(service.updateTimeEntry(memberContext(), timeEntryId, { version: 1, minutes: 135 }))
+      .rejects.toMatchObject({ reason: "TIMESHEET_LOCKED" });
+  });
+
   it("keeps company data isolated and preserves the last active manager", async () => {
     const foreignContext = { companyId: foreignCompanyId, userId };
     expect((await service.listProjects(foreignContext, { page: 1, pageSize: 25 })).data).toEqual([]);
@@ -225,7 +350,7 @@ describe.runIf(enabled)("professional projects and time with MariaDB", () => {
       reason: "انتهاء الإسناد الاختباري",
       idempotencyKey: "it-professional-member-unassign-0001",
     });
-    await expect(service.deleteTimeEntry(memberContext(), timeEntryId, { version: 0, reason: "محاولة بعد انتهاء الإسناد" }))
+    await expect(service.deleteTimeEntry(memberContext(), timeEntryId, { version: 1, reason: "محاولة بعد انتهاء الإسناد" }))
       .rejects.toMatchObject({ reason: "MEMBER_INACTIVE" });
   });
 });

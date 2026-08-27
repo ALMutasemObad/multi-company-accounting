@@ -11,12 +11,22 @@ import type {
   ProfessionalProjectStatus,
   ProfessionalTimeEntry,
   ProfessionalTimeEntryList,
+  ProfessionalTimesheet,
 } from "./types";
 import { Button, EmptyState, Modal, PageHeader, Pagination, Spinner } from "./ui";
 
 type Notice = (message: string, tone?: "success" | "error") => void;
 type ProjectDetail = { project: ProfessionalProject; members: ProfessionalProjectMember[] };
 const today = () => new Date().toISOString().slice(0, 10);
+const currentWeekStart = () => {
+  const value = new Date();
+  value.setHours(12, 0, 0, 0);
+  value.setDate(value.getDate() - value.getDay());
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
 
 export function ProfessionalProjectsPage({ notify }: { notify: Notice }) {
   const { t } = useI18n();
@@ -30,6 +40,9 @@ export function ProfessionalProjectsPage({ notify }: { notify: Notice }) {
   const [timeMeta, setTimeMeta] = useState({ page: 1, pageSize: 10, total: 0, totalPages: 0 });
   const [timeSummary, setTimeSummary] = useState({ trackedMinutes: 0, billableMinutes: 0, nonBillableMinutes: 0 });
   const [timePage, setTimePage] = useState(1);
+  const [timesheets, setTimesheets] = useState<ProfessionalTimesheet[]>([]);
+  const [timesheetMeta, setTimesheetMeta] = useState({ page: 1, pageSize: 10, total: 0, totalPages: 0 });
+  const [timesheetPage, setTimesheetPage] = useState(1);
   const [customers, setCustomers] = useState<ProfessionalCustomerOption[]>([]);
   const [people, setPeople] = useState<ProfessionalPerson[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,8 +95,19 @@ export function ProfessionalProjectsPage({ notify }: { notify: Notice }) {
     }
   }, [notify, selectedId, t, timePage]);
 
+  const loadTimesheets = useCallback(async () => {
+    try {
+      const result = await api<ListResponse<ProfessionalTimesheet>>(`/professional-timesheets?scope=MY&page=${timesheetPage}&pageSize=10`);
+      setTimesheets(result.data);
+      setTimesheetMeta(result.meta);
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : t("professional.timesheetLoadError"), "error");
+    }
+  }, [notify, t, timesheetPage]);
+
   useEffect(() => { void loadProjects(); }, [loadProjects]);
   useEffect(() => { void Promise.all([loadDetail(), loadTime()]); }, [loadDetail, loadTime]);
+  useEffect(() => { void loadTimesheets(); }, [loadTimesheets]);
   useEffect(() => {
     void Promise.all([
       api<{ data: ProfessionalCustomerOption[] }>("/professional-projects/customer-options"),
@@ -101,7 +125,48 @@ export function ProfessionalProjectsPage({ notify }: { notify: Notice }) {
 
   async function refreshAll() {
     await loadProjects();
-    await Promise.all([loadDetail(), loadTime()]);
+    await Promise.all([loadDetail(), loadTime(), loadTimesheets()]);
+  }
+
+  async function createTimesheet(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    setWorking(true);
+    try {
+      await api("/professional-timesheets", {
+        method: "POST",
+        idempotencyKey: idempotencyKey("professional-timesheet", crypto.randomUUID()),
+        body: JSON.stringify({ periodStart: String(data.get("periodStart") ?? "") }),
+      });
+      notify(t("professional.timesheetCreated"));
+      await loadTimesheets();
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : t("professional.timesheetError"), "error");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function submitTimesheet(timesheet: ProfessionalTimesheet) {
+    if (!window.confirm(t("professional.timesheetSubmitConfirm"))) return;
+    setWorking(true);
+    try {
+      await api("/approval-requests", {
+        method: "POST",
+        idempotencyKey: idempotencyKey("professional-timesheet-submit", crypto.randomUUID()),
+        body: JSON.stringify({
+          subjectType: "PROFESSIONAL_TIMESHEET",
+          subjectId: timesheet.id,
+          subjectVersion: timesheet.version,
+        }),
+      });
+      notify(t("professional.timesheetSubmitted"));
+      await Promise.all([loadTimesheets(), loadTime()]);
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : t("professional.timesheetError"), "error");
+    } finally {
+      setWorking(false);
+    }
   }
 
   async function createProject(event: FormEvent<HTMLFormElement>) {
@@ -304,6 +369,32 @@ export function ProfessionalProjectsPage({ notify }: { notify: Notice }) {
       </form>}
       {timeEntries.length === 0 ? <EmptyState title={t("professional.timeEmptyTitle")} description={t("professional.timeEmptyDescription")} /> : <><div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("professional.workDate")}</th><th>{t("professional.person")}</th><th>{t("professional.workDescription")}</th><th>{t("professional.time")}</th><th>{t("professional.billable")}</th><th>{t("professional.actions")}</th></tr></thead><tbody>{timeEntries.map((entry) => <tr key={entry.id}><td>{entry.workDate}</td><td>{entry.user.displayName}</td><td>{entry.description}</td><td>{formatDuration(entry.minutes)}</td><td>{entry.isBillable ? t("professional.yes") : t("professional.no")}</td><td>{entry.editable ? <Button variant="ghost" icon="trash" disabled={working} onClick={() => void deleteTime(entry)}>{t("professional.deleteTime")}</Button> : <span className="muted">{t("professional.readOnly")}</span>}</td></tr>)}</tbody></table></div><Pagination {...timeMeta} page={timePage} onChange={setTimePage} /></>}
     </article>}
+
+    <article className="panel professional-timesheet-panel">
+      <header><div><h2>{t("professional.timesheets")}</h2><p>{t("professional.timesheetsDescription")}</p></div></header>
+      <form className="professional-timesheet-form" onSubmit={createTimesheet}>
+        <label><span>{t("professional.weekStart")}</span><input name="periodStart" type="date" defaultValue={currentWeekStart()} required /></label>
+        <Button type="submit" icon="plus" disabled={working}>{t("professional.createTimesheet")}</Button>
+        <small>{t("professional.sundayHint")}</small>
+      </form>
+      {timesheets.length === 0 ? <EmptyState title={t("professional.timesheetEmptyTitle")} description={t("professional.timesheetEmptyDescription")} /> : <>
+        <div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}>
+          <table className="data-table"><thead><tr><th>{t("professional.week")}</th><th>{t("professional.statusLabel")}</th><th>{t("professional.entries")}</th><th>{t("professional.time")}</th><th>{t("professional.billable")}</th><th>{t("professional.actions")}</th></tr></thead>
+            <tbody>{timesheets.map((timesheet) => <tr key={timesheet.id}>
+              <td><strong>{timesheet.periodStart}</strong><small>{t("professional.toDate", { date: timesheet.periodEnd })}</small></td>
+              <td><span className={`status-chip ${timesheet.status.toLowerCase()}`}>{t(`professional.timesheetStatus.${timesheet.status}`)}</span></td>
+              <td>{timesheet.entryCount}</td>
+              <td>{formatDuration(timesheet.trackedMinutes)}</td>
+              <td>{formatDuration(timesheet.billableMinutes)}</td>
+              <td>{timesheet.editable && timesheet.entryCount > 0
+                ? <Button disabled={working} onClick={() => void submitTimesheet(timesheet)}>{t("professional.submitTimesheet")}</Button>
+                : <span className="muted">{timesheet.status === "OPEN" ? t("professional.timesheetNeedsEntries") : t("professional.readOnly")}</span>}</td>
+            </tr>)}</tbody>
+          </table>
+        </div>
+        <Pagination {...timesheetMeta} page={timesheetPage} onChange={setTimesheetPage} />
+      </>}
+    </article>
 
     {createOpen && <Modal title={t("professional.createTitle")} description={t("professional.createDescription")} onClose={() => setCreateOpen(false)} wide>
       <form className="modal-form form-grid" onSubmit={createProject}>

@@ -9,6 +9,18 @@ const toPerson = (value: { user: ProfessionalPersonReference }) => value.user;
 export class ProfessionalPeopleAdapter implements ProfessionalPeoplePort {
   constructor(private readonly prisma: PrismaClient) {}
 
+  async lockAssignment(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+    userId: bigint,
+  ) {
+    const rows = await tx.$queryRaw<Array<{ user_id: bigint }>>`
+      SELECT user_id FROM user_companies
+      WHERE company_id=${companyId} AND user_id=${userId}
+      FOR UPDATE`;
+    return rows.length === 1;
+  }
+
   async findActiveInCompany(
     tx: Prisma.TransactionClient,
     companyId: bigint,

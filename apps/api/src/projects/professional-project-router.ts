@@ -29,6 +29,12 @@ const timeQuery = pagination.extend({
   dateTo: isoDate.optional(),
   billable: booleanQuery.optional(),
 }).refine((value) => !value.dateFrom || !value.dateTo || value.dateFrom <= value.dateTo, { message: "dateFrom must be before dateTo" });
+const timesheetQuery = pagination.extend({
+  scope: z.enum(["MY", "ALL"]).default("MY"),
+  status: z.enum(["OPEN", "AWAITING_APPROVAL", "APPROVED"]).optional(),
+  dateFrom: isoDate.optional(),
+  dateTo: isoDate.optional(),
+}).refine((value) => !value.dateFrom || !value.dateTo || value.dateFrom <= value.dateTo, { message: "dateFrom must be before dateTo" });
 const optionQuery = z.object({ search: z.string().trim().min(1).max(200).optional() });
 
 function sid(request: Request) {
@@ -127,6 +133,21 @@ export function createProfessionalProjectRouter(auth: AuthService, projects: Pro
       bodies.deleteProfessionalTimeEntry.parse(request.body),
     ));
   });
+  router.get("/professional-timesheets", async (request, response) => {
+    const context = await authorize(request, "professional_timesheets.view", false);
+    response.json(await projects.listTimesheets(context, timesheetQuery.parse(request.query)));
+  });
+  router.post("/professional-timesheets", async (request, response) => {
+    const context = await authorize(request, "professional_timesheets.submit", true);
+    response.status(201).json(await projects.createTimesheet(context, {
+      ...bodies.createProfessionalTimesheet.parse(request.body),
+      idempotencyKey: idempotencyKey(request),
+    }));
+  });
+  router.get("/professional-timesheets/:professionalTimesheetId", async (request, response) => {
+    const context = await authorize(request, "professional_timesheets.view", false);
+    response.json(await projects.getTimesheet(context, publicId.parse(request.params.professionalTimesheetId)));
+  });
 
   const errors: ErrorRequestHandler = (error, _request, response, next) => {
     if (error instanceof ZodError) {
@@ -134,7 +155,7 @@ export function createProfessionalProjectRouter(auth: AuthService, projects: Pro
       return;
     }
     if (error instanceof ProfessionalProjectError) {
-      const status = ["NOT_FOUND", "CUSTOMER_NOT_FOUND", "USER_NOT_FOUND", "MEMBER_NOT_FOUND"].includes(error.reason)
+      const status = ["NOT_FOUND", "CUSTOMER_NOT_FOUND", "USER_NOT_FOUND", "MEMBER_NOT_FOUND", "NOT_TIMESHEET_OWNER"].includes(error.reason)
         ? 404
         : ["VERSION_CONFLICT", "IDEMPOTENCY_MISMATCH", "IDEMPOTENCY_IN_PROGRESS"].includes(error.reason)
           ? 409

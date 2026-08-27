@@ -27,6 +27,11 @@ export type ProfessionalPersonReference = {
 };
 
 export interface ProfessionalPeoplePort {
+  lockAssignment(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+    userId: bigint,
+  ): Promise<boolean>;
   findActiveInCompany(
     tx: Prisma.TransactionClient,
     companyId: bigint,
@@ -36,4 +41,24 @@ export interface ProfessionalPeoplePort {
     companyId: bigint,
     input: { ids?: bigint[] | undefined; search?: string | undefined; limit: number },
   ): Promise<ProfessionalPersonReference[]>;
+}
+
+export type ProfessionalEmployeeReference = {
+  id: string;
+  employeeNumber: string;
+  nameAr: string;
+  nameEn: string | null;
+  status: "ACTIVE" | "ON_LEAVE" | "TERMINATED";
+};
+
+export interface ProfessionalEmployeePort {
+  findByUserInCompany(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+    userId: bigint,
+  ): Promise<ProfessionalEmployeeReference | null>;
+  listByUsersInCompany(
+    companyId: bigint,
+    userIds: bigint[],
+  ): Promise<Array<ProfessionalEmployeeReference & { userId: bigint }>>;
 }

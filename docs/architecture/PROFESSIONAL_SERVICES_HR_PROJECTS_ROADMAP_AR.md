@@ -1,7 +1,7 @@
 ---
 title: "Professional Services, HR, and Projects Roadmap"
-status: "approved sequencing; phases A and B complete locally; phase C next"
-version: "1.1"
+status: "approved sequencing; phases A, B, and C complete locally; phase D next"
+version: "1.2"
 date: "2026-08-27"
 related:
   - "ADR-006-professional-services-projects-priority.md"
@@ -20,8 +20,8 @@ related:
 |---:|---|---|---|---|
 | A | المشاريع/القضايا والوقت الشخصي | مشروع مرتبط بعميل، فريق، وقت خام، حالات وتدقيق | Sales customers + Identity users | منفذة محليًا |
 | B | أساس HR | ملف موظف، رقم وظيفي، قسم، منصب، عقد/حالة عمل غير مالي | Identity reference only | منفذة محليًا |
-| C | Timesheets والموافقة | فترة وقت immutable عند الإرسال وقرار Maker/Checker | A + Approvals + B | التالية |
-| D | العقود والأسعار وفوترة الخدمات | أسعار مؤرخة ولقطة تسعير وفاتورة عبر Sales port | C + Sales + Tax | مخططة |
+| C | Timesheets والموافقة | فترة وقت immutable عند الإرسال وقرار Maker/Checker | A + Approvals + B | منفذة محليًا |
+| D | العقود والأسعار وفوترة الخدمات | أسعار مؤرخة ولقطة تسعير وفاتورة عبر Sales port | C + Sales + Tax | التالية |
 | E | تخطيط المشروع والمصروفات | مهام/معالم/ميزانية وقت ومصروفات معتمدة | B/C + Expenses/Approvals | مخططة |
 | F | خصائص المكتب القانوني | تعارض مصالح، مواعيد، تصنيف مستندات وقيود وصول | A + Security/Audit | تحتاج قرارات نطاق |
 | G | أموال العملاء/الأمانات | حسابات منفصلة، تسوية، منع الاعتراف كإيراد وضبط صلاحيات | Treasury + Ledger + Reconciliation | ADR مستقل إلزامي |
@@ -47,6 +47,10 @@ related:
 - يرسل `PROFESSIONAL_TIMESHEET` إلى Approvals عبر `ApprovalSubjectPort`.
 - يظل Approvals مالك `ApprovalRequest/ApprovalDecision` فقط؛ يعيد المالك فتح الفترة عند الرفض ويثبتها عند الاعتماد.
 - تحدد السياسة هل مدير المشروع ثم مدير الموارد البشرية تسلسل واحد أو عدة مستويات قبل تنفيذها؛ لا يفترض ذلك في البيانات الحالية.
+
+### النطاق المنفذ
+
+اعتمدت الشريحة الأولى الأسبوع من الأحد إلى السبت، وربطت أهلية الإنشاء بموظف HR نشط، واحتفظت بكل محاولة إرسال كقائمة معرفات ونسخ وبصمة دون نسخ حقائق الوقت. تطبق سياسة Maker/Checker واحدة عبر المحرك القائم، وتؤجل الفترة الشهرية والمستويات المتعددة حتى توجد سياسة أعمال معتمدة.
 
 ## المرحلة D — العقود والأسعار والفوترة
 

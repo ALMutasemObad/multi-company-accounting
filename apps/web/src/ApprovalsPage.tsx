@@ -81,7 +81,7 @@ export function ApprovalsPage({ notify }: { notify: Notice }) {
           <table className="data-table approvals-table">
             <thead><tr><th>{t("approvals.subject")}</th><th>{t("approvals.requestedBy")}</th><th>{t("approvals.requestedAt")}</th><th>{t("approvals.statusLabel")}</th><th>{t("approvals.decision")}</th><th>{t("approvals.actions")}</th></tr></thead>
             <tbody>{requests.map((request) => <tr key={request.id}>
-              <td><strong>{t("approvals.subject.FINANCIAL_CLOSE_RUN")}</strong><small className="approval-reference">{request.subjectId}</small></td>
+              <td><strong>{t(`approvals.subject.${request.subjectType}`)}</strong><small className="approval-reference">{request.subjectId}</small></td>
               <td>{request.requestedBy.displayName}<small>{request.makerCheckerRequired ? t("approvals.separationRequired") : ""}</small></td>
               <td>{new Date(request.createdAt).toLocaleString(activeIntlLocale())}</td>
               <td><span className={`status-chip ${request.status.toLowerCase()}`}>{t(`approvals.status.${request.status}`)}</span></td>

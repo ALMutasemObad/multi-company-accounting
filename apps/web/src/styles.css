@@ -506,7 +506,7 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", "Noto Sans Devanaga
 .professional-toolbar label { display: grid; gap: 5px; }
 .professional-toolbar label > span { color: var(--muted); font-size: .78rem; font-weight: 700; }
 .professional-layout { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(300px, .8fr); gap: 20px; }
-.professional-project-list, .professional-detail, .professional-time-panel { overflow: hidden; }
+.professional-project-list, .professional-detail, .professional-time-panel, .professional-timesheet-panel { overflow: hidden; }
 .professional-project-select { display: grid; gap: 3px; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: start; cursor: pointer; }
 .professional-project-select small, .professional-project-list td > small { color: var(--muted); font-size: .72rem; }
 .selected-row { background: #f0f7f3; }
@@ -531,6 +531,12 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", "Noto Sans Devanaga
 .professional-time-description { min-width: 0; }
 .professional-time-form .checkbox-row { display: flex; align-items: center; min-height: 42px; }
 .professional-time-form .checkbox-row input { width: 18px; height: 18px; accent-color: var(--green-700); }
+.professional-timesheet-panel { margin-top: 20px; }
+.professional-timesheet-form { display: flex; align-items: end; gap: 12px; padding: 18px 24px; border-bottom: 1px solid var(--line); background: var(--surface-soft); }
+.professional-timesheet-form label { display: grid; gap: 5px; }
+.professional-timesheet-form label > span { color: var(--muted); font-size: .72rem; font-weight: 700; }
+.professional-timesheet-form small { align-self: center; color: var(--muted); }
+.professional-timesheet-panel td > small { display: block; color: var(--muted); font-size: .72rem; }
 .form-grid .full-span { grid-column: 1 / -1; }
 
 .hr-toolbar label { display: grid; gap: 5px; }
@@ -563,6 +569,7 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", "Noto Sans Devanaga
 
 @media (max-width: 680px) {
   .professional-member-form, .professional-time-form { grid-template-columns: 1fr; }
+  .professional-timesheet-form { align-items: stretch; flex-direction: column; }
   .professional-time-description { grid-column: auto; }
   .professional-transitions .button, .professional-member-form .button, .professional-time-form .button { width: 100%; }
   .hr-structure-form { grid-template-columns: 1fr; }

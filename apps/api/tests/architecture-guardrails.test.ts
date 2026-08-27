@@ -111,7 +111,7 @@ describe("core accounting architecture guardrails", () => {
 
   it("keeps the approval engine away from owner facts and Ledger writes", async () => {
     const approval = await source("approvals/approval-service.ts");
-    expect(approval).not.toMatch(/\.(?:journalEntry|journalLine|accountingDocument|financialCloseRun)\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
+    expect(approval).not.toMatch(/\.(?:journalEntry|journalLine|accountingDocument|financialCloseRun|professionalTimesheet|professionalTimeEntry)\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
     expect(approval).toContain("this.ports[input.subjectType].request");
     expect(approval).toContain("await port.approve");
     expect(approval).toContain("await port.reject");
@@ -119,9 +119,11 @@ describe("core accounting architecture guardrails", () => {
 
   it("keeps professional projects behind customer and people ports and away from financial facts", async () => {
     const service = await source("projects/professional-project-service.ts");
-    expect(service).not.toMatch(/\.(?:customer|user|userCompany|salesInvoice|accountingDocument|journalEntry|journalLine)\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
+    expect(service).not.toMatch(/\.(?:customer|user|userCompany|employee|approvalRequest|approvalDecision|salesInvoice|purchaseInvoice|accountingDocument|journalEntry|journalLine|inventoryMovement|receipt|payment)\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
     expect(service).toContain("this.customers.findInCompany");
     expect(service).toContain("this.people.findActiveInCompany");
+    expect(service).toContain("this.people.lockAssignment");
+    expect(service).toContain("this.employees.findByUserInCompany");
     expect(service).not.toContain("PostingEngine");
   });
 

@@ -43,6 +43,7 @@ enum FinancialCloseRunStatus {
 
 enum ApprovalSubjectType {
   FINANCIAL_CLOSE_RUN
+  PROFESSIONAL_TIMESHEET
 }
 
 enum ApprovalRequestStatus {
@@ -268,6 +269,12 @@ enum ProfessionalProjectMemberRole {
   REVIEWER
 }
 
+enum ProfessionalTimesheetStatus {
+  OPEN
+  AWAITING_APPROVAL
+  APPROVED
+}
+
 enum HrEmploymentType {
   FULL_TIME
   PART_TIME
@@ -400,6 +407,8 @@ model Company {
   professionalProjects              ProfessionalProject[]
   professionalProjectMembers        ProfessionalProjectMember[]
   professionalTimeEntries           ProfessionalTimeEntry[]
+  professionalTimesheets            ProfessionalTimesheet[]
+  professionalTimesheetSubmissions  ProfessionalTimesheetSubmission[]
   hrDepartments                     HrDepartment[]
   hrPositions                       HrPosition[]
   employees                         Employee[]
@@ -458,15 +467,16 @@ model User {
   professionalProjectsUpdated       ProfessionalProject[]              @relation("ProfessionalProjectUpdatedBy")
   professionalMembersAssigned       ProfessionalProjectMember[]        @relation("ProfessionalProjectMemberAssignedBy")
   professionalMembersUpdated        ProfessionalProjectMember[]        @relation("ProfessionalProjectMemberUpdatedBy")
-  hrDepartmentsCreated              HrDepartment[]                      @relation("HrDepartmentCreatedBy")
-  hrDepartmentsUpdated              HrDepartment[]                      @relation("HrDepartmentUpdatedBy")
-  hrPositionsCreated                HrPosition[]                        @relation("HrPositionCreatedBy")
-  hrPositionsUpdated                HrPosition[]                        @relation("HrPositionUpdatedBy")
-  employeesCreated                  Employee[]                          @relation("EmployeeCreatedBy")
-  employeesUpdated                  Employee[]                          @relation("EmployeeUpdatedBy")
-  employmentContractsCreated        EmploymentContract[]                @relation("EmploymentContractCreatedBy")
-  employmentContractsUpdated        EmploymentContract[]                @relation("EmploymentContractUpdatedBy")
-  employmentContractsEnded          EmploymentContract[]                @relation("EmploymentContractEndedBy")
+  hrDepartmentsCreated              HrDepartment[]                     @relation("HrDepartmentCreatedBy")
+  hrDepartmentsUpdated              HrDepartment[]                     @relation("HrDepartmentUpdatedBy")
+  hrPositionsCreated                HrPosition[]                       @relation("HrPositionCreatedBy")
+  hrPositionsUpdated                HrPosition[]                       @relation("HrPositionUpdatedBy")
+  employeesCreated                  Employee[]                         @relation("EmployeeCreatedBy")
+  employeesUpdated                  Employee[]                         @relation("EmployeeUpdatedBy")
+  employmentContractsCreated        EmploymentContract[]               @relation("EmploymentContractCreatedBy")
+  employmentContractsUpdated        EmploymentContract[]               @relation("EmploymentContractUpdatedBy")
+  employmentContractsEnded          EmploymentContract[]               @relation("EmploymentContractEndedBy")
+  professionalTimesheetSubmissions  ProfessionalTimesheetSubmission[]  @relation("ProfessionalTimesheetSubmittedBy")
 
   @@map("users")
 }
@@ -799,6 +809,7 @@ model UserCompany {
   company                        Company                     @relation(fields: [companyId], references: [id])
   roles                          UserCompanyRole[]
   professionalProjectMemberships ProfessionalProjectMember[]
+  professionalTimesheets         ProfessionalTimesheet[]
   employee                       Employee?
 
   @@id([userId, companyId])
@@ -1393,6 +1404,52 @@ model ProfessionalTimeEntry {
   @@map("professional_time_entries")
 }
 
+model ProfessionalTimesheet {
+  id                       BigInt                            @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId                 String                            @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId                BigInt                            @map("company_id") @db.UnsignedBigInt
+  userId                   BigInt                            @map("user_id") @db.UnsignedBigInt
+  periodStart              DateTime                          @map("period_start") @db.Date
+  periodEnd                DateTime                          @map("period_end") @db.Date
+  status                   ProfessionalTimesheetStatus       @default(OPEN)
+  lastSubmissionNumber     Int                               @default(0) @map("last_submission_number") @db.UnsignedSmallInt
+  activeSubmissionNumber   Int?                              @map("active_submission_number") @db.UnsignedSmallInt
+  activeSnapshotHashSha256 Bytes?                            @map("active_snapshot_hash_sha256") @db.Binary(32)
+  submittedAt              DateTime?                         @map("submitted_at")
+  version                  Int                               @default(0) @db.UnsignedInt
+  createdAt                DateTime                          @default(now()) @map("created_at")
+  updatedAt                DateTime                          @updatedAt @map("updated_at")
+  company                  Company                           @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  assignment               UserCompany                       @relation(fields: [userId, companyId], references: [userId, companyId], onDelete: Restrict, onUpdate: Restrict)
+  submissions              ProfessionalTimesheetSubmission[]
+
+  @@unique([companyId, userId, periodStart])
+  @@unique([id, companyId])
+  @@index([companyId, status, periodStart, id])
+  @@index([companyId, userId, periodStart, periodEnd])
+  @@map("professional_timesheets")
+}
+
+model ProfessionalTimesheetSubmission {
+  id                 BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId          BigInt                @map("company_id") @db.UnsignedBigInt
+  timesheetId        BigInt                @map("timesheet_id") @db.UnsignedBigInt
+  submissionNumber   Int                   @map("submission_number") @db.UnsignedSmallInt
+  entryReferences    Json                  @map("entry_references")
+  snapshotHashSha256 Bytes                 @map("snapshot_hash_sha256") @db.Binary(32)
+  submittedById      BigInt                @map("submitted_by_id") @db.UnsignedBigInt
+  submittedAt        DateTime              @default(now()) @map("submitted_at")
+  company            Company               @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  timesheet          ProfessionalTimesheet @relation(fields: [timesheetId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  submittedBy        User                  @relation("ProfessionalTimesheetSubmittedBy", fields: [submittedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([timesheetId, submissionNumber])
+  @@unique([id, companyId])
+  @@index([companyId, submittedAt, id])
+  @@index([submittedById, submittedAt])
+  @@map("professional_timesheet_submissions")
+}
+
 model HrDepartment {
   id          BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
   publicId    String     @unique @default(uuid()) @map("public_id") @db.Char(36)
@@ -1444,36 +1501,36 @@ model HrPosition {
 }
 
 model Employee {
-  id                BigInt             @id @default(autoincrement()) @db.UnsignedBigInt
-  publicId          String             @unique @default(uuid()) @map("public_id") @db.Char(36)
-  companyId         BigInt             @map("company_id") @db.UnsignedBigInt
-  userId            BigInt?            @map("user_id") @db.UnsignedBigInt
-  departmentId      BigInt?            @map("department_id") @db.UnsignedBigInt
-  positionId        BigInt?            @map("position_id") @db.UnsignedBigInt
-  managerEmployeeId BigInt?            @map("manager_employee_id") @db.UnsignedBigInt
-  employeeNumber    String             @map("employee_number") @db.VarChar(40)
-  nameAr            String             @map("name_ar") @db.VarChar(160)
-  nameEn            String?            @map("name_en") @db.VarChar(160)
-  employmentType    HrEmploymentType   @map("employment_type")
-  status            HrEmploymentStatus @default(ACTIVE)
-  hireDate          DateTime           @map("hire_date") @db.Date
-  terminationDate   DateTime?          @map("termination_date") @db.Date
-  terminationReason String?            @map("termination_reason") @db.VarChar(500)
-  workLocation      String?            @map("work_location") @db.VarChar(160)
-  version           Int                @default(0) @db.UnsignedInt
-  createdById       BigInt             @map("created_by_id") @db.UnsignedBigInt
-  updatedById       BigInt             @map("updated_by_id") @db.UnsignedBigInt
-  createdAt         DateTime           @default(now()) @map("created_at")
-  updatedAt         DateTime           @updatedAt @map("updated_at")
-  company           Company            @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  identityAssignment UserCompany?       @relation(fields: [userId, companyId], references: [userId, companyId], onDelete: Restrict, onUpdate: Restrict)
-  department        HrDepartment?      @relation(fields: [departmentId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
-  position          HrPosition?        @relation(fields: [positionId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
-  manager           Employee?          @relation("EmployeeManager", fields: [managerEmployeeId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
-  directReports     Employee[]         @relation("EmployeeManager")
-  contracts         EmploymentContract[]
-  createdBy         User               @relation("EmployeeCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  updatedBy         User               @relation("EmployeeUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  id                 BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId           String               @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId          BigInt               @map("company_id") @db.UnsignedBigInt
+  userId             BigInt?              @map("user_id") @db.UnsignedBigInt
+  departmentId       BigInt?              @map("department_id") @db.UnsignedBigInt
+  positionId         BigInt?              @map("position_id") @db.UnsignedBigInt
+  managerEmployeeId  BigInt?              @map("manager_employee_id") @db.UnsignedBigInt
+  employeeNumber     String               @map("employee_number") @db.VarChar(40)
+  nameAr             String               @map("name_ar") @db.VarChar(160)
+  nameEn             String?              @map("name_en") @db.VarChar(160)
+  employmentType     HrEmploymentType     @map("employment_type")
+  status             HrEmploymentStatus   @default(ACTIVE)
+  hireDate           DateTime             @map("hire_date") @db.Date
+  terminationDate    DateTime?            @map("termination_date") @db.Date
+  terminationReason  String?              @map("termination_reason") @db.VarChar(500)
+  workLocation       String?              @map("work_location") @db.VarChar(160)
+  version            Int                  @default(0) @db.UnsignedInt
+  createdById        BigInt               @map("created_by_id") @db.UnsignedBigInt
+  updatedById        BigInt               @map("updated_by_id") @db.UnsignedBigInt
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @updatedAt @map("updated_at")
+  company            Company              @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  identityAssignment UserCompany?         @relation(fields: [userId, companyId], references: [userId, companyId], onDelete: Restrict, onUpdate: Restrict)
+  department         HrDepartment?        @relation(fields: [departmentId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  position           HrPosition?          @relation(fields: [positionId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  manager            Employee?            @relation("EmployeeManager", fields: [managerEmployeeId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  directReports      Employee[]           @relation("EmployeeManager")
+  contracts          EmploymentContract[]
+  createdBy          User                 @relation("EmployeeCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy          User                 @relation("EmployeeUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
   @@unique([companyId, employeeNumber])
   @@unique([userId, companyId])
@@ -1486,30 +1543,30 @@ model Employee {
 }
 
 model EmploymentContract {
-  id          BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
-  publicId    String           @unique @default(uuid()) @map("public_id") @db.Char(36)
-  companyId   BigInt           @map("company_id") @db.UnsignedBigInt
-  employeeId  BigInt           @map("employee_id") @db.UnsignedBigInt
-  contractType HrContractType  @map("contract_type")
-  titleAr     String           @map("title_ar") @db.VarChar(200)
-  titleEn     String?          @map("title_en") @db.VarChar(200)
-  startDate   DateTime         @map("start_date") @db.Date
-  endDate     DateTime?        @map("end_date") @db.Date
-  status      HrContractStatus @default(ACTIVE)
-  notes       String?          @db.VarChar(1000)
-  endReason   String?          @map("end_reason") @db.VarChar(500)
-  endedAt     DateTime?        @map("ended_at")
-  endedById   BigInt?          @map("ended_by_id") @db.UnsignedBigInt
-  version     Int              @default(0) @db.UnsignedInt
-  createdById BigInt           @map("created_by_id") @db.UnsignedBigInt
-  updatedById BigInt           @map("updated_by_id") @db.UnsignedBigInt
-  createdAt   DateTime         @default(now()) @map("created_at")
-  updatedAt   DateTime         @updatedAt @map("updated_at")
-  company     Company          @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  employee    Employee         @relation(fields: [employeeId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
-  endedBy     User?            @relation("EmploymentContractEndedBy", fields: [endedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  createdBy   User             @relation("EmploymentContractCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  updatedBy   User             @relation("EmploymentContractUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  id           BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId     String           @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId    BigInt           @map("company_id") @db.UnsignedBigInt
+  employeeId   BigInt           @map("employee_id") @db.UnsignedBigInt
+  contractType HrContractType   @map("contract_type")
+  titleAr      String           @map("title_ar") @db.VarChar(200)
+  titleEn      String?          @map("title_en") @db.VarChar(200)
+  startDate    DateTime         @map("start_date") @db.Date
+  endDate      DateTime?        @map("end_date") @db.Date
+  status       HrContractStatus @default(ACTIVE)
+  notes        String?          @db.VarChar(1000)
+  endReason    String?          @map("end_reason") @db.VarChar(500)
+  endedAt      DateTime?        @map("ended_at")
+  endedById    BigInt?          @map("ended_by_id") @db.UnsignedBigInt
+  version      Int              @default(0) @db.UnsignedInt
+  createdById  BigInt           @map("created_by_id") @db.UnsignedBigInt
+  updatedById  BigInt           @map("updated_by_id") @db.UnsignedBigInt
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+  company      Company          @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  employee     Employee         @relation(fields: [employeeId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  endedBy      User?            @relation("EmploymentContractEndedBy", fields: [endedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  createdBy    User             @relation("EmploymentContractCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy    User             @relation("EmploymentContractUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
   @@unique([id, companyId])
   @@index([employeeId, companyId, status, startDate])

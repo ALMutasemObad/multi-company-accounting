@@ -128,7 +128,7 @@ export type FinancialCloseRun = {
 
 export type ApprovalRequest = {
   id: string;
-  subjectType: "FINANCIAL_CLOSE_RUN";
+  subjectType: "FINANCIAL_CLOSE_RUN" | "PROFESSIONAL_TIMESHEET";
   subjectId: string;
   subjectVersion: number;
   subjectSnapshotHashSha256: string;
@@ -1012,6 +1012,31 @@ export type ProfessionalTimeEntry = {
 };
 export type ProfessionalTimeEntryList = ListResponse<ProfessionalTimeEntry> & {
   summary: { trackedMinutes: number; billableMinutes: number; nonBillableMinutes: number };
+};
+export type ProfessionalTimesheetStatus = "OPEN" | "AWAITING_APPROVAL" | "APPROVED";
+export type ProfessionalTimesheet = {
+  id: string;
+  employee: {
+    id: string;
+    employeeNumber: string;
+    nameAr: string;
+    nameEn: string | null;
+    status: "ACTIVE" | "ON_LEAVE" | "TERMINATED";
+  };
+  periodStart: string;
+  periodEnd: string;
+  status: ProfessionalTimesheetStatus;
+  entryCount: number;
+  trackedMinutes: number;
+  billableMinutes: number;
+  nonBillableMinutes: number;
+  activeSubmissionNumber: number | null;
+  activeSnapshotHashSha256: string | null;
+  submittedAt: string | null;
+  editable: boolean;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type HrEmploymentType = "FULL_TIME" | "PART_TIME" | "CONTRACTOR" | "INTERN";

@@ -29,6 +29,8 @@ export const permissionDefinitions = [
   ['professional_projects.manage', 'professional_projects', 'إدارة المشاريع والقضايا المهنية وأعضائها'],
   ['professional_time.view', 'professional_projects', 'عرض سجلات الوقت المهنية'],
   ['professional_time.log', 'professional_projects', 'تسجيل الوقت المهني وتعديل السجل الشخصي'],
+  ['professional_timesheets.view', 'professional_projects', 'عرض فترات الوقت الأسبوعية وحالات اعتمادها'],
+  ['professional_timesheets.submit', 'professional_projects', 'إنشاء فترة الوقت الشخصية وإرسالها للموافقة'],
   ['hr.employees.view', 'human_resources', 'عرض سجل الموظفين وبياناتهم غير المالية'],
   ['hr.employees.manage', 'human_resources', 'إنشاء الموظفين وتعديل حالتهم وهيكلهم'],
   ['hr.structure.view', 'human_resources', 'عرض الأقسام والمناصب'],

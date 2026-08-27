@@ -4,7 +4,9 @@ import {
   type ProfessionalProject,
   type ProfessionalProjectMember,
   type ProfessionalTimeEntry,
+  type ProfessionalTimesheet,
 } from "@prisma/client";
+import { createHash } from "node:crypto";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
 import { reserveMasterDataCode } from "../platform/master-data-code-service.js";
 import { TransactionExecutor } from "../platform/transaction-executor.js";
@@ -12,6 +14,8 @@ import type { ActorContext } from "../users/user-service.js";
 import type {
   ProfessionalCustomerPort,
   ProfessionalCustomerReference,
+  ProfessionalEmployeePort,
+  ProfessionalEmployeeReference,
   ProfessionalPeoplePort,
   ProfessionalPersonReference,
 } from "./project-reference-ports.js";
@@ -30,6 +34,14 @@ export type ProfessionalProjectFailureReason =
   | "BILLABLE_NOT_ALLOWED"
   | "BILLABLE_TIME_EXISTS"
   | "LAST_MANAGER"
+  | "EMPLOYEE_NOT_FOUND"
+  | "EMPLOYEE_INACTIVE"
+  | "INVALID_PERIOD_START"
+  | "TIMESHEET_EMPTY"
+  | "TIMESHEET_LOCKED"
+  | "TIMESHEET_INVALID_STATE"
+  | "TIMESHEET_CHANGED"
+  | "NOT_TIMESHEET_OWNER"
   | "IDEMPOTENCY_MISMATCH"
   | "IDEMPOTENCY_IN_PROGRESS";
 
@@ -43,11 +55,19 @@ type ProjectKind = "LEGAL_MATTER" | "CONSULTING_ENGAGEMENT" | "PROFESSIONAL_PROJ
 type BillingModel = "TIME_AND_MATERIALS" | "FIXED_FEE" | "NON_BILLABLE";
 type ProjectStatus = "ACTIVE" | "ON_HOLD" | "COMPLETED" | "CANCELLED";
 type MemberRole = "MANAGER" | "PROFESSIONAL" | "REVIEWER";
+type TimesheetStatus = "OPEN" | "AWAITING_APPROVAL" | "APPROVED";
+type TimeEntryWithProject = Prisma.ProfessionalTimeEntryGetPayload<{
+  include: { member: { include: { project: true } } };
+}>;
 
 type ProjectStats = { memberCount: number; trackedMinutes: number; billableMinutes: number };
+type TimesheetStats = { entryCount: number; trackedMinutes: number; billableMinutes: number };
 
 const asDate = (value: string) => new Date(`${value}T00:00:00.000Z`);
 const dateString = (value: Date) => value.toISOString().slice(0, 10);
+const addUtcDays = (value: Date, days: number) => new Date(value.getTime() + days * 86_400_000);
+const weekStart = (value: Date) => addUtcDays(value, -value.getUTCDay());
+const timesheetKey = (userId: bigint, periodStart: Date) => `${userId}:${dateString(periodStart)}`;
 const personJson = (person: ProfessionalPersonReference) => ({
   id: person.id.toString(),
   displayName: person.displayName,
@@ -59,6 +79,58 @@ const customerJson = (customer: ProfessionalCustomerReference) => ({
   nameAr: customer.nameAr,
   nameEn: customer.nameEn,
 });
+const employeeJson = (employee: ProfessionalEmployeeReference) => ({
+  id: employee.id,
+  employeeNumber: employee.employeeNumber,
+  nameAr: employee.nameAr,
+  nameEn: employee.nameEn,
+  status: employee.status,
+});
+
+function timesheetJson(
+  timesheet: ProfessionalTimesheet,
+  employee: ProfessionalEmployeeReference,
+  stats: TimesheetStats,
+  editable: boolean,
+) {
+  return {
+    id: timesheet.publicId,
+    employee: employeeJson(employee),
+    periodStart: dateString(timesheet.periodStart),
+    periodEnd: dateString(timesheet.periodEnd),
+    status: timesheet.status,
+    entryCount: stats.entryCount,
+    trackedMinutes: stats.trackedMinutes,
+    billableMinutes: stats.billableMinutes,
+    nonBillableMinutes: stats.trackedMinutes - stats.billableMinutes,
+    activeSubmissionNumber: timesheet.activeSubmissionNumber,
+    activeSnapshotHashSha256: timesheet.activeSnapshotHashSha256
+      ? Buffer.from(timesheet.activeSnapshotHashSha256).toString("hex")
+      : null,
+    submittedAt: timesheet.submittedAt?.toISOString() ?? null,
+    editable,
+    version: timesheet.version,
+    createdAt: timesheet.createdAt.toISOString(),
+    updatedAt: timesheet.updatedAt.toISOString(),
+  };
+}
+
+function timesheetSnapshot(entries: TimeEntryWithProject[]) {
+  const ordered = [...entries].sort((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
+  const facts = ordered.map((entry) => ({
+    id: entry.publicId,
+    version: entry.version,
+    projectId: entry.member.project.publicId,
+    workDate: dateString(entry.workDate),
+    minutes: entry.minutes,
+    isBillable: entry.isBillable,
+    description: entry.description,
+  }));
+  return {
+    references: facts.map(({ id, version }) => ({ timeEntryId: id, version })),
+    hash: createHash("sha256").update(JSON.stringify(facts), "utf8").digest(),
+  };
+}
 
 function projectJson(
   project: ProfessionalProject,
@@ -138,6 +210,7 @@ export class ProfessionalProjectService {
     private readonly prisma: PrismaClient,
     private readonly customers: ProfessionalCustomerPort,
     private readonly people: ProfessionalPeoplePort,
+    private readonly employees: ProfessionalEmployeePort,
   ) {
     this.transactions = new TransactionExecutor(prisma);
     this.commands = new IdempotentCommandExecutor(prisma, this.transactions);
@@ -248,6 +321,117 @@ export class ProfessionalProjectService {
   async listMemberOptions(context: ActorContext, search?: string) {
     const rows = await this.people.listActiveInCompany(context.companyId, { search, limit: 100 });
     return { data: rows.map(personJson) };
+  }
+
+  async listTimesheets(context: ActorContext, input: {
+    page: number;
+    pageSize: number;
+    scope: "MY" | "ALL";
+    status?: TimesheetStatus | undefined;
+    dateFrom?: string | undefined;
+    dateTo?: string | undefined;
+  }) {
+    const where: Prisma.ProfessionalTimesheetWhereInput = {
+      companyId: context.companyId,
+      ...(input.scope === "MY" ? { userId: context.userId } : {}),
+      ...(input.status ? { status: input.status } : {}),
+      ...((input.dateFrom || input.dateTo) ? {
+        periodStart: {
+          ...(input.dateFrom ? { gte: asDate(input.dateFrom) } : {}),
+          ...(input.dateTo ? { lte: asDate(input.dateTo) } : {}),
+        },
+      } : {}),
+    };
+    const result = await this.prisma.$transaction(async (tx) => {
+      const [rows, total] = await Promise.all([
+        tx.professionalTimesheet.findMany({
+          where,
+          orderBy: [{ periodStart: "desc" }, { id: "desc" }],
+          skip: (input.page - 1) * input.pageSize,
+          take: input.pageSize,
+        }),
+        tx.professionalTimesheet.count({ where }),
+      ]);
+      return { rows, total, stats: await this.timesheetStats(tx, context.companyId, rows) };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+    const employeeMap = await this.employeeMap(context.companyId, result.rows.map((row) => row.userId));
+    return {
+      data: result.rows.map((row) => {
+        const employee = employeeMap.get(row.userId);
+        if (!employee) throw new ProfessionalProjectError("EMPLOYEE_NOT_FOUND");
+        return timesheetJson(
+          row,
+          employee,
+          result.stats.get(timesheetKey(row.userId, row.periodStart)) ?? { entryCount: 0, trackedMinutes: 0, billableMinutes: 0 },
+          row.userId === context.userId && row.status === "OPEN",
+        );
+      }),
+      meta: {
+        page: input.page,
+        pageSize: input.pageSize,
+        total: result.total,
+        totalPages: Math.ceil(result.total / input.pageSize),
+      },
+    };
+  }
+
+  async getTimesheet(context: ActorContext, publicId: string) {
+    const result = await this.prisma.$transaction(async (tx) => {
+      const timesheet = await tx.professionalTimesheet.findFirst({ where: { publicId, companyId: context.companyId } });
+      if (!timesheet) throw new ProfessionalProjectError("NOT_FOUND");
+      const entries = await this.loadTimesheetEntries(tx, timesheet);
+      return { timesheet, entries };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+    const [employeeMap, peopleMap] = await Promise.all([
+      this.employeeMap(context.companyId, [result.timesheet.userId]),
+      this.peopleMap(context.companyId, [result.timesheet.userId]),
+    ]);
+    const employee = employeeMap.get(result.timesheet.userId);
+    const person = peopleMap.get(result.timesheet.userId);
+    if (!employee) throw new ProfessionalProjectError("EMPLOYEE_NOT_FOUND");
+    if (!person) throw new ProfessionalProjectError("USER_NOT_FOUND");
+    const stats = this.statsFromEntries(result.entries);
+    const editable = result.timesheet.userId === context.userId && result.timesheet.status === "OPEN";
+    return {
+      timesheet: timesheetJson(result.timesheet, employee, stats, editable),
+      entries: result.entries.map((entry) => timeEntryJson(
+        entry,
+        entry.member.project,
+        person,
+        editable && entry.member.isActive && entry.member.project.status === "ACTIVE",
+      )),
+    };
+  }
+
+  createTimesheet(context: ActorContext, input: { periodStart: string; idempotencyKey: string }) {
+    return this.executeCommand(context, "CREATE_PROFESSIONAL_TIMESHEET", input.idempotencyKey, input, 201, async (tx) => {
+      const periodStart = asDate(input.periodStart);
+      if (periodStart.getUTCDay() !== 0) throw new ProfessionalProjectError("INVALID_PERIOD_START");
+      await this.lockActiveTimesheetOwner(tx, context);
+      const employee = await this.requireActiveEmployee(tx, context.companyId, context.userId);
+      const existing = await tx.professionalTimesheet.findUnique({
+        where: { companyId_userId_periodStart: { companyId: context.companyId, userId: context.userId, periodStart } },
+      });
+      if (existing) {
+        const stats = this.statsFromEntries(await this.loadTimesheetEntries(tx, existing));
+        return { timesheet: timesheetJson(existing, employee, stats, existing.status === "OPEN") };
+      }
+      const timesheet = await tx.professionalTimesheet.create({
+        data: {
+          companyId: context.companyId,
+          userId: context.userId,
+          periodStart,
+          periodEnd: addUtcDays(periodStart, 6),
+        },
+      });
+      await this.audit(tx, context, "PROFESSIONAL_TIMESHEET_CREATED", "PROFESSIONAL_TIMESHEET", timesheet.publicId, {
+        periodStart: input.periodStart,
+        periodEnd: dateString(timesheet.periodEnd),
+        employeeId: employee.id,
+      });
+      const stats = this.statsFromEntries(await this.loadTimesheetEntries(tx, timesheet));
+      return { timesheet: timesheetJson(timesheet, employee, stats, true) };
+    });
   }
 
   createProject(context: ActorContext, input: {
@@ -497,9 +681,21 @@ export class ProfessionalProjectService {
         tx.professionalTimeEntry.count({ where }),
         tx.professionalTimeEntry.groupBy({ by: ["isBillable"], where, _sum: { minutes: true } }),
       ]);
-      return { rows, total, sums };
+      const userIds = [...new Set(rows.map((row) => row.userId.toString()))].map(BigInt);
+      const periodStarts = [...new Set(rows.map((row) => dateString(weekStart(row.workDate))))].map(asDate);
+      const locked = userIds.length && periodStarts.length ? await tx.professionalTimesheet.findMany({
+        where: {
+          companyId: context.companyId,
+          userId: { in: userIds },
+          periodStart: { in: periodStarts },
+          status: { in: ["AWAITING_APPROVAL", "APPROVED"] },
+        },
+        select: { userId: true, periodStart: true },
+      }) : [];
+      return { rows, total, sums, locked };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
     const peopleMap = await this.peopleMap(context.companyId, result.rows.map((row) => row.userId));
+    const lockedKeys = new Set(result.locked.map((row) => timesheetKey(row.userId, row.periodStart)));
     const billableMinutes = result.sums.find((row) => row.isBillable)?._sum.minutes ?? 0;
     const nonBillableMinutes = result.sums.find((row) => !row.isBillable)?._sum.minutes ?? 0;
     return {
@@ -507,7 +703,10 @@ export class ProfessionalProjectService {
         row,
         row.member.project,
         peopleMap.get(row.userId)!,
-        row.userId === context.userId && row.member.isActive && row.member.project.status === "ACTIVE",
+        row.userId === context.userId
+          && row.member.isActive
+          && row.member.project.status === "ACTIVE"
+          && !lockedKeys.has(timesheetKey(row.userId, weekStart(row.workDate))),
       )),
       meta: { page: input.page, pageSize: input.pageSize, total: result.total, totalPages: Math.ceil(result.total / input.pageSize) },
       summary: { trackedMinutes: billableMinutes + nonBillableMinutes, billableMinutes, nonBillableMinutes },
@@ -523,6 +722,8 @@ export class ProfessionalProjectService {
     idempotencyKey: string;
   }) {
     return this.executeCommand(context, "CREATE_PROFESSIONAL_TIME_ENTRY", input.idempotencyKey, input, 201, async (tx) => {
+      await this.lockActiveTimesheetOwner(tx, context);
+      await this.assertTimesheetPeriodsOpen(tx, context.companyId, context.userId, [weekStart(asDate(input.workDate))]);
       const project = await tx.professionalProject.findFirst({ where: { publicId: input.projectId, companyId: context.companyId } });
       if (!project) throw new ProfessionalProjectError("NOT_FOUND");
       this.assertTimeAllowed(project, input.isBillable);
@@ -560,6 +761,7 @@ export class ProfessionalProjectService {
     description?: string;
   }) {
     return this.transactions.execute({ operation: "UPDATE_PROFESSIONAL_TIME_ENTRY", companyId: context.companyId }, async (tx) => {
+      await this.lockActiveTimesheetOwner(tx, context);
       const entry = await tx.professionalTimeEntry.findFirst({
         where: { publicId, companyId: context.companyId, userId: context.userId },
         include: { member: { include: { project: true } } },
@@ -568,6 +770,10 @@ export class ProfessionalProjectService {
       if (entry.version !== input.version) throw new ProfessionalProjectError("VERSION_CONFLICT");
       if (!entry.member.isActive) throw new ProfessionalProjectError("MEMBER_INACTIVE");
       this.assertTimeAllowed(entry.member.project, input.isBillable ?? entry.isBillable);
+      await this.assertTimesheetPeriodsOpen(tx, context.companyId, context.userId, [
+        weekStart(entry.workDate),
+        weekStart(input.workDate ? asDate(input.workDate) : entry.workDate),
+      ]);
       const changed = await tx.professionalTimeEntry.updateMany({
         where: { id: entry.id, companyId: context.companyId, userId: context.userId, version: input.version },
         data: {
@@ -589,6 +795,7 @@ export class ProfessionalProjectService {
 
   deleteTimeEntry(context: ActorContext, publicId: string, input: { version: number; reason: string }) {
     return this.transactions.execute({ operation: "DELETE_PROFESSIONAL_TIME_ENTRY", companyId: context.companyId }, async (tx) => {
+      await this.lockActiveTimesheetOwner(tx, context);
       const entry = await tx.professionalTimeEntry.findFirst({
         where: { publicId, companyId: context.companyId, userId: context.userId },
         include: { member: { include: { project: true } } },
@@ -597,6 +804,7 @@ export class ProfessionalProjectService {
       if (entry.version !== input.version) throw new ProfessionalProjectError("VERSION_CONFLICT");
       if (!entry.member.isActive) throw new ProfessionalProjectError("MEMBER_INACTIVE");
       this.assertTimeAllowed(entry.member.project, entry.isBillable);
+      await this.assertTimesheetPeriodsOpen(tx, context.companyId, context.userId, [weekStart(entry.workDate)]);
       const changed = await tx.professionalTimeEntry.deleteMany({ where: { id: entry.id, companyId: context.companyId, userId: context.userId, version: input.version } });
       if (changed.count !== 1) throw new ProfessionalProjectError("VERSION_CONFLICT");
       await this.audit(tx, context, "PROFESSIONAL_TIME_ENTRY_DELETED", "PROFESSIONAL_TIME_ENTRY", publicId, { reason: input.reason });
@@ -604,9 +812,232 @@ export class ProfessionalProjectService {
     });
   }
 
+  async requestTimesheetApprovalInTransaction(
+    tx: Prisma.TransactionClient,
+    context: ActorContext,
+    publicId: string,
+    expectedVersion: number,
+  ) {
+    const timesheet = await this.lockTimesheetForApproval(tx, context.companyId, publicId);
+    if (timesheet.userId !== context.userId) throw new ProfessionalProjectError("NOT_TIMESHEET_OWNER");
+    if (timesheet.version !== expectedVersion) throw new ProfessionalProjectError("VERSION_CONFLICT");
+    if (timesheet.status !== "OPEN") throw new ProfessionalProjectError("TIMESHEET_INVALID_STATE");
+    await this.requireActiveEmployee(tx, context.companyId, context.userId);
+    const entries = await this.loadTimesheetEntries(tx, timesheet);
+    if (entries.length === 0) throw new ProfessionalProjectError("TIMESHEET_EMPTY");
+    const snapshot = timesheetSnapshot(entries);
+    const submissionNumber = timesheet.lastSubmissionNumber + 1;
+    await tx.professionalTimesheetSubmission.create({
+      data: {
+        companyId: context.companyId,
+        timesheetId: timesheet.id,
+        submissionNumber,
+        entryReferences: snapshot.references,
+        snapshotHashSha256: snapshot.hash,
+        submittedById: context.userId,
+      },
+    });
+    const submittedAt = new Date();
+    const changed = await tx.professionalTimesheet.updateMany({
+      where: { id: timesheet.id, companyId: context.companyId, version: expectedVersion, status: "OPEN" },
+      data: {
+        status: "AWAITING_APPROVAL",
+        lastSubmissionNumber: submissionNumber,
+        activeSubmissionNumber: submissionNumber,
+        activeSnapshotHashSha256: snapshot.hash,
+        submittedAt,
+        version: { increment: 1 },
+      },
+    });
+    if (changed.count !== 1) throw new ProfessionalProjectError("VERSION_CONFLICT");
+    await this.audit(tx, context, "PROFESSIONAL_TIMESHEET_APPROVAL_REQUESTED", "PROFESSIONAL_TIMESHEET", publicId, {
+      submissionNumber,
+      entryCount: entries.length,
+      snapshotHashSha256: snapshot.hash.toString("hex"),
+    });
+    return {
+      subjectId: publicId,
+      subjectVersion: expectedVersion + 1,
+      subjectSnapshotHashSha256: snapshot.hash,
+    };
+  }
+
+  async approveTimesheetInTransaction(
+    tx: Prisma.TransactionClient,
+    context: ActorContext,
+    input: { subjectId: string; subjectVersion: number; subjectSnapshotHashSha256: Uint8Array },
+  ) {
+    const timesheet = await this.lockTimesheetForApproval(tx, context.companyId, input.subjectId);
+    this.assertApprovalTimesheet(timesheet, input);
+    const snapshot = timesheetSnapshot(await this.loadTimesheetEntries(tx, timesheet));
+    if (!snapshot.hash.equals(Buffer.from(input.subjectSnapshotHashSha256))) {
+      throw new ProfessionalProjectError("TIMESHEET_CHANGED");
+    }
+    const changed = await tx.professionalTimesheet.updateMany({
+      where: {
+        id: timesheet.id,
+        companyId: context.companyId,
+        version: input.subjectVersion,
+        status: "AWAITING_APPROVAL",
+      },
+      data: { status: "APPROVED", version: { increment: 1 } },
+    });
+    if (changed.count !== 1) throw new ProfessionalProjectError("VERSION_CONFLICT");
+    await this.audit(tx, context, "PROFESSIONAL_TIMESHEET_APPROVED", "PROFESSIONAL_TIMESHEET", input.subjectId, {
+      submissionNumber: timesheet.activeSubmissionNumber,
+      snapshotHashSha256: snapshot.hash.toString("hex"),
+    });
+  }
+
+  async rejectTimesheetInTransaction(
+    tx: Prisma.TransactionClient,
+    context: ActorContext,
+    input: { subjectId: string; subjectVersion: number; subjectSnapshotHashSha256: Uint8Array; reason: string },
+  ) {
+    const timesheet = await this.lockTimesheetForApproval(tx, context.companyId, input.subjectId);
+    this.assertApprovalTimesheet(timesheet, input);
+    const snapshot = timesheetSnapshot(await this.loadTimesheetEntries(tx, timesheet));
+    if (!snapshot.hash.equals(Buffer.from(input.subjectSnapshotHashSha256))) {
+      throw new ProfessionalProjectError("TIMESHEET_CHANGED");
+    }
+    const changed = await tx.professionalTimesheet.updateMany({
+      where: {
+        id: timesheet.id,
+        companyId: context.companyId,
+        version: input.subjectVersion,
+        status: "AWAITING_APPROVAL",
+      },
+      data: {
+        status: "OPEN",
+        activeSubmissionNumber: null,
+        activeSnapshotHashSha256: null,
+        submittedAt: null,
+        version: { increment: 1 },
+      },
+    });
+    if (changed.count !== 1) throw new ProfessionalProjectError("VERSION_CONFLICT");
+    await this.audit(tx, context, "PROFESSIONAL_TIMESHEET_REJECTED", "PROFESSIONAL_TIMESHEET", input.subjectId, {
+      submissionNumber: timesheet.activeSubmissionNumber,
+      reason: input.reason,
+    });
+  }
+
   private assertTimeAllowed(project: ProfessionalProject, isBillable: boolean) {
     if (project.status !== "ACTIVE") throw new ProfessionalProjectError("PROJECT_INACTIVE");
     if (project.billingModel === "NON_BILLABLE" && isBillable) throw new ProfessionalProjectError("BILLABLE_NOT_ALLOWED");
+  }
+
+  private assertApprovalTimesheet(
+    timesheet: ProfessionalTimesheet,
+    input: { subjectVersion: number; subjectSnapshotHashSha256: Uint8Array },
+  ) {
+    if (timesheet.version !== input.subjectVersion) throw new ProfessionalProjectError("VERSION_CONFLICT");
+    if (timesheet.status !== "AWAITING_APPROVAL") throw new ProfessionalProjectError("TIMESHEET_INVALID_STATE");
+    if (!timesheet.activeSnapshotHashSha256
+      || !Buffer.from(timesheet.activeSnapshotHashSha256).equals(Buffer.from(input.subjectSnapshotHashSha256))) {
+      throw new ProfessionalProjectError("TIMESHEET_CHANGED");
+    }
+  }
+
+  private async lockActiveTimesheetOwner(tx: Prisma.TransactionClient, context: ActorContext) {
+    if (!await this.people.lockAssignment(tx, context.companyId, context.userId)) {
+      throw new ProfessionalProjectError("USER_NOT_FOUND");
+    }
+    if (!await this.people.findActiveInCompany(tx, context.companyId, context.userId)) {
+      throw new ProfessionalProjectError("USER_NOT_FOUND");
+    }
+  }
+
+  private async assertTimesheetPeriodsOpen(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+    userId: bigint,
+    periodStarts: Date[],
+  ) {
+    const unique = [...new Set(periodStarts.map(dateString))].sort().map(asDate);
+    if (unique.length === 0) return;
+    const rows = await tx.$queryRaw<Array<{ status: TimesheetStatus }>>(Prisma.sql`
+      SELECT status FROM professional_timesheets
+      WHERE company_id=${companyId} AND user_id=${userId}
+        AND period_start IN (${Prisma.join(unique)})
+      ORDER BY period_start
+      FOR UPDATE`);
+    if (rows.some((row) => row.status !== "OPEN")) throw new ProfessionalProjectError("TIMESHEET_LOCKED");
+  }
+
+  private async lockTimesheetForApproval(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+    publicId: string,
+  ) {
+    const candidate = await tx.professionalTimesheet.findFirst({ where: { publicId, companyId }, select: { userId: true } });
+    if (!candidate) throw new ProfessionalProjectError("NOT_FOUND");
+    if (!await this.people.lockAssignment(tx, companyId, candidate.userId)) throw new ProfessionalProjectError("NOT_FOUND");
+    const rows = await tx.$queryRaw<Array<{ id: bigint }>>`
+      SELECT id FROM professional_timesheets
+      WHERE public_id=${publicId} AND company_id=${companyId}
+      FOR UPDATE`;
+    if (rows.length !== 1) throw new ProfessionalProjectError("NOT_FOUND");
+    return tx.professionalTimesheet.findFirstOrThrow({ where: { id: rows[0]!.id, companyId } });
+  }
+
+  private async requireActiveEmployee(tx: Prisma.TransactionClient, companyId: bigint, userId: bigint) {
+    const employee = await this.employees.findByUserInCompany(tx, companyId, userId);
+    if (!employee) throw new ProfessionalProjectError("EMPLOYEE_NOT_FOUND");
+    if (employee.status !== "ACTIVE") throw new ProfessionalProjectError("EMPLOYEE_INACTIVE");
+    return employee;
+  }
+
+  private loadTimesheetEntries(
+    tx: Prisma.TransactionClient,
+    timesheet: Pick<ProfessionalTimesheet, "companyId" | "userId" | "periodStart" | "periodEnd">,
+  ) {
+    return tx.professionalTimeEntry.findMany({
+      where: {
+        companyId: timesheet.companyId,
+        userId: timesheet.userId,
+        workDate: { gte: timesheet.periodStart, lte: timesheet.periodEnd },
+      },
+      include: { member: { include: { project: true } } },
+      orderBy: [{ id: "asc" }],
+    });
+  }
+
+  private statsFromEntries(entries: Array<Pick<ProfessionalTimeEntry, "minutes" | "isBillable">>): TimesheetStats {
+    return entries.reduce<TimesheetStats>((stats, entry) => {
+      stats.entryCount += 1;
+      stats.trackedMinutes += entry.minutes;
+      if (entry.isBillable) stats.billableMinutes += entry.minutes;
+      return stats;
+    }, { entryCount: 0, trackedMinutes: 0, billableMinutes: 0 });
+  }
+
+  private async timesheetStats(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+    timesheets: Array<Pick<ProfessionalTimesheet, "userId" | "periodStart" | "periodEnd">>,
+  ) {
+    const stats = new Map<string, TimesheetStats>();
+    for (const timesheet of timesheets) stats.set(timesheetKey(timesheet.userId, timesheet.periodStart), { entryCount: 0, trackedMinutes: 0, billableMinutes: 0 });
+    if (timesheets.length === 0) return stats;
+    const entries = await tx.professionalTimeEntry.findMany({
+      where: {
+        companyId,
+        OR: timesheets.map((timesheet) => ({
+          userId: timesheet.userId,
+          workDate: { gte: timesheet.periodStart, lte: timesheet.periodEnd },
+        })),
+      },
+      select: { userId: true, workDate: true, minutes: true, isBillable: true },
+    });
+    for (const entry of entries) {
+      const value = stats.get(timesheetKey(entry.userId, weekStart(entry.workDate)));
+      if (!value) continue;
+      value.entryCount += 1;
+      value.trackedMinutes += entry.minutes;
+      if (entry.isBillable) value.billableMinutes += entry.minutes;
+    }
+    return stats;
   }
 
   private async mutableProject(tx: Prisma.TransactionClient, companyId: bigint, publicId: string, version: number) {
@@ -648,6 +1079,12 @@ export class ProfessionalProjectService {
     const unique = [...new Set(ids.map(String))].map(BigInt);
     const rows = unique.length ? await this.people.listActiveInCompany(companyId, { ids: unique, limit: unique.length }) : [];
     return new Map(rows.map((row) => [row.id, row]));
+  }
+
+  private async employeeMap(companyId: bigint, userIds: bigint[]) {
+    const unique = [...new Set(userIds.map(String))].map(BigInt);
+    const rows = await this.employees.listByUsersInCompany(companyId, unique);
+    return new Map(rows.map((row) => [row.userId, row]));
   }
 
   private executeCommand<T>(

@@ -146,6 +146,11 @@ describe.runIf(enabled)("reviewed financial close workflow with MariaDB", () => 
     });
     approvals = new ApprovalService(prisma!, {
       FINANCIAL_CLOSE_RUN: new FinancialCloseApprovalAdapter(service),
+      PROFESSIONAL_TIMESHEET: {
+        request: async () => { throw new Error("unused timesheet approval port"); },
+        approve: async () => { throw new Error("unused timesheet approval port"); },
+        reject: async () => { throw new Error("unused timesheet approval port"); },
+      },
     });
     await createPostedDocument("FC-IT-001", "200.0000", "70.0000");
   });
