@@ -30,6 +30,7 @@ last_updated: "2026-08-27"
 | Point of Sale | تنسيق البيع النقدي الحضوري وربط نتيجة الـCheckout | `PosSale` فقط | Process Manager؛ لا يملك بنودًا أو مبالغ أو فاتورة أو حركة مخزون/نقد أو قيدًا، ويستدعي منافذ Sales وTreasury الحالية |
 | Approvals | تنسيق طلبات وقرارات Maker/Checker المشتركة | `ApprovalRequest`, `ApprovalDecision` | يربط الموضوع ونسخته وبصمته فقط؛ يطبق المالك انتقال الموضوع عبر `ApprovalSubjectPort` ولا يملك حالته أو أثره المالي |
 | Professional Services & Projects | القضايا والتكليفات والمشاريع المهنية، فرقها، والوقت الخام | `ProfessionalProject`, `ProfessionalProjectMember`, `ProfessionalTimeEntry` | يقرأ العميل من Sales والشخص من Identity عبر Ports؛ لا يملك فاتورة أو تسعيرًا أو قرار موافقة أو وقتًا معتمدًا أو قيدًا |
+| Human Resources | الهيكل التنظيمي وهوية الموظف وحالة العمل والعقد غير المالي | `HrDepartment`, `HrPosition`, `Employee`, `EmploymentContract` | الموظف مستقل عن `User` ويرتبط اختياريًا بعضوية الشركة عبر Identity Port؛ لا يملك رواتب أو بيانات بنكية أو قرار موافقة أو وقت مشروع |
 | Tax | معدلات الضرائب وربط حساباتها والحساب والتقريب | `TaxRate` | يكشف `TaxQuotePort` للمبيعات والمشتريات ويملك النسخ المتفائلة |
 | Printing & Document Output | اللقطات التاريخية والتوليد | `DocumentPrintArchive` | يقرأ عبر Document Snapshot Port |
 | Reporting | التقارير والقوائم وRead Models | لا يملك حقائق مالية تشغيلية | قراءة فقط، ويمكنه امتلاك projections مستقبلًا |
@@ -58,6 +59,7 @@ Sales/Purchases ─────> Inventory catalog and invoice-stock application
 POS ─────────────────> Sales cash-checkout and Treasury receipt application ports
 Approvals ───────────> owning context approval-subject application ports
 Professional Projects ──> Sales customer query port and Identity people query port
+Human Resources ────────> Identity membership query port
 All operational contexts ──> Audit append port
 
 Reporting <────────── read/query ports or dedicated read models
@@ -98,7 +100,9 @@ Printing  <────────── immutable document snapshot port
 
 ثم أضيف سياق Approvals وفق [ADR-005](ADR-005-shared-approval-engine.md): يملك طلب الموافقة والقرار فقط، ويستدعي `FinancialCloseApprovalAdapter` لتغيير تشغيل الإقفال داخل المعاملة. لا يقرأ أو يكتب Ledger أو يكرر حزمة الإقفال؛ يخزن بصمتها ونسخة الموضوع فقط، وتفرض الشريحة الأولى Checker مستقلًا.
 
-وأضيف سياق Professional Services & Projects وفق [ADR-006](ADR-006-professional-services-projects-priority.md): يملك المشروع المهني وعضويته وسجل الوقت الشخصي الخام، ويربط القضية أو التكليف بعميل Sales وبأعضاء Identity عبر منفذين يملكهـما السياقان المصدران. لا يكتب في العميل أو المستخدم أو الفاتورة أو المخزون أو الخزينة أو Ledger. يبقى اعتماد الوقت والفوترة وHR وخصائص المكتب القانوني مراحل لاحقة مستقلة موثقة في [خارطة الخدمات المهنية](PROFESSIONAL_SERVICES_HR_PROJECTS_ROADMAP_AR.md).
+وأضيف سياق Professional Services & Projects وفق [ADR-006](ADR-006-professional-services-projects-priority.md): يملك المشروع المهني وعضويته وسجل الوقت الشخصي الخام، ويربط القضية أو التكليف بعميل Sales وبأعضاء Identity عبر منفذين يملكهـما السياقان المصدران. لا يكتب في العميل أو المستخدم أو الفاتورة أو المخزون أو الخزينة أو Ledger. يبقى اعتماد الوقت والفوترة وخصائص المكتب القانوني مراحل لاحقة مستقلة موثقة في [خارطة الخدمات المهنية](PROFESSIONAL_SERVICES_HR_PROJECTS_ROADMAP_AR.md).
+
+ثم أضيف سياق Human Resources وفق [ADR-007](ADR-007-human-resources-foundation.md): يملك الأقسام والمناصب والموظف والعقد المؤرخ غير المالي. يظل `Employee` هوية عمل مستقلة عن `User`، ويتحقق من الرابط الاختياري بعضوية الشركة عبر `HrIdentityPort` دون تحديث Identity. لا يكتب HR في المشاريع أو الموافقات أو الفواتير أو المخزون أو الخزينة أو Ledger، وتبقى الرواتب والإجازات والبيانات الحساسة خارج الشريحة.
 
 الاستثناءات التالية ما زالت موجودة ولا تعد نمطًا مسموحًا للنسخ:
 
@@ -121,6 +125,7 @@ Printing  <────────── immutable document snapshot port
 | `FiscalPeriod` | الإغلاق وإعادة الفتح والترتيب الزمني |
 | `ApprovalRequest` | طلبًا نشطًا واحدًا لكل موضوع، وفصل Maker/Checker، وقرارًا نهائيًا immutable |
 | `ProfessionalProject` | هوية العمل والعميل المرجعي والنوع ونموذج الفوترة والحالة والتواريخ والفريق والوقت المنسوب إليه |
+| `Employee` | الهوية الوظيفية داخل الشركة، الإسناد التنظيمي، سلسلة المدير، حالة العمل والعقد النشط الواحد |
 | `ChartOfAccounts`/`Account` | صلاحية الترحيل والبنية الهرمية |
 
 لا يشترط أن تتحول جميعها إلى Classes كبيرة؛ المطلوب أن تكون invariants والملكية ومداخل التغيير واضحة ومختبرة.

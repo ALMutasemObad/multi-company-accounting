@@ -125,6 +125,14 @@ describe("core accounting architecture guardrails", () => {
     expect(service).not.toContain("PostingEngine");
   });
 
+  it("keeps HR identity behind its port and away from IAM and financial writes", async () => {
+    const service = await source("hr/hr-service.ts");
+    expect(service).not.toMatch(/\.(?:user|userCompany|professionalProject|professionalTimeEntry|salesInvoice|purchaseInvoice|accountingDocument|journalEntry|journalLine|inventoryMovement|posSale)\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
+    expect(service).toContain("this.identity.findActiveInCompany");
+    expect(service).toContain("this.identity.findInCompany");
+    expect(service).not.toContain("PostingEngine");
+  });
+
   it("keeps open-source bank file parsers behind Treasury adapters", async () => {
     const sources = await allTypeScriptSources();
     const parserImport = /from\s+["'](?:csv-parse(?:\/sync)?|fast-xml-parser)["']/u;

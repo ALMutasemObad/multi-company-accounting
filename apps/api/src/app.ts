@@ -83,6 +83,8 @@ import type { ApprovalService } from './approvals/approval-service.js';
 import { createApprovalRouter } from './approvals/approval-router.js';
 import type { ProfessionalProjectService } from './projects/professional-project-service.js';
 import { createProfessionalProjectRouter } from './projects/professional-project-router.js';
+import type { HrService } from './hr/hr-service.js';
+import { createHrRouter } from './hr/hr-router.js';
 
 type ClientRequestProblem = {
   status: number;
@@ -123,7 +125,7 @@ function clientRequestProblem(error: unknown): ClientRequestProblem | undefined 
   return undefined;
 }
 
-export function createApp(config: AppConfig, services: { readiness?: ReadinessCheck; metrics?: OperationalMetrics; auth?: AuthService; registration?: RegistrationService; passwordReset?: PasswordResetService; users?: UserService; companies?: CompanyService; printing?: PrintService; audit?: AuditService; security?: SecurityEventService; fiscal?: FiscalService; financialClose?: FinancialCloseService; approvals?: ApprovalService; professionalProjects?: ProfessionalProjectService; accounts?: AccountService; journals?: ManualJournalService; receiptReferences?: ReceiptReferenceService; treasury?: TreasuryService; bankReconciliation?: BankReconciliationService; inventory?: InventoryService; inventoryCatalog?: InventoryCatalogService; inventoryMovements?: InventoryMovementService; receipts?: ReceiptService; suppliers?: SupplierReferenceService; payments?: PaymentService; reports?: ReportService; cashFlow?: CashFlowService; taxSummary?: TaxSummaryService; costCenterActivity?: CostCenterActivityService; taxes?: TaxService; salesInvoices?: SalesInvoiceService; purchaseInvoices?: PurchaseInvoiceService; dataImports?: DataImportService; pos?: PosService } = {}) {
+export function createApp(config: AppConfig, services: { readiness?: ReadinessCheck; metrics?: OperationalMetrics; auth?: AuthService; registration?: RegistrationService; passwordReset?: PasswordResetService; users?: UserService; companies?: CompanyService; printing?: PrintService; audit?: AuditService; security?: SecurityEventService; fiscal?: FiscalService; financialClose?: FinancialCloseService; approvals?: ApprovalService; professionalProjects?: ProfessionalProjectService; hr?: HrService; accounts?: AccountService; journals?: ManualJournalService; receiptReferences?: ReceiptReferenceService; treasury?: TreasuryService; bankReconciliation?: BankReconciliationService; inventory?: InventoryService; inventoryCatalog?: InventoryCatalogService; inventoryMovements?: InventoryMovementService; receipts?: ReceiptService; suppliers?: SupplierReferenceService; payments?: PaymentService; reports?: ReportService; cashFlow?: CashFlowService; taxSummary?: TaxSummaryService; costCenterActivity?: CostCenterActivityService; taxes?: TaxService; salesInvoices?: SalesInvoiceService; purchaseInvoices?: PurchaseInvoiceService; dataImports?: DataImportService; pos?: PosService } = {}) {
   const app = express();
   const metrics = services.metrics ?? operationalMetrics;
 
@@ -205,6 +207,7 @@ export function createApp(config: AppConfig, services: { readiness?: ReadinessCh
   if (services.auth && services.fiscal) app.use('/api/v1', createFiscalRouter(services.auth, services.fiscal, services.financialClose));
   if (services.auth && services.approvals) app.use('/api/v1', createApprovalRouter(services.auth, services.approvals));
   if (services.auth && services.professionalProjects) app.use('/api/v1', createProfessionalProjectRouter(services.auth, services.professionalProjects));
+  if (services.auth && services.hr) app.use('/api/v1', createHrRouter(services.auth, services.hr));
   if (services.auth && services.accounts) app.use('/api/v1', createAccountRouter(services.auth, services.accounts));
   if (services.auth && services.journals) app.use('/api/v1', createManualJournalRouter(services.auth, services.journals));
   if (services.auth && services.receiptReferences) app.use('/api/v1', createReceiptReferenceRouter(services.auth, services.receiptReferences));

@@ -1013,3 +1013,52 @@ export type ProfessionalTimeEntry = {
 export type ProfessionalTimeEntryList = ListResponse<ProfessionalTimeEntry> & {
   summary: { trackedMinutes: number; billableMinutes: number; nonBillableMinutes: number };
 };
+
+export type HrEmploymentType = "FULL_TIME" | "PART_TIME" | "CONTRACTOR" | "INTERN";
+export type HrEmploymentStatus = "ACTIVE" | "ON_LEAVE" | "TERMINATED";
+export type HrContractType = "PERMANENT" | "FIXED_TERM" | "CONSULTANT" | "INTERNSHIP";
+export type HrContractStatus = "ACTIVE" | "ENDED";
+export type HrStructureReference = {
+  id: string;
+  code: string;
+  nameAr: string;
+  nameEn: string | null;
+  description: string | null;
+  isActive: boolean;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};
+export type HrIdentityReference = { id: string; displayName: string; nameEn: string | null };
+export type EmployeeReference = { id: string; employeeNumber: string; nameAr: string; nameEn: string | null };
+export type Employee = EmployeeReference & {
+  employmentType: HrEmploymentType;
+  status: HrEmploymentStatus;
+  hireDate: string;
+  terminationDate: string | null;
+  terminationReason: string | null;
+  workLocation: string | null;
+  department: HrStructureReference | null;
+  position: HrStructureReference | null;
+  manager: EmployeeReference | null;
+  linkedUser: HrIdentityReference | null;
+  hasActiveContract: boolean;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};
+export type EmploymentContract = {
+  id: string;
+  contractType: HrContractType;
+  titleAr: string;
+  titleEn: string | null;
+  startDate: string;
+  endDate: string | null;
+  status: HrContractStatus;
+  notes: string | null;
+  endReason: string | null;
+  endedAt: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};

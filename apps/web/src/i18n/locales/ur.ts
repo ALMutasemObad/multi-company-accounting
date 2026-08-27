@@ -7,6 +7,7 @@ import { urCostCenterActivity } from "./cost-center-activity";
 import { urPos } from "./pos";
 import { urApprovals } from "./approvals";
 import { urProfessionalProjects } from "./professional-projects";
+import { urHumanResources } from "./human-resources";
 
 export const ur = {
   ...urReconciliation,
@@ -17,6 +18,7 @@ export const ur = {
   ...urPos,
   ...urApprovals,
   ...urProfessionalProjects,
+  ...urHumanResources,
   "referencePicker.loading": "تلاش جاری ہے…",
   "referencePicker.empty": "کوئی مماثل نتیجہ نہیں ملا۔",
   "referencePicker.more": "مزید نتائج لوڈ کریں",

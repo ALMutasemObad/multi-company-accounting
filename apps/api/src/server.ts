@@ -61,6 +61,8 @@ import { FinancialCloseApprovalAdapter } from './fiscal/financial-close-approval
 import { ProfessionalProjectService } from './projects/professional-project-service.js';
 import { ProfessionalCustomerAdapter } from './sales/professional-customer-adapter.js';
 import { ProfessionalPeopleAdapter } from './users/professional-people-adapter.js';
+import { HrService } from './hr/hr-service.js';
+import { HrIdentityAdapter } from './users/hr-identity-adapter.js';
 
 const config = loadConfig();
 if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required to start the API');
@@ -158,6 +160,7 @@ const professionalProjects = new ProfessionalProjectService(
   new ProfessionalCustomerAdapter(database),
   new ProfessionalPeopleAdapter(database),
 );
+const hr = new HrService(database, new HrIdentityAdapter(database));
 const app = createApp(config, {
   readiness: new DatabaseReadinessService(database, config.READINESS_TIMEOUT_MS),
   metrics: operationalMetrics,
@@ -173,6 +176,7 @@ const app = createApp(config, {
   financialClose,
   approvals,
   professionalProjects,
+  hr,
   accounts: new AccountService(database),
   journals: new ManualJournalService(database),
   receiptReferences,

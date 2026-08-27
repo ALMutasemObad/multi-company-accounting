@@ -22,6 +22,7 @@ const workspaceScreens: Screen[] = [
   'pos',
   'customers',
   'professionalProjects',
+  'humanResources',
   'sales',
   'receipts',
   'suppliers',
@@ -169,7 +170,7 @@ async function auditCurrentInterface(page: Page, locale: Locale, label: string) 
 }
 
 for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
-  test(`${locale}: all 24 screens satisfy the responsive interface contract`, async ({ page }) => {
+  test(`${locale}: all 25 screens satisfy the responsive interface contract`, async ({ page }) => {
     const runtimeErrors: string[] = [];
     page.on('pageerror', (error) => runtimeErrors.push(error.message));
     await configureLocale(page, locale);

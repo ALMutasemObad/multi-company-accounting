@@ -1,8 +1,8 @@
 ---
 title: "Master Data Code Policy"
 status: "mandatory"
-version: "1.4"
-last_updated: "2026-08-25"
+version: "1.5"
+last_updated: "2026-08-27"
 related:
   - "ARCHITECTURE_GUARDRAILS_AR.md"
   - "BOUNDED_CONTEXT_MAP_AR.md"
@@ -29,6 +29,9 @@ related:
 | معدل الضريبة | الشركة + نوع الكيان | `TAX-` | `TAX-000001` | Tax Configuration |
 | الدور المخصص | الشركة + نوع الكيان | `ROL-` | `ROL-000001` | Identity & Access |
 | المشروع/القضية المهنية | الشركة + نوع الكيان | `PRJ-` | `PRJ-000001` | Professional Services & Projects |
+| قسم الموارد البشرية | الشركة + نوع الكيان | `DEP-` | `DEP-000001` | Human Resources |
+| المنصب الوظيفي | الشركة + نوع الكيان | `JOB-` | `JOB-000001` | Human Resources |
+| الموظف | الشركة + نوع الكيان | `EMP-` | `EMP-000001` | Human Resources |
 
 - **يجب** أن يولد الخادم الرمز؛ لا يقبل API الرمز في طلب الإنشاء أو التعديل.
 - **يجب** أن يكون الرمز فريدًا داخل الشركة وغير قابل للتعديل بعد الإنشاء.
@@ -63,7 +66,7 @@ related:
 ## 4. التوافق والترحيل
 
 - الرموز الموجودة قبل اعتماد السياسة تبقى كما هي؛ لا يعاد ترقيمها ولا تغيير المراجع المطبوعة أو التاريخية.
-- يهيئ الترحيل `20260822150000_auto_master_data_codes` تسلسلي العميل والمورد، ويوسع `20260822210000_expand_auto_codes_and_password_reset` الأنواع الأخرى، ويضيف `20260824170000_inventory_warehouse_foundation` تسلسل المستودع، ثم يضيف `20260824200000_inventory_item_catalog` تسلسل الصنف. حساب أكبر لاحقة رقمية مسموح داخل ترحيل النشر الأحادي فقط لإجراء الـbackfill، وليس خوارزمية حجز وقت التشغيل.
+- يهيئ الترحيل `20260822150000_auto_master_data_codes` تسلسلي العميل والمورد، ويوسع `20260822210000_expand_auto_codes_and_password_reset` الأنواع الأخرى، ويضيف `20260824170000_inventory_warehouse_foundation` تسلسل المستودع، ثم يضيف `20260824200000_inventory_item_catalog` تسلسل الصنف، و`20260827180000_professional_projects_time` تسلسل المشروع، و`20260827210000_hr_foundation` تسلسلات القسم والمنصب والموظف. حساب أكبر لاحقة رقمية مسموح داخل ترحيل النشر الأحادي فقط لإجراء الـbackfill، وليس خوارزمية حجز وقت التشغيل.
 - اختلاف الشكل القديم عن الصيغة الجديدة مقبول. يمنع إجراء إعادة تنسيق جماعية بلا خطة انتقال وموافقة أعمال مستقلة.
 - تغيير البادئة أو عدد الخانات لا يغير الرموز السابقة، ويحتاج Migration وعقد API وتوثيقًا واختبارات توافق.
 
@@ -72,7 +75,7 @@ related:
 | الطبقة | المرجع |
 |---|---|
 | مخطط البيانات | `apps/api/prisma/schema.prisma` — `MasterDataCodeSequence` |
-| الترحيل | `20260822150000_auto_master_data_codes` ثم `20260822210000_expand_auto_codes_and_password_reset` ثم `20260827180000_professional_projects_time` للمشاريع المهنية |
+| الترحيل | `20260822150000_auto_master_data_codes` ثم `20260822210000_expand_auto_codes_and_password_reset` ثم `20260827180000_professional_projects_time` ثم `20260827210000_hr_foundation` |
 | الحجز الذري | `apps/api/src/platform/master-data-code-service.ts` |
 | العملاء | `apps/api/src/receipts/reference-service.ts` و`reference-router.ts` |
 | الخزينة وطرق الدفع | `apps/api/src/treasury/treasury-service.ts` و`treasury-router.ts` |
@@ -81,8 +84,9 @@ related:
 | الحسابات ومراكز التكلفة | `apps/api/src/accounts/account-service.ts` و`account-router.ts` |
 | الضرائب | `apps/api/src/tax/tax-service.ts` و`tax-router.ts` |
 | الأدوار المخصصة | `apps/api/src/users/user-service.ts` و`user-router.ts` |
+| الأقسام والمناصب والموظفون | `apps/api/src/hr/hr-service.ts` و`hr-router.ts` |
 | العقد | `packages/contracts/openapi.yaml`؛ `code` في الاستجابة `readOnly` |
-| الاختبارات | `master-data-code-service.test.ts` واختبارات تكامل الحسابات والخزينة والمبيعات والمشتريات والمستخدمين |
+| الاختبارات | `master-data-code-service.test.ts` واختبارات تكامل الحسابات والخزينة والمبيعات والمشتريات والمستخدمين والمشاريع والموارد البشرية |
 
 ## 6. بوابة إضافة كيان جديد
 

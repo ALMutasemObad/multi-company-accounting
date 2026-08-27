@@ -1,7 +1,7 @@
 ---
 title: "Hybrid Open Source Module Execution Plan"
-status: "professional projects phase complete locally; HR foundation next"
-version: "1.4"
+status: "HR foundation complete locally; timesheet approvals next"
+version: "1.5"
 date: "2026-08-27"
 related:
   - "OPEN_SOURCE_MODULE_ADOPTION_POLICY_AR.md"
@@ -26,7 +26,7 @@ related:
 - لا يعتمد موديول خارجي كامل إذا أضاف Ledger أو قاعدة بيانات أو Tenant model أو خدمة دائمة موازية.
 - ينفذ موديول واحد فقط في كل وقت حتى يكتمل ويثبت في الإنتاج؛ لا تفتح حلقات متوازية ناقصة.
 
-اكتمل المسار الأول: **المطابقة البنكية** ثم **الإقفال المالي** ثم **التقارير الأساسية** وPOS ومحرك الموافقات. ووفق [ADR-006](ADR-006-professional-services-projects-priority.md) أصبحت أولوية P1 التالية هي الخدمات المهنية والمشاريع، ثم أساس HR، قبل العودة إلى الموديولات المالية الأوسع.
+اكتمل المسار الأول: **المطابقة البنكية** ثم **الإقفال المالي** ثم **التقارير الأساسية** وPOS ومحرك الموافقات، ثم اكتملت المشاريع المهنية وأساس HR غير المالي. ووفق [خارطة الخدمات المهنية](PROFESSIONAL_SERVICES_HR_PROJECTS_ROADMAP_AR.md) تصبح أولوية P1 التالية تجميع الوقت في Timesheets ثابتة عند الإرسال وربط قرارها بمحرك الموافقات الحالي.
 
 ## 2. قواعد إدارة التنفيذ
 
@@ -293,7 +293,7 @@ related:
 
 اكتملت محليًا المرحلة 6A وفق [ADR-006](ADR-006-professional-services-projects-priority.md) و[عقد الشريحة](PROFESSIONAL_PROJECTS_TIME_SLICE_AR.md): مشروع/قضية مرتبط بعميل Sales، وفريق مرتبط بعضوية Identity، وسجل وقت شخصي خام مع عزل وتدقيق وIdempotency ونسخ متفائلة. لا ينشئ السياق فاتورة أو حركة مخزون/خزينة أو قيدًا ولا يكرر حقائق تلك المالكين.
 
-المرحلة التالية 6B هي أساس HR غير المالي، ثم يربط Timesheet المعتمد بمحرك Approvals الحالي، وبعده تمر فوترة الخدمات إلى Sales عبر Port. الترتيب الكامل وحدود خصائص المكاتب القانونية والرواتب وأموال العملاء في [خارطة الخدمات المهنية وHR والمشاريع](PROFESSIONAL_SERVICES_HR_PROJECTS_ROADMAP_AR.md).
+واكتملت محليًا المرحلة 6B وفق [ADR-007](ADR-007-human-resources-foundation.md) و[عقد الشريحة](HR_FOUNDATION_SLICE_AR.md): يملك HR الأقسام والمناصب والموظف المستقل عن حساب الدخول والعقد المؤرخ غير المالي، ويقرأ عضوية Identity عبر `HrIdentityPort` فقط. لا توجد رواتب أو هوية وطنية أو حسابات بنكية أو كتابة في المشاريع أو الموافقات أو الأنظمة المالية. المرحلة التالية تجمع الوقت الخام في Timesheet ثابتة عند الإرسال وتربط قرارها بمحرك Approvals الحالي، وبعدها تمر فوترة الخدمات إلى Sales عبر Port. الترتيب الكامل وحدود خصائص المكاتب القانونية والرواتب وأموال العملاء في [خارطة الخدمات المهنية وHR والمشاريع](PROFESSIONAL_SERVICES_HR_PROJECTS_ROADMAP_AR.md).
 
 ## 13. مراحل P1 اللاحقة
 

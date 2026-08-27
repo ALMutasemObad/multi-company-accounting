@@ -22,10 +22,10 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 226, requestBodies: 116, responseBodies: 1505 });
-    expect(guardedOpenApiOperations).toHaveLength(116);
+    expect(openApiContractCoverage).toEqual({ operations: 241, requestBodies: 125, responseBodies: 1590 });
+    expect(guardedOpenApiOperations).toHaveLength(125);
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
-      'login', 'createUser', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'initializeInventoryBalanceValuation', 'reverseInventoryMovement', 'previewDataImport', 'commitDataImport', 'previewBankStatement', 'commitBankStatementImport', 'createBankReconciliationSession', 'generateBankReconciliationSuggestions', 'approveBankReconciliationMatch', 'createManualBankReconciliationMatch', 'releaseBankReconciliationMatch', 'classifyBankStatementLine', 'closeBankReconciliationSession', 'startFinancialCloseRun', 'refreshFinancialCloseRun', 'createApprovalRequest', 'approveApprovalRequest', 'rejectApprovalRequest', 'createProfessionalProject', 'assignProfessionalProjectMember', 'createProfessionalTimeEntry', 'returnFinancialCloseRun', 'updateCashFlowMapping',
+      'login', 'createUser', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'initializeInventoryBalanceValuation', 'reverseInventoryMovement', 'previewDataImport', 'commitDataImport', 'previewBankStatement', 'commitBankStatementImport', 'createBankReconciliationSession', 'generateBankReconciliationSuggestions', 'approveBankReconciliationMatch', 'createManualBankReconciliationMatch', 'releaseBankReconciliationMatch', 'classifyBankStatementLine', 'closeBankReconciliationSession', 'startFinancialCloseRun', 'refreshFinancialCloseRun', 'createApprovalRequest', 'approveApprovalRequest', 'rejectApprovalRequest', 'createProfessionalProject', 'assignProfessionalProjectMember', 'createProfessionalTimeEntry', 'createHrDepartment', 'updateHrDepartment', 'createHrPosition', 'updateHrPosition', 'createEmployee', 'updateEmployee', 'transitionEmployee', 'createEmploymentContract', 'endEmploymentContract', 'returnFinancialCloseRun', 'updateCashFlowMapping',
     ]));
   });
 
@@ -122,6 +122,30 @@ describe('generated OpenAPI request guards', () => {
     }).success).toBe(false);
     expect(openApiRequestBodySchemas.createProfessionalTimeEntry.safeParse({
       projectId: '5aa8b232-356c-4d55-8b89-f27d44d1678d', workDate: '2057-08-27', minutes: 1441, isBillable: true, description: 'عمل',
+    }).success).toBe(false);
+  });
+
+  it('validates HR foundation commands and keeps master-data codes server-owned', () => {
+    expect(openApiRequestBodySchemas.createHrDepartment.parse({
+      nameAr: '  الشؤون القانونية  ', nameEn: '  Legal affairs  ', description: null,
+    })).toEqual({ nameAr: 'الشؤون القانونية', nameEn: 'Legal affairs', description: null });
+    expect(openApiRequestBodySchemas.createHrDepartment.safeParse({
+      code: 'DEP-MANUAL', nameAr: 'الشؤون القانونية',
+    }).success).toBe(false);
+    expect(openApiRequestBodySchemas.updateHrDepartment.safeParse({
+      version: 0, isActive: false,
+    }).success).toBe(true);
+    expect(openApiRequestBodySchemas.createEmployee.parse({
+      nameAr: '  مستشار قانوني  ', employmentType: 'FULL_TIME', hireDate: '2057-08-27', userId: '12',
+    })).toMatchObject({ nameAr: 'مستشار قانوني', employmentType: 'FULL_TIME', userId: 12n });
+    expect(openApiRequestBodySchemas.createEmployee.safeParse({
+      employeeNumber: 'EMP-MANUAL', nameAr: 'مستشار', employmentType: 'FULL_TIME', hireDate: '2057-08-27',
+    }).success).toBe(false);
+    expect(openApiRequestBodySchemas.transitionEmployee.safeParse({
+      version: 1, status: 'TERMINATED', effectiveDate: '2057-09-01', reason: 'إنهاء موثق',
+    }).success).toBe(true);
+    expect(openApiRequestBodySchemas.createEmploymentContract.safeParse({
+      contractType: 'CONSULTANT', titleAr: 'عقد استشاري', startDate: '2057-08-27', salary: '1000.00',
     }).success).toBe(false);
   });
 

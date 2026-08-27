@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.32.0
+  version: 1.33.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -32,6 +32,8 @@ info:
     - يملك محرك الموافقات طلب الموافقة والقرار فقط؛ أول تطبيق يفرض Maker/Checker على مراجعة إقفال الفترة، بينما يبقى Fiscal مالك دورة الإقفال وCore Accounting مالك Ledger.
 
     - يملك سياق Professional Services المشاريع والقضايا المهنية وإسناد أعضائها وسجلات الوقت فقط؛ يقرأ العملاء والأشخاص عبر منافذ مالكيهم ولا ينشئ فاتورة أو قيداً أو يكرر حقائق Sales أو Ledger.
+
+    - يملك Human Resources الأقسام والمناصب والموظفين والعقود غير المالية؛ Employee مستقل عن User ويرتبط بعضوية Identity اختياريًا عبر منفذ قراءة فقط، ولا تشمل الشريحة الرواتب أو التعويضات.
 
     - تبدأ رحلة Inventory بإدارة المستودعات المعزولة حسب الشركة، مع رموز خادمية ثابتة ونسخ متفائلة، دون أثر على الأستاذ في هذه المرحلة.
 
@@ -86,6 +88,8 @@ tags:
   description: طلبات وقرارات الموافقة المشتركة؛ لا يملك المحرك حالات المستندات أو آثارها المالية.
 - name: Professional Projects
   description: المشاريع والقضايا والاستشارات المهنية وأعضاؤها وسجلات الوقت؛ الفوترة والرواتب وأموال الأمانات خارج هذه الشريحة.
+- name: Human Resources
+  description: الهيكل والموظفون والعقود غير المالية؛ الرواتب والهوية الوطنية والحسابات البنكية خارج هذه الشريحة.
 - name: Accounts
   description: دليل الحسابات ومراكز التكلفة.
 - name: Data Imports
@@ -2171,6 +2175,294 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
       x-permission: professional_time.log
       security: [{ SessionCookie: [], CsrfToken: [] }]
+  /hr/departments:
+    get:
+      tags: [Human Resources]
+      summary: عرض أقسام الشركة
+      operationId: listHrDepartments
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Search'
+      - { name: active, in: query, schema: { type: boolean } }
+      responses:
+        '200': { description: الأقسام المعزولة حسب الشركة, content: { application/json: { schema: { $ref: '#/components/schemas/HrDepartmentListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: hr.structure.view
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [Human Resources]
+      summary: إنشاء قسم برمز خادمي
+      operationId: createHrDepartment
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateHrDepartmentRequest' } } }
+      responses:
+        '201': { description: القسم المنشأ, content: { application/json: { schema: { $ref: '#/components/schemas/HrDepartmentResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+      x-permission: hr.structure.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /hr/departments/{departmentId}:
+    patch:
+      tags: [Human Resources]
+      summary: تعديل أو تعطيل قسم
+      operationId: updateHrDepartment
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: departmentId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/UpdateHrStructureReferenceRequest' } } }
+      responses:
+        '200': { description: القسم المحدث, content: { application/json: { schema: { $ref: '#/components/schemas/HrDepartmentResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: hr.structure.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /hr/positions:
+    get:
+      tags: [Human Resources]
+      summary: عرض مناصب الشركة
+      operationId: listHrPositions
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Search'
+      - { name: active, in: query, schema: { type: boolean } }
+      responses:
+        '200': { description: المناصب المعزولة حسب الشركة, content: { application/json: { schema: { $ref: '#/components/schemas/HrPositionListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: hr.structure.view
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [Human Resources]
+      summary: إنشاء منصب برمز خادمي
+      operationId: createHrPosition
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateHrPositionRequest' } } }
+      responses:
+        '201': { description: المنصب المنشأ, content: { application/json: { schema: { $ref: '#/components/schemas/HrPositionResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+      x-permission: hr.structure.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /hr/positions/{positionId}:
+    patch:
+      tags: [Human Resources]
+      summary: تعديل أو تعطيل منصب
+      operationId: updateHrPosition
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: positionId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/UpdateHrStructureReferenceRequest' } } }
+      responses:
+        '200': { description: المنصب المحدث, content: { application/json: { schema: { $ref: '#/components/schemas/HrPositionResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: hr.structure.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /hr/user-options:
+    get:
+      tags: [Human Resources]
+      summary: عرض عضويات الدخول غير المرتبطة بموظف
+      operationId: listHrUserOptions
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Search'
+      responses:
+        '200': { description: مستخدمو الشركة النشطون غير المرتبطين, content: { application/json: { schema: { $ref: '#/components/schemas/HrIdentityReferenceListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: hr.employees.view
+      security: [{ SessionCookie: [] }]
+  /hr/employees:
+    get:
+      tags: [Human Resources]
+      summary: عرض سجل الموظفين
+      operationId: listEmployees
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - $ref: '#/components/parameters/Search'
+      - { name: status, in: query, schema: { $ref: '#/components/schemas/HrEmploymentStatus' } }
+      - { name: departmentId, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: الموظفون المعزولون حسب الشركة, content: { application/json: { schema: { $ref: '#/components/schemas/EmployeeListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: hr.employees.view
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [Human Resources]
+      summary: إنشاء سجل موظف مستقل
+      operationId: createEmployee
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateEmployeeRequest' } } }
+      responses:
+        '201': { description: الموظف المنشأ, content: { application/json: { schema: { $ref: '#/components/schemas/EmployeeResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: hr.employees.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /hr/employees/{employeeId}:
+    get:
+      tags: [Human Resources]
+      summary: عرض موظف واحد
+      operationId: getEmployee
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: employeeId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: تفاصيل الموظف غير المالية, content: { application/json: { schema: { $ref: '#/components/schemas/EmployeeResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: hr.employees.view
+      security: [{ SessionCookie: [] }]
+    patch:
+      tags: [Human Resources]
+      summary: تعديل بيانات الموظف وهيكله
+      operationId: updateEmployee
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: employeeId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/UpdateEmployeeRequest' } } }
+      responses:
+        '200': { description: الموظف المحدث, content: { application/json: { schema: { $ref: '#/components/schemas/EmployeeResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: hr.employees.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /hr/employees/{employeeId}/transition:
+    post:
+      tags: [Human Resources]
+      summary: نقل حالة الموظف بسبب مدقق
+      operationId: transitionEmployee
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: employeeId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/TransitionEmployeeRequest' } } }
+      responses:
+        '200': { description: الموظف بعد الانتقال, content: { application/json: { schema: { $ref: '#/components/schemas/EmployeeResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: hr.employees.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /hr/employees/{employeeId}/contracts:
+    get:
+      tags: [Human Resources]
+      summary: عرض عقود موظف
+      operationId: listEmploymentContracts
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: employeeId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: العقود المؤرخة, content: { application/json: { schema: { $ref: '#/components/schemas/EmploymentContractListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: hr.contracts.view
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [Human Resources]
+      summary: إنشاء عقد عمل غير مالي
+      operationId: createEmploymentContract
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: employeeId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateEmploymentContractRequest' } } }
+      responses:
+        '201': { description: العقد المنشأ, content: { application/json: { schema: { $ref: '#/components/schemas/EmploymentContractResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: hr.contracts.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /hr/employees/{employeeId}/contracts/{contractId}/end:
+    post:
+      tags: [Human Resources]
+      summary: إنهاء عقد مع الاحتفاظ بالتاريخ
+      operationId: endEmploymentContract
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: employeeId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: contractId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/EndEmploymentContractRequest' } } }
+      responses:
+        '200': { description: العقد المنتهي, content: { application/json: { schema: { $ref: '#/components/schemas/EmploymentContractResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: hr.contracts.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
   /approval-requests:
     get:
       tags: [Approvals]
@@ -13588,6 +13880,253 @@ components:
       required: [deleted]
       properties:
         deleted: { type: boolean, const: true }
+    HrEmploymentType:
+      type: string
+      enum: [FULL_TIME, PART_TIME, CONTRACTOR, INTERN]
+    HrEmploymentStatus:
+      type: string
+      enum: [ACTIVE, ON_LEAVE, TERMINATED]
+    HrContractType:
+      type: string
+      enum: [PERMANENT, FIXED_TERM, CONSULTANT, INTERNSHIP]
+    HrContractStatus:
+      type: string
+      enum: [ACTIVE, ENDED]
+    HrStructureReference:
+      type: object
+      required: [id, code, nameAr, nameEn, description, isActive, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string, maxLength: 40, readOnly: true }
+        nameAr: { type: string, maxLength: 160 }
+        nameEn: { type: [string, 'null'], maxLength: 160 }
+        description: { type: [string, 'null'], maxLength: 500 }
+        isActive: { type: boolean }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    HrDepartmentListResponse:
+      type: object
+      required: [data]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/HrStructureReference' } }
+    HrPositionListResponse:
+      type: object
+      required: [data]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/HrStructureReference' } }
+    HrDepartmentResponse:
+      type: object
+      required: [department]
+      properties:
+        department: { $ref: '#/components/schemas/HrStructureReference' }
+    HrPositionResponse:
+      type: object
+      required: [position]
+      properties:
+        position: { $ref: '#/components/schemas/HrStructureReference' }
+    CreateHrDepartmentRequest:
+      type: object
+      additionalProperties: false
+      required: [nameAr]
+      properties:
+        nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 160 }
+        nameEn: { type: [string, 'null'], x-trim: true, maxLength: 160 }
+        description: { type: [string, 'null'], x-trim: true, maxLength: 500 }
+    CreateHrPositionRequest:
+      type: object
+      additionalProperties: false
+      required: [nameAr]
+      properties:
+        nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 160 }
+        nameEn: { type: [string, 'null'], x-trim: true, maxLength: 160 }
+        description: { type: [string, 'null'], x-trim: true, maxLength: 500 }
+    UpdateHrStructureReferenceRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      minProperties: 2
+      properties:
+        version: { type: integer, minimum: 0 }
+        nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 160 }
+        nameEn: { type: [string, 'null'], x-trim: true, maxLength: 160 }
+        description: { type: [string, 'null'], x-trim: true, maxLength: 500 }
+        isActive: { type: boolean }
+        reason: { type: string, x-trim: true, minLength: 3, maxLength: 500 }
+    HrIdentityReference:
+      type: object
+      required: [id, displayName, nameEn]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        displayName: { type: string, maxLength: 160 }
+        nameEn: { type: [string, 'null'], maxLength: 160 }
+    HrIdentityReferenceListResponse:
+      type: object
+      required: [data]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/HrIdentityReference' } }
+    EmployeeReference:
+      type: object
+      required: [id, employeeNumber, nameAr, nameEn]
+      properties:
+        id: { type: string, format: uuid }
+        employeeNumber: { type: string, maxLength: 40, readOnly: true }
+        nameAr: { type: string, maxLength: 160 }
+        nameEn: { type: [string, 'null'], maxLength: 160 }
+    Employee:
+      type: object
+      required:
+      - id
+      - employeeNumber
+      - nameAr
+      - nameEn
+      - employmentType
+      - status
+      - hireDate
+      - terminationDate
+      - terminationReason
+      - workLocation
+      - department
+      - position
+      - manager
+      - linkedUser
+      - hasActiveContract
+      - version
+      - createdAt
+      - updatedAt
+      properties:
+        id: { type: string, format: uuid }
+        employeeNumber: { type: string, maxLength: 40, readOnly: true }
+        nameAr: { type: string, maxLength: 160 }
+        nameEn: { type: [string, 'null'], maxLength: 160 }
+        employmentType: { $ref: '#/components/schemas/HrEmploymentType' }
+        status: { $ref: '#/components/schemas/HrEmploymentStatus' }
+        hireDate: { type: string, format: date }
+        terminationDate: { type: [string, 'null'], format: date }
+        terminationReason: { type: [string, 'null'], maxLength: 500 }
+        workLocation: { type: [string, 'null'], maxLength: 160 }
+        department:
+          oneOf:
+          - { $ref: '#/components/schemas/HrStructureReference' }
+          - { type: 'null' }
+        position:
+          oneOf:
+          - { $ref: '#/components/schemas/HrStructureReference' }
+          - { type: 'null' }
+        manager:
+          oneOf:
+          - { $ref: '#/components/schemas/EmployeeReference' }
+          - { type: 'null' }
+        linkedUser:
+          oneOf:
+          - { $ref: '#/components/schemas/HrIdentityReference' }
+          - { type: 'null' }
+        hasActiveContract: { type: boolean }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    EmployeeResponse:
+      type: object
+      required: [employee]
+      properties:
+        employee: { $ref: '#/components/schemas/Employee' }
+    EmployeeListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Employee' } }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    CreateEmployeeRequest:
+      type: object
+      additionalProperties: false
+      required: [nameAr, employmentType, hireDate]
+      properties:
+        nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 160 }
+        nameEn: { type: [string, 'null'], x-trim: true, maxLength: 160 }
+        userId:
+          oneOf:
+          - { $ref: '#/components/schemas/Id' }
+          - { type: 'null' }
+        departmentId: { type: [string, 'null'], format: uuid }
+        positionId: { type: [string, 'null'], format: uuid }
+        managerEmployeeId: { type: [string, 'null'], format: uuid }
+        employmentType: { $ref: '#/components/schemas/HrEmploymentType' }
+        hireDate: { type: string, format: date }
+        workLocation: { type: [string, 'null'], x-trim: true, maxLength: 160 }
+    UpdateEmployeeRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      minProperties: 2
+      properties:
+        version: { type: integer, minimum: 0 }
+        nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 160 }
+        nameEn: { type: [string, 'null'], x-trim: true, maxLength: 160 }
+        userId:
+          oneOf:
+          - { $ref: '#/components/schemas/Id' }
+          - { type: 'null' }
+        departmentId: { type: [string, 'null'], format: uuid }
+        positionId: { type: [string, 'null'], format: uuid }
+        managerEmployeeId: { type: [string, 'null'], format: uuid }
+        employmentType: { $ref: '#/components/schemas/HrEmploymentType' }
+        hireDate: { type: string, format: date }
+        workLocation: { type: [string, 'null'], x-trim: true, maxLength: 160 }
+    TransitionEmployeeRequest:
+      type: object
+      additionalProperties: false
+      required: [version, status, reason]
+      properties:
+        version: { type: integer, minimum: 0 }
+        status: { $ref: '#/components/schemas/HrEmploymentStatus' }
+        effectiveDate: { type: [string, 'null'], format: date }
+        reason: { type: string, x-trim: true, minLength: 3, maxLength: 500 }
+    EmploymentContract:
+      type: object
+      required: [id, contractType, titleAr, titleEn, startDate, endDate, status, notes, endReason, endedAt, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        contractType: { $ref: '#/components/schemas/HrContractType' }
+        titleAr: { type: string, maxLength: 200 }
+        titleEn: { type: [string, 'null'], maxLength: 200 }
+        startDate: { type: string, format: date }
+        endDate: { type: [string, 'null'], format: date }
+        status: { $ref: '#/components/schemas/HrContractStatus' }
+        notes: { type: [string, 'null'], maxLength: 1000 }
+        endReason: { type: [string, 'null'], maxLength: 500 }
+        endedAt: { type: [string, 'null'], format: date-time }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    EmploymentContractResponse:
+      type: object
+      required: [contract]
+      properties:
+        contract: { $ref: '#/components/schemas/EmploymentContract' }
+    EmploymentContractListResponse:
+      type: object
+      required: [data]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/EmploymentContract' } }
+    CreateEmploymentContractRequest:
+      type: object
+      additionalProperties: false
+      required: [contractType, titleAr, startDate]
+      properties:
+        contractType: { $ref: '#/components/schemas/HrContractType' }
+        titleAr: { type: string, x-trim: true, minLength: 1, maxLength: 200 }
+        titleEn: { type: [string, 'null'], x-trim: true, maxLength: 200 }
+        startDate: { type: string, format: date }
+        endDate: { type: [string, 'null'], format: date }
+        notes: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
+    EndEmploymentContractRequest:
+      type: object
+      additionalProperties: false
+      required: [version, endDate, reason]
+      properties:
+        version: { type: integer, minimum: 0 }
+        endDate: { type: string, format: date }
+        reason: { type: string, x-trim: true, minLength: 3, maxLength: 500 }
     ReasonRequest:
       type: object
       additionalProperties: false
