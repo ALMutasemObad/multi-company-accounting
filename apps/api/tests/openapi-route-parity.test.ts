@@ -43,7 +43,7 @@ const routers = [
   { prefix: '', router: createPrintRouter(stub, stub) },
   { prefix: '', router: createAuditRouter(stub, stub) },
   { prefix: '', router: createSecurityEventRouter(stub, stub) },
-  { prefix: '', router: createFiscalRouter(stub, stub) },
+  { prefix: '', router: createFiscalRouter(stub, stub, stub) },
   { prefix: '', router: createAccountRouter(stub, stub) },
   { prefix: '', router: createManualJournalRouter(stub, stub) },
   { prefix: '', router: createReceiptReferenceRouter(stub, stub) },

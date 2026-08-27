@@ -34,6 +34,12 @@ enum FiscalPeriodStatus {
   REOPENED
 }
 
+enum FinancialCloseRunStatus {
+  PREPARING
+  REVIEWED
+  CLOSED
+}
+
 enum AccountingDocumentType {
   MANUAL_JOURNAL
   INVENTORY_ADJUSTMENT
@@ -310,6 +316,7 @@ model Company {
   bankStatementLines                BankStatementLine[]
   bankReconciliationSessions        BankReconciliationSession[]
   bankReconciliationMatches         BankReconciliationMatch[]
+  financialCloseRuns                FinancialCloseRun[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -351,6 +358,10 @@ model User {
   bankReconciliationSessionsClosed  BankReconciliationSession[]        @relation("BankReconciliationSessionClosedBy")
   bankReconciliationMatchesApproved BankReconciliationMatch[]          @relation("BankReconciliationMatchApprovedBy")
   bankReconciliationMatchesReleased BankReconciliationMatch[]          @relation("BankReconciliationMatchReleasedBy")
+  financialCloseRunsStarted         FinancialCloseRun[]                 @relation("FinancialCloseRunStartedBy")
+  financialCloseRunsReviewed        FinancialCloseRun[]                 @relation("FinancialCloseRunReviewedBy")
+  financialCloseRunsReturned        FinancialCloseRun[]                 @relation("FinancialCloseRunReturnedBy")
+  financialCloseRunsClosed          FinancialCloseRun[]                 @relation("FinancialCloseRunClosedBy")
 
   @@map("users")
 }
@@ -799,11 +810,54 @@ model FiscalPeriod {
   closedByUser   User?                @relation("PeriodClosedBy", fields: [closedBy], references: [id], onDelete: Restrict, onUpdate: Restrict)
   reopenedByUser User?                @relation("PeriodReopenedBy", fields: [reopenedBy], references: [id], onDelete: Restrict, onUpdate: Restrict)
   documents      AccountingDocument[]
+  closeRuns      FinancialCloseRun[]
 
   @@unique([fiscalYearId, periodNumber])
   @@unique([id, companyId])
   @@index([companyId, startDate, endDate])
   @@map("fiscal_periods")
+}
+
+model FinancialCloseRun {
+  id                    BigInt                  @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId              String                  @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId             BigInt                  @map("company_id") @db.UnsignedBigInt
+  fiscalPeriodId        BigInt                  @map("fiscal_period_id") @db.UnsignedBigInt
+  cycle                 Int                     @db.UnsignedSmallInt
+  status                FinancialCloseRunStatus @default(PREPARING)
+  checklistSnapshot     Json                    @map("checklist_snapshot")
+  checklistHashSha256   Bytes                   @map("checklist_hash_sha256") @db.Binary(32)
+  closePackSnapshot     Json?                   @map("close_pack_snapshot")
+  closePackHashSha256   Bytes?                  @map("close_pack_hash_sha256") @db.Binary(32)
+  closeDocumentId       BigInt?                 @map("close_document_id") @db.UnsignedBigInt
+  startedById           BigInt                  @map("started_by_id") @db.UnsignedBigInt
+  reviewedById          BigInt?                 @map("reviewed_by_id") @db.UnsignedBigInt
+  reviewedAt            DateTime?               @map("reviewed_at")
+  returnedById          BigInt?                 @map("returned_by_id") @db.UnsignedBigInt
+  returnedAt            DateTime?               @map("returned_at")
+  returnReason          String?                 @map("return_reason") @db.VarChar(500)
+  closedById            BigInt?                 @map("closed_by_id") @db.UnsignedBigInt
+  closedAt              DateTime?               @map("closed_at")
+  version               Int                     @default(0) @db.UnsignedInt
+  createdAt             DateTime                @default(now()) @map("created_at")
+  updatedAt             DateTime                @updatedAt @map("updated_at")
+  company               Company                 @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  fiscalPeriod          FiscalPeriod            @relation(fields: [fiscalPeriodId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  startedBy             User                    @relation("FinancialCloseRunStartedBy", fields: [startedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  reviewedBy            User?                   @relation("FinancialCloseRunReviewedBy", fields: [reviewedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  returnedBy            User?                   @relation("FinancialCloseRunReturnedBy", fields: [returnedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  closedBy              User?                   @relation("FinancialCloseRunClosedBy", fields: [closedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  closeDocument         AccountingDocument?     @relation(fields: [closeDocumentId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([id, companyId])
+  @@unique([fiscalPeriodId, cycle])
+  @@unique([closeDocumentId, companyId])
+  @@index([companyId, status, createdAt])
+  @@index([startedById, createdAt])
+  @@index([reviewedById, reviewedAt])
+  @@index([returnedById, returnedAt])
+  @@index([closedById, closedAt])
+  @@map("financial_close_runs")
 }
 
 model DocumentSequence {
@@ -869,6 +923,7 @@ model AccountingDocument {
   purchaseInvoice      PurchaseInvoice?
   inventoryMovement    InventoryMovement?
   printArchive         DocumentPrintArchive?
+  financialCloseRun    FinancialCloseRun?
 
   @@unique([companyId, documentType, documentNumber])
   @@unique([id, companyId])

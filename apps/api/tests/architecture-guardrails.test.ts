@@ -90,11 +90,23 @@ describe("core accounting architecture guardrails", () => {
     expect(JSON.parse(apiPackage).dependencies).toMatchObject({
       "csv-parse": "7.0.2",
       "fast-xml-parser": "5.11.0",
+      "xstate": "5.32.5",
     });
     expect(notice).toContain("csv-parse 7.0.2");
     expect(notice).toContain("Copyright (c) 2010 Adaltas");
     expect(notice).toContain("fast-xml-parser 5.11.0");
     expect(notice).toContain("Copyright (c) 2017 Amit Kumar Gupta");
+    expect(notice).toContain("XState 5.32.5");
+    expect(notice).toContain("Copyright (c) 2015 David Khourshid");
+  });
+
+  it("keeps XState isolated to the financial-close transition adapter", async () => {
+    const sources = await allTypeScriptSources();
+    const importers = sources
+      .filter(({ content }) => /from\s+["']xstate["']/u.test(content))
+      .map(({ path }) => path)
+      .sort();
+    expect(importers).toEqual(["fiscal/financial-close-workflow.ts"]);
   });
 
   it("keeps open-source bank file parsers behind Treasury adapters", async () => {

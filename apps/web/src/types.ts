@@ -85,6 +85,47 @@ export type FiscalYear = {
   periods: FiscalPeriod[];
 };
 
+export type FinancialCloseChecklistCode =
+  | "EARLIER_PERIODS_CLOSED"
+  | "NO_DRAFT_DOCUMENTS"
+  | "LEDGER_BALANCED"
+  | "SUBLEDGERS_RECONCILED"
+  | "BANK_RECONCILIATION_COMPLETE"
+  | "INVENTORY_READY"
+  | "EXCHANGE_RATES_AVAILABLE"
+  | "RETAINED_EARNINGS_READY";
+
+export type FinancialCloseReadiness = {
+  periodId: string;
+  periodVersion: number;
+  isYearEnd: boolean;
+  ready: boolean;
+  checkedAt: string;
+  items: Array<{
+    code: FinancialCloseChecklistCode;
+    status: "PASS" | "BLOCKED" | "WARNING";
+    count: number;
+    details: string[];
+  }>;
+};
+
+export type FinancialCloseRun = {
+  id: string;
+  periodId: string;
+  cycle: number;
+  status: "PREPARING" | "REVIEWED" | "CLOSED";
+  checklist: FinancialCloseReadiness;
+  checklistHashSha256: string;
+  closePack: Record<string, unknown> | null;
+  closePackHashSha256: string | null;
+  closeDocumentId: string | null;
+  returnReason: string | null;
+  reviewedAt: string | null;
+  closedAt: string | null;
+  version: number;
+  updatedAt: string;
+};
+
 export type CostCenter = { id: string; parentId: string | null; code: string; nameAr: string; nameEn: string | null; isActive: boolean };
 
 export type CashBankAccount = {

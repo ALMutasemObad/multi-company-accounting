@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.25.0
+  version: 1.26.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -1828,6 +1828,126 @@ paths:
         CsrfToken: []
       x-idempotency-scope: user + company + operation + key
       x-idempotency-retention: 24h (configurable)
+  /fiscal-periods/{periodId}/close-readiness:
+    get:
+      tags: [Fiscal]
+      summary: فحص جاهزية الفترة للإقفال المالي
+      operationId: getFinancialCloseReadiness
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: periodId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200': { description: نتيجة الفحص, content: { application/json: { schema: { $ref: '#/components/schemas/FinancialCloseReadiness' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: fiscal_periods.view
+      security: [{ SessionCookie: [] }]
+  /fiscal-periods/{periodId}/close-run:
+    get:
+      tags: [Fiscal]
+      summary: عرض أحدث دورة إقفال للفترة
+      operationId: getCurrentFinancialCloseRun
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: periodId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200': { description: أحدث دورة أو قيمة فارغة, content: { application/json: { schema: { $ref: '#/components/schemas/FinancialCloseRunNullableResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: fiscal_periods.view
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [Fiscal]
+      summary: بدء دورة إقفال مالي
+      operationId: startFinancialCloseRun
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: periodId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/StartFinancialCloseRunRequest' } } }
+      responses:
+        '201': { description: بدأت دورة الإقفال, content: { application/json: { schema: { $ref: '#/components/schemas/FinancialCloseRunResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: fiscal_periods.close
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /financial-close-runs/{closeRunId}/refresh:
+    post:
+      tags: [Fiscal]
+      summary: تحديث قائمة تحقق الإقفال
+      operationId: refreshFinancialCloseRun
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: closeRunId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/FinancialCloseRunVersionRequest' } } }
+      responses:
+        '200': { description: تم التحديث, content: { application/json: { schema: { $ref: '#/components/schemas/FinancialCloseRunResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: fiscal_periods.close
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /financial-close-runs/{closeRunId}/review:
+    post:
+      tags: [Fiscal]
+      summary: اعتماد مراجعة حزمة الإقفال
+      operationId: reviewFinancialCloseRun
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: closeRunId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/FinancialCloseRunVersionRequest' } } }
+      responses:
+        '200': { description: تم اعتماد المراجعة, content: { application/json: { schema: { $ref: '#/components/schemas/FinancialCloseRunResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: fiscal_periods.close
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /financial-close-runs/{closeRunId}/return:
+    post:
+      tags: [Fiscal]
+      summary: إعادة دورة الإقفال للتحضير
+      operationId: returnFinancialCloseRun
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: closeRunId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ReturnFinancialCloseRunRequest' } } }
+      responses:
+        '200': { description: أعيدت للتحضير, content: { application/json: { schema: { $ref: '#/components/schemas/FinancialCloseRunResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: fiscal_periods.close
+      security: [{ SessionCookie: [], CsrfToken: [] }]
   /fiscal-periods/{periodId}/reopen:
     post:
       tags:
@@ -8213,9 +8333,15 @@ components:
       additionalProperties: false
       required:
       - version
-      - reviewConfirmed
       properties:
         version:
+          type: integer
+          minimum: 0
+          example: 0
+        closeRunId:
+          type: string
+          format: uuid
+        closeRunVersion:
           type: integer
           minimum: 0
           example: 0
@@ -8225,6 +8351,196 @@ components:
         requirePeriodCloseDocument:
           type: boolean
           default: false
+    StartFinancialCloseRunRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version:
+          type: integer
+          minimum: 0
+          example: 0
+    FinancialCloseRunVersionRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version:
+          type: integer
+          minimum: 0
+          example: 0
+    ReturnFinancialCloseRunRequest:
+      type: object
+      additionalProperties: false
+      required: [version, reason]
+      properties:
+        version:
+          type: integer
+          minimum: 0
+        reason:
+          type: string
+          x-trim: true
+          minLength: 10
+          maxLength: 500
+    FinancialCloseChecklistStatus:
+      type: string
+      enum: [PASS, BLOCKED, WARNING]
+    FinancialCloseChecklistCode:
+      type: string
+      enum:
+      - EARLIER_PERIODS_CLOSED
+      - NO_DRAFT_DOCUMENTS
+      - LEDGER_BALANCED
+      - SUBLEDGERS_RECONCILED
+      - BANK_RECONCILIATION_COMPLETE
+      - INVENTORY_READY
+      - EXCHANGE_RATES_AVAILABLE
+      - RETAINED_EARNINGS_READY
+    FinancialCloseChecklistItem:
+      type: object
+      additionalProperties: false
+      required: [code, status, count, details]
+      properties:
+        code:
+          $ref: '#/components/schemas/FinancialCloseChecklistCode'
+        status:
+          $ref: '#/components/schemas/FinancialCloseChecklistStatus'
+        count:
+          type: integer
+          minimum: 0
+        details:
+          type: array
+          items: { type: string }
+    FinancialCloseReadiness:
+      type: object
+      additionalProperties: false
+      required: [periodId, periodVersion, isYearEnd, ready, checkedAt, items]
+      properties:
+        periodId:
+          $ref: '#/components/schemas/Id'
+        periodVersion:
+          type: integer
+          minimum: 0
+        isYearEnd:
+          type: boolean
+        ready:
+          type: boolean
+        checkedAt:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/FinancialCloseChecklistItem'
+    FinancialCloseRunStatus:
+      type: string
+      enum: [PREPARING, REVIEWED, CLOSED]
+    FinancialCloseRun:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - periodId
+      - cycle
+      - status
+      - checklist
+      - checklistHashSha256
+      - closePack
+      - closePackHashSha256
+      - closeDocumentId
+      - startedById
+      - reviewedById
+      - reviewedAt
+      - returnedById
+      - returnedAt
+      - returnReason
+      - closedById
+      - closedAt
+      - version
+      - createdAt
+      - updatedAt
+      properties:
+        id: { type: string, format: uuid }
+        periodId:
+          $ref: '#/components/schemas/Id'
+        cycle: { type: integer, minimum: 1 }
+        status:
+          $ref: '#/components/schemas/FinancialCloseRunStatus'
+        checklist:
+          $ref: '#/components/schemas/FinancialCloseReadiness'
+        checklistHashSha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        closePack:
+          oneOf:
+          - type: object
+            additionalProperties: true
+          - type: 'null'
+        closePackHashSha256:
+          oneOf:
+          - type: string
+            pattern: '^[a-f0-9]{64}$'
+          - type: 'null'
+        closeDocumentId:
+          oneOf:
+          - $ref: '#/components/schemas/Id'
+          - type: 'null'
+        startedById:
+          $ref: '#/components/schemas/Id'
+        reviewedById:
+          oneOf:
+          - $ref: '#/components/schemas/Id'
+          - type: 'null'
+        reviewedAt:
+          oneOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        returnedById:
+          oneOf:
+          - $ref: '#/components/schemas/Id'
+          - type: 'null'
+        returnedAt:
+          oneOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        returnReason:
+          type: [string, 'null']
+        closedById:
+          oneOf:
+          - $ref: '#/components/schemas/Id'
+          - type: 'null'
+        closedAt:
+          oneOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        version:
+          type: integer
+          minimum: 0
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    FinancialCloseRunResponse:
+      type: object
+      additionalProperties: false
+      required: [run]
+      properties:
+        run:
+          $ref: '#/components/schemas/FinancialCloseRun'
+    FinancialCloseRunNullableResponse:
+      type: object
+      additionalProperties: false
+      required: [run]
+      properties:
+        run:
+          oneOf:
+          - $ref: '#/components/schemas/FinancialCloseRun'
+          - type: 'null'
     ReopenPeriodRequest:
       type: object
       additionalProperties: false
@@ -8252,6 +8568,8 @@ components:
         requestId:
           type: string
           format: uuid
+        closeRun:
+          $ref: '#/components/schemas/FinancialCloseRun'
         reconciliation:
           type: object
           properties:

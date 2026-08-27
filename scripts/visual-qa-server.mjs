@@ -17,6 +17,24 @@ const company = {
   updatedAt: "2026-08-21T12:00:00.000Z",
 };
 const zeroSection = { rows: [], total: "0.00", comparisonTotal: null, variance: null, variancePercent: null };
+const fiscalPeriod = { id: "1001", fiscalYearId: "1001", periodNumber: 12, name: "ديسمبر 2026", startDate: "2026-12-01", endDate: "2026-12-31", status: "OPEN", closedAt: null, reopenedAt: null, reopenReason: null, version: 0 };
+const closeReadiness = {
+  periodId: fiscalPeriod.id,
+  periodVersion: 0,
+  isYearEnd: true,
+  ready: true,
+  checkedAt: "2026-12-31T18:00:00.000Z",
+  items: [
+    "EARLIER_PERIODS_CLOSED",
+    "NO_DRAFT_DOCUMENTS",
+    "LEDGER_BALANCED",
+    "SUBLEDGERS_RECONCILED",
+    "BANK_RECONCILIATION_COMPLETE",
+    "INVENTORY_READY",
+    "EXCHANGE_RATES_AVAILABLE",
+    "RETAINED_EARNINGS_READY",
+  ].map((code) => ({ code, status: "PASS", count: 0, details: [] })),
+};
 
 function list(data = []) {
   return { data, meta: { ...meta, total: data.length, totalPages: data.length ? 1 : 0 } };
@@ -28,6 +46,9 @@ function responseFor(url, method) {
   if (pathname === "/auth/companies") return { data: [company] };
   if (pathname === "/auth/context" || pathname === "/auth/logout") return null;
   if (pathname === "/companies/current") return company;
+  if (pathname === "/fiscal-years") return list([{ id: "1001", name: "السنة المالية 2026", startDate: "2026-01-01", endDate: "2026-12-31", status: "OPEN", periods: [fiscalPeriod] }]);
+  if (pathname === `/fiscal-periods/${fiscalPeriod.id}/close-readiness`) return closeReadiness;
+  if (pathname === `/fiscal-periods/${fiscalPeriod.id}/close-run`) return { run: null };
   if (pathname === "/settings") return { data: [{ key: "accounting.manual_journal_maker_checker_enabled", value: true }] };
   if (pathname === "/auth/register/options") return {
     currencies: [currency, { id: "currency-yer", code: "YER", nameAr: "ريال يمني", nameEn: "Yemeni Rial", decimals: 2 }],

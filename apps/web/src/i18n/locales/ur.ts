@@ -1,8 +1,10 @@
 import type { ar } from "./ar";
 import { urReconciliation } from "./reconciliation";
+import { urFinancialClose } from "./financial-close";
 
 export const ur = {
   ...urReconciliation,
+  ...urFinancialClose,
   "referencePicker.loading": "تلاش جاری ہے…",
   "referencePicker.empty": "کوئی مماثل نتیجہ نہیں ملا۔",
   "referencePicker.more": "مزید نتائج لوڈ کریں",

@@ -259,6 +259,37 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
     expect.soft(runtimeErrors, `${locale} bank reconciliation runtime errors`).toEqual([]);
   });
 
+  test(`${locale}: financial close checklist stays responsive and accessible`, async ({ page }) => {
+    const runtimeErrors: string[] = [];
+    page.on('pageerror', (error) => runtimeErrors.push(error.message));
+    await configureLocale(page, locale);
+    await page.goto('/?qa=fiscal#fiscal');
+    await waitForStableInterface(page, { name: 'fiscal', path: '', ready: '.workspace-page', kind: 'workspace' });
+
+    const opener = page.locator('.fiscal-year-card tbody .row-actions .button.secondary');
+    await expect(opener).toHaveCount(1);
+    await opener.click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toBeFocused();
+    await expect(dialog.locator('.close-checklist article')).toHaveCount(8);
+    await expect(dialog.locator('.close-readiness-banner')).toHaveClass(/\bready\b/u);
+    expect.soft(await dialog.evaluate((element) => {
+      const target = element as HTMLElement;
+      const titleId = target.getAttribute('aria-labelledby');
+      return {
+        labelled: Boolean(titleId && document.querySelectorAll(`#${CSS.escape(titleId)}`).length === 1),
+        contained: target.scrollWidth <= target.clientWidth + 1,
+        scrollLocked: document.body.style.overflow === 'hidden',
+      };
+    }), `${locale}/financial-close dialog contract`).toEqual({ labelled: true, contained: true, scrollLocked: true });
+    await auditCurrentInterface(page, locale, 'financial-close');
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(opener).toBeFocused();
+    expect.soft(runtimeErrors, `${locale} financial close runtime errors`).toEqual([]);
+  });
+
   test(`${locale}: sales and purchase invoice editors stay contained and accessible`, async ({ page }) => {
     const runtimeErrors: string[] = [];
     page.on('pageerror', (error) => runtimeErrors.push(error.message));

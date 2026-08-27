@@ -480,6 +480,31 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", "Noto Sans Devanaga
 .fiscal-year-card .data-table-wrap { box-shadow: none; }
 .fiscal-year-card .row-actions { min-width: 190px; gap: 5px; }
 .fiscal-year-card .row-actions .button { display: inline-flex; width: auto; height: auto; padding: 7px 9px; }
+.financial-close-workspace { display: grid; gap: 16px; padding: 22px 28px 26px; }
+.close-readiness-banner { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 17px 19px; border: 1px solid; border-radius: 14px; }
+.close-readiness-banner.ready { border-color: #b9d8c8; background: #edf7f1; color: #206044; }
+.close-readiness-banner.blocked { border-color: #e8c4bf; background: #fff5f3; color: var(--danger); }
+.close-readiness-banner > div:first-child { display: grid; gap: 5px; }
+.close-readiness-banner span { font-size: .78rem; line-height: 1.55; }
+.close-run-badge { flex: 0 0 auto; min-width: 112px; padding: 8px 11px; border-radius: 10px; background: rgba(255,255,255,.72); text-align: center; }
+.close-run-badge span, .close-run-badge strong { display: block; }
+.close-checklist { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.close-checklist article { display: flex; align-items: center; gap: 11px; min-height: 68px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); }
+.close-checklist article.pass { border-color: #cee1d7; }
+.close-checklist article.blocked { border-color: #ebc6c2; background: #fffafa; }
+.close-check-icon { display: grid; flex: 0 0 30px; width: 30px; height: 30px; place-items: center; border-radius: 50%; background: #dcefe5; color: #23694c; font-weight: 900; }
+.close-checklist article.blocked .close-check-icon { background: var(--danger-soft); color: var(--danger); }
+.close-checklist article div { display: grid; gap: 4px; }
+.close-checklist article strong { font-size: .84rem; }
+.close-checklist article small, .close-checked-at { color: var(--muted); font-size: .74rem; }
+.close-checked-at { margin: -5px 2px 0; }
+.close-empty-note, .close-pack-note { padding: 13px 15px; border: 1px dashed #b7ccc3; border-radius: 11px; background: #f7faf8; color: var(--muted); font-size: .82rem; }
+.close-pack-note { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-style: solid; color: #276148; }
+.close-pack-note code { direction: ltr; padding: 4px 7px; border-radius: 7px; background: #e5f0ea; font-size: .72rem; }
+.close-return-panel { display: grid; gap: 10px; padding: 14px; border: 1px solid #ebc6c2; border-radius: 12px; background: #fffafa; }
+.close-return-panel label { display: grid; gap: 7px; }
+.close-return-panel .row-actions { justify-content: flex-end; }
+.close-actions { padding-top: 2px; border-top: 1px solid var(--line); }
 .status-chip.open { background: #e2f2e9; color: #25704e; }
 .status-chip.closed { background: #edf0ee; color: #596b64; }
 .status-chip.reopened { background: #e9efff; color: #365da8; }
@@ -858,6 +883,7 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", "Noto Sans Devanaga
   .dashboard-grid { grid-template-columns: 1fr; }
   .fiscal-year-card { padding: 14px; }
   .fiscal-year-card > header { align-items: flex-start; flex-direction: column; }
+  .close-checklist { grid-template-columns: 1fr; }
   .period-editor > div { grid-template-columns: 58px 1fr 40px; }
   .period-editor > div input:nth-child(3), .period-editor > div input:nth-child(4) { grid-column: 1 / 3; }
   .entry-meta { grid-template-columns: 1fr; }
@@ -892,6 +918,10 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", "Noto Sans Devanaga
   .modal-backdrop { padding: 0; place-items: stretch; }
   .modal, .modal.wide { min-height: 100vh; border-radius: 0; }
   .modal-header, .form-grid { padding-inline: 18px; }
+  .financial-close-workspace { padding-inline: 18px; }
+  .close-readiness-banner, .close-pack-note { align-items: stretch; flex-direction: column; }
+  .close-run-badge { text-align: start; }
+  .close-actions .button { width: 100%; }
   .detail-actions, .detail-grid, .document-summary, .subsection-heading, .address-list, .allocation-detail-list { padding-inline: 18px; }
   .detail-actions { flex-wrap: wrap; }
   .period-editor, .journal-entries, .journal-detail-entry { padding-inline: 18px; }

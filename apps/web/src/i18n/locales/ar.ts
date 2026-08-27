@@ -2,11 +2,13 @@ import { arPages } from "./ar-pages";
 import { arDomain } from "./ar-domain";
 import { arEvents } from "./ar-events";
 import { arReconciliation } from "./reconciliation";
+import { arFinancialClose } from "./financial-close";
 
 export const ar = {
   ...arDomain,
   ...arEvents,
   ...arReconciliation,
+  ...arFinancialClose,
   "language.label": "اللغة",
   "branding.name": "النظام المحاسبي متعدد الشركات",
   "branding.shortName": "منصة المحاسبة",

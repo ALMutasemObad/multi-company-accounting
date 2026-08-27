@@ -42,6 +42,11 @@ import { InventoryMovementService } from './inventory/inventory-movement-service
 import { BankStatementParser } from './treasury/reconciliation/bank-statement-parser.js';
 import { PrismaReconciliationLedgerQueryAdapter } from './treasury/reconciliation/adapters/prisma-reconciliation-ledger-query-adapter.js';
 import { BankReconciliationService } from './treasury/reconciliation/reconciliation-service.js';
+import { FinancialCloseService } from './fiscal/financial-close-service.js';
+import { TreasuryFinancialCloseReadinessAdapter } from './treasury/financial-close-readiness-adapter.js';
+import { InventoryFinancialCloseReadinessAdapter } from './inventory/financial-close-readiness-adapter.js';
+import { CompanyCurrencyFinancialCloseReadinessAdapter } from './companies/financial-close-readiness-adapter.js';
+import { SettlementFinancialCloseReadinessAdapter } from './reports/financial-close-readiness-adapter.js';
 
 const config = loadConfig();
 if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required to start the API');
@@ -122,6 +127,13 @@ const inventoryMovements = new InventoryMovementService(database);
 const salesInvoices = new SalesInvoiceService(database, taxes, inventoryCatalog, inventoryMovements);
 const purchaseInvoices = new PurchaseInvoiceService(database, taxes, inventoryCatalog, inventoryMovements);
 const dataImports = new DataImportService(database, receiptReferences, suppliers, salesInvoices, purchaseInvoices, outboxAppender);
+const fiscal = new FiscalService(database);
+const financialClose = new FinancialCloseService(database, {
+  treasury: new TreasuryFinancialCloseReadinessAdapter(),
+  inventory: new InventoryFinancialCloseReadinessAdapter(),
+  currencies: new CompanyCurrencyFinancialCloseReadinessAdapter(),
+  settlements: new SettlementFinancialCloseReadinessAdapter(),
+});
 const app = createApp(config, {
   readiness: new DatabaseReadinessService(database, config.READINESS_TIMEOUT_MS),
   metrics: operationalMetrics,
@@ -133,7 +145,8 @@ const app = createApp(config, {
   printing: new PrintService(database),
   audit: new AuditService(database),
   security: new SecurityEventService(database),
-  fiscal: new FiscalService(database),
+  fiscal,
+  financialClose,
   accounts: new AccountService(database),
   journals: new ManualJournalService(database),
   receiptReferences,
