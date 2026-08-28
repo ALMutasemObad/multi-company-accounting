@@ -140,6 +140,10 @@ test("CI deploys main only after all database and upgrade gates and uses pinned 
   assert.match(source, /actions\/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020/u);
   assert.match(source, /actions\/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02/u);
   assert.match(source, /actions\/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093/u);
+  assert.match(
+    source,
+    /Upload verified production release\s+if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'\s+uses: actions\/upload-artifact/u,
+  );
   assert.match(source, /mariadb:10\.11\.11@sha256:96be0d3dfbeb07bc420e5fb8a6dc05c492676f1f89980a497a55e6fbbba3f1c4/u);
   assert.match(source, /mysql:8\.4\.11@sha256:b3b90af2a6552ae30c266fdb7d5dd55f3afb72404bb78d37fe8a23eb857fd3fb/u);
   assert.ok(provenanceIndex > 0, "production provenance verification must be present");
