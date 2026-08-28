@@ -4,7 +4,7 @@ import { z, ZodError } from "zod";
 import type { AuthService } from "../auth/auth-service.js";
 import { openApiRequestBodySchemas as bodies } from "../generated/openapi-request-guards.js";
 import { ReceiptError } from "../receipts/receipt-service.js";
-import { SalesInvoiceError } from "../sales/sales-invoice-service.js";
+import { SalesInvoiceError } from "../sales/sales-invoice-ports.js";
 import { PosError, PosService } from "./pos-service.js";
 
 const page = z.object({

@@ -1,4 +1,5 @@
 import { readFile, readdir } from "node:fs/promises";
+import { posix } from "node:path";
 import { describe, expect, it } from "vitest";
 import { guardedOpenApiOperations } from "../src/generated/openapi-request-guards.js";
 
@@ -36,6 +37,74 @@ async function allTypeScriptSources(
   }));
   return nested.flat();
 }
+
+function relativeSourceDependencies(
+  path: string,
+  content: string,
+  knownPaths: ReadonlySet<string>,
+) {
+  const dependencies = new Set<string>();
+  const staticImport = /\b(?:import|export)\s+(?:type\s+)?(?:[^"'`;]+?\s+from\s+)?["'](\.[^"']+)["']/gu;
+  for (const match of content.matchAll(staticImport)) {
+    const specifier = match[1]!;
+    const typeScriptSpecifier = specifier.endsWith(".js")
+      ? `${specifier.slice(0, -3)}.ts`
+      : `${specifier}.ts`;
+    const dependency = posix.normalize(posix.join(posix.dirname(path), typeScriptSpecifier));
+    if (knownPaths.has(dependency)) dependencies.add(dependency);
+  }
+  return [...dependencies].sort();
+}
+
+describe("Application dependency boundaries", () => {
+  it("keeps the API source dependency graph acyclic", async () => {
+    const sources = await allTypeScriptSources();
+    const knownPaths = new Set(sources.map(({ path }) => path));
+    const graph = new Map(sources.map(({ path, content }) => [
+      path,
+      relativeSourceDependencies(path, content, knownPaths),
+    ]));
+    const states = new Map<string, "visiting" | "visited">();
+    const stack: string[] = [];
+    let cycle: string[] | null = null;
+
+    const visit = (path: string) => {
+      if (cycle || states.get(path) === "visited") return;
+      if (states.get(path) === "visiting") {
+        cycle = [...stack.slice(stack.indexOf(path)), path];
+        return;
+      }
+      states.set(path, "visiting");
+      stack.push(path);
+      for (const dependency of graph.get(path) ?? []) visit(dependency);
+      stack.pop();
+      states.set(path, "visited");
+    };
+
+    for (const path of [...graph.keys()].sort()) visit(path);
+    const detectedCycle = cycle as string[] | null;
+    expect(
+      detectedCycle,
+      detectedCycle ? `Circular dependency: ${detectedCycle.join(" -> ")}` : undefined,
+    ).toBeNull();
+  });
+
+  it("keeps Data Import dependent on owner ports and shared file infrastructure", async () => {
+    const [imports, sales, purchases, suppliers] = await Promise.all([
+      source("imports/data-import-service.ts"),
+      source("sales/sales-invoice-service.ts"),
+      source("purchases/purchase-invoice-service.ts"),
+      source("suppliers/supplier-service.ts"),
+    ]);
+    expect(imports).toContain("CustomerImportPort");
+    expect(imports).toContain("SupplierImportPort");
+    expect(imports).toContain("SalesInvoiceImportPort");
+    expect(imports).toContain("PurchaseInvoiceImportPort");
+    expect(imports).toContain("platform/tabular-file-exporter.js");
+    expect(imports).not.toMatch(/(?:sales-invoice|purchase-invoice|supplier)-service\.js|reports\//u);
+    expect(`${sales}\n${purchases}\n${suppliers}`).not.toContain("../imports/");
+  });
+});
 
 describe("OpenAPI executable-contract guardrails", () => {
   it("keeps every JSON request body parser backed by the generated contract", async () => {
