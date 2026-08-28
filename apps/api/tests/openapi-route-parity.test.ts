@@ -32,6 +32,7 @@ import { createProfessionalProjectPlanningRouter } from '../src/projects/profess
 import { createProfessionalBillingRouter } from '../src/projects/professional-billing-router.js';
 import { createProfessionalProjectAccessRouter } from '../src/projects/professional-project-access-router.js';
 import { createHrRouter } from '../src/hr/hr-router.js';
+import { createPlatformOperationsRouter } from '../src/platform-operations/platform-operations-router.js';
 
 type RouteLayer = {
   route?: {
@@ -45,6 +46,7 @@ const routers = [
   { prefix: '/auth', router: createAuthRouter(stub, false) },
   { prefix: '/auth/password', router: createPasswordResetRouter(stub, stub) },
   { prefix: '/auth/register', router: createRegistrationRouter(stub, stub) },
+  { prefix: '', router: createPlatformOperationsRouter(stub, stub) },
   { prefix: '', router: createUserRouter(stub, stub, stub) },
   { prefix: '', router: createCompanyRouter(stub, stub) },
   { prefix: '', router: createPrintRouter(stub, stub) },

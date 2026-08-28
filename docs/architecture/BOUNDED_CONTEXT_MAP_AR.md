@@ -1,7 +1,7 @@
 ---
 title: "Bounded Context Map"
 status: "accepted target architecture"
-version: "2.4"
+version: "2.5"
 last_updated: "2026-08-28"
 ---
 
@@ -34,6 +34,7 @@ last_updated: "2026-08-28"
 | Tax | معدلات الضرائب وربط حساباتها والحساب والتقريب | `TaxRate` | يكشف `TaxQuotePort` للمبيعات والمشتريات ويملك النسخ المتفائلة |
 | Printing & Document Output | اللقطات التاريخية والتوليد | `DocumentPrintArchive` | يقرأ عبر Document Snapshot Port |
 | Reporting | التقارير والقوائم وRead Models | لا يملك حقائق مالية تشغيلية | قراءة فقط، ويمكنه امتلاك projections مستقبلًا |
+| Platform Operations | مؤشرات تبني وصحة المنصة العابرة للشركات للشركة المطوّرة | لا يملك جداول أعمال | قراءة تجميعية فقط عبر Query Ports، وتفويض مشغّل منصة مستقل عن أدوار الشركات؛ لا يعرض بيانات أفراد أو تفاصيل مالية |
 | Data Import | تنسيق القوالب والمعاينة والاعتماد الجماعي | `DataImportBatch` فقط | Process Manager؛ يستدعي منافذ المالكين ولا يخزن الملف أو يرحّل الفواتير |
 | Audit | سجل الأعمال والامتثال | `AuditLog` | Append-only، وليس Event Bus |
 | Security Monitoring | أحداث المخاطر والإقرار | `SecurityEvent` | يمكنه إصدار تنبيه Integration بعد حفظ الحدث |
@@ -66,6 +67,7 @@ Workforce Access workflow ──> Human Resources employee-account port + Identi
 All operational contexts ──> Audit append port
 
 Reporting <────────── read/query ports or dedicated read models
+Platform Operations <── aggregate query ports + Identity operator query port
 Printing  <────────── immutable document snapshot port
 ```
 

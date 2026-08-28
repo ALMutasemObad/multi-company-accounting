@@ -13,6 +13,24 @@ export type Permission = { id: string; code: string; module: string; description
 export type Role = { id: string; code: string; nameAr: string; nameEn: string | null; isSystemRole: boolean; isActive: boolean; assignedUsers: number; permissionIds: string[]; permissions: string[] };
 export type UserRole = { roleId: string; roleCode: string; isActive: boolean; assignedAt: string };
 export type UserSession = { id: string; createdAt: string; lastActivityAt: string; expiresAt: string; current: boolean; revoked: boolean };
+
+export type PlatformOverview = {
+  generatedAt: string;
+  window: { days: 7 | 30 | 90; startsAt: string; endsAt: string };
+  metrics: {
+    totalCompanies: number; activeCompanies: number; newCompanies: number;
+    totalEmployees: number; activeEmployees: number; linkedEmployees: number;
+    totalUsers: number; activeUsers: number; activeSessions: number;
+    systemOperations: number; financialDocuments: number; postedDocuments: number; securityAlerts: number;
+  };
+  health: {
+    pendingOutbox: number; failedOutbox: number; unacknowledgedSecurityAlerts: number;
+    activeCompaniesInWindow: number; employeeAccountCoverage: number; companyAdoptionRate: number;
+  };
+  trends: Array<{ month: string; newCompanies: number; operations: number }>;
+  modules: Array<{ code: "SALES" | "PURCHASES" | "TREASURY" | "POS" | "INVENTORY" | "PROJECTS" | "HR" | "APPROVALS" | "IMPORTS"; total: number; recent: number }>;
+  topCompanies: Array<{ id: string; name: string; operations: number; lastActivityAt: string }>;
+};
 export type CompanyDetails = { id: string; name: string; baseCurrencyId: string; baseCurrency: { code: string; nameAr: string }; timezone: string; isActive: boolean; manualJournalMakerCheckerEnabled: boolean; updatedAt: string };
 export type AuditLog = { id: string; actor: { id: string; name: string; email: string }; action: string; entityType: string; entityId: string; details: Record<string, unknown> | null; createdAt: string };
 export type AuditOptions = { actions: string[]; entityTypes: string[]; users: Array<{ id: string; name: string; email: string }> };

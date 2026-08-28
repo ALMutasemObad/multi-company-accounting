@@ -2,11 +2,9 @@ import { useEffect, useId, useRef, type ButtonHTMLAttributes, type ReactNode } f
 import { localizedBrand } from "./branding";
 import { useI18n } from "./i18n";
 
-export function Icon({
-  name,
-  size = 20,
-}: {
-  name:
+export type IconName =
+    | "home"
+    | "platform"
     | "suppliers"
     | "payments"
     | "customers"
@@ -39,9 +37,17 @@ export function Icon({
     | "settings"
     | "audit"
     | "print";
+
+export function Icon({
+  name,
+  size = 20,
+}: {
+  name: IconName;
   size?: number;
 }) {
   const paths: Record<string, ReactNode> = {
+    home: <><path d="m3 11 9-8 9 8"/><path d="M5 10v11h14V10M9 21v-7h6v7"/></>,
+    platform: <><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M7 14v-3M12 14V8M17 14v-5M8 22h8M12 18v4"/></>,
     customers: (
       <>
         <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />

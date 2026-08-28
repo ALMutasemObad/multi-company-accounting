@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.37.0
+  version: 1.38.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -602,6 +602,53 @@ paths:
       security:
       - SessionCookie: []
         CsrfToken: []
+  /platform/capabilities:
+    get:
+      tags: [Platform Operations]
+      summary: التحقق من أهلية المستخدم للوحة تشغيل المنصة
+      operationId: getPlatformCapabilities
+      description: لا يكشف هوية المشغل أو قائمة السماح؛ يعيد قدرة منطقية فقط لجلسة مصادق عليها.
+      security:
+      - SessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: قدرات المنصة
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlatformCapabilitiesResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /platform/overview:
+    get:
+      tags: [Platform Operations]
+      summary: مؤشرات تشغيل وتبني المنصة المجمعة
+      operationId: getPlatformOverview
+      description: قراءة عابرة للشركات ومجمعة فقط، محمية بقائمة مشغلي المنصة المستقلة عن أدوار الشركات.
+      security:
+      - SessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: days
+        in: query
+        required: false
+        schema:
+          type: integer
+          enum: [7, 30, 90]
+          default: 30
+      responses:
+        '200':
+          description: ملخص المنصة
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlatformOverviewResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
   /users:
     get:
       tags:
@@ -9198,6 +9245,93 @@ components:
       - ACTIVE
       - LOCKED
       - DISABLED
+    PlatformCapabilitiesResponse:
+      type: object
+      additionalProperties: false
+      required: [platformOperations]
+      properties:
+        platformOperations: { type: boolean }
+    PlatformOverviewResponse:
+      type: object
+      additionalProperties: false
+      required: [generatedAt, window, metrics, health, trends, modules, topCompanies]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        window:
+          type: object
+          additionalProperties: false
+          required: [days, startsAt, endsAt]
+          properties:
+            days: { type: integer, enum: [7, 30, 90] }
+            startsAt: { type: string, format: date-time }
+            endsAt: { type: string, format: date-time }
+        metrics:
+          type: object
+          additionalProperties: false
+          required: [totalCompanies, activeCompanies, newCompanies, totalEmployees, activeEmployees, linkedEmployees, totalUsers, activeUsers, activeSessions, systemOperations, financialDocuments, postedDocuments, securityAlerts]
+          properties:
+            totalCompanies: { type: integer, minimum: 0 }
+            activeCompanies: { type: integer, minimum: 0 }
+            newCompanies: { type: integer, minimum: 0 }
+            totalEmployees: { type: integer, minimum: 0 }
+            activeEmployees: { type: integer, minimum: 0 }
+            linkedEmployees: { type: integer, minimum: 0 }
+            totalUsers: { type: integer, minimum: 0 }
+            activeUsers: { type: integer, minimum: 0 }
+            activeSessions: { type: integer, minimum: 0 }
+            systemOperations: { type: integer, minimum: 0 }
+            financialDocuments: { type: integer, minimum: 0 }
+            postedDocuments: { type: integer, minimum: 0 }
+            securityAlerts: { type: integer, minimum: 0 }
+        health:
+          type: object
+          additionalProperties: false
+          required: [pendingOutbox, failedOutbox, unacknowledgedSecurityAlerts, activeCompaniesInWindow, employeeAccountCoverage, companyAdoptionRate]
+          properties:
+            pendingOutbox: { type: integer, minimum: 0 }
+            failedOutbox: { type: integer, minimum: 0 }
+            unacknowledgedSecurityAlerts: { type: integer, minimum: 0 }
+            activeCompaniesInWindow: { type: integer, minimum: 0 }
+            employeeAccountCoverage: { type: integer, minimum: 0, maximum: 100 }
+            companyAdoptionRate: { type: integer, minimum: 0, maximum: 100 }
+        trends:
+          type: array
+          minItems: 6
+          maxItems: 6
+          items:
+            type: object
+            additionalProperties: false
+            required: [month, newCompanies, operations]
+            properties:
+              month: { type: string, pattern: '^[0-9]{4}-(?:0[1-9]|1[0-2])$' }
+              newCompanies: { type: integer, minimum: 0 }
+              operations: { type: integer, minimum: 0 }
+        modules:
+          type: array
+          minItems: 9
+          maxItems: 9
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, total, recent]
+            properties:
+              code:
+                type: string
+                enum: [SALES, PURCHASES, TREASURY, POS, INVENTORY, PROJECTS, HR, APPROVALS, IMPORTS]
+              total: { type: integer, minimum: 0 }
+              recent: { type: integer, minimum: 0 }
+        topCompanies:
+          type: array
+          maxItems: 5
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, name, operations, lastActivityAt]
+            properties:
+              id: { type: string, pattern: '^[1-9][0-9]*$' }
+              name: { type: string, minLength: 1, maxLength: 200 }
+              operations: { type: integer, minimum: 1 }
+              lastActivityAt: { type: string, format: date-time }
     User:
       type: object
       required:

@@ -35,6 +35,43 @@ const closeReadiness = {
     "RETAINED_EARNINGS_READY",
   ].map((code) => ({ code, status: "PASS", count: 0, details: [] })),
 };
+const platformOverview = {
+  generatedAt: "2026-08-28T09:00:00.000Z",
+  window: { days: 30, startsAt: "2026-07-30T09:00:00.000Z", endsAt: "2026-08-28T09:00:00.000Z" },
+  metrics: {
+    totalCompanies: 18, activeCompanies: 16, newCompanies: 3,
+    totalEmployees: 247, activeEmployees: 231, linkedEmployees: 208,
+    totalUsers: 214, activeUsers: 203, activeSessions: 37,
+    systemOperations: 12840, financialDocuments: 3190, postedDocuments: 2871, securityAlerts: 2,
+  },
+  health: {
+    pendingOutbox: 4, failedOutbox: 0, unacknowledgedSecurityAlerts: 2,
+    activeCompaniesInWindow: 15, employeeAccountCoverage: 84, companyAdoptionRate: 83,
+  },
+  trends: [
+    { month: "2026-03", newCompanies: 1, operations: 5200 },
+    { month: "2026-04", newCompanies: 2, operations: 6400 },
+    { month: "2026-05", newCompanies: 2, operations: 7100 },
+    { month: "2026-06", newCompanies: 3, operations: 8500 },
+    { month: "2026-07", newCompanies: 4, operations: 10600 },
+    { month: "2026-08", newCompanies: 3, operations: 12840 },
+  ],
+  modules: [
+    { code: "SALES", total: 4700, recent: 540 },
+    { code: "PURCHASES", total: 2100, recent: 240 },
+    { code: "TREASURY", total: 1800, recent: 211 },
+    { code: "POS", total: 1340, recent: 190 },
+    { code: "INVENTORY", total: 950, recent: 80 },
+    { code: "PROJECTS", total: 810, recent: 102 },
+    { code: "HR", total: 480, recent: 36 },
+    { code: "APPROVALS", total: 390, recent: 52 },
+    { code: "IMPORTS", total: 270, recent: 18 },
+  ],
+  topCompanies: [
+    { id: "company-qa", name: "شركة جوار التجريبية", operations: 1640, lastActivityAt: "2026-08-28T08:57:00.000Z" },
+    { id: "company-legal", name: "شركة الاستشارات القانونية", operations: 1180, lastActivityAt: "2026-08-28T08:44:00.000Z" },
+  ],
+};
 const professionalProjectId = "b1af217e-7c7b-43bb-b15f-61184df1d6b9";
 const professionalStageId = "44b23a51-b68c-4e35-a252-d577c3021c2a";
 const professionalResearchTaskId = "49e2bc47-bf40-4bf7-a40a-3408b77cfba5";
@@ -162,6 +199,8 @@ function responseFor(url, method) {
   if (pathname === "/auth/csrf") return { csrfToken: "visual-qa-csrf" };
   if (pathname === "/auth/companies") return { data: [company] };
   if (pathname === "/auth/context" || pathname === "/auth/logout") return null;
+  if (pathname === "/platform/capabilities") return { platformOperations: true };
+  if (pathname === "/platform/overview") return platformOverview;
   if (pathname === "/companies/current") return company;
   if (pathname === "/professional-projects/customer-options") return { data: [professionalCustomer] };
   if (pathname === "/professional-projects/member-options") return { data: [professionalManager] };

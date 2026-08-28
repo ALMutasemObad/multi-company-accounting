@@ -171,6 +171,20 @@ describe("core accounting architecture guardrails", () => {
     expect(userService).not.toContain("async create(");
   });
 
+  it("keeps platform operations read-only, aggregated and behind explicit identity and analytics ports", async () => {
+    const [service, analytics, identity] = await Promise.all([
+      source("platform-operations/platform-operations-service.ts"),
+      source("platform-operations/prisma-platform-analytics-query-adapter.ts"),
+      source("users/platform-identity-query-adapter.ts"),
+    ]);
+    expect(service).toContain("PlatformIdentityQueryPort");
+    expect(service).toContain("PlatformAnalyticsQueryPort");
+    expect(service).not.toContain("PrismaClient");
+    expect(analytics).not.toMatch(/\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
+    expect(identity).not.toMatch(/\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
+    expect(analytics).not.toMatch(/(?:emailNormalized|displayName|ipAddress|userAgent|passwordHash)/u);
+  });
+
   it("keeps open-source bank file parsers behind Treasury adapters", async () => {
     const sources = await allTypeScriptSources();
     const parserImport = /from\s+["'](?:csv-parse(?:\/sync)?|fast-xml-parser)["']/u;

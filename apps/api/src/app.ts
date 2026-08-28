@@ -92,6 +92,8 @@ import type { ProfessionalProjectAccessService } from './projects/professional-p
 import { createProfessionalProjectAccessRouter } from './projects/professional-project-access-router.js';
 import type { HrService } from './hr/hr-service.js';
 import { createHrRouter } from './hr/hr-router.js';
+import type { PlatformOperationsService } from './platform-operations/platform-operations-service.js';
+import { createPlatformOperationsRouter } from './platform-operations/platform-operations-router.js';
 
 type ClientRequestProblem = {
   status: number;
@@ -132,7 +134,7 @@ function clientRequestProblem(error: unknown): ClientRequestProblem | undefined 
   return undefined;
 }
 
-export function createApp(config: AppConfig, services: { readiness?: ReadinessCheck; metrics?: OperationalMetrics; auth?: AuthService; registration?: RegistrationService; passwordReset?: PasswordResetService; users?: UserService; workforceAccess?: WorkforceAccessService; companies?: CompanyService; printing?: PrintService; audit?: AuditService; security?: SecurityEventService; fiscal?: FiscalService; financialClose?: FinancialCloseService; approvals?: ApprovalService; professionalProjects?: ProfessionalProjectService; professionalProjectPlanning?: ProfessionalProjectPlanningService; professionalBilling?: ProfessionalBillingService; professionalProjectAccess?: ProfessionalProjectAccessService; hr?: HrService; accounts?: AccountService; journals?: ManualJournalService; receiptReferences?: ReceiptReferenceService; treasury?: TreasuryService; bankReconciliation?: BankReconciliationService; inventory?: InventoryService; inventoryCatalog?: InventoryCatalogService; inventoryMovements?: InventoryMovementService; receipts?: ReceiptService; suppliers?: SupplierReferenceService; payments?: PaymentService; reports?: ReportService; cashFlow?: CashFlowService; taxSummary?: TaxSummaryService; costCenterActivity?: CostCenterActivityService; taxes?: TaxService; salesInvoices?: SalesInvoiceService; purchaseInvoices?: PurchaseInvoiceService; dataImports?: DataImportService; pos?: PosService } = {}) {
+export function createApp(config: AppConfig, services: { readiness?: ReadinessCheck; metrics?: OperationalMetrics; auth?: AuthService; registration?: RegistrationService; passwordReset?: PasswordResetService; users?: UserService; workforceAccess?: WorkforceAccessService; platformOperations?: PlatformOperationsService; companies?: CompanyService; printing?: PrintService; audit?: AuditService; security?: SecurityEventService; fiscal?: FiscalService; financialClose?: FinancialCloseService; approvals?: ApprovalService; professionalProjects?: ProfessionalProjectService; professionalProjectPlanning?: ProfessionalProjectPlanningService; professionalBilling?: ProfessionalBillingService; professionalProjectAccess?: ProfessionalProjectAccessService; hr?: HrService; accounts?: AccountService; journals?: ManualJournalService; receiptReferences?: ReceiptReferenceService; treasury?: TreasuryService; bankReconciliation?: BankReconciliationService; inventory?: InventoryService; inventoryCatalog?: InventoryCatalogService; inventoryMovements?: InventoryMovementService; receipts?: ReceiptService; suppliers?: SupplierReferenceService; payments?: PaymentService; reports?: ReportService; cashFlow?: CashFlowService; taxSummary?: TaxSummaryService; costCenterActivity?: CostCenterActivityService; taxes?: TaxService; salesInvoices?: SalesInvoiceService; purchaseInvoices?: PurchaseInvoiceService; dataImports?: DataImportService; pos?: PosService } = {}) {
   const app = express();
   const metrics = services.metrics ?? operationalMetrics;
 
@@ -216,6 +218,7 @@ export function createApp(config: AppConfig, services: { readiness?: ReadinessCh
   if (services.auth) app.use('/api/v1/auth', createAuthRouter(services.auth, config.SESSION_COOKIE_SECURE));
   if (services.auth && services.registration) app.use('/api/v1/auth/register', createRegistrationRouter(services.auth, services.registration));
   if (services.auth && services.passwordReset) app.use('/api/v1/auth/password', createPasswordResetRouter(services.auth, services.passwordReset));
+  if (services.auth && services.platformOperations) app.use('/api/v1', createPlatformOperationsRouter(services.auth, services.platformOperations));
   if (services.auth && services.users && services.workforceAccess) app.use('/api/v1', createUserRouter(services.auth, services.users, services.workforceAccess));
   if (services.auth && services.companies) app.use('/api/v1', createCompanyRouter(services.auth, services.companies));
   if (services.auth && services.printing) app.use('/api/v1', createPrintRouter(services.auth, services.printing));

@@ -172,6 +172,18 @@ describe('production configuration', () => {
     }).METRICS_ENABLED).toBe(true);
   });
 
+  it('accepts an explicit comma-separated platform operator allowlist', () => {
+    expect(loadConfig({
+      NODE_ENV: 'test',
+      PLATFORM_OPERATOR_EMAILS: 'owner@example.com, operations@example.com',
+    }).PLATFORM_OPERATOR_EMAILS).toBe('owner@example.com, operations@example.com');
+
+    expect(() => loadConfig({
+      NODE_ENV: 'test',
+      PLATFORM_OPERATOR_EMAILS: 'owner@example.com,*',
+    })).toThrow(/PLATFORM_OPERATOR_EMAILS/);
+  });
+
   it('allows verification capture only outside production', () => {
     expect(loadConfig({
       NODE_ENV: 'test',

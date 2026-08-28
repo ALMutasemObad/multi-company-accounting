@@ -8,6 +8,7 @@ import { urPos } from "./pos";
 import { urApprovals } from "./approvals";
 import { urProfessionalProjects } from "./professional-projects";
 import { urHumanResources } from "./human-resources";
+import { urSystemHomePlatform } from "./system-home-platform";
 
 export const ur = {
   ...urReconciliation,
@@ -19,6 +20,7 @@ export const ur = {
   ...urApprovals,
   ...urProfessionalProjects,
   ...urHumanResources,
+  ...urSystemHomePlatform,
   "referencePicker.loading": "تلاش جاری ہے…",
   "referencePicker.empty": "کوئی مماثل نتیجہ نہیں ملا۔",
   "referencePicker.more": "مزید نتائج لوڈ کریں",

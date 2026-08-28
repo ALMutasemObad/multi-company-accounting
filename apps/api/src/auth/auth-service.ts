@@ -100,6 +100,11 @@ export class AuthService {
     return { sessionId: session.id, userId: session.userId!, companyId: session.selectedCompanyId! };
   }
 
+  async authenticate(input: { sid?: string | undefined }) {
+    const session = await this.requireAuthenticated(input.sid);
+    return { sessionId: session.id, userId: session.userId! };
+  }
+
   private async requirePermission(session: StoredSession, code: string) {
     if (!session.selectedCompanyId) throw new AuthError('FORBIDDEN');
     const allowed = await this.store.hasPermission({ userId: session.userId!, companyId: session.selectedCompanyId, code });

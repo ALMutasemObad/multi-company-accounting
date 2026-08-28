@@ -1,13 +1,16 @@
 import { FormEvent, lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { api, ApiError, beginLogin, login, logout } from "./api";
 import { localizedBrand, storageKey } from "./branding";
-import { LanguageSwitcher, type TranslationKey, useI18n } from "./i18n";
+import { LanguageSwitcher, useI18n } from "./i18n";
 import type { Company, User } from "./types";
 import { Button, Icon, Spinner, Toast } from "./ui";
 import { RegistrationPage } from "./RegistrationPage";
 import { PasswordResetPage } from "./PasswordResetPage";
+import { navigationItems, viewTitleKey, views, type View } from "./app-navigation";
 
+const SystemHomePage = lazy(() => import("./SystemHomePage").then((module) => ({ default: module.SystemHomePage })));
 const DashboardPage = lazy(() => import("./DashboardPage").then((module) => ({ default: module.DashboardPage })));
+const PlatformOperationsPage = lazy(() => import("./PlatformOperationsPage").then((module) => ({ default: module.PlatformOperationsPage })));
 const CustomersPage = lazy(() => import("./CustomersPage").then((module) => ({ default: module.CustomersPage })));
 const SalesInvoicesPage = lazy(() => import("./SalesInvoicesPage").then((module) => ({ default: module.SalesInvoicesPage })));
 const ReceiptsPage = lazy(() => import("./ReceiptsPage").then((module) => ({ default: module.ReceiptsPage })));
@@ -30,61 +33,9 @@ const ApprovalsPage = lazy(() => import("./ApprovalsPage").then((module) => ({ d
 const ProfessionalProjectsPage = lazy(() => import("./ProfessionalProjectsPage").then((module) => ({ default: module.ProfessionalProjectsPage })));
 const HumanResourcesPage = lazy(() => import("./HumanResourcesPage").then((module) => ({ default: module.HumanResourcesPage })));
 
-type View = "dashboard" | "pos" | "customers" | "professionalProjects" | "humanResources" | "sales" | "receipts" | "suppliers" | "purchases" | "payments" | "journals" | "fiscal" | "approvals" | "accounts" | "treasury" | "inventory" | "reports" | "imports" | "admin" | "audit" | "security" | "settings";
-
 const viewFromHash = (): View => {
   const value = location.hash.slice(1);
-  return ["dashboard", "pos", "customers", "professionalProjects", "humanResources", "sales", "receipts", "suppliers", "purchases", "payments", "journals", "fiscal", "approvals", "accounts", "treasury", "inventory", "reports", "imports", "admin", "audit", "security", "settings"].includes(value) ? value as View : "dashboard";
-};
-
-const navigationItems: Array<{ view: View; icon: Parameters<typeof Icon>[0]["name"]; label: TranslationKey }> = [
-  { view: "dashboard", icon: "dashboard", label: "nav.dashboard" },
-  { view: "pos", icon: "wallet", label: "nav.pos" },
-  { view: "customers", icon: "customers", label: "nav.customers" },
-  { view: "professionalProjects", icon: "users", label: "nav.professionalProjects" },
-  { view: "humanResources", icon: "building", label: "nav.humanResources" },
-  { view: "sales", icon: "document", label: "nav.sales" },
-  { view: "receipts", icon: "receipts", label: "nav.receipts" },
-  { view: "suppliers", icon: "suppliers", label: "nav.suppliers" },
-  { view: "purchases", icon: "document", label: "nav.purchases" },
-  { view: "payments", icon: "payments", label: "nav.payments" },
-  { view: "journals", icon: "journal", label: "nav.journals" },
-  { view: "fiscal", icon: "calendar", label: "nav.fiscal" },
-  { view: "approvals", icon: "check", label: "nav.approvals" },
-  { view: "accounts", icon: "accounts", label: "nav.accounts" },
-  { view: "treasury", icon: "treasury", label: "nav.treasury" },
-  { view: "inventory", icon: "inventory", label: "nav.inventory" },
-  { view: "reports", icon: "reports", label: "nav.reports" },
-  { view: "imports", icon: "arrowUp", label: "nav.imports" },
-  { view: "admin", icon: "users", label: "nav.admin" },
-  { view: "audit", icon: "audit", label: "nav.audit" },
-  { view: "security", icon: "audit", label: "nav.security" },
-  { view: "settings", icon: "settings", label: "nav.settings" },
-];
-
-const viewTitleKey: Record<View, TranslationKey> = {
-  admin: "nav.admin",
-  audit: "nav.audit",
-  security: "nav.security",
-  settings: "nav.settings",
-  dashboard: "nav.dashboard",
-  pos: "nav.pos",
-  customers: "nav.customers",
-  professionalProjects: "view.professionalProjects",
-  humanResources: "view.humanResources",
-  sales: "view.sales",
-  receipts: "nav.receipts",
-  suppliers: "nav.suppliers",
-  purchases: "view.purchases",
-  payments: "nav.payments",
-  journals: "nav.journals",
-  fiscal: "view.fiscal",
-  approvals: "view.approvals",
-  accounts: "view.accounts",
-  treasury: "nav.treasury",
-  inventory: "nav.inventory",
-  reports: "nav.reports",
-  imports: "nav.imports",
+  return views.has(value as View) ? value as View : "home";
 };
 
 export default function App() {
@@ -95,6 +46,7 @@ export default function App() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [company, setCompany] = useState<Company | null>(null);
   const [view, setView] = useState<View>(viewFromHash);
+  const [platformOperator, setPlatformOperator] = useState<boolean | null>(null);
   const [mobileNav, setMobileNav] = useState(false);
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(null);
 
@@ -113,9 +65,19 @@ export default function App() {
       body: JSON.stringify({ companyId: selected.id }),
     });
     setCompany(selected);
+    const capabilities = await api<{ platformOperations: boolean }>("/platform/capabilities")
+      .catch(() => ({ platformOperations: false }));
+    setPlatformOperator(capabilities.platformOperations);
     localStorage.setItem(storageKey("company"), selected.id);
     setState("ready");
   }, []);
+
+  useEffect(() => {
+    if (state === "ready" && platformOperator === false && view === "platform") {
+      setView("home");
+      location.hash = "home";
+    }
+  }, [platformOperator, state, view]);
 
   useEffect(() => {
     void (async () => {
@@ -236,7 +198,7 @@ export default function App() {
           <div><strong>{brand.shortName}</strong><span>{t("app.trustedFinance")}</span></div>
         </div>
         <nav aria-label={t("app.mainNavigation")}>
-          {navigationItems.map((item) => (
+          {navigationItems.filter((item) => !item.platformOnly || platformOperator).map((item) => (
             <button type="button" key={item.view} className={view === item.view ? "active" : ""} aria-current={view === item.view ? "page" : undefined} onClick={() => navigate(item.view)}>
               <Icon name={item.icon} /><span>{t(item.label)}</span>
             </button>
@@ -280,7 +242,9 @@ export default function App() {
         </header>
         <main id="main-content" className="content" tabIndex={-1}>
           <Suspense fallback={<div className="loading"><Spinner /><span>{t("app.loadingModule")}</span></div>}>
+            {view === "home" && <SystemHomePage onNavigate={navigate} />}
             {view === "dashboard" && <DashboardPage onNavigate={navigate} />}
+            {view === "platform" && platformOperator && <PlatformOperationsPage />}
             {view === "pos" && <PosPage notify={notify} />}
             {view === "customers" && <CustomersPage notify={notify} />}
             {view === "professionalProjects" && <ProfessionalProjectsPage notify={notify} />}

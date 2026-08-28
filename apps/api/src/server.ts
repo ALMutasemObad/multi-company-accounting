@@ -68,6 +68,9 @@ import { HrIdentityAdapter } from './users/hr-identity-adapter.js';
 import { HrEmployeeAccountAdapter } from './hr/employee-account-adapter.js';
 import { IdentityAccountAdapter } from './users/identity-account-adapter.js';
 import { WorkforceAccessService } from './workforce-access/workforce-access-service.js';
+import { PlatformIdentityQueryAdapter } from './users/platform-identity-query-adapter.js';
+import { PlatformOperationsService } from './platform-operations/platform-operations-service.js';
+import { PrismaPlatformAnalyticsQueryAdapter } from './platform-operations/prisma-platform-analytics-query-adapter.js';
 import { ProfessionalEmployeeAdapter } from './hr/professional-employee-adapter.js';
 import { ProfessionalTimesheetApprovalAdapter } from './projects/professional-timesheet-approval-adapter.js';
 import { ProfessionalBillingCurrencyAdapter } from './companies/professional-billing-currency-adapter.js';
@@ -185,6 +188,17 @@ const workforceAccess = new WorkforceAccessService(
   new HrEmployeeAccountAdapter(database),
   new IdentityAccountAdapter(database),
 );
+const configuredPlatformOperators = (config.PLATFORM_OPERATOR_EMAILS ?? "")
+  .split(",")
+  .map((email) => email.trim())
+  .filter(Boolean);
+const platformOperations = new PlatformOperationsService(
+  new PlatformIdentityQueryAdapter(database),
+  new PrismaPlatformAnalyticsQueryAdapter(database),
+  configuredPlatformOperators.length || config.NODE_ENV === "production"
+    ? configuredPlatformOperators
+    : ["admin@mcap.local"],
+);
 const app = createApp(config, {
   readiness: new DatabaseReadinessService(database, config.READINESS_TIMEOUT_MS),
   metrics: operationalMetrics,
@@ -193,6 +207,7 @@ const app = createApp(config, {
   ...(passwordReset ? { passwordReset } : {}),
   users,
   workforceAccess,
+  platformOperations,
   companies: new CompanyService(database),
   printing: new PrintService(database),
   audit: new AuditService(database),

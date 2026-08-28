@@ -1,7 +1,7 @@
 ---
 title: "Architecture Governance Index"
 status: "mandatory"
-last_updated: "2026-08-27"
+last_updated: "2026-08-28"
 ---
 
 # فهرس الحوكمة المعمارية
@@ -48,6 +48,8 @@ last_updated: "2026-08-27"
 36. [شريحة فوترة الخدمات المهنية](PROFESSIONAL_SERVICE_BILLING_SLICE_AR.md): النطاق والبيانات والواجهات والصلاحيات والتزامن والترحيل والعكس والاختبارات.
 37. [ADR-010 لتخطيط المشاريع المهنية](ADR-010-professional-project-planning.md): أولوية E1 وملكية المراحل والمهام والاعتماديات وميزانية الوقت وتأجيل المصروفات.
 38. [شريحة تخطيط المشاريع المهنية](PROFESSIONAL_PROJECT_PLANNING_SLICE_AR.md): نموذج Stage/Task/Dependency وplanningVersion وربط الوقت وOpenAPI والواجهة والاختبارات والعكس.
+39. [ADR-013 للصفحة الرئيسية ولوحة تشغيل المنصة](ADR-013-platform-operations-and-system-home.md): فصل إدارة الشركة عن صلاحية الشركة المطوّرة وقرار التجميع الآمن.
+40. [شريحة لوحة تشغيل المنصة ودليل الأنظمة](PLATFORM_OPERATIONS_DASHBOARD_SLICE_AR.md): النطاق والمقاييس والمنافذ والخصوصية والعقد والواجهة والاختبارات والعكس.
 
 التقرير [ARCHITECTURE_AUDIT_DDD_EVENT_DRIVEN_AR.md](../ARCHITECTURE_AUDIT_DDD_EVENT_DRIVEN_AR.md) وثيقة تقييم وأدلة، وليس بديلًا عن القرارات الحاكمة أعلاه.
 
