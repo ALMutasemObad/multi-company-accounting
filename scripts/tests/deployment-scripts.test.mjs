@@ -49,6 +49,31 @@ test("every external GitHub Action uses the approved immutable Node 24 pin", asy
   assert.deepEqual(observedActions, new Set(approvedActionPins.keys()));
 });
 
+test("dependency security monitoring runs daily from main without secrets or artifacts", async () => {
+  const source = await readFile(
+    path.join(repositoryRoot, ".github", "workflows", "dependency-security-monitor.yml"),
+    "utf8",
+  );
+  const installIndex = source.indexOf("npm ci");
+  const scriptsIndex = source.indexOf("npm run audit:install-scripts");
+  const buildAuditIndex = source.indexOf("npm run audit:critical");
+  const pruneIndex = source.indexOf("npm prune --omit=dev --omit=optional");
+  const productionAuditIndex = source.indexOf("npm run audit:production");
+
+  assert.match(source, /schedule:\s+- cron: '37 3 \* \* \*'/u);
+  assert.match(source, /workflow_dispatch:/u);
+  assert.match(source, /permissions:\s+contents: read/u);
+  assert.match(source, /if: github\.ref == 'refs\/heads\/main'/u);
+  assert.match(source, /timeout-minutes: 15/u);
+  assert.doesNotMatch(source, /\$\{\{\s*secrets\./u);
+  assert.doesNotMatch(source, /upload-artifact|download-artifact/u);
+  assert.ok(installIndex > 0, "the locked dependency graph must be installed");
+  assert.ok(scriptsIndex > installIndex, "install-script policy must follow npm ci");
+  assert.ok(buildAuditIndex > scriptsIndex, "the complete graph must be audited before pruning");
+  assert.ok(pruneIndex > buildAuditIndex, "build dependencies must be pruned after their audit");
+  assert.ok(productionAuditIndex > pruneIndex, "the pruned production graph must be audited last");
+});
+
 test("deployment installers do not require /dev/fd process substitution", async () => {
   for (const installer of installers) {
     const source = await readFile(path.join(repositoryRoot, "deploy", "scripts", installer), "utf8");
