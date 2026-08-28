@@ -9,6 +9,7 @@ import {
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
 import { TransactionExecutor } from "../platform/transaction-executor.js";
 import type { ActorContext } from "../users/user-service.js";
+import { ProfessionalProjectAccessPolicy } from "./professional-project-access-policy.js";
 
 export type ProfessionalPlanningFailureReason =
   | "NOT_FOUND"
@@ -99,6 +100,7 @@ const dependencyJson = (
 export class ProfessionalProjectPlanningService {
   private readonly transactions: TransactionExecutor;
   private readonly commands: IdempotentCommandExecutor;
+  private readonly access = new ProfessionalProjectAccessPolicy();
 
   constructor(private readonly prisma: PrismaClient) {
     this.transactions = new TransactionExecutor(prisma);
@@ -107,9 +109,7 @@ export class ProfessionalProjectPlanningService {
 
   async getPlan(context: ActorContext, projectPublicId: string) {
     const result = await this.prisma.$transaction(async (tx) => {
-      const project = await tx.professionalProject.findFirst({
-        where: { publicId: projectPublicId, companyId: context.companyId },
-      });
+      const project = await this.access.findAccessible(tx, context, { publicId: projectPublicId });
       if (!project) throw new ProfessionalPlanningError("NOT_FOUND");
       const [stages, tasks, dependencies, entries] = await Promise.all([
         tx.professionalProjectStage.findMany({
@@ -231,7 +231,7 @@ export class ProfessionalProjectPlanningService {
     timeBudgetMinutes: number | null;
   }) {
     return this.transactions.execute({ operation: "UPDATE_PROFESSIONAL_PROJECT_TIME_BUDGET", companyId: context.companyId }, async (tx) => {
-      const project = await this.lockMutableProject(tx, context.companyId, projectPublicId, input.planningVersion);
+      const project = await this.lockMutableProject(tx, context, projectPublicId, input.planningVersion);
       await this.bumpPlanningVersion(tx, context, project, input.planningVersion, { timeBudgetMinutes: input.timeBudgetMinutes });
       await this.audit(tx, context, "PROFESSIONAL_PROJECT_TIME_BUDGET_UPDATED", "PROFESSIONAL_PROJECT", projectPublicId, {
         timeBudgetMinutes: input.timeBudgetMinutes,
@@ -253,7 +253,7 @@ export class ProfessionalProjectPlanningService {
     idempotencyKey: string;
   }) {
     return this.executeCommand(context, "CREATE_PROFESSIONAL_PROJECT_STAGE", input.idempotencyKey, { projectPublicId, ...input }, 201, async (tx) => {
-      const project = await this.lockMutableProject(tx, context.companyId, projectPublicId, input.planningVersion);
+      const project = await this.lockMutableProject(tx, context, projectPublicId, input.planningVersion);
       const dates = this.stageDates(project, input.plannedStartDate ?? null, input.targetEndDate ?? null);
       const sequence = (await tx.professionalProjectStage.aggregate({
         where: { companyId: context.companyId, projectId: project.id },
@@ -290,7 +290,7 @@ export class ProfessionalProjectPlanningService {
   }) {
     return this.transactions.execute({ operation: "UPDATE_PROFESSIONAL_PROJECT_STAGE", companyId: context.companyId }, async (tx) => {
       const candidate = await this.stageCandidate(tx, context.companyId, stagePublicId);
-      const project = await this.lockMutableProject(tx, context.companyId, candidate.project.publicId, input.planningVersion);
+      const project = await this.lockMutableProject(tx, context, candidate.project.publicId, input.planningVersion);
       const stage = await tx.professionalProjectStage.findFirst({ where: { id: candidate.id, companyId: context.companyId } });
       if (!stage) throw new ProfessionalPlanningError("STAGE_NOT_FOUND");
       if (stage.version !== input.version) throw new ProfessionalPlanningError("VERSION_CONFLICT");
@@ -330,7 +330,7 @@ export class ProfessionalProjectPlanningService {
   }) {
     return this.executeCommand(context, "TRANSITION_PROFESSIONAL_PROJECT_STAGE", input.idempotencyKey, { stagePublicId, ...input }, 200, async (tx) => {
       const candidate = await this.stageCandidate(tx, context.companyId, stagePublicId);
-      const project = await this.lockMutableProject(tx, context.companyId, candidate.project.publicId, input.planningVersion);
+      const project = await this.lockMutableProject(tx, context, candidate.project.publicId, input.planningVersion);
       const stage = await tx.professionalProjectStage.findFirst({ where: { id: candidate.id, companyId: context.companyId } });
       if (!stage) throw new ProfessionalPlanningError("STAGE_NOT_FOUND");
       if (stage.version !== input.version) throw new ProfessionalPlanningError("VERSION_CONFLICT");
@@ -372,7 +372,7 @@ export class ProfessionalProjectPlanningService {
   }) {
     return this.executeCommand(context, "CREATE_PROFESSIONAL_PROJECT_TASK", input.idempotencyKey, { stagePublicId, ...input }, 201, async (tx) => {
       const candidate = await this.stageCandidate(tx, context.companyId, stagePublicId);
-      const project = await this.lockMutableProject(tx, context.companyId, candidate.project.publicId, input.planningVersion);
+      const project = await this.lockMutableProject(tx, context, candidate.project.publicId, input.planningVersion);
       const stage = await tx.professionalProjectStage.findFirst({ where: { id: candidate.id, companyId: context.companyId } });
       if (!stage) throw new ProfessionalPlanningError("STAGE_NOT_FOUND");
       if (["COMPLETED", "CANCELLED"].includes(stage.status)) throw new ProfessionalPlanningError("STAGE_INACTIVE");
@@ -418,7 +418,7 @@ export class ProfessionalProjectPlanningService {
   }) {
     return this.transactions.execute({ operation: "UPDATE_PROFESSIONAL_PROJECT_TASK", companyId: context.companyId }, async (tx) => {
       const candidate = await this.taskCandidate(tx, context.companyId, taskPublicId);
-      const project = await this.lockMutableProject(tx, context.companyId, candidate.project.publicId, input.planningVersion);
+      const project = await this.lockMutableProject(tx, context, candidate.project.publicId, input.planningVersion);
       const task = await tx.professionalProjectTask.findFirst({ where: { id: candidate.id, companyId: context.companyId }, include: { stage: true } });
       if (!task) throw new ProfessionalPlanningError("TASK_NOT_FOUND");
       if (task.version !== input.version) throw new ProfessionalPlanningError("VERSION_CONFLICT");
@@ -461,7 +461,7 @@ export class ProfessionalProjectPlanningService {
   }) {
     return this.executeCommand(context, "TRANSITION_PROFESSIONAL_PROJECT_TASK", input.idempotencyKey, { taskPublicId, ...input }, 200, async (tx) => {
       const candidate = await this.taskCandidate(tx, context.companyId, taskPublicId);
-      const project = await this.lockMutableProject(tx, context.companyId, candidate.project.publicId, input.planningVersion);
+      const project = await this.lockMutableProject(tx, context, candidate.project.publicId, input.planningVersion);
       const task = await tx.professionalProjectTask.findFirst({ where: { id: candidate.id, companyId: context.companyId }, include: { stage: true } });
       if (!task) throw new ProfessionalPlanningError("TASK_NOT_FOUND");
       if (task.version !== input.version) throw new ProfessionalPlanningError("VERSION_CONFLICT");
@@ -499,7 +499,7 @@ export class ProfessionalProjectPlanningService {
       const successorCandidate = await this.taskCandidate(tx, context.companyId, input.successorTaskId);
       const project = await this.lockMutableProject(
         tx,
-        context.companyId,
+        context,
         successorCandidate.project.publicId,
         input.planningVersion,
       );
@@ -565,7 +565,7 @@ export class ProfessionalProjectPlanningService {
         include: { project: { select: { publicId: true } }, task: { select: { publicId: true } }, dependsOnTask: { select: { publicId: true } } },
       });
       if (!candidate) throw new ProfessionalPlanningError("DEPENDENCY_NOT_FOUND");
-      const project = await this.lockMutableProject(tx, context.companyId, candidate.project.publicId, input.planningVersion);
+      const project = await this.lockMutableProject(tx, context, candidate.project.publicId, input.planningVersion);
       const dependency = await tx.professionalTaskDependency.findFirst({ where: { id: candidate.id, companyId: context.companyId } });
       if (!dependency) throw new ProfessionalPlanningError("DEPENDENCY_NOT_FOUND");
       if (!dependency.isActive) throw new ProfessionalPlanningError("DEPENDENCY_INACTIVE");
@@ -628,13 +628,8 @@ export class ProfessionalProjectPlanningService {
     };
   }
 
-  private async lockMutableProject(tx: Prisma.TransactionClient, companyId: bigint, publicId: string, planningVersion: number) {
-    const rows = await tx.$queryRaw<Array<{ id: bigint }>>`
-      SELECT id FROM professional_projects
-      WHERE public_id=${publicId} AND company_id=${companyId}
-      FOR UPDATE`;
-    if (rows.length !== 1) throw new ProfessionalPlanningError("NOT_FOUND");
-    const project = await tx.professionalProject.findFirstOrThrow({ where: { id: rows[0]!.id, companyId } });
+  private async lockMutableProject(tx: Prisma.TransactionClient, context: ActorContext, publicId: string, planningVersion: number) {
+    const project = await this.access.lockAccessible(tx, context, publicId, () => new ProfessionalPlanningError("NOT_FOUND"));
     if (project.planningVersion !== planningVersion) throw new ProfessionalPlanningError("VERSION_CONFLICT");
     if (!["ACTIVE", "ON_HOLD"].includes(project.status)) throw new ProfessionalPlanningError("PROJECT_INACTIVE");
     return project;

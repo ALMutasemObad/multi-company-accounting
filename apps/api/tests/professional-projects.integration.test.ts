@@ -13,6 +13,8 @@ import { ProfessionalTimesheetApprovalAdapter } from "../src/projects/profession
 import { ProfessionalBillingService } from "../src/projects/professional-billing-service.js";
 import { ProfessionalBillingCurrencyAdapter } from "../src/companies/professional-billing-currency-adapter.js";
 import { SalesInvoiceService } from "../src/sales/sales-invoice-service.js";
+import { ProfessionalProjectAccessService } from "../src/projects/professional-project-access-service.js";
+import { ProfessionalProjectPlanningService } from "../src/projects/professional-project-planning-service.js";
 
 const enabled = process.env.RUN_DB_TESTS === "true" && Boolean(process.env.DATABASE_URL);
 const prisma = enabled ? createDatabase(process.env.DATABASE_URL!) : null;
@@ -21,9 +23,12 @@ describe.runIf(enabled)("professional projects and time with MariaDB", () => {
   let service: ProfessionalProjectService;
   let approvals: ApprovalService;
   let billing: ProfessionalBillingService;
+  let access: ProfessionalProjectAccessService;
+  let planning: ProfessionalProjectPlanningService;
   let companyId: bigint;
   let userId: bigint;
   let memberUserId: bigint;
+  let outsiderUserId: bigint;
   let customerId: bigint;
   let accountId: bigint;
   let revenueAccountId: bigint;
@@ -34,14 +39,17 @@ describe.runIf(enabled)("professional projects and time with MariaDB", () => {
   let foreignCustomerId: bigint;
   let projectId = "";
   let timeEntryId = "";
+  let timesheetId = "";
 
   const context = () => ({ companyId, userId });
   const memberContext = () => ({ companyId, userId: memberUserId });
+  const outsiderContext = () => ({ companyId, userId: outsiderUserId });
 
   async function cleanMainRows() {
     const projects = await prisma!.professionalProject.findMany({ where: { companyId, nameAr: { startsWith: "IT-PRO-" } }, select: { id: true } });
     const ids = projects.map(({ id }) => id);
     if (ids.length) {
+      await prisma!.professionalProjectAccessGrant.deleteMany({ where: { companyId, projectId: { in: ids } } });
       await prisma!.professionalBillingSourceLine.deleteMany({ where: { companyId, billingRun: { projectId: { in: ids } } } });
       await prisma!.professionalBillingRun.deleteMany({ where: { companyId, projectId: { in: ids } } });
       await prisma!.professionalServiceRate.deleteMany({ where: { companyId, contract: { projectId: { in: ids } } } });
@@ -88,6 +96,8 @@ describe.runIf(enabled)("professional projects and time with MariaDB", () => {
           "END_PROFESSIONAL_SERVICE_CONTRACT",
           "END_PROFESSIONAL_SERVICE_RATE",
           "CREATE_PROFESSIONAL_BILLING_RUN",
+          "GRANT_PROFESSIONAL_PROJECT_ACCESS",
+          "REVOKE_PROFESSIONAL_PROJECT_ACCESS",
         ] },
       },
     });
@@ -126,6 +136,21 @@ describe.runIf(enabled)("professional projects and time with MariaDB", () => {
       where: { userId_companyId: { userId: memberUserId, companyId } },
       update: { isActive: true },
       create: { userId: memberUserId, companyId },
+    });
+    const outsider = await prisma!.user.upsert({
+      where: { emailNormalized: "professional.outsider@mcap.local" },
+      update: { displayName: "مستخدم خارج القضية", isActive: true },
+      create: {
+        emailNormalized: "professional.outsider@mcap.local",
+        passwordHash: admin.passwordHash,
+        displayName: "مستخدم خارج القضية",
+      },
+    });
+    outsiderUserId = outsider.id;
+    await prisma!.userCompany.upsert({
+      where: { userId_companyId: { userId: outsiderUserId, companyId } },
+      update: { isActive: true },
+      create: { userId: outsiderUserId, companyId },
     });
     await prisma!.employee.create({
       data: {
@@ -202,6 +227,8 @@ describe.runIf(enabled)("professional projects and time with MariaDB", () => {
       new ProfessionalBillingCurrencyAdapter(prisma!),
       new SalesInvoiceService(prisma!),
     );
+    access = new ProfessionalProjectAccessService(prisma!, new ProfessionalPeopleAdapter(prisma!));
+    planning = new ProfessionalProjectPlanningService(prisma!);
   });
 
   afterAll(async () => {
@@ -209,6 +236,8 @@ describe.runIf(enabled)("professional projects and time with MariaDB", () => {
     await cleanMainRows();
     await prisma.userCompany.deleteMany({ where: { userId: memberUserId, companyId } });
     await prisma.user.deleteMany({ where: { id: memberUserId, emailNormalized: "professional.member@mcap.local" } });
+    await prisma.userCompany.deleteMany({ where: { userId: outsiderUserId, companyId } });
+    await prisma.user.deleteMany({ where: { id: outsiderUserId, emailNormalized: "professional.outsider@mcap.local" } });
     await prisma.customer.deleteMany({ where: { id: foreignCustomerId, companyId: foreignCompanyId } });
     await prisma.account.deleteMany({ where: { id: foreignAccountId, companyId: foreignCompanyId } });
     await prisma.masterDataCodeSequence.deleteMany({ where: { companyId: foreignCompanyId } });
@@ -311,6 +340,7 @@ describe.runIf(enabled)("professional projects and time with MariaDB", () => {
       service.createTimesheet(memberContext(), input),
     ]);
     expect(replayed).toEqual(created);
+    timesheetId = created.timesheet.id;
     expect(created.timesheet).toMatchObject({ status: "OPEN", entryCount: 1, trackedMinutes: 125, version: 0 });
     expect((await service.listTimesheets(memberContext(), { page: 1, pageSize: 25, scope: "MY" })).data).toHaveLength(1);
     expect((await service.listTimesheets({ companyId: foreignCompanyId, userId }, { page: 1, pageSize: 25, scope: "ALL" })).data).toEqual([]);
@@ -551,5 +581,56 @@ describe.runIf(enabled)("professional projects and time with MariaDB", () => {
     });
     await expect(service.deleteTimeEntry(memberContext(), timeEntryId, { version: 1, reason: "محاولة بعد انتهاء الإسناد" }))
       .rejects.toMatchObject({ reason: "MEMBER_INACTIVE" });
+  });
+
+  it("fails closed across projects, planning, time, timesheets, and billing while serializing grants", async () => {
+    const restricted = await access.updateAccessMode(context(), projectId, {
+      accessVersion: 0,
+      accessMode: "RESTRICTED",
+      reason: "قضية قانونية سرية للاختبار",
+    });
+    expect(restricted).toMatchObject({ accessMode: "RESTRICTED", accessVersion: 1 });
+
+    expect((await service.listProjects(outsiderContext(), { page: 1, pageSize: 25 })).data.map((project) => project.id)).not.toContain(projectId);
+    await expect(service.getProject(outsiderContext(), projectId)).rejects.toMatchObject({ reason: "NOT_FOUND" });
+    await expect(planning.getPlan(outsiderContext(), projectId)).rejects.toMatchObject({ reason: "NOT_FOUND" });
+    await expect(billing.listContracts(outsiderContext(), { projectId })).rejects.toMatchObject({ reason: "NOT_FOUND" });
+    expect((await service.listTimeEntries(outsiderContext(), { page: 1, pageSize: 25, projectId })).data).toEqual([]);
+    const hiddenTimesheet = await service.getTimesheet(outsiderContext(), timesheetId);
+    expect(hiddenTimesheet.entries).toEqual([]);
+    expect(hiddenTimesheet.restrictedEntryCount).toBeGreaterThan(0);
+
+    const grants = await Promise.allSettled([
+      access.grantAccess(context(), projectId, {
+        accessVersion: 1,
+        userId: outsiderUserId,
+        reason: "مستشار مشارك في الملف",
+        idempotencyKey: "it-professional-access-grant-a",
+      }),
+      access.grantAccess(context(), projectId, {
+        accessVersion: 1,
+        userId: outsiderUserId,
+        reason: "محاولة متزامنة ثانية",
+        idempotencyKey: "it-professional-access-grant-b",
+      }),
+    ]);
+    expect(grants.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(grants.filter((result) => result.status === "rejected")).toHaveLength(1);
+    expect((await service.listProjects(outsiderContext(), { page: 1, pageSize: 25 })).data.map((project) => project.id)).toContain(projectId);
+    await expect(planning.getPlan(outsiderContext(), projectId)).resolves.toMatchObject({ projectId });
+    await expect(billing.listContracts(outsiderContext(), { projectId })).resolves.toMatchObject({ data: expect.any(Array) });
+
+    const current = await access.getAccess(context(), projectId);
+    const grant = current.grants.find((row) => row.user.id === outsiderUserId.toString() && row.isActive)!;
+    const revoked = await access.revokeAccess(context(), projectId, grant.id, {
+      accessVersion: current.accessVersion,
+      grantVersion: grant.version,
+      reason: "انتهاء مشاركة المستشار",
+      idempotencyKey: "it-professional-access-revoke",
+    });
+    expect(revoked.revoked).toBe(true);
+    await expect(service.getProject(outsiderContext(), projectId)).rejects.toMatchObject({ reason: "NOT_FOUND" });
+    await expect(billing.getRun(outsiderContext(), (await billing.listRuns(context(), { projectId })).data[0]!.id)).rejects.toMatchObject({ reason: "NOT_FOUND" });
+    expect(await prisma!.auditLog.count({ where: { companyId, entityId: projectId, action: { in: ["PROFESSIONAL_PROJECT_ACCESS_MODE_CHANGED", "PROFESSIONAL_PROJECT_ACCESS_GRANTED", "PROFESSIONAL_PROJECT_ACCESS_REVOKED"] } } })).toBe(3);
   });
 });

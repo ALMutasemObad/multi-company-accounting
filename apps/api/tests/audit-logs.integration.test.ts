@@ -32,10 +32,14 @@ describe.runIf(enabled)("audit log operations with MariaDB", () => {
   const startedAt = new Date();
 
   beforeAll(async () => {
-    const baseCompany = await prisma!.company.findFirstOrThrow();
-    companyId = baseCompany.id;
     const admin = await prisma!.user.findUniqueOrThrow({ where: { emailNormalized: "admin@mcap.local" } });
     adminId = admin.id;
+    const adminAssignment = await prisma!.userCompany.findFirstOrThrow({
+      where: { userId: admin.id, isActive: true },
+      include: { company: true },
+    });
+    const baseCompany = adminAssignment.company;
+    companyId = adminAssignment.companyId;
     await prisma!.session.deleteMany({ where: { user: { emailNormalized: viewerEmail } } });
     const existingViewer = await prisma!.user.findUnique({ where: { emailNormalized: viewerEmail } });
     if (existingViewer) {

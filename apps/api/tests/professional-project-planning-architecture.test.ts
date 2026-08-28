@@ -18,8 +18,11 @@ describe("professional project planning architecture", () => {
 
   it("locks the project aggregate before mutating the dependency graph", async () => {
     const service = await source("projects/professional-project-planning-service.ts");
-    expect(service).toContain("SELECT id FROM professional_projects");
-    expect(service).toContain("FOR UPDATE");
+    const accessPolicy = await source("projects/professional-project-access-policy.ts");
+    expect(service).toContain("this.access.lockAccessible");
+    expect(accessPolicy).toContain("SELECT id FROM professional_projects");
+    expect(accessPolicy).toContain("FOR UPDATE");
+    expect(accessPolicy).toMatch(/FOR UPDATE`;[\s\S]{0,200}await this\.assertAccessible/u);
     expect(service).toContain("planningVersion: { increment: 1 }");
     expect(service).toContain("assertNoDependencyCycle");
     expect(service).toContain("isActive: false");

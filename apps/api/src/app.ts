@@ -87,6 +87,8 @@ import type { ProfessionalProjectPlanningService } from './projects/professional
 import { createProfessionalProjectPlanningRouter } from './projects/professional-project-planning-router.js';
 import type { ProfessionalBillingService } from './projects/professional-billing-service.js';
 import { createProfessionalBillingRouter } from './projects/professional-billing-router.js';
+import type { ProfessionalProjectAccessService } from './projects/professional-project-access-service.js';
+import { createProfessionalProjectAccessRouter } from './projects/professional-project-access-router.js';
 import type { HrService } from './hr/hr-service.js';
 import { createHrRouter } from './hr/hr-router.js';
 
@@ -129,7 +131,7 @@ function clientRequestProblem(error: unknown): ClientRequestProblem | undefined 
   return undefined;
 }
 
-export function createApp(config: AppConfig, services: { readiness?: ReadinessCheck; metrics?: OperationalMetrics; auth?: AuthService; registration?: RegistrationService; passwordReset?: PasswordResetService; users?: UserService; companies?: CompanyService; printing?: PrintService; audit?: AuditService; security?: SecurityEventService; fiscal?: FiscalService; financialClose?: FinancialCloseService; approvals?: ApprovalService; professionalProjects?: ProfessionalProjectService; professionalProjectPlanning?: ProfessionalProjectPlanningService; professionalBilling?: ProfessionalBillingService; hr?: HrService; accounts?: AccountService; journals?: ManualJournalService; receiptReferences?: ReceiptReferenceService; treasury?: TreasuryService; bankReconciliation?: BankReconciliationService; inventory?: InventoryService; inventoryCatalog?: InventoryCatalogService; inventoryMovements?: InventoryMovementService; receipts?: ReceiptService; suppliers?: SupplierReferenceService; payments?: PaymentService; reports?: ReportService; cashFlow?: CashFlowService; taxSummary?: TaxSummaryService; costCenterActivity?: CostCenterActivityService; taxes?: TaxService; salesInvoices?: SalesInvoiceService; purchaseInvoices?: PurchaseInvoiceService; dataImports?: DataImportService; pos?: PosService } = {}) {
+export function createApp(config: AppConfig, services: { readiness?: ReadinessCheck; metrics?: OperationalMetrics; auth?: AuthService; registration?: RegistrationService; passwordReset?: PasswordResetService; users?: UserService; companies?: CompanyService; printing?: PrintService; audit?: AuditService; security?: SecurityEventService; fiscal?: FiscalService; financialClose?: FinancialCloseService; approvals?: ApprovalService; professionalProjects?: ProfessionalProjectService; professionalProjectPlanning?: ProfessionalProjectPlanningService; professionalBilling?: ProfessionalBillingService; professionalProjectAccess?: ProfessionalProjectAccessService; hr?: HrService; accounts?: AccountService; journals?: ManualJournalService; receiptReferences?: ReceiptReferenceService; treasury?: TreasuryService; bankReconciliation?: BankReconciliationService; inventory?: InventoryService; inventoryCatalog?: InventoryCatalogService; inventoryMovements?: InventoryMovementService; receipts?: ReceiptService; suppliers?: SupplierReferenceService; payments?: PaymentService; reports?: ReportService; cashFlow?: CashFlowService; taxSummary?: TaxSummaryService; costCenterActivity?: CostCenterActivityService; taxes?: TaxService; salesInvoices?: SalesInvoiceService; purchaseInvoices?: PurchaseInvoiceService; dataImports?: DataImportService; pos?: PosService } = {}) {
   const app = express();
   const metrics = services.metrics ?? operationalMetrics;
 
@@ -213,6 +215,7 @@ export function createApp(config: AppConfig, services: { readiness?: ReadinessCh
   if (services.auth && services.professionalProjects) app.use('/api/v1', createProfessionalProjectRouter(services.auth, services.professionalProjects));
   if (services.auth && services.professionalProjectPlanning) app.use('/api/v1', createProfessionalProjectPlanningRouter(services.auth, services.professionalProjectPlanning));
   if (services.auth && services.professionalBilling) app.use('/api/v1', createProfessionalBillingRouter(services.auth, services.professionalBilling));
+  if (services.auth && services.professionalProjectAccess) app.use('/api/v1', createProfessionalProjectAccessRouter(services.auth, services.professionalProjectAccess));
   if (services.auth && services.hr) app.use('/api/v1', createHrRouter(services.auth, services.hr));
   if (services.auth && services.accounts) app.use('/api/v1', createAccountRouter(services.auth, services.accounts));
   if (services.auth && services.journals) app.use('/api/v1', createManualJournalRouter(services.auth, services.journals));

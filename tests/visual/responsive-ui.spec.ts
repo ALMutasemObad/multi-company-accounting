@@ -180,6 +180,7 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
         await page.goto(screen.path);
         await waitForStableInterface(page, screen);
         if (screen.name === 'professionalProjects') {
+          await expect(page.locator('.professional-access-panel')).toBeVisible();
           await expect(page.locator('.professional-plan-panel')).toBeVisible();
           await expect(page.locator('.professional-task-row')).toHaveCount(2);
         }

@@ -263,6 +263,11 @@ enum ProfessionalProjectStatus {
   CANCELLED
 }
 
+enum ProfessionalProjectAccessMode {
+  COMPANY
+  RESTRICTED
+}
+
 enum ProfessionalProjectMemberRole {
   MANAGER
   PROFESSIONAL
@@ -425,6 +430,7 @@ model Company {
   posSales                          PosSale[]
   professionalProjects              ProfessionalProject[]
   professionalProjectMembers        ProfessionalProjectMember[]
+  professionalProjectAccessGrants   ProfessionalProjectAccessGrant[]
   professionalProjectStages         ProfessionalProjectStage[]
   professionalProjectTasks          ProfessionalProjectTask[]
   professionalTaskDependencies      ProfessionalTaskDependency[]
@@ -493,6 +499,9 @@ model User {
   professionalProjectsUpdated       ProfessionalProject[]              @relation("ProfessionalProjectUpdatedBy")
   professionalMembersAssigned       ProfessionalProjectMember[]        @relation("ProfessionalProjectMemberAssignedBy")
   professionalMembersUpdated        ProfessionalProjectMember[]        @relation("ProfessionalProjectMemberUpdatedBy")
+  professionalAccessGrantsGranted   ProfessionalProjectAccessGrant[]   @relation("ProfessionalProjectAccessGrantGrantedBy")
+  professionalAccessGrantsRevoked   ProfessionalProjectAccessGrant[]   @relation("ProfessionalProjectAccessGrantRevokedBy")
+  professionalAccessGrantsUpdated   ProfessionalProjectAccessGrant[]   @relation("ProfessionalProjectAccessGrantUpdatedBy")
   hrDepartmentsCreated              HrDepartment[]                     @relation("HrDepartmentCreatedBy")
   hrDepartmentsUpdated              HrDepartment[]                     @relation("HrDepartmentUpdatedBy")
   hrPositionsCreated                HrPosition[]                       @relation("HrPositionCreatedBy")
@@ -848,6 +857,7 @@ model UserCompany {
   company                        Company                     @relation(fields: [companyId], references: [id])
   roles                          UserCompanyRole[]
   professionalProjectMemberships ProfessionalProjectMember[]
+  professionalProjectAccessGrants ProfessionalProjectAccessGrant[]
   professionalTimesheets         ProfessionalTimesheet[]
   professionalServiceRates       ProfessionalServiceRate[]
   employee                       Employee?
@@ -1375,6 +1385,8 @@ model ProfessionalProject {
   targetEndDate     DateTime?                       @map("target_end_date") @db.Date
   timeBudgetMinutes Int?                            @map("time_budget_minutes") @db.UnsignedInt
   planningVersion   Int                             @default(0) @map("planning_version") @db.UnsignedInt
+  accessMode        ProfessionalProjectAccessMode   @default(COMPANY) @map("access_mode")
+  accessVersion     Int                             @default(0) @map("access_version") @db.UnsignedInt
   description       String?                         @db.VarChar(1000)
   version           Int                             @default(0) @db.UnsignedInt
   createdById       BigInt                          @map("created_by_id") @db.UnsignedBigInt
@@ -1386,6 +1398,7 @@ model ProfessionalProject {
   createdBy         User                            @relation("ProfessionalProjectCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
   updatedBy         User                            @relation("ProfessionalProjectUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
   members           ProfessionalProjectMember[]
+  accessGrants      ProfessionalProjectAccessGrant[]
   stages            ProfessionalProjectStage[]
   tasks             ProfessionalProjectTask[]
   taskDependencies  ProfessionalTaskDependency[]
@@ -1427,6 +1440,39 @@ model ProfessionalProjectMember {
   @@index([companyId, userId, isActive])
   @@index([projectId, isActive, role])
   @@map("professional_project_members")
+}
+
+model ProfessionalProjectAccessGrant {
+  id               BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId         String              @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId        BigInt              @map("company_id") @db.UnsignedBigInt
+  projectId        BigInt              @map("project_id") @db.UnsignedBigInt
+  userId           BigInt              @map("user_id") @db.UnsignedBigInt
+  isActive         Boolean             @default(true) @map("is_active")
+  version          Int                 @default(0) @db.UnsignedInt
+  grantReason      String              @map("grant_reason") @db.VarChar(500)
+  grantedById      BigInt              @map("granted_by_id") @db.UnsignedBigInt
+  grantedAt        DateTime            @default(now()) @map("granted_at")
+  revocationReason String?             @map("revocation_reason") @db.VarChar(500)
+  revokedById      BigInt?             @map("revoked_by_id") @db.UnsignedBigInt
+  revokedAt        DateTime?           @map("revoked_at")
+  updatedById      BigInt              @map("updated_by_id") @db.UnsignedBigInt
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+  company          Company             @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  project          ProfessionalProject @relation(fields: [projectId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  assignment       UserCompany         @relation(fields: [userId, companyId], references: [userId, companyId], onDelete: Restrict, onUpdate: Restrict)
+  grantedBy        User                @relation("ProfessionalProjectAccessGrantGrantedBy", fields: [grantedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  revokedBy        User?               @relation("ProfessionalProjectAccessGrantRevokedBy", fields: [revokedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy        User                @relation("ProfessionalProjectAccessGrantUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([projectId, userId])
+  @@unique([id, companyId])
+  @@index([companyId, userId, isActive])
+  @@index([projectId, isActive, userId])
+  @@index([companyId, grantedById])
+  @@index([companyId, revokedById])
+  @@map("professional_project_access_grants")
 }
 
 model ProfessionalTimeEntry {

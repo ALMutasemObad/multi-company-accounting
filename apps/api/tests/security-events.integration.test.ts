@@ -20,7 +20,11 @@ describe.runIf(enabled)("security event monitoring with MariaDB", () => {
   const testUserIds: bigint[] = [];
 
   beforeAll(async () => {
-    companyId = (await prisma!.company.findFirstOrThrow()).id;
+    const admin = await prisma!.user.findUniqueOrThrow({ where: { emailNormalized: "admin@mcap.local" } });
+    companyId = (await prisma!.userCompany.findFirstOrThrow({
+      where: { userId: admin.id, isActive: true },
+      select: { companyId: true },
+    })).companyId;
     const passwordHash = await hash(password);
     for (const [emailNormalized, displayName] of [[accountantEmail, "محاسب اختبار الأمان"], [reviewerEmail, "مراجع اختبار الأمان"]] as const) {
       const user = await prisma!.user.upsert({

@@ -50,6 +50,8 @@ const professionalProject = {
   kind: "CONSULTING_ENGAGEMENT",
   billingModel: "TIME_AND_MATERIALS",
   status: "ACTIVE",
+  accessMode: "RESTRICTED",
+  accessVersion: 2,
   startDate: "2026-08-01",
   targetEndDate: "2026-10-31",
   description: "تحليل الهيكل الحالي وصياغة التوصيات وخطة التنفيذ.",
@@ -164,6 +166,21 @@ function responseFor(url, method) {
   if (pathname === "/professional-projects/customer-options") return { data: [professionalCustomer] };
   if (pathname === "/professional-projects/member-options") return { data: [professionalManager] };
   if (pathname === "/professional-projects") return list([professionalProject]);
+  if (pathname === "/professional-projects/" + professionalProjectId + "/access") return {
+    projectId: professionalProjectId,
+    accessMode: "RESTRICTED",
+    accessVersion: 2,
+    grants: [{
+      id: "74d5c65e-3381-4aba-a3ae-0b61409375f6",
+      user: professionalManager,
+      isActive: true,
+      version: 0,
+      grantReason: "مشاركة المستشارة في الملف",
+      grantedAt: "2026-08-01T08:00:00.000Z",
+      revocationReason: null,
+      revokedAt: null,
+    }],
+  };
   if (pathname === "/professional-projects/" + professionalProjectId + "/plan") return professionalPlan;
   if (pathname === "/professional-projects/" + professionalProjectId) return {
     project: professionalProject,

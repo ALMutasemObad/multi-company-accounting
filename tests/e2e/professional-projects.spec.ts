@@ -5,6 +5,7 @@ test("creates a legal matter, approves time, configures rates, and posts profess
   const entryId = "cbcc08ff-99bc-40c4-8757-bc90016584e3";
   const customer = { id: "41", code: "CUS-000041", nameAr: "شركة العميل التجريبية", nameEn: "Example Client" };
   const manager = { id: "7", displayName: "Project Manager", nameEn: "Project Manager" };
+  const consultant = { id: "8", displayName: "External Consultant", nameEn: "External Consultant" };
   let created = false;
   let timeRecorded = false;
   let timesheetCreated = false;
@@ -13,6 +14,9 @@ test("creates a legal matter, approves time, configures rates, and posts profess
   let contractCreated = false;
   let rateCreated = false;
   let billingCreated = false;
+  let accessMode: "COMPANY" | "RESTRICTED" = "COMPANY";
+  let accessVersion = 0;
+  let accessGrantActive = false;
   let timeBudgetMinutes: number | null = null;
   let planningVersion = 0;
   let stageCreated = false;
@@ -31,6 +35,7 @@ test("creates a legal matter, approves time, configures rates, and posts profess
   const researchTaskId = "49e2bc47-bf40-4bf7-a40a-3408b77cfba5";
   const draftingTaskId = "8ff14e20-5f22-4e6e-909b-bc0385144d49";
   const dependencyId = "6c2d61ed-8e4e-4b0c-baa9-7997145394b1";
+  const accessGrantId = "74d5c65e-3381-4aba-a3ae-0b61409375f6";
   const currency = { id: "2", code: "SAR", nameAr: "الريال السعودي", decimals: 2 };
   const contract = () => ({
     id: contractId,
@@ -83,6 +88,8 @@ test("creates a legal matter, approves time, configures rates, and posts profess
     kind: "LEGAL_MATTER",
     billingModel: "TIME_AND_MATERIALS",
     status: "ACTIVE",
+    accessMode,
+    accessVersion,
     startDate: "2026-08-27",
     targetEndDate: null,
     description: "Defined advisory scope",
@@ -200,7 +207,7 @@ test("creates a legal matter, approves time, configures rates, and posts profess
     if (path === "/auth/companies") return json({ data: [{ id: "1", name: "E2E Company" }] });
     if (path === "/auth/context") return route.fulfill({ status: 204, body: "" });
     if (path === "/professional-projects/customer-options") return json({ data: [customer] });
-    if (path === "/professional-projects/member-options") return json({ data: [manager] });
+    if (path === "/professional-projects/member-options") return json({ data: [manager, consultant] });
     if (path === "/professional-billing/currency-options") return json({ data: [currency] });
     if (path === "/fiscal-periods") return json({ data: [{ id: "3", fiscalYearId: "1", periodNumber: 8, name: "August 2026", startDate: "2026-08-01", endDate: "2026-08-31", status: "OPEN", closedAt: null, reopenedAt: null, reopenReason: null, version: 0 }], meta: meta(1) });
     if (path === "/accounts") return json({ data: [{ id: "9", accountTypeId: "5", parentAccountId: null, code: "4100", nameAr: "إيراد خدمات", nameEn: "Service revenue", level: 1, allowsPosting: true, isControlAccount: false, isActive: true, sourceTemplateCode: null, sourceTemplateKey: null }], meta: meta(1) });
@@ -209,6 +216,37 @@ test("creates a legal matter, approves time, configures rates, and posts profess
       return json({ project: project() }, 201);
     }
     if (path === "/professional-projects") return json({ data: created ? [project()] : [], meta: meta(created ? 1 : 0) });
+    if (path === `/professional-projects/${projectId}/access` && method === "PATCH") {
+      const body = request.postDataJSON() as { accessMode: "COMPANY" | "RESTRICTED" };
+      accessMode = body.accessMode;
+      accessVersion += 1;
+      return json({ projectId, accessMode, accessVersion, grants: [] });
+    }
+    if (path === `/professional-projects/${projectId}/access-grants` && method === "POST") {
+      accessGrantActive = true;
+      accessVersion += 1;
+      return json({ grant: { id: accessGrantId }, accessVersion }, 201);
+    }
+    if (path === `/professional-projects/${projectId}/access-grants/${accessGrantId}/revoke` && method === "POST") {
+      accessGrantActive = false;
+      accessVersion += 1;
+      return json({ revoked: true, accessVersion, grantVersion: 1 });
+    }
+    if (path === `/professional-projects/${projectId}/access`) return json({
+      projectId,
+      accessMode,
+      accessVersion,
+      grants: accessVersion >= 2 ? [{
+        id: accessGrantId,
+        user: consultant,
+        isActive: accessGrantActive,
+        version: accessGrantActive ? 0 : 1,
+        grantReason: "Matter consultation",
+        grantedAt: "2026-08-27T12:02:00.000Z",
+        revocationReason: accessGrantActive ? null : "Engagement ended",
+        revokedAt: accessGrantActive ? null : "2026-08-27T12:03:00.000Z",
+      }] : [],
+    });
     if (path === `/professional-projects/${projectId}/plan`) return json(plan());
     if (path === `/professional-projects/${projectId}/time-budget` && method === "PATCH") {
       const body = request.postDataJSON() as { timeBudgetMinutes: number | null };
@@ -307,6 +345,20 @@ test("creates a legal matter, approves time, configures rates, and posts profess
 
   await expect(page.getByRole("heading", { name: "Legal advisory matter" })).toBeVisible();
   await expect(page.getByText("Project Manager").first()).toBeVisible();
+
+  const accessPanel = page.locator(".professional-access-panel");
+  await expect(accessPanel.getByRole("heading", { name: "Matter ethical wall" })).toBeVisible();
+  await accessPanel.getByLabel("Access scope").selectOption("RESTRICTED");
+  await accessPanel.getByLabel("Change reason").fill("Confidential legal matter");
+  await accessPanel.getByRole("button", { name: "Save policy" }).click();
+  await expect(accessPanel.getByText("Matter team and grants only").first()).toBeVisible();
+  await accessPanel.getByLabel("Member").selectOption(consultant.id);
+  await accessPanel.getByLabel("Grant reason").fill("Matter consultation");
+  await accessPanel.getByRole("button", { name: "Grant access" }).click();
+  await expect(accessPanel.getByRole("cell", { name: /External Consultant/u })).toBeVisible();
+  page.once("dialog", (dialog) => dialog.accept("Engagement ended"));
+  await accessPanel.getByRole("button", { name: "Revoke access" }).click();
+  await expect(accessPanel.getByText("Revoked")).toBeVisible();
 
   const planPanel = page.locator(".professional-plan-panel");
   await expect(planPanel.getByRole("heading", { name: "Project plan" })).toBeVisible();

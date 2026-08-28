@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.36.0
+  version: 1.37.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -2091,6 +2091,89 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/BusinessRuleViolation' }
       x-permission: professional_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /professional-projects/{professionalProjectId}/access:
+    get:
+      tags: [Professional Projects]
+      summary: عرض سياسة الوصول ومنح الجدار الأخلاقي لقضية متاحة
+      operationId: getProfessionalProjectAccess
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: professionalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: سياسة الوصول والمنح التاريخية, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalProjectAccessResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: professional_access.manage
+      security: [{ SessionCookie: [] }]
+    patch:
+      tags: [Professional Projects]
+      summary: تغيير وضع الجدار الأخلاقي بنسخة وصول متفائلة
+      operationId: updateProfessionalProjectAccess
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: professionalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/UpdateProfessionalProjectAccessRequest' } } }
+      responses:
+        '200': { description: سياسة الوصول المحدثة, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalProjectAccessResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: professional_access.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /professional-projects/{professionalProjectId}/access-grants:
+    post:
+      tags: [Professional Projects]
+      summary: منح مستخدم وصولاً صريحاً إلى قضية مقيدة
+      operationId: grantProfessionalProjectAccess
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: professionalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/GrantProfessionalProjectAccessRequest' } } }
+      responses:
+        '201': { description: المنحة ونسخة الوصول المحدثة, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalProjectAccessGrantMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: professional_access.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /professional-projects/{professionalProjectId}/access-grants/{professionalProjectAccessGrantId}/revoke:
+    post:
+      tags: [Professional Projects]
+      summary: سحب منحة وصول مع الاحتفاظ بسجلها
+      operationId: revokeProfessionalProjectAccess
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: professionalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: professionalProjectAccessGrantId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RevokeProfessionalProjectAccessRequest' } } }
+      responses:
+        '200': { description: تم سحب المنحة, content: { application/json: { schema: { $ref: '#/components/schemas/ProfessionalProjectAccessRevokeResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: professional_access.manage
       security: [{ SessionCookie: [], CsrfToken: [] }]
       x-idempotency-scope: user + company + operation + key
   /professional-projects/{professionalProjectId}/plan:
@@ -14160,6 +14243,8 @@ components:
       - memberCount
       - trackedMinutes
       - billableMinutes
+      - accessMode
+      - accessVersion
       - version
       - createdAt
       - updatedAt
@@ -14178,6 +14263,8 @@ components:
         memberCount: { type: integer, minimum: 0 }
         trackedMinutes: { type: integer, minimum: 0 }
         billableMinutes: { type: integer, minimum: 0 }
+        accessMode: { type: string, enum: [COMPANY, RESTRICTED] }
+        accessVersion: { type: integer, minimum: 0 }
         version: { type: integer, minimum: 0 }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
@@ -14277,6 +14364,69 @@ components:
         unassigned: { type: boolean, const: true }
         projectVersion: { type: integer, minimum: 0 }
         memberVersion: { type: integer, minimum: 0 }
+    ProfessionalProjectAccessGrant:
+      type: object
+      additionalProperties: false
+      required: [id, user, isActive, version, grantReason, grantedAt, revocationReason, revokedAt]
+      properties:
+        id: { type: string, format: uuid }
+        user: { $ref: '#/components/schemas/ProfessionalPerson' }
+        isActive: { type: boolean }
+        version: { type: integer, minimum: 0 }
+        grantReason: { type: string, minLength: 3, maxLength: 500 }
+        grantedAt: { type: string, format: date-time }
+        revocationReason: { type: [string, 'null'], minLength: 3, maxLength: 500 }
+        revokedAt: { type: [string, 'null'], format: date-time }
+    ProfessionalProjectAccessResponse:
+      type: object
+      additionalProperties: false
+      required: [projectId, accessMode, accessVersion, grants]
+      properties:
+        projectId: { type: string, format: uuid }
+        accessMode: { type: string, enum: [COMPANY, RESTRICTED] }
+        accessVersion: { type: integer, minimum: 0 }
+        grants:
+          type: array
+          items: { $ref: '#/components/schemas/ProfessionalProjectAccessGrant' }
+    UpdateProfessionalProjectAccessRequest:
+      type: object
+      additionalProperties: false
+      required: [accessVersion, accessMode, reason]
+      properties:
+        accessVersion: { type: integer, minimum: 0 }
+        accessMode: { type: string, enum: [COMPANY, RESTRICTED] }
+        reason: { type: string, x-trim: true, minLength: 3, maxLength: 500 }
+    GrantProfessionalProjectAccessRequest:
+      type: object
+      additionalProperties: false
+      required: [accessVersion, userId, reason]
+      properties:
+        accessVersion: { type: integer, minimum: 0 }
+        userId: { $ref: '#/components/schemas/Id' }
+        reason: { type: string, x-trim: true, minLength: 3, maxLength: 500 }
+    RevokeProfessionalProjectAccessRequest:
+      type: object
+      additionalProperties: false
+      required: [accessVersion, grantVersion, reason]
+      properties:
+        accessVersion: { type: integer, minimum: 0 }
+        grantVersion: { type: integer, minimum: 0 }
+        reason: { type: string, x-trim: true, minLength: 3, maxLength: 500 }
+    ProfessionalProjectAccessGrantMutationResponse:
+      type: object
+      additionalProperties: false
+      required: [grant, accessVersion]
+      properties:
+        grant: { $ref: '#/components/schemas/ProfessionalProjectAccessGrant' }
+        accessVersion: { type: integer, minimum: 0 }
+    ProfessionalProjectAccessRevokeResponse:
+      type: object
+      additionalProperties: false
+      required: [revoked, accessVersion, grantVersion]
+      properties:
+        revoked: { type: boolean, const: true }
+        accessVersion: { type: integer, minimum: 0 }
+        grantVersion: { type: integer, minimum: 0 }
     ProfessionalProjectStageStatus:
       type: string
       enum: [PLANNED, IN_PROGRESS, COMPLETED, CANCELLED]
@@ -14659,12 +14809,13 @@ components:
     ProfessionalTimesheetDetailResponse:
       type: object
       additionalProperties: false
-      required: [timesheet, entries]
+      required: [timesheet, entries, restrictedEntryCount]
       properties:
         timesheet: { $ref: '#/components/schemas/ProfessionalTimesheet' }
         entries:
           type: array
           items: { $ref: '#/components/schemas/ProfessionalTimeEntry' }
+        restrictedEntryCount: { type: integer, minimum: 0, readOnly: true }
     CreateProfessionalTimesheetRequest:
       type: object
       additionalProperties: false

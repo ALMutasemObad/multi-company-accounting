@@ -164,7 +164,7 @@ for (const [pattern, description] of responsiveCssContracts) {
   if (!pattern.test(styles)) failures.push(`apps/web/src/styles.css: missing responsive contract: ${description}`);
 }
 if (pageHeaders !== 22) failures.push(`Expected 22 shared PageHeader usages; found ${pageHeaders}`);
-if (tableRegions !== 58) failures.push(`Expected 58 accessible table regions; found ${tableRegions}`);
+if (tableRegions !== 59) failures.push(`Expected 59 accessible table regions; found ${tableRegions}`);
 
 if (failures.length) {
   console.error("Web UI contract check failed:\n");

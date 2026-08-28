@@ -967,6 +967,7 @@ export type DataImportPreview = { batch: DataImportBatch; errors: Array<{ row: n
 export type ProfessionalProjectKind = "LEGAL_MATTER" | "CONSULTING_ENGAGEMENT" | "PROFESSIONAL_PROJECT";
 export type ProfessionalProjectBillingModel = "TIME_AND_MATERIALS" | "FIXED_FEE" | "NON_BILLABLE";
 export type ProfessionalProjectStatus = "ACTIVE" | "ON_HOLD" | "COMPLETED" | "CANCELLED";
+export type ProfessionalProjectAccessMode = "COMPANY" | "RESTRICTED";
 export type ProfessionalProjectMemberRole = "MANAGER" | "PROFESSIONAL" | "REVIEWER";
 export type ProfessionalCustomerOption = { id: string; code: string; nameAr: string; nameEn: string | null };
 export type ProfessionalPerson = { id: string; displayName: string; nameEn: string | null };
@@ -985,6 +986,8 @@ export type ProfessionalProject = {
   memberCount: number;
   trackedMinutes: number;
   billableMinutes: number;
+  accessMode: ProfessionalProjectAccessMode;
+  accessVersion: number;
   version: number;
   createdAt: string;
   updatedAt: string;
@@ -996,6 +999,22 @@ export type ProfessionalProjectMember = {
   version: number;
   assignedAt: string;
   unassignedAt: string | null;
+};
+export type ProfessionalProjectAccessGrant = {
+  id: string;
+  user: ProfessionalPerson;
+  isActive: boolean;
+  version: number;
+  grantReason: string;
+  grantedAt: string;
+  revocationReason: string | null;
+  revokedAt: string | null;
+};
+export type ProfessionalProjectAccess = {
+  projectId: string;
+  accessMode: ProfessionalProjectAccessMode;
+  accessVersion: number;
+  grants: ProfessionalProjectAccessGrant[];
 };
 export type ProfessionalProjectStageStatus = "PLANNED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
 export type ProfessionalProjectTaskStatus = "TODO" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";

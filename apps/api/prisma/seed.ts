@@ -91,6 +91,7 @@ try {
     ['professional_planning.view', 'professional_projects', 'عرض مراحل ومهام واعتماديات وميزانية وقت المشاريع المهنية'],
     ['professional_planning.manage', 'professional_projects', 'إدارة مراحل ومهام واعتماديات وميزانية وقت المشاريع المهنية'],
     ['professional_tasks.progress', 'professional_projects', 'تحديث تقدم المهام المهنية للمسؤولين والمديرين'],
+    ['professional_access.manage', 'professional_projects', 'إدارة الجدار الأخلاقي ومنح الوصول للقضايا المهنية'],
     ['hr.employees.view', 'human_resources', 'عرض سجل الموظفين وبياناتهم غير المالية'],
     ['hr.employees.manage', 'human_resources', 'إنشاء الموظفين وتعديل حالتهم وهيكلهم'],
     ['hr.structure.view', 'human_resources', 'عرض الأقسام والمناصب'],

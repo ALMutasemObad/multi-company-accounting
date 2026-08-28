@@ -506,7 +506,7 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", "Noto Sans Devanaga
 .professional-toolbar label { display: grid; gap: 5px; }
 .professional-toolbar label > span { color: var(--muted); font-size: .78rem; font-weight: 700; }
 .professional-layout { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(300px, .8fr); gap: 20px; }
-.professional-project-list, .professional-detail, .professional-plan-panel, .professional-time-panel, .professional-timesheet-panel, .professional-commercial-panel { overflow: hidden; }
+.professional-project-list, .professional-detail, .professional-access-panel, .professional-plan-panel, .professional-time-panel, .professional-timesheet-panel, .professional-commercial-panel { overflow: hidden; }
 .professional-project-select { display: grid; gap: 3px; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: start; cursor: pointer; }
 .professional-project-select small, .professional-project-list td > small { color: var(--muted); font-size: .72rem; }
 .selected-row { background: #f0f7f3; }
@@ -524,7 +524,17 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", "Noto Sans Devanaga
 .professional-member-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, .65fr) auto; align-items: end; gap: 10px; padding: 16px 24px 22px; border-top: 1px solid var(--line); }
 .professional-member-form label, .professional-time-form label { display: grid; gap: 5px; min-width: 0; }
 .professional-member-form label > span, .professional-time-form label > span { color: var(--muted); font-size: .72rem; font-weight: 700; }
-.professional-plan-panel, .professional-time-panel { margin-top: 20px; }
+.professional-access-panel, .professional-plan-panel, .professional-time-panel { margin-top: 20px; }
+.professional-access-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-bottom: 1px solid var(--line); }
+.professional-access-grid > section { min-width: 0; padding: 18px 24px; }
+.professional-access-grid > section + section { border-inline-start: 1px solid var(--line); }
+.professional-access-grid h3 { margin: 0 0 12px; font-size: .92rem; }
+.professional-access-form { display: grid; grid-template-columns: minmax(130px, .7fr) minmax(180px, 1fr) auto; align-items: end; gap: 10px; }
+.professional-access-form label { display: grid; min-width: 0; gap: 5px; }
+.professional-access-form label > span { color: var(--muted); font-size: .72rem; font-weight: 700; }
+.professional-access-empty { display: block; padding: 18px 24px; }
+.professional-access-panel td > small { display: block; margin-top: 3px; color: var(--muted); font-size: .69rem; }
+.status-chip.restricted { background: #fff0e8; color: #8a3f16; }
 .professional-plan-panel > .loading { margin: 24px; }
 .professional-plan-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 18px 24px; border-bottom: 1px solid var(--line); background: var(--surface-soft); }
 .professional-plan-summary > div { display: grid; min-width: 0; gap: 5px; padding: 13px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
@@ -605,7 +615,8 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", "Noto Sans Devanaga
 .status-chip.terminated, .status-chip.ended { background: #eceff2; color: #4d5965; }
 
 @media (max-width: 1100px) {
-  .professional-layout, .professional-commercial-grid, .hr-layout, .hr-structure-grid { grid-template-columns: 1fr; }
+  .professional-layout, .professional-access-grid, .professional-commercial-grid, .hr-layout, .hr-structure-grid { grid-template-columns: 1fr; }
+  .professional-access-grid > section + section { border-inline-start: 0; border-top: 1px solid var(--line); }
   .professional-plan-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .professional-plan-forms { grid-template-columns: 1fr; }
   .professional-plan-forms > section:nth-child(even) { border-inline-start: 0; }
@@ -616,7 +627,7 @@ h1, h2, h3, .brand strong { font-family: "Noto Kufi Arabic", "Noto Sans Devanaga
 }
 
 @media (max-width: 680px) {
-  .professional-member-form, .professional-plan-form, .professional-plan-form.compact, .professional-time-form, .professional-commercial-form, .professional-billing-form { grid-template-columns: 1fr; }
+  .professional-member-form, .professional-access-form, .professional-plan-form, .professional-plan-form.compact, .professional-time-form, .professional-commercial-form, .professional-billing-form { grid-template-columns: 1fr; }
   .professional-plan-summary { grid-template-columns: 1fr; }
   .professional-plan-form .full-span { grid-column: auto; }
   .professional-plan-form .button { width: 100%; }

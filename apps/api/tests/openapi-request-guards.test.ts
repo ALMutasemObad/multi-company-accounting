@@ -22,10 +22,10 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 264, requestBodies: 140, responseBodies: 1735 });
-    expect(guardedOpenApiOperations).toHaveLength(140);
+    expect(openApiContractCoverage).toEqual({ operations: 268, requestBodies: 143, responseBodies: 1761 });
+    expect(guardedOpenApiOperations).toHaveLength(143);
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
-      'login', 'createUser', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'initializeInventoryBalanceValuation', 'reverseInventoryMovement', 'previewDataImport', 'commitDataImport', 'previewBankStatement', 'commitBankStatementImport', 'createBankReconciliationSession', 'generateBankReconciliationSuggestions', 'approveBankReconciliationMatch', 'createManualBankReconciliationMatch', 'releaseBankReconciliationMatch', 'classifyBankStatementLine', 'closeBankReconciliationSession', 'startFinancialCloseRun', 'refreshFinancialCloseRun', 'createApprovalRequest', 'approveApprovalRequest', 'rejectApprovalRequest', 'createProfessionalProject', 'assignProfessionalProjectMember', 'createProfessionalTimeEntry', 'createProfessionalTimesheet', 'createProfessionalServiceContract', 'endProfessionalServiceContract', 'createProfessionalServiceRate', 'endProfessionalServiceRate', 'createProfessionalBillingRun', 'updateProfessionalProjectTimeBudget', 'createProfessionalProjectStage', 'updateProfessionalProjectStage', 'transitionProfessionalProjectStage', 'createProfessionalProjectTask', 'updateProfessionalProjectTask', 'transitionProfessionalProjectTask', 'createProfessionalProjectTaskDependency', 'removeProfessionalProjectTaskDependency', 'createHrDepartment', 'updateHrDepartment', 'createHrPosition', 'updateHrPosition', 'createEmployee', 'updateEmployee', 'transitionEmployee', 'createEmploymentContract', 'endEmploymentContract', 'returnFinancialCloseRun', 'updateCashFlowMapping',
+      'login', 'createUser', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'initializeInventoryBalanceValuation', 'reverseInventoryMovement', 'previewDataImport', 'commitDataImport', 'previewBankStatement', 'commitBankStatementImport', 'createBankReconciliationSession', 'generateBankReconciliationSuggestions', 'approveBankReconciliationMatch', 'createManualBankReconciliationMatch', 'releaseBankReconciliationMatch', 'classifyBankStatementLine', 'closeBankReconciliationSession', 'startFinancialCloseRun', 'refreshFinancialCloseRun', 'createApprovalRequest', 'approveApprovalRequest', 'rejectApprovalRequest', 'createProfessionalProject', 'assignProfessionalProjectMember', 'createProfessionalTimeEntry', 'createProfessionalTimesheet', 'createProfessionalServiceContract', 'endProfessionalServiceContract', 'createProfessionalServiceRate', 'endProfessionalServiceRate', 'createProfessionalBillingRun', 'updateProfessionalProjectAccess', 'grantProfessionalProjectAccess', 'revokeProfessionalProjectAccess', 'updateProfessionalProjectTimeBudget', 'createProfessionalProjectStage', 'updateProfessionalProjectStage', 'transitionProfessionalProjectStage', 'createProfessionalProjectTask', 'updateProfessionalProjectTask', 'transitionProfessionalProjectTask', 'createProfessionalProjectTaskDependency', 'removeProfessionalProjectTaskDependency', 'createHrDepartment', 'updateHrDepartment', 'createHrPosition', 'updateHrPosition', 'createEmployee', 'updateEmployee', 'transitionEmployee', 'createEmploymentContract', 'endEmploymentContract', 'returnFinancialCloseRun', 'updateCashFlowMapping',
     ]));
   });
 
@@ -123,6 +123,55 @@ describe('generated OpenAPI request guards', () => {
     expect(openApiRequestBodySchemas.createProfessionalTimeEntry.safeParse({
       projectId: '5aa8b232-356c-4d55-8b89-f27d44d1678d', workDate: '2057-08-27', minutes: 1441, isBillable: true, description: 'عمل',
     }).success).toBe(false);
+  });
+
+  it('validates ethical-wall commands and the strict access response', () => {
+    const projectId = '5aa8b232-356c-4d55-8b89-f27d44d1678d';
+    const grantId = '74d5c65e-3381-4aba-a3ae-0b61409375f6';
+
+    expect(openApiRequestBodySchemas.updateProfessionalProjectAccess.parse({
+      accessVersion: 2,
+      accessMode: 'RESTRICTED',
+      reason: '  قضية سرية  ',
+    })).toEqual({ accessVersion: 2, accessMode: 'RESTRICTED', reason: 'قضية سرية' });
+    expect(openApiRequestBodySchemas.grantProfessionalProjectAccess.parse({
+      accessVersion: 3,
+      userId: '7',
+      reason: '  عضو فريق القضية  ',
+    })).toEqual({ accessVersion: 3, userId: 7n, reason: 'عضو فريق القضية' });
+    expect(openApiRequestBodySchemas.revokeProfessionalProjectAccess.parse({
+      accessVersion: 4,
+      grantVersion: 1,
+      reason: '  انتهت الحاجة  ',
+    })).toEqual({ accessVersion: 4, grantVersion: 1, reason: 'انتهت الحاجة' });
+    expect(openApiRequestBodySchemas.updateProfessionalProjectAccess.safeParse({
+      accessVersion: 2,
+      accessMode: 'BYPASS',
+      reason: 'غير مسموح',
+    }).success).toBe(false);
+
+    expect(parseOpenApiResponseBody('getProfessionalProjectAccess', 200, {
+      projectId,
+      accessMode: 'RESTRICTED',
+      accessVersion: 5,
+      grants: [{
+        id: grantId,
+        user: { id: '7', displayName: 'مستشار القضية', nameEn: null },
+        isActive: true,
+        version: 1,
+        grantReason: 'عضو فريق القضية',
+        grantedAt: '2057-08-27T10:00:00.000Z',
+        revocationReason: null,
+        revokedAt: null,
+      }],
+    })).toMatchObject({ accessMode: 'RESTRICTED', grants: [{ user: { id: '7' } }] });
+    expect(() => parseOpenApiResponseBody('getProfessionalProjectAccess', 200, {
+      projectId,
+      accessMode: 'RESTRICTED',
+      accessVersion: 5,
+      grants: [],
+      bypass: true,
+    })).toThrow();
   });
 
   it('validates professional contracts, rates, and billing commands', () => {

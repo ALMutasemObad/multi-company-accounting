@@ -14,6 +14,8 @@ import type {
   ProfessionalPerson,
   ProfessionalProjectPlan,
   ProfessionalProject,
+  ProfessionalProjectAccess,
+  ProfessionalProjectAccessGrant,
   ProfessionalProjectMember,
   ProfessionalProjectMemberRole,
   ProfessionalProjectStage,
@@ -63,6 +65,8 @@ export function ProfessionalProjectsPage({ notify }: { notify: Notice }) {
   const [plan, setPlan] = useState<ProfessionalProjectPlan | null>(null);
   const [planLoading, setPlanLoading] = useState(false);
   const [planningUnavailable, setPlanningUnavailable] = useState(false);
+  const [access, setAccess] = useState<ProfessionalProjectAccess | null>(null);
+  const [accessUnavailable, setAccessUnavailable] = useState(false);
   const [selectedPlanStageId, setSelectedPlanStageId] = useState("");
   const [editingStage, setEditingStage] = useState<ProfessionalProjectStage | null>(null);
   const [editingTask, setEditingTask] = useState<ProfessionalProjectTask | null>(null);
@@ -157,6 +161,26 @@ export function ProfessionalProjectsPage({ notify }: { notify: Notice }) {
     }
   }, [notify, selectedId, t]);
 
+  const loadAccess = useCallback(async () => {
+    if (!selectedId) {
+      setAccess(null);
+      setAccessUnavailable(false);
+      return;
+    }
+    try {
+      setAccess(await api<ProfessionalProjectAccess>(`/professional-projects/${selectedId}/access`));
+      setAccessUnavailable(false);
+    } catch (cause) {
+      setAccess(null);
+      if (cause instanceof ApiError && cause.status === 403) {
+        setAccessUnavailable(true);
+      } else {
+        setAccessUnavailable(false);
+        notify(cause instanceof Error ? cause.message : t("professional.accessLoadError"), "error");
+      }
+    }
+  }, [notify, selectedId, t]);
+
   const loadTimesheets = useCallback(async () => {
     try {
       const result = await api<ListResponse<ProfessionalTimesheet>>(`/professional-timesheets?scope=MY&page=${timesheetPage}&pageSize=10`);
@@ -218,6 +242,7 @@ export function ProfessionalProjectsPage({ notify }: { notify: Notice }) {
   }, [selectedId]);
   useEffect(() => { void Promise.all([loadDetail(), loadTime(), loadCommercial()]); }, [loadCommercial, loadDetail, loadTime]);
   useEffect(() => { void loadPlan(); }, [loadPlan]);
+  useEffect(() => { void loadAccess(); }, [loadAccess]);
   useEffect(() => { void loadRates(); }, [loadRates]);
   useEffect(() => { void loadTimesheets(); }, [loadTimesheets]);
   useEffect(() => {
@@ -255,7 +280,76 @@ export function ProfessionalProjectsPage({ notify }: { notify: Notice }) {
 
   async function refreshAll() {
     await loadProjects();
-    await Promise.all([loadDetail(), loadTime(), loadTimesheets(), loadCommercial(), loadRates(), loadPlan()]);
+    await Promise.all([loadDetail(), loadTime(), loadTimesheets(), loadCommercial(), loadRates(), loadPlan(), loadAccess()]);
+  }
+
+  async function updateAccessMode(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!access) return;
+    const data = new FormData(event.currentTarget);
+    setWorking(true);
+    try {
+      await api(`/professional-projects/${access.projectId}/access`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          accessVersion: access.accessVersion,
+          accessMode: String(data.get("accessMode")),
+          reason: String(data.get("reason") ?? ""),
+        }),
+      });
+      notify(t("professional.accessUpdated"));
+      await Promise.all([loadAccess(), loadDetail(), loadProjects()]);
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : t("professional.accessError"), "error");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function grantProjectAccess(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!access) return;
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    setWorking(true);
+    try {
+      await api(`/professional-projects/${access.projectId}/access-grants`, {
+        method: "POST",
+        idempotencyKey: idempotencyKey("professional-access-grant", crypto.randomUUID()),
+        body: JSON.stringify({
+          accessVersion: access.accessVersion,
+          userId: String(data.get("userId")),
+          reason: String(data.get("reason") ?? ""),
+        }),
+      });
+      form.reset();
+      notify(t("professional.accessGranted"));
+      await loadAccess();
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : t("professional.accessError"), "error");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function revokeProjectAccess(grant: ProfessionalProjectAccessGrant) {
+    if (!access) return;
+    const reason = window.prompt(t("professional.accessRevokePrompt"));
+    if (!reason) return;
+    setWorking(true);
+    try {
+      await api(`/professional-projects/${access.projectId}/access-grants/${grant.id}/revoke`, {
+        method: "POST",
+        idempotencyKey: idempotencyKey("professional-access-revoke", crypto.randomUUID()),
+        body: JSON.stringify({ accessVersion: access.accessVersion, grantVersion: grant.version, reason }),
+      });
+      notify(t("professional.accessRevoked"));
+      await Promise.all([loadAccess(), loadProjects(), loadDetail()]);
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : t("professional.accessError"), "error");
+    } finally {
+      setWorking(false);
+    }
   }
 
   async function updateTimeBudget(event: FormEvent<HTMLFormElement>) {
@@ -842,7 +936,7 @@ export function ProfessionalProjectsPage({ notify }: { notify: Notice }) {
         </article>
         {detail && <aside className="panel professional-detail">
           <header><div><h2>{localizedReferenceName(detail.project)}</h2><p>{detail.project.code}</p></div><span className={`status-chip ${detail.project.status.toLowerCase()}`}>{t(`professional.status.${detail.project.status}`)}</span></header>
-          <dl className="detail-list"><div><dt>{t("professional.billingModel")}</dt><dd>{t(`professional.billing.${detail.project.billingModel}`)}</dd></div><div><dt>{t("professional.startDate")}</dt><dd>{detail.project.startDate}</dd></div><div><dt>{t("professional.members")}</dt><dd>{detail.project.memberCount}</dd></div></dl>
+          <dl className="detail-list"><div><dt>{t("professional.billingModel")}</dt><dd>{t(`professional.billing.${detail.project.billingModel}`)}</dd></div><div><dt>{t("professional.accessMode")}</dt><dd>{t(`professional.accessMode.${detail.project.accessMode}`)}</dd></div><div><dt>{t("professional.startDate")}</dt><dd>{detail.project.startDate}</dd></div><div><dt>{t("professional.members")}</dt><dd>{detail.project.memberCount}</dd></div></dl>
           <div className="row-actions professional-transitions">
             {detail.project.status === "ACTIVE" && <><Button variant="secondary" disabled={working} onClick={() => void transition("ON_HOLD")}>{t("professional.hold")}</Button><Button disabled={working} onClick={() => void transition("COMPLETED")}>{t("professional.complete")}</Button><Button variant="danger" disabled={working} onClick={() => void transition("CANCELLED")}>{t("professional.cancelProject")}</Button></>}
             {detail.project.status === "ON_HOLD" && <><Button disabled={working} onClick={() => void transition("ACTIVE")}>{t("professional.activate")}</Button><Button variant="danger" disabled={working} onClick={() => void transition("CANCELLED")}>{t("professional.cancelProject")}</Button></>}
@@ -856,6 +950,29 @@ export function ProfessionalProjectsPage({ notify }: { notify: Notice }) {
           </form>}
         </aside>}
       </div>}
+
+    {detail && !accessUnavailable && access && <article className="panel professional-access-panel">
+      <header><div><h2>{t("professional.accessTitle")}</h2><p>{t("professional.accessDescription")}</p></div><span className={`status-chip ${access.accessMode.toLowerCase()}`}>{t(`professional.accessMode.${access.accessMode}`)}</span></header>
+      <div className="professional-access-grid">
+        <section>
+          <h3>{t("professional.accessPolicy")}</h3>
+          <form key={`access-${access.accessVersion}`} className="professional-access-form" onSubmit={updateAccessMode}>
+            <label><span>{t("professional.accessMode")}</span><select name="accessMode" defaultValue={access.accessMode}><option value="COMPANY">{t("professional.accessMode.COMPANY")}</option><option value="RESTRICTED">{t("professional.accessMode.RESTRICTED")}</option></select></label>
+            <label><span>{t("professional.changeReason")}</span><input name="reason" minLength={3} maxLength={500} required /></label>
+            <Button type="submit" disabled={working}>{t("professional.saveAccess")}</Button>
+          </form>
+        </section>
+        <section>
+          <h3>{t("professional.explicitGrant")}</h3>
+          <form className="professional-access-form" onSubmit={grantProjectAccess}>
+            <label><span>{t("professional.person")}</span><select name="userId" required defaultValue=""><option value="" />{people.map((person) => <option key={person.id} value={person.id}>{person.displayName}</option>)}</select></label>
+            <label><span>{t("professional.grantReason")}</span><input name="reason" minLength={3} maxLength={500} required /></label>
+            <Button type="submit" icon="plus" disabled={working}>{t("professional.grantAccess")}</Button>
+          </form>
+        </section>
+      </div>
+      {access.grants.length === 0 ? <p className="muted professional-access-empty">{t("professional.noAccessGrants")}</p> : <div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("professional.person")}</th><th>{t("professional.grantReason")}</th><th>{t("professional.statusLabel")}</th><th>{t("professional.actions")}</th></tr></thead><tbody>{access.grants.map((grant) => <tr key={grant.id}><td>{grant.user.displayName}<small>{grant.grantedAt.slice(0, 10)}</small></td><td>{grant.grantReason}{grant.revocationReason && <small>{grant.revocationReason}</small>}</td><td><span className={`status-chip ${grant.isActive ? "active" : "ended"}`}>{grant.isActive ? t("professional.grantActive") : t("professional.grantRevoked")}</span></td><td>{grant.isActive ? <Button variant="ghost" disabled={working} onClick={() => void revokeProjectAccess(grant)}>{t("professional.revokeAccess")}</Button> : <span className="muted">{grant.revokedAt?.slice(0, 10)}</span>}</td></tr>)}</tbody></table></div>}
+    </article>}
 
     {detail && !planningUnavailable && <article className="panel professional-plan-panel">
       <header><div><h2>{t("professional.planTitle")}</h2><p>{t("professional.planDescription")}</p></div></header>

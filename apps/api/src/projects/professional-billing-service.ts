@@ -16,6 +16,7 @@ import type {
   ProfessionalBillingCurrencyPort,
   ProfessionalBillingCurrencyReference,
 } from "./project-reference-ports.js";
+import { ProfessionalProjectAccessPolicy } from "./professional-project-access-policy.js";
 
 export type ProfessionalBillingFailureReason =
   | "NOT_FOUND"
@@ -140,6 +141,7 @@ function runJson(run: BillingRunWithRelations, invoice: ProfessionalBillingInvoi
 export class ProfessionalBillingService {
   private readonly transactions: TransactionExecutor;
   private readonly commands: IdempotentCommandExecutor;
+  private readonly access = new ProfessionalProjectAccessPolicy();
 
   constructor(
     private readonly prisma: PrismaClient,
@@ -156,11 +158,14 @@ export class ProfessionalBillingService {
 
   async listContracts(context: ActorContext, input: { projectId?: string | undefined }) {
     const project = input.projectId
-      ? await this.prisma.professionalProject.findFirst({ where: { publicId: input.projectId, companyId: context.companyId }, select: { id: true } })
+      ? await this.prisma.professionalProject.findFirst({ where: this.access.where(context, { publicId: input.projectId }), select: { id: true } })
       : null;
     if (input.projectId && !project) throw new ProfessionalBillingError("NOT_FOUND");
     const rows = await this.prisma.professionalServiceContract.findMany({
-      where: { companyId: context.companyId, ...(project ? { projectId: project.id } : {}) },
+      where: {
+        companyId: context.companyId,
+        ...(project ? { projectId: project.id } : { project: { is: this.access.scope(context) } }),
+      },
       include: { project: { select: { publicId: true } } },
       orderBy: [{ effectiveFrom: "desc" }, { id: "desc" }],
     });
@@ -178,7 +183,7 @@ export class ProfessionalBillingService {
     idempotencyKey: string;
   }) {
     return this.executeCommand(context, "CREATE_PROFESSIONAL_SERVICE_CONTRACT", input.idempotencyKey, input, 201, async (tx) => {
-      const project = await this.lockProject(tx, context.companyId, input.projectId);
+      const project = await this.lockProject(tx, context, input.projectId);
       this.assertBillableProject(project);
       const effectiveFrom = asDate(input.effectiveFrom);
       const effectiveTo = input.effectiveTo ? asDate(input.effectiveTo) : null;
@@ -222,7 +227,7 @@ export class ProfessionalBillingService {
     return this.executeCommand(context, "END_PROFESSIONAL_SERVICE_CONTRACT", input.idempotencyKey, { publicId, ...input }, 200, async (tx) => {
       const candidate = await tx.professionalServiceContract.findFirst({ where: { publicId, companyId: context.companyId }, select: { project: { select: { publicId: true } } } });
       if (!candidate) throw new ProfessionalBillingError("NOT_FOUND");
-      await this.lockProject(tx, context.companyId, candidate.project.publicId);
+      await this.lockProject(tx, context, candidate.project.publicId);
       const contract = await tx.professionalServiceContract.findFirst({ where: { publicId, companyId: context.companyId } });
       if (!contract) throw new ProfessionalBillingError("NOT_FOUND");
       if (contract.status !== "ACTIVE") throw new ProfessionalBillingError("CONTRACT_INVALID_STATE");
@@ -259,7 +264,10 @@ export class ProfessionalBillingService {
   }
 
   async listRates(context: ActorContext, input: { contractId: string }) {
-    const contract = await this.prisma.professionalServiceContract.findFirst({ where: { publicId: input.contractId, companyId: context.companyId }, select: { id: true } });
+    const contract = await this.prisma.professionalServiceContract.findFirst({
+      where: { publicId: input.contractId, companyId: context.companyId, project: { is: this.access.scope(context) } },
+      select: { id: true },
+    });
     if (!contract) throw new ProfessionalBillingError("NOT_FOUND");
     return {
       data: (await this.prisma.professionalServiceRate.findMany({
@@ -280,7 +288,7 @@ export class ProfessionalBillingService {
     return this.executeCommand(context, "CREATE_PROFESSIONAL_SERVICE_RATE", input.idempotencyKey, input, 201, async (tx) => {
       const candidate = await tx.professionalServiceContract.findFirst({ where: { publicId: input.contractId, companyId: context.companyId }, select: { project: { select: { publicId: true } } } });
       if (!candidate) throw new ProfessionalBillingError("NOT_FOUND");
-      await this.lockProject(tx, context.companyId, candidate.project.publicId);
+      await this.lockProject(tx, context, candidate.project.publicId);
       const contract = await tx.professionalServiceContract.findFirst({ where: { publicId: input.contractId, companyId: context.companyId } });
       if (!contract) throw new ProfessionalBillingError("NOT_FOUND");
       if (contract.status !== "ACTIVE") throw new ProfessionalBillingError("CONTRACT_INVALID_STATE");
@@ -329,7 +337,7 @@ export class ProfessionalBillingService {
     return this.executeCommand(context, "END_PROFESSIONAL_SERVICE_RATE", input.idempotencyKey, { publicId, ...input }, 200, async (tx) => {
       const candidate = await tx.professionalServiceRate.findFirst({ where: { publicId, companyId: context.companyId }, select: { contract: { select: { publicId: true, project: { select: { publicId: true } } } } } });
       if (!candidate) throw new ProfessionalBillingError("NOT_FOUND");
-      await this.lockProject(tx, context.companyId, candidate.contract.project.publicId);
+      await this.lockProject(tx, context, candidate.contract.project.publicId);
       const rate = await tx.professionalServiceRate.findFirst({ where: { publicId, companyId: context.companyId } });
       if (!rate) throw new ProfessionalBillingError("NOT_FOUND");
       if (rate.status !== "ACTIVE") throw new ProfessionalBillingError("CONTRACT_INVALID_STATE");
@@ -352,7 +360,7 @@ export class ProfessionalBillingService {
   }
 
   async listRuns(context: ActorContext, input: { projectId: string }) {
-    const project = await this.prisma.professionalProject.findFirst({ where: { publicId: input.projectId, companyId: context.companyId }, select: { id: true } });
+    const project = await this.prisma.professionalProject.findFirst({ where: this.access.where(context, { publicId: input.projectId }), select: { id: true } });
     if (!project) throw new ProfessionalBillingError("NOT_FOUND");
     const rows = await this.prisma.professionalBillingRun.findMany({
       where: { companyId: context.companyId, projectId: project.id },
@@ -365,7 +373,7 @@ export class ProfessionalBillingService {
 
   async getRun(context: ActorContext, publicId: string) {
     const run = await this.prisma.professionalBillingRun.findFirst({
-      where: { publicId, companyId: context.companyId },
+      where: { publicId, companyId: context.companyId, project: { is: this.access.scope(context) } },
       include: {
         ...this.runInclude(),
         sourceLines: {
@@ -414,7 +422,7 @@ export class ProfessionalBillingService {
       const sourceDateFrom = asDate(input.sourceDateFrom);
       const sourceDateTo = asDate(input.sourceDateTo);
       this.assertDateRange(sourceDateFrom, sourceDateTo);
-      const project = await this.lockProject(tx, context.companyId, input.projectId);
+      const project = await this.lockProject(tx, context, input.projectId);
       this.assertBillableProject(project);
       const contract = await tx.professionalServiceContract.findFirst({
         where: { publicId: input.contractId, companyId: context.companyId, projectId: project.id },
@@ -541,13 +549,8 @@ export class ProfessionalBillingService {
     } as const;
   }
 
-  private async lockProject(tx: Prisma.TransactionClient, companyId: bigint, publicId: string) {
-    const rows = await tx.$queryRaw<Array<{ id: bigint }>>`
-      SELECT id FROM professional_projects
-      WHERE public_id=${publicId} AND company_id=${companyId}
-      FOR UPDATE`;
-    if (rows.length !== 1) throw new ProfessionalBillingError("NOT_FOUND");
-    return tx.professionalProject.findFirstOrThrow({ where: { id: rows[0]!.id, companyId } });
+  private lockProject(tx: Prisma.TransactionClient, context: ActorContext, publicId: string) {
+    return this.access.lockAccessible(tx, context, publicId, () => new ProfessionalBillingError("NOT_FOUND"));
   }
 
   private assertBillableProject(project: { billingModel: string; status: string }) {
