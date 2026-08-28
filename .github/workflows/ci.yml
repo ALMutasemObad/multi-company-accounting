@@ -89,9 +89,7 @@ jobs:
         run: |
           bash scripts/ci/database-identities.integration.sh
           bash scripts/ci/database-roundtrip.sh
-      - name: Upload verified production release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: failure()
         with:
           name: playwright-mariadb-failure
@@ -342,7 +340,9 @@ jobs:
             npx --yes prisma@7.9.1 validate
           )
           sha256sum --check mcap-finance-linux-x64.tgz.sha256
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - name: Upload verified production release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: mcap-finance-linux-x64
           path: |
