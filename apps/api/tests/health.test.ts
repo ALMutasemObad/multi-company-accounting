@@ -19,6 +19,8 @@ describe('GET /health', () => {
 
     expect(response.body).toEqual({ status: 'ok', service: 'mcap-finance-api' });
     expect(JSON.stringify(response.body)).not.toContain('DATABASE_URL');
+    expect(response.headers['permissions-policy']).toBe('camera=(), geolocation=(), microphone=(), payment=(), usb=()');
+    expect(response.headers['x-powered-by']).toBeUndefined();
   });
 
   it('reports database readiness and returns 503 without leaking the failure', async () => {
@@ -50,6 +52,34 @@ describe('GET /health', () => {
     expect(response.body.code).toBe('RATE_LIMITED');
     expect(response.headers['retry-after']).toBeDefined();
     expect(response.headers['x-request-id']).toBeDefined();
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.headers.pragma).toBe('no-cache');
+    expect(response.headers.expires).toBe('0');
+  });
+
+  it('prevents caching of authentication bootstrap and API error responses', async () => {
+    const protectedApp = createApp({
+      NODE_ENV: 'test', PORT: 3000, WEB_ORIGIN: 'http://localhost:5173', SESSION_COOKIE_SECURE: false,
+      PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12,
+    }, {
+      auth: {
+        issueCsrf: async () => ({
+          sid: 'session-token-with-sufficient-entropy',
+          csrfToken: 'csrf-token-with-sufficient-entropy',
+          expiresAt: new Date('2030-01-01T00:00:00.000Z'),
+        }),
+      } as AuthService,
+    });
+
+    for (const response of [
+      await request(protectedApp).get('/api/v1/auth/csrf').expect(200),
+      await request(protectedApp).get('/api/v1/missing').expect(404),
+    ]) {
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(response.headers.pragma).toBe('no-cache');
+      expect(response.headers.expires).toBe('0');
+      expect(response.headers['permissions-policy']).toBe('camera=(), geolocation=(), microphone=(), payment=(), usb=()');
+    }
   });
 
   it('exposes only safe Prometheus metrics and protects configured bearer access', async () => {

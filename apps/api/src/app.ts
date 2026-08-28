@@ -138,6 +138,10 @@ export function createApp(config: AppConfig, services: { readiness?: ReadinessCh
   app.disable('x-powered-by');
   if (config.TRUST_PROXY) app.set('trust proxy', 1);
   app.use(helmet());
+  app.use((_request, response, next) => {
+    response.setHeader('Permissions-Policy', 'camera=(), geolocation=(), microphone=(), payment=(), usb=()');
+    next();
+  });
   app.use(cors({ origin: config.WEB_ORIGIN, credentials: true }));
   app.use(requestLogger(config.LOG_REQUESTS ?? false));
   app.use(requestContextMiddleware({
@@ -196,6 +200,12 @@ export function createApp(config: AppConfig, services: { readiness?: ReadinessCh
   app.get('/ready', ready);
 
   const windowMs = config.RATE_LIMIT_WINDOW_MS ?? 60_000;
+  app.use('/api/v1', (_request, response, next) => {
+    response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('Pragma', 'no-cache');
+    response.setHeader('Expires', '0');
+    next();
+  });
   app.use('/api/v1', createRateLimiter({ scope: 'api', windowMs, max: config.RATE_LIMIT_MAX ?? 300 }));
   app.use('/api/v1/auth/csrf', createRateLimiter({ scope: 'csrf', windowMs, max: config.AUTH_RATE_LIMIT_MAX ?? 20 }));
   app.use('/api/v1/auth/login', createRateLimiter({ scope: 'login', windowMs, max: config.AUTH_RATE_LIMIT_MAX ?? 20 }));
