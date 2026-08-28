@@ -274,6 +274,7 @@ jobs:
           WEB_ORIGIN: https://ci.mcap.example
           SESSION_COOKIE_SECURE: 'true'
           TRUST_PROXY: 'true'
+          RATE_LIMIT_IDENTITY_SECRET: ci-only-stable-rate-limit-identity-secret-2026
           SELF_REGISTRATION_ENABLED: 'false'
         run: |
           node apps/api/dist/server.js > api-smoke.log 2>&1 &

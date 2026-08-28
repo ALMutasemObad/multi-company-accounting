@@ -146,6 +146,15 @@ test("CI deploys main only after all database and upgrade gates and uses pinned 
   assert.ok(sshSecretIndex > provenanceIndex, "PR provenance must be verified before production secrets are read");
 });
 
+test("production runtime smoke test supplies every required security setting", async () => {
+  const source = await readFile(path.join(repositoryRoot, ".github", "workflows", "ci.yml"), "utf8");
+
+  assert.match(
+    source,
+    /Smoke-test production runtime and graceful shutdown[\s\S]*?env:[\s\S]*?RATE_LIMIT_IDENTITY_SECRET: [^\r\n]{32,}[\s\S]*?run:/u,
+  );
+});
+
 test("production metrics monitor protects the scrape and surfaces recent or synthetic alerts", async () => {
   const source = await readFile(
     path.join(repositoryRoot, ".github", "workflows", "production-metrics-monitor.yml"),
