@@ -1,8 +1,8 @@
 ---
 title: "Data Import Context and Safe Intake Policy"
 status: "implemented"
-version: "1.0"
-last_updated: "2026-08-22"
+version: "1.1"
+last_updated: "2026-08-29"
 related:
   - "ARCHITECTURE_GUARDRAILS_AR.md"
   - "BOUNDED_CONTEXT_MAP_AR.md"
@@ -38,6 +38,12 @@ related:
 | `PurchaseInvoice` | Purchases & AP | `PurchaseInvoiceImportPort` لمسودة فقط |
 
 تمر الكتابة عبر منافذ صغيرة تقبل `Prisma.TransactionClient`. لا يستورد سياق Data Import نماذج Prisma المملوكة للسياقات الأربعة ولا يكرر قواعد إنشاء الكيان أو حجز رمزه أو حساب الفاتورة.
+
+اعتبارًا من 29 أغسطس 2026 أصبحت الحدود الأربع منفذة فعليًا بعقود مالك مستقلة:
+`CustomerImportPort` و`SupplierImportPort` و`SalesInvoiceImportPort` و`PurchaseInvoiceImportPort`.
+لا يستورد `DataImportService` الخدمات الخرسانية لهذه السياقات، ولا تستورد خدمات الفواتير
+أنواعًا من سياق Data Import. كما انتقل إنشاء ملفات CSV/XLSX الجدولية العامة إلى
+`platform/tabular-file-exporter.ts` كي لا يعتمد الاستيراد على سياق التقارير.
 
 ## 3. دورة الدفعة
 

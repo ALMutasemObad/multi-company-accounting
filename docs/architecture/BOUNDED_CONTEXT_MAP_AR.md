@@ -130,7 +130,10 @@ Printing  <────────── immutable document snapshot port
 واعتمد [ADR-014](ADR-014-crm-business-development-priority.md) سياق `CRM / Business Development` كهدف المرحلة التالية: يملك Lead وOpportunity وActivity قبل العميل، ويحول عبر منفذ Sales من دون كتابة Customer مباشرة أو نسخ حقائق الفاتورة والذمة. لا ينشئ CRM الأول مشروعًا أو قضية؛ يلزم F2 قبل إضافة هذا الربط لشركات المحاماة.
 
 وفي دفعة التثبيت السابقة لـCRM نُقل CRUD العميل وعناوينه من وحدة Receipts إلى Sales،
-وأصبح Data Import يستهلك `CustomerImportPort`. يكشف Sales كذلك
+وأصبح Data Import يستهلك `CustomerImportPort`. وفي 29 أغسطس 2026 اكتمل تطبيق الحد
+على الموردين وفواتير المبيعات والمشتريات عبر `SupplierImportPort` و
+`SalesInvoiceImportPort` و`PurchaseInvoiceImportPort`، وأزيلت الاعتمادات المتبادلة على
+أنواع Data Import والاعتماد على خدمة Reports الخرسانية. يكشف Sales كذلك
 `CrmCustomerQueryPort/CrmCustomerProvisioningPort` داخل `TransactionClient` المستدعي؛
 وبذلك لا يحتاج CRM إلى Prisma أو إلى استيراد خدمة التطبيق الخاصة بالعميل.
 

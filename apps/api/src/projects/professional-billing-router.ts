@@ -3,7 +3,7 @@ import { Router, type ErrorRequestHandler, type Request } from "express";
 import { z, ZodError } from "zod";
 import type { AuthService } from "../auth/auth-service.js";
 import { openApiRequestBodySchemas as bodies } from "../generated/openapi-request-guards.js";
-import { SalesInvoiceError } from "../sales/sales-invoice-service.js";
+import { SalesInvoiceError } from "../sales/sales-invoice-ports.js";
 import {
   ProfessionalBillingError,
   type ProfessionalBillingService,

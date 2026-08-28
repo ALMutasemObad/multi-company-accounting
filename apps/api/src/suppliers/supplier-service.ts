@@ -4,35 +4,17 @@ import { reserveMasterDataCode } from "../platform/master-data-code-service.js";
 import type { ActorContext } from "../platform/actor-context.js";
 import type { AccountingAccountQueryPort } from "../accounts/account-query-port.js";
 import { PrismaAccountingAccountQueryAdapter } from "../accounts/prisma-account-query-adapter.js";
+import {
+  SupplierError,
+  type SupplierAddressInput,
+  type SupplierImportPort,
+  type SupplierInput,
+} from "./supplier-ports.js";
 
-export type SupplierErrorReason =
-  | "NOT_FOUND"
-  | "CODE_EXISTS"
-  | "INVALID_ACCOUNT";
-export class SupplierError extends Error {
-  constructor(public readonly reason: SupplierErrorReason) {
-    super(reason);
-  }
-}
-export type AddressInput = {
-  addressType: "LEGAL" | "PAYMENT" | "OTHER";
-  line1: string;
-  line2?: string | null | undefined;
-  city?: string | null | undefined;
-  region?: string | null | undefined;
-  postalCode?: string | null | undefined;
-  countryCode?: string | null | undefined;
-  isPrimary?: boolean | undefined;
-};
-export type SupplierInput = {
-  payableAccountId: bigint;
-  nameAr: string;
-  nameEn?: string | null | undefined;
-  phone?: string | null | undefined;
-  email?: string | null | undefined;
-  taxNumber?: string | null | undefined;
-  addresses?: AddressInput[] | undefined;
-};
+export { SupplierError } from "./supplier-ports.js";
+export type { SupplierErrorReason, SupplierInput } from "./supplier-ports.js";
+
+type AddressInput = SupplierAddressInput;
 type SupplierUpdate = { payableAccountId?: bigint | undefined; nameAr?: string | undefined; nameEn?: string | null | undefined; phone?: string | null | undefined; email?: string | null | undefined; taxNumber?: string | null | undefined };
 type AddressUpdate = { addressType?: AddressInput["addressType"] | undefined; line1?: string | undefined; line2?: string | null | undefined; city?: string | null | undefined; region?: string | null | undefined; postalCode?: string | null | undefined; countryCode?: string | null | undefined; isPrimary?: boolean | undefined };
 const last4 = (value?: string | null) =>
@@ -43,7 +25,7 @@ const unique = (error: unknown) =>
 const supplierInclude = { addresses: true } as const;
 type SupplierRecord = Prisma.SupplierGetPayload<{ include: typeof supplierInclude }>;
 
-export class SupplierService {
+export class SupplierService implements SupplierImportPort {
   constructor(
     private readonly prisma: PrismaClient,
     private readonly accounts: AccountingAccountQueryPort = new PrismaAccountingAccountQueryAdapter(),

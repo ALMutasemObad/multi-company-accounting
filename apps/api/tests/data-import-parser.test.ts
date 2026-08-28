@@ -1,6 +1,6 @@
 import { unzipSync, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
-import { tableToXlsx } from "../src/reports/financial-statement-exporter.js";
+import { tableToXlsx } from "../src/platform/tabular-file-exporter.js";
 import { DataImportParseError, groupInvoiceRows, importHeaders, parseImportFile } from "../src/imports/data-import-parser.js";
 
 const base64 = (value: Buffer | string) => Buffer.from(value).toString("base64");

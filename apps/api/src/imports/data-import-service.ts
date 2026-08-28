@@ -2,14 +2,25 @@ import { createHash, randomUUID } from "node:crypto";
 import { Prisma, type DataImportBatch, type PrismaClient } from "@prisma/client";
 import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import { CustomerError, type CustomerImportPort, type CustomerInput } from "../sales/customer-ports.js";
-import type { SupplierService, SupplierInput } from "../suppliers/supplier-service.js";
-import { SalesInvoiceError, type SalesInvoiceInput, type SalesInvoiceService } from "../sales/sales-invoice-service.js";
-import { PurchaseInvoiceError, type PurchaseInvoiceInput, type PurchaseInvoiceService } from "../purchases/purchase-invoice-service.js";
-import { SupplierError } from "../suppliers/supplier-service.js";
+import {
+  SalesInvoiceError,
+  type SalesInvoiceImportPort,
+  type SalesInvoiceInput,
+} from "../sales/sales-invoice-ports.js";
+import {
+  PurchaseInvoiceError,
+  type PurchaseInvoiceImportPort,
+  type PurchaseInvoiceInput,
+} from "../purchases/purchase-invoice-ports.js";
+import {
+  SupplierError,
+  type SupplierImportPort,
+  type SupplierInput,
+} from "../suppliers/supplier-ports.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
 import type { ActorContext } from "../platform/actor-context.js";
+import { tableToCsv, tableToXlsx } from "../platform/tabular-file-exporter.js";
 import type { OutboxAppender } from "../outbox/outbox.js";
-import { tableToCsv, tableToXlsx } from "../reports/financial-statement-exporter.js";
 import { groupInvoiceRows, importExamples, importHeaders, parseImportFile } from "./data-import-parser.js";
 import type { DataImportFormatValue, DataImportInvoiceGroup, DataImportRow, DataImportRowError, DataImportTypeValue } from "./data-import-types.js";
 
@@ -100,9 +111,9 @@ export class DataImportService {
   constructor(
     private readonly prisma: PrismaClient,
     private readonly customers: CustomerImportPort,
-    private readonly suppliers: SupplierService,
-    private readonly salesInvoices: SalesInvoiceService,
-    private readonly purchaseInvoices: PurchaseInvoiceService,
+    private readonly suppliers: SupplierImportPort,
+    private readonly salesInvoices: SalesInvoiceImportPort,
+    private readonly purchaseInvoices: PurchaseInvoiceImportPort,
     private readonly outbox: OutboxAppender,
   ) { this.commands = new IdempotentCommandExecutor(prisma); }
 

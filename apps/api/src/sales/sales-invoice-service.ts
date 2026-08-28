@@ -26,99 +26,31 @@ import { ReceivableItemService } from "../receivables/receivable-item-service.js
 import { calculateTaxDocument, TaxCalculationError } from "../tax/tax-calculator.js";
 import { TaxError, TaxService, type TaxQuotePort } from "../tax/tax-service.js";
 import type { ActorContext } from "../platform/actor-context.js";
-import type { DataImportInvoiceGroup } from "../imports/data-import-types.js";
 import type {
   ProfessionalBillingInvoiceInput,
   ProfessionalBillingInvoiceReference,
   ProfessionalBillingSalesPort,
 } from "./professional-billing-sales-port.js";
+import {
+  SalesInvoiceError,
+  type PosSalesCheckoutPort,
+  type PosSalesCheckoutResult,
+  type SalesInvoiceImportGroup,
+  type SalesInvoiceImportPort,
+  type SalesInvoiceInput,
+  type SalesInvoiceLineInput,
+} from "./sales-invoice-ports.js";
 
-export type SalesInvoiceErrorReason =
-  | "NOT_FOUND"
-  | "INVALID_STATE"
-  | "VERSION_CONFLICT"
-  | "PERIOD_CLOSED"
-  | "DATE_OUTSIDE_PERIOD"
-  | "INVALID_CUSTOMER"
-  | "INVALID_ACCOUNT"
-  | "INVALID_COST_CENTER"
-  | "INVALID_TAX_RATE"
-  | "INVALID_CURRENCY"
-  | "WAREHOUSE_REQUIRED"
-  | "INVALID_WAREHOUSE"
-  | "INVALID_INVENTORY_ITEM"
-  | "INVALID_QUANTITY_PRECISION"
-  | "INSUFFICIENT_STOCK"
-  | "INVENTORY_VALUATION_REQUIRED"
-  | "INVENTORY_VALUE_MISMATCH"
-  | "INVENTORY_ACCOUNTING_NOT_CONFIGURED"
-  | "INVALID_LINE"
-  | "INVALID_DISCOUNT"
-  | "INVALID_TOTAL"
-  | "SOURCE_INVOICE_REQUIRED"
-  | "INVALID_SOURCE_INVOICE"
-  | "CREDIT_EXCEEDS_INVOICE"
-  | "HAS_SETTLEMENTS"
-  | "ALREADY_REVERSED"
-  | "IDEMPOTENCY_MISMATCH"
-  | "IDEMPOTENCY_IN_PROGRESS";
-
-export class SalesInvoiceError extends Error {
-  constructor(public readonly reason: SalesInvoiceErrorReason) {
-    super(reason);
-  }
-}
-
-export type SalesInvoiceLineInput = {
-  inventoryItemId?: bigint | null;
-  description: string;
-  quantity: string;
-  unitPrice: string;
-  discountAmount: string;
-  revenueAccountId: bigint;
-  costCenterId?: bigint | null;
-  taxRateId?: bigint | null;
-};
-
-export type SalesInvoiceInput = {
-  documentType: "SALES_INVOICE" | "SALES_CREDIT_NOTE";
-  fiscalPeriodId: bigint;
-  documentDate: string;
-  dueDate: string;
-  description: string;
-  customerId: bigint;
-  warehouseId?: bigint | null;
-  sourceInvoiceId?: bigint | null;
-  currencyId: bigint;
-  exchangeRate: string;
-  customerAddress?: string | null;
-  notes?: string | null;
-  lines: SalesInvoiceLineInput[];
-};
+export { SalesInvoiceError } from "./sales-invoice-ports.js";
+export type {
+  PosSalesCheckoutPort,
+  PosSalesCheckoutResult,
+  SalesInvoiceErrorReason,
+  SalesInvoiceInput,
+  SalesInvoiceLineInput,
+} from "./sales-invoice-ports.js";
 
 export type SalesInvoiceUpdate = { version: number } & Partial<SalesInvoiceInput>;
-
-export type PosSalesCheckoutResult = {
-  invoiceId: bigint;
-  documentId: bigint;
-  documentNumber: string;
-  documentStatus: string;
-  customerId: bigint;
-  customerName: string;
-  currencyId: bigint;
-  total: Prisma.Decimal;
-  baseTotal: Prisma.Decimal;
-  receivableItemId: bigint;
-  journalEntryIds: string[];
-};
-
-export interface PosSalesCheckoutPort {
-  checkoutInTransaction(
-    tx: Prisma.TransactionClient,
-    context: ActorContext,
-    input: SalesInvoiceInput,
-  ): Promise<PosSalesCheckoutResult>;
-}
 
 type SalesInvoiceStockSnapshot = {
   id: bigint;
@@ -206,7 +138,7 @@ type SalesAgingGroup = {
 };
 type AgingBucket = "current" | "days1To30" | "days31To60" | "days61To90" | "daysOver90";
 
-export class SalesInvoiceService implements ProfessionalBillingSalesPort {
+export class SalesInvoiceService implements ProfessionalBillingSalesPort, SalesInvoiceImportPort, PosSalesCheckoutPort {
   private readonly fiscal: FiscalService;
   private readonly posting = new PostingEngine();
   private readonly receivables = new ReceivableItemService();
@@ -595,7 +527,7 @@ export class SalesInvoiceService implements ProfessionalBillingSalesPort {
     };
   }
 
-  async resolveImportedDraft(tx: Prisma.TransactionClient, companyId: bigint, group: DataImportInvoiceGroup): Promise<SalesInvoiceInput> {
+  async resolveImportedDraft(tx: Prisma.TransactionClient, companyId: bigint, group: SalesInvoiceImportGroup): Promise<SalesInvoiceInput> {
     const first = group.rows[0]!.values;
     const documentDate = asDate(first.document_date!);
     const period = await tx.fiscalPeriod.findFirst({ where: { companyId, status: "OPEN", startDate: { lte: documentDate }, endDate: { gte: documentDate } }, orderBy: { startDate: "desc" } });

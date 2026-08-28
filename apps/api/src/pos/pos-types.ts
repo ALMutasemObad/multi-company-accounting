@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import type { ActorContext } from "../platform/actor-context.js";
-import type { SalesInvoiceLineInput } from "../sales/sales-invoice-service.js";
+import type { SalesInvoiceLineInput } from "../sales/sales-invoice-ports.js";
 
 export type PosCheckoutInput = {
   fiscalPeriodId: bigint;

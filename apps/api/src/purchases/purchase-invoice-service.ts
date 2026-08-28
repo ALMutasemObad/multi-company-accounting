@@ -25,70 +25,20 @@ import { archiveDocument } from "../printing/print-archive.js";
 import { calculateTaxDocument, TaxCalculationError } from "../tax/tax-calculator.js";
 import { TaxError, TaxService, type TaxQuotePort } from "../tax/tax-service.js";
 import type { ActorContext } from "../platform/actor-context.js";
-import type { DataImportInvoiceGroup } from "../imports/data-import-types.js";
+import {
+  PurchaseInvoiceError,
+  type PurchaseInvoiceImportGroup,
+  type PurchaseInvoiceImportPort,
+  type PurchaseInvoiceInput,
+  type PurchaseInvoiceLineInput,
+} from "./purchase-invoice-ports.js";
 
-export type PurchaseInvoiceErrorReason =
-  | "NOT_FOUND"
-  | "INVALID_STATE"
-  | "VERSION_CONFLICT"
-  | "PERIOD_CLOSED"
-  | "DATE_OUTSIDE_PERIOD"
-  | "INVALID_SUPPLIER"
-  | "INVALID_ACCOUNT"
-  | "INVALID_COST_CENTER"
-  | "INVALID_TAX_RATE"
-  | "INVALID_CURRENCY"
-  | "WAREHOUSE_REQUIRED"
-  | "INVALID_WAREHOUSE"
-  | "INVALID_INVENTORY_ITEM"
-  | "INVALID_QUANTITY_PRECISION"
-  | "INSUFFICIENT_STOCK"
-  | "INVENTORY_VALUATION_REQUIRED"
-  | "INVENTORY_VALUE_MISMATCH"
-  | "INVENTORY_ACCOUNTING_NOT_CONFIGURED"
-  | "INVALID_LINE"
-  | "INVALID_DISCOUNT"
-  | "INVALID_TOTAL"
-  | "SOURCE_INVOICE_REQUIRED"
-  | "INVALID_SOURCE_INVOICE"
-  | "DEBIT_EXCEEDS_INVOICE"
-  | "HAS_SETTLEMENTS"
-  | "ALREADY_REVERSED"
-  | "IDEMPOTENCY_MISMATCH"
-  | "IDEMPOTENCY_IN_PROGRESS";
-
-export class PurchaseInvoiceError extends Error {
-  constructor(public readonly reason: PurchaseInvoiceErrorReason) {
-    super(reason);
-  }
-}
-export type PurchaseInvoiceLineInput = {
-  inventoryItemId?: bigint | null;
-  description: string;
-  quantity: string;
-  unitPrice: string;
-  discountAmount: string;
-  debitAccountId: bigint;
-  costCenterId?: bigint | null;
-  taxRateId?: bigint | null;
-};
-
-export type PurchaseInvoiceInput = {
-  documentType: "PURCHASE_INVOICE" | "PURCHASE_DEBIT_NOTE";
-  fiscalPeriodId: bigint;
-  documentDate: string;
-  dueDate: string;
-  description: string;
-  supplierId: bigint;
-  warehouseId?: bigint | null;
-  supplierInvoiceNumber?: string | null;
-  sourceInvoiceId?: bigint | null;
-  currencyId: bigint;
-  exchangeRate: string;
-  supplierAddress?: string | null;
-  notes?: string | null;
-  lines: PurchaseInvoiceLineInput[];
-};
+export { PurchaseInvoiceError } from "./purchase-invoice-ports.js";
+export type {
+  PurchaseInvoiceErrorReason,
+  PurchaseInvoiceInput,
+  PurchaseInvoiceLineInput,
+} from "./purchase-invoice-ports.js";
 
 export type PurchaseInvoiceUpdate = { version: number } & Partial<PurchaseInvoiceInput>;
 
@@ -180,7 +130,7 @@ type PurchaseAgingGroup = {
 };
 type AgingBucket = "current" | "days1To30" | "days31To60" | "days61To90" | "daysOver90";
 
-export class PurchaseInvoiceService {
+export class PurchaseInvoiceService implements PurchaseInvoiceImportPort {
   private readonly fiscal: FiscalService;
   private readonly posting = new PostingEngine();
   private readonly payables = new PayableItemService();
@@ -546,7 +496,7 @@ export class PurchaseInvoiceService {
     });
   }
 
-  async resolveImportedDraft(tx: Prisma.TransactionClient, companyId: bigint, group: DataImportInvoiceGroup): Promise<PurchaseInvoiceInput> {
+  async resolveImportedDraft(tx: Prisma.TransactionClient, companyId: bigint, group: PurchaseInvoiceImportGroup): Promise<PurchaseInvoiceInput> {
     const first = group.rows[0]!.values;
     const documentDate = asDate(first.document_date!);
     const period = await tx.fiscalPeriod.findFirst({ where: { companyId, status: "OPEN", startDate: { lte: documentDate }, endDate: { gte: documentDate } }, orderBy: { startDate: "desc" } });
