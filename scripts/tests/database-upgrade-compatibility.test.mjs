@@ -4,6 +4,14 @@ import test from "node:test";
 
 const script = await readFile(new URL("../ci/database-upgrade-compatibility.sh", import.meta.url), "utf8");
 const workflow = await readFile(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8");
+const inventoryCostingMigration = await readFile(
+  new URL("../../apps/api/prisma/migrations/20260826190000_inventory_weighted_average_costing/migration.sql", import.meta.url),
+  "utf8",
+);
+const settlementFxMigration = await readFile(
+  new URL("../../apps/api/prisma/migrations/20260826230000_realized_fx_settlements/migration.sql", import.meta.url),
+  "utf8",
+);
 
 test("upgrade compatibility starts from a pinned production ancestor and populated fixtures", () => {
   assert.match(script, /PRODUCTION_BASELINE_COMMIT/u);
@@ -47,4 +55,27 @@ test("CI runs the upgrade gate on both supported release engines", () => {
     workflow,
     /shellcheck --shell=bash --severity=warning[\s\S]*scripts\/ci\/database-upgrade-compatibility\.sh/u,
   );
+});
+
+test("expand migrations preserve writes from the previous production application", () => {
+  assert.match(inventoryCostingMigration, /unit_cost_base` DECIMAL\(19,8\) NOT NULL DEFAULT 0\.00000000/u);
+  assert.match(inventoryCostingMigration, /total_cost_base` DECIMAL\(19,4\) NOT NULL DEFAULT 0\.0000/u);
+  assert.match(inventoryCostingMigration, /is_cost_initialized` BOOLEAN NOT NULL DEFAULT FALSE/u);
+  assert.doesNotMatch(
+    inventoryCostingMigration,
+    /MODIFY `is_valuation_initialized` BOOLEAN NOT NULL DEFAULT TRUE/u,
+    "an old writer must not silently mark newly stocked balances as valued",
+  );
+
+  for (const owner of ["receivable", "payable"]) {
+    assert.ok(
+      settlementFxMigration.includes("CREATE TRIGGER `" + owner + "_items_base_amounts_before_insert`"),
+    );
+    assert.ok(
+      settlementFxMigration.includes("CREATE TRIGGER `" + owner + "_items_base_amounts_before_update`"),
+    );
+  }
+  assert.match(settlementFxMigration, /original_base_amount` DECIMAL\(19,4\) NOT NULL DEFAULT 0\.0000/u);
+  assert.match(settlementFxMigration, /outstanding_base_amount` DECIMAL\(19,4\) NOT NULL DEFAULT 0\.0000/u);
+  assert.match(settlementFxMigration, /SELECT `invoice`\.`base_total`/u);
 });

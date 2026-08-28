@@ -2050,9 +2050,9 @@ model InventoryMovementLine {
   fromWarehouseId           BigInt?           @map("from_warehouse_id") @db.UnsignedBigInt
   toWarehouseId             BigInt?           @map("to_warehouse_id") @db.UnsignedBigInt
   quantity                  Decimal           @db.Decimal(19, 6)
-  unitCostBase              Decimal           @map("unit_cost_base") @db.Decimal(19, 8)
-  totalCostBase             Decimal           @map("total_cost_base") @db.Decimal(19, 4)
-  isCostInitialized         Boolean           @default(true) @map("is_cost_initialized")
+  unitCostBase              Decimal           @default(0) @map("unit_cost_base") @db.Decimal(19, 8)
+  totalCostBase             Decimal           @default(0) @map("total_cost_base") @db.Decimal(19, 4)
+  isCostInitialized         Boolean           @default(false) @map("is_cost_initialized")
   inventoryItemCodeSnapshot String            @map("inventory_item_code_snapshot") @db.VarChar(40)
   inventoryItemNameSnapshot String            @map("inventory_item_name_snapshot") @db.VarChar(200)
   unitOfMeasureCodeSnapshot String            @map("unit_of_measure_code_snapshot") @db.VarChar(20)
@@ -2081,7 +2081,7 @@ model InventoryBalance {
   onHand                  Decimal                           @default(0) @map("on_hand") @db.Decimal(19, 6)
   inventoryValueBase      Decimal                           @default(0) @map("inventory_value_base") @db.Decimal(19, 4)
   averageUnitCostBase     Decimal                           @default(0) @map("average_unit_cost_base") @db.Decimal(19, 8)
-  isValuationInitialized  Boolean                           @default(true) @map("is_valuation_initialized")
+  isValuationInitialized  Boolean                           @default(false) @map("is_valuation_initialized")
   version                 Int                               @default(0) @db.UnsignedInt
   movementCount           Int                               @default(0) @map("movement_count") @db.UnsignedInt
   updatedAt               DateTime                          @updatedAt @map("updated_at")
@@ -2283,8 +2283,8 @@ model ReceivableItem {
   dueDate               DateTime             @map("due_date") @db.Date
   originalAmount        Decimal              @map("original_amount") @db.Decimal(19, 4)
   outstandingAmount     Decimal              @map("outstanding_amount") @db.Decimal(19, 4)
-  originalBaseAmount    Decimal              @map("original_base_amount") @db.Decimal(19, 4)
-  outstandingBaseAmount Decimal              @map("outstanding_base_amount") @db.Decimal(19, 4)
+  originalBaseAmount    Decimal              @default(0) @map("original_base_amount") @db.Decimal(19, 4)
+  outstandingBaseAmount Decimal              @default(0) @map("outstanding_base_amount") @db.Decimal(19, 4)
   status                SettlementItemStatus @default(OPEN)
   version               Int                  @default(0) @db.UnsignedInt
   createdAt             DateTime             @default(now()) @map("created_at")
@@ -2416,8 +2416,8 @@ model PayableItem {
   dueDate               DateTime             @map("due_date") @db.Date
   originalAmount        Decimal              @map("original_amount") @db.Decimal(19, 4)
   outstandingAmount     Decimal              @map("outstanding_amount") @db.Decimal(19, 4)
-  originalBaseAmount    Decimal              @map("original_base_amount") @db.Decimal(19, 4)
-  outstandingBaseAmount Decimal              @map("outstanding_base_amount") @db.Decimal(19, 4)
+  originalBaseAmount    Decimal              @default(0) @map("original_base_amount") @db.Decimal(19, 4)
+  outstandingBaseAmount Decimal              @default(0) @map("outstanding_base_amount") @db.Decimal(19, 4)
   status                SettlementItemStatus @default(OPEN)
   version               Int                  @default(0) @db.UnsignedInt
   createdAt             DateTime             @default(now()) @map("created_at")

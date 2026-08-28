@@ -296,8 +296,8 @@ WHERE `original_base_amount` IS NULL
 DROP TEMPORARY TABLE `_settlement_base_balance_guard`;
 
 ALTER TABLE `receivable_items`
-  MODIFY `original_base_amount` DECIMAL(19,4) NOT NULL,
-  MODIFY `outstanding_base_amount` DECIMAL(19,4) NOT NULL,
+  MODIFY `original_base_amount` DECIMAL(19,4) NOT NULL DEFAULT 0.0000,
+  MODIFY `outstanding_base_amount` DECIMAL(19,4) NOT NULL DEFAULT 0.0000,
   ADD CONSTRAINT `receivable_items_base_amounts_chk` CHECK (
     `original_base_amount` > 0
     AND `outstanding_base_amount` >= 0
@@ -310,8 +310,8 @@ ALTER TABLE `receivable_items`
   );
 
 ALTER TABLE `payable_items`
-  MODIFY `original_base_amount` DECIMAL(19,4) NOT NULL,
-  MODIFY `outstanding_base_amount` DECIMAL(19,4) NOT NULL,
+  MODIFY `original_base_amount` DECIMAL(19,4) NOT NULL DEFAULT 0.0000,
+  MODIFY `outstanding_base_amount` DECIMAL(19,4) NOT NULL DEFAULT 0.0000,
   ADD CONSTRAINT `payable_items_base_amounts_chk` CHECK (
     `original_base_amount` > 0
     AND `outstanding_base_amount` >= 0
@@ -322,6 +322,88 @@ ALTER TABLE `payable_items`
     OR (`status` = 'PARTIAL' AND `outstanding_base_amount` > 0 AND `outstanding_base_amount` < `original_base_amount`)
     OR (`status` IN ('SETTLED', 'REVERSED') AND `outstanding_base_amount` = 0)
   );
+
+-- The previous production application remains live while the release target is
+-- prepared. Its generated client does not know the new base-currency columns,
+-- so bounded compatibility triggers derive the same immutable invoice-rate
+-- values that the current application writes explicitly. The defaults allow
+-- strict-mode inserts to reach BEFORE INSERT; the checks still reject a row if
+-- its owning invoice cannot provide a valid base amount.
+CREATE TRIGGER `receivable_items_base_amounts_before_insert`
+BEFORE INSERT ON `receivable_items`
+FOR EACH ROW
+SET
+  NEW.`original_base_amount` = CASE
+    WHEN NEW.`original_base_amount` = 0.0000 THEN COALESCE((
+      SELECT `invoice`.`base_total`
+      FROM `sales_invoices` AS `invoice`
+      WHERE `invoice`.`id` = NEW.`sales_invoice_id`
+        AND `invoice`.`company_id` = NEW.`company_id`
+      LIMIT 1
+    ), 0.0000)
+    ELSE NEW.`original_base_amount`
+  END,
+  NEW.`outstanding_base_amount` = CASE
+    WHEN NEW.`outstanding_base_amount` <> 0.0000 THEN NEW.`outstanding_base_amount`
+    WHEN NEW.`outstanding_amount` = 0.0000 THEN 0.0000
+    WHEN NEW.`original_amount` > 0.0000 THEN ROUND(COALESCE((
+      SELECT `invoice`.`base_total`
+      FROM `sales_invoices` AS `invoice`
+      WHERE `invoice`.`id` = NEW.`sales_invoice_id`
+        AND `invoice`.`company_id` = NEW.`company_id`
+      LIMIT 1
+    ), 0.0000) * NEW.`outstanding_amount` / NEW.`original_amount`, 4)
+    ELSE 0.0000
+  END;
+
+CREATE TRIGGER `receivable_items_base_amounts_before_update`
+BEFORE UPDATE ON `receivable_items`
+FOR EACH ROW
+SET NEW.`outstanding_base_amount` = CASE
+  WHEN NEW.`outstanding_amount` <> OLD.`outstanding_amount`
+    AND NEW.`outstanding_base_amount` = OLD.`outstanding_base_amount`
+    AND NEW.`original_amount` > 0.0000
+  THEN ROUND(NEW.`original_base_amount` * NEW.`outstanding_amount` / NEW.`original_amount`, 4)
+  ELSE NEW.`outstanding_base_amount`
+END;
+
+CREATE TRIGGER `payable_items_base_amounts_before_insert`
+BEFORE INSERT ON `payable_items`
+FOR EACH ROW
+SET
+  NEW.`original_base_amount` = CASE
+    WHEN NEW.`original_base_amount` = 0.0000 THEN COALESCE((
+      SELECT `invoice`.`base_total`
+      FROM `purchase_invoices` AS `invoice`
+      WHERE `invoice`.`id` = NEW.`purchase_invoice_id`
+        AND `invoice`.`company_id` = NEW.`company_id`
+      LIMIT 1
+    ), 0.0000)
+    ELSE NEW.`original_base_amount`
+  END,
+  NEW.`outstanding_base_amount` = CASE
+    WHEN NEW.`outstanding_base_amount` <> 0.0000 THEN NEW.`outstanding_base_amount`
+    WHEN NEW.`outstanding_amount` = 0.0000 THEN 0.0000
+    WHEN NEW.`original_amount` > 0.0000 THEN ROUND(COALESCE((
+      SELECT `invoice`.`base_total`
+      FROM `purchase_invoices` AS `invoice`
+      WHERE `invoice`.`id` = NEW.`purchase_invoice_id`
+        AND `invoice`.`company_id` = NEW.`company_id`
+      LIMIT 1
+    ), 0.0000) * NEW.`outstanding_amount` / NEW.`original_amount`, 4)
+    ELSE 0.0000
+  END;
+
+CREATE TRIGGER `payable_items_base_amounts_before_update`
+BEFORE UPDATE ON `payable_items`
+FOR EACH ROW
+SET NEW.`outstanding_base_amount` = CASE
+  WHEN NEW.`outstanding_amount` <> OLD.`outstanding_amount`
+    AND NEW.`outstanding_base_amount` = OLD.`outstanding_base_amount`
+    AND NEW.`original_amount` > 0.0000
+  THEN ROUND(NEW.`original_base_amount` * NEW.`outstanding_amount` / NEW.`original_amount`, 4)
+  ELSE NEW.`outstanding_base_amount`
+END;
 
 ALTER TABLE `receipt_allocations`
   ADD CONSTRAINT `receipt_allocations_fx_snapshot_chk` CHECK (

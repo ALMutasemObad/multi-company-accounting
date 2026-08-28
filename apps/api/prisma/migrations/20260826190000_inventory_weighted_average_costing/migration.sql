@@ -9,9 +9,9 @@ SET `unit_cost_base` = 0.00000000,
 WHERE `unit_cost_base` IS NULL OR `total_cost_base` IS NULL;
 
 ALTER TABLE `inventory_movement_lines`
-  MODIFY `unit_cost_base` DECIMAL(19,8) NOT NULL,
-  MODIFY `total_cost_base` DECIMAL(19,4) NOT NULL,
-  MODIFY `is_cost_initialized` BOOLEAN NOT NULL DEFAULT TRUE,
+  MODIFY `unit_cost_base` DECIMAL(19,8) NOT NULL DEFAULT 0.00000000,
+  MODIFY `total_cost_base` DECIMAL(19,4) NOT NULL DEFAULT 0.0000,
+  MODIFY `is_cost_initialized` BOOLEAN NOT NULL DEFAULT FALSE,
   ADD CONSTRAINT `inventory_movement_lines_unit_cost_nonnegative_chk`
     CHECK (`unit_cost_base` >= 0),
   ADD CONSTRAINT `inventory_movement_lines_total_cost_nonnegative_chk`
@@ -29,9 +29,6 @@ ALTER TABLE `inventory_balances`
 UPDATE `inventory_balances`
 SET `is_valuation_initialized` = TRUE
 WHERE `on_hand` = 0;
-
-ALTER TABLE `inventory_balances`
-  MODIFY `is_valuation_initialized` BOOLEAN NOT NULL DEFAULT TRUE;
 
 CREATE TABLE `inventory_valuation_initializations` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
