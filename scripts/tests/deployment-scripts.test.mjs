@@ -7,6 +7,12 @@ import { parseDocument } from "yaml";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const installers = ["install-release.sh", "install-cpanel-release.sh"];
+const approvedActionPins = new Map([
+  ["actions/checkout", { sha: "3d3c42e5aac5ba805825da76410c181273ba90b1", version: "v7.0.1" }],
+  ["actions/setup-node", { sha: "820762786026740c76f36085b0efc47a31fe5020", version: "v7.0.0" }],
+  ["actions/upload-artifact", { sha: "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a", version: "v7.0.1" }],
+  ["actions/download-artifact", { sha: "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c", version: "v8.0.1" }],
+]);
 
 test("GitHub Actions workflows are valid YAML without duplicate keys", async () => {
   const workflowDirectory = path.join(repositoryRoot, ".github", "workflows");
@@ -17,6 +23,30 @@ test("GitHub Actions workflows are valid YAML without duplicate keys", async () 
     const document = parseDocument(source, { uniqueKeys: true });
     assert.deepEqual(document.errors, [], `${workflowFile} must parse without YAML errors`);
   }
+});
+
+test("every external GitHub Action uses the approved immutable Node 24 pin", async () => {
+  const workflowDirectory = path.join(repositoryRoot, ".github", "workflows");
+  const workflowFiles = (await readdir(workflowDirectory)).filter((file) => /\.ya?ml$/u.test(file));
+  const observedActions = new Set();
+
+  for (const workflowFile of workflowFiles) {
+    const source = await readFile(path.join(workflowDirectory, workflowFile), "utf8");
+    for (const match of source.matchAll(/^\s*-?\s*uses:\s+([^\s#]+)(?:\s+#\s*(\S+))?/gmu)) {
+      const reference = match[1];
+      const separator = reference.lastIndexOf("@");
+      assert.ok(separator > 0, `${workflowFile} contains an unpinned action: ${reference}`);
+      const name = reference.slice(0, separator);
+      const sha = reference.slice(separator + 1);
+      const approved = approvedActionPins.get(name);
+      assert.ok(approved, `${workflowFile} contains an unapproved external action: ${name}`);
+      assert.equal(sha, approved.sha, `${workflowFile} must use the approved ${name} commit`);
+      assert.equal(match[2], approved.version, `${workflowFile} must document the pinned ${name} release`);
+      observedActions.add(name);
+    }
+  }
+
+  assert.deepEqual(observedActions, new Set(approvedActionPins.keys()));
 });
 
 test("deployment installers do not require /dev/fd process substitution", async () => {
@@ -119,6 +149,7 @@ test("cPanel production pipeline backs up before invoking the atomic installer",
 test("CI deploys main only after all database and upgrade gates and uses pinned SSH identity", async () => {
   const source = await readFile(path.join(repositoryRoot, ".github", "workflows", "ci.yml"), "utf8");
   const provenanceIndex = source.indexOf("Verify merged pull request provenance");
+  const rebuildIndex = source.indexOf("Rebuild the verified release from the merged revision");
   const sshSecretIndex = source.indexOf("CPANEL_SSH_PRIVATE_KEY: ${{ secrets.CPANEL_SSH_PRIVATE_KEY }}");
 
   assert.match(
@@ -140,7 +171,6 @@ test("CI deploys main only after all database and upgrade gates and uses pinned 
   assert.match(source, /switch-cloudlinux-registration\.sh/u);
   assert.match(source, /MCAP_CLOUDLINUX_SELECTOR=\/usr\/sbin\/cloudlinux-selector/u);
   assert.match(source, /cloudlinux-registration\.integration\.sh/u);
-  assert.match(source, /sha256sum --check mcap-finance-linux-x64\.tgz\.sha256/u);
   assert.match(source, /SELF_REGISTRATION_ENABLED: 'false'/u);
   assert.match(source, /mcap_https_redirect_probe/u);
   assert.match(source, /redirect_status/u);
@@ -149,18 +179,38 @@ test("CI deploys main only after all database and upgrade gates and uses pinned 
   assert.match(source, /mcap_operational_alert_active/u);
   assert.doesNotMatch(source, /group: production-database-operation/u);
   assert.match(source, /MCAP_PIPELINE_LOCK_WAIT_SECONDS=900/u);
-  assert.match(source, /actions\/checkout@11d5960a326750d5838078e36cf38b85af677262/u);
-  assert.match(source, /actions\/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020/u);
-  assert.match(source, /actions\/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02/u);
-  assert.match(source, /actions\/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093/u);
-  assert.match(
-    source,
-    /Create reproducible verified release[\s\S]*?Upload verified production release\s+if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'\s+uses: actions\/upload-artifact/u,
-  );
+  assert.match(source, /release_archive_sha256: \$\{\{ steps\.release\.outputs\.archive_sha256 \}\}/u);
+  assert.match(source, /release_manifest_sha256: \$\{\{ steps\.release\.outputs\.manifest_sha256 \}\}/u);
+  assert.match(source, /VERIFIED_ARCHIVE_SHA256: \$\{\{ needs\.verify\.outputs\.release_archive_sha256 \}\}/u);
+  assert.match(source, /VERIFIED_MANIFEST_SHA256: \$\{\{ needs\.verify\.outputs\.release_manifest_sha256 \}\}/u);
+  assert.match(source, /test "\$\{#VERIFIED_ARCHIVE_SHA256\}" -eq 64/u);
+  assert.match(source, /test "\$\{#VERIFIED_MANIFEST_SHA256\}" -eq 64/u);
+  assert.doesNotMatch(source, /Upload verified production release/u);
+  assert.doesNotMatch(source, /actions\/download-artifact/u);
   assert.match(source, /mariadb:10\.11\.11@sha256:96be0d3dfbeb07bc420e5fb8a6dc05c492676f1f89980a497a55e6fbbba3f1c4/u);
   assert.match(source, /mysql:8\.4\.11@sha256:b3b90af2a6552ae30c266fdb7d5dd55f3afb72404bb78d37fe8a23eb857fd3fb/u);
   assert.ok(provenanceIndex > 0, "production provenance verification must be present");
+  assert.ok(rebuildIndex > provenanceIndex, "the release must be rebuilt only after merge provenance is verified");
+  assert.ok(sshSecretIndex > rebuildIndex, "release reproduction must complete before production secrets are read");
   assert.ok(sshSecretIndex > provenanceIndex, "PR provenance must be verified before production secrets are read");
+});
+
+test("release packaging is shared by verification and deployment and emits only immutable digests", async () => {
+  const workflow = await readFile(path.join(repositoryRoot, ".github", "workflows", "ci.yml"), "utf8");
+  const packager = await readFile(
+    path.join(repositoryRoot, "scripts", "release", "package-release.sh"),
+    "utf8",
+  );
+
+  assert.equal(workflow.match(/bash scripts\/release\/package-release\.sh/gmu)?.length, 2);
+  assert.match(packager, /set -Eeuo pipefail/u);
+  assert.match(packager, /SOURCE_DATE_EPOCH/u);
+  assert.match(packager, /tar --sort=name/u);
+  assert.match(packager, /gzip -n -9/u);
+  assert.match(packager, /verify-release\.mjs/u);
+  assert.match(packager, /sha256sum --check/u);
+  assert.match(packager, /archive_sha256=%s\\nmanifest_sha256=%s/u);
+  assert.doesNotMatch(packager, /rm\s+-rf/u);
 });
 
 test("production runtime smoke test supplies every required security setting", async () => {
@@ -252,10 +302,10 @@ test("scheduled production DR stores immutable offsite recovery points and resto
   assert.doesNotMatch(source, /group: production-database-operation/u);
   assert.match(source, /MCAP_PIPELINE_LOCK_WAIT_SECONDS=900/u);
   assert.match(source, /actions: read/u);
-  assert.match(source, /actions\/checkout@11d5960a326750d5838078e36cf38b85af677262/u);
-  assert.match(source, /actions\/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020/u);
-  assert.match(source, /actions\/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02/u);
-  assert.match(source, /actions\/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093/u);
+  assert.match(source, /actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1/u);
+  assert.match(source, /actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020/u);
+  assert.match(source, /actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/u);
+  assert.match(source, /actions\/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c/u);
   assert.match(source, /deploy\/ssh\/ifastnet_known_hosts/u);
   assert.match(source, /secrets\.CPANEL_SSH_PRIVATE_KEY/u);
   assert.match(source, /secrets\.BACKUP_ENCRYPTION_PASSPHRASE/u);
