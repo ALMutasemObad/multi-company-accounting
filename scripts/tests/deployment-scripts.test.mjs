@@ -125,6 +125,7 @@ test("CI deploys main only after all database and upgrade gates and uses pinned 
     source,
     /deploy-production:[\s\S]*needs: \[hosting-compatibility, migration-upgrade-compatibility, verify\]/u,
   );
+  assert.match(source, /on:\s+push:\s+branches: \[main\]\s+pull_request:/u);
   assert.match(source, /github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/u);
   assert.match(source, /cancel-in-progress: \$\{\{ github\.ref != 'refs\/heads\/main' \}\}/u);
   assert.match(source, /pull-requests: read/u);
