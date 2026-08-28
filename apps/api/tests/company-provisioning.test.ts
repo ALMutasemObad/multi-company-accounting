@@ -1,12 +1,12 @@
 import type { PrismaClient } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
-import { CompanyProvisioningService } from '../src/platform/company-provisioning-service.js';
+import { createCompanyProvisioningService } from '../src/composition/create-company-provisioning-service.js';
 
 describe('company provisioning input preparation', () => {
   it('removes the plaintext password before strict prepared-input validation', async () => {
     const transaction = vi.fn().mockResolvedValue({ status: 'accepted' });
     const prisma = { $transaction: transaction } as unknown as PrismaClient;
-    const service = new CompanyProvisioningService(prisma);
+    const service = createCompanyProvisioningService(prisma);
 
     await expect(service.provision({
       organizationCode: 'E2E_ORG',

@@ -9,21 +9,26 @@ import { AuthError, type AuthService } from './auth/auth-service.js';
 import { createAuthRouter } from './auth/auth-router.js';
 import type { UserService } from './users/user-service.js';
 import { createUserRouter } from './users/user-router.js';
+import type { WorkforceAccessService } from './workforce-access/workforce-access-service.js';
 import type { FiscalService } from './fiscal/fiscal-service.js';
+import type { FinancialCloseService } from './fiscal/financial-close-service.js';
 import { createFiscalRouter } from './fiscal/fiscal-router.js';
 import type { AccountService } from './accounts/account-service.js';
 import { createAccountRouter } from './accounts/account-router.js';
 import type { ManualJournalService } from './journals/manual-journal-service.js';
 import { createManualJournalRouter } from './journals/manual-journal-router.js';
-import type { ReceiptReferenceService } from './receipts/reference-service.js';
-import { createReceiptReferenceRouter } from './receipts/reference-router.js';
+import type { CustomerService } from './sales/customer-service.js';
+import { createCustomerRouter } from './sales/customer-router.js';
 import type { ReceiptService } from './receipts/receipt-service.js';
 import { createReceiptRouter } from './receipts/receipt-router.js';
-import type { SupplierReferenceService } from './suppliers/supplier-service.js';
+import type { SupplierService } from './suppliers/supplier-service.js';
 import { createSupplierRouter } from './suppliers/supplier-router.js';
 import type { PaymentService } from './payments/payment-service.js';
 import { createPaymentRouter } from './payments/payment-router.js';
 import type { ReportService } from './reports/report-service.js';
+import type { CashFlowService } from './reports/cash-flow-service.js';
+import type { TaxSummaryService } from './reports/tax-summary-service.js';
+import type { CostCenterActivityService } from './reports/cost-center-activity-service.js';
 import { createReportRouter } from './reports/report-router.js';
 import type { CompanyService } from './companies/company-service.js';
 import { createCompanyRouter } from './companies/company-router.js';
@@ -38,7 +43,13 @@ import { createPurchaseInvoiceRouter } from './purchases/purchase-invoice-router
 import type { SecurityEventService } from './security/security-event-service.js';
 import { createSecurityEventRouter } from './security/security-event-router.js';
 import type { ReadinessCheck } from './operations/readiness-service.js';
-import { createRateLimiter } from './operations/rate-limit.js';
+import {
+  createRateLimiter,
+  credentialOrNetworkRateLimitIdentity,
+  networkRateLimitIdentity,
+  sessionOrNetworkRateLimitIdentity,
+  type RateLimitStore,
+} from './operations/rate-limit.js';
 import { logEvent, requestLogger } from './operations/logger.js';
 import { operationalMetrics, type OperationalMetrics } from './operations/metrics.js';
 import {
@@ -70,6 +81,25 @@ import type { InventoryCatalogService } from './inventory/inventory-catalog-serv
 import { createInventoryCatalogRouter } from './inventory/inventory-catalog-router.js';
 import type { InventoryMovementService } from './inventory/inventory-movement-service.js';
 import { createInventoryMovementRouter } from './inventory/inventory-movement-router.js';
+import type { BankReconciliationService } from './treasury/reconciliation/reconciliation-service.js';
+import { createBankReconciliationRouter } from './treasury/reconciliation/reconciliation-router.js';
+import { BankReconciliationRolloutPolicy } from './treasury/reconciliation/reconciliation-rollout.js';
+import type { PosService } from './pos/pos-service.js';
+import { createPosRouter } from './pos/pos-router.js';
+import type { ApprovalService } from './approvals/approval-service.js';
+import { createApprovalRouter } from './approvals/approval-router.js';
+import type { ProfessionalProjectService } from './projects/professional-project-service.js';
+import { createProfessionalProjectRouter } from './projects/professional-project-router.js';
+import type { ProfessionalProjectPlanningService } from './projects/professional-project-planning-service.js';
+import { createProfessionalProjectPlanningRouter } from './projects/professional-project-planning-router.js';
+import type { ProfessionalBillingService } from './projects/professional-billing-service.js';
+import { createProfessionalBillingRouter } from './projects/professional-billing-router.js';
+import type { ProfessionalProjectAccessService } from './projects/professional-project-access-service.js';
+import { createProfessionalProjectAccessRouter } from './projects/professional-project-access-router.js';
+import type { HrService } from './hr/hr-service.js';
+import { createHrRouter } from './hr/hr-router.js';
+import type { PlatformOperationsService } from './platform-operations/platform-operations-service.js';
+import { createPlatformOperationsRouter } from './platform-operations/platform-operations-router.js';
 
 type ClientRequestProblem = {
   status: number;
@@ -110,13 +140,64 @@ function clientRequestProblem(error: unknown): ClientRequestProblem | undefined 
   return undefined;
 }
 
-export function createApp(config: AppConfig, services: { readiness?: ReadinessCheck; metrics?: OperationalMetrics; auth?: AuthService; registration?: RegistrationService; passwordReset?: PasswordResetService; users?: UserService; companies?: CompanyService; printing?: PrintService; audit?: AuditService; security?: SecurityEventService; fiscal?: FiscalService; accounts?: AccountService; journals?: ManualJournalService; receiptReferences?: ReceiptReferenceService; treasury?: TreasuryService; inventory?: InventoryService; inventoryCatalog?: InventoryCatalogService; inventoryMovements?: InventoryMovementService; receipts?: ReceiptService; suppliers?: SupplierReferenceService; payments?: PaymentService; reports?: ReportService; taxes?: TaxService; salesInvoices?: SalesInvoiceService; purchaseInvoices?: PurchaseInvoiceService; dataImports?: DataImportService } = {}) {
+export type AppServices = {
+  readiness?: ReadinessCheck;
+  metrics?: OperationalMetrics;
+  sensitiveRateLimits?: RateLimitStore;
+  auth?: AuthService;
+  registration?: RegistrationService;
+  passwordReset?: PasswordResetService;
+  users?: UserService;
+  workforceAccess?: WorkforceAccessService;
+  platformOperations?: PlatformOperationsService;
+  companies?: CompanyService;
+  printing?: PrintService;
+  audit?: AuditService;
+  security?: SecurityEventService;
+  fiscal?: FiscalService;
+  financialClose?: FinancialCloseService;
+  approvals?: ApprovalService;
+  professionalProjects?: ProfessionalProjectService;
+  professionalProjectPlanning?: ProfessionalProjectPlanningService;
+  professionalBilling?: ProfessionalBillingService;
+  professionalProjectAccess?: ProfessionalProjectAccessService;
+  hr?: HrService;
+  accounts?: AccountService;
+  journals?: ManualJournalService;
+  customers?: CustomerService;
+  treasury?: TreasuryService;
+  bankReconciliation?: BankReconciliationService;
+  inventory?: InventoryService;
+  inventoryCatalog?: InventoryCatalogService;
+  inventoryMovements?: InventoryMovementService;
+  receipts?: ReceiptService;
+  suppliers?: SupplierService;
+  payments?: PaymentService;
+  reports?: ReportService;
+  cashFlow?: CashFlowService;
+  taxSummary?: TaxSummaryService;
+  costCenterActivity?: CostCenterActivityService;
+  taxes?: TaxService;
+  salesInvoices?: SalesInvoiceService;
+  purchaseInvoices?: PurchaseInvoiceService;
+  dataImports?: DataImportService;
+  pos?: PosService;
+};
+
+export function createApp(config: AppConfig, services: AppServices = {}) {
+  if (config.NODE_ENV === 'production' && !services.sensitiveRateLimits) {
+    throw new Error('A shared security-sensitive rate-limit store is required in production');
+  }
   const app = express();
   const metrics = services.metrics ?? operationalMetrics;
 
   app.disable('x-powered-by');
   if (config.TRUST_PROXY) app.set('trust proxy', 1);
   app.use(helmet());
+  app.use((_request, response, next) => {
+    response.setHeader('Permissions-Policy', 'camera=(), geolocation=(), microphone=(), payment=(), usb=()');
+    next();
+  });
   app.use(cors({ origin: config.WEB_ORIGIN, credentials: true }));
   app.use(requestLogger(config.LOG_REQUESTS ?? false));
   app.use(requestContextMiddleware({
@@ -175,25 +256,86 @@ export function createApp(config: AppConfig, services: { readiness?: ReadinessCh
   app.get('/ready', ready);
 
   const windowMs = config.RATE_LIMIT_WINDOW_MS ?? 60_000;
-  app.use('/api/v1', createRateLimiter({ scope: 'api', windowMs, max: config.RATE_LIMIT_MAX ?? 300 }));
-  app.use('/api/v1/auth/csrf', createRateLimiter({ scope: 'csrf', windowMs, max: config.AUTH_RATE_LIMIT_MAX ?? 20 }));
-  app.use('/api/v1/auth/login', createRateLimiter({ scope: 'login', windowMs, max: config.AUTH_RATE_LIMIT_MAX ?? 20 }));
-  const registrationLimiter = createRateLimiter({ scope: 'registration', windowMs, max: config.REGISTRATION_RATE_LIMIT_MAX ?? 5 });
-  app.use('/api/v1/auth/register', (request, response, next) => request.method === 'GET' ? next() : registrationLimiter(request, response, next));
-  app.use('/api/v1/auth/password', createRateLimiter({ scope: 'password-reset', windowMs, max: config.PASSWORD_RESET_RATE_LIMIT_MAX ?? 5 }));
+  app.use('/api/v1', (_request, response, next) => {
+    response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('Pragma', 'no-cache');
+    response.setHeader('Expires', '0');
+    next();
+  });
+  const networkMultiplier = config.RATE_LIMIT_NETWORK_MULTIPLIER ?? 10;
+  const generalMax = config.RATE_LIMIT_MAX ?? 300;
+  app.use('/api/v1', createRateLimiter({
+    scope: 'api-network',
+    windowMs,
+    max: generalMax * networkMultiplier,
+    metrics,
+  }));
+  app.use('/api/v1', createRateLimiter({
+    scope: 'api-session',
+    windowMs,
+    max: generalMax,
+    identity: sessionOrNetworkRateLimitIdentity,
+    metrics,
+  }));
+  const sensitiveLimiter = (scope: string, max: number, identity = networkRateLimitIdentity) => createRateLimiter({
+    scope,
+    windowMs,
+    max,
+    identity,
+    ...(services.sensitiveRateLimits ? { store: services.sensitiveRateLimits } : {}),
+    metrics,
+  });
+  const sensitivePair = (scope: string, principalMax: number) => [
+    sensitiveLimiter(
+      `${scope}-network`,
+      principalMax * networkMultiplier,
+    ),
+    sensitiveLimiter(`${scope}-principal`, principalMax, credentialOrNetworkRateLimitIdentity),
+  ] as const;
+  app.get(
+    '/api/v1/auth/csrf',
+    sensitiveLimiter(
+      'csrf-network',
+      (config.AUTH_RATE_LIMIT_MAX ?? 20) * networkMultiplier,
+    ),
+  );
+  app.post('/api/v1/auth/login', ...sensitivePair('login', config.AUTH_RATE_LIMIT_MAX ?? 20));
+  const registrationLimiters = sensitivePair('registration', config.REGISTRATION_RATE_LIMIT_MAX ?? 5);
+  app.post('/api/v1/auth/register', ...registrationLimiters);
+  app.post('/api/v1/auth/register/resend', ...registrationLimiters);
+  app.post('/api/v1/auth/register/verify', ...registrationLimiters);
+  const passwordResetLimiters = sensitivePair('password-reset', config.PASSWORD_RESET_RATE_LIMIT_MAX ?? 5);
+  app.post('/api/v1/auth/password/forgot', ...passwordResetLimiters);
+  app.post('/api/v1/auth/password/reset', ...passwordResetLimiters);
   if (services.auth) app.use('/api/v1/auth', createAuthRouter(services.auth, config.SESSION_COOKIE_SECURE));
   if (services.auth && services.registration) app.use('/api/v1/auth/register', createRegistrationRouter(services.auth, services.registration));
   if (services.auth && services.passwordReset) app.use('/api/v1/auth/password', createPasswordResetRouter(services.auth, services.passwordReset));
-  if (services.auth && services.users) app.use('/api/v1', createUserRouter(services.auth, services.users));
+  if (services.auth && services.platformOperations) app.use('/api/v1', createPlatformOperationsRouter(services.auth, services.platformOperations));
+  if (services.auth && services.users && services.workforceAccess) app.use('/api/v1', createUserRouter(services.auth, services.users, services.workforceAccess));
   if (services.auth && services.companies) app.use('/api/v1', createCompanyRouter(services.auth, services.companies));
   if (services.auth && services.printing) app.use('/api/v1', createPrintRouter(services.auth, services.printing));
   if (services.auth && services.audit) app.use('/api/v1', createAuditRouter(services.auth, services.audit));
   if (services.auth && services.security) app.use('/api/v1', createSecurityEventRouter(services.auth, services.security));
-  if (services.auth && services.fiscal) app.use('/api/v1', createFiscalRouter(services.auth, services.fiscal));
+  if (services.auth && services.fiscal) app.use('/api/v1', createFiscalRouter(services.auth, services.fiscal, services.financialClose));
+  if (services.auth && services.approvals) app.use('/api/v1', createApprovalRouter(services.auth, services.approvals));
+  if (services.auth && services.professionalProjects) app.use('/api/v1', createProfessionalProjectRouter(services.auth, services.professionalProjects));
+  if (services.auth && services.professionalProjectPlanning) app.use('/api/v1', createProfessionalProjectPlanningRouter(services.auth, services.professionalProjectPlanning));
+  if (services.auth && services.professionalBilling) app.use('/api/v1', createProfessionalBillingRouter(services.auth, services.professionalBilling));
+  if (services.auth && services.professionalProjectAccess) app.use('/api/v1', createProfessionalProjectAccessRouter(services.auth, services.professionalProjectAccess));
+  if (services.auth && services.hr) app.use('/api/v1', createHrRouter(services.auth, services.hr));
   if (services.auth && services.accounts) app.use('/api/v1', createAccountRouter(services.auth, services.accounts));
   if (services.auth && services.journals) app.use('/api/v1', createManualJournalRouter(services.auth, services.journals));
-  if (services.auth && services.receiptReferences) app.use('/api/v1', createReceiptReferenceRouter(services.auth, services.receiptReferences));
+  if (services.auth && services.customers) app.use('/api/v1', createCustomerRouter(services.auth, services.customers));
   if (services.auth && services.treasury) app.use('/api/v1', createTreasuryRouter(services.auth, services.treasury));
+  if (services.auth && services.bankReconciliation) app.use('/api/v1', createBankReconciliationRouter(
+    services.auth,
+    services.bankReconciliation,
+    new BankReconciliationRolloutPolicy(
+      config.BANK_RECONCILIATION_ENABLED ?? false,
+      config.BANK_RECONCILIATION_COMPANY_IDS ?? '',
+      config.BANK_RECONCILIATION_ROLLOUT_STAGE ?? 'OFF',
+    ),
+  ));
   if (services.auth && services.inventory) app.use('/api/v1', createInventoryRouter(services.auth, services.inventory));
   if (services.auth && services.inventoryCatalog) app.use('/api/v1', createInventoryCatalogRouter(services.auth, services.inventoryCatalog));
   if (services.auth && services.inventoryMovements) app.use('/api/v1', createInventoryMovementRouter(services.auth, services.inventoryMovements));
@@ -203,8 +345,9 @@ export function createApp(config: AppConfig, services: { readiness?: ReadinessCh
   if (services.auth && services.taxes) app.use('/api/v1', createTaxRouter(services.auth, services.taxes));
   if (services.auth && services.salesInvoices) app.use('/api/v1', createSalesInvoiceRouter(services.auth, services.salesInvoices));
   if (services.auth && services.purchaseInvoices) app.use('/api/v1', createPurchaseInvoiceRouter(services.auth, services.purchaseInvoices));
-  if (services.auth && services.reports) app.use('/api/v1', createReportRouter(services.auth, services.reports));
+  if (services.auth && services.reports) app.use('/api/v1', createReportRouter(services.auth, services.reports, services.cashFlow, services.taxSummary, services.costCenterActivity));
   if (services.auth && services.dataImports) app.use('/api/v1', createDataImportRouter(services.auth, services.dataImports));
+  if (services.auth && services.pos) app.use('/api/v1', createPosRouter(services.auth, services.pos));
 
   if (config.NODE_ENV === 'production' || config.SERVE_WEB_ASSETS) {
     const webRoot = fileURLToPath(new URL('../../web/dist/', import.meta.url));

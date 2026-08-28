@@ -1,6 +1,6 @@
-import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { storageKey } from "../branding";
-import { createTranslator, type Locale, localeDetails, resolveLocale, setActiveLocale, supportedLocales } from "./core";
+import { createTranslator, type Locale, loadLocale, localeDetails, resolveLocale, setActiveLocale, supportedLocales } from "./core";
 
 type I18nContextValue = {
   locale: Locale;
@@ -21,8 +21,20 @@ function initialLocale() {
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [locale, updateLocale] = useState<Locale>(initialLocale);
+  const localeRequest = useRef(0);
   const details = localeDetails[locale];
   setActiveLocale(locale);
+
+  const selectLocale = useCallback((next: Locale) => {
+    const request = ++localeRequest.current;
+    void loadLocale(next).then(() => {
+      if (request !== localeRequest.current) return;
+      window.localStorage.setItem(storageKey("locale"), next);
+      updateLocale(next);
+    }).catch((error: unknown) => {
+      console.error("locale_dictionary_load_failed", error instanceof Error ? error.name : "UNKNOWN_ERROR");
+    });
+  }, []);
 
   useEffect(() => {
     document.documentElement.lang = locale;
@@ -33,14 +45,11 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     locale,
     dir: details.dir,
     intlLocale: details.intl,
-    setLocale: (next) => {
-      window.localStorage.setItem(storageKey("locale"), next);
-      updateLocale(next);
-    },
+    setLocale: selectLocale,
     t: createTranslator(locale),
     formatNumber: (number) => number.toLocaleString(details.intl),
     formatDateTime: (date) => new Date(date).toLocaleString(details.intl),
-  }), [details.dir, details.intl, locale]);
+  }), [details.dir, details.intl, locale, selectLocale]);
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }

@@ -7,8 +7,10 @@ import {
 const postingAccount = (companyId: bigint, id = 91n) => ({
   id,
   companyId,
+  code: "110100",
   isActive: true,
   allowsPosting: true,
+  accountType: { class: "ASSET" },
   _count: { children: 0 },
 });
 

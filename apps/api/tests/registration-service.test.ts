@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { PrismaClient } from '@prisma/client';
 import type { OutboxAppender } from '../src/outbox/outbox.js';
-import type { CompanyProvisioningService } from '../src/platform/company-provisioning-service.js';
+import type { CompanyProvisioningPort } from '../src/platform/company-provisioning-ports.js';
 import { RegistrationService } from '../src/registration/registration-service.js';
+import type { RegistrationOwnerPorts } from '../src/registration/registration-owner-ports.js';
 
 const input = {
   email: ' owner@example.com ',
@@ -20,8 +21,6 @@ function fixture(existingUser = false) {
   const events: unknown[] = [];
   const upsert = vi.fn().mockResolvedValue({ id: 9n, publicId: 'registration-public-id', deliveryGeneration: 4 });
   const tx = {
-    currency: { findUnique: vi.fn().mockResolvedValue({ isActive: true }) },
-    user: { findUnique: vi.fn().mockResolvedValue(existingUser ? { id: 7n } : null) },
     registrationRequest: { upsert },
     registrationEvent: { create: vi.fn((event) => { events.push(event); return Promise.resolve(event); }) },
   };
@@ -30,8 +29,20 @@ function fixture(existingUser = false) {
     $transaction: vi.fn((callback: (client: typeof tx) => unknown) => callback(tx)),
   } as unknown as PrismaClient;
   const outbox: OutboxAppender = { append: vi.fn().mockResolvedValue({ eventId: 'event-id' }) };
+  const owners: RegistrationOwnerPorts = {
+    tenant: {
+      listGlobalCurrencies: vi.fn().mockResolvedValue([]),
+      isActiveGlobalCurrency: vi.fn().mockResolvedValue(true),
+    },
+    identity: { identityExists: vi.fn().mockResolvedValue(existingUser) },
+    accounting: {
+      listChartTemplates: vi.fn().mockReturnValue([]),
+      isSupportedChartTemplate: vi.fn().mockReturnValue(true),
+    },
+    security: { recordCompletion: vi.fn().mockResolvedValue(undefined) },
+  };
   const passwordHasher = vi.fn().mockResolvedValue('$argon2id$prepared-hash');
-  const service = new RegistrationService(prisma, {} as CompanyProvisioningService, outbox, {
+  const service = new RegistrationService(prisma, {} as CompanyProvisioningPort, outbox, owners, {
     auditPepper: 'unit-test-registration-audit-pepper-12345',
     passwordHasher,
     now: () => new Date('2026-08-22T01:00:00.000Z'),

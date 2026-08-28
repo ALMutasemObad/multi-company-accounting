@@ -5,7 +5,7 @@ import { createApp } from "../src/app.js";
 import { AuthService } from "../src/auth/auth-service.js";
 import { PrismaAuthStore } from "../src/auth/prisma-auth-store.js";
 import { createDatabase } from "../src/database.js";
-import { SupplierReferenceService } from "../src/suppliers/supplier-service.js";
+import { SupplierService } from "../src/suppliers/supplier-service.js";
 import {
   PaymentService,
   type PaymentInput,
@@ -230,7 +230,7 @@ describe.runIf(enabled)(
       periodId = year.periods[0]!.id;
       const treasury = new TreasuryService(prisma!);
       paymentService = new PaymentService(prisma!, treasury);
-      const references = new SupplierReferenceService(prisma!);
+      const references = new SupplierService(prisma!);
       const auth = new AuthService(
         new PrismaAuthStore(prisma!),
         { verify },

@@ -34,4 +34,43 @@ describe('outbox retry policy', () => {
     expect(metrics.renderPrometheus()).toContain('mcap_outbox_oldest_lag_seconds 0');
     await expect(worker.stop()).resolves.toBeUndefined();
   });
+
+  it('releases a claim when a handler ignores cancellation and exceeds its deadline', async () => {
+    const event = {
+      id: 1n,
+      eventId: '00000000-0000-4000-8000-000000000001',
+      eventType: 'NeverCompletes',
+      schemaVersion: 1,
+      aggregateType: 'TEST',
+      aggregateId: '1',
+      companyId: 1n,
+      payload: {},
+      occurredAt: new Date(),
+      attemptCount: 0,
+      maxAttempts: 3,
+    };
+    const outboxEvent = {
+      findFirst: vi.fn().mockResolvedValue(event),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+    };
+    const worker = new OutboxWorker(
+      { outboxEvent } as unknown as PrismaClient,
+      new Map([['NeverCompletes', async () => new Promise<void>(() => undefined)]]),
+      {
+        pollIntervalMs: 60_000,
+        leaseMs: 1_000,
+        batchSize: 1,
+        baseBackoffMs: 10,
+        handlerTimeoutMs: 10,
+        retentionDays: 30,
+        random: () => 0.5,
+      },
+    );
+
+    await expect(worker.runOnce()).resolves.toBe(1);
+    expect(outboxEvent.updateMany).toHaveBeenCalledTimes(2);
+    expect(outboxEvent.updateMany.mock.calls[1]?.[0]).toMatchObject({
+      data: { status: 'PENDING', lastErrorCode: 'OUTBOX_HANDLER_TIMEOUT', lockedAt: null, lockToken: null },
+    });
+  });
 });

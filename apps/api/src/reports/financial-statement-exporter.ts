@@ -66,6 +66,126 @@ export function incomeStatementTable(report: ExportReport & { range: { dateFrom:
   return rows;
 }
 
+export function indirectCashFlowTable(report: {
+  company: { name: string };
+  baseCurrency: { code: string; nameAr: string };
+  range: { dateFrom: string; dateTo: string };
+  sections: {
+    operating: { netIncome: string; adjustments: Array<{ code: string; nameAr: string; amount: string }>; adjustmentsTotal: string; workingCapital: Array<{ code: string; nameAr: string; amount: string }>; workingCapitalTotal: string; total: string };
+    investing: { rows: Array<{ code: string; nameAr: string; amount: string }>; total: string };
+    financing: { rows: Array<{ code: string; nameAr: string; amount: string }>; total: string };
+  };
+  cash: { opening: string; calculatedNetChange: string; closing: string; difference: string; reconciled: boolean };
+}) {
+  const rows: Cell[][] = [
+    [{ value: report.company.name, style: 1 }],
+    [{ value: "قائمة التدفق النقدي بالطريقة غير المباشرة", style: 1 }],
+    [{ value: `من ${report.range.dateFrom} إلى ${report.range.dateTo}` }, { value: `العملة: ${report.baseCurrency.code}` }],
+    [{ value: "البند", style: 2 }, { value: "المبلغ", style: 2 }],
+    [{ value: "التدفقات من الأنشطة التشغيلية", style: 3 }],
+    [{ value: "صافي الربح أو الخسارة" }, { value: report.sections.operating.netIncome, numeric: true, style: 4 }],
+    ...report.sections.operating.adjustments.map((row) => [{ value: `${row.code} - ${row.nameAr}` }, { value: row.amount, numeric: true, style: 4 }]),
+    [{ value: "إجمالي التعديلات غير النقدية", style: 3 }, { value: report.sections.operating.adjustmentsTotal, numeric: true, style: 5 }],
+    ...report.sections.operating.workingCapital.map((row) => [{ value: `${row.code} - ${row.nameAr}` }, { value: row.amount, numeric: true, style: 4 }]),
+    [{ value: "إجمالي تغيرات رأس المال العامل", style: 3 }, { value: report.sections.operating.workingCapitalTotal, numeric: true, style: 5 }],
+    [{ value: "صافي النقد من الأنشطة التشغيلية", style: 3 }, { value: report.sections.operating.total, numeric: true, style: 5 }],
+    [{ value: "التدفقات من الأنشطة الاستثمارية", style: 3 }],
+    ...report.sections.investing.rows.map((row) => [{ value: `${row.code} - ${row.nameAr}` }, { value: row.amount, numeric: true, style: 4 }]),
+    [{ value: "صافي النقد من الأنشطة الاستثمارية", style: 3 }, { value: report.sections.investing.total, numeric: true, style: 5 }],
+    [{ value: "التدفقات من الأنشطة التمويلية", style: 3 }],
+    ...report.sections.financing.rows.map((row) => [{ value: `${row.code} - ${row.nameAr}` }, { value: row.amount, numeric: true, style: 4 }]),
+    [{ value: "صافي النقد من الأنشطة التمويلية", style: 3 }, { value: report.sections.financing.total, numeric: true, style: 5 }],
+    [{ value: "النقد أول الفترة", style: 3 }, { value: report.cash.opening, numeric: true, style: 5 }],
+    [{ value: "صافي التغير المحسوب", style: 3 }, { value: report.cash.calculatedNetChange, numeric: true, style: 5 }],
+    [{ value: "النقد آخر الفترة", style: 3 }, { value: report.cash.closing, numeric: true, style: 5 }],
+    [{ value: report.cash.reconciled ? "مطابقة الرصيد النقدي: متطابق" : "مطابقة الرصيد النقدي: تحتاج مراجعة", style: 3 }, { value: report.cash.difference, numeric: true, style: 5 }],
+  ];
+  return rows;
+}
+
+export function taxSummaryTable(report: {
+  company: { name: string };
+  baseCurrency: { code: string; nameAr: string };
+  range: { dateFrom: string; dateTo: string };
+  filter: { status: string | null; basis: "LEDGER" | "STATUS_FILTER" };
+  totals: { outputTaxable: string; outputTax: string; inputTaxable: string; inputTax: string; netTaxDue: string; documentCount: number };
+  rows: Array<{ usage: string; documentType: string; status: string; taxCode: string | null; taxNameAr: string | null; rate: string; documentCount: number; taxableBase: string; taxBase: string }>;
+}) {
+  const usage = (value: string) => value === "OUTPUT" ? "مخرجات" : "مدخلات";
+  const status = (value: string) => ({ POSTED: "مرحل", REVERSED: "عكس", DRAFT: "مسودة", CANCELLED: "ملغي" }[value] ?? value);
+  const documentType = (value: string) => ({ SALES_INVOICE: "فاتورة مبيعات", SALES_CREDIT_NOTE: "إشعار دائن مبيعات", PURCHASE_INVOICE: "فاتورة مشتريات", PURCHASE_DEBIT_NOTE: "إشعار مدين مشتريات" }[value] ?? value);
+  return [
+    [{ value: report.company.name, style: 1 }],
+    [{ value: "ملخص الضريبة", style: 1 }],
+    [{ value: `من ${report.range.dateFrom} إلى ${report.range.dateTo}` }, { value: `العملة: ${report.baseCurrency.code}` }],
+    [{ value: report.filter.basis === "LEDGER" ? "الأساس: الأثر المرحل والعكس" : `الحالة: ${status(report.filter.status ?? "")}` }],
+    ["النوع", "المستند", "الحالة", "الضريبة", "النسبة", "المستندات", "الخاضع بعملة الأساس", "الضريبة بعملة الأساس"].map((value) => ({ value, style: 2 })),
+    ...report.rows.map((row) => [
+      { value: usage(row.usage) },
+      { value: documentType(row.documentType) },
+      { value: status(row.status) },
+      { value: row.taxCode ? `${row.taxCode} - ${row.taxNameAr ?? ""}` : "بدون ضريبة" },
+      { value: row.rate, numeric: true, style: 4 },
+      { value: String(row.documentCount), numeric: true, style: 4 },
+      { value: row.taxableBase, numeric: true, style: 4 },
+      { value: row.taxBase, numeric: true, style: 4 },
+    ]),
+    [{ value: "إجمالي ضريبة المخرجات", style: 3 }, { value: report.totals.outputTax, numeric: true, style: 5 }],
+    [{ value: "إجمالي ضريبة المدخلات", style: 3 }, { value: report.totals.inputTax, numeric: true, style: 5 }],
+    [{ value: "صافي الضريبة المستحقة", style: 3 }, { value: report.totals.netTaxDue, numeric: true, style: 5 }],
+  ] satisfies Cell[][];
+}
+
+export function costCenterActivityTable(report: {
+  company: { name: string };
+  baseCurrency: { code: string; nameAr: string };
+  range: { dateFrom: string; dateTo: string };
+  data: Array<{
+    costCenter: { code: string; nameAr: string };
+    accounts: Array<{ code: string; nameAr: string; movementLineCount: number; debit: string; credit: string; net: string }>;
+    totals: { movementLineCount: number; debit: string; credit: string; net: string };
+  }>;
+  totals: { costCenterCount: number; accountCount: number; movementLineCount: number; debit: string; credit: string; net: string };
+}) {
+  const rows: Cell[][] = [
+    [{ value: report.company.name, style: 1 }],
+    [{ value: "تقرير حركة مراكز التكلفة الفعلية", style: 1 }],
+    [{ value: `من ${report.range.dateFrom} إلى ${report.range.dateTo}` }, { value: `العملة: ${report.baseCurrency.code}` }],
+    ["رمز مركز التكلفة", "مركز التكلفة", "رمز الحساب", "الحساب", "عدد الحركات", "مدين", "دائن", "الصافي"].map((value) => ({ value, style: 2 })),
+  ];
+  for (const center of report.data) {
+    for (const account of center.accounts) rows.push([
+      { value: center.costCenter.code },
+      { value: center.costCenter.nameAr },
+      { value: account.code },
+      { value: account.nameAr },
+      { value: String(account.movementLineCount), numeric: true, style: 4 },
+      { value: account.debit, numeric: true, style: 4 },
+      { value: account.credit, numeric: true, style: 4 },
+      { value: account.net, numeric: true, style: 4 },
+    ]);
+    rows.push([
+      { value: `إجمالي ${center.costCenter.code} - ${center.costCenter.nameAr}`, style: 3 },
+      { value: "" }, { value: "" }, { value: "" },
+      { value: String(center.totals.movementLineCount), numeric: true, style: 5 },
+      { value: center.totals.debit, numeric: true, style: 5 },
+      { value: center.totals.credit, numeric: true, style: 5 },
+      { value: center.totals.net, numeric: true, style: 5 },
+    ]);
+  }
+  rows.push([
+    { value: "إجمالي الفترة", style: 3 },
+    { value: `${report.totals.costCenterCount} مركز` },
+    { value: `${report.totals.accountCount} حساب` },
+    { value: "" },
+    { value: String(report.totals.movementLineCount), numeric: true, style: 5 },
+    { value: report.totals.debit, numeric: true, style: 5 },
+    { value: report.totals.credit, numeric: true, style: 5 },
+    { value: report.totals.net, numeric: true, style: 5 },
+  ]);
+  return rows;
+}
+
 export function ledgerReportTable(report: {
   company: { name: string };
   baseCurrency: { code: string; nameAr: string };
@@ -110,7 +230,7 @@ export function tableToXlsx(rows: Cell[][], sheetName: string) {
     return cell.numeric && cell.value !== "" ? `<c r="${ref}" s="${cell.style ?? 0}" t="n"><v>${xml(cell.value)}</v></c>` : `<c r="${ref}" s="${cell.style ?? 0}" t="inlineStr"><is><t xml:space="preserve">${xml(cell.value)}</t></is></c>`;
   }).join("")}</row>`).join("");
   const columnCount = Math.max(1, ...rows.map((row) => row.length));
-  const columnWidths = columnCount === 7 ? [14, 20, 42, 16, 16, 18, 18] : [42, ...Array.from({ length: columnCount - 1 }, () => 18)];
+  const columnWidths = columnCount === 8 ? [16, 24, 16, 32, 14, 14, 22, 22] : columnCount === 7 ? [14, 20, 42, 16, 16, 18, 18] : columnCount === 2 ? [72, 20] : [42, ...Array.from({ length: columnCount - 1 }, () => 18)];
   const columns = columnWidths.map((width, index) => `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`).join("");
   const files: Record<string, string> = {
     "[Content_Types].xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`,
@@ -132,10 +252,10 @@ export function tableToPdf(rows: Cell[][], title: string, companyName: string): 
     const pageHeader = () => { pdf.rect(0, 0, 842, 75).fill("#173f34"); pdf.font("ArabicBold").fontSize(17).fillColor("#ffffff").text(arabicSafe(companyName), 36, 18, { width: 770, align: "right", features: ["rtla"] }); pdf.font("Arabic").fontSize(10).fillColor("#d6e7df").text(arabicSafe(title), 36, 47, { width: 770, align: "right", features: ["rtla"] }); pdf.y = 92; };
     pageHeader();
     const columnCount = Math.max(1, ...rows.map((row) => row.length));
-    const widths = columnCount === 7 ? [80, 100, 250, 80, 80, 90, 90] : [370, 100, 100, 100, 100];
+    const widths = columnCount === 8 ? [70, 115, 65, 140, 65, 65, 125, 125] : columnCount === 7 ? [80, 100, 250, 80, 80, 90, 90] : columnCount === 2 ? [600, 170] : [370, 100, 100, 100, 100];
     for (let rowIndex = 3; rowIndex < rows.length; rowIndex += 1) {
       if (pdf.y > 530) { pdf.addPage(); pageHeader(); }
-      const row = rows[rowIndex]!; const y = pdf.y; const isHeader = rowIndex === 3; const isSection = row[0]?.style === 3;
+      const row = rows[rowIndex]!; const y = pdf.y; const isHeader = row.length > 0 && row.every((cell) => cell.style === 2); const isSection = row[0]?.style === 3;
       if (isHeader) pdf.rect(36, y, 770, 24).fill("#173f34"); else if (isSection) pdf.rect(36, y, 770, 24).fill("#e8f1ed");
       let x = 36;
       for (let index = 0; index < widths.length; index += 1) {

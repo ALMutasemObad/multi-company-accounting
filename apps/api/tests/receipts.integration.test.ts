@@ -5,7 +5,8 @@ import { createApp } from "../src/app.js";
 import { AuthService } from "../src/auth/auth-service.js";
 import { PrismaAuthStore } from "../src/auth/prisma-auth-store.js";
 import { createDatabase } from "../src/database.js";
-import { ReceiptReferenceService } from "../src/receipts/reference-service.js";
+import { createCompanyService } from "../src/composition/create-company-service.js";
+import { CustomerService } from "../src/sales/customer-service.js";
 import {
   ReceiptService,
   type ReceiptInput,
@@ -245,7 +246,7 @@ describe.runIf(enabled)(
       periodId = year.periods[0]!.id;
       const treasury = new TreasuryService(prisma!);
       receiptService = new ReceiptService(prisma!, treasury);
-      const references = new ReceiptReferenceService(prisma!);
+      const customers = new CustomerService(prisma!);
       const auth = new AuthService(
         new PrismaAuthStore(prisma!),
         { verify },
@@ -261,7 +262,14 @@ describe.runIf(enabled)(
           SESSION_TTL_HOURS: 12,
           DATABASE_URL: databaseUrl,
         },
-        { auth, receiptReferences: references, treasury, receipts: receiptService, printing: new PrintService(prisma!) },
+        {
+          auth,
+          companies: createCompanyService(prisma!),
+          customers,
+          treasury,
+          receipts: receiptService,
+          printing: new PrintService(prisma!),
+        },
       );
       agent = request.agent(app);
       csrf = (await agent.get("/api/v1/auth/csrf")).body.csrfToken;

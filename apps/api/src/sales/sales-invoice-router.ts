@@ -33,7 +33,7 @@ export function createSalesInvoiceRouter(auth: AuthService, service: SalesInvoic
   router.get("/sales-invoices", async (request, response) => {
     const context = await authorize(request, "sales_invoices.view", false);
     const parsed = query.parse(request.query);
-    const result = await service.list(context, parsed as any);
+    const result = await service.list(context, parsed);
     response.json({ data: result.data.map(SalesInvoiceService.json), meta: { page: parsed.page, pageSize: parsed.pageSize, total: result.total, totalPages: Math.ceil(result.total / parsed.pageSize) } });
   });
 
@@ -73,7 +73,7 @@ export function createSalesInvoiceRouter(auth: AuthService, service: SalesInvoic
   router.get("/reports/receivables-aging", async (request, response) => {
     const context = await authorize(request, "reports.receivables.view", false);
     const parsed = z.object({ asOf: isoDate, customerId: id.optional() }).parse(request.query);
-    response.json(await service.receivablesAging(context, parsed as any));
+    response.json(await service.receivablesAging(context, parsed));
   });
 
   const errors: ErrorRequestHandler = (error, _request, response, next) => {

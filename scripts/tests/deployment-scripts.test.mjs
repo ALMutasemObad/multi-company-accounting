@@ -1,11 +1,23 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
+import { parseDocument } from "yaml";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const installers = ["install-release.sh", "install-cpanel-release.sh"];
+
+test("GitHub Actions workflows are valid YAML without duplicate keys", async () => {
+  const workflowDirectory = path.join(repositoryRoot, ".github", "workflows");
+  const workflowFiles = (await readdir(workflowDirectory)).filter((file) => /\.ya?ml$/u.test(file));
+
+  for (const workflowFile of workflowFiles) {
+    const source = await readFile(path.join(workflowDirectory, workflowFile), "utf8");
+    const document = parseDocument(source, { uniqueKeys: true });
+    assert.deepEqual(document.errors, [], `${workflowFile} must parse without YAML errors`);
+  }
+});
 
 test("deployment installers do not require /dev/fd process substitution", async () => {
   for (const installer of installers) {
@@ -49,6 +61,9 @@ test("CloudLinux registration switching recreates immutable release roots and re
   assert.doesNotMatch(switcher, /https:\/\/%\{HTTP_HOST\}/u);
   assert.match(switcher, /restore_passenger_config/u);
   assert.match(switcher, /chmod "\$config_mode"/u);
+  assert.match(switcher, /randomBytes\(48\)\.toString\("base64url"\)/u);
+  assert.match(switcher, /environment\.RATE_LIMIT_IDENTITY_SECRET/u);
+  assert.match(switcher, /validate_registered_environment "\$target_root" true/u);
   assert.doesNotMatch(switcher, /printf[^\n]*environment_json/u);
   assert.match(installer, /MCAP_CLOUDLINUX_SWITCHER/u);
   assert.match(installer, /activate_release "\$old_release" "\$release_dir"/u);
@@ -101,12 +116,16 @@ test("cPanel production pipeline backs up before invoking the atomic installer",
   assert.ok(installerIndex > backupIndex, "backup must complete before installation");
 });
 
-test("CI deploys main only after both database gates and uses pinned SSH identity", async () => {
+test("CI deploys main only after all database and upgrade gates and uses pinned SSH identity", async () => {
   const source = await readFile(path.join(repositoryRoot, ".github", "workflows", "ci.yml"), "utf8");
   const provenanceIndex = source.indexOf("Verify merged pull request provenance");
   const sshSecretIndex = source.indexOf("CPANEL_SSH_PRIVATE_KEY: ${{ secrets.CPANEL_SSH_PRIVATE_KEY }}");
 
-  assert.match(source, /deploy-production:[\s\S]*needs: \[hosting-compatibility, verify\]/u);
+  assert.match(
+    source,
+    /deploy-production:[\s\S]*needs: \[hosting-compatibility, migration-upgrade-compatibility, verify\]/u,
+  );
+  assert.match(source, /on:\s+push:\s+branches: \[main\]\s+pull_request:/u);
   assert.match(source, /github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/u);
   assert.match(source, /cancel-in-progress: \$\{\{ github\.ref != 'refs\/heads\/main' \}\}/u);
   assert.match(source, /pull-requests: read/u);
@@ -134,10 +153,23 @@ test("CI deploys main only after both database gates and uses pinned SSH identit
   assert.match(source, /actions\/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020/u);
   assert.match(source, /actions\/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02/u);
   assert.match(source, /actions\/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093/u);
+  assert.match(
+    source,
+    /Create reproducible verified release[\s\S]*?Upload verified production release\s+if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'\s+uses: actions\/upload-artifact/u,
+  );
   assert.match(source, /mariadb:10\.11\.11@sha256:96be0d3dfbeb07bc420e5fb8a6dc05c492676f1f89980a497a55e6fbbba3f1c4/u);
   assert.match(source, /mysql:8\.4\.11@sha256:b3b90af2a6552ae30c266fdb7d5dd55f3afb72404bb78d37fe8a23eb857fd3fb/u);
   assert.ok(provenanceIndex > 0, "production provenance verification must be present");
   assert.ok(sshSecretIndex > provenanceIndex, "PR provenance must be verified before production secrets are read");
+});
+
+test("production runtime smoke test supplies every required security setting", async () => {
+  const source = await readFile(path.join(repositoryRoot, ".github", "workflows", "ci.yml"), "utf8");
+
+  assert.match(
+    source,
+    /Smoke-test production runtime and graceful shutdown[\s\S]*?env:[\s\S]*?RATE_LIMIT_IDENTITY_SECRET: [^\r\n]{32,}[\s\S]*?run:/u,
+  );
 });
 
 test("production metrics monitor protects the scrape and surfaces recent or synthetic alerts", async () => {

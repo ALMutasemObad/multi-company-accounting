@@ -10,7 +10,8 @@ const validRange = (value: { dateFrom?: string | undefined; dateTo?: string | un
 const filters = z.object(filterShape).refine(validRange, { message: "dateFrom must be before or equal to dateTo" });
 const listQuery = z.object({ ...filterShape, page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(25) }).refine(validRange, { message: "dateFrom must be before or equal to dateTo" });
 const sid = (request: Request) => Object.fromEntries((request.headers.cookie ?? "").split(";").map((part) => part.trim().split("=", 2)).filter(([key, value]) => key && value)).sid;
-const serialize = (row: any) => ({ id: row.id.toString(), actor: { id: row.actor.id.toString(), name: row.actor.displayName, email: row.actor.emailNormalized }, action: row.action, entityType: row.entityType, entityId: row.entityId, details: row.details, createdAt: row.createdAt.toISOString() });
+type AuditRow = NonNullable<Awaited<ReturnType<AuditService["get"]>>>;
+const serialize = (row: AuditRow) => ({ id: row.id.toString(), actor: { id: row.actor.id.toString(), name: row.actor.displayName, email: row.actor.emailNormalized }, action: row.action, entityType: row.entityType, entityId: row.entityId, details: row.details, createdAt: row.createdAt.toISOString() });
 
 export function createAuditRouter(auth: AuthService, audit: AuditService) {
   const router = Router();

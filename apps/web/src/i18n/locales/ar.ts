@@ -1,10 +1,30 @@
 import { arPages } from "./ar-pages";
 import { arDomain } from "./ar-domain";
 import { arEvents } from "./ar-events";
+import { arReconciliation } from "./reconciliation";
+import { arFinancialClose } from "./financial-close";
+import { arCashFlow } from "./cash-flow";
+import { arTaxSummary } from "./tax-summary";
+import { arCostCenterActivity } from "./cost-center-activity";
+import { arPos } from "./pos";
+import { arApprovals } from "./approvals";
+import { arProfessionalProjects } from "./professional-projects";
+import { arHumanResources } from "./human-resources";
+import { arSystemHomePlatform } from "./system-home-platform";
 
 export const ar = {
   ...arDomain,
   ...arEvents,
+  ...arReconciliation,
+  ...arFinancialClose,
+  ...arCashFlow,
+  ...arTaxSummary,
+  ...arCostCenterActivity,
+  ...arPos,
+  ...arApprovals,
+  ...arProfessionalProjects,
+  ...arHumanResources,
+  ...arSystemHomePlatform,
   "language.label": "اللغة",
   "branding.name": "النظام المحاسبي متعدد الشركات",
   "branding.shortName": "منصة المحاسبة",

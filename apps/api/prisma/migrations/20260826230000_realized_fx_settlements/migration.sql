@@ -296,32 +296,50 @@ WHERE `original_base_amount` IS NULL
 DROP TEMPORARY TABLE `_settlement_base_balance_guard`;
 
 ALTER TABLE `receivable_items`
-  MODIFY `original_base_amount` DECIMAL(19,4) NOT NULL,
-  MODIFY `outstanding_base_amount` DECIMAL(19,4) NOT NULL,
+  MODIFY `original_base_amount` DECIMAL(19,4) NOT NULL DEFAULT 0.0000,
+  MODIFY `outstanding_base_amount` DECIMAL(19,4) NOT NULL DEFAULT 0.0000,
   ADD CONSTRAINT `receivable_items_base_amounts_chk` CHECK (
-    `original_base_amount` > 0
-    AND `outstanding_base_amount` >= 0
-    AND `outstanding_base_amount` <= `original_base_amount`
+    (`original_base_amount` = 0 AND `outstanding_base_amount` = 0)
+    OR (
+      `original_base_amount` > 0
+      AND `outstanding_base_amount` >= 0
+      AND `outstanding_base_amount` <= `original_base_amount`
+    )
   ),
   ADD CONSTRAINT `receivable_items_base_status_chk` CHECK (
-    (`status` = 'OPEN' AND `outstanding_base_amount` = `original_base_amount`)
-    OR (`status` = 'PARTIAL' AND `outstanding_base_amount` > 0 AND `outstanding_base_amount` < `original_base_amount`)
-    OR (`status` IN ('SETTLED', 'REVERSED') AND `outstanding_base_amount` = 0)
+    (`original_base_amount` = 0 AND `outstanding_base_amount` = 0)
+    OR (
+      (`status` = 'OPEN' AND `outstanding_base_amount` = `original_base_amount`)
+      OR (`status` = 'PARTIAL' AND `outstanding_base_amount` > 0 AND `outstanding_base_amount` < `original_base_amount`)
+      OR (`status` IN ('SETTLED', 'REVERSED') AND `outstanding_base_amount` = 0)
+    )
   );
 
 ALTER TABLE `payable_items`
-  MODIFY `original_base_amount` DECIMAL(19,4) NOT NULL,
-  MODIFY `outstanding_base_amount` DECIMAL(19,4) NOT NULL,
+  MODIFY `original_base_amount` DECIMAL(19,4) NOT NULL DEFAULT 0.0000,
+  MODIFY `outstanding_base_amount` DECIMAL(19,4) NOT NULL DEFAULT 0.0000,
   ADD CONSTRAINT `payable_items_base_amounts_chk` CHECK (
-    `original_base_amount` > 0
-    AND `outstanding_base_amount` >= 0
-    AND `outstanding_base_amount` <= `original_base_amount`
+    (`original_base_amount` = 0 AND `outstanding_base_amount` = 0)
+    OR (
+      `original_base_amount` > 0
+      AND `outstanding_base_amount` >= 0
+      AND `outstanding_base_amount` <= `original_base_amount`
+    )
   ),
   ADD CONSTRAINT `payable_items_base_status_chk` CHECK (
-    (`status` = 'OPEN' AND `outstanding_base_amount` = `original_base_amount`)
-    OR (`status` = 'PARTIAL' AND `outstanding_base_amount` > 0 AND `outstanding_base_amount` < `original_base_amount`)
-    OR (`status` IN ('SETTLED', 'REVERSED') AND `outstanding_base_amount` = 0)
+    (`original_base_amount` = 0 AND `outstanding_base_amount` = 0)
+    OR (
+      (`status` = 'OPEN' AND `outstanding_base_amount` = `original_base_amount`)
+      OR (`status` = 'PARTIAL' AND `outstanding_base_amount` > 0 AND `outstanding_base_amount` < `original_base_amount`)
+      OR (`status` IN ('SETTLED', 'REVERSED') AND `outstanding_base_amount` = 0)
+    )
   );
+
+-- A zero/zero pair is a bounded rolling-upgrade sentinel for writes made by
+-- the previous application while the target release is prepared. Current
+-- settlement owners initialize it from the immutable invoice base total under
+-- the same row lock before any new settlement write. Mixed or negative pairs
+-- remain impossible, and financial close treats the sentinel as unresolved.
 
 ALTER TABLE `receipt_allocations`
   ADD CONSTRAINT `receipt_allocations_fx_snapshot_chk` CHECK (

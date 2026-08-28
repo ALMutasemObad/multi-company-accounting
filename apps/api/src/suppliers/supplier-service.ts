@@ -1,13 +1,16 @@
-import { Prisma, type PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient, type SupplierAddress } from "@prisma/client";
+import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import { reserveMasterDataCode } from "../platform/master-data-code-service.js";
-import type { ActorContext } from "../users/user-service.js";
+import type { ActorContext } from "../platform/actor-context.js";
+import type { AccountingAccountQueryPort } from "../accounts/account-query-port.js";
+import { PrismaAccountingAccountQueryAdapter } from "../accounts/prisma-account-query-adapter.js";
 
-export type ReferenceErrorReason =
+export type SupplierErrorReason =
   | "NOT_FOUND"
   | "CODE_EXISTS"
   | "INVALID_ACCOUNT";
-export class ReferenceError extends Error {
-  constructor(public readonly reason: ReferenceErrorReason) {
+export class SupplierError extends Error {
+  constructor(public readonly reason: SupplierErrorReason) {
     super(reason);
   }
 }
@@ -37,9 +40,14 @@ const last4 = (value?: string | null) =>
 const unique = (error: unknown) =>
   error instanceof Prisma.PrismaClientKnownRequestError &&
   error.code === "P2002";
+const supplierInclude = { addresses: true } as const;
+type SupplierRecord = Prisma.SupplierGetPayload<{ include: typeof supplierInclude }>;
 
-export class SupplierReferenceService {
-  constructor(private readonly prisma: PrismaClient) {}
+export class SupplierService {
+  constructor(
+    private readonly prisma: PrismaClient,
+    private readonly accounts: AccountingAccountQueryPort = new PrismaAccountingAccountQueryAdapter(),
+  ) {}
   listSuppliers(
     context: ActorContext,
     input: {
@@ -66,7 +74,7 @@ export class SupplierReferenceService {
     return this.prisma.$transaction(async (tx) => ({
       data: await tx.supplier.findMany({
         where,
-        include: { addresses: true },
+        include: supplierInclude,
         orderBy: { code: "asc" },
         skip: (input.page - 1) * input.pageSize,
         take: input.pageSize,
@@ -77,26 +85,26 @@ export class SupplierReferenceService {
   async getSupplier(context: ActorContext, id: bigint) {
     const value = await this.prisma.supplier.findFirst({
       where: { id, companyId: context.companyId },
-      include: { addresses: true },
+      include: supplierInclude,
     });
-    if (!value) throw new ReferenceError("NOT_FOUND");
+    if (!value) throw new SupplierError("NOT_FOUND");
     return value;
   }
   async createSupplier(context: ActorContext, input: SupplierInput) {
     try {
       return await this.prisma.$transaction((tx) => this.createImportedSupplier(tx, context, input, false));
     } catch (error) {
-      if (unique(error)) throw new ReferenceError("CODE_EXISTS");
+      if (unique(error)) throw new SupplierError("CODE_EXISTS");
       throw error;
     }
   }
 
   async resolveImportedSupplier(tx: Prisma.TransactionClient, companyId: bigint, row: Record<string, string>): Promise<SupplierInput> {
-    const account = await tx.account.findFirst({ where: { companyId, code: row.payable_account_code! } });
-    if (!account) throw new ReferenceError("INVALID_ACCOUNT");
+    const account = await this.accounts.findByCode(tx, companyId, row.payable_account_code!);
+    if (!account) throw new SupplierError("INVALID_ACCOUNT");
     await this.validPostingAccount(tx, companyId, account.id);
     const addressType = row.address_type || "PAYMENT";
-    if (!["LEGAL", "PAYMENT", "OTHER"].includes(addressType)) throw new ReferenceError("INVALID_ACCOUNT");
+    if (!["LEGAL", "PAYMENT", "OTHER"].includes(addressType)) throw new SupplierError("INVALID_ACCOUNT");
     return {
       payableAccountId: account.id,
       nameAr: row.name_ar!, nameEn: row.name_en || null, phone: row.phone || null,
@@ -115,7 +123,7 @@ export class SupplierReferenceService {
         email: input.email ?? null, taxNumberLast4: last4(input.taxNumber),
         ...(input.addresses?.length ? { addresses: { create: input.addresses.map((address) => ({ addressType: address.addressType, line1: address.line1, line2: address.line2 ?? null, city: address.city ?? null, region: address.region ?? null, postalCode: address.postalCode ?? null, countryCode: address.countryCode ?? null, isPrimary: address.isPrimary ?? false })) } } : {}),
       },
-      include: { addresses: true },
+      include: supplierInclude,
     });
     await this.audit(tx, context, "SUPPLIER_CREATED", "SUPPLIER", value.id, imported ? { source: "DATA_IMPORT" } : undefined);
     return value;
@@ -132,7 +140,7 @@ export class SupplierReferenceService {
             where: { id, companyId: context.companyId },
           }))
         )
-          throw new ReferenceError("NOT_FOUND");
+          throw new SupplierError("NOT_FOUND");
         if (input.payableAccountId !== undefined)
           await this.validPostingAccount(
             tx,
@@ -159,7 +167,7 @@ export class SupplierReferenceService {
         return value;
       });
     } catch (error) {
-      if (unique(error)) throw new ReferenceError("CODE_EXISTS");
+      if (unique(error)) throw new SupplierError("CODE_EXISTS");
       throw error;
     }
   }
@@ -170,7 +178,7 @@ export class SupplierReferenceService {
           where: { id, companyId: context.companyId },
         }))
       )
-        throw new ReferenceError("NOT_FOUND");
+        throw new SupplierError("NOT_FOUND");
       const value = await tx.supplier.update({
         where: { id },
         data: { isActive: false },
@@ -193,7 +201,7 @@ export class SupplierReferenceService {
           where: { id: supplierId, companyId: context.companyId },
         }))
       )
-        throw new ReferenceError("NOT_FOUND");
+        throw new SupplierError("NOT_FOUND");
       if (input.isPrimary)
         await tx.supplierAddress.updateMany({
           where: { supplierId, companyId: context.companyId },
@@ -230,7 +238,7 @@ export class SupplierReferenceService {
           where: { id, supplierId, companyId: context.companyId },
         }))
       )
-        throw new ReferenceError("NOT_FOUND");
+        throw new SupplierError("NOT_FOUND");
       if (input.isPrimary)
         await tx.supplierAddress.updateMany({
           where: { supplierId, companyId: context.companyId, id: { not: id } },
@@ -256,7 +264,7 @@ export class SupplierReferenceService {
       const address = await tx.supplierAddress.findFirst({
         where: { id, supplierId, companyId: context.companyId },
       });
-      if (!address) throw new ReferenceError("NOT_FOUND");
+      if (!address) throw new SupplierError("NOT_FOUND");
       await tx.supplierAddress.delete({ where: { id } });
       await this.audit(
         tx,
@@ -268,7 +276,7 @@ export class SupplierReferenceService {
     });
   }
 
-  static supplierJson(value: any) {
+  static supplierJson(value: SupplierRecord) {
     return {
       id: value.id.toString(),
       payableAccountId: value.payableAccountId.toString(),
@@ -281,10 +289,10 @@ export class SupplierReferenceService {
         ? `****${value.taxNumberLast4}`
         : null,
       isActive: value.isActive,
-      addresses: value.addresses.map(SupplierReferenceService.addressJson),
+      addresses: value.addresses.map(SupplierService.addressJson),
     };
   }
-  static addressJson(value: any) {
+  static addressJson(value: SupplierAddress) {
     return {
       id: value.id.toString(),
       addressType: value.addressType,
@@ -302,17 +310,14 @@ export class SupplierReferenceService {
     companyId: bigint,
     id: bigint,
   ) {
-    const account = await tx.account.findFirst({
-      where: { id, companyId },
-      include: { _count: { select: { children: true } } },
-    });
+    const account = await this.accounts.findById(tx, companyId, id);
     if (
       !account ||
       !account.isActive ||
       !account.allowsPosting ||
-      account._count.children
+      account.childCount
     )
-      throw new ReferenceError("INVALID_ACCOUNT");
+      throw new SupplierError("INVALID_ACCOUNT");
     return account;
   }
   private addressData(input: AddressUpdate) {
@@ -341,7 +346,7 @@ export class SupplierReferenceService {
     id: bigint,
     details?: Prisma.InputJsonValue,
   ) {
-    return tx.auditLog.create({
+    return appendAudit(tx, {
       data: {
         companyId: context.companyId,
         actorUserId: context.userId,

@@ -1,8 +1,12 @@
 import { Router, type ErrorRequestHandler, type Request } from "express";
 import { z, ZodError } from "zod";
 import type { AuthService } from "../auth/auth-service.js";
+import { openApiRequestBodySchemas as bodies } from "../generated/openapi-request-guards.js";
+import { CashFlowError, type CashFlowService } from "./cash-flow-service.js";
+import { CostCenterActivityError, type CostCenterActivityService } from "./cost-center-activity-service.js";
+import { TaxSummaryError, type TaxSummaryService } from "./tax-summary-service.js";
 import { ReportError, ReportService } from "./report-service.js";
-import { financialPositionTable, incomeStatementTable, journalReportToCsv, ledgerReportTable, tableToCsv, tableToPdf, tableToXlsx } from "./financial-statement-exporter.js";
+import { costCenterActivityTable, financialPositionTable, incomeStatementTable, indirectCashFlowTable, journalReportToCsv, ledgerReportTable, tableToCsv, tableToPdf, tableToXlsx, taxSummaryTable } from "./financial-statement-exporter.js";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const id = z.string().regex(/^[1-9]\d*$/).transform(BigInt);
@@ -10,6 +14,7 @@ const queryBoolean = z.preprocess((value) => value === "true" ? true : value ===
 const query = z.object({ dateFrom: isoDate, dateTo: isoDate })
   .refine((value) => value.dateFrom <= value.dateTo, { message: "dateFrom must be before or equal to dateTo" })
   .refine((value) => (Date.parse(`${value.dateTo}T00:00:00Z`) - Date.parse(`${value.dateFrom}T00:00:00Z`)) / 86_400_000 <= 365, { message: "Report range cannot exceed 366 days" });
+const taxSummaryQuery = query.and(z.object({ status: z.enum(["POSTED", "REVERSED", "DRAFT", "CANCELLED"]).optional() }));
 const financialPositionQuery = z.object({ asOf: isoDate, compareAsOf: isoDate.optional(), includeZeroBalances: queryBoolean });
 const incomeStatementQuery = z.object({ dateFrom: isoDate, dateTo: isoDate, compareDateFrom: isoDate.optional(), compareDateTo: isoDate.optional(), includeZeroBalances: queryBoolean })
   .refine((value) => value.dateFrom <= value.dateTo, { message: "dateFrom must be before or equal to dateTo" })
@@ -17,8 +22,10 @@ const incomeStatementQuery = z.object({ dateFrom: isoDate, dateTo: isoDate, comp
   .refine((value) => !value.compareDateFrom || value.compareDateFrom <= value.compareDateTo!, { message: "compareDateFrom must be before or equal to compareDateTo" })
   .refine((value) => (Date.parse(`${value.dateTo}T00:00:00Z`) - Date.parse(`${value.dateFrom}T00:00:00Z`)) / 86_400_000 <= 365, { message: "Report range cannot exceed 366 days" })
   .refine((value) => !value.compareDateFrom || (Date.parse(`${value.compareDateTo}T00:00:00Z`) - Date.parse(`${value.compareDateFrom}T00:00:00Z`)) / 86_400_000 <= 365, { message: "Comparison range cannot exceed 366 days" });
-const ledgerQuery = query.and(z.object({ accountId: id.optional(), customerId: id.optional(), supplierId: id.optional(), page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(50) }))
-  .refine((value) => [value.accountId, value.customerId, value.supplierId].filter((item) => item != null).length === 1, { message: "Exactly one report subject is required" });
+const costCenterActivityQuery = query.and(z.object({ costCenterId: id.optional() }));
+const ledgerQuery = query.and(z.object({ accountId: id.optional(), customerId: id.optional(), supplierId: id.optional(), costCenterId: id.optional(), page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(50) }))
+  .refine((value) => [value.accountId, value.customerId, value.supplierId].filter((item) => item != null).length === 1, { message: "Exactly one report subject is required" })
+  .refine((value) => value.costCenterId == null || value.accountId != null, { message: "costCenterId is only available for ledger accounts" });
 const journalQuery = query.and(z.object({
   documentType: z.enum(["MANUAL_JOURNAL", "INVENTORY_ADJUSTMENT", "RECEIPT", "PAYMENT", "SALES_INVOICE", "SALES_CREDIT_NOTE", "PURCHASE_INVOICE", "PURCHASE_DEBIT_NOTE", "PERIOD_CLOSE"]).optional(),
   status: z.enum(["POSTED", "REVERSED"]).optional(),
@@ -28,9 +35,9 @@ const journalQuery = query.and(z.object({
 function sid(request: Request) {
   return Object.fromEntries((request.headers.cookie ?? "").split(";").map((value) => value.trim().split("=", 2)).filter(([key, value]) => key && value)).sid;
 }
-export function createReportRouter(auth: AuthService, service: ReportService) {
+export function createReportRouter(auth: AuthService, service: ReportService, cashFlow?: CashFlowService, taxSummary?: TaxSummaryService, costCenterActivity?: CostCenterActivityService) {
   const router = Router();
-  const authorize = (request: Request, permission: string) => auth.authorize({ sid: sid(request), permission, requireCsrf: false });
+  const authorize = (request: Request, permission: string, requireCsrf = false) => auth.authorize({ sid: sid(request), csrfToken: request.header("X-CSRF-Token") ?? undefined, permission, requireCsrf });
   router.get("/reports/dashboard", async (request, response) => {
     const context = await authorize(request, "dashboard.view");
     response.json(await service.dashboard(context, query.parse(request.query)));
@@ -39,6 +46,68 @@ export function createReportRouter(auth: AuthService, service: ReportService) {
     const context = await authorize(request, "reports.trial_balance.view");
     response.json(await service.trialBalance(context, query.parse(request.query)));
   });
+  if (cashFlow) {
+    router.get("/reports/cash-flow", async (request, response) => {
+      const context = await authorize(request, "reports.cash_flow.view");
+      response.json(await cashFlow.cashFlow(context, query.parse(request.query)));
+    });
+    router.get("/reports/cash-flow/mappings", async (request, response) => {
+      const context = await authorize(request, "reports.cash_flow.view");
+      response.json(await cashFlow.listMappings(context));
+    });
+    router.put("/reports/cash-flow/mappings/:accountId", async (request, response) => {
+      const context = await authorize(request, "reports.cash_flow.manage", true);
+      response.json(await cashFlow.updateMapping(context, id.parse(request.params.accountId), bodies.updateCashFlowMapping.parse(request.body)));
+    });
+    router.get("/reports/cash-flow/export/:format", async (request, response) => {
+      const context = await authorize(request, "reports.financial_statements.export");
+      const format = z.enum(["csv", "xlsx", "pdf"]).parse(request.params.format);
+      const parameters = query.parse(request.query);
+      const report = await cashFlow.cashFlow(context, parameters);
+      const table = indirectCashFlowTable(report);
+      const content = format === "csv" ? tableToCsv(table) : format === "xlsx" ? tableToXlsx(table, "التدفق النقدي") : await tableToPdf(table, `قائمة التدفق النقدي من ${report.range.dateFrom} إلى ${report.range.dateTo}`, report.company.name);
+      await service.recordExport(context, "INDIRECT_CASH_FLOW", format.toUpperCase(), parameters);
+      response.setHeader("Content-Type", format === "csv" ? "text/csv; charset=utf-8" : format === "xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/pdf");
+      response.setHeader("Content-Disposition", `attachment; filename="cash-flow-${report.range.dateFrom}-${report.range.dateTo}.${format}"`);
+      response.send(content);
+    });
+  }
+  if (taxSummary) {
+    router.get("/reports/tax-summary", async (request, response) => {
+      const context = await authorize(request, "reports.tax_summary.view");
+      response.json(await taxSummary.summary(context, taxSummaryQuery.parse(request.query)));
+    });
+    router.get("/reports/tax-summary/export/:format", async (request, response) => {
+      const context = await authorize(request, "reports.financial_statements.export");
+      const format = z.enum(["csv", "xlsx", "pdf"]).parse(request.params.format);
+      const parameters = taxSummaryQuery.parse(request.query);
+      const report = await taxSummary.summary(context, parameters);
+      const table = taxSummaryTable(report);
+      const content = format === "csv" ? tableToCsv(table) : format === "xlsx" ? tableToXlsx(table, "ملخص الضريبة") : await tableToPdf(table, `ملخص الضريبة من ${report.range.dateFrom} إلى ${report.range.dateTo}`, report.company.name);
+      await service.recordExport(context, "TAX_SUMMARY", format.toUpperCase(), parameters);
+      response.setHeader("Content-Type", format === "csv" ? "text/csv; charset=utf-8" : format === "xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/pdf");
+      response.setHeader("Content-Disposition", `attachment; filename="tax-summary-${report.range.dateFrom}-${report.range.dateTo}.${format}"`);
+      response.send(content);
+    });
+  }
+  if (costCenterActivity) {
+    router.get("/reports/cost-centers", async (request, response) => {
+      const context = await authorize(request, "reports.cost_centers.view");
+      response.json(await costCenterActivity.activity(context, costCenterActivityQuery.parse(request.query)));
+    });
+    router.get("/reports/cost-centers/export/:format", async (request, response) => {
+      const context = await authorize(request, "reports.cost_centers.export");
+      const format = z.enum(["csv", "xlsx", "pdf"]).parse(request.params.format);
+      const parameters = costCenterActivityQuery.parse(request.query);
+      const report = await costCenterActivity.activity(context, parameters);
+      const table = costCenterActivityTable(report);
+      const content = format === "csv" ? tableToCsv(table) : format === "xlsx" ? tableToXlsx(table, "حركة مراكز التكلفة") : await tableToPdf(table, `حركة مراكز التكلفة من ${report.range.dateFrom} إلى ${report.range.dateTo}`, report.company.name);
+      await service.recordExport(context, "COST_CENTER_ACTIVITY", format.toUpperCase(), parameters);
+      response.setHeader("Content-Type", format === "csv" ? "text/csv; charset=utf-8" : format === "xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/pdf");
+      response.setHeader("Content-Disposition", `attachment; filename="cost-center-activity-${report.range.dateFrom}-${report.range.dateTo}.${format}"`);
+      response.send(content);
+    });
+  }
   router.get("/reports/journal", async (request, response) => {
     const context = await authorize(request, "reports.journal.view");
     response.json(await service.journalReport(context, journalQuery.parse(request.query)));
@@ -113,6 +182,19 @@ export function createReportRouter(auth: AuthService, service: ReportService) {
       return;
     }
     if (error instanceof ReportError) {
+      response.status(404).json({ status: 404, code: error.reason });
+      return;
+    }
+    if (error instanceof CashFlowError) {
+      const status = error.reason === "NOT_FOUND" ? 404 : error.reason === "VERSION_CONFLICT" ? 409 : 422;
+      response.status(status).json({ status, code: "BUSINESS_RULE_VIOLATION", reason: error.reason });
+      return;
+    }
+    if (error instanceof TaxSummaryError) {
+      response.status(404).json({ status: 404, code: error.reason });
+      return;
+    }
+    if (error instanceof CostCenterActivityError) {
       response.status(404).json({ status: 404, code: error.reason });
       return;
     }

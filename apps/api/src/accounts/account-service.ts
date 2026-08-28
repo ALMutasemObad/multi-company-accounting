@@ -1,6 +1,7 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
+import { appendAudit } from '../audit/prisma-audit-append-adapter.js';
 import { reserveMasterDataCode } from '../platform/master-data-code-service.js';
-import type { ActorContext } from '../users/user-service.js';
+import type { ActorContext } from '../platform/actor-context.js';
 import { applyDefaultChartTemplate, inspectDefaultChartTemplate } from './default-chart-template.js';
 
 export type AccountErrorReason = 'NOT_FOUND' | 'CODE_EXISTS' | 'INVALID_PARENT' | 'CYCLE_DETECTED' | 'LEVEL_EXCEEDED' | 'HAS_ACTIVE_CHILDREN' | 'HAS_CHILDREN' | 'ACCOUNT_IN_USE' | 'POSTING_NOT_ALLOWED' | 'TEMPLATE_CONFLICT';
@@ -82,7 +83,7 @@ export class AccountService {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const result = await applyDefaultChartTemplate(tx, context.companyId);
-        await tx.auditLog.create({ data: { companyId: context.companyId, actorUserId: context.userId, action: 'DEFAULT_CHART_TEMPLATE_APPLIED', entityType: 'COMPANY', entityId: context.companyId.toString(), details: { templateCode: result.templateCode, version: result.version, created: result.created, linked: result.linked, existing: result.existing } } });
+        await appendAudit(tx, { data: { companyId: context.companyId, actorUserId: context.userId, action: 'DEFAULT_CHART_TEMPLATE_APPLIED', entityType: 'COMPANY', entityId: context.companyId.toString(), details: { templateCode: result.templateCode, version: result.version, created: result.created, linked: result.linked, existing: result.existing } } });
         return result;
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
     } catch (error) {
@@ -103,7 +104,7 @@ export class AccountService {
         const usage = Object.entries(account._count).filter(([key, count]) => key !== 'children' && count > 0).map(([key]) => key);
         if (usage.length > 0) throw new AccountError('ACCOUNT_IN_USE');
         await tx.account.delete({ where: { id } });
-        await tx.auditLog.create({ data: { companyId: context.companyId, actorUserId: context.userId, action: 'ACCOUNT_DELETED', entityType: 'ACCOUNT', entityId: id.toString(), details: { reason, code: account.code, nameAr: account.nameAr, sourceTemplateCode: account.sourceTemplateCode, sourceTemplateKey: account.sourceTemplateKey } } });
+        await appendAudit(tx, { data: { companyId: context.companyId, actorUserId: context.userId, action: 'ACCOUNT_DELETED', entityType: 'ACCOUNT', entityId: id.toString(), details: { reason, code: account.code, nameAr: account.nameAr, sourceTemplateCode: account.sourceTemplateCode, sourceTemplateKey: account.sourceTemplateKey } } });
         return { id: id.toString(), deleted: true };
       });
     } catch (error) {
@@ -121,5 +122,5 @@ export class AccountService {
   async deactivateCostCenter(context: ActorContext, id: bigint, reason: string) { return this.prisma.$transaction(async (tx) => { if (!await tx.costCenter.findFirst({ where: { id, companyId: context.companyId } })) throw new AccountError('NOT_FOUND'); if (await tx.costCenter.count({ where: { companyId: context.companyId, parentId: id, isActive: true } })) throw new AccountError('HAS_ACTIVE_CHILDREN'); const value = await tx.costCenter.update({ where: { id }, data: { isActive: false } }); await this.audit(tx, context, 'COST_CENTER_DEACTIVATED', 'COST_CENTER', id, reason); return value; }); }
 
   private async descendants(tx: Prisma.TransactionClient, companyId: bigint, root: bigint) { const result: Array<{ id: bigint; level: number }> = []; let ids = [root]; while (ids.length) { const rows = await tx.account.findMany({ where: { companyId, parentAccountId: { in: ids } }, select: { id: true, level: true } }); result.push(...rows); ids = rows.map((row) => row.id); } return result; }
-  private audit(tx: Prisma.TransactionClient, context: ActorContext, action: string, entityType: string, id: bigint, reason?: string) { return tx.auditLog.create({ data: { companyId: context.companyId, actorUserId: context.userId, action, entityType, entityId: id.toString(), ...(reason ? { details: { reason } } : {}) } }); }
+  private audit(tx: Prisma.TransactionClient, context: ActorContext, action: string, entityType: string, id: bigint, reason?: string) { return appendAudit(tx, { data: { companyId: context.companyId, actorUserId: context.userId, action, entityType, entityId: id.toString(), ...(reason ? { details: { reason } } : {}) } }); }
 }

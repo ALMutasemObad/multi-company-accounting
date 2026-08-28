@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { createTranslator, dictionaries, localeDetails, localizedReferenceName, resolveLocale, supportedLocales } from "./index";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { createTranslator, dictionaryFor, loadLocale, localeDetails, localizedReferenceName, resolveLocale, supportedLocales } from "./index";
 import { setActiveLocale } from "./core";
 
+beforeAll(async () => Promise.all(supportedLocales.map(loadLocale)));
 afterEach(() => setActiveLocale("ar"));
 
 describe("translation dictionaries", () => {
@@ -10,18 +11,19 @@ describe("translation dictionaries", () => {
     expect(supportedLocales).toContain("en");
     expect(supportedLocales).toContain("ur");
     expect(supportedLocales).toContain("hi");
-    const sourceKeys = Object.keys(dictionaries.ar).sort();
-    for (const locale of supportedLocales) expect(Object.keys(dictionaries[locale]).sort()).toEqual(sourceKeys);
+    const sourceKeys = Object.keys(dictionaryFor("ar")).sort();
+    for (const locale of supportedLocales) expect(Object.keys(dictionaryFor(locale)).sort()).toEqual(sourceKeys);
   });
 
   it("keeps interpolation placeholders identical and rejects unfinished catalogue entries", () => {
     const placeholders = (message: string) => [...message.matchAll(/\{([A-Za-z][A-Za-z0-9]*)\}/gu)].map((match) => match[1]).sort();
-    for (const key of Object.keys(dictionaries.ar) as Array<keyof typeof dictionaries.ar>) {
+    const arabic = dictionaryFor("ar");
+    for (const key of Object.keys(arabic) as Array<keyof typeof arabic>) {
       for (const locale of supportedLocales) {
-        const message = dictionaries[locale][key];
+        const message = dictionaryFor(locale)[key];
         expect(message.trim(), `${locale}.${key} must not be empty`).not.toBe("");
         expect(message, `${locale}.${key} contains a migration marker`).not.toMatch(/TODO|__MCAP_/u);
-        expect(placeholders(message), `${locale}.${key} placeholders`).toEqual(placeholders(dictionaries.ar[key]));
+        expect(placeholders(message), `${locale}.${key} placeholders`).toEqual(placeholders(arabic[key]));
       }
     }
   });

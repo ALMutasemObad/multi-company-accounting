@@ -152,4 +152,88 @@ describe("settlement item application ports", () => {
     expect(updateMany.mock.calls[1]![0].data.outstandingBaseAmount.toFixed(4)).toBe("77.9999");
     expect(updateMany.mock.calls[1]![0].data.status).toBe("PARTIAL");
   });
+
+  it("initializes rolling-upgrade settlement sentinels under the owner row lock", async () => {
+    const receivableUpdate = vi.fn().mockResolvedValue({ count: 1 });
+    const receivableTx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: 30n }]),
+      salesInvoice: {
+        findFirst: vi.fn().mockResolvedValue({ baseTotal: new Prisma.Decimal("130.0000") }),
+      },
+      receivableItem: {
+        findMany: vi.fn().mockResolvedValue([{
+          id: 30n,
+          companyId: 1n,
+          salesInvoiceId: 300n,
+          customerId: 2n,
+          currencyId: 3n,
+          originalAmount: new Prisma.Decimal("100.0000"),
+          outstandingAmount: new Prisma.Decimal("40.0000"),
+          originalBaseAmount: new Prisma.Decimal("0.0000"),
+          outstandingBaseAmount: new Prisma.Decimal("0.0000"),
+          status: "PARTIAL",
+          version: 3,
+        }]),
+        updateMany: receivableUpdate,
+      },
+    };
+    const receipt = await new ReceivableItemService().applyReceipt(
+      receivableTx as unknown as Prisma.TransactionClient,
+      {
+        companyId: 1n,
+        customerId: 2n,
+        currencyId: 3n,
+        allocations: [{ receivableItemId: 30n, allocatedAmount: "10.0000" }],
+        errors: errors(),
+      },
+    );
+    expect(receivableUpdate.mock.calls[0]![0].where).toMatchObject({
+      id: 30n,
+      version: 3,
+    });
+    expect(receivableUpdate.mock.calls[0]![0].data.originalBaseAmount.toFixed(4)).toBe("130.0000");
+    expect(receivableUpdate.mock.calls[0]![0].data.outstandingBaseAmount.toFixed(4)).toBe("52.0000");
+    expect(receivableUpdate.mock.calls[1]![0].where).toMatchObject({ version: 4, status: "PARTIAL" });
+    expect(receivableUpdate.mock.calls[1]![0].data.outstandingBaseAmount.toFixed(4)).toBe("39.0000");
+    expect(receipt[0]!.carryingBaseAmount.toFixed(4)).toBe("13.0000");
+
+    const payableUpdate = vi.fn().mockResolvedValue({ count: 1 });
+    const payableTx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: 40n }]),
+      purchaseInvoice: {
+        findFirst: vi.fn().mockResolvedValue({ baseTotal: new Prisma.Decimal("120.0000") }),
+      },
+      payableItem: {
+        findMany: vi.fn().mockResolvedValue([{
+          id: 40n,
+          companyId: 1n,
+          purchaseInvoiceId: 400n,
+          supplierId: 2n,
+          currencyId: 3n,
+          originalAmount: new Prisma.Decimal("100.0000"),
+          outstandingAmount: new Prisma.Decimal("25.0000"),
+          originalBaseAmount: new Prisma.Decimal("0.0000"),
+          outstandingBaseAmount: new Prisma.Decimal("0.0000"),
+          status: "PARTIAL",
+          version: 7,
+        }]),
+        updateMany: payableUpdate,
+      },
+    };
+    const payment = await new PayableItemService().applyPayment(
+      payableTx as unknown as Prisma.TransactionClient,
+      {
+        companyId: 1n,
+        supplierId: 2n,
+        currencyId: 3n,
+        allocations: [{ payableItemId: 40n, allocatedAmount: "5.0000" }],
+        errors: errors(),
+      },
+    );
+    expect(payableUpdate.mock.calls[0]![0].data.originalBaseAmount.toFixed(4)).toBe("120.0000");
+    expect(payableUpdate.mock.calls[0]![0].data.outstandingBaseAmount.toFixed(4)).toBe("30.0000");
+    expect(payableUpdate.mock.calls[1]![0].where).toMatchObject({ version: 8, status: "PARTIAL" });
+    expect(payableUpdate.mock.calls[1]![0].data.outstandingBaseAmount.toFixed(4)).toBe("24.0000");
+    expect(payment[0]!.carryingBaseAmount.toFixed(4)).toBe("6.0000");
+  });
 });

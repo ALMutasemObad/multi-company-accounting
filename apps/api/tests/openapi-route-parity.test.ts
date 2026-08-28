@@ -10,7 +10,7 @@ import { createPaymentRouter } from '../src/payments/payment-router.js';
 import { createPrintRouter } from '../src/printing/print-router.js';
 import { createPurchaseInvoiceRouter } from '../src/purchases/purchase-invoice-router.js';
 import { createReceiptRouter } from '../src/receipts/receipt-router.js';
-import { createReceiptReferenceRouter } from '../src/receipts/reference-router.js';
+import { createCustomerRouter } from '../src/sales/customer-router.js';
 import { createReportRouter } from '../src/reports/report-router.js';
 import { createSalesInvoiceRouter } from '../src/sales/sales-invoice-router.js';
 import { createSecurityEventRouter } from '../src/security/security-event-router.js';
@@ -24,6 +24,15 @@ import { createDataImportRouter } from '../src/imports/data-import-router.js';
 import { createInventoryRouter } from '../src/inventory/inventory-router.js';
 import { createInventoryCatalogRouter } from '../src/inventory/inventory-catalog-router.js';
 import { createInventoryMovementRouter } from '../src/inventory/inventory-movement-router.js';
+import { createBankReconciliationRouter } from '../src/treasury/reconciliation/reconciliation-router.js';
+import { createPosRouter } from '../src/pos/pos-router.js';
+import { createApprovalRouter } from '../src/approvals/approval-router.js';
+import { createProfessionalProjectRouter } from '../src/projects/professional-project-router.js';
+import { createProfessionalProjectPlanningRouter } from '../src/projects/professional-project-planning-router.js';
+import { createProfessionalBillingRouter } from '../src/projects/professional-billing-router.js';
+import { createProfessionalProjectAccessRouter } from '../src/projects/professional-project-access-router.js';
+import { createHrRouter } from '../src/hr/hr-router.js';
+import { createPlatformOperationsRouter } from '../src/platform-operations/platform-operations-router.js';
 
 type RouteLayer = {
   route?: {
@@ -37,16 +46,24 @@ const routers = [
   { prefix: '/auth', router: createAuthRouter(stub, false) },
   { prefix: '/auth/password', router: createPasswordResetRouter(stub, stub) },
   { prefix: '/auth/register', router: createRegistrationRouter(stub, stub) },
-  { prefix: '', router: createUserRouter(stub, stub) },
+  { prefix: '', router: createPlatformOperationsRouter(stub, stub) },
+  { prefix: '', router: createUserRouter(stub, stub, stub) },
   { prefix: '', router: createCompanyRouter(stub, stub) },
   { prefix: '', router: createPrintRouter(stub, stub) },
   { prefix: '', router: createAuditRouter(stub, stub) },
   { prefix: '', router: createSecurityEventRouter(stub, stub) },
-  { prefix: '', router: createFiscalRouter(stub, stub) },
+  { prefix: '', router: createFiscalRouter(stub, stub, stub) },
+  { prefix: '', router: createApprovalRouter(stub, stub) },
+  { prefix: '', router: createProfessionalProjectRouter(stub, stub) },
+  { prefix: '', router: createProfessionalProjectPlanningRouter(stub, stub) },
+  { prefix: '', router: createProfessionalBillingRouter(stub, stub) },
+  { prefix: '', router: createProfessionalProjectAccessRouter(stub, stub) },
+  { prefix: '', router: createHrRouter(stub, stub) },
   { prefix: '', router: createAccountRouter(stub, stub) },
   { prefix: '', router: createManualJournalRouter(stub, stub) },
-  { prefix: '', router: createReceiptReferenceRouter(stub, stub) },
+  { prefix: '', router: createCustomerRouter(stub, stub) },
   { prefix: '', router: createTreasuryRouter(stub, stub) },
+  { prefix: '', router: createBankReconciliationRouter(stub, stub) },
   { prefix: '', router: createInventoryRouter(stub, stub) },
   { prefix: '', router: createInventoryCatalogRouter(stub, stub) },
   { prefix: '', router: createInventoryMovementRouter(stub, stub) },
@@ -56,8 +73,9 @@ const routers = [
   { prefix: '', router: createTaxRouter(stub, stub) },
   { prefix: '', router: createSalesInvoiceRouter(stub, stub) },
   { prefix: '', router: createPurchaseInvoiceRouter(stub, stub) },
-  { prefix: '', router: createReportRouter(stub, stub) },
+  { prefix: '', router: createReportRouter(stub, stub, stub, stub, stub) },
   { prefix: '', router: createDataImportRouter(stub, stub) },
+  { prefix: '', router: createPosRouter(stub, stub) },
 ] as const;
 
 function normalizePath(path: string) {

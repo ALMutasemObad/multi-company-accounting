@@ -1,5 +1,7 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
-import type { ActorContext } from '../users/user-service.js';
+import { appendAudit } from '../audit/prisma-audit-append-adapter.js';
+import type { ActorContext } from '../platform/actor-context.js';
+import type { CompanyCurrencyUsageQueryPort } from './company-currency-usage-port.js';
 
 export type CompanyCurrencyErrorReason = 'CURRENCY_NOT_FOUND' | 'CURRENCY_NOT_ENABLED' | 'CURRENCY_CODE_EXISTS' | 'CURRENCY_IN_USE' | 'BASE_CURRENCY_RATE' | 'RATE_NOT_FOUND';
 
@@ -11,7 +13,14 @@ export type ExchangeRateInput = { currencyId: bigint; rateDate: string; rate: st
 export type CompanyCurrencyCreateInput = { code: string; nameAr: string; decimals: number };
 
 export class CompanyService {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(
+    private readonly prisma: PrismaClient,
+    private readonly currencyUsage: readonly CompanyCurrencyUsageQueryPort[],
+  ) {
+    if (currencyUsage.length === 0) {
+      throw new TypeError('CompanyService requires at least one currency usage owner port');
+    }
+  }
 
   get(context: ActorContext) {
     return this.prisma.company.findUniqueOrThrow({ where: { id: context.companyId }, include: { baseCurrency: true } });
@@ -21,7 +30,7 @@ export class CompanyService {
     const data = { ...(input.name !== undefined ? { name: input.name } : {}), ...(input.timezone !== undefined ? { timezone: input.timezone } : {}) };
     const company = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.company.update({ where: { id: context.companyId }, data, include: { baseCurrency: true } });
-      await tx.auditLog.create({ data: { companyId: context.companyId, actorUserId: context.userId, action: 'COMPANY_UPDATED', entityType: 'COMPANY', entityId: context.companyId.toString(), details: input } });
+      await appendAudit(tx, { data: { companyId: context.companyId, actorUserId: context.userId, action: 'COMPANY_UPDATED', entityType: 'COMPANY', entityId: context.companyId.toString(), details: input } });
       return updated;
     });
     return company;
@@ -30,7 +39,7 @@ export class CompanyService {
   async updateMakerChecker(context: ActorContext, enabled: boolean) {
     const company = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.company.update({ where: { id: context.companyId }, data: { manualJournalMakerCheckerEnabled: enabled }, include: { baseCurrency: true } });
-      await tx.auditLog.create({ data: { companyId: context.companyId, actorUserId: context.userId, action: 'COMPANY_SETTING_UPDATED', entityType: 'COMPANY', entityId: context.companyId.toString(), details: { key: 'accounting.manual_journal_maker_checker_enabled', value: enabled } } });
+      await appendAudit(tx, { data: { companyId: context.companyId, actorUserId: context.userId, action: 'COMPANY_SETTING_UPDATED', entityType: 'COMPANY', entityId: context.companyId.toString(), details: { key: 'accounting.manual_journal_maker_checker_enabled', value: enabled } } });
       return updated;
     });
     return company;
@@ -66,6 +75,28 @@ export class CompanyService {
     });
   }
 
+  listEnabledCurrencies(context: ActorContext) {
+    return this.prisma.companyCurrency.findMany({
+      where: {
+        companyId: context.companyId,
+        isActive: true,
+        currency: {
+          isActive: true,
+          OR: [
+            { scope: 'GLOBAL', ownerCompanyId: null },
+            { scope: 'COMPANY', ownerCompanyId: context.companyId },
+          ],
+        },
+      },
+      orderBy: { currency: { code: 'asc' } },
+      include: {
+        company: { select: { baseCurrencyId: true } },
+        currency: true,
+        rates: { orderBy: { rateDate: 'desc' }, take: 1 },
+      },
+    });
+  }
+
   async createCompanyCurrency(context: ActorContext, input: CompanyCurrencyCreateInput) {
     const code = input.code.trim().toUpperCase();
     const nameAr = input.nameAr.trim();
@@ -91,7 +122,7 @@ export class CompanyService {
           },
         });
         await tx.companyCurrency.create({ data: { companyId: context.companyId, currencyId: currency.id } });
-        await tx.auditLog.create({
+        await appendAudit(tx, {
           data: {
             companyId: context.companyId,
             actorUserId: context.userId,
@@ -141,14 +172,9 @@ export class CompanyService {
       });
       const disabledCurrencyIds = currenciesToDisable.map(({ currencyId }) => currencyId);
       if (disabledCurrencyIds.length) {
-        const usageWhere = { companyId: context.companyId, currencyId: { in: disabledCurrencyIds } };
-        const usage = await Promise.all([
-          tx.journalLine.findFirst({ where: usageWhere, select: { id: true } }),
-          tx.receipt.findFirst({ where: usageWhere, select: { id: true } }),
-          tx.payment.findFirst({ where: usageWhere, select: { id: true } }),
-          tx.salesInvoice.findFirst({ where: usageWhere, select: { id: true } }),
-          tx.purchaseInvoice.findFirst({ where: usageWhere, select: { id: true } }),
-        ]);
+        const usage = await Promise.all(this.currencyUsage.map((port) => (
+          port.isAnyCurrencyUsed(tx, context.companyId, disabledCurrencyIds)
+        )));
         if (usage.some(Boolean)) throw new CompanyCurrencyError('CURRENCY_IN_USE');
       }
       await tx.companyCurrency.updateMany({
@@ -162,7 +188,7 @@ export class CompanyService {
           create: { companyId: context.companyId, currencyId },
         });
       }
-      await tx.auditLog.create({
+      await appendAudit(tx, {
         data: {
           companyId: context.companyId,
           actorUserId: context.userId,
@@ -222,7 +248,7 @@ export class CompanyService {
         create: { companyId: context.companyId, currencyId: input.currencyId, rateDate, rate, source: input.source ?? null, updatedById: context.userId },
         include: { companyCurrency: { include: { currency: true } }, updatedBy: { select: { id: true, displayName: true } } },
       });
-      await tx.auditLog.create({
+      await appendAudit(tx, {
         data: {
           companyId: context.companyId,
           actorUserId: context.userId,

@@ -9,21 +9,22 @@ import { UserService } from './users/user-service.js';
 import { FiscalService } from './fiscal/fiscal-service.js';
 import { AccountService } from './accounts/account-service.js';
 import { ManualJournalService } from './journals/manual-journal-service.js';
-import { ReceiptReferenceService } from './receipts/reference-service.js';
+import { CustomerService } from './sales/customer-service.js';
 import { ReceiptService } from './receipts/receipt-service.js';
-import { SupplierReferenceService } from './suppliers/supplier-service.js';
+import { SupplierService } from './suppliers/supplier-service.js';
 import { PaymentService } from './payments/payment-service.js';
 import { ReportService } from './reports/report-service.js';
-import { CompanyService } from './companies/company-service.js';
+import { createCompanyService } from './composition/create-company-service.js';
 import { PrintService } from './printing/print-service.js';
-import { AuditService } from './audit/audit-service.js';
 import { SalesInvoiceService } from './sales/sales-invoice-service.js';
 import { PurchaseInvoiceService } from './purchases/purchase-invoice-service.js';
-import { SecurityEventService } from './security/security-event-service.js';
+import { createAuditService } from './composition/create-audit-service.js';
+import { createSecurityEventService } from './composition/create-security-event-service.js';
 import { DatabaseReadinessService } from './operations/readiness-service.js';
 import { closeGracefully } from './operations/graceful-shutdown.js';
 import { logEvent } from './operations/logger.js';
-import { CompanyProvisioningService } from './platform/company-provisioning-service.js';
+import { createCompanyProvisioningService } from './composition/create-company-provisioning-service.js';
+import { createRegistrationOwnerPorts } from './composition/create-registration-owner-ports.js';
 import { RegistrationService } from './registration/registration-service.js';
 import { DevelopmentRegistrationMailer, ResendRegistrationMailer } from './registration/registration-mailer.js';
 import { PASSWORD_RESET_REQUESTED, PrismaOutboxAppender, REGISTRATION_VERIFICATION_REQUESTED, type OutboxHandler } from './outbox/outbox.js';
@@ -33,12 +34,50 @@ import { PasswordResetService } from './auth/password-reset-service.js';
 import { PasswordResetHandler } from './auth/password-reset-handler.js';
 import { configureHttpServerTimeouts } from './operations/http-server.js';
 import { operationalMetrics } from './operations/metrics.js';
+import { PrismaRateLimitStore } from './operations/rate-limit.js';
 import { TaxService } from './tax/tax-service.js';
 import { TreasuryService } from './treasury/treasury-service.js';
 import { DataImportService } from './imports/data-import-service.js';
 import { InventoryService } from './inventory/inventory-service.js';
 import { InventoryCatalogService } from './inventory/inventory-catalog-service.js';
 import { InventoryMovementService } from './inventory/inventory-movement-service.js';
+import { BankStatementParser } from './treasury/reconciliation/bank-statement-parser.js';
+import { PrismaReconciliationLedgerQueryAdapter } from './treasury/reconciliation/adapters/prisma-reconciliation-ledger-query-adapter.js';
+import { BankReconciliationService } from './treasury/reconciliation/reconciliation-service.js';
+import { FinancialCloseService } from './fiscal/financial-close-service.js';
+import { TreasuryFinancialCloseReadinessAdapter } from './treasury/financial-close-readiness-adapter.js';
+import { InventoryFinancialCloseReadinessAdapter } from './inventory/financial-close-readiness-adapter.js';
+import { CompanyCurrencyFinancialCloseReadinessAdapter } from './companies/financial-close-readiness-adapter.js';
+import { SettlementFinancialCloseReadinessAdapter } from './reports/financial-close-readiness-adapter.js';
+import { CashFlowService } from './reports/cash-flow-service.js';
+import { PrismaCashFlowLedgerQueryAdapter } from './reports/adapters/prisma-cash-flow-ledger-query-adapter.js';
+import { TreasuryCashFlowAccountAdapter } from './treasury/cash-flow-account-adapter.js';
+import { TaxSummaryService } from './reports/tax-summary-service.js';
+import { PrismaTaxSummaryQueryAdapter } from './reports/adapters/prisma-tax-summary-query-adapter.js';
+import { CostCenterActivityService } from './reports/cost-center-activity-service.js';
+import { PrismaCostCenterActivityLedgerQueryAdapter } from './reports/adapters/prisma-cost-center-activity-ledger-query-adapter.js';
+import { PosService } from './pos/pos-service.js';
+import { PrismaPosSaleQueryAdapter } from './pos/adapters/prisma-pos-sale-query-adapter.js';
+import { ApprovalService } from './approvals/approval-service.js';
+import { FinancialCloseApprovalAdapter } from './fiscal/financial-close-approval-adapter.js';
+import { ProfessionalProjectService } from './projects/professional-project-service.js';
+import { ProfessionalProjectPlanningService } from './projects/professional-project-planning-service.js';
+import { ProfessionalProjectAccessService } from './projects/professional-project-access-service.js';
+import { ProfessionalCustomerAdapter } from './sales/professional-customer-adapter.js';
+import { ProfessionalPeopleAdapter } from './users/professional-people-adapter.js';
+import { HrService } from './hr/hr-service.js';
+import { HrIdentityAdapter } from './users/hr-identity-adapter.js';
+import { HrEmployeeAccountAdapter } from './hr/employee-account-adapter.js';
+import { IdentityAccountAdapter } from './users/identity-account-adapter.js';
+import { WorkforceAccessService } from './workforce-access/workforce-access-service.js';
+import { PlatformIdentityQueryAdapter } from './users/platform-identity-query-adapter.js';
+import { PlatformOperationsService } from './platform-operations/platform-operations-service.js';
+import { PrismaPlatformAnalyticsQueryAdapter } from './platform-operations/prisma-platform-analytics-query-adapter.js';
+import { ProfessionalEmployeeAdapter } from './hr/professional-employee-adapter.js';
+import { ProfessionalTimesheetApprovalAdapter } from './projects/professional-timesheet-approval-adapter.js';
+import { ProfessionalBillingCurrencyAdapter } from './companies/professional-billing-currency-adapter.js';
+import { ProfessionalBillingService } from './projects/professional-billing-service.js';
+import { PrismaAccountingAccountQueryAdapter } from './accounts/prisma-account-query-adapter.js';
 
 const config = loadConfig();
 if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required to start the API');
@@ -53,8 +92,16 @@ operationalMetrics.configure({
   cooldownMs: config.ALERT_COOLDOWN_MS,
 });
 const database = createDatabase(config.DATABASE_URL);
-const taxes = new TaxService(database);
-const treasury = new TreasuryService(database);
+const accountQueries = new PrismaAccountingAccountQueryAdapter();
+const taxes = new TaxService(database, accountQueries);
+const treasury = new TreasuryService(database, accountQueries);
+const bankReconciliation = config.BANK_RECONCILIATION_ENABLED
+  ? new BankReconciliationService(
+      database,
+      new BankStatementParser(),
+      new PrismaReconciliationLedgerQueryAdapter(),
+    )
+  : undefined;
 const auth = new AuthService(new PrismaAuthStore(database), { verify }, {
   preAuthTtlMinutes: config.PRE_AUTH_TTL_MINUTES,
   sessionTtlHours: config.SESSION_TTL_HOURS,
@@ -66,9 +113,15 @@ const registrationAuditPepper = config.REGISTRATION_AUDIT_PEPPER ?? 'development
 const registrationTokenSecret = config.REGISTRATION_TOKEN_SECRET ?? 'development-only-registration-token-secret';
 const outboxAppender = new PrismaOutboxAppender(config.OUTBOX_MAX_ATTEMPTS);
 const registration = config.SELF_REGISTRATION_ENABLED
-  ? new RegistrationService(database, new CompanyProvisioningService(database), outboxAppender, {
-      auditPepper: registrationAuditPepper,
-    })
+  ? new RegistrationService(
+      database,
+      createCompanyProvisioningService(database),
+      outboxAppender,
+      createRegistrationOwnerPorts(database),
+      {
+        auditPepper: registrationAuditPepper,
+      },
+    )
   : undefined;
 const registrationVerificationHandler = registration
   ? new RegistrationVerificationHandler(database, registrationMailer, {
@@ -105,40 +158,102 @@ const outboxWorker = outboxHandlers.size
       metrics: operationalMetrics,
     })
   : undefined;
-const receiptReferences = new ReceiptReferenceService(database);
-const suppliers = new SupplierReferenceService(database);
+const customers = new CustomerService(database, accountQueries);
+const suppliers = new SupplierService(database, accountQueries);
 const inventoryCatalog = new InventoryCatalogService(database);
 const inventoryMovements = new InventoryMovementService(database);
 const salesInvoices = new SalesInvoiceService(database, taxes, inventoryCatalog, inventoryMovements);
 const purchaseInvoices = new PurchaseInvoiceService(database, taxes, inventoryCatalog, inventoryMovements);
-const dataImports = new DataImportService(database, receiptReferences, suppliers, salesInvoices, purchaseInvoices, outboxAppender);
+const receipts = new ReceiptService(database, treasury);
+const pos = new PosService(database, salesInvoices, receipts, new PrismaPosSaleQueryAdapter(database));
+const dataImports = new DataImportService(database, customers, suppliers, salesInvoices, purchaseInvoices, outboxAppender);
+const fiscal = new FiscalService(database);
+const financialClose = new FinancialCloseService(database, {
+  treasury: new TreasuryFinancialCloseReadinessAdapter(),
+  inventory: new InventoryFinancialCloseReadinessAdapter(),
+  currencies: new CompanyCurrencyFinancialCloseReadinessAdapter(),
+  settlements: new SettlementFinancialCloseReadinessAdapter(),
+});
+const professionalProjects = new ProfessionalProjectService(
+  database,
+  new ProfessionalCustomerAdapter(database),
+  new ProfessionalPeopleAdapter(database),
+  new ProfessionalEmployeeAdapter(database),
+);
+const professionalProjectPlanning = new ProfessionalProjectPlanningService(database);
+const professionalProjectAccess = new ProfessionalProjectAccessService(database, new ProfessionalPeopleAdapter(database));
+const professionalBilling = new ProfessionalBillingService(
+  database,
+  new ProfessionalBillingCurrencyAdapter(database),
+  salesInvoices,
+);
+const approvals = new ApprovalService(database, {
+  FINANCIAL_CLOSE_RUN: new FinancialCloseApprovalAdapter(financialClose),
+  PROFESSIONAL_TIMESHEET: new ProfessionalTimesheetApprovalAdapter(professionalProjects),
+});
+const hr = new HrService(database, new HrIdentityAdapter(database));
+const users = new UserService(database);
+const workforceAccess = new WorkforceAccessService(
+  database,
+  new HrEmployeeAccountAdapter(database),
+  new IdentityAccountAdapter(database),
+);
+const configuredPlatformOperators = (config.PLATFORM_OPERATOR_EMAILS ?? "")
+  .split(",")
+  .map((email) => email.trim())
+  .filter(Boolean);
+const platformOperations = new PlatformOperationsService(
+  new PlatformIdentityQueryAdapter(database),
+  new PrismaPlatformAnalyticsQueryAdapter(database),
+  configuredPlatformOperators.length || config.NODE_ENV === "production"
+    ? configuredPlatformOperators
+    : ["admin@mcap.local"],
+);
 const app = createApp(config, {
   readiness: new DatabaseReadinessService(database, config.READINESS_TIMEOUT_MS),
   metrics: operationalMetrics,
+  sensitiveRateLimits: new PrismaRateLimitStore(
+    database,
+    config.RATE_LIMIT_IDENTITY_SECRET ?? 'local-development-rate-limit-identity-secret',
+  ),
   auth,
   ...(registration ? { registration } : {}),
   ...(passwordReset ? { passwordReset } : {}),
-  users: new UserService(database),
-  companies: new CompanyService(database),
+  users,
+  workforceAccess,
+  platformOperations,
+  companies: createCompanyService(database),
   printing: new PrintService(database),
-  audit: new AuditService(database),
-  security: new SecurityEventService(database),
-  fiscal: new FiscalService(database),
+  audit: createAuditService(database),
+  security: createSecurityEventService(database),
+  fiscal,
+  financialClose,
+  approvals,
+  professionalProjects,
+  professionalProjectPlanning,
+  professionalProjectAccess,
+  professionalBilling,
+  hr,
   accounts: new AccountService(database),
   journals: new ManualJournalService(database),
-  receiptReferences,
+  customers,
   treasury,
+  ...(bankReconciliation ? { bankReconciliation } : {}),
   inventory: new InventoryService(database),
   inventoryCatalog,
   inventoryMovements,
-  receipts: new ReceiptService(database, treasury),
+  receipts,
   suppliers,
   payments: new PaymentService(database, treasury),
   reports: new ReportService(database),
+  cashFlow: new CashFlowService(database, new PrismaCashFlowLedgerQueryAdapter(), new TreasuryCashFlowAccountAdapter()),
+  taxSummary: new TaxSummaryService(database, new PrismaTaxSummaryQueryAdapter()),
+  costCenterActivity: new CostCenterActivityService(database, new PrismaCostCenterActivityLedgerQueryAdapter()),
   taxes,
   salesInvoices,
   purchaseInvoices,
   dataImports,
+  pos,
 });
 
 const server = app.listen(config.PORT, () => {

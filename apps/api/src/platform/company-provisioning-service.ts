@@ -1,9 +1,16 @@
 import { hash } from 'argon2';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { z } from 'zod';
-import { applyDefaultChartTemplate } from '../accounts/default-chart-template.js';
-import { upsertGlobalPaymentMethods } from '../treasury/treasury-service.js';
-import { accountTypeDefinitions, permissionDefinitions } from './reference-data.js';
+import type { AuditAppendPort } from './audit-append-port.js';
+import {
+  CompanyProvisioningError,
+  type AccountingCompanyProvisioningPort,
+  type IdentityCompanyProvisioningPort,
+  type TenantCompanyProvisioningPort,
+  type TreasuryCompanyProvisioningPort,
+} from './company-provisioning-ports.js';
+
+export { CompanyProvisioningError } from './company-provisioning-ports.js';
 
 const tenantCode = z.string().trim().min(2).max(80).transform((value) => value.toUpperCase())
   .refine((value) => /^[A-Z][A-Z0-9_-]+$/.test(value), 'Use uppercase Latin letters, numbers, underscores or hyphens');
@@ -26,12 +33,15 @@ export type CompanyProvisioningInput = z.input<typeof companyProvisioningSchema>
 export const preparedCompanyProvisioningSchema = companyProvisioningSchema.omit({ adminPassword: true });
 export type PreparedCompanyProvisioningInput = z.input<typeof preparedCompanyProvisioningSchema>;
 
-export class CompanyProvisioningError extends Error {
-  constructor(public readonly reason: 'CURRENCY_NOT_FOUND' | 'COMPANY_CURRENCY_MISMATCH' | 'ADMIN_USER_DISABLED' | 'ADMIN_USER_EXISTS') { super(reason); }
-}
-
 export class CompanyProvisioningService {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(
+    private readonly prisma: PrismaClient,
+    private readonly tenant: TenantCompanyProvisioningPort,
+    private readonly identity: IdentityCompanyProvisioningPort,
+    private readonly accounting: AccountingCompanyProvisioningPort,
+    private readonly treasury: TreasuryCompanyProvisioningPort,
+    private readonly audit: AuditAppendPort,
+  ) {}
 
   async provision(rawInput: CompanyProvisioningInput) {
     const input = companyProvisioningSchema.parse(rawInput);
@@ -51,84 +61,63 @@ export class CompanyProvisioningService {
     passwordHash: string,
     options: { requireNewAdminIdentity?: boolean } = {},
   ) {
-      const input = preparedCompanyProvisioningSchema.parse(rawInput);
-      if (!passwordHash || passwordHash.length > 255) throw new TypeError('A valid prepared password hash is required');
-      const currency = await tx.currency.findUnique({ where: { scopeKey_code: { scopeKey: 'GLOBAL', code: input.baseCurrencyCode } } });
-      if (!currency?.isActive) throw new CompanyProvisioningError('CURRENCY_NOT_FOUND');
+    const input = preparedCompanyProvisioningSchema.parse(rawInput);
+    if (!passwordHash || passwordHash.length > 255) {
+      throw new TypeError('A valid prepared password hash is required');
+    }
 
-      const organization = await tx.organization.upsert({
-        where: { code: input.organizationCode },
-        update: { name: input.organizationName },
-        create: { code: input.organizationCode, name: input.organizationName },
-      });
-      const existingCompany = await tx.company.findUnique({
-        where: { organizationId_code: { organizationId: organization.id, code: input.companyCode } },
-      });
-      if (existingCompany && existingCompany.baseCurrencyId !== currency.id) {
-        throw new CompanyProvisioningError('COMPANY_CURRENCY_MISMATCH');
-      }
-      const company = existingCompany
-        ? await tx.company.update({ where: { id: existingCompany.id }, data: { name: input.companyName, timezone: input.timezone, isActive: true } })
-        : await tx.company.create({ data: { organizationId: organization.id, baseCurrencyId: currency.id, code: input.companyCode, name: input.companyName, timezone: input.timezone } });
-      await tx.companyCurrency.upsert({
-        where: { companyId_currencyId: { companyId: company.id, currencyId: currency.id } },
-        update: { isActive: true },
-        create: { companyId: company.id, currencyId: currency.id },
-      });
+    const tenant = await this.tenant.provisionTenant(tx, input);
+    const identity = await this.identity.provisionAdministrator(tx, {
+      companyId: tenant.company.id,
+      email: input.adminEmail,
+      displayName: input.adminDisplayName,
+      passwordHash,
+      requireNewIdentity: options.requireNewAdminIdentity ?? false,
+    });
+    const defaultChart = await this.accounting.provisionAccounting(
+      tx,
+      tenant.company.id,
+      tenant.created,
+    );
+    await this.treasury.provisionTreasury(tx);
+    await this.audit.append(tx, {
+      companyId: tenant.company.id,
+      actorUserId: identity.administrator.id,
+      action: tenant.created ? 'COMPANY_PROVISIONED' : 'COMPANY_PROVISIONING_CONFIRMED',
+      entityType: 'COMPANY',
+      entityId: tenant.company.id.toString(),
+      details: {
+        organizationCode: tenant.organization.code,
+        companyCode: tenant.company.code,
+        reusedAdminIdentity: identity.reusedIdentity,
+        ...(defaultChart ? {
+          defaultChartTemplate: defaultChart.templateCode,
+          defaultChartAccountsCreated: defaultChart.accountsCreated,
+        } : {}),
+      },
+    });
 
-      const existingUser = await tx.user.findUnique({ where: { emailNormalized: input.adminEmail } });
-      if (existingUser && !existingUser.isActive) throw new CompanyProvisioningError('ADMIN_USER_DISABLED');
-      if (existingUser && options.requireNewAdminIdentity) throw new CompanyProvisioningError('ADMIN_USER_EXISTS');
-      const admin = existingUser ?? await tx.user.create({ data: { emailNormalized: input.adminEmail, displayName: input.adminDisplayName, passwordHash } });
-      await tx.userCompany.upsert({
-        where: { userId_companyId: { userId: admin.id, companyId: company.id } },
-        update: { isActive: true },
-        create: { userId: admin.id, companyId: company.id },
-      });
-
-      const administratorRole = await tx.role.upsert({
-        where: { companyId_code: { companyId: company.id, code: 'ADMINISTRATOR' } },
-        update: { nameAr: 'مدير الشركة', isActive: true, isSystemRole: true },
-        create: { companyId: company.id, code: 'ADMINISTRATOR', nameAr: 'مدير الشركة', isSystemRole: true },
-      });
-      for (const [code, module, descriptionAr] of permissionDefinitions) {
-        const permission = await tx.permission.upsert({ where: { code }, update: { module, descriptionAr }, create: { code, module, descriptionAr } });
-        await tx.rolePermission.upsert({
-          where: { roleId_permissionId: { roleId: administratorRole.id, permissionId: permission.id } },
-          update: {},
-          create: { roleId: administratorRole.id, permissionId: permission.id },
-        });
-      }
-      await tx.userCompanyRole.upsert({
-        where: { userId_companyId_roleId: { userId: admin.id, companyId: company.id, roleId: administratorRole.id } },
-        update: {},
-        create: { userId: admin.id, companyId: company.id, roleId: administratorRole.id },
-      });
-
-      for (const definition of accountTypeDefinitions) {
-        await tx.accountType.upsert({ where: { code: definition.code }, update: definition, create: definition });
-      }
-      const defaultChart = existingCompany ? null : await applyDefaultChartTemplate(tx, company.id);
-      await upsertGlobalPaymentMethods(tx);
-
-      await tx.auditLog.create({
-        data: {
-          companyId: company.id,
-          actorUserId: admin.id,
-          action: existingCompany ? 'COMPANY_PROVISIONING_CONFIRMED' : 'COMPANY_PROVISIONED',
-          entityType: 'COMPANY',
-          entityId: company.id.toString(),
-          details: { organizationCode: organization.code, companyCode: company.code, reusedAdminIdentity: Boolean(existingUser), ...(defaultChart ? { defaultChartTemplate: defaultChart.templateCode, defaultChartAccountsCreated: defaultChart.created } : {}) },
-        },
-      });
-
-      return {
-        organization: { id: organization.id.toString(), code: organization.code, name: organization.name },
-        company: { id: company.id.toString(), code: company.code, name: company.name, timezone: company.timezone, baseCurrencyCode: currency.code },
-        administrator: { id: admin.id.toString(), email: admin.emailNormalized, reusedIdentity: Boolean(existingUser) },
-        permissionsGranted: permissionDefinitions.length,
-        defaultChart: defaultChart ? { templateCode: defaultChart.templateCode, version: defaultChart.version, accountsCreated: defaultChart.created } : null,
-      };
+    return {
+      organization: {
+        id: tenant.organization.id.toString(),
+        code: tenant.organization.code,
+        name: tenant.organization.name,
+      },
+      company: {
+        id: tenant.company.id.toString(),
+        code: tenant.company.code,
+        name: tenant.company.name,
+        timezone: tenant.company.timezone,
+        baseCurrencyCode: tenant.baseCurrency.code,
+      },
+      administrator: {
+        id: identity.administrator.id.toString(),
+        email: identity.administrator.email,
+        reusedIdentity: identity.reusedIdentity,
+      },
+      permissionsGranted: identity.permissionsGranted,
+      defaultChart,
+    };
   }
 
   async provisionPrepared(

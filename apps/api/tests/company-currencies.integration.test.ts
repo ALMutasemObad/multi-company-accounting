@@ -4,9 +4,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
 import { AuthService } from '../src/auth/auth-service.js';
 import { PrismaAuthStore } from '../src/auth/prisma-auth-store.js';
-import { CompanyService } from '../src/companies/company-service.js';
+import { createCompanyService } from '../src/composition/create-company-service.js';
 import { createDatabase } from '../src/database.js';
-import { ReceiptReferenceService } from '../src/receipts/reference-service.js';
 
 const enabled = process.env.RUN_DB_TESTS === 'true' && Boolean(process.env.DATABASE_URL);
 const databaseUrl = process.env.DATABASE_URL ?? '';
@@ -77,10 +76,10 @@ describe.runIf(enabled)('company currencies and dated exchange rates with MariaD
     await cleanup();
 
     const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, { preAuthTtlMinutes: 10, sessionTtlHours: 12 });
-    const companies = new CompanyService(prisma!);
+    const companies = createCompanyService(prisma!);
     const app = createApp(
       { NODE_ENV: 'test', PORT: 3000, WEB_ORIGIN: 'http://localhost:5173', SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: databaseUrl },
-      { auth, companies, receiptReferences: new ReceiptReferenceService(prisma!) },
+      { auth, companies },
     );
     agent = request.agent(app);
     csrf = (await agent.get('/api/v1/auth/csrf').expect(200)).body.csrfToken;
@@ -124,7 +123,7 @@ describe.runIf(enabled)('company currencies and dated exchange rates with MariaD
 
   it('isolates rates with the same currency and date between companies', async () => {
     const foreign = await ensureForeignCompany();
-    const service = new CompanyService(prisma!);
+    const service = createCompanyService(prisma!);
     await service.upsertExchangeRate({ userId, companyId: foreign.id }, { currencyId: usdId, rateDate: '2026-08-01', rate: '7.50000000', source: 'شركة أخرى' });
 
     const currentRate = await service.resolveExchangeRate({ userId, companyId }, usdId, '2026-08-01');
@@ -135,7 +134,7 @@ describe.runIf(enabled)('company currencies and dated exchange rates with MariaD
 
   it('creates, audits and isolates company-owned currencies while handling duplicate races', async () => {
     const foreign = await ensureForeignCompany();
-    const service = new CompanyService(prisma!);
+    const service = createCompanyService(prisma!);
     const currentContext = { userId, companyId };
     const foreignContext = { userId, companyId: foreign.id };
 

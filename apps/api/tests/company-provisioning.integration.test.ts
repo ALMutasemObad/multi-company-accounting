@@ -1,7 +1,7 @@
 import { beforeAll, afterAll, describe, expect, it } from 'vitest';
 import type { PrismaClient } from '@prisma/client';
 import { createDatabase } from '../src/database.js';
-import { CompanyProvisioningService } from '../src/platform/company-provisioning-service.js';
+import { createCompanyProvisioningService } from '../src/composition/create-company-provisioning-service.js';
 import { permissionDefinitions } from '../src/platform/reference-data.js';
 import { DEFAULT_CHART_TEMPLATE_CODE, DEFAULT_CHART_TEMPLATE_VERSION, defaultChartDefinitions } from '../src/accounts/default-chart-template.js';
 
@@ -47,7 +47,7 @@ suite('multi-company provisioning integration', () => {
   afterAll(async () => { await cleanup(); await prisma.$disconnect(); });
 
   it('provisions two isolated companies for one global identity and safely replays', async () => {
-    const service = new CompanyProvisioningService(prisma);
+    const service = createCompanyProvisioningService(prisma);
     const base = {
       organizationCode,
       organizationName: 'مؤسسة اختبار التجهيز',

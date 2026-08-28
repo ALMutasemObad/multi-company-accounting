@@ -9,7 +9,11 @@ export type MasterDataEntityType =
   | "INVENTORY_ITEM"
   | "PAYMENT_METHOD"
   | "TAX_RATE"
-  | "CUSTOM_ROLE";
+  | "CUSTOM_ROLE"
+  | "PROFESSIONAL_PROJECT"
+  | "HR_DEPARTMENT"
+  | "HR_POSITION"
+  | "EMPLOYEE";
 
 const defaults: Record<
   MasterDataEntityType,
@@ -30,6 +34,10 @@ const defaults: Record<
   },
   TAX_RATE: { prefix: "TAX-", padding: 6 },
   CUSTOM_ROLE: { prefix: "ROL-", padding: 6 },
+  PROFESSIONAL_PROJECT: { prefix: "PRJ-", padding: 6 },
+  HR_DEPARTMENT: { prefix: "DEP-", padding: 6 },
+  HR_POSITION: { prefix: "JOB-", padding: 6 },
+  EMPLOYEE: { prefix: "EMP-", padding: 6 },
 };
 
 type ReservedSequenceRow = {

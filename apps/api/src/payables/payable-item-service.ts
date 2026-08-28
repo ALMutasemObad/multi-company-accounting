@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, type PayableItem } from "@prisma/client";
 
 export type PayableAllocationTarget = {
   payableItemId: bigint;
@@ -255,11 +255,18 @@ export class PayableItemService implements PayableSettlementPort {
       const locked = await lockPayableItems(tx, command.companyId, ids);
       if (locked.length !== ids.length) throw command.errors.invalid();
     }
-    const items = await tx.payableItem.findMany({
+    let items = await tx.payableItem.findMany({
       where: { companyId: command.companyId, id: { in: ids } },
       orderBy: { id: "asc" },
     });
     if (items.length !== ids.length) throw command.errors.invalid();
+    if (lock) {
+      const initialized: PayableItem[] = [];
+      for (const item of items) {
+        initialized.push(await this.initializeBaseAmounts(tx, item, command.errors.conflict));
+      }
+      items = initialized;
+    }
     return items;
   }
 
@@ -409,6 +416,57 @@ export class PayableItemService implements PayableSettlementPort {
     if (changed.count !== 1) throw conflict();
   }
 
+  private async initializeBaseAmounts(
+    tx: Prisma.TransactionClient,
+    item: PayableItem,
+    conflict: () => Error,
+  ): Promise<PayableItem> {
+    const originalIsZero = item.originalBaseAmount.equals(0);
+    const outstandingIsZero = item.outstandingBaseAmount.equals(0);
+    if (!originalIsZero) return item;
+    if (!outstandingIsZero || item.originalAmount.lte(0)) throw conflict();
+
+    const invoice = await tx.purchaseInvoice.findFirst({
+      where: { id: item.purchaseInvoiceId, companyId: item.companyId },
+      select: { baseTotal: true },
+    });
+    const originalBaseAmount = invoice ? money(invoice.baseTotal) : new Prisma.Decimal(0);
+    if (originalBaseAmount.lte(0)) throw conflict();
+    const outstandingBaseAmount = item.outstandingAmount.equals(0)
+      ? money(0)
+      : item.outstandingAmount.equals(item.originalAmount)
+        ? originalBaseAmount
+        : money(originalBaseAmount.mul(item.outstandingAmount).div(item.originalAmount));
+    if (
+      outstandingBaseAmount.lt(0) ||
+      outstandingBaseAmount.gt(originalBaseAmount) ||
+      (item.status === "PARTIAL" && (outstandingBaseAmount.lte(0) || outstandingBaseAmount.gte(originalBaseAmount)))
+    ) {
+      throw conflict();
+    }
+    const changed = await tx.payableItem.updateMany({
+      where: {
+        id: item.id,
+        companyId: item.companyId,
+        version: item.version,
+        originalBaseAmount: new Prisma.Decimal(0),
+        outstandingBaseAmount: new Prisma.Decimal(0),
+      },
+      data: {
+        originalBaseAmount,
+        outstandingBaseAmount,
+        version: { increment: 1 },
+      },
+    });
+    if (changed.count !== 1) throw conflict();
+    return {
+      ...item,
+      originalBaseAmount,
+      outstandingBaseAmount,
+      version: item.version + 1,
+    };
+  }
+
   private async lockByInvoice(
     tx: Prisma.TransactionClient,
     companyId: bigint,
@@ -426,6 +484,6 @@ export class PayableItemService implements PayableSettlementPort {
       where: { id: candidate.id, companyId, purchaseInvoiceId },
     });
     if (!item) throw invalid();
-    return item;
+    return this.initializeBaseAmounts(tx, item, invalid);
   }
 }

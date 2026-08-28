@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { financialPositionTable, journalReportToCsv, ledgerReportTable, tableToCsv, tableToPdf, tableToXlsx } from "../src/reports/financial-statement-exporter.js";
+import { costCenterActivityTable, financialPositionTable, indirectCashFlowTable, journalReportToCsv, ledgerReportTable, tableToCsv, tableToPdf, tableToXlsx, taxSummaryTable } from "../src/reports/financial-statement-exporter.js";
 
 const report = {
   company: { name: "الشركة التجريبية" }, baseCurrency: { code: "SAR", nameAr: "ريال سعودي" }, asOf: "2026-08-11", comparisonAsOf: null,
@@ -45,5 +45,49 @@ describe("financial statement exports", () => {
     expect(tableToXlsx(table, "كشف الحساب").includes(Buffer.from("xl/worksheets/sheet1.xml"))).toBe(true);
     const pdf = await tableToPdf(table, "كشف الحساب", "الشركة التجريبية");
     expect(pdf.subarray(0, 4).toString()).toBe("%PDF");
+  });
+  it("exports the indirect cash-flow reconciliation in every supported format", async () => {
+    const table = indirectCashFlowTable({
+      company: { name: "الشركة التجريبية" },
+      baseCurrency: { code: "SAR", nameAr: "ريال سعودي" },
+      range: { dateFrom: "2026-01-01", dateTo: "2026-12-31" },
+      sections: {
+        operating: { netIncome: "80.0000", adjustments: [], adjustmentsTotal: "0.0000", workingCapital: [{ code: "1210", nameAr: "الذمم", amount: "-40.0000" }], workingCapitalTotal: "-40.0000", total: "40.0000" },
+        investing: { rows: [], total: "0.0000" },
+        financing: { rows: [], total: "0.0000" },
+      },
+      cash: { opening: "100.0000", calculatedNetChange: "40.0000", closing: "140.0000", difference: "0.0000", reconciled: true },
+    });
+    const csv = tableToCsv(table).toString("utf8");
+    expect(csv).toContain("قائمة التدفق النقدي بالطريقة غير المباشرة");
+    expect(csv).toContain("مطابقة الرصيد النقدي: متطابق");
+    expect(tableToXlsx(table, "التدفق النقدي").subarray(0, 4).toString("hex")).toBe("504b0304");
+    expect((await tableToPdf(table, "التدفق النقدي", "الشركة التجريبية")).subarray(0, 4).toString()).toBe("%PDF");
+  });
+  it("exports a tax summary with its ledger basis and reconciliation totals", async () => {
+    const table = taxSummaryTable({
+      company: { name: "الشركة التجريبية" }, baseCurrency: { code: "SAR", nameAr: "ريال سعودي" },
+      range: { dateFrom: "2026-01-01", dateTo: "2026-12-31" }, filter: { status: null, basis: "LEDGER" },
+      totals: { outputTaxable: "100.0000", outputTax: "15.0000", inputTaxable: "40.0000", inputTax: "6.0000", netTaxDue: "9.0000", documentCount: 2 },
+      rows: [{ usage: "OUTPUT", documentType: "SALES_INVOICE", status: "POSTED", taxCode: "VAT-15", taxNameAr: "ضريبة 15%", rate: "15.0000", documentCount: 1, taxableBase: "100.0000", taxBase: "15.0000" }],
+    });
+    const csv = tableToCsv(table).toString("utf8");
+    expect(csv).toContain("الأثر المرحل والعكس");
+    expect(csv).toContain('"صافي الضريبة المستحقة","9.0000"');
+    expect(tableToXlsx(table, "ملخص الضريبة").subarray(0, 4).toString("hex")).toBe("504b0304");
+    expect((await tableToPdf(table, "ملخص الضريبة", "الشركة التجريبية")).subarray(0, 4).toString()).toBe("%PDF");
+  });
+  it("exports cost-center account detail and period totals in every supported format", async () => {
+    const table = costCenterActivityTable({
+      company: { name: "الشركة التجريبية" }, baseCurrency: { code: "SAR", nameAr: "ريال سعودي" },
+      range: { dateFrom: "2026-01-01", dateTo: "2026-12-31" },
+      data: [{ costCenter: { code: "CC-001", nameAr: "المشروع الأول" }, accounts: [{ code: "5100", nameAr: "مصروف المشروع", movementLineCount: 2, debit: "20.3000", credit: "0.0000", net: "20.3000" }], totals: { movementLineCount: 2, debit: "20.3000", credit: "0.0000", net: "20.3000" } }],
+      totals: { costCenterCount: 1, accountCount: 1, movementLineCount: 2, debit: "20.3000", credit: "0.0000", net: "20.3000" },
+    });
+    const csv = tableToCsv(table).toString("utf8");
+    expect(csv).toContain("حركة مراكز التكلفة الفعلية");
+    expect(csv).toContain("إجمالي الفترة");
+    expect(tableToXlsx(table, "حركة مراكز التكلفة").subarray(0, 4).toString("hex")).toBe("504b0304");
+    expect((await tableToPdf(table, "حركة مراكز التكلفة", "الشركة التجريبية")).subarray(0, 4).toString()).toBe("%PDF");
   });
 });

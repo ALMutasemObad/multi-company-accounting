@@ -20,12 +20,15 @@
     "@prisma/client": "7.9.1",
     "argon2": "^0.45.1",
     "cors": "2.8.6",
+    "csv-parse": "7.0.2",
     "dotenv": "17.4.2",
     "express": "5.2.1",
+    "fast-xml-parser": "5.11.0",
     "fflate": "0.8.3",
     "helmet": "8.3.0",
     "pdfkit": "^0.19.1",
     "read-excel-file": "9.3.10",
+    "xstate": "5.32.5",
     "zod": "4.4.3"
   },
   "devDependencies": {

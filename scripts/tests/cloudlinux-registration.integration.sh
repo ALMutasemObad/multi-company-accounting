@@ -131,6 +131,7 @@ run_switch "$source_release" "$target_release" "$metrics_token_file"
   const fs = require("node:fs");
   const environment = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
   if (environment.METRICS_ENABLED !== "true" || environment.METRICS_BEARER_TOKEN !== "fixture-metrics-token-12345678901234567890") process.exit(1);
+  if (typeof environment.RATE_LIMIT_IDENTITY_SECRET !== "string" || environment.RATE_LIMIT_IDENTITY_SECRET.length < 32) process.exit(1);
 ' "$state_environment"
 [[ "$(stat -c '%a' -- "$passenger_config")" == 644 ]]
 [[ -n "$(find "$backup_directory" -maxdepth 1 -type f -name 'selector-before-target-*.json' -print -quit)" ]]

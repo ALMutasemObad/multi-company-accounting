@@ -1,15 +1,15 @@
 ---
 title: "Treasury Context Ownership and Instrument Policy"
 status: "implemented"
-version: "1.1"
-last_updated: "2026-08-26"
+version: "1.2"
+last_updated: "2026-08-27"
 ---
 
 # ملكية سياق Treasury وسياسة أدوات الحركة النقدية
 
 ## 1. القرار
 
-`CashBankAccount` و`PaymentMethod` مملوكان حصريًا لوحدة `Treasury`. لا تنفذ خدمات العملاء أو الموردين أو القبض أو الصرف Prisma CRUD مباشرًا عليهما. تستخدم حركتا القبض والصرف `TreasuryInstrumentPort` للحصول على حساب النقد وطريقة الدفع الصالحين داخل المعاملة المالية نفسها.
+`CashBankAccount` و`PaymentMethod` وواردات كشوف البنك وخطوطها وجلسات المطابقة وسجل روابطها مملوكة حصريًا لوحدة `Treasury`. لا تنفذ خدمات العملاء أو الموردين أو القبض أو الصرف Prisma CRUD مباشرًا على مراجع Treasury. تستخدم حركتا القبض والصرف `TreasuryInstrumentPort` للحصول على حساب النقد وطريقة الدفع الصالحين داخل المعاملة المالية نفسها، وتستخدم المطابقة `ReconciliationLedgerQueryPort` لقراءة حقائق Ledger المرحلة فقط.
 
 تبقى مسارات HTTP العامة الحالية بلا كسر:
 
@@ -23,6 +23,7 @@ last_updated: "2026-08-26"
 | الوحدة | تملك | تستهلك |
 |---|---|---|
 | Treasury references | `CashBankAccount` و`PaymentMethod` وCRUD وسياسة الصلاحية والتقنيع والنسخ | الحساب المحاسبي كمرجع مقيد بالشركة |
+| Bank reconciliation | `BankStatementImport/Line` و`BankReconciliationSession/Match` وسياسة الاقتراح والاعتماد والإقفال | `BankStatementParserPort` و`ReconciliationLedgerQueryPort`؛ قراءة Ledger فقط |
 | Receipt | رأس القبض وحركة النقد وتخصيصاتها | `TreasuryInstrumentPort` و`ReceivableSettlementPort` و`PostingEngine` |
 | Payment | رأس الصرف وحركة النقد وتخصيصاتها | `TreasuryInstrumentPort` و`PayableSettlementPort` و`PostingEngine` |
 | Registration/Onboarding | تنسيق تجهيز الشركة | `upsertGlobalPaymentMethods` المملوك لوحدة Treasury بدل Prisma المباشر |
@@ -54,9 +55,11 @@ last_updated: "2026-08-26"
 
 لا يحتاج المستخدم إلى اختيار حساب فرق العملة: يحل Core Accounting حسابي الدليل الافتراضي `realized-fx-gain` و`realized-fx-loss` عند وجود فرق فقط. يكون الفرق الموجب ربحًا وفق منظور الشركة في القبض والدفع، وتنعكس الخطة الأصلية حرفيًا عند عكس السند. إذا كانت الحسابات غير جاهزة يفشل الترحيل ذريًا قبل أي أثر دائم برسالة إعداد واضحة.
 
+أما المطابقة البنكية فلا تبني Posting Plan أصلًا. يحول الـParser الملف إلى عقد محلي بلا Persistence، ويحفظ `ReconciliationService` الاستيراد بعد نجاح التحقق، ثم يقرأ Adapter الحركات المرتبطة بحساب البنك من القيود `POSTED` فقط. محرك المطابقة pure ولا يملك Prisma. تصنيف السطر بأنه يحتاج مستندًا محاسبيًا لا ينشئ ذلك المستند؛ ينشئ المستخدم قبضًا أو صرفًا أو قيدًا يدويًا عبر خدمته الحالية، فيمر الأثر عبر `PostingEngine` ثم يمكن ربط الحركة الناتجة.
+
 ## 5. التزامن والأخطاء
 
-تمر إنشاءات وتعديلات وتعطيلات مراجع Treasury عبر `TransactionExecutor` بمهلة واحدة وretry محدود لأخطاء قاعدة البيانات العابرة فقط. لا يعاد خطأ النسخة القديمة أو العزل أو المرجع العام؛ يعاد HTTP 409 للنسخة القديمة و404 للكيان غير المرئي و422 لقاعدة الأعمال.
+تمر إنشاءات وتعديلات وتعطيلات مراجع Treasury وأوامر المطابقة عبر `TransactionExecutor` بمهلة واحدة وretry محدود لأخطاء قاعدة البيانات العابرة فقط. تستخدم أوامر المطابقة `Idempotency-Key` ونسخة الجلسة، وتقفل الجلسة ثم خطوط البنك تصاعديًا ثم حركات Ledger تصاعديًا. لا يعاد خطأ النسخة القديمة أو العزل أو المرجع العام؛ يعاد HTTP 409 للنسخة القديمة و404 للكيان غير المرئي و422 لقاعدة الأعمال.
 
 اختبارا التحديث المتنافس على `CashBankAccount` و`PaymentMethod` يثبتان نجاح طلب واحد فقط وإعادة 409 للآخر على MariaDB وMySQL الفعليين.
 
@@ -77,4 +80,5 @@ last_updated: "2026-08-26"
 - اختبارات وحدة للعزل وصلاحية حساب الأستاذ والمرجع الإلزامي والنسخة والطرق العامة.
 - اختبارات تكامل للـCRUD والتقنيع والتعطيل والتزامن وcross-company.
 - استمرار اختبارات القبض والصرف والتسوية والعكس والـIdempotency عبر المنفذ الجديد.
-- نجاح 178/178 اختبار API على MariaDB وMySQL 8.4، وبناء API والواجهة، وOpenAPI/Redocly.
+- اختبارات المطابقة تثبت العزل والتفرد والتزامن وإعادة الأمر وحفظ تاريخ الفك والإقفال، وتثبت ثبات عدد `JournalEntry/JournalLine` طوال الدورة.
+- نجاح حزمة API وقاعدة البيانات من قاعدة فارغة على محركات المصفوفة، وبناء API والواجهة، وOpenAPI/Redocly.

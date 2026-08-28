@@ -1,5 +1,6 @@
 ﻿import { createHash, randomUUID } from "node:crypto";
-import { Prisma, type PrismaClient } from "@prisma/client";
+import { Prisma, type AccountingDocument, type PrismaClient } from "@prisma/client";
+import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import {
   lockAccountingDocument,
   PostingEngine,
@@ -23,7 +24,7 @@ import { PayableItemService } from "../payables/payable-item-service.js";
 import { archiveDocument } from "../printing/print-archive.js";
 import { calculateTaxDocument, TaxCalculationError } from "../tax/tax-calculator.js";
 import { TaxError, TaxService, type TaxQuotePort } from "../tax/tax-service.js";
-import type { ActorContext } from "../users/user-service.js";
+import type { ActorContext } from "../platform/actor-context.js";
 import type { DataImportInvoiceGroup } from "../imports/data-import-types.js";
 
 export type PurchaseInvoiceErrorReason =
@@ -113,7 +114,7 @@ const day = (value: Date) => value.toISOString().slice(0, 10);
 const decimal = (value: Prisma.Decimal.Value) => new Prisma.Decimal(value);
 const money = (value: Prisma.Decimal.Value) => decimal(value).toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP);
 
-const documentJson = (value: any) => ({
+const documentJson = (value: AccountingDocument) => ({
   id: value.id.toString(),
   documentType: value.documentType,
   documentNumber: value.documentNumber,
@@ -128,6 +129,56 @@ const documentJson = (value: any) => ({
   postedAt: value.postedAt?.toISOString() ?? null,
   reversedByDocumentId: value.reversedByDocumentId?.toString() ?? null,
 });
+
+const purchaseInvoiceInclude = {
+  accountingDocument: true,
+  supplier: { select: { id: true, code: true, nameAr: true } },
+  currency: { select: { id: true, code: true, nameAr: true } },
+  sourceInvoice: { include: { accountingDocument: true } },
+  debitNotes: { include: { accountingDocument: true } },
+  lines: {
+    orderBy: { lineNumber: "asc" as const },
+    include: {
+      debitAccount: { select: { id: true, code: true, nameAr: true } },
+      costCenter: { select: { id: true, code: true, nameAr: true } },
+      taxRate: { select: { id: true, code: true, nameAr: true, rate: true } },
+    },
+  },
+  payableItem: {
+    include: {
+      paymentAllocations: {
+        include: { payment: { include: { accountingDocument: true } } },
+      },
+    },
+  },
+} as const;
+
+type PurchaseInvoiceRecord = Prisma.PurchaseInvoiceGetPayload<{ include: typeof purchaseInvoiceInclude }>;
+const purchaseInvoiceCommandInclude = {
+  accountingDocument: true,
+  lines: { orderBy: { lineNumber: "asc" as const } },
+} as const;
+type PurchaseInvoiceCommandRecord = Prisma.PurchaseInvoiceGetPayload<{ include: typeof purchaseInvoiceCommandInclude }>;
+type SerializedAccountingDocument = ReturnType<typeof documentJson>;
+type PurchaseCommandJsonInput = {
+  document: AccountingDocument | SerializedAccountingDocument;
+  generatedJournalEntryIds?: string[];
+  ids?: string[];
+  requestId: string;
+};
+type PurchaseAgingGroup = {
+  supplierId: string;
+  supplierCode: string;
+  supplierName: string;
+  current: Prisma.Decimal;
+  days1To30: Prisma.Decimal;
+  days31To60: Prisma.Decimal;
+  days61To90: Prisma.Decimal;
+  daysOver90: Prisma.Decimal;
+  total: Prisma.Decimal;
+  invoices: Array<{ id: string; documentNumber: string; documentDate: string; dueDate: string; total: string; outstanding: string; ageDays: number }>;
+};
+type AgingBucket = "current" | "days1To30" | "days31To60" | "days61To90" | "daysOver90";
 
 export class PurchaseInvoiceService {
   private readonly fiscal: FiscalService;
@@ -152,42 +203,21 @@ export class PurchaseInvoiceService {
   }
 
   private include() {
-    return {
-      accountingDocument: true,
-      supplier: { select: { id: true, code: true, nameAr: true } },
-      currency: { select: { id: true, code: true, nameAr: true } },
-      sourceInvoice: { include: { accountingDocument: true } },
-      debitNotes: { include: { accountingDocument: true } },
-      lines: {
-        orderBy: { lineNumber: "asc" as const },
-        include: {
-          debitAccount: { select: { id: true, code: true, nameAr: true } },
-          costCenter: { select: { id: true, code: true, nameAr: true } },
-          taxRate: { select: { id: true, code: true, nameAr: true, rate: true } },
-        },
-      },
-      payableItem: {
-        include: {
-          paymentAllocations: {
-            include: { payment: { include: { accountingDocument: true } } },
-          },
-        },
-      },
-    } as const;
+    return purchaseInvoiceInclude;
   }
 
   async list(context: ActorContext, input: {
     page: number;
     pageSize: number;
-    documentType?: "PURCHASE_INVOICE" | "PURCHASE_DEBIT_NOTE";
-    status?: "DRAFT" | "POSTED" | "CANCELLED" | "REVERSED";
-    supplierId?: bigint;
-    dateFrom?: string;
-    dateTo?: string;
-    dueFrom?: string;
-    dueTo?: string;
-    search?: string;
-    outstandingOnly?: boolean;
+    documentType?: "PURCHASE_INVOICE" | "PURCHASE_DEBIT_NOTE" | undefined;
+    status?: "DRAFT" | "POSTED" | "CANCELLED" | "REVERSED" | undefined;
+    supplierId?: bigint | undefined;
+    dateFrom?: string | undefined;
+    dateTo?: string | undefined;
+    dueFrom?: string | undefined;
+    dueTo?: string | undefined;
+    search?: string | undefined;
+    outstandingOnly?: boolean | undefined;
   }) {
     const where: Prisma.PurchaseInvoiceWhereInput = {
       companyId: context.companyId,
@@ -638,7 +668,7 @@ export class PurchaseInvoiceService {
     });
   }
 
-  async payablesAging(context: ActorContext, input: { asOf: string; supplierId?: bigint }) {
+  async payablesAging(context: ActorContext, input: { asOf: string; supplierId?: bigint | undefined }) {
     const asOf = asDate(input.asOf);
     const company = await this.prisma.company.findUniqueOrThrow({
       where: { id: context.companyId },
@@ -652,10 +682,10 @@ export class PurchaseInvoiceService {
     const rows = invoices.map((invoice) => {
       const outstanding = money(this.outstanding(invoice, asOf).mul(invoice.exchangeRate));
       const ageDays = Math.max(0, Math.floor((asOf.getTime() - invoice.dueDate.getTime()) / 86_400_000));
-      const bucket = invoice.dueDate >= asOf ? "current" : ageDays <= 30 ? "days1To30" : ageDays <= 60 ? "days31To60" : ageDays <= 90 ? "days61To90" : "daysOver90";
+      const bucket: AgingBucket = invoice.dueDate >= asOf ? "current" : ageDays <= 30 ? "days1To30" : ageDays <= 60 ? "days31To60" : ageDays <= 90 ? "days61To90" : "daysOver90";
       return { invoice, outstanding, ageDays, bucket };
     }).filter((row) => !row.outstanding.equals(0));
-    const grouped = new Map<string, any>();
+    const grouped = new Map<string, PurchaseAgingGroup>();
     for (const row of rows) {
       const key = row.invoice.supplierId.toString();
       const current = grouped.get(key) ?? { supplierId: key, supplierCode: row.invoice.supplier.code, supplierName: row.invoice.supplier.nameAr, current: decimal(0), days1To30: decimal(0), days31To60: decimal(0), days61To90: decimal(0), daysOver90: decimal(0), total: decimal(0), invoices: [] };
@@ -674,11 +704,19 @@ export class PurchaseInvoiceService {
     };
   }
 
-  static json(value: any) {
-    const paid = value.payableItem ? value.payableItem.paymentAllocations.filter((allocation: any) => allocation.payment.accountingDocument.status === "POSTED").reduce((sum: Prisma.Decimal, allocation: any) => sum.add(allocation.allocatedAmount), decimal(0)) : decimal(0);
-    const debited = value.debitNotes?.filter((note: any) => note.accountingDocument.status === "POSTED").reduce((sum: Prisma.Decimal, note: any) => sum.add(note.total), decimal(0)) ?? decimal(0);
+  static json(value: PurchaseInvoiceRecord) {
+    const paid = value.payableItem ? value.payableItem.paymentAllocations.filter((allocation) => allocation.payment.accountingDocument.status === "POSTED").reduce((sum: Prisma.Decimal, allocation) => sum.add(allocation.allocatedAmount), decimal(0)) : decimal(0);
+    const debited = value.debitNotes.filter((note) => note.accountingDocument.status === "POSTED").reduce((sum: Prisma.Decimal, note) => sum.add(note.total), decimal(0));
     const outstanding = value.accountingDocument.documentType === "PURCHASE_INVOICE" ? value.payableItem?.outstandingAmount ?? value.total.sub(paid).sub(debited) : decimal(0);
-    const outstandingBase = value.accountingDocument.documentType === "PURCHASE_INVOICE" ? value.payableItem?.outstandingBaseAmount ?? value.baseTotal : decimal(0);
+    const outstandingBase = value.accountingDocument.documentType !== "PURCHASE_INVOICE"
+      ? decimal(0)
+      : !value.payableItem
+        ? value.baseTotal
+        : value.payableItem.originalBaseAmount.gt(0)
+          ? value.payableItem.outstandingBaseAmount
+          : outstanding.equals(0) || value.total.lte(0)
+            ? decimal(0)
+            : money(value.baseTotal.mul(outstanding).div(value.total));
     return {
       id: value.id.toString(),
       document: documentJson(value.accountingDocument),
@@ -711,7 +749,7 @@ export class PurchaseInvoiceService {
       supplierTaxMasked: value.supplierTaxLast4 ? `****${value.supplierTaxLast4}` : null,
       supplierAddressSnapshot: value.supplierAddressSnapshot,
       notes: value.notes,
-      lines: value.lines.map((line: any) => ({
+      lines: value.lines.map((line) => ({
         id: line.id.toString(),
         lineNumber: line.lineNumber,
         inventoryItemId: line.inventoryItemId?.toString() ?? null,
@@ -736,14 +774,14 @@ export class PurchaseInvoiceService {
     };
   }
 
-  static commandJson(value: any) {
-    return { document: typeof value.document.id === "string" ? value.document : documentJson(value.document), generatedJournalEntryIds: value.generatedJournalEntryIds ?? value.ids ?? [], requestId: value.requestId };
+  static commandJson(value: PurchaseCommandJsonInput) {
+    return { document: "companyId" in value.document ? documentJson(value.document) : value.document, generatedJournalEntryIds: value.generatedJournalEntryIds ?? value.ids ?? [], requestId: value.requestId };
   }
 
-  private outstanding(invoice: any, asOf?: Date) {
+  private outstanding(invoice: PurchaseInvoiceRecord, asOf?: Date) {
     if (!asOf && invoice.payableItem) return invoice.payableItem.outstandingAmount;
-    const paid = invoice.payableItem?.paymentAllocations.filter((allocation: any) => allocation.payment.accountingDocument.status === "POSTED" && (!asOf || allocation.payment.accountingDocument.documentDate <= asOf)).reduce((sum: Prisma.Decimal, allocation: any) => sum.add(allocation.allocatedAmount), decimal(0)) ?? decimal(0);
-    const debited = invoice.debitNotes?.filter((note: any) => note.accountingDocument.status === "POSTED" && (!asOf || note.accountingDocument.documentDate <= asOf)).reduce((sum: Prisma.Decimal, note: any) => sum.add(note.total), decimal(0)) ?? decimal(0);
+    const paid = invoice.payableItem?.paymentAllocations.filter((allocation) => allocation.payment.accountingDocument.status === "POSTED" && (!asOf || allocation.payment.accountingDocument.documentDate <= asOf)).reduce((sum: Prisma.Decimal, allocation) => sum.add(allocation.allocatedAmount), decimal(0)) ?? decimal(0);
+    const debited = invoice.debitNotes.filter((note) => note.accountingDocument.status === "POSTED" && (!asOf || note.accountingDocument.documentDate <= asOf)).reduce((sum: Prisma.Decimal, note) => sum.add(note.total), decimal(0));
     return invoice.total.sub(paid).sub(debited);
   }
 
@@ -850,8 +888,8 @@ export class PurchaseInvoiceService {
     };
   }
 
-  private inputFrom(value: any): PurchaseInvoiceInput {
-    return { documentType: value.accountingDocument.documentType, fiscalPeriodId: value.accountingDocument.fiscalPeriodId, documentDate: day(value.accountingDocument.documentDate), dueDate: day(value.dueDate), description: value.accountingDocument.description, supplierId: value.supplierId, warehouseId: value.warehouseId, supplierInvoiceNumber: value.supplierInvoiceNumber, sourceInvoiceId: value.sourceInvoiceId, currencyId: value.currencyId, exchangeRate: value.exchangeRate.toFixed(8), supplierAddress: value.supplierAddressSnapshot, notes: value.notes, lines: value.lines.map((line: any) => ({ inventoryItemId: line.inventoryItemId, description: line.description, quantity: line.quantity.toFixed(6), unitPrice: line.unitPrice.toFixed(4), discountAmount: line.discountAmount.toFixed(4), debitAccountId: line.debitAccountId, costCenterId: line.costCenterId, taxRateId: line.taxRateId })) };
+  private inputFrom(value: PurchaseInvoiceCommandRecord): PurchaseInvoiceInput {
+    return { documentType: value.accountingDocument.documentType as PurchaseInvoiceInput["documentType"], fiscalPeriodId: value.accountingDocument.fiscalPeriodId, documentDate: day(value.accountingDocument.documentDate), dueDate: day(value.dueDate), description: value.accountingDocument.description, supplierId: value.supplierId, warehouseId: value.warehouseId, supplierInvoiceNumber: value.supplierInvoiceNumber, sourceInvoiceId: value.sourceInvoiceId, currencyId: value.currencyId, exchangeRate: value.exchangeRate.toFixed(8), supplierAddress: value.supplierAddressSnapshot, notes: value.notes, lines: value.lines.map((line) => ({ inventoryItemId: line.inventoryItemId, description: line.description, quantity: line.quantity.toFixed(6), unitPrice: line.unitPrice.toFixed(4), discountAmount: line.discountAmount.toFixed(4), debitAccountId: line.debitAccountId, costCenterId: line.costCenterId, taxRateId: line.taxRateId })) };
   }
 
   private async validateDebitLimit(tx: Prisma.TransactionClient, companyId: bigint, sourceInvoiceId: bigint, amount: Prisma.Decimal, currentId?: bigint) {
@@ -944,7 +982,7 @@ export class PurchaseInvoiceService {
   }
 
   private audit(tx: Prisma.TransactionClient, context: ActorContext, action: string, id: bigint, details?: Prisma.InputJsonValue, entityType = "PURCHASE_INVOICE") {
-    return tx.auditLog.create({ data: { companyId: context.companyId, actorUserId: context.userId, action, entityType, entityId: id.toString(), ...(details ? { details } : {}) } });
+    return appendAudit(tx, { data: { companyId: context.companyId, actorUserId: context.userId, action, entityType, entityId: id.toString(), ...(details ? { details } : {}) } });
   }
 
   private async applyStockMovement(
@@ -1003,7 +1041,7 @@ export class PurchaseInvoiceService {
     }
   }
 
-  private async command(context: ActorContext, id: bigint, operation: string, key: string, fingerprint: string, execute: (tx: Prisma.TransactionClient, invoice: any) => Promise<{ document: any; ids: string[] }>) {
+  private async command(context: ActorContext, id: bigint, operation: string, key: string, fingerprint: string, execute: (tx: Prisma.TransactionClient, invoice: PurchaseInvoiceCommandRecord) => Promise<{ document: AccountingDocument; ids: string[] }>) {
     return this.commands.execute({
       context,
       operation,
@@ -1014,7 +1052,7 @@ export class PurchaseInvoiceService {
         inProgress: () => new PurchaseInvoiceError("IDEMPOTENCY_IN_PROGRESS"),
       },
     }, async (tx) => {
-        const invoice = await tx.purchaseInvoice.findFirst({ where: { id, companyId: context.companyId }, include: { accountingDocument: true, lines: { orderBy: { lineNumber: "asc" } } } });
+        const invoice = await tx.purchaseInvoice.findFirst({ where: { id, companyId: context.companyId }, include: purchaseInvoiceCommandInclude });
         if (!invoice) throw new PurchaseInvoiceError("NOT_FOUND");
         const result = await execute(tx, invoice);
         await this.audit(tx, context, operation, id);

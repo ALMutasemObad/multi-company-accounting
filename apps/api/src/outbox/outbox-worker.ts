@@ -236,10 +236,16 @@ export class OutboxWorker {
 
     const controller = new AbortController();
     this.handlerController = controller;
-    const timer = setTimeout(() => controller.abort(new Error('OUTBOX_HANDLER_TIMEOUT')), this.options.handlerTimeoutMs);
+    let rejectTimeout: ((reason: Error) => void) | undefined;
+    const timeout = new Promise<never>((_resolve, reject) => { rejectTimeout = reject; });
+    const timer = setTimeout(() => {
+      const error = new Error('OUTBOX_HANDLER_TIMEOUT');
+      controller.abort(error);
+      rejectTimeout?.(error);
+    }, this.options.handlerTimeoutMs);
     timer.unref();
     try {
-      await handler(event, controller.signal);
+      await Promise.race([handler(event, controller.signal), timeout]);
       if (controller.signal.aborted) throw controller.signal.reason;
       const completedAt = this.now();
       const completed = await this.prisma.outboxEvent.updateMany({

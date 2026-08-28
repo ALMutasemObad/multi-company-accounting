@@ -2,7 +2,7 @@ import { hash, verify } from "argon2";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
-import { AuditService } from "../src/audit/audit-service.js";
+import { createAuditService } from "../src/composition/create-audit-service.js";
 import { AuthService } from "../src/auth/auth-service.js";
 import { PrismaAuthStore } from "../src/auth/prisma-auth-store.js";
 import { createDatabase } from "../src/database.js";
@@ -32,10 +32,14 @@ describe.runIf(enabled)("audit log operations with MariaDB", () => {
   const startedAt = new Date();
 
   beforeAll(async () => {
-    const baseCompany = await prisma!.company.findFirstOrThrow();
-    companyId = baseCompany.id;
     const admin = await prisma!.user.findUniqueOrThrow({ where: { emailNormalized: "admin@mcap.local" } });
     adminId = admin.id;
+    const adminAssignment = await prisma!.userCompany.findFirstOrThrow({
+      where: { userId: admin.id, isActive: true },
+      include: { company: true },
+    });
+    const baseCompany = adminAssignment.company;
+    companyId = adminAssignment.companyId;
     await prisma!.session.deleteMany({ where: { user: { emailNormalized: viewerEmail } } });
     const existingViewer = await prisma!.user.findUnique({ where: { emailNormalized: viewerEmail } });
     if (existingViewer) {
@@ -54,7 +58,7 @@ describe.runIf(enabled)("audit log operations with MariaDB", () => {
     await prisma!.auditLog.create({ data: { companyId, actorUserId: adminId, action: "IT_AUDIT_UPDATED", entityType: "OTHER_ENTITY", entityId: "third" } });
     await prisma!.auditLog.create({ data: { companyId: foreign.id, actorUserId: adminId, action: "IT_AUDIT_FOREIGN", entityType: "TEST_ENTITY", entityId: "foreign" } });
     const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, { preAuthTtlMinutes: 10, sessionTtlHours: 12 });
-    app = createApp({ NODE_ENV: "test", PORT: 3000, WEB_ORIGIN: "http://localhost:5173", SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: databaseUrl }, { auth, audit: new AuditService(prisma!) });
+    app = createApp({ NODE_ENV: "test", PORT: 3000, WEB_ORIGIN: "http://localhost:5173", SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: databaseUrl }, { auth, audit: createAuditService(prisma!) });
   });
 
   afterAll(async () => {

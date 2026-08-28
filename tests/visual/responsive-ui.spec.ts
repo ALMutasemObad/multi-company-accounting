@@ -18,8 +18,13 @@ const authScreens: Screen[] = [
 ];
 
 const workspaceScreens: Screen[] = [
+  'home',
   'dashboard',
+  'platform',
+  'pos',
   'customers',
+  'professionalProjects',
+  'humanResources',
   'sales',
   'receipts',
   'suppliers',
@@ -27,6 +32,7 @@ const workspaceScreens: Screen[] = [
   'payments',
   'journals',
   'fiscal',
+  'approvals',
   'accounts',
   'treasury',
   'inventory',
@@ -166,7 +172,7 @@ async function auditCurrentInterface(page: Page, locale: Locale, label: string) 
 }
 
 for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
-  test(`${locale}: all 21 screens satisfy the responsive interface contract`, async ({ page }) => {
+  test(`${locale}: all 27 screens satisfy the responsive interface contract`, async ({ page }) => {
     const runtimeErrors: string[] = [];
     page.on('pageerror', (error) => runtimeErrors.push(error.message));
     await configureLocale(page, locale);
@@ -175,6 +181,11 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
       await test.step(screen.name, async () => {
         await page.goto(screen.path);
         await waitForStableInterface(page, screen);
+        if (screen.name === 'professionalProjects') {
+          await expect(page.locator('.professional-access-panel')).toBeVisible();
+          await expect(page.locator('.professional-plan-panel')).toBeVisible();
+          await expect(page.locator('.professional-task-row')).toHaveCount(2);
+        }
         await auditCurrentInterface(page, locale, screen.name);
         if (screen.name === 'login') {
           await expect(page.locator('.login-card [name="email"]')).toHaveValue('');
@@ -240,6 +251,96 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
     }
 
     expect.soft(runtimeErrors, `${locale} inventory catalog runtime errors`).toEqual([]);
+  });
+
+  test(`${locale}: bank reconciliation upload workspace stays responsive`, async ({ page }) => {
+    const runtimeErrors: string[] = [];
+    page.on('pageerror', (error) => runtimeErrors.push(error.message));
+    await configureLocale(page, locale);
+    await page.goto('/?qa=treasury#treasury');
+    await waitForStableInterface(page, { name: 'treasury', path: '', ready: '.workspace-page', kind: 'workspace' });
+
+    const tabs = page.locator('.workspace-page > .section-tabs button');
+    await expect(tabs).toHaveCount(3);
+    await tabs.nth(2).click();
+    await expect(page.locator('.reconciliation-workspace')).toBeVisible();
+    await expect(page.locator('.reconciliation-workspace .loading')).toHaveCount(0);
+    await auditCurrentInterface(page, locale, 'bank-reconciliation');
+
+    expect.soft(runtimeErrors, `${locale} bank reconciliation runtime errors`).toEqual([]);
+  });
+
+  test(`${locale}: financial close checklist stays responsive and accessible`, async ({ page }) => {
+    const runtimeErrors: string[] = [];
+    page.on('pageerror', (error) => runtimeErrors.push(error.message));
+    await configureLocale(page, locale);
+    await page.goto('/?qa=fiscal#fiscal');
+    await waitForStableInterface(page, { name: 'fiscal', path: '', ready: '.workspace-page', kind: 'workspace' });
+
+    const opener = page.locator('.fiscal-year-card tbody .row-actions .button.secondary');
+    await expect(opener).toHaveCount(1);
+    await opener.click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toBeFocused();
+    await expect(dialog.locator('.close-checklist article')).toHaveCount(8);
+    await expect(dialog.locator('.close-readiness-banner')).toHaveClass(/\bready\b/u);
+    expect.soft(await dialog.evaluate((element) => {
+      const target = element as HTMLElement;
+      const titleId = target.getAttribute('aria-labelledby');
+      return {
+        labelled: Boolean(titleId && document.querySelectorAll(`#${CSS.escape(titleId)}`).length === 1),
+        contained: target.scrollWidth <= target.clientWidth + 1,
+        scrollLocked: document.body.style.overflow === 'hidden',
+      };
+    }), `${locale}/financial-close dialog contract`).toEqual({ labelled: true, contained: true, scrollLocked: true });
+    await auditCurrentInterface(page, locale, 'financial-close');
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(opener).toBeFocused();
+    expect.soft(runtimeErrors, `${locale} financial close runtime errors`).toEqual([]);
+  });
+
+  test(`${locale}: tax summary report stays responsive and readable`, async ({ page }) => {
+    const runtimeErrors: string[] = [];
+    page.on('pageerror', (error) => runtimeErrors.push(error.message));
+    await configureLocale(page, locale);
+    await page.goto('/?qa=reports#reports');
+    await waitForStableInterface(page, { name: 'reports', path: '', ready: '.workspace-page', kind: 'workspace' });
+
+    const tabs = page.locator('.report-tabs button');
+    await expect(tabs).toHaveCount(8);
+    await tabs.nth(1).click();
+    await expect(tabs.nth(1)).toHaveClass(/\bactive\b/u);
+    await expect(page.locator('.workspace-page .loading')).toHaveCount(0);
+    await expect(page.locator('.tax-summary-report')).toBeVisible();
+    await expect(page.locator('.tax-summary-table tbody tr')).toHaveCount(3);
+    await auditCurrentInterface(page, locale, 'tax-summary');
+
+    expect.soft(runtimeErrors, `${locale} tax summary runtime errors`).toEqual([]);
+  });
+
+  test(`${locale}: cost-center activity report stays responsive and readable`, async ({ page }) => {
+    const runtimeErrors: string[] = [];
+    page.on('pageerror', (error) => runtimeErrors.push(error.message));
+    await configureLocale(page, locale);
+    await page.goto('/?qa=reports#reports');
+    await waitForStableInterface(page, { name: 'reports', path: '', ready: '.workspace-page', kind: 'workspace' });
+
+    const tabs = page.locator('.report-tabs button');
+    await expect(tabs).toHaveCount(8);
+    await tabs.nth(2).click();
+    await expect(tabs.nth(2)).toHaveClass(/\bactive\b/u);
+    await expect(page.locator('.workspace-page .loading')).toHaveCount(0);
+    await expect(page.locator('.cost-center-activity-report')).toBeVisible();
+    await expect(page.locator('.cost-center-activity-table tbody tr')).toHaveCount(7);
+    await auditCurrentInterface(page, locale, 'cost-center-activity');
+    await page.locator('.account-drilldown').first().click();
+    await expect(page.locator('.ledger-panel')).toBeVisible();
+    await expect(page.locator('.ledger-panel')).toContainText('CC-000001');
+    await auditCurrentInterface(page, locale, 'cost-center-ledger');
+
+    expect.soft(runtimeErrors, `${locale} cost-center activity runtime errors`).toEqual([]);
   });
 
   test(`${locale}: sales and purchase invoice editors stay contained and accessible`, async ({ page }) => {

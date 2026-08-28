@@ -1,8 +1,11 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
+import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import { reserveMasterDataCode } from "../platform/master-data-code-service.js";
 import { TransactionExecutor } from "../platform/transaction-executor.js";
-import type { ActorContext } from "../users/user-service.js";
+import type { ActorContext } from "../platform/actor-context.js";
 import { paymentMethodDefinitions } from "./treasury-reference-data.js";
+import type { AccountingAccountQueryPort, PostingAccountReference } from "../accounts/account-query-port.js";
+import { PrismaAccountingAccountQueryAdapter } from "../accounts/prisma-account-query-adapter.js";
 
 export type TreasuryErrorReason =
   | "NOT_FOUND"
@@ -101,7 +104,10 @@ export async function upsertGlobalPaymentMethods(tx: Prisma.TransactionClient) {
 export class TreasuryService implements TreasuryInstrumentPort {
   private readonly transactions: TransactionExecutor;
 
-  constructor(private readonly prisma: PrismaClient) {
+  constructor(
+    private readonly prisma: PrismaClient,
+    private readonly accounts: AccountingAccountQueryPort = new PrismaAccountingAccountQueryAdapter(),
+  ) {
     this.transactions = new TransactionExecutor(prisma);
   }
 
@@ -462,16 +468,13 @@ export class TreasuryService implements TreasuryInstrumentPort {
     companyId: bigint,
     id: bigint,
   ) {
-    const account = await tx.account.findFirst({
-      where: { id, companyId },
-      select: accountSelection,
-    });
+    const account = await this.accounts.findById(tx, companyId, id);
     if (!this.isPostingAccount(account, companyId)) throw new TreasuryError("INVALID_ACCOUNT");
     return account;
   }
 
   private isPostingAccount(
-    account: {
+    account: PostingAccountReference | {
       companyId: bigint;
       isActive: boolean;
       allowsPosting: boolean;
@@ -479,12 +482,13 @@ export class TreasuryService implements TreasuryInstrumentPort {
     } | null,
     companyId: bigint,
   ) {
+    const childCount = account && "childCount" in account ? account.childCount : account?._count.children;
     return Boolean(
       account
       && account.companyId === companyId
       && account.isActive
       && account.allowsPosting
-      && account._count.children === 0,
+      && childCount === 0,
     );
   }
 
@@ -518,7 +522,7 @@ export class TreasuryService implements TreasuryInstrumentPort {
     id: bigint,
     details?: Prisma.InputJsonValue,
   ) {
-    return tx.auditLog.create({
+    return appendAudit(tx, {
       data: {
         companyId: context.companyId,
         actorUserId: context.userId,

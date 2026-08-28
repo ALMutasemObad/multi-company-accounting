@@ -17,6 +17,20 @@ const sid = (request: Request) => Object.fromEntries((request.headers.cookie ?? 
 const serialize = (company: { id: bigint; name: string; baseCurrencyId: bigint; timezone: string; isActive: boolean; manualJournalMakerCheckerEnabled: boolean; updatedAt: Date; baseCurrency: { code: string; nameAr: string } }) => ({ id: company.id.toString(), name: company.name, baseCurrencyId: company.baseCurrencyId.toString(), baseCurrency: { code: company.baseCurrency.code, nameAr: company.baseCurrency.nameAr }, timezone: company.timezone, isActive: company.isActive, manualJournalMakerCheckerEnabled: company.manualJournalMakerCheckerEnabled, updatedAt: company.updatedAt.toISOString() });
 const settings = (company: { manualJournalMakerCheckerEnabled: boolean; updatedAt: Date }) => ({ data: [{ key: 'accounting.manual_journal_maker_checker_enabled', value: company.manualJournalMakerCheckerEnabled, updatedAt: company.updatedAt.toISOString() }] });
 const currencySetting = (value: { id: bigint; code: string; nameAr: string; decimals: number; isBase: boolean; isCustom: boolean; isEnabled: boolean; latestExchangeRate: { toFixed(decimals: number): string } | null; latestExchangeRateDate: Date | null }) => ({ id: value.id.toString(), code: value.code, nameAr: value.nameAr, decimals: value.decimals, isBase: value.isBase, isCustom: value.isCustom, isEnabled: value.isEnabled, latestExchangeRate: value.latestExchangeRate?.toFixed(8) ?? null, latestExchangeRateDate: value.latestExchangeRateDate?.toISOString().slice(0, 10) ?? null });
+type EnabledCurrency = Awaited<ReturnType<CompanyService['listEnabledCurrencies']>>[number];
+const enabledCurrency = (value: EnabledCurrency) => {
+  const isBase = value.company.baseCurrencyId === value.currency.id;
+  const latest = value.rates[0];
+  return {
+    id: value.currency.id.toString(),
+    code: value.currency.code,
+    nameAr: value.currency.nameAr,
+    decimals: value.currency.decimals,
+    isBase,
+    latestExchangeRate: isBase ? '1.00000000' : latest?.rate.toFixed(8) ?? null,
+    latestExchangeRateDate: isBase ? null : latest?.rateDate.toISOString().slice(0, 10) ?? null,
+  };
+};
 const exchangeRate = (value: { id: bigint; rateDate: Date; rate: { toFixed(decimals: number): string }; source: string | null; updatedAt: Date; companyCurrency: { currency: { id: bigint; code: string; nameAr: string } }; updatedBy: { id: bigint; displayName: string } }) => ({ id: value.id.toString(), currency: { id: value.companyCurrency.currency.id.toString(), code: value.companyCurrency.currency.code, nameAr: value.companyCurrency.currency.nameAr }, rateDate: value.rateDate.toISOString().slice(0, 10), rate: value.rate.toFixed(8), source: value.source, updatedAt: value.updatedAt.toISOString(), updatedBy: { id: value.updatedBy.id.toString(), displayName: value.updatedBy.displayName } });
 
 export function createCompanyRouter(auth: AuthService, companies: CompanyService) {
@@ -27,6 +41,13 @@ export function createCompanyRouter(auth: AuthService, companies: CompanyService
   router.get('/settings', async (request, response) => { const context = await authorize(request, 'settings.manage', false); response.json(settings(await companies.get(context))); });
   router.put('/settings', async (request, response) => { const context = await authorize(request, 'settings.manage', true); const body = replaceCompanySettingsRequestSchema.parse(request.body); response.json(settings(await companies.updateMakerChecker(context, body.settings[0]!.value))); });
   router.get('/company-currencies', async (request, response) => { const context = await authorize(request, 'currencies.view', false); response.json({ data: (await companies.listCurrencyCatalog(context)).map(currencySetting) }); });
+  router.get('/currencies', async (request, response) => {
+    const context = await authorize(request, 'currencies.view', false);
+    const data = (await companies.listEnabledCurrencies(context))
+      .map(enabledCurrency)
+      .sort((left, right) => Number(right.isBase) - Number(left.isBase) || left.code.localeCompare(right.code));
+    response.json({ data });
+  });
   router.post('/company-currencies', async (request, response) => { const context = await authorize(request, 'currencies.create', true); const body = createCompanyCurrencyRequestSchema.parse(request.body); response.status(201).json(currencySetting(await companies.createCompanyCurrency(context, body))); });
   router.put('/company-currencies', async (request, response) => { const context = await authorize(request, 'currencies.manage', true); const body = replaceCompanyCurrenciesRequestSchema.parse(request.body); response.json({ data: (await companies.updateCompanyCurrencies(context, body.currencyIds)).map(currencySetting) }); });
   router.get('/exchange-rates', async (request, response) => { const context = await authorize(request, 'currencies.view', false); const query = rateFilterSchema.parse(request.query); const result = await companies.listExchangeRates(context, query); response.json({ data: result.data.map(exchangeRate), meta: { page: query.page, pageSize: query.pageSize, total: result.total, totalPages: Math.ceil(result.total / query.pageSize) } }); });

@@ -22,6 +22,21 @@ async function routerSources(
   return nested.flat();
 }
 
+async function allTypeScriptSources(
+  directory = new URL("../src/", import.meta.url),
+  prefix = "",
+): Promise<Array<{ path: string; content: string }>> {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const nested = await Promise.all(entries.map(async (entry) => {
+    if (entry.isDirectory()) {
+      return allTypeScriptSources(new URL(`${entry.name}/`, directory), `${prefix}${entry.name}/`);
+    }
+    if (!entry.isFile() || !entry.name.endsWith(".ts")) return [];
+    return [{ path: `${prefix}${entry.name}`, content: await readFile(new URL(entry.name, directory), "utf8") }];
+  }));
+  return nested.flat();
+}
+
 describe("OpenAPI executable-contract guardrails", () => {
   it("keeps every JSON request body parser backed by the generated contract", async () => {
     const routers = await routerSources();
@@ -67,6 +82,119 @@ describe("OpenAPI executable-contract guardrails", () => {
 });
 
 describe("core accounting architecture guardrails", () => {
+  it("pins adopted bank parsers and keeps their MIT notices", async () => {
+    const [apiPackage, notice] = await Promise.all([
+      projectFile("apps/api/package.json"),
+      projectFile("THIRD_PARTY_NOTICES.md"),
+    ]);
+    expect(JSON.parse(apiPackage).dependencies).toMatchObject({
+      "csv-parse": "7.0.2",
+      "fast-xml-parser": "5.11.0",
+      "xstate": "5.32.5",
+    });
+    expect(notice).toContain("csv-parse 7.0.2");
+    expect(notice).toContain("Copyright (c) 2010 Adaltas");
+    expect(notice).toContain("fast-xml-parser 5.11.0");
+    expect(notice).toContain("Copyright (c) 2017 Amit Kumar Gupta");
+    expect(notice).toContain("XState 5.32.5");
+    expect(notice).toContain("Copyright (c) 2015 David Khourshid");
+  });
+
+  it("keeps XState isolated behind the shared workflow-state adapter", async () => {
+    const sources = await allTypeScriptSources();
+    const importers = sources
+      .filter(({ content }) => /from\s+["']xstate["']/u.test(content))
+      .map(({ path }) => path)
+      .sort();
+    expect(importers).toEqual(["approvals/workflow-state-port.ts"]);
+  });
+
+  it("keeps the approval engine away from owner facts and Ledger writes", async () => {
+    const approval = await source("approvals/approval-service.ts");
+    expect(approval).not.toMatch(/\.(?:journalEntry|journalLine|accountingDocument|financialCloseRun|professionalTimesheet|professionalTimeEntry)\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
+    expect(approval).toContain("this.ports[input.subjectType].request");
+    expect(approval).toContain("await port.approve");
+    expect(approval).toContain("await port.reject");
+  });
+
+  it("keeps professional projects behind customer and people ports and away from financial facts", async () => {
+    const service = await source("projects/professional-project-service.ts");
+    expect(service).not.toMatch(/\.(?:customer|user|userCompany|employee|approvalRequest|approvalDecision|salesInvoice|purchaseInvoice|accountingDocument|journalEntry|journalLine|inventoryMovement|receipt|payment)\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
+    expect(service).toContain("this.customers.findInCompany");
+    expect(service).toContain("this.people.findActiveInCompany");
+    expect(service).toContain("this.people.lockAssignment");
+    expect(service).toContain("this.employees.findByUserInCompany");
+    expect(service).not.toContain("PostingEngine");
+  });
+
+  it("keeps professional billing provenance in Projects and delegates invoice and Ledger facts", async () => {
+    const [billing, salesPort, sales, schema] = await Promise.all([
+      source("projects/professional-billing-service.ts"),
+      source("sales/professional-billing-sales-port.ts"),
+      source("sales/sales-invoice-service.ts"),
+      projectFile("apps/api/prisma/schema.prisma"),
+    ]);
+    const directForeignWrite = /\.(?:salesInvoice|salesInvoiceLine|receivableItem|accountingDocument|journalEntry|journalLine|taxRate|inventoryMovement)\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u;
+
+    expect(billing).toContain("ProfessionalBillingSalesPort");
+    expect(billing).toContain("this.sales.createAndPostProfessionalBillingInvoice");
+    expect(billing).toContain("this.sales.listProfessionalBillingInvoiceReferences");
+    expect(billing).not.toMatch(directForeignWrite);
+    expect(billing).not.toContain("PostingEngine");
+    expect(salesPort).toContain("createAndPostProfessionalBillingInvoice");
+    expect(sales).toContain("implements ProfessionalBillingSalesPort");
+    expect(sales).toContain("this.posting.postPlan");
+    expect(schema).toContain("model ProfessionalBillingSourceLine");
+    expect(schema).not.toMatch(/model ProfessionalBillingRun[\s\S]{0,1600}\b(?:total|taxAmount|outstandingAmount|journalEntryId)\b/u);
+  });
+
+  it("keeps employee-first provisioning behind owner ports and away from direct cross-context writes", async () => {
+    const [service, workflow, employeeAdapter, identityAdapter, userService] = await Promise.all([
+      source("hr/hr-service.ts"),
+      source("workforce-access/workforce-access-service.ts"),
+      source("hr/employee-account-adapter.ts"),
+      source("users/identity-account-adapter.ts"),
+      source("users/user-service.ts"),
+    ]);
+    expect(service).not.toMatch(/\.(?:user|userCompany|professionalProject|professionalTimeEntry|salesInvoice|purchaseInvoice|accountingDocument|journalEntry|journalLine|inventoryMovement|posSale)\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
+    expect(service).toContain("this.identity.findInCompany");
+    expect(service).not.toContain("input.userId");
+    expect(service).not.toContain("PostingEngine");
+    expect(workflow).toContain("this.employees.lockCandidate");
+    expect(workflow).toContain("this.identities.createForEmployee");
+    expect(workflow).not.toMatch(/\.(?:employee|user|userCompany)\./u);
+    expect(employeeAdapter).toMatch(/employee\.updateMany\s*\(/u);
+    expect(employeeAdapter).not.toMatch(/\.(?:user|userCompany)\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
+    expect(identityAdapter).toMatch(/user\.create\s*\(/u);
+    expect(identityAdapter).toMatch(/userCompany\.create\s*\(/u);
+    expect(identityAdapter).not.toMatch(/employee\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
+    expect(userService).not.toContain("async create(");
+  });
+
+  it("keeps platform operations read-only, aggregated and behind explicit identity and analytics ports", async () => {
+    const [service, analytics, identity] = await Promise.all([
+      source("platform-operations/platform-operations-service.ts"),
+      source("platform-operations/prisma-platform-analytics-query-adapter.ts"),
+      source("users/platform-identity-query-adapter.ts"),
+    ]);
+    expect(service).toContain("PlatformIdentityQueryPort");
+    expect(service).toContain("PlatformAnalyticsQueryPort");
+    expect(service).not.toContain("PrismaClient");
+    expect(analytics).not.toMatch(/\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
+    expect(identity).not.toMatch(/\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
+    expect(analytics).not.toMatch(/(?:emailNormalized|displayName|ipAddress|userAgent|passwordHash)/u);
+  });
+
+  it("keeps open-source bank file parsers behind Treasury adapters", async () => {
+    const sources = await allTypeScriptSources();
+    const parserImport = /from\s+["'](?:csv-parse(?:\/sync)?|fast-xml-parser)["']/u;
+    const importers = sources.filter(({ content }) => parserImport.test(content)).map(({ path }) => path).sort();
+    expect(importers).toEqual([
+      "treasury/reconciliation/adapters/camt053-bank-statement-adapter.ts",
+      "treasury/reconciliation/adapters/csv-bank-statement-adapter.ts",
+    ]);
+  });
+
   it("keeps cross-context JournalEntry and JournalLine writes inside PostingEngine", async () => {
     const services = await Promise.all(
       [
@@ -217,17 +345,43 @@ describe("Tax ownership boundary guardrails", () => {
 });
 
 describe("Treasury ownership boundary guardrails", () => {
+  it("keeps bank parsing and matching isolated from persistence and Ledger writes", async () => {
+    const [service, matcher, parser, ledgerAdapter, migration, referenceData] = await Promise.all([
+      source("treasury/reconciliation/reconciliation-service.ts"),
+      source("treasury/reconciliation/local-reconciliation-matcher.ts"),
+      source("treasury/reconciliation/bank-statement-parser.ts"),
+      source("treasury/reconciliation/adapters/prisma-reconciliation-ledger-query-adapter.ts"),
+      projectFile("apps/api/prisma/migrations/20260827010000_bank_reconciliation_backend/migration.sql"),
+      source("platform/reference-data.ts"),
+    ]);
+    expect(service).toContain("ReconciliationLedgerQueryPort");
+    expect(service).toContain("ReconciliationMatcherPort");
+    expect(ledgerAdapter).toContain("implements ReconciliationLedgerQueryPort");
+    expect(matcher).toContain("implements ReconciliationMatcherPort");
+    expect(`${parser}\n${matcher}`).not.toMatch(/\.(?:journalEntry|journalLine|bankStatementImport|bankStatementLine)\.(?:create|update|delete|upsert)/u);
+    expect(service).not.toMatch(/\.(?:journalEntry|journalLine)\.(?:create|createMany|update|updateMany|delete|upsert)/u);
+    expect(ledgerAdapter).not.toMatch(/\.(?:journalEntry|journalLine)\.(?:create|createMany|update|updateMany|delete|upsert)/u);
+    expect(service).toContain("lockSession(");
+    expect(service).toContain("lockLines(");
+    expect(service).toContain("ledgerSnapshotForSession(tx, session, true)");
+    expect(migration).toContain("bank_reconciliation_matches_company_active_line_key");
+    expect(migration).toContain("bank_reconciliation_matches_company_active_book_key");
+    expect(migration).toContain("WHERE `roles`.`code` = 'ADMINISTRATOR'");
+    expect(referenceData).toContain("bank_reconciliation.close");
+  });
+
   it("keeps cash-bank and payment-method access behind the Treasury application port", async () => {
-    const [treasury, receipts, payments, customerReferences, suppliers, provisioning, seed] = await Promise.all([
+    const [treasury, receipts, payments, customers, suppliers, provisioning, treasuryProvisioning, seed] = await Promise.all([
       source("treasury/treasury-service.ts"),
       source("receipts/receipt-service.ts"),
       source("payments/payment-service.ts"),
-      source("receipts/reference-service.ts"),
+      source("sales/customer-service.ts"),
       source("suppliers/supplier-service.ts"),
       source("platform/company-provisioning-service.ts"),
+      source("treasury/company-provisioning-adapter.ts"),
       source("platform/reference-seed-service.ts"),
     ]);
-    const foreignContexts = [receipts, payments, customerReferences, suppliers, provisioning, seed]
+    const foreignContexts = [receipts, payments, customers, suppliers, provisioning, seed]
       .join("\n");
 
     expect(treasury).toContain("interface TreasuryInstrumentPort");
@@ -239,14 +393,16 @@ describe("Treasury ownership boundary guardrails", () => {
     expect(foreignContexts).not.toMatch(
       /\.(?:cashBankAccount|paymentMethod)\.(?:create|update|updateMany|delete|findFirst|findMany|upsert|count)\s*\(/u,
     );
-    expect(provisioning).toContain("upsertGlobalPaymentMethods(tx)");
+    expect(provisioning).toContain("this.treasury.provisionTreasury(tx)");
+    expect(treasuryProvisioning).toContain("implements TreasuryCompanyProvisioningPort");
+    expect(treasuryProvisioning).toContain("upsertGlobalPaymentMethods(tx)");
     expect(seed).toContain("upsertGlobalPaymentMethods(tx)");
   });
 
-  it("removes Treasury CRUD and serializers from customer and supplier references", async () => {
+  it("keeps Treasury CRUD out of Sales customer and supplier references", async () => {
     const [customerService, customerRouter, supplierService] = await Promise.all([
-      source("receipts/reference-service.ts"),
-      source("receipts/reference-router.ts"),
+      source("sales/customer-service.ts"),
+      source("sales/customer-router.ts"),
       source("suppliers/supplier-service.ts"),
     ]);
     const oldOwners = `${customerService}\n${customerRouter}\n${supplierService}`;
@@ -254,6 +410,266 @@ describe("Treasury ownership boundary guardrails", () => {
     expect(oldOwners).not.toMatch(
       /listCashBankAccounts|createCashBankAccount|updateCashBankAccount|deactivateCashBankAccount|listPaymentMethods|paymentMethodJson|cashBankJson/u,
     );
+  });
+});
+
+describe("Application kernel and onboarding boundary guardrails", () => {
+  it("keeps ActorContext in the application kernel instead of the Identity service", async () => {
+    const [sources, actorContext] = await Promise.all([
+      allTypeScriptSources(),
+      source("platform/actor-context.ts"),
+    ]);
+    const forbiddenImports = sources
+      .filter(({ path, content }) => path !== "users/user-service.ts"
+        && /import\s+type\s*\{\s*ActorContext\s*\}\s+from\s+["'][^"']*users\/user-service\.js["']/u.test(content))
+      .map(({ path }) => path);
+
+    expect(actorContext).toContain("export type ActorContext");
+    expect(forbiddenImports).toEqual([]);
+  });
+
+  it("coordinates provisioning through owner ports without direct cross-context Prisma access", async () => {
+    const [service, tenant, identity, accounting, treasury, composition] = await Promise.all([
+      source("platform/company-provisioning-service.ts"),
+      source("companies/company-provisioning-adapter.ts"),
+      source("users/company-provisioning-adapter.ts"),
+      source("accounts/company-provisioning-adapter.ts"),
+      source("treasury/company-provisioning-adapter.ts"),
+      source("composition/create-company-provisioning-service.ts"),
+    ]);
+    const directOwnerAccess = /tx\.(?:currency|organization|company|companyCurrency|user|userCompany|role|permission|rolePermission|userCompanyRole|accountType|account|paymentMethod)\./u;
+
+    expect(service).not.toMatch(directOwnerAccess);
+    expect(service).toContain("this.tenant.provisionTenant(tx, input)");
+    expect(service).toContain("this.identity.provisionAdministrator(tx");
+    expect(service).toContain("this.accounting.provisionAccounting(");
+    expect(service).toContain("this.treasury.provisionTreasury(tx)");
+    expect(tenant).toContain("implements TenantCompanyProvisioningPort");
+    expect(identity).toContain("implements IdentityCompanyProvisioningPort");
+    expect(accounting).toContain("implements AccountingCompanyProvisioningPort");
+    expect(treasury).toContain("implements TreasuryCompanyProvisioningPort");
+    expect(composition).toContain("new TenantCompanyProvisioningAdapter()");
+    expect(composition).toContain("new IdentityCompanyProvisioningAdapter()");
+  });
+
+  it("keeps registration state local and delegates Tenant, Identity, Accounting and Security facts", async () => {
+    const [registration, composition] = await Promise.all([
+      source("registration/registration-service.ts"),
+      source("composition/create-registration-owner-ports.ts"),
+    ]);
+
+    expect(registration).not.toMatch(/(?:this\.prisma|tx)\.(?:currency|user|securityEvent)\./u);
+    expect(registration).not.toContain("platform/company-provisioning-service.js");
+    expect(registration).toContain("this.owners.tenant.isActiveGlobalCurrency");
+    expect(registration).toContain("this.owners.identity.identityExists");
+    expect(registration).toContain("this.owners.accounting.isSupportedChartTemplate");
+    expect(registration).toContain("this.owners.security.recordCompletion");
+    expect(composition).toContain("new RegistrationTenantAdapter(prisma)");
+    expect(composition).toContain("new RegistrationIdentityAdapter()");
+    expect(composition).toContain("new RegistrationAccountingAdapter()");
+    expect(composition).toContain("new RegistrationSecurityAdapter()");
+  });
+
+  it("asks owner contexts before disabling a company currency", async () => {
+    const [service, composition] = await Promise.all([
+      source("companies/company-service.ts"),
+      source("composition/create-company-service.ts"),
+    ]);
+
+    expect(service).toContain("port.isAnyCurrencyUsed(tx, context.companyId, disabledCurrencyIds)");
+    expect(service).not.toMatch(/tx\.(?:journalLine|receipt|payment|salesInvoice|purchaseInvoice)\./u);
+    expect(composition).toContain("new CoreAccountingCompanyCurrencyUsageAdapter()");
+    expect(composition).toContain("new TreasuryCompanyCurrencyUsageAdapter()");
+    expect(composition).toContain("new SalesCompanyCurrencyUsageAdapter()");
+    expect(composition).toContain("new PurchasesCompanyCurrencyUsageAdapter()");
+  });
+});
+
+describe("Security, accounting-reference and printing boundary guardrails", () => {
+  it("keeps application source free of explicit any type escape hatches", async () => {
+    const sources = await allTypeScriptSources();
+    const untyped = sources
+      .filter(({ content }) => /(?:\bas\s+any\b|:\s*any\b|<any>|Promise<any>)/u.test(content))
+      .map(({ path }) => path);
+
+    expect(untyped).toEqual([]);
+  });
+
+  it("keeps core financial command services free of untyped any escape hatches", async () => {
+    const services = await Promise.all([
+      source("sales/sales-invoice-service.ts"),
+      source("purchases/purchase-invoice-service.ts"),
+      source("receipts/receipt-service.ts"),
+      source("payments/payment-service.ts"),
+      source("journals/manual-journal-service.ts"),
+    ]);
+
+    for (const service of services) {
+      expect(service).not.toMatch(/\bany\b/u);
+    }
+  });
+
+  it("keeps AuditLog writes inside the Audit append boundary", async () => {
+    const sources = await allTypeScriptSources();
+    const foreignWriters = sources
+      .filter(({ path }) => !path.startsWith("audit/"))
+      .filter(({ content }) => /\.auditLog\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u.test(content))
+      .map(({ path }) => path);
+    const adapter = await source("audit/prisma-audit-append-adapter.ts");
+
+    expect(foreignWriters).toEqual([]);
+    expect(adapter).toContain("function appendAudit");
+    expect(adapter).toContain("implements AuditAppendPort");
+  });
+
+  it("keeps SecurityEvent writes inside the Security owner", async () => {
+    const sources = await allTypeScriptSources();
+    const foreignWriters = sources
+      .filter(({ path }) => !path.startsWith("security/"))
+      .filter(({ content }) => /\.securityEvent\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u.test(content))
+      .map(({ path }) => path);
+    const [authStore, resetService, adapter] = await Promise.all([
+      source("auth/prisma-auth-store.ts"),
+      source("auth/password-reset-service.ts"),
+      source("security/prisma-security-event-append-adapter.ts"),
+    ]);
+
+    expect(foreignWriters).toEqual([]);
+    expect(authStore).toContain("SecurityEventAppendPort");
+    expect(resetService).toContain("SecurityEventAppendPort");
+    expect(adapter).toContain("implements SecurityEventAppendPort");
+  });
+
+  it("resolves posting-account references through the Core Accounting query port", async () => {
+    const [customer, supplier, tax, treasury, port, adapter] = await Promise.all([
+      source("sales/customer-service.ts"),
+      source("suppliers/supplier-service.ts"),
+      source("tax/tax-service.ts"),
+      source("treasury/treasury-service.ts"),
+      source("accounts/account-query-port.ts"),
+      source("accounts/prisma-account-query-adapter.ts"),
+    ]);
+    const consumers = `${customer}\n${supplier}\n${tax}\n${treasury}`;
+
+    expect(consumers).toContain("AccountingAccountQueryPort");
+    expect(consumers).not.toMatch(/(?:tx|this\.prisma)\.account\.(?:find|count|aggregate|groupBy)/u);
+    expect(port).toContain("findById(tx: Prisma.TransactionClient, companyId: bigint");
+    expect(adapter).toContain("implements AccountingAccountQueryPort");
+    expect(adapter).toContain("where: { id: accountId, companyId }");
+  });
+
+  it("keeps Printing orchestration behind locator and snapshot query adapters", async () => {
+    const [service, archive, locator, snapshots] = await Promise.all([
+      source("printing/print-service.ts"),
+      source("printing/print-archive.ts"),
+      source("printing/prisma-print-document-locator-adapter.ts"),
+      source("printing/prisma-print-snapshot-query-adapter.ts"),
+    ]);
+
+    expect(service).toContain("PrintDocumentLocatorPort");
+    expect(service).not.toMatch(/this\.prisma\.(?:accountingDocument|receipt|payment|purchaseInvoice|salesInvoice)\./u);
+    expect(archive).toContain("PrintSnapshotQueryPort");
+    expect(archive).not.toMatch(/tx\.(?:accountingDocument|receipt|payment|purchaseInvoice|salesInvoice|journalEntry|journalLine)\./u);
+    expect(locator).toContain("implements PrintDocumentLocatorPort");
+    expect(snapshots).toContain("implements PrintSnapshotQueryPort");
+  });
+
+  it("requires a shared limiter for production-sensitive routes", async () => {
+    const [app, limiter, schema, migration] = await Promise.all([
+      source("app.ts"),
+      source("operations/rate-limit.ts"),
+      projectFile("apps/api/prisma/schema.prisma"),
+      projectFile("apps/api/prisma/migrations/20260828120000_distributed_sensitive_rate_limits/migration.sql"),
+    ]);
+
+    expect(app).toContain("A shared security-sensitive rate-limit store is required in production");
+    expect(app).toContain("sensitiveRateLimits");
+    expect(app).toContain("sessionOrNetworkRateLimitIdentity");
+    expect(app).toContain("credentialOrNetworkRateLimitIdentity");
+    expect(app).toContain("RATE_LIMIT_NETWORK_MULTIPLIER");
+    expect(limiter).toContain("class PrismaRateLimitStore");
+    expect(limiter).toContain("createHash('sha256')");
+    expect(limiter).toContain("createHmac('sha256', this.identitySecret)");
+    expect(limiter).toContain("`${input.scope}:${identityDigest(input.identity)}`");
+    expect(schema).toContain("model RateLimitCounter");
+    expect(migration).toContain("PRIMARY KEY (`scope`, `identity_hash`, `window_started_at`)");
+  });
+});
+
+describe("Reporting ownership boundary guardrails", () => {
+  it("keeps indirect cash-flow reads behind Ledger and Treasury query ports", async () => {
+    const [service, ledgerAdapter, treasuryAdapter, calculator] = await Promise.all([
+      source("reports/cash-flow-service.ts"),
+      source("reports/adapters/prisma-cash-flow-ledger-query-adapter.ts"),
+      source("treasury/cash-flow-account-adapter.ts"),
+      source("reports/cash-flow-calculator.ts"),
+    ]);
+
+    expect(service).toContain("CashFlowLedgerQueryPort");
+    expect(service).toContain("TreasuryCashAccountQueryPort");
+    expect(service).not.toMatch(/\.(?:account|journalEntry|journalLine|cashBankAccount)\.(?:find|groupBy|aggregate|create|update|delete)/u);
+    expect(ledgerAdapter).toContain("implements CashFlowLedgerQueryPort");
+    expect(ledgerAdapter).toContain("documentType: { not: \"PERIOD_CLOSE\" }");
+    expect(treasuryAdapter).toContain("implements TreasuryCashAccountQueryPort");
+    expect(calculator).not.toMatch(/\.(?:account|journalEntry|journalLine|cashBankAccount)\./u);
+  });
+
+  it("keeps tax-summary invoice reads behind a company-scoped query port", async () => {
+    const [service, adapter, calculator] = await Promise.all([
+      source("reports/tax-summary-service.ts"),
+      source("reports/adapters/prisma-tax-summary-query-adapter.ts"),
+      source("reports/tax-summary-calculator.ts"),
+    ]);
+
+    expect(service).toContain("TaxSummaryQueryPort");
+    expect(service).not.toMatch(/\.(?:salesInvoice|purchaseInvoice|taxRate)\.(?:find|groupBy|aggregate|create|update|delete)/u);
+    expect(adapter).toContain("implements TaxSummaryQueryPort");
+    expect(adapter).toContain("where: { companyId");
+    expect(adapter).not.toMatch(/\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
+    expect(calculator).not.toMatch(/\.(?:salesInvoice|purchaseInvoice|taxRate)\./u);
+  });
+
+  it("keeps cost-center activity derived from Ledger behind a company-scoped query port", async () => {
+    const [service, adapter, calculator] = await Promise.all([
+      source("reports/cost-center-activity-service.ts"),
+      source("reports/adapters/prisma-cost-center-activity-ledger-query-adapter.ts"),
+      source("reports/cost-center-activity-calculator.ts"),
+    ]);
+
+    expect(service).toContain("CostCenterActivityLedgerQueryPort");
+    expect(service).not.toMatch(/\.(?:journalEntry|journalLine|account|costCenter)\.(?:find|groupBy|aggregate|create|update|delete)/u);
+    expect(adapter).toContain("implements CostCenterActivityLedgerQueryPort");
+    expect(adapter).toContain("companyId,");
+    expect(adapter).toContain('status: { in: ["POSTED", "REVERSED"] }');
+    expect(adapter).not.toMatch(/\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
+    expect(calculator).toContain("Prisma.Decimal");
+    expect(calculator).not.toMatch(/\.(?:journalEntry|journalLine|account|costCenter)\.(?:find|groupBy|aggregate|create|update|delete)/u);
+  });
+});
+
+describe("Sales customer ownership boundary guardrails", () => {
+  it("owns Customer writes and exposes typed import and CRM ports", async () => {
+    const [customerService, customerPorts, dataImports, sources] = await Promise.all([
+      source("sales/customer-service.ts"),
+      source("sales/customer-ports.ts"),
+      source("imports/data-import-service.ts"),
+      allTypeScriptSources(),
+    ]);
+    const receiptSources = sources
+      .filter(({ path }) => path.startsWith("receipts/"))
+      .map(({ content }) => content)
+      .join("\n");
+
+    expect(customerService).toContain("implements CustomerImportPort, CrmCustomerQueryPort, CrmCustomerProvisioningPort");
+    expect(customerService).toContain("tx.customer.create(");
+    expect(customerPorts).toContain("interface CrmCustomerQueryPort");
+    expect(customerPorts).toContain("interface CrmCustomerProvisioningPort");
+    expect(customerPorts).toContain("interface CustomerImportPort");
+    expect(dataImports).toContain("CustomerImportPort");
+    expect(dataImports).not.toMatch(/\.(?:customer|customerAddress)\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
+    expect(receiptSources).not.toMatch(/\.(?:customer|customerAddress)\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
+    await expect(source("receipts/reference-service.ts")).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(source("receipts/reference-router.ts")).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
 
@@ -318,5 +734,37 @@ describe("Inventory ownership boundary guardrails", () => {
     expect(schema).toContain("model InventoryValuationInitialization");
     expect(schema).toContain("@@unique([companyId, sourceType, sourceId, sourceEvent]");
     expect(openapi).toContain("averageUnitCostBase");
+  });
+});
+
+describe("POS orchestration boundary guardrails", () => {
+  it("owns only the immutable POS link and delegates financial facts to current owners", async () => {
+    const [service, queryAdapter, sales, receipts, schema, migration, openapi] = await Promise.all([
+      source("pos/pos-service.ts"),
+      source("pos/adapters/prisma-pos-sale-query-adapter.ts"),
+      source("sales/sales-invoice-service.ts"),
+      source("receipts/receipt-service.ts"),
+      projectFile("apps/api/prisma/schema.prisma"),
+      projectFile("apps/api/prisma/migrations/20260827130000_pos_cash_sale_vertical_slice/migration.sql"),
+      projectFile("packages/contracts/openapi.yaml"),
+    ]);
+    const directForeignWrite = /\.(?:salesInvoice|salesInvoiceLine|receipt|receiptAllocation|inventoryMovement|inventoryMovementLine|inventoryBalance|journalEntry|journalLine)\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u;
+
+    expect(service).toContain("PosSalesCheckoutPort");
+    expect(service).toContain("PosReceiptCheckoutPort");
+    expect(service).toContain("this.sales.checkoutInTransaction");
+    expect(service).toContain("this.receipts.captureInTransaction");
+    expect(service).not.toMatch(directForeignWrite);
+    expect(service).not.toContain("PostingEngine");
+    expect(queryAdapter).toContain("where = { companyId: context.companyId }");
+    expect(queryAdapter).not.toMatch(/\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
+    expect(sales).toContain("checkoutInTransaction(");
+    expect(receipts).toContain("captureInTransaction(");
+    expect(schema).toContain("model PosSale");
+    expect(migration).toContain("FOREIGN KEY (`sales_invoice_id`, `company_id`)");
+    expect(migration).toContain("FOREIGN KEY (`receipt_id`, `company_id`)");
+    expect(migration).toContain("WHERE `roles`.`code` = 'ADMINISTRATOR'");
+    expect(openapi).toContain("operationId: completePosCheckout");
+    expect(openapi).toContain("x-permission: pos.checkout");
   });
 });

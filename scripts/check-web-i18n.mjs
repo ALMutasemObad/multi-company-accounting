@@ -115,9 +115,24 @@ for (const fullPath of sourceFiles(sourceRoot).sort()) {
   walk(fullPath, ast);
 }
 
+const registrySource = fs.readFileSync(path.join(sourceRoot, "i18n", "locales", "registry.ts"), "utf8");
+if (/from\s+["']\.\/(?:ar|en|ur|hi)["']/u.test(registrySource) || /messages\s*:/u.test(registrySource)) {
+  findings.push("apps/web/src/i18n/locales/registry.ts must keep metadata only; locale dictionaries are loaded asynchronously");
+}
+const i18nCoreSource = fs.readFileSync(path.join(sourceRoot, "i18n", "core.ts"), "utf8");
+for (const locale of ["ar", "en", "ur", "hi"]) {
+  if (!i18nCoreSource.includes(`import("./locales/${locale}")`)) {
+    findings.push(`apps/web/src/i18n/core.ts must dynamically import the ${locale} dictionary`);
+  }
+}
+const mainSource = fs.readFileSync(path.join(sourceRoot, "main.tsx"), "utf8");
+if (!mainSource.includes('await loadLocale("ar")')) {
+  findings.push("apps/web/src/main.tsx must load the Arabic fallback before rendering the application");
+}
+
 if (findings.length) {
   console.error("Web i18n gate failed:\n" + findings.map((finding) => `- ${finding}`).join("\n"));
   process.exitCode = 1;
 } else {
-  console.log("Web i18n gate passed: no Arabic text outside dictionaries, hard-coded visible JSX text, fixed Intl locale, or module-frozen translation was found.");
+  console.log("Web i18n gate passed: translations stay runtime-safe and locale dictionaries remain asynchronously split.");
 }

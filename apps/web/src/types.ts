@@ -7,11 +7,30 @@ export type PageMeta = {
 
 export type Company = { id: string; name: string };
 export type User = { id: string; displayName: string };
-export type AdminUser = { id: string; email: string; nameAr: string; nameEn: string | null; status: "ACTIVE" | "LOCKED" | "DISABLED"; lastLoginAt: string | null; createdAt: string; updatedAt: string };
+export type EmployeeAccountOption = { id: string; employeeNumber: string; nameAr: string; nameEn: string | null; status: "ACTIVE" | "ON_LEAVE" | "TERMINATED" };
+export type AdminUser = { id: string; email: string; nameAr: string; nameEn: string | null; status: "ACTIVE" | "LOCKED" | "DISABLED"; lastLoginAt: string | null; createdAt: string; updatedAt: string; employee: EmployeeAccountOption | null };
 export type Permission = { id: string; code: string; module: string; descriptionAr: string };
 export type Role = { id: string; code: string; nameAr: string; nameEn: string | null; isSystemRole: boolean; isActive: boolean; assignedUsers: number; permissionIds: string[]; permissions: string[] };
 export type UserRole = { roleId: string; roleCode: string; isActive: boolean; assignedAt: string };
 export type UserSession = { id: string; createdAt: string; lastActivityAt: string; expiresAt: string; current: boolean; revoked: boolean };
+
+export type PlatformOverview = {
+  generatedAt: string;
+  window: { days: 7 | 30 | 90; startsAt: string; endsAt: string };
+  metrics: {
+    totalCompanies: number; activeCompanies: number; newCompanies: number;
+    totalEmployees: number; activeEmployees: number; linkedEmployees: number;
+    totalUsers: number; activeUsers: number; activeSessions: number;
+    systemOperations: number; financialDocuments: number; postedDocuments: number; securityAlerts: number;
+  };
+  health: {
+    pendingOutbox: number; failedOutbox: number; unacknowledgedSecurityAlerts: number;
+    activeCompaniesInWindow: number; employeeAccountCoverage: number; companyAdoptionRate: number;
+  };
+  trends: Array<{ month: string; newCompanies: number; operations: number }>;
+  modules: Array<{ code: "SALES" | "PURCHASES" | "TREASURY" | "POS" | "INVENTORY" | "PROJECTS" | "HR" | "APPROVALS" | "IMPORTS"; total: number; recent: number }>;
+  topCompanies: Array<{ id: string; name: string; operations: number; lastActivityAt: string }>;
+};
 export type CompanyDetails = { id: string; name: string; baseCurrencyId: string; baseCurrency: { code: string; nameAr: string }; timezone: string; isActive: boolean; manualJournalMakerCheckerEnabled: boolean; updatedAt: string };
 export type AuditLog = { id: string; actor: { id: string; name: string; email: string }; action: string; entityType: string; entityId: string; details: Record<string, unknown> | null; createdAt: string };
 export type AuditOptions = { actions: string[]; entityTypes: string[]; users: Array<{ id: string; name: string; email: string }> };
@@ -85,6 +104,67 @@ export type FiscalYear = {
   periods: FiscalPeriod[];
 };
 
+export type FinancialCloseChecklistCode =
+  | "EARLIER_PERIODS_CLOSED"
+  | "NO_DRAFT_DOCUMENTS"
+  | "LEDGER_BALANCED"
+  | "SUBLEDGERS_RECONCILED"
+  | "BANK_RECONCILIATION_COMPLETE"
+  | "INVENTORY_READY"
+  | "EXCHANGE_RATES_AVAILABLE"
+  | "RETAINED_EARNINGS_READY";
+
+export type FinancialCloseReadiness = {
+  periodId: string;
+  periodVersion: number;
+  isYearEnd: boolean;
+  ready: boolean;
+  checkedAt: string;
+  items: Array<{
+    code: FinancialCloseChecklistCode;
+    status: "PASS" | "BLOCKED" | "WARNING";
+    count: number;
+    details: string[];
+  }>;
+};
+
+export type FinancialCloseRun = {
+  id: string;
+  periodId: string;
+  cycle: number;
+  status: "PREPARING" | "AWAITING_APPROVAL" | "REVIEWED" | "CLOSED";
+  checklist: FinancialCloseReadiness;
+  checklistHashSha256: string;
+  closePack: Record<string, unknown> | null;
+  closePackHashSha256: string | null;
+  closeDocumentId: string | null;
+  returnReason: string | null;
+  reviewedAt: string | null;
+  closedAt: string | null;
+  version: number;
+  updatedAt: string;
+};
+
+export type ApprovalRequest = {
+  id: string;
+  subjectType: "FINANCIAL_CLOSE_RUN" | "PROFESSIONAL_TIMESHEET";
+  subjectId: string;
+  subjectVersion: number;
+  subjectSnapshotHashSha256: string;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+  makerCheckerRequired: true;
+  requestedBy: { id: string; displayName: string };
+  decision: {
+    type: "APPROVE" | "REJECT";
+    actor: { id: string; displayName: string };
+    reason: string | null;
+    decidedAt: string;
+  } | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type CostCenter = { id: string; parentId: string | null; code: string; nameAr: string; nameEn: string | null; isActive: boolean };
 
 export type CashBankAccount = {
@@ -99,6 +179,152 @@ export type CashBankAccount = {
   ibanMasked: string | null;
   isActive: boolean;
   version: number;
+};
+
+export type BankReconciliationRolloutStage = "OFF" | "SHADOW" | "REVIEW" | "CLOSE";
+export type BankReconciliationCapabilities = {
+  enabled: boolean;
+  stage: BankReconciliationRolloutStage;
+  canImport: boolean;
+  canSuggest: boolean;
+  canReview: boolean;
+  canClose: boolean;
+};
+export type BankStatementFormat = "CSV" | "CAMT053";
+export type BankStatementDirection = "CREDIT" | "DEBIT";
+export type BankStatementCsvProfile = {
+  delimiter: "," | ";" | "\t";
+  dateFormat: "YYYY-MM-DD" | "DD/MM/YYYY" | "MM/DD/YYYY";
+  decimalSeparator: "." | ",";
+  thousandsSeparator?: "," | "." | " ";
+  defaultCurrency: string;
+  accountIdentifier?: string;
+  positiveAmountDirection?: BankStatementDirection;
+  columns: {
+    bookingDate: string;
+    valueDate?: string;
+    amount?: string;
+    debit?: string;
+    credit?: string;
+    currency?: string;
+    externalId?: string;
+    reference?: string;
+    description?: string;
+  };
+};
+export type BankStatementFileRequest = {
+  cashBankAccountId: string;
+  format: BankStatementFormat;
+  contentBase64: string;
+  fileName?: string;
+  csvProfile?: BankStatementCsvProfile;
+  expectedAccountIdentifier?: string;
+  expectedCurrency?: string;
+};
+export type BankStatementPreviewLine = {
+  sourceRowNumber: number;
+  bookingDate: string;
+  valueDate: string | null;
+  amount: string;
+  direction: BankStatementDirection;
+  currency: string;
+  fingerprintSha256: string;
+  externalId: string | null;
+  reference: string | null;
+  description: string | null;
+};
+export type NormalizedBankStatementPreview = {
+  format: BankStatementFormat;
+  sourceHashSha256: string;
+  statementId: string | null;
+  accountIdentifierMasked: string | null;
+  currency: string;
+  periodStart: string | null;
+  periodEnd: string | null;
+  openingBalance: string | null;
+  closingBalance: string | null;
+  netMovement: string;
+  ignoredEntryCount: number;
+  sourceTimeZoneOffsets: string[];
+  lines: BankStatementPreviewLine[];
+};
+export type BankReconciliationCashAccountReference = { id: string; code: string; nameAr: string };
+export type BankStatementImport = {
+  id: string;
+  cashBankAccount: BankReconciliationCashAccountReference;
+  format: BankStatementFormat;
+  sourceHashSha256: string;
+  statementId: string | null;
+  accountIdentifierMasked: string | null;
+  currency: string;
+  periodStart: string;
+  periodEnd: string;
+  openingBalance: string | null;
+  closingBalance: string | null;
+  netMovement: string;
+  lineCount: number;
+  ignoredEntryCount: number;
+  status: "COMMITTED" | "CANCELLED";
+  version: number;
+  committedAt: string;
+  cancelledAt: string | null;
+  createdAt: string;
+};
+export type BankStatementLineClassification = "PENDING_TRANSACTION" | "BANK_FEE" | "BANK_INTEREST" | "BANK_ERROR" | "NEEDS_ACCOUNTING_DOCUMENT";
+export type BankStatementLine = BankStatementPreviewLine & {
+  id: string;
+  classification: BankStatementLineClassification | null;
+  classificationNote: string | null;
+  classifiedAt: string | null;
+  version: number;
+};
+export type BankReconciliationBookMovement = {
+  key: string;
+  occurredOn: string;
+  amount: string;
+  currency: string;
+  reference: string | null;
+  documentType: string;
+  documentNumber: string;
+  matched?: boolean;
+};
+export type BankReconciliationMatch = {
+  id: string;
+  bankStatementLineId: string;
+  bookMovement: BankReconciliationBookMovement;
+  status: "PROPOSED" | "APPROVED" | "RELEASED";
+  source: "SUGGESTED" | "MANUAL";
+  rule: "EXACT_REFERENCE_AMOUNT_CURRENCY" | "EXACT_AMOUNT_CURRENCY_DATE" | "MANUAL";
+  score: number;
+  version: number;
+  approvedAt: string | null;
+  releasedAt: string | null;
+  releaseReason: string | null;
+  createdAt: string;
+};
+export type BankReconciliationSession = {
+  id: string;
+  statementImportId: string;
+  cashBankAccount: BankReconciliationCashAccountReference;
+  dateFrom: string;
+  dateTo: string;
+  currency: string;
+  bankOpeningBalance: string | null;
+  bankClosingBalance: string | null;
+  bankNetMovement: string;
+  bookOpeningBalance: string;
+  bookClosingBalance: string;
+  bookNetMovement: string;
+  difference: string;
+  status: "OPEN" | "CLOSED";
+  version: number;
+  closedAt: string | null;
+  closingExplanation: string | null;
+  createdAt: string;
+};
+export type BankReconciliationSessionDetail = BankReconciliationSession & {
+  lines: BankStatementLine[];
+  matches: BankReconciliationMatch[];
 };
 
 export type Warehouse = {
@@ -548,6 +774,118 @@ export type DashboardReport = {
   recentActivity: RecentActivity[];
 };
 
+export type PosSale = {
+  id: string;
+  completedAt: string;
+  completedBy: { id: string; displayName: string };
+  invoice: {
+    id: string;
+    documentNumber: string;
+    documentDate: string;
+    status: "DRAFT" | "POSTED" | "CANCELLED" | "REVERSED";
+    customerName: string;
+    total: string;
+    baseTotal: string;
+  };
+  receipt: {
+    id: string;
+    documentNumber: string;
+    status: "DRAFT" | "POSTED" | "CANCELLED" | "REVERSED";
+  };
+};
+
+export type PosCheckoutResult = {
+  id: string;
+  completedAt: string;
+  invoice: {
+    id: string;
+    documentNumber: string;
+    status: "POSTED";
+    customerName: string;
+    total: string;
+    baseTotal: string;
+    generatedJournalEntryIds: string[];
+  };
+  receipt: {
+    id: string;
+    documentNumber: string;
+    status: "POSTED";
+    generatedJournalEntryIds: string[];
+  };
+};
+
+export type CashFlowMappingClassification = "NET_INCOME" | "OPERATING_ADJUSTMENT" | "OPERATING_WORKING_CAPITAL" | "INVESTING" | "FINANCING" | "EXCLUDED";
+export type EffectiveCashFlowClassification = CashFlowMappingClassification | "CASH_AND_CASH_EQUIVALENTS";
+export type CashFlowMapping = {
+  accountId: string;
+  code: string;
+  nameAr: string;
+  nameEn: string | null;
+  accountClass: "ASSET" | "LIABILITY" | "EQUITY" | "REVENUE" | "EXPENSE";
+  normalBalance: "DEBIT" | "CREDIT";
+  classification: EffectiveCashFlowClassification | null;
+  source: "TREASURY" | "EXPLICIT" | "TEMPLATE" | "SYSTEM" | "UNMAPPED";
+  version: number;
+  editable: boolean;
+};
+export type CashFlowReportLine = { accountId: string; code: string; nameAr: string; nameEn: string | null; amount: string };
+export type IndirectCashFlowReport = {
+  range: { dateFrom: string; dateTo: string };
+  company: { name: string };
+  baseCurrency: { id: string; code: string; nameAr: string; decimals: number };
+  sections: {
+    operating: { netIncome: string; adjustments: CashFlowReportLine[]; adjustmentsTotal: string; workingCapital: CashFlowReportLine[]; workingCapitalTotal: string; total: string };
+    investing: { rows: CashFlowReportLine[]; total: string };
+    financing: { rows: CashFlowReportLine[]; total: string };
+  };
+  cash: { opening: string; netChange: string; closing: string; calculatedNetChange: string; calculatedClosing: string; difference: string; reconciled: boolean };
+  mapping: { complete: boolean; cashAccountCount: number; unmappedAccounts: Array<{ accountId: string; code: string; nameAr: string; nameEn: string | null; change: string }> };
+};
+
+export type TaxSummaryStatus = "POSTED" | "REVERSED" | "DRAFT" | "CANCELLED";
+export type TaxSummaryDocumentType = "SALES_INVOICE" | "SALES_CREDIT_NOTE" | "PURCHASE_INVOICE" | "PURCHASE_DEBIT_NOTE";
+export type TaxSummaryReport = {
+  range: { dateFrom: string; dateTo: string };
+  filter: { status: TaxSummaryStatus | null; basis: "LEDGER" | "STATUS_FILTER" };
+  company: { name: string };
+  baseCurrency: { id: string; code: string; nameAr: string; decimals: number };
+  totals: { outputTaxable: string; outputTax: string; inputTaxable: string; inputTax: string; netTaxDue: string; documentCount: number };
+  rows: Array<{
+    usage: "OUTPUT" | "INPUT";
+    documentType: TaxSummaryDocumentType;
+    status: TaxSummaryStatus;
+    taxRateId: string | null;
+    taxCode: string | null;
+    taxNameAr: string | null;
+    rate: string;
+    documentCount: number;
+    taxableBase: string;
+    taxBase: string;
+  }>;
+};
+
+export type CostCenterActivityReport = {
+  range: { dateFrom: string; dateTo: string };
+  filter: { costCenterId: string | null; basis: "POSTED_LEDGER" };
+  company: { name: string };
+  baseCurrency: { id: string; code: string; nameAr: string; decimals: number };
+  data: Array<{
+    costCenter: { id: string; parentId: string | null; code: string; nameAr: string; nameEn: string | null };
+    accounts: Array<{
+      accountId: string;
+      code: string;
+      nameAr: string;
+      nameEn: string | null;
+      movementLineCount: number;
+      debit: string;
+      credit: string;
+      net: string;
+    }>;
+    totals: { movementLineCount: number; debit: string; credit: string; net: string };
+  }>;
+  totals: { costCenterCount: number; accountCount: number; movementLineCount: number; debit: string; credit: string; net: string };
+};
+
 export type TrialBalanceRow = {
   accountId: string;
   code: string;
@@ -630,6 +968,7 @@ export type LedgerReport = {
   company: { name: string };
   baseCurrency: { id: string; code: string; nameAr: string; decimals: number };
   subject: { id: string; code: string; nameAr: string; nameEn: string | null; type: "ACCOUNT" | "CUSTOMER" | "SUPPLIER" };
+  costCenter: { id: string; code: string; nameAr: string; nameEn: string | null } | null;
   range: { dateFrom: string; dateTo: string };
   openingDebit: string;
   openingCredit: string;
@@ -643,3 +982,261 @@ export type DataImportType = "CUSTOMERS" | "SUPPLIERS" | "SALES_INVOICES" | "PUR
 export type DataImportFormat = "CSV" | "XLSX";
 export type DataImportBatch = { id: string; importType: DataImportType; sourceFormat: DataImportFormat; rowCount: number; validRowCount: number; errorRowCount: number; status: "PREVIEWED" | "COMMITTED" | "EXPIRED"; expiresAt: string; committedAt: string | null; createdAt: string };
 export type DataImportPreview = { batch: DataImportBatch; errors: Array<{ row: number; column: string; code: string }> };
+
+export type ProfessionalProjectKind = "LEGAL_MATTER" | "CONSULTING_ENGAGEMENT" | "PROFESSIONAL_PROJECT";
+export type ProfessionalProjectBillingModel = "TIME_AND_MATERIALS" | "FIXED_FEE" | "NON_BILLABLE";
+export type ProfessionalProjectStatus = "ACTIVE" | "ON_HOLD" | "COMPLETED" | "CANCELLED";
+export type ProfessionalProjectAccessMode = "COMPANY" | "RESTRICTED";
+export type ProfessionalProjectMemberRole = "MANAGER" | "PROFESSIONAL" | "REVIEWER";
+export type ProfessionalCustomerOption = { id: string; code: string; nameAr: string; nameEn: string | null };
+export type ProfessionalPerson = { id: string; displayName: string; nameEn: string | null };
+export type ProfessionalProject = {
+  id: string;
+  code: string;
+  customer: ProfessionalCustomerOption;
+  nameAr: string;
+  nameEn: string | null;
+  kind: ProfessionalProjectKind;
+  billingModel: ProfessionalProjectBillingModel;
+  status: ProfessionalProjectStatus;
+  startDate: string;
+  targetEndDate: string | null;
+  description: string | null;
+  memberCount: number;
+  trackedMinutes: number;
+  billableMinutes: number;
+  accessMode: ProfessionalProjectAccessMode;
+  accessVersion: number;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};
+export type ProfessionalProjectMember = {
+  user: ProfessionalPerson;
+  role: ProfessionalProjectMemberRole;
+  isActive: boolean;
+  version: number;
+  assignedAt: string;
+  unassignedAt: string | null;
+};
+export type ProfessionalProjectAccessGrant = {
+  id: string;
+  user: ProfessionalPerson;
+  isActive: boolean;
+  version: number;
+  grantReason: string;
+  grantedAt: string;
+  revocationReason: string | null;
+  revokedAt: string | null;
+};
+export type ProfessionalProjectAccess = {
+  projectId: string;
+  accessMode: ProfessionalProjectAccessMode;
+  accessVersion: number;
+  grants: ProfessionalProjectAccessGrant[];
+};
+export type ProfessionalProjectStageStatus = "PLANNED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+export type ProfessionalProjectTaskStatus = "TODO" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+export type ProfessionalProjectTaskCounts = Record<ProfessionalProjectTaskStatus, number>;
+export type ProfessionalProjectPlanSummary = {
+  timeBudgetMinutes: number | null;
+  estimatedMinutes: number;
+  actualMinutes: number;
+  approvedMinutes: number;
+  allocatedActualMinutes: number;
+  unallocatedActualMinutes: number;
+  remainingBudgetMinutes: number | null;
+  overBudgetMinutes: number;
+  taskCounts: ProfessionalProjectTaskCounts;
+};
+export type ProfessionalProjectTask = {
+  id: string;
+  stageId: string;
+  sequence: number;
+  titleAr: string;
+  titleEn: string | null;
+  description: string | null;
+  status: ProfessionalProjectTaskStatus;
+  assigneeUserId: string;
+  estimatedMinutes: number;
+  plannedStartDate: string | null;
+  dueDate: string | null;
+  completedAt: string | null;
+  version: number;
+  actualMinutes: number;
+  approvedMinutes: number;
+};
+export type ProfessionalProjectStage = {
+  id: string;
+  sequence: number;
+  nameAr: string;
+  nameEn: string | null;
+  description: string | null;
+  status: ProfessionalProjectStageStatus;
+  plannedStartDate: string | null;
+  targetEndDate: string | null;
+  version: number;
+  summary: {
+    estimatedMinutes: number;
+    actualMinutes: number;
+    approvedMinutes: number;
+    taskCounts: ProfessionalProjectTaskCounts;
+  };
+  tasks: ProfessionalProjectTask[];
+};
+export type ProfessionalProjectTaskDependency = {
+  id: string;
+  predecessorTaskId: string;
+  successorTaskId: string;
+  isActive: boolean;
+  version: number;
+};
+export type ProfessionalProjectPlan = {
+  projectId: string;
+  planningVersion: number;
+  summary: ProfessionalProjectPlanSummary;
+  stages: ProfessionalProjectStage[];
+  dependencies: ProfessionalProjectTaskDependency[];
+};
+export type ProfessionalTimeEntry = {
+  id: string;
+  project: { id: string; code: string; nameAr: string; nameEn: string | null };
+  task: { id: string; titleAr: string; titleEn: string | null; status: ProfessionalProjectTaskStatus } | null;
+  user: ProfessionalPerson;
+  workDate: string;
+  minutes: number;
+  isBillable: boolean;
+  description: string;
+  editable: boolean;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};
+export type ProfessionalTimeEntryList = ListResponse<ProfessionalTimeEntry> & {
+  summary: { trackedMinutes: number; billableMinutes: number; nonBillableMinutes: number };
+};
+export type ProfessionalTimesheetStatus = "OPEN" | "AWAITING_APPROVAL" | "APPROVED";
+export type ProfessionalTimesheet = {
+  id: string;
+  employee: {
+    id: string;
+    employeeNumber: string;
+    nameAr: string;
+    nameEn: string | null;
+    status: "ACTIVE" | "ON_LEAVE" | "TERMINATED";
+  };
+  periodStart: string;
+  periodEnd: string;
+  status: ProfessionalTimesheetStatus;
+  entryCount: number;
+  trackedMinutes: number;
+  billableMinutes: number;
+  nonBillableMinutes: number;
+  activeSubmissionNumber: number | null;
+  activeSnapshotHashSha256: string | null;
+  submittedAt: string | null;
+  editable: boolean;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};
+export type ProfessionalBillingCurrency = { id: string; code: string; nameAr: string; decimals: number };
+export type ProfessionalCommercialTermStatus = "ACTIVE" | "ENDED";
+export type ProfessionalServiceContract = {
+  id: string;
+  projectId: string;
+  currency: ProfessionalBillingCurrency;
+  contractReference: string | null;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  paymentTermsDays: number;
+  status: ProfessionalCommercialTermStatus;
+  endReason: string | null;
+  endedAt: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};
+export type ProfessionalServiceRate = {
+  id: string;
+  contractId: string;
+  userId: string;
+  hourlyRate: string;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  status: ProfessionalCommercialTermStatus;
+  endReason: string | null;
+  endedAt: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};
+export type ProfessionalBillingRun = {
+  id: string;
+  project: { id: string; code: string; nameAr: string; nameEn: string | null };
+  contract: { id: string; contractReference: string | null };
+  contractVersion: number;
+  sourceDateFrom: string;
+  sourceDateTo: string;
+  sourceEntryCount: number;
+  sourceMinutes: number;
+  invoice: {
+    id: string;
+    documentId: string;
+    documentNumber: string;
+    status: "POSTED" | "REVERSED";
+    currency: { id: string; code: string; nameAr: string };
+    total: string;
+    baseTotal: string;
+  };
+  createdAt: string;
+};
+
+export type HrEmploymentType = "FULL_TIME" | "PART_TIME" | "CONTRACTOR" | "INTERN";
+export type HrEmploymentStatus = "ACTIVE" | "ON_LEAVE" | "TERMINATED";
+export type HrContractType = "PERMANENT" | "FIXED_TERM" | "CONSULTANT" | "INTERNSHIP";
+export type HrContractStatus = "ACTIVE" | "ENDED";
+export type HrStructureReference = {
+  id: string;
+  code: string;
+  nameAr: string;
+  nameEn: string | null;
+  description: string | null;
+  isActive: boolean;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};
+export type HrIdentityReference = { id: string; displayName: string; nameEn: string | null };
+export type EmployeeReference = { id: string; employeeNumber: string; nameAr: string; nameEn: string | null };
+export type Employee = EmployeeReference & {
+  employmentType: HrEmploymentType;
+  status: HrEmploymentStatus;
+  hireDate: string;
+  terminationDate: string | null;
+  terminationReason: string | null;
+  workLocation: string | null;
+  department: HrStructureReference | null;
+  position: HrStructureReference | null;
+  manager: EmployeeReference | null;
+  linkedUser: HrIdentityReference | null;
+  hasActiveContract: boolean;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};
+export type EmploymentContract = {
+  id: string;
+  contractType: HrContractType;
+  titleAr: string;
+  titleEn: string | null;
+  startDate: string;
+  endDate: string | null;
+  status: HrContractStatus;
+  notes: string | null;
+  endReason: string | null;
+  endedAt: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};

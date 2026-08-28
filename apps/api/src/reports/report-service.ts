@@ -1,11 +1,12 @@
 import { Prisma, type AccountingDocumentType, type PrismaClient } from "@prisma/client";
-import type { ActorContext } from "../users/user-service.js";
+import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
+import type { ActorContext } from "../platform/actor-context.js";
 import { buildStatementRows, decimalMoney, syntheticStatementRow, type AccountBalanceInput } from "./financial-statement-calculator.js";
 
 export type ReportRange = { dateFrom: string; dateTo: string };
 export type FinancialPositionQuery = { asOf: string; compareAsOf?: string | undefined; includeZeroBalances?: boolean | undefined };
 export type IncomeStatementQuery = ReportRange & { compareDateFrom?: string | undefined; compareDateTo?: string | undefined; includeZeroBalances?: boolean | undefined };
-export type LedgerQuery = ReportRange & { accountId?: bigint | undefined; customerId?: bigint | undefined; supplierId?: bigint | undefined; page: number; pageSize: number };
+export type LedgerQuery = ReportRange & { accountId?: bigint | undefined; customerId?: bigint | undefined; supplierId?: bigint | undefined; costCenterId?: bigint | undefined; page: number; pageSize: number };
 export type LedgerExportQuery = Omit<LedgerQuery, "page" | "pageSize">;
 export type JournalReportQuery = ReportRange & {
   documentType?: AccountingDocumentType | undefined;
@@ -18,16 +19,27 @@ export type JournalReportQuery = ReportRange & {
 export class ReportError extends Error { constructor(public readonly reason: "NOT_FOUND") { super(reason); } }
 
 type CashMovement = { documentDate: Date; baseAmount: Prisma.Decimal };
+type RecentCashActivity = {
+  id: bigint;
+  baseAmount: Prisma.Decimal;
+  counterpartyNameSnapshot: string;
+  accountingDocument: {
+    documentNumber: string;
+    documentDate: Date;
+    status: string;
+    description: string;
+  };
+};
 const asDate = (value: string) => new Date(`${value}T00:00:00.000Z`);
-const money = (value: number) => value.toFixed(4);
+const money = (value: Prisma.Decimal.Value) => new Prisma.Decimal(value).toFixed(4);
 
 export function monthlyCashFlow(receipts: CashMovement[], payments: CashMovement[]) {
-  const months = new Map<string, { receipts: number; payments: number }>();
+  const months = new Map<string, { receipts: Prisma.Decimal; payments: Prisma.Decimal }>();
   const add = (items: CashMovement[], field: "receipts" | "payments") => {
     for (const item of items) {
       const month = item.documentDate.toISOString().slice(0, 7);
-      const current = months.get(month) ?? { receipts: 0, payments: 0 };
-      current[field] += Number(item.baseAmount);
+      const current = months.get(month) ?? { receipts: new Prisma.Decimal(0), payments: new Prisma.Decimal(0) };
+      current[field] = current[field].add(item.baseAmount);
       months.set(month, current);
     }
   };
@@ -37,7 +49,7 @@ export function monthlyCashFlow(receipts: CashMovement[], payments: CashMovement
     month,
     receipts: money(values.receipts),
     payments: money(values.payments),
-    net: money(values.receipts - values.payments),
+    net: money(values.receipts.sub(values.payments)),
   }));
 }
 
@@ -75,8 +87,8 @@ export class ReportService {
     });
     const receipts = movements(receiptRows);
     const payments = movements(paymentRows);
-    const receiptsTotal = receipts.reduce((sum, row) => sum + Number(row.baseAmount), 0);
-    const paymentsTotal = payments.reduce((sum, row) => sum + Number(row.baseAmount), 0);
+    const receiptsTotal = receipts.reduce((sum, row) => sum.add(row.baseAmount), new Prisma.Decimal(0));
+    const paymentsTotal = payments.reduce((sum, row) => sum.add(row.baseAmount), new Prisma.Decimal(0));
     const recentActivity = [
       ...recentReceipts.map((row) => this.activityJson("RECEIPT", row)),
       ...recentPayments.map((row) => this.activityJson("PAYMENT", row)),
@@ -84,7 +96,7 @@ export class ReportService {
     return {
       range,
       baseCurrency: { ...company.baseCurrency, id: company.baseCurrency.id.toString() },
-      metrics: { receipts: money(receiptsTotal), payments: money(paymentsTotal), netCashFlow: money(receiptsTotal - paymentsTotal), activeSuppliers: suppliers, activeCustomers: customers, draftDocuments: draftPayments + draftReceipts },
+      metrics: { receipts: money(receiptsTotal), payments: money(paymentsTotal), netCashFlow: money(receiptsTotal.sub(paymentsTotal)), activeSuppliers: suppliers, activeCustomers: customers, draftDocuments: draftPayments + draftReceipts },
       cashFlow: monthlyCashFlow(receipts, payments),
       recentActivity,
     };
@@ -101,11 +113,11 @@ export class ReportService {
     const accountById = new Map(accounts.map((account) => [account.id.toString(), account]));
     const data = rows.map((row) => {
       const account = accountById.get(row.accountId.toString())!;
-      const debit = Number(row._sum.baseDebitAmount ?? 0);
-      const credit = Number(row._sum.baseCreditAmount ?? 0);
-      return { accountId: row.accountId.toString(), code: account.code, nameAr: account.nameAr, accountClass: account.accountType.class, debit: money(debit), credit: money(credit), balance: money(debit - credit) };
+      const debit = new Prisma.Decimal(row._sum.baseDebitAmount ?? 0);
+      const credit = new Prisma.Decimal(row._sum.baseCreditAmount ?? 0);
+      return { accountId: row.accountId.toString(), code: account.code, nameAr: account.nameAr, accountClass: account.accountType.class, debit: money(debit), credit: money(credit), balance: money(debit.sub(credit)) };
     });
-    return { range, data, totals: { debit: money(data.reduce((sum, row) => sum + Number(row.debit), 0)), credit: money(data.reduce((sum, row) => sum + Number(row.credit), 0)) } };
+    return { range, data, totals: { debit: money(data.reduce((sum, row) => sum.add(row.debit), new Prisma.Decimal(0))), credit: money(data.reduce((sum, row) => sum.add(row.credit), new Prisma.Decimal(0))) } };
   }
 
   async journalReport(context: ActorContext, input: JournalReportQuery) {
@@ -219,13 +231,19 @@ export class ReportService {
   }
 
   async ledger(context: ActorContext, input: LedgerQuery) {
-    const selector = input.accountId != null ? { accountId: input.accountId } : input.customerId != null ? { customerId: input.customerId } : { supplierId: input.supplierId! };
+    const selector = input.accountId != null
+      ? { accountId: input.accountId, ...(input.costCenterId != null ? { costCenterId: input.costCenterId } : {}) }
+      : input.customerId != null ? { customerId: input.customerId } : { supplierId: input.supplierId! };
     const subject = input.accountId != null
       ? await this.prisma.account.findFirst({ where: { id: input.accountId, companyId: context.companyId }, select: { id: true, code: true, nameAr: true, nameEn: true } })
       : input.customerId != null
         ? await this.prisma.customer.findFirst({ where: { id: input.customerId, companyId: context.companyId }, select: { id: true, code: true, nameAr: true, nameEn: true } })
         : await this.prisma.supplier.findFirst({ where: { id: input.supplierId!, companyId: context.companyId }, select: { id: true, code: true, nameAr: true, nameEn: true } });
-    if (!subject) throw new ReportError("NOT_FOUND");
+    const costCenter = input.costCenterId == null ? null : await this.prisma.costCenter.findFirst({
+      where: { id: input.costCenterId, companyId: context.companyId },
+      select: { id: true, code: true, nameAr: true, nameEn: true },
+    });
+    if (!subject || (input.costCenterId != null && (!costCenter || input.accountId == null))) throw new ReportError("NOT_FOUND");
     const documentStatus = { in: ["POSTED" as const, "REVERSED" as const] };
     const [company, opening, lines] = await this.prisma.$transaction([
       this.companyCurrency(context.companyId),
@@ -245,6 +263,7 @@ export class ReportService {
       company: { name: company.name },
       baseCurrency: this.currencyJson(company.baseCurrency),
       subject: { id: subject.id.toString(), code: subject.code, nameAr: subject.nameAr, nameEn: subject.nameEn, type: input.accountId != null ? "ACCOUNT" as const : input.customerId != null ? "CUSTOMER" as const : "SUPPLIER" as const },
+      costCenter: costCenter ? { ...costCenter, id: costCenter.id.toString() } : null,
       range: { dateFrom: input.dateFrom, dateTo: input.dateTo },
       openingDebit: openingSplit.debit,
       openingCredit: openingSplit.credit,
@@ -262,10 +281,10 @@ export class ReportService {
 
   async recordExport(context: ActorContext, report: string, format: string, parameters: Record<string, unknown>) {
     const safeParameters = JSON.parse(JSON.stringify(parameters, (_key, value) => typeof value === "bigint" ? value.toString() : value)) as Prisma.InputJsonObject;
-    await this.prisma.auditLog.create({ data: { companyId: context.companyId, actorUserId: context.userId, action: "FINANCIAL_REPORT_EXPORTED", entityType: "REPORT", entityId: report, details: { format, parameters: safeParameters } as Prisma.InputJsonObject } });
+    await appendAudit(this.prisma, { data: { companyId: context.companyId, actorUserId: context.userId, action: "FINANCIAL_REPORT_EXPORTED", entityType: "REPORT", entityId: report, details: { format, parameters: safeParameters } as Prisma.InputJsonObject } });
   }
 
-  private activityJson(type: "RECEIPT" | "PAYMENT", row: any) {
+  private activityJson(type: "RECEIPT" | "PAYMENT", row: RecentCashActivity) {
     return { id: row.id.toString(), type, documentNumber: row.accountingDocument.documentNumber, documentDate: row.accountingDocument.documentDate.toISOString().slice(0, 10), status: row.accountingDocument.status, description: row.accountingDocument.description, counterpartyName: row.counterpartyNameSnapshot, amount: row.baseAmount.toFixed(4) };
   }
 

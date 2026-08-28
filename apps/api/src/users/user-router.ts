@@ -4,25 +4,32 @@ import type { AuthService } from '../auth/auth-service.js';
 import { openApiRequestBodySchemas as bodies } from '../generated/openapi-request-guards.js';
 import type { UserService } from './user-service.js';
 import { UserManagementError } from './user-service.js';
+import type { EmployeeAccountReference } from '../workforce-access/workforce-access-ports.js';
+import {
+  WorkforceAccessError,
+  type WorkforceAccessService,
+} from '../workforce-access/workforce-access-service.js';
 
 const idSchema = z.string().regex(/^[1-9][0-9]*$/).transform(BigInt);
+const publicIdSchema = z.string().uuid();
 const paginationSchema = z.object({ page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(25), search: z.string().max(200).optional(), status: z.enum(['ACTIVE', 'LOCKED', 'DISABLED']).optional() });
+const employeeOptionQuery = z.object({ search: z.string().trim().min(1).max(160).optional() });
 
 function sid(request: Request) {
   const entries = (request.headers.cookie ?? '').split(';').map((part) => part.trim().split('=', 2)).filter(([key, value]) => key && value);
   return Object.fromEntries(entries).sid;
 }
 
-function serializeUser(user: { id: bigint; emailNormalized: string; displayName: string; nameEn: string | null; isActive: boolean; lockedUntil: Date | null; lastLoginAt: Date | null; createdAt: Date; updatedAt: Date }) {
+function serializeUser(user: { id: bigint; emailNormalized: string; displayName: string; nameEn: string | null; isActive: boolean; lockedUntil: Date | null; lastLoginAt: Date | null; createdAt: Date; updatedAt: Date }, employee: EmployeeAccountReference | null) {
   const status = !user.isActive ? 'DISABLED' : user.lockedUntil && user.lockedUntil > new Date() ? 'LOCKED' : 'ACTIVE';
-  return { id: user.id.toString(), email: user.emailNormalized, nameAr: user.displayName, nameEn: user.nameEn, status, lastLoginAt: user.lastLoginAt?.toISOString() ?? null, createdAt: user.createdAt.toISOString(), updatedAt: user.updatedAt.toISOString() };
+  return { id: user.id.toString(), email: user.emailNormalized, nameAr: employee?.nameAr ?? user.displayName, nameEn: employee?.nameEn ?? user.nameEn, status, lastLoginAt: user.lastLoginAt?.toISOString() ?? null, createdAt: user.createdAt.toISOString(), updatedAt: user.updatedAt.toISOString(), employee: employee ? { id: employee.id, employeeNumber: employee.employeeNumber, nameAr: employee.nameAr, nameEn: employee.nameEn, status: employee.status } : null };
 }
 
 function serializeRole(role: { id: bigint; code: string; nameAr: string; nameEn: string | null; isSystemRole: boolean; isActive: boolean; permissions: Array<{ permission: { id: bigint; code: string } }>; _count: { assignments: number } }) {
   return { id: role.id.toString(), code: role.code, nameAr: role.nameAr, nameEn: role.nameEn, isSystemRole: role.isSystemRole, isActive: role.isActive, assignedUsers: role._count.assignments, permissionIds: role.permissions.map((item) => item.permission.id.toString()), permissions: role.permissions.map((item) => item.permission.code) };
 }
 
-export function createUserRouter(auth: AuthService, users: UserService) {
+export function createUserRouter(auth: AuthService, users: UserService, workforce: WorkforceAccessService) {
   const router = Router();
   const authorize = (request: Request, permission: string, requireCsrf: boolean) => auth.authorize({ sid: sid(request), csrfToken: request.header('X-CSRF-Token') ?? undefined, permission, requireCsrf });
 
@@ -30,23 +37,49 @@ export function createUserRouter(auth: AuthService, users: UserService) {
     const context = await authorize(request, 'users.view', false);
     const page = paginationSchema.parse(request.query);
     const result = await users.list(context, page);
-    response.json({ data: result.data.map(serializeUser), meta: { page: page.page, pageSize: page.pageSize, total: result.total, totalPages: Math.ceil(result.total / page.pageSize) } });
+    const links = await workforce.employeeLinks(context.companyId, result.data.map((user) => user.id));
+    response.json({ data: result.data.map((user) => serializeUser(user, links.get(user.id.toString()) ?? null)), meta: { page: page.page, pageSize: page.pageSize, total: result.total, totalPages: Math.ceil(result.total / page.pageSize) } });
+  });
+  router.get('/users/employee-options', async (request, response) => {
+    const context = await authorize(request, 'users.create', false);
+    const query = employeeOptionQuery.parse(request.query);
+    response.json({ data: await workforce.listEmployeeOptions(context, query.search) });
   });
   router.post('/users', async (request, response) => {
     const context = await authorize(request, 'users.create', true);
-    response.status(201).json(serializeUser(await users.create(context, bodies.createUser.parse(request.body))));
+    const body = bodies.createUser.parse(request.body);
+    response.status(201).json(await workforce.createUser(context, {
+      ...body,
+      idempotencyKey: z.string().min(16).max(100).parse(request.header('Idempotency-Key')),
+    }));
   });
   router.get('/users/:userId', async (request, response) => {
     const context = await authorize(request, 'users.view', false);
-    response.json(serializeUser(await users.get(context, idSchema.parse(request.params.userId))));
+    const user = await users.get(context, idSchema.parse(request.params.userId));
+    const links = await workforce.employeeLinks(context.companyId, [user.id]);
+    response.json(serializeUser(user, links.get(user.id.toString()) ?? null));
   });
   router.patch('/users/:userId', async (request, response) => {
     const context = await authorize(request, 'users.update', true);
-    response.json(serializeUser(await users.update(context, idSchema.parse(request.params.userId), bodies.updateUser.parse(request.body))));
+    const userId = idSchema.parse(request.params.userId);
+    await workforce.assertLegacyProfileEditable(context, userId);
+    const user = await users.update(context, userId, bodies.updateUser.parse(request.body));
+    const links = await workforce.employeeLinks(context.companyId, [user.id]);
+    response.json(serializeUser(user, links.get(user.id.toString()) ?? null));
+  });
+  router.post('/users/:userId/employee-link', async (request, response) => {
+    const context = await authorize(request, 'users.update', true);
+    const body = bodies.linkUserEmployee.parse(request.body);
+    response.json(await workforce.linkExistingUser(context, idSchema.parse(request.params.userId), {
+      employeeId: publicIdSchema.parse(body.employeeId),
+      idempotencyKey: z.string().min(16).max(100).parse(request.header('Idempotency-Key')),
+    }));
   });
   router.post('/users/:userId/disable', async (request, response) => {
     const context = await authorize(request, 'users.disable', true);
-    response.json(serializeUser(await users.disable(context, idSchema.parse(request.params.userId), bodies.disableUser.parse(request.body).reason)));
+    const user = await users.disable(context, idSchema.parse(request.params.userId), bodies.disableUser.parse(request.body).reason);
+    const links = await workforce.employeeLinks(context.companyId, [user.id]);
+    response.json(serializeUser(user, links.get(user.id.toString()) ?? null));
   });
   router.get('/users/:userId/roles', async (request, response) => {
     const context = await authorize(request, 'roles.view', false);
@@ -93,6 +126,14 @@ export function createUserRouter(auth: AuthService, users: UserService) {
     if (error instanceof UserManagementError) {
       const status = error.reason === 'NOT_FOUND' ? 404 : error.reason === 'EMAIL_EXISTS' || error.reason === 'ROLE_CODE_EXISTS' ? 409 : 422;
       response.status(status).json({ type: 'about:blank', title: 'User management failed', status, code: error.reason }); return;
+    }
+    if (error instanceof WorkforceAccessError) {
+      const status = ['EMPLOYEE_NOT_FOUND', 'USER_NOT_FOUND'].includes(error.reason)
+        ? 404
+        : ['EMPLOYEE_ALREADY_LINKED', 'USER_ALREADY_LINKED', 'EMAIL_EXISTS', 'IDEMPOTENCY_MISMATCH', 'IDEMPOTENCY_IN_PROGRESS'].includes(error.reason)
+          ? 409
+          : 422;
+      response.status(status).json({ type: 'about:blank', title: 'Workforce access provisioning failed', status, code: error.reason }); return;
     }
     next(error);
   };

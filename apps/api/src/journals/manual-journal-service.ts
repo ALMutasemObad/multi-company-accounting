@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { Prisma, type PrismaClient } from "@prisma/client";
+import { Prisma, type AccountingDocument, type PrismaClient } from "@prisma/client";
+import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import {
   PostingEngine,
   type PostingFailureReason,
 } from "../core-accounting/posting-engine.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
-import type { ActorContext } from "../users/user-service.js";
+import type { ActorContext } from "../platform/actor-context.js";
 import { archiveDocument } from "../printing/print-archive.js";
 import { FiscalService } from "../fiscal/fiscal-service.js";
 
@@ -62,7 +63,7 @@ export type JournalUpdateInput = {
   entries?: JournalEntryInput[] | undefined;
 };
 const date = (value: string) => new Date(`${value}T00:00:00.000Z`);
-const serializeDocument = (v: any) => ({
+const serializeDocument = (v: AccountingDocument) => ({
   id: v.id.toString(),
   documentType: v.documentType,
   documentNumber: v.documentNumber,
@@ -77,6 +78,22 @@ const serializeDocument = (v: any) => ({
   postedAt: v.postedAt?.toISOString() ?? null,
   reversedByDocumentId: v.reversedByDocumentId?.toString() ?? null,
 });
+
+const manualJournalInclude = {
+  journalEntries: {
+    include: { lines: true },
+    orderBy: { entryNumber: "asc" as const },
+  },
+} as const;
+type ManualJournalRecord = Prisma.AccountingDocumentGetPayload<{
+  include: typeof manualJournalInclude;
+}>;
+type SerializedAccountingDocument = ReturnType<typeof serializeDocument>;
+type ManualJournalCommandJsonInput = {
+  document: AccountingDocument | SerializedAccountingDocument;
+  generatedJournalEntryIds?: string[];
+  requestId: string;
+};
 
 export class ManualJournalService {
   private readonly fiscal: FiscalService;
@@ -391,17 +408,17 @@ export class ManualJournalService {
     );
   }
 
-  static serialize(value: any) {
+  static serialize(value: ManualJournalRecord) {
     return {
       document: serializeDocument(value),
-      entries: value.journalEntries.map((entry: any) => ({
+      entries: value.journalEntries.map((entry) => ({
         id: entry.id.toString(),
         entryNumber: entry.entryNumber,
         entryDate: entry.entryDate.toISOString().slice(0, 10),
         description: entry.description,
         reversalOfJournalEntryId:
           entry.reversalOfJournalEntryId?.toString() ?? null,
-        lines: entry.lines.map((line: any) => ({
+        lines: entry.lines.map((line) => ({
           id: line.id.toString(),
           lineNumber: line.lineNumber,
           accountId: line.accountId.toString(),
@@ -419,24 +436,19 @@ export class ManualJournalService {
       })),
     };
   }
-  static serializeCommand(value: any) {
+  static serializeCommand(value: ManualJournalCommandJsonInput) {
     return {
       document:
-        typeof value.document.id === "string"
-          ? value.document
-          : serializeDocument(value.document),
+        "companyId" in value.document
+          ? serializeDocument(value.document)
+          : value.document,
       generatedJournalEntryIds: value.generatedJournalEntryIds ?? [],
       requestId: value.requestId,
     };
   }
 
   private include() {
-    return {
-      journalEntries: {
-        include: { lines: true },
-        orderBy: { entryNumber: "asc" as const },
-      },
-    } as const;
+    return manualJournalInclude;
   }
   private async openPeriod(companyId: bigint, id: bigint) {
     const value = await this.prisma.fiscalPeriod.findFirst({
@@ -569,7 +581,7 @@ export class ManualJournalService {
     id: bigint,
     details?: Prisma.InputJsonValue,
   ) {
-    return tx.auditLog.create({
+    return appendAudit(tx, {
       data: {
         companyId: context.companyId,
         actorUserId: context.userId,
@@ -588,8 +600,11 @@ export class ManualJournalService {
     fingerprint: string,
     execute: (
       tx: Prisma.TransactionClient,
-      document: any,
-    ) => Promise<{ document: any; generatedJournalEntryIds: string[] }>,
+      document: AccountingDocument,
+    ) => Promise<{
+      document: AccountingDocument;
+      generatedJournalEntryIds: string[];
+    }>,
   ) {
     return this.commands.execute(
       {

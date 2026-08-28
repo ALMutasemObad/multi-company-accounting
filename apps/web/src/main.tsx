@@ -13,13 +13,31 @@ import "@fontsource/noto-sans-devanagari/devanagari-500.css";
 import "@fontsource/noto-sans-devanagari/devanagari-600.css";
 import "@fontsource/noto-sans-devanagari/devanagari-700.css";
 import App from "./App";
-import { I18nProvider } from "./i18n";
+import { storageKey } from "./branding";
+import { I18nProvider, loadLocale, resolveLocale } from "./i18n";
 import "./styles.css";
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
-    <I18nProvider>
-      <App />
-    </I18nProvider>
-  </React.StrictMode>,
-);
+async function bootstrap() {
+  const requestedLocale = resolveLocale(window.localStorage.getItem(storageKey("locale")));
+  await loadLocale("ar");
+  if (requestedLocale !== "ar") {
+    try {
+      await loadLocale(requestedLocale);
+    } catch (error) {
+      window.localStorage.setItem(storageKey("locale"), "ar");
+      console.error("initial_locale_dictionary_load_failed", error instanceof Error ? error.name : "UNKNOWN_ERROR");
+    }
+  }
+
+  ReactDOM.createRoot(document.getElementById("root")!).render(
+    <React.StrictMode>
+      <I18nProvider>
+        <App />
+      </I18nProvider>
+    </React.StrictMode>,
+  );
+}
+
+void bootstrap().catch((error: unknown) => {
+  console.error("application_bootstrap_failed", error instanceof Error ? error.name : "UNKNOWN_ERROR");
+});
