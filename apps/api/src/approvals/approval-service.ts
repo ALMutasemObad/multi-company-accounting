@@ -5,9 +5,10 @@ import {
   type PrismaClient,
   type User,
 } from "@prisma/client";
+import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
 import { TransactionExecutor } from "../platform/transaction-executor.js";
-import type { ActorContext } from "../users/user-service.js";
+import type { ActorContext } from "../platform/actor-context.js";
 import type {
   ApprovalSubjectPorts,
   SupportedApprovalSubjectType,
@@ -302,7 +303,7 @@ export class ApprovalService {
     entityId: string,
     details: Prisma.InputJsonObject,
   ) {
-    return tx.auditLog.create({
+    return appendAudit(tx, {
       data: {
         companyId: context.companyId,
         actorUserId: context.userId,

@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
+import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import type {
   IdentityAccountPort,
   IdentityAccountRecord,
@@ -48,7 +49,7 @@ export class IdentityAccountAdapter implements IdentityAccountPort {
       select,
     });
     await tx.userCompany.create({ data: { userId: user.id, companyId: input.companyId } });
-    await tx.auditLog.create({
+    await appendAudit(tx, {
       data: {
         companyId: input.companyId,
         actorUserId: input.actorUserId,
@@ -90,7 +91,7 @@ export class IdentityAccountAdapter implements IdentityAccountPort {
       data: { displayName: input.displayName, nameEn: input.nameEn },
       select,
     });
-    await tx.auditLog.create({
+    await appendAudit(tx, {
       data: {
         companyId: input.companyId,
         actorUserId: input.actorUserId,

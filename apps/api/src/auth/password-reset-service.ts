@@ -7,6 +7,8 @@ import {
 } from '../outbox/outbox.js';
 import type { ClientMetadata } from './auth-store.js';
 import type { SupportedLocale } from '../registration/supported-locales.js';
+import type { SecurityEventAppendPort } from '../platform/security-event-append-port.js';
+import { PrismaSecurityEventAppendAdapter } from '../security/prisma-security-event-append-adapter.js';
 
 export class PasswordResetError extends Error {
   constructor(public readonly reason: 'INVALID_OR_EXPIRED_TOKEN') {
@@ -31,6 +33,7 @@ export class PasswordResetService {
     private readonly passwords: PasswordHasher,
     private readonly outbox: OutboxAppender,
     private readonly options: PasswordResetOptions,
+    private readonly security: SecurityEventAppendPort = new PrismaSecurityEventAppendAdapter(),
   ) {
     this.now = options.now ?? (() => new Date());
   }
@@ -133,16 +136,14 @@ export class PasswordResetService {
         select: { companyId: true },
       });
       if (assignments.length) {
-        await tx.securityEvent.createMany({
-          data: assignments.map(({ companyId }) => ({
+        await this.security.appendMany(tx, assignments.map(({ companyId }) => ({
             companyId,
             userId: request.userId,
             eventType: 'PASSWORD_RESET_COMPLETED',
             severity: 'HIGH' as const,
             ipAddress: metadata.ipAddress ?? null,
             userAgent: metadata.userAgent ?? null,
-          })),
-        });
+          })));
       }
     }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, maxWait: 2_000, timeout: 8_000 });
   }

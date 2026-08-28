@@ -1,5 +1,5 @@
 import {
-  dictionaries,
+  hasTranslation,
   translate as t,
   type TranslationKey } from "./i18n";
 import { FormEvent,
@@ -26,7 +26,7 @@ const emptyFilters: Filters = { search: "", userId: "", action: "", entityType: 
 
 function codedLabel(scope: "action" | "entity", code: string) {
   const key = `audit.${scope}.${code}`;
-  return Object.hasOwn(dictionaries.ar, key) ? t(key as TranslationKey) : code;
+  return hasTranslation(key) ? t(key) : code;
 }
 const actionLabel = (code: string) => codedLabel("action", code);
 const entityLabel = (code: string) => codedLabel("entity", code);

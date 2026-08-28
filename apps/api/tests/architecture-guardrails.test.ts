@@ -371,16 +371,17 @@ describe("Treasury ownership boundary guardrails", () => {
   });
 
   it("keeps cash-bank and payment-method access behind the Treasury application port", async () => {
-    const [treasury, receipts, payments, customerReferences, suppliers, provisioning, seed] = await Promise.all([
+    const [treasury, receipts, payments, customers, suppliers, provisioning, treasuryProvisioning, seed] = await Promise.all([
       source("treasury/treasury-service.ts"),
       source("receipts/receipt-service.ts"),
       source("payments/payment-service.ts"),
-      source("receipts/reference-service.ts"),
+      source("sales/customer-service.ts"),
       source("suppliers/supplier-service.ts"),
       source("platform/company-provisioning-service.ts"),
+      source("treasury/company-provisioning-adapter.ts"),
       source("platform/reference-seed-service.ts"),
     ]);
-    const foreignContexts = [receipts, payments, customerReferences, suppliers, provisioning, seed]
+    const foreignContexts = [receipts, payments, customers, suppliers, provisioning, seed]
       .join("\n");
 
     expect(treasury).toContain("interface TreasuryInstrumentPort");
@@ -392,14 +393,16 @@ describe("Treasury ownership boundary guardrails", () => {
     expect(foreignContexts).not.toMatch(
       /\.(?:cashBankAccount|paymentMethod)\.(?:create|update|updateMany|delete|findFirst|findMany|upsert|count)\s*\(/u,
     );
-    expect(provisioning).toContain("upsertGlobalPaymentMethods(tx)");
+    expect(provisioning).toContain("this.treasury.provisionTreasury(tx)");
+    expect(treasuryProvisioning).toContain("implements TreasuryCompanyProvisioningPort");
+    expect(treasuryProvisioning).toContain("upsertGlobalPaymentMethods(tx)");
     expect(seed).toContain("upsertGlobalPaymentMethods(tx)");
   });
 
-  it("removes Treasury CRUD and serializers from customer and supplier references", async () => {
+  it("keeps Treasury CRUD out of Sales customer and supplier references", async () => {
     const [customerService, customerRouter, supplierService] = await Promise.all([
-      source("receipts/reference-service.ts"),
-      source("receipts/reference-router.ts"),
+      source("sales/customer-service.ts"),
+      source("sales/customer-router.ts"),
       source("suppliers/supplier-service.ts"),
     ]);
     const oldOwners = `${customerService}\n${customerRouter}\n${supplierService}`;
@@ -407,6 +410,189 @@ describe("Treasury ownership boundary guardrails", () => {
     expect(oldOwners).not.toMatch(
       /listCashBankAccounts|createCashBankAccount|updateCashBankAccount|deactivateCashBankAccount|listPaymentMethods|paymentMethodJson|cashBankJson/u,
     );
+  });
+});
+
+describe("Application kernel and onboarding boundary guardrails", () => {
+  it("keeps ActorContext in the application kernel instead of the Identity service", async () => {
+    const [sources, actorContext] = await Promise.all([
+      allTypeScriptSources(),
+      source("platform/actor-context.ts"),
+    ]);
+    const forbiddenImports = sources
+      .filter(({ path, content }) => path !== "users/user-service.ts"
+        && /import\s+type\s*\{\s*ActorContext\s*\}\s+from\s+["'][^"']*users\/user-service\.js["']/u.test(content))
+      .map(({ path }) => path);
+
+    expect(actorContext).toContain("export type ActorContext");
+    expect(forbiddenImports).toEqual([]);
+  });
+
+  it("coordinates provisioning through owner ports without direct cross-context Prisma access", async () => {
+    const [service, tenant, identity, accounting, treasury, composition] = await Promise.all([
+      source("platform/company-provisioning-service.ts"),
+      source("companies/company-provisioning-adapter.ts"),
+      source("users/company-provisioning-adapter.ts"),
+      source("accounts/company-provisioning-adapter.ts"),
+      source("treasury/company-provisioning-adapter.ts"),
+      source("composition/create-company-provisioning-service.ts"),
+    ]);
+    const directOwnerAccess = /tx\.(?:currency|organization|company|companyCurrency|user|userCompany|role|permission|rolePermission|userCompanyRole|accountType|account|paymentMethod)\./u;
+
+    expect(service).not.toMatch(directOwnerAccess);
+    expect(service).toContain("this.tenant.provisionTenant(tx, input)");
+    expect(service).toContain("this.identity.provisionAdministrator(tx");
+    expect(service).toContain("this.accounting.provisionAccounting(");
+    expect(service).toContain("this.treasury.provisionTreasury(tx)");
+    expect(tenant).toContain("implements TenantCompanyProvisioningPort");
+    expect(identity).toContain("implements IdentityCompanyProvisioningPort");
+    expect(accounting).toContain("implements AccountingCompanyProvisioningPort");
+    expect(treasury).toContain("implements TreasuryCompanyProvisioningPort");
+    expect(composition).toContain("new TenantCompanyProvisioningAdapter()");
+    expect(composition).toContain("new IdentityCompanyProvisioningAdapter()");
+  });
+
+  it("keeps registration state local and delegates Tenant, Identity, Accounting and Security facts", async () => {
+    const [registration, composition] = await Promise.all([
+      source("registration/registration-service.ts"),
+      source("composition/create-registration-owner-ports.ts"),
+    ]);
+
+    expect(registration).not.toMatch(/(?:this\.prisma|tx)\.(?:currency|user|securityEvent)\./u);
+    expect(registration).not.toContain("platform/company-provisioning-service.js");
+    expect(registration).toContain("this.owners.tenant.isActiveGlobalCurrency");
+    expect(registration).toContain("this.owners.identity.identityExists");
+    expect(registration).toContain("this.owners.accounting.isSupportedChartTemplate");
+    expect(registration).toContain("this.owners.security.recordCompletion");
+    expect(composition).toContain("new RegistrationTenantAdapter(prisma)");
+    expect(composition).toContain("new RegistrationIdentityAdapter()");
+    expect(composition).toContain("new RegistrationAccountingAdapter()");
+    expect(composition).toContain("new RegistrationSecurityAdapter()");
+  });
+
+  it("asks owner contexts before disabling a company currency", async () => {
+    const [service, composition] = await Promise.all([
+      source("companies/company-service.ts"),
+      source("composition/create-company-service.ts"),
+    ]);
+
+    expect(service).toContain("port.isAnyCurrencyUsed(tx, context.companyId, disabledCurrencyIds)");
+    expect(service).not.toMatch(/tx\.(?:journalLine|receipt|payment|salesInvoice|purchaseInvoice)\./u);
+    expect(composition).toContain("new CoreAccountingCompanyCurrencyUsageAdapter()");
+    expect(composition).toContain("new TreasuryCompanyCurrencyUsageAdapter()");
+    expect(composition).toContain("new SalesCompanyCurrencyUsageAdapter()");
+    expect(composition).toContain("new PurchasesCompanyCurrencyUsageAdapter()");
+  });
+});
+
+describe("Security, accounting-reference and printing boundary guardrails", () => {
+  it("keeps application source free of explicit any type escape hatches", async () => {
+    const sources = await allTypeScriptSources();
+    const untyped = sources
+      .filter(({ content }) => /(?:\bas\s+any\b|:\s*any\b|<any>|Promise<any>)/u.test(content))
+      .map(({ path }) => path);
+
+    expect(untyped).toEqual([]);
+  });
+
+  it("keeps core financial command services free of untyped any escape hatches", async () => {
+    const services = await Promise.all([
+      source("sales/sales-invoice-service.ts"),
+      source("purchases/purchase-invoice-service.ts"),
+      source("receipts/receipt-service.ts"),
+      source("payments/payment-service.ts"),
+      source("journals/manual-journal-service.ts"),
+    ]);
+
+    for (const service of services) {
+      expect(service).not.toMatch(/\bany\b/u);
+    }
+  });
+
+  it("keeps AuditLog writes inside the Audit append boundary", async () => {
+    const sources = await allTypeScriptSources();
+    const foreignWriters = sources
+      .filter(({ path }) => !path.startsWith("audit/"))
+      .filter(({ content }) => /\.auditLog\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u.test(content))
+      .map(({ path }) => path);
+    const adapter = await source("audit/prisma-audit-append-adapter.ts");
+
+    expect(foreignWriters).toEqual([]);
+    expect(adapter).toContain("function appendAudit");
+    expect(adapter).toContain("implements AuditAppendPort");
+  });
+
+  it("keeps SecurityEvent writes inside the Security owner", async () => {
+    const sources = await allTypeScriptSources();
+    const foreignWriters = sources
+      .filter(({ path }) => !path.startsWith("security/"))
+      .filter(({ content }) => /\.securityEvent\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u.test(content))
+      .map(({ path }) => path);
+    const [authStore, resetService, adapter] = await Promise.all([
+      source("auth/prisma-auth-store.ts"),
+      source("auth/password-reset-service.ts"),
+      source("security/prisma-security-event-append-adapter.ts"),
+    ]);
+
+    expect(foreignWriters).toEqual([]);
+    expect(authStore).toContain("SecurityEventAppendPort");
+    expect(resetService).toContain("SecurityEventAppendPort");
+    expect(adapter).toContain("implements SecurityEventAppendPort");
+  });
+
+  it("resolves posting-account references through the Core Accounting query port", async () => {
+    const [customer, supplier, tax, treasury, port, adapter] = await Promise.all([
+      source("sales/customer-service.ts"),
+      source("suppliers/supplier-service.ts"),
+      source("tax/tax-service.ts"),
+      source("treasury/treasury-service.ts"),
+      source("accounts/account-query-port.ts"),
+      source("accounts/prisma-account-query-adapter.ts"),
+    ]);
+    const consumers = `${customer}\n${supplier}\n${tax}\n${treasury}`;
+
+    expect(consumers).toContain("AccountingAccountQueryPort");
+    expect(consumers).not.toMatch(/(?:tx|this\.prisma)\.account\.(?:find|count|aggregate|groupBy)/u);
+    expect(port).toContain("findById(tx: Prisma.TransactionClient, companyId: bigint");
+    expect(adapter).toContain("implements AccountingAccountQueryPort");
+    expect(adapter).toContain("where: { id: accountId, companyId }");
+  });
+
+  it("keeps Printing orchestration behind locator and snapshot query adapters", async () => {
+    const [service, archive, locator, snapshots] = await Promise.all([
+      source("printing/print-service.ts"),
+      source("printing/print-archive.ts"),
+      source("printing/prisma-print-document-locator-adapter.ts"),
+      source("printing/prisma-print-snapshot-query-adapter.ts"),
+    ]);
+
+    expect(service).toContain("PrintDocumentLocatorPort");
+    expect(service).not.toMatch(/this\.prisma\.(?:accountingDocument|receipt|payment|purchaseInvoice|salesInvoice)\./u);
+    expect(archive).toContain("PrintSnapshotQueryPort");
+    expect(archive).not.toMatch(/tx\.(?:accountingDocument|receipt|payment|purchaseInvoice|salesInvoice|journalEntry|journalLine)\./u);
+    expect(locator).toContain("implements PrintDocumentLocatorPort");
+    expect(snapshots).toContain("implements PrintSnapshotQueryPort");
+  });
+
+  it("requires a shared limiter for production-sensitive routes", async () => {
+    const [app, limiter, schema, migration] = await Promise.all([
+      source("app.ts"),
+      source("operations/rate-limit.ts"),
+      projectFile("apps/api/prisma/schema.prisma"),
+      projectFile("apps/api/prisma/migrations/20260828120000_distributed_sensitive_rate_limits/migration.sql"),
+    ]);
+
+    expect(app).toContain("A shared security-sensitive rate-limit store is required in production");
+    expect(app).toContain("sensitiveRateLimits");
+    expect(app).toContain("sessionOrNetworkRateLimitIdentity");
+    expect(app).toContain("credentialOrNetworkRateLimitIdentity");
+    expect(app).toContain("RATE_LIMIT_NETWORK_MULTIPLIER");
+    expect(limiter).toContain("class PrismaRateLimitStore");
+    expect(limiter).toContain("createHash('sha256')");
+    expect(limiter).toContain("createHmac('sha256', this.identitySecret)");
+    expect(limiter).toContain("`${input.scope}:${identityDigest(input.identity)}`");
+    expect(schema).toContain("model RateLimitCounter");
+    expect(migration).toContain("PRIMARY KEY (`scope`, `identity_hash`, `window_started_at`)");
   });
 });
 
@@ -458,6 +644,32 @@ describe("Reporting ownership boundary guardrails", () => {
     expect(adapter).not.toMatch(/\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
     expect(calculator).toContain("Prisma.Decimal");
     expect(calculator).not.toMatch(/\.(?:journalEntry|journalLine|account|costCenter)\.(?:find|groupBy|aggregate|create|update|delete)/u);
+  });
+});
+
+describe("Sales customer ownership boundary guardrails", () => {
+  it("owns Customer writes and exposes typed import and CRM ports", async () => {
+    const [customerService, customerPorts, dataImports, sources] = await Promise.all([
+      source("sales/customer-service.ts"),
+      source("sales/customer-ports.ts"),
+      source("imports/data-import-service.ts"),
+      allTypeScriptSources(),
+    ]);
+    const receiptSources = sources
+      .filter(({ path }) => path.startsWith("receipts/"))
+      .map(({ content }) => content)
+      .join("\n");
+
+    expect(customerService).toContain("implements CustomerImportPort, CrmCustomerQueryPort, CrmCustomerProvisioningPort");
+    expect(customerService).toContain("tx.customer.create(");
+    expect(customerPorts).toContain("interface CrmCustomerQueryPort");
+    expect(customerPorts).toContain("interface CrmCustomerProvisioningPort");
+    expect(customerPorts).toContain("interface CustomerImportPort");
+    expect(dataImports).toContain("CustomerImportPort");
+    expect(dataImports).not.toMatch(/\.(?:customer|customerAddress)\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
+    expect(receiptSources).not.toMatch(/\.(?:customer|customerAddress)\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
+    await expect(source("receipts/reference-service.ts")).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(source("receipts/reference-router.ts")).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
 

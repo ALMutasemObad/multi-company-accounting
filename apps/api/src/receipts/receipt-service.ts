@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { Prisma, type PrismaClient } from "@prisma/client";
+import { Prisma, type AccountingDocument, type PrismaClient } from "@prisma/client";
+import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import {
   PostingEngine,
   type PostingFailureReason,
@@ -19,7 +20,7 @@ import {
   type TreasuryInstrumentPort,
   type TreasuryInstrumentQuote,
 } from "../treasury/treasury-service.js";
-import type { ActorContext } from "../users/user-service.js";
+import type { ActorContext } from "../platform/actor-context.js";
 import { archiveDocument } from "../printing/print-archive.js";
 
 export type ReceiptErrorReason =
@@ -89,7 +90,7 @@ export interface PosReceiptCheckoutPort {
 const date = (v: string) => new Date(`${v}T00:00:00.000Z`);
 const last4 = (v?: string | null) =>
   v ? v.replace(/\s/g, "").slice(-4) : null;
-const documentJson = (v: any) => ({
+const documentJson = (v: AccountingDocument) => ({
   id: v.id.toString(),
   documentType: v.documentType,
   documentNumber: v.documentNumber,
@@ -104,6 +105,30 @@ const documentJson = (v: any) => ({
   postedAt: v.postedAt?.toISOString() ?? null,
   reversedByDocumentId: v.reversedByDocumentId?.toString() ?? null,
 });
+
+const receiptInclude = {
+  accountingDocument: true,
+  allocations: {
+    orderBy: { id: "asc" as const },
+    include: {
+      receivableItem: {
+        include: {
+          salesInvoice: {
+            include: { accountingDocument: true },
+          },
+        },
+      },
+    },
+  },
+} as const;
+type ReceiptRecord = Prisma.ReceiptGetPayload<{ include: typeof receiptInclude }>;
+type SerializedAccountingDocument = ReturnType<typeof documentJson>;
+type ReceiptCommandJsonInput = {
+  document: AccountingDocument | SerializedAccountingDocument;
+  generatedJournalEntryIds?: string[];
+  ids?: string[];
+  requestId: string;
+};
 
 export class ReceiptService {
   private readonly fiscal: FiscalService;
@@ -123,21 +148,7 @@ export class ReceiptService {
     this.commands = new IdempotentCommandExecutor(prisma);
   }
   private include() {
-    return {
-      accountingDocument: true,
-      allocations: {
-        orderBy: { id: "asc" as const },
-        include: {
-          receivableItem: {
-            include: {
-              salesInvoice: {
-                include: { accountingDocument: true },
-              },
-            },
-          },
-        },
-      },
-    } as const;
+    return receiptInclude;
   }
   async list(
     context: ActorContext,
@@ -345,7 +356,7 @@ export class ReceiptService {
     context: ActorContext,
     id: bigint,
     version: number,
-    receipt: any,
+    receipt: ReceiptRecord,
   ) {
         const prepared = await this.prepare(
           tx,
@@ -568,9 +579,9 @@ export class ReceiptService {
       },
     );
   }
-  static json(v: any) {
+  static json(v: ReceiptRecord) {
     const realizedFxBaseAmount = v.allocations.reduce(
-      (sum: Prisma.Decimal, allocation: any) =>
+      (sum, allocation) =>
         sum.add(allocation.realizedFxBaseAmount ?? 0),
       new Prisma.Decimal(0),
     );
@@ -593,7 +604,7 @@ export class ReceiptService {
         : null,
       counterpartyAddressSnapshot: v.counterpartyAddressSnapshot,
       notes: v.notes,
-      allocations: v.allocations.map((a: any) => ({
+      allocations: v.allocations.map((a) => ({
         id: a.id.toString(),
         receivableItemId: a.receivableItemId.toString(),
         allocatedAmount: a.allocatedAmount.toFixed(4),
@@ -606,18 +617,16 @@ export class ReceiptService {
       })),
     };
   }
-  static commandJson(v: any) {
+  static commandJson(v: ReceiptCommandJsonInput) {
     return {
       document:
-        typeof v.document.id === "string"
-          ? v.document
-          : documentJson(v.document),
+        "companyId" in v.document ? documentJson(v.document) : v.document,
       generatedJournalEntryIds: v.generatedJournalEntryIds ?? v.ids ?? [],
       requestId: v.requestId,
     };
   }
   private postingEntry(
-    receipt: any,
+    receipt: ReceiptRecord,
     prepared: {
       cashBankLedgerAccountId: bigint;
       counterLedgerAccountId: bigint;
@@ -835,7 +844,7 @@ export class ReceiptService {
       counterLedgerAccountId,
     };
   }
-  private inputFrom(v: any): ReceiptInput {
+  private inputFrom(v: ReceiptRecord): ReceiptInput {
     return {
       fiscalPeriodId: v.accountingDocument.fiscalPeriodId,
       documentDate: v.accountingDocument.documentDate
@@ -853,7 +862,7 @@ export class ReceiptService {
       counterpartyName: v.counterpartyNameSnapshot,
       counterpartyAddress: v.counterpartyAddressSnapshot,
       notes: v.notes,
-      allocations: v.allocations.map((a: any) => ({
+      allocations: v.allocations.map((a) => ({
         receivableItemId: a.receivableItemId,
         allocatedAmount: a.allocatedAmount.toFixed(4),
       })),
@@ -888,7 +897,7 @@ export class ReceiptService {
     id: bigint,
     details?: Prisma.InputJsonValue,
   ) {
-    return tx.auditLog.create({
+    return appendAudit(tx, {
       data: {
         companyId: context.companyId,
         actorUserId: context.userId,
@@ -907,8 +916,8 @@ export class ReceiptService {
     fingerprint: string,
     execute: (
       tx: Prisma.TransactionClient,
-      receipt: any,
-    ) => Promise<{ document: any; ids: string[] }>,
+      receipt: ReceiptRecord,
+    ) => Promise<{ document: AccountingDocument; ids: string[] }>,
   ) {
     return this.commands.execute(
       {

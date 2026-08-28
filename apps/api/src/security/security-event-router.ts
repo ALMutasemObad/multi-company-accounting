@@ -18,7 +18,8 @@ const query = z.object({
   dateTo: date.optional(),
 }).refine((value) => !value.dateFrom || !value.dateTo || value.dateFrom <= value.dateTo, { message: "dateFrom must be before or equal to dateTo" });
 const sid = (request: Request) => Object.fromEntries((request.headers.cookie ?? "").split(";").map((part) => part.trim().split("=", 2)).filter(([key, value]) => key && value)).sid;
-const serialize = (row: any) => ({
+type SecurityEventRow = NonNullable<Awaited<ReturnType<SecurityEventService["acknowledge"]>>>;
+const serialize = (row: SecurityEventRow) => ({
   id: row.id.toString(), eventType: row.eventType, severity: row.severity,
   user: row.user ? { id: row.user.id.toString(), name: row.user.displayName, email: row.user.emailNormalized } : null,
   email: row.emailSnapshot, ipAddress: row.ipAddress, userAgent: row.userAgent, details: row.details,

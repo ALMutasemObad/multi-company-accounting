@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
-import type { ActorContext } from "../../users/user-service.js";
+import type { ActorContext } from "../../platform/actor-context.js";
 import type { PosSaleQueryPort } from "../pos-types.js";
 
 export class PrismaPosSaleQueryAdapter implements PosSaleQueryPort {

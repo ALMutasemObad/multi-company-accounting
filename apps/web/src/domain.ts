@@ -1,10 +1,10 @@
 import type { Currency, JournalEntry, Payment, PaymentAllocation, ReceiptAllocation, TaxRate } from "./types";
-import { activeIntlLocale, dictionaries, translate, type TranslationKey } from "./i18n";
+import { activeIntlLocale, hasTranslation, translate, type TranslationKey } from "./i18n";
 
 export function messageForError(code?: string, reason?: string) {
   for (const candidate of [reason, code]) {
     const key = `errors.${candidate ?? ""}`;
-    if (Object.hasOwn(dictionaries.ar, key)) return translate(key as TranslationKey);
+    if (hasTranslation(key)) return translate(key);
   }
   return translate("errors.DEFAULT");
 }

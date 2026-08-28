@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { setActiveLocale } from "./i18n/core";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { loadLocale, setActiveLocale } from "./i18n/core";
 import {
   allocationsTotal,
   exchangeRateForCurrency,
@@ -17,6 +17,7 @@ import {
   validateTreasuryAccount,
 } from "./domain";
 
+beforeAll(async () => Promise.all([loadLocale("ar"), loadLocale("en")]));
 afterEach(() => setActiveLocale("ar"));
 
 describe("واجهة سند الصرف", () => {

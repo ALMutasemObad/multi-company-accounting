@@ -1,7 +1,8 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
+import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import { reserveMasterDataCode } from "../platform/master-data-code-service.js";
 import { TransactionExecutor } from "../platform/transaction-executor.js";
-import type { ActorContext } from "../users/user-service.js";
+import type { ActorContext } from "../platform/actor-context.js";
 
 export type InventoryCatalogErrorReason =
   | "NOT_FOUND"
@@ -600,7 +601,7 @@ export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
     id: bigint,
     details?: Prisma.InputJsonValue,
   ) {
-    return tx.auditLog.create({
+    return appendAudit(tx, {
       data: {
         companyId: context.companyId,
         actorUserId: context.userId,

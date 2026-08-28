@@ -155,7 +155,8 @@ related:
 
 ### ما يمنع
 
-- لا استيراد لخدمة Customer الانتقالية في `receipts/reference-service.ts` من CRM.
+- لا استيراد لـ`CustomerService` من CRM؛ يستهلك السياق فقط `CrmCustomerQueryPort`
+  و`CrmCustomerProvisioningPort` المملوكين لـSales في `sales/customer-ports.ts`.
 - لا وصول إلى `SalesInvoice/ReceivableItem/Receipt/InventoryMovement/JournalEntry`.
 - لا استدعاء `PostingEngine`.
 - لا استدعاء Professional Projects في الشريحة الأولى.

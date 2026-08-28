@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
-import type { ActorContext } from "../users/user-service.js";
+import type { ActorContext } from "./actor-context.js";
 import { assertRequestActive } from "../operations/request-context.js";
 import {
   classifyTransactionError,

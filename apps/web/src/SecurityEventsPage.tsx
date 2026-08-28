@@ -1,6 +1,6 @@
 import {
   activeIntlLocale,
-  dictionaries,
+  hasTranslation,
   translate as t,
   type TranslationKey } from "./i18n";
 import { FormEvent,
@@ -29,7 +29,7 @@ const severityCodes: SecuritySeverity[] = ["INFO", "WARNING", "HIGH", "CRITICAL"
 const severityLabel = (severity: SecuritySeverity) => t(`security.severity.${severity}` as TranslationKey);
 function eventLabel(eventType: string) {
   const key = `security.event.${eventType}`;
-  return Object.hasOwn(dictionaries.ar, key) ? t(key as TranslationKey) : eventType;
+  return hasTranslation(key) ? t(key) : eventType;
 }
 export function SecurityEventsPage({ notify }: { notify: Notice }) {
   const [rows, setRows] = useState<SecurityEvent[]>([]);

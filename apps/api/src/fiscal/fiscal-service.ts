@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { Prisma, type PrismaClient } from '@prisma/client';
+import { Prisma, type FiscalPeriod, type PrismaClient } from '@prisma/client';
+import { appendAudit } from '../audit/prisma-audit-append-adapter.js';
 import { lockFiscalPeriod } from '../core-accounting/posting-engine.js';
 import { IdempotentCommandExecutor } from '../platform/idempotent-command-executor.js';
 import { TransactionExecutor } from '../platform/transaction-executor.js';
-import type { ActorContext } from '../users/user-service.js';
+import type { ActorContext } from '../platform/actor-context.js';
 
 export class FiscalError extends Error {
   constructor(public readonly reason: 'NOT_FOUND' | 'DATE_RANGE_INVALID' | 'OVERLAP' | 'PERIOD_OUTSIDE_YEAR' | 'VERSION_CONFLICT' | 'INVALID_STATE' | 'ORDER_VIOLATION' | 'DATES_LOCKED' | 'DRAFT_DOCUMENTS_EXIST' | 'RECONCILIATION_FAILED' | 'IDEMPOTENCY_MISMATCH' | 'IDEMPOTENCY_IN_PROGRESS') { super(reason); }
@@ -62,7 +63,7 @@ export class FiscalService {
       const overlap = await tx.fiscalYear.findFirst({ where: { companyId: context.companyId, startDate: { lte: endDate }, endDate: { gte: startDate } }, select: { id: true } });
       if (overlap) throw new FiscalError('OVERLAP');
       const year = await tx.fiscalYear.create({ data: { companyId: context.companyId, name: input.name, startDate, endDate, periods: { create: periods } } });
-      await tx.auditLog.create({ data: { companyId: context.companyId, actorUserId: context.userId, action: 'FISCAL_YEAR_CREATED', entityType: 'FISCAL_YEAR', entityId: year.id.toString() } });
+      await appendAudit(tx, { data: { companyId: context.companyId, actorUserId: context.userId, action: 'FISCAL_YEAR_CREATED', entityType: 'FISCAL_YEAR', entityId: year.id.toString() } });
       return tx.fiscalYear.findUniqueOrThrow({ where: { id: year.id }, include: { periods: { orderBy: { periodNumber: 'asc' } } } });
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
@@ -82,7 +83,7 @@ export class FiscalService {
       const overlap = await tx.fiscalYear.findFirst({ where: { companyId: context.companyId, id: { not: id }, startDate: { lte: endDate }, endDate: { gte: startDate } } });
       if (overlap) throw new FiscalError('OVERLAP');
       await tx.fiscalYear.update({ where: { id }, data: { ...(input.name ? { name: input.name } : {}), startDate, endDate } });
-      await tx.auditLog.create({ data: { companyId: context.companyId, actorUserId: context.userId, action: 'FISCAL_YEAR_UPDATED', entityType: 'FISCAL_YEAR', entityId: id.toString() } });
+      await appendAudit(tx, { data: { companyId: context.companyId, actorUserId: context.userId, action: 'FISCAL_YEAR_UPDATED', entityType: 'FISCAL_YEAR', entityId: id.toString() } });
       return tx.fiscalYear.findUniqueOrThrow({ where: { id }, include: { periods: { orderBy: { periodNumber: 'asc' } } } });
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
@@ -114,7 +115,7 @@ export class FiscalService {
       if (overlap) throw new FiscalError('OVERLAP');
       const updated = await tx.fiscalPeriod.updateMany({ where: { id, version: input.version }, data: { ...(input.name ? { name: input.name } : {}), startDate, endDate, version: { increment: 1 } } });
       if (updated.count !== 1) throw new FiscalError('VERSION_CONFLICT');
-      await tx.auditLog.create({ data: { companyId: context.companyId, actorUserId: context.userId, action: 'FISCAL_PERIOD_UPDATED', entityType: 'FISCAL_PERIOD', entityId: id.toString() } });
+      await appendAudit(tx, { data: { companyId: context.companyId, actorUserId: context.userId, action: 'FISCAL_PERIOD_UPDATED', entityType: 'FISCAL_PERIOD', entityId: id.toString() } });
       return tx.fiscalPeriod.findUniqueOrThrow({ where: { id } });
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
@@ -165,7 +166,7 @@ export class FiscalService {
     });
   }
 
-  private async periodCommand(context: ActorContext, id: bigint, operation: string, key: string, fingerprintSource: string, execute: (tx: Prisma.TransactionClient, period: Awaited<ReturnType<Prisma.TransactionClient['fiscalPeriod']['findFirstOrThrow']>>) => Promise<any>) {
+  private async periodCommand(context: ActorContext, id: bigint, operation: string, key: string, fingerprintSource: string, execute: (tx: Prisma.TransactionClient, period: FiscalPeriod) => Promise<FiscalPeriod>) {
     const requestId = randomUUID();
     return this.commands.execute({
       context,
@@ -180,7 +181,7 @@ export class FiscalService {
       if (!await lockFiscalPeriod(tx, context.companyId, id)) throw new FiscalError('NOT_FOUND');
       const period = await tx.fiscalPeriod.findFirstOrThrow({ where: { id, companyId: context.companyId } }).catch(() => { throw new FiscalError('NOT_FOUND'); });
       const updated = await execute(tx, period);
-      await tx.auditLog.create({ data: { companyId: context.companyId, actorUserId: context.userId, action: operation, entityType: 'FISCAL_PERIOD', entityId: id.toString() } });
+      await appendAudit(tx, { data: { companyId: context.companyId, actorUserId: context.userId, action: operation, entityType: 'FISCAL_PERIOD', entityId: id.toString() } });
       const response = { period: FiscalService.serializePeriod(updated), requestId, reconciliation: { balanced: true, differences: [] } };
       return response;
     });
@@ -214,7 +215,7 @@ export class FiscalService {
     });
   }
 
-  static serializePeriod(period: any) {
+  static serializePeriod(period: FiscalPeriod) {
     return { id: period.id.toString(), fiscalYearId: period.fiscalYearId.toString(), periodNumber: period.periodNumber, name: period.name, startDate: period.startDate.toISOString().slice(0, 10), endDate: period.endDate.toISOString().slice(0, 10), status: period.status, closedBy: period.closedBy?.toString() ?? null, closedAt: period.closedAt?.toISOString() ?? null, reopenedBy: period.reopenedBy?.toString() ?? null, reopenedAt: period.reopenedAt?.toISOString() ?? null, reopenReason: period.reopenReason, version: period.version };
   }
 }

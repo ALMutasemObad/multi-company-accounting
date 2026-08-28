@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
-import type { ActorContext } from "../users/user-service.js";
+import type { ActorContext } from "../platform/actor-context.js";
 import { calculateTaxSummary } from "./tax-summary-calculator.js";
 import type { TaxSummaryQuery, TaxSummaryQueryPort } from "./tax-summary-types.js";
 

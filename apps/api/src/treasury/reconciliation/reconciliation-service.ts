@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import { Prisma, type PrismaClient } from "@prisma/client";
-import type { ActorContext } from "../../users/user-service.js";
+import { appendAudit } from "../../audit/prisma-audit-append-adapter.js";
+import type { ActorContext } from "../../platform/actor-context.js";
 import { IdempotentCommandExecutor } from "../../platform/idempotent-command-executor.js";
 import {
   BankStatementParseError,
@@ -1050,7 +1051,7 @@ export class BankReconciliationService {
     entityId: string,
     details: Prisma.InputJsonValue,
   ) {
-    return tx.auditLog.create({
+    return appendAudit(tx, {
       data: {
         companyId: context.companyId,
         actorUserId: context.userId,

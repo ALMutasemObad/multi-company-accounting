@@ -6,7 +6,7 @@ import { AuthService } from '../src/auth/auth-service.js';
 import { PrismaAuthStore } from '../src/auth/prisma-auth-store.js';
 import { createDatabase } from '../src/database.js';
 import { UserService } from '../src/users/user-service.js';
-import { CompanyService } from '../src/companies/company-service.js';
+import { createCompanyService } from '../src/composition/create-company-service.js';
 import { WorkforceAccessService } from '../src/workforce-access/workforce-access-service.js';
 import { HrEmployeeAccountAdapter } from '../src/hr/employee-account-adapter.js';
 import { IdentityAccountAdapter } from '../src/users/identity-account-adapter.js';
@@ -61,7 +61,7 @@ describe.runIf(enabled)('users and roles with MariaDB', () => {
     employeePublicId = employee.publicId;
     const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, { preAuthTtlMinutes: 10, sessionTtlHours: 12 });
     const workforceAccess = new WorkforceAccessService(prisma!, new HrEmployeeAccountAdapter(prisma!), new IdentityAccountAdapter(prisma!));
-    app = createApp({ NODE_ENV: 'test', PORT: 3000, WEB_ORIGIN: 'http://localhost:5173', SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: databaseUrl }, { auth, users: new UserService(prisma!), workforceAccess, companies: new CompanyService(prisma!) });
+    app = createApp({ NODE_ENV: 'test', PORT: 3000, WEB_ORIGIN: 'http://localhost:5173', SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: databaseUrl }, { auth, users: new UserService(prisma!), workforceAccess, companies: createCompanyService(prisma!) });
   });
 
   afterAll(async () => {

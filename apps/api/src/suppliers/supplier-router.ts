@@ -3,8 +3,8 @@ import { z, ZodError } from "zod";
 import type { AuthService } from "../auth/auth-service.js";
 import { openApiRequestBodySchemas as bodies } from "../generated/openapi-request-guards.js";
 import {
-  SupplierReferenceService,
-  ReferenceError,
+  SupplierService,
+  SupplierError,
 } from "./supplier-service.js";
 const id = z
   .string()
@@ -25,7 +25,7 @@ function sid(req: Request) {
 }
 export function createSupplierRouter(
   auth: AuthService,
-  service: SupplierReferenceService,
+  service: SupplierService,
 ) {
   const router = Router();
   const authorize = (req: Request, permission: string, csrf: boolean) =>
@@ -47,7 +47,7 @@ export function createSupplierRouter(
       .parse(req.query);
     const result = await service.listSuppliers(context, q);
     res.json({
-      data: result.data.map(SupplierReferenceService.supplierJson),
+      data: result.data.map(SupplierService.supplierJson),
       meta: {
         page: q.page,
         pageSize: q.pageSize,
@@ -61,7 +61,7 @@ export function createSupplierRouter(
     res
       .status(201)
       .json(
-        SupplierReferenceService.supplierJson(
+        SupplierService.supplierJson(
           await service.createSupplier(context, bodies.createSupplier.parse(req.body)),
         ),
       );
@@ -69,7 +69,7 @@ export function createSupplierRouter(
   router.get("/suppliers/:supplierId", async (req, res) => {
     const context = await authorize(req, "suppliers.view", false);
     res.json(
-      SupplierReferenceService.supplierJson(
+      SupplierService.supplierJson(
         await service.getSupplier(context, id.parse(req.params.supplierId)),
       ),
     );
@@ -77,7 +77,7 @@ export function createSupplierRouter(
   router.patch("/suppliers/:supplierId", async (req, res) => {
     const context = await authorize(req, "suppliers.manage", true);
     res.json(
-      SupplierReferenceService.supplierJson(
+      SupplierService.supplierJson(
         await service.updateSupplier(
           context,
           id.parse(req.params.supplierId),
@@ -90,7 +90,7 @@ export function createSupplierRouter(
     const context = await authorize(req, "suppliers.manage", true);
     const body = bodies.deactivateSupplier.parse(req.body);
     res.json(
-      SupplierReferenceService.supplierJson(
+      SupplierService.supplierJson(
         await service.deactivateSupplier(
           context,
           id.parse(req.params.supplierId),
@@ -104,7 +104,7 @@ export function createSupplierRouter(
     res
       .status(201)
       .json(
-        SupplierReferenceService.addressJson(
+        SupplierService.addressJson(
           await service.createAddress(
             context,
             id.parse(req.params.supplierId),
@@ -118,7 +118,7 @@ export function createSupplierRouter(
     async (req, res) => {
       const context = await authorize(req, "suppliers.manage", true);
       res.json(
-        SupplierReferenceService.addressJson(
+        SupplierService.addressJson(
           await service.updateAddress(
             context,
             id.parse(req.params.supplierId),
@@ -148,7 +148,7 @@ export function createSupplierRouter(
         .json({ status: 400, code: "VALIDATION_ERROR", errors: error.issues });
       return;
     }
-    if (error instanceof ReferenceError) {
+    if (error instanceof SupplierError) {
       const status =
         error.reason === "NOT_FOUND"
           ? 404

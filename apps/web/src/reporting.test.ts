@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { loadLocale } from "./i18n";
 import { accountStatementQuery, currentYearRange, trialBalanceCsv } from "./reporting";
+
+beforeAll(async () => loadLocale("ar"));
 
 describe("reporting helpers", () => {
   it("builds the complete current-year range", () => {

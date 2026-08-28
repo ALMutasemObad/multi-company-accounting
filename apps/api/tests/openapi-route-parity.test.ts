@@ -10,7 +10,7 @@ import { createPaymentRouter } from '../src/payments/payment-router.js';
 import { createPrintRouter } from '../src/printing/print-router.js';
 import { createPurchaseInvoiceRouter } from '../src/purchases/purchase-invoice-router.js';
 import { createReceiptRouter } from '../src/receipts/receipt-router.js';
-import { createReceiptReferenceRouter } from '../src/receipts/reference-router.js';
+import { createCustomerRouter } from '../src/sales/customer-router.js';
 import { createReportRouter } from '../src/reports/report-router.js';
 import { createSalesInvoiceRouter } from '../src/sales/sales-invoice-router.js';
 import { createSecurityEventRouter } from '../src/security/security-event-router.js';
@@ -61,7 +61,7 @@ const routers = [
   { prefix: '', router: createHrRouter(stub, stub) },
   { prefix: '', router: createAccountRouter(stub, stub) },
   { prefix: '', router: createManualJournalRouter(stub, stub) },
-  { prefix: '', router: createReceiptReferenceRouter(stub, stub) },
+  { prefix: '', router: createCustomerRouter(stub, stub) },
   { prefix: '', router: createTreasuryRouter(stub, stub) },
   { prefix: '', router: createBankReconciliationRouter(stub, stub) },
   { prefix: '', router: createInventoryRouter(stub, stub) },

@@ -6,7 +6,8 @@ import { defaultChartDefinitions } from '../src/accounts/default-chart-template.
 import { createDatabase } from '../src/database.js';
 import { PrismaOutboxAppender, REGISTRATION_VERIFICATION_REQUESTED } from '../src/outbox/outbox.js';
 import { OutboxWorker } from '../src/outbox/outbox-worker.js';
-import { CompanyProvisioningService } from '../src/platform/company-provisioning-service.js';
+import { createCompanyProvisioningService } from '../src/composition/create-company-provisioning-service.js';
+import { createRegistrationOwnerPorts } from '../src/composition/create-registration-owner-ports.js';
 import { permissionDefinitions } from '../src/platform/reference-data.js';
 import type { RegistrationMailer, RegistrationVerificationMessage } from '../src/registration/registration-mailer.js';
 import { RegistrationService } from '../src/registration/registration-service.js';
@@ -108,7 +109,13 @@ describe.runIf(enabled)('self-registration with MariaDB', () => {
     });
     mailer = new CapturingMailer();
     const outbox = new PrismaOutboxAppender(3);
-    service = new RegistrationService(prisma, new CompanyProvisioningService(prisma), outbox, { auditPepper });
+    service = new RegistrationService(
+      prisma,
+      createCompanyProvisioningService(prisma),
+      outbox,
+      createRegistrationOwnerPorts(prisma),
+      { auditPepper },
+    );
     const handler = new RegistrationVerificationHandler(prisma, mailer, {
       tokenTtlHours: 24,
       publicAppUrl: 'http://localhost:5173',
@@ -178,9 +185,9 @@ describe.runIf(enabled)('self-registration with MariaDB', () => {
 
   it('rolls back the registration request and audit event when the outbox append fails', async () => {
     const email = emails[5]!;
-    const failingService = new RegistrationService(prisma, new CompanyProvisioningService(prisma), {
+    const failingService = new RegistrationService(prisma, createCompanyProvisioningService(prisma), {
       append: async () => { throw new Error('SIMULATED_OUTBOX_WRITE_FAILURE'); },
-    }, { auditPepper });
+    }, createRegistrationOwnerPorts(prisma), { auditPepper });
     await expect(failingService.start(registrationInput(email, 'Atomic rollback password'))).rejects.toThrow('SIMULATED_OUTBOX_WRITE_FAILURE');
     expect(await prisma.registrationRequest.findUnique({ where: { emailNormalized: email } })).toBeNull();
     expect(await prisma.registrationEvent.count({ where: { emailHash: emailHash(email) } })).toBe(0);

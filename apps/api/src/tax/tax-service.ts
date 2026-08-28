@@ -1,7 +1,10 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
+import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import { reserveMasterDataCode } from "../platform/master-data-code-service.js";
 import { TransactionExecutor } from "../platform/transaction-executor.js";
-import type { ActorContext } from "../users/user-service.js";
+import type { ActorContext } from "../platform/actor-context.js";
+import type { AccountingAccountQueryPort, PostingAccountReference } from "../accounts/account-query-port.js";
+import { PrismaAccountingAccountQueryAdapter } from "../accounts/prisma-account-query-adapter.js";
 
 export type TaxUsage = "OUTPUT" | "INPUT";
 export type TaxErrorReason = "NOT_FOUND" | "VERSION_CONFLICT" | "INVALID_TAX_RATE";
@@ -71,11 +74,27 @@ const taxRateInclude = {
 } as const;
 
 type TaxRateListItem = Prisma.TaxRateGetPayload<{ include: typeof taxRateInclude }>;
+type TaxAccountView = NonNullable<TaxRateListItem["outputTaxAccount"]>;
+type TaxRateView = {
+  id: bigint;
+  code: string;
+  nameAr: string;
+  rate: Prisma.Decimal;
+  isActive: boolean;
+  version: number;
+  outputTaxAccountId?: bigint | null | undefined;
+  inputTaxAccountId?: bigint | null | undefined;
+  outputTaxAccount: TaxAccountView | null;
+  inputTaxAccount: TaxAccountView | null;
+};
 
 export class TaxService implements TaxQuotePort {
   private readonly transactions: TransactionExecutor;
 
-  constructor(private readonly prisma: PrismaClient) {
+  constructor(
+    private readonly prisma: PrismaClient,
+    private readonly accounts: AccountingAccountQueryPort = new PrismaAccountingAccountQueryAdapter(),
+  ) {
     this.transactions = new TransactionExecutor(prisma);
   }
 
@@ -223,7 +242,7 @@ export class TaxService implements TaxQuotePort {
     return result;
   }
 
-  static json(value: any, usage: TaxUsage) {
+  static json(value: TaxRateView, usage: TaxUsage) {
     const account = usage === "OUTPUT" ? value.outputTaxAccount : value.inputTaxAccount;
     const readinessReason = TaxService.readinessReason(value, usage);
     const publicAccount = account
@@ -250,7 +269,7 @@ export class TaxService implements TaxQuotePort {
     };
   }
 
-  private static readinessReason(value: any, usage: TaxUsage) {
+  private static readinessReason(value: TaxRateView, usage: TaxUsage) {
     if (!value.isActive) return "TAX_RATE_INACTIVE";
     if (decimal(value.rate).equals(0)) return null;
     const account = usage === "OUTPUT" ? value.outputTaxAccount : value.inputTaxAccount;
@@ -283,17 +302,14 @@ export class TaxService implements TaxQuotePort {
   ) {
     if (rate.equals(0) && accountId === null) return;
     if (!accountId) throw new TaxError("INVALID_TAX_RATE");
-    const account = await tx.account.findFirst({
-      where: { id: accountId, companyId },
-      select: accountSelection,
-    });
+    const account = await this.accounts.findById(tx, companyId, accountId);
     this.assertAccount(usage, rate, account);
   }
 
   private assertAccount(
     usage: TaxUsage,
     rate: Prisma.Decimal,
-    account: {
+    account: PostingAccountReference | {
       id: bigint;
       isActive: boolean;
       allowsPosting: boolean;
@@ -303,12 +319,14 @@ export class TaxService implements TaxQuotePort {
   ) {
     if (rate.equals(0) && !account) return;
     const requiredClass = usage === "OUTPUT" ? "LIABILITY" : "ASSET";
+    const childCount = account && "childCount" in account ? account.childCount : account?._count.children;
+    const accountClass = account && "accountClass" in account ? account.accountClass : account?.accountType.class;
     if (
       !account
       || !account.isActive
       || !account.allowsPosting
-      || account._count.children > 0
-      || account.accountType.class !== requiredClass
+      || childCount! > 0
+      || accountClass !== requiredClass
     ) {
       throw new TaxError("INVALID_TAX_RATE");
     }
@@ -321,7 +339,7 @@ export class TaxService implements TaxQuotePort {
     id: bigint,
     details: Prisma.InputJsonValue,
   ) {
-    return tx.auditLog.create({
+    return appendAudit(tx, {
       data: {
         companyId: context.companyId,
         actorUserId: context.userId,

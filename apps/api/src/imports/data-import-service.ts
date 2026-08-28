@@ -1,13 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
-import { Prisma, type PrismaClient } from "@prisma/client";
-import type { ReceiptReferenceService, CustomerInput } from "../receipts/reference-service.js";
-import type { SupplierReferenceService, SupplierInput } from "../suppliers/supplier-service.js";
+import { Prisma, type DataImportBatch, type PrismaClient } from "@prisma/client";
+import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
+import { CustomerError, type CustomerImportPort, type CustomerInput } from "../sales/customer-ports.js";
+import type { SupplierService, SupplierInput } from "../suppliers/supplier-service.js";
 import { SalesInvoiceError, type SalesInvoiceInput, type SalesInvoiceService } from "../sales/sales-invoice-service.js";
 import { PurchaseInvoiceError, type PurchaseInvoiceInput, type PurchaseInvoiceService } from "../purchases/purchase-invoice-service.js";
-import { ReferenceError as CustomerReferenceError } from "../receipts/reference-service.js";
-import { ReferenceError as SupplierReferenceError } from "../suppliers/supplier-service.js";
+import { SupplierError } from "../suppliers/supplier-service.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
-import type { ActorContext } from "../users/user-service.js";
+import type { ActorContext } from "../platform/actor-context.js";
 import type { OutboxAppender } from "../outbox/outbox.js";
 import { tableToCsv, tableToXlsx } from "../reports/financial-statement-exporter.js";
 import { groupInvoiceRows, importExamples, importHeaders, parseImportFile } from "./data-import-parser.js";
@@ -99,8 +99,8 @@ export class DataImportService {
   private readonly commands: IdempotentCommandExecutor;
   constructor(
     private readonly prisma: PrismaClient,
-    private readonly customers: ReceiptReferenceService,
-    private readonly suppliers: SupplierReferenceService,
+    private readonly customers: CustomerImportPort,
+    private readonly suppliers: SupplierService,
     private readonly salesInvoices: SalesInvoiceService,
     private readonly purchaseInvoices: PurchaseInvoiceService,
     private readonly outbox: OutboxAppender,
@@ -127,7 +127,7 @@ export class DataImportService {
       const validation = await this.validate(tx, context.companyId, type, rows);
       const errorRows = new Set(validation.errors.map((item) => item.row));
       const batch = await tx.dataImportBatch.create({ data: { companyId: context.companyId, createdById: context.userId, importType: type, sourceFormat: format, fileHash: hash, rowCount: rows.length, validRowCount: rows.length - errorRows.size, errorRowCount: errorRows.size, expiresAt: new Date(Date.now() + PREVIEW_TTL_MS) } });
-      await tx.auditLog.create({ data: { companyId: context.companyId, actorUserId: context.userId, action: "DATA_IMPORT_PREVIEWED", entityType: "DATA_IMPORT_BATCH", entityId: batch.publicId, details: { importType: type, sourceFormat: format, rowCount: rows.length, errorRowCount: errorRows.size } } });
+      await appendAudit(tx, { data: { companyId: context.companyId, actorUserId: context.userId, action: "DATA_IMPORT_PREVIEWED", entityType: "DATA_IMPORT_BATCH", entityId: batch.publicId, details: { importType: type, sourceFormat: format, rowCount: rows.length, errorRowCount: errorRows.size } } });
       return { batch, errors: validation.errors };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
     return { batch: DataImportService.json(result.batch), errors: result.errors.slice(0, 200) };
@@ -154,7 +154,7 @@ export class DataImportService {
       if (type === "PURCHASE_INVOICES") for (const command of (validation.commands as PurchaseInvoiceInput[]).sort(DataImportService.invoiceOrder)) createdIds.push((await this.purchaseInvoices.createImportedDraft(tx, context, command)).id.toString());
       const committedAt = new Date();
       await tx.dataImportBatch.update({ where: { id: batch.id }, data: { status: "COMMITTED", committedAt } });
-      await tx.auditLog.create({ data: { companyId: context.companyId, actorUserId: context.userId, action: "DATA_IMPORT_COMMITTED", entityType: "DATA_IMPORT_BATCH", entityId: batch.publicId, details: { importType: type, createdCount: createdIds.length } } });
+      await appendAudit(tx, { data: { companyId: context.companyId, actorUserId: context.userId, action: "DATA_IMPORT_COMMITTED", entityType: "DATA_IMPORT_BATCH", entityId: batch.publicId, details: { importType: type, createdCount: createdIds.length } } });
       await this.outbox.append(tx, { eventType: "DataImportCommitted", schemaVersion: 1, aggregateType: "DataImportBatch", aggregateId: batch.publicId, companyId: context.companyId, payload: { batchId: batch.publicId, importType: type, createdCount: createdIds.length, occurredBy: context.userId.toString() } });
       return { batchId: batch.publicId, status: "COMMITTED" as const, createdCount: createdIds.length, createdIds, requestId: randomUUID() };
     });
@@ -167,7 +167,7 @@ export class DataImportService {
       for (const row of rows) {
         if (errors.some((item) => item.row === row.rowNumber)) continue;
         try { commands.push(type === "CUSTOMERS" ? await this.customers.resolveImportedCustomer(tx, companyId, row.values) : await this.suppliers.resolveImportedSupplier(tx, companyId, row.values)); }
-        catch (caught) { const reason = caught instanceof CustomerReferenceError || caught instanceof SupplierReferenceError ? caught.reason : "INVALID_ROW"; errors.push(error(row, domainColumn(reason, type), reason)); }
+        catch (caught) { const reason = caught instanceof CustomerError || caught instanceof SupplierError ? caught.reason : "INVALID_ROW"; errors.push(error(row, domainColumn(reason, type), reason)); }
       }
     } else {
       const grouped = groupInvoiceRows(rows); errors.push(...grouped.errors);
@@ -181,7 +181,7 @@ export class DataImportService {
     return { commands: commands as ImportCommands, errors };
   }
 
-  static json(value: any) {
+  static json(value: DataImportBatch) {
     const status = value.status === "PREVIEWED" && value.expiresAt <= new Date() ? "EXPIRED" : value.status;
     return { id: value.publicId, importType: value.importType, sourceFormat: value.sourceFormat, rowCount: value.rowCount, validRowCount: value.validRowCount, errorRowCount: value.errorRowCount, status, expiresAt: value.expiresAt.toISOString(), committedAt: value.committedAt?.toISOString() ?? null, createdAt: value.createdAt.toISOString() };
   }

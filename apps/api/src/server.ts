@@ -9,21 +9,22 @@ import { UserService } from './users/user-service.js';
 import { FiscalService } from './fiscal/fiscal-service.js';
 import { AccountService } from './accounts/account-service.js';
 import { ManualJournalService } from './journals/manual-journal-service.js';
-import { ReceiptReferenceService } from './receipts/reference-service.js';
+import { CustomerService } from './sales/customer-service.js';
 import { ReceiptService } from './receipts/receipt-service.js';
-import { SupplierReferenceService } from './suppliers/supplier-service.js';
+import { SupplierService } from './suppliers/supplier-service.js';
 import { PaymentService } from './payments/payment-service.js';
 import { ReportService } from './reports/report-service.js';
-import { CompanyService } from './companies/company-service.js';
+import { createCompanyService } from './composition/create-company-service.js';
 import { PrintService } from './printing/print-service.js';
-import { AuditService } from './audit/audit-service.js';
 import { SalesInvoiceService } from './sales/sales-invoice-service.js';
 import { PurchaseInvoiceService } from './purchases/purchase-invoice-service.js';
-import { SecurityEventService } from './security/security-event-service.js';
+import { createAuditService } from './composition/create-audit-service.js';
+import { createSecurityEventService } from './composition/create-security-event-service.js';
 import { DatabaseReadinessService } from './operations/readiness-service.js';
 import { closeGracefully } from './operations/graceful-shutdown.js';
 import { logEvent } from './operations/logger.js';
-import { CompanyProvisioningService } from './platform/company-provisioning-service.js';
+import { createCompanyProvisioningService } from './composition/create-company-provisioning-service.js';
+import { createRegistrationOwnerPorts } from './composition/create-registration-owner-ports.js';
 import { RegistrationService } from './registration/registration-service.js';
 import { DevelopmentRegistrationMailer, ResendRegistrationMailer } from './registration/registration-mailer.js';
 import { PASSWORD_RESET_REQUESTED, PrismaOutboxAppender, REGISTRATION_VERIFICATION_REQUESTED, type OutboxHandler } from './outbox/outbox.js';
@@ -33,6 +34,7 @@ import { PasswordResetService } from './auth/password-reset-service.js';
 import { PasswordResetHandler } from './auth/password-reset-handler.js';
 import { configureHttpServerTimeouts } from './operations/http-server.js';
 import { operationalMetrics } from './operations/metrics.js';
+import { PrismaRateLimitStore } from './operations/rate-limit.js';
 import { TaxService } from './tax/tax-service.js';
 import { TreasuryService } from './treasury/treasury-service.js';
 import { DataImportService } from './imports/data-import-service.js';
@@ -75,6 +77,7 @@ import { ProfessionalEmployeeAdapter } from './hr/professional-employee-adapter.
 import { ProfessionalTimesheetApprovalAdapter } from './projects/professional-timesheet-approval-adapter.js';
 import { ProfessionalBillingCurrencyAdapter } from './companies/professional-billing-currency-adapter.js';
 import { ProfessionalBillingService } from './projects/professional-billing-service.js';
+import { PrismaAccountingAccountQueryAdapter } from './accounts/prisma-account-query-adapter.js';
 
 const config = loadConfig();
 if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required to start the API');
@@ -89,8 +92,9 @@ operationalMetrics.configure({
   cooldownMs: config.ALERT_COOLDOWN_MS,
 });
 const database = createDatabase(config.DATABASE_URL);
-const taxes = new TaxService(database);
-const treasury = new TreasuryService(database);
+const accountQueries = new PrismaAccountingAccountQueryAdapter();
+const taxes = new TaxService(database, accountQueries);
+const treasury = new TreasuryService(database, accountQueries);
 const bankReconciliation = config.BANK_RECONCILIATION_ENABLED
   ? new BankReconciliationService(
       database,
@@ -109,9 +113,15 @@ const registrationAuditPepper = config.REGISTRATION_AUDIT_PEPPER ?? 'development
 const registrationTokenSecret = config.REGISTRATION_TOKEN_SECRET ?? 'development-only-registration-token-secret';
 const outboxAppender = new PrismaOutboxAppender(config.OUTBOX_MAX_ATTEMPTS);
 const registration = config.SELF_REGISTRATION_ENABLED
-  ? new RegistrationService(database, new CompanyProvisioningService(database), outboxAppender, {
-      auditPepper: registrationAuditPepper,
-    })
+  ? new RegistrationService(
+      database,
+      createCompanyProvisioningService(database),
+      outboxAppender,
+      createRegistrationOwnerPorts(database),
+      {
+        auditPepper: registrationAuditPepper,
+      },
+    )
   : undefined;
 const registrationVerificationHandler = registration
   ? new RegistrationVerificationHandler(database, registrationMailer, {
@@ -148,15 +158,15 @@ const outboxWorker = outboxHandlers.size
       metrics: operationalMetrics,
     })
   : undefined;
-const receiptReferences = new ReceiptReferenceService(database);
-const suppliers = new SupplierReferenceService(database);
+const customers = new CustomerService(database, accountQueries);
+const suppliers = new SupplierService(database, accountQueries);
 const inventoryCatalog = new InventoryCatalogService(database);
 const inventoryMovements = new InventoryMovementService(database);
 const salesInvoices = new SalesInvoiceService(database, taxes, inventoryCatalog, inventoryMovements);
 const purchaseInvoices = new PurchaseInvoiceService(database, taxes, inventoryCatalog, inventoryMovements);
 const receipts = new ReceiptService(database, treasury);
 const pos = new PosService(database, salesInvoices, receipts, new PrismaPosSaleQueryAdapter(database));
-const dataImports = new DataImportService(database, receiptReferences, suppliers, salesInvoices, purchaseInvoices, outboxAppender);
+const dataImports = new DataImportService(database, customers, suppliers, salesInvoices, purchaseInvoices, outboxAppender);
 const fiscal = new FiscalService(database);
 const financialClose = new FinancialCloseService(database, {
   treasury: new TreasuryFinancialCloseReadinessAdapter(),
@@ -202,16 +212,20 @@ const platformOperations = new PlatformOperationsService(
 const app = createApp(config, {
   readiness: new DatabaseReadinessService(database, config.READINESS_TIMEOUT_MS),
   metrics: operationalMetrics,
+  sensitiveRateLimits: new PrismaRateLimitStore(
+    database,
+    config.RATE_LIMIT_IDENTITY_SECRET ?? 'local-development-rate-limit-identity-secret',
+  ),
   auth,
   ...(registration ? { registration } : {}),
   ...(passwordReset ? { passwordReset } : {}),
   users,
   workforceAccess,
   platformOperations,
-  companies: new CompanyService(database),
+  companies: createCompanyService(database),
   printing: new PrintService(database),
-  audit: new AuditService(database),
-  security: new SecurityEventService(database),
+  audit: createAuditService(database),
+  security: createSecurityEventService(database),
   fiscal,
   financialClose,
   approvals,
@@ -222,7 +236,7 @@ const app = createApp(config, {
   hr,
   accounts: new AccountService(database),
   journals: new ManualJournalService(database),
-  receiptReferences,
+  customers,
   treasury,
   ...(bankReconciliation ? { bankReconciliation } : {}),
   inventory: new InventoryService(database),

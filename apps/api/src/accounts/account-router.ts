@@ -1,3 +1,4 @@
+import type { Account, AccountType, CostCenter } from '@prisma/client';
 import { Router, type ErrorRequestHandler, type Request } from 'express';
 import { z, ZodError } from 'zod';
 import type { AuthService } from '../auth/auth-service.js';
@@ -18,9 +19,9 @@ const accountQuery = pagination.extend({
 });
 const costCenterQuery = pagination.extend({ active: booleanQuery.optional() });
 function sid(request: Request) { return Object.fromEntries((request.headers.cookie ?? '').split(';').map((part) => part.trim().split('=', 2)).filter(([key, value]) => key && value)).sid; }
-const accountJson = (v: any) => ({ id: v.id.toString(), accountTypeId: v.accountTypeId.toString(), parentAccountId: v.parentAccountId?.toString() ?? null, code: v.code, nameAr: v.nameAr, nameEn: v.nameEn, level: v.level, allowsPosting: v.allowsPosting, isControlAccount: v.isControlAccount, isActive: v.isActive, sourceTemplateCode: v.sourceTemplateCode ?? null, sourceTemplateKey: v.sourceTemplateKey ?? null });
-const typeJson = (v: any) => ({ id: v.id.toString(), code: v.code, nameAr: v.nameAr, class: v.class, normalBalance: v.normalBalance, statementSection: v.statementSection });
-const centerJson = (v: any) => ({ id: v.id.toString(), parentId: v.parentId?.toString() ?? null, code: v.code, nameAr: v.nameAr, nameEn: v.nameEn, isActive: v.isActive });
+const accountJson = (v: Account) => ({ id: v.id.toString(), accountTypeId: v.accountTypeId.toString(), parentAccountId: v.parentAccountId?.toString() ?? null, code: v.code, nameAr: v.nameAr, nameEn: v.nameEn, level: v.level, allowsPosting: v.allowsPosting, isControlAccount: v.isControlAccount, isActive: v.isActive, sourceTemplateCode: v.sourceTemplateCode ?? null, sourceTemplateKey: v.sourceTemplateKey ?? null });
+const typeJson = (v: AccountType) => ({ id: v.id.toString(), code: v.code, nameAr: v.nameAr, class: v.class, normalBalance: v.normalBalance, statementSection: v.statementSection });
+const centerJson = (v: CostCenter) => ({ id: v.id.toString(), parentId: v.parentId?.toString() ?? null, code: v.code, nameAr: v.nameAr, nameEn: v.nameEn, isActive: v.isActive });
 
 export function createAccountRouter(auth: AuthService, service: AccountService) {
   const router = Router(); const authorize = (req: Request, permission: string, csrf: boolean) => auth.authorize({ sid: sid(req), csrfToken: req.header('X-CSRF-Token') ?? undefined, permission, requireCsrf: csrf });

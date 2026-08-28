@@ -162,12 +162,15 @@ const defaultAlertConfiguration: AlertConfiguration = {
 
 type WindowEvent = 'transaction_attempt' | 'deadlock' | 'retry_exhausted' | 'request_deadline' | 'outbox_dead_letter';
 type AlertRule = 'DB_DEADLOCK_RATIO_HIGH' | 'TRANSACTION_RETRY_EXHAUSTED_RATIO_HIGH' | 'REQUEST_DEADLINE_RATE_HIGH' | 'OUTBOX_LAG_HIGH' | 'OUTBOX_DEAD_LETTER_PRESENT';
+const ALERT_BUCKET_MS = 1_000;
 
 export interface OperationalMetricsSink {
   recordHttpRequest(requestClass: string, method: string, status: number, durationMs: number): void;
   recordRequestDeadline(requestClass: string): void;
   recordClientDisconnect(requestClass: string): void;
   recordOptimisticConflict(requestClass: string): void;
+  recordRateLimitRejected(scope: string): void;
+  recordRateLimitStoreFailure(scope: string): void;
   recordTransactionAttempt(operation: string): void;
   recordTransactionDuration(operation: string, outcome: string, durationMs: number): void;
   recordTransactionFailure(operation: string, classification: string): void;
@@ -185,7 +188,9 @@ export class OperationalMetrics implements OperationalMetricsSink {
   readonly registry = new MetricsRegistry();
   private configuration: AlertConfiguration;
   private readonly now: () => number;
-  private readonly events = new Map<WindowEvent, number[]>();
+  // One counter per second keeps alert memory bounded by the configured window,
+  // independently of request/transaction throughput.
+  private readonly events = new Map<WindowEvent, Map<number, number>>();
   private readonly alertStates = new Map<AlertRule, { active: boolean; lastLoggedAt: number }>();
   private outboxLagMs = 0;
   private outboxFailed = 0;
@@ -201,6 +206,8 @@ export class OperationalMetrics implements OperationalMetricsSink {
   private readonly retries = this.registry.counter('mcap_transaction_retry_total', 'Scheduled complete transaction retries.', ['operation', 'classification']);
   private readonly retryExhausted = this.registry.counter('mcap_transaction_retry_exhausted_total', 'Transactions that exhausted their bounded retry attempts.', ['operation', 'classification']);
   private readonly optimisticConflicts = this.registry.counter('mcap_optimistic_conflict_total', 'Public optimistic version conflicts observed at the HTTP boundary.', ['request_class']);
+  private readonly rateLimitRejections = this.registry.counter('mcap_rate_limit_rejected_total', 'Requests rejected by bounded rate-limit scope.', ['scope']);
+  private readonly rateLimitStoreFailures = this.registry.counter('mcap_rate_limit_store_failure_total', 'Security-sensitive rate-limit store failures by bounded scope.', ['scope']);
   private readonly outboxProcessed = this.registry.counter('mcap_outbox_processed_total', 'Successfully processed outbox events by bounded event type.', ['event_type']);
   private readonly outboxRetries = this.registry.counter('mcap_outbox_retry_total', 'Outbox retries scheduled by bounded event type.', ['event_type']);
   private readonly outboxDeadLetters = this.registry.counter('mcap_outbox_dead_letter_total', 'Outbox events moved to the terminal failed state.', ['event_type']);
@@ -240,6 +247,14 @@ export class OperationalMetrics implements OperationalMetricsSink {
 
   recordOptimisticConflict(requestClass: string) {
     this.optimisticConflicts.increment({ request_class: safeLabel(requestClass, 'OTHER') });
+  }
+
+  recordRateLimitRejected(scope: string) {
+    this.rateLimitRejections.increment({ scope: safeLabel(scope.toUpperCase().replaceAll('-', '_'), 'OTHER') });
+  }
+
+  recordRateLimitStoreFailure(scope: string) {
+    this.rateLimitStoreFailures.increment({ scope: safeLabel(scope.toUpperCase().replaceAll('-', '_'), 'OTHER') });
   }
 
   recordTransactionAttempt(operation: string) {
@@ -299,18 +314,23 @@ export class OperationalMetrics implements OperationalMetricsSink {
   }
 
   private recordWindow(event: WindowEvent) {
-    const values = this.events.get(event) ?? [];
-    values.push(this.now());
+    const now = this.now();
+    const bucket = Math.floor(now / ALERT_BUCKET_MS) * ALERT_BUCKET_MS;
+    const values = this.events.get(event) ?? new Map<number, number>();
+    values.set(bucket, (values.get(bucket) ?? 0) + 1);
     this.events.set(event, values);
     this.evaluateAlerts();
   }
 
   private windowCount(event: WindowEvent, cutoff: number) {
-    const values = this.events.get(event) ?? [];
-    let firstCurrent = 0;
-    while (firstCurrent < values.length && values[firstCurrent]! < cutoff) firstCurrent += 1;
-    if (firstCurrent) values.splice(0, firstCurrent);
-    return values.length;
+    const values = this.events.get(event);
+    if (!values) return 0;
+    let count = 0;
+    for (const [bucket, bucketCount] of values) {
+      if (bucket + ALERT_BUCKET_MS <= cutoff) values.delete(bucket);
+      else count += bucketCount;
+    }
+    return count;
   }
 
   private evaluateAlerts() {

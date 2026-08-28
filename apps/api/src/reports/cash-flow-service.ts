@@ -1,6 +1,7 @@
 import { Prisma, type CashFlowMappingClassification, type PrismaClient } from "@prisma/client";
+import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import { TransactionExecutor } from "../platform/transaction-executor.js";
-import type { ActorContext } from "../users/user-service.js";
+import type { ActorContext } from "../platform/actor-context.js";
 import { calculateIndirectCashFlow, defaultCashFlowClassification } from "./cash-flow-calculator.js";
 import type {
   CashFlowAccountInput,
@@ -124,7 +125,7 @@ export class CashFlowService {
         where: { companyId_accountId: { companyId: context.companyId, accountId } },
         select: { accountId: true, classification: true, version: true },
       });
-      await tx.auditLog.create({
+      await appendAudit(tx, {
         data: {
           companyId: context.companyId,
           actorUserId: context.userId,

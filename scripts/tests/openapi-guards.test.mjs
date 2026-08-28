@@ -65,7 +65,7 @@ test("guard generation reflects request constraints from the contract", () => {
 
 test("guard generation covers request transforms and response schemas", () => {
   const generated = buildGeneratedSource();
-  assert.match(generated, /openApiContractCoverage = \{ operations: 271, requestBodies: 144, responseBodies: 1778 \}/u);
+  assert.match(generated, /openApiContractCoverage = \{ operations: 271, requestBodies: 144, responseBodies: 1782 \}/u);
   assert.match(generated, /"receivableItemId": z\.string\(\).*\.transform\(\(value\) => BigInt\(value\)\)/u);
   assert.match(generated, /export const openApiResponseBodySchemas = \{/u);
 });

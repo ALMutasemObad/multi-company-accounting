@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
 import type { AuthService } from '../src/auth/auth-service.js';
 import { OperationalMetrics } from '../src/operations/metrics.js';
+import type { RateLimitStore } from '../src/operations/rate-limit.js';
 
 const app = createApp({
   NODE_ENV: 'test',
@@ -14,6 +15,13 @@ const app = createApp({
 });
 
 describe('GET /health', () => {
+  it('refuses an instance-local security limiter in production', () => {
+    expect(() => createApp({
+      NODE_ENV: 'production', PORT: 3000, WEB_ORIGIN: 'https://finance.example.com', SESSION_COOKIE_SECURE: true,
+      PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12,
+    })).toThrow(/shared security-sensitive rate-limit store/);
+  });
+
   it('returns the service status without secrets', async () => {
     const response = await request(app).get('/health').expect(200);
 
@@ -55,6 +63,64 @@ describe('GET /health', () => {
     expect(response.headers['cache-control']).toBe('no-store');
     expect(response.headers.pragma).toBe('no-cache');
     expect(response.headers.expires).toBe('0');
+  });
+
+  it('isolates the general API allowance by session while retaining an anti-evasion network ceiling', async () => {
+    const limited = createApp({
+      NODE_ENV: 'test', PORT: 3000, WEB_ORIGIN: 'http://localhost:5173', SESSION_COOKIE_SECURE: false,
+      PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, RATE_LIMIT_MAX: 1, RATE_LIMIT_WINDOW_MS: 60_000,
+      RATE_LIMIT_NETWORK_MULTIPLIER: 3,
+    });
+    await request(limited).get('/api/v1/missing').set('Cookie', 'sid=session-a').expect(404);
+    await request(limited).get('/api/v1/missing').set('Cookie', 'sid=session-a').expect(429);
+    await request(limited).get('/api/v1/missing').set('Cookie', 'sid=session-b').expect(404);
+    await request(limited).get('/api/v1/missing').set('Cookie', 'sid=session-c').expect(429);
+  });
+
+  it('limits sensitive attempts per credential while retaining a wider shared-network ceiling', async () => {
+    const limited = createApp({
+      NODE_ENV: 'test', PORT: 3000, WEB_ORIGIN: 'http://localhost:5173', SESSION_COOKIE_SECURE: false,
+      PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, AUTH_RATE_LIMIT_MAX: 1,
+      RATE_LIMIT_NETWORK_MULTIPLIER: 10,
+    }, { auth: {} as AuthService });
+    const invalidPassword = (email: string) => request(limited)
+      .post('/api/v1/auth/login')
+      .send({ email, password: '' });
+
+    await invalidPassword('User@Example.com').expect(400);
+    await invalidPassword(' user@example.com ').expect(429);
+    await invalidPassword('other@example.com').expect(400);
+  });
+
+  it('shares security-sensitive limits across application instances and fails closed when the store is unavailable', async () => {
+    let count = 0;
+    const sharedStore: RateLimitStore = {
+      increment: ({ now, windowMs }) => ({ count: ++count, resetAt: now + windowMs }),
+    };
+    const config = {
+      NODE_ENV: 'test' as const, PORT: 3000, WEB_ORIGIN: 'http://localhost:5173', SESSION_COOKIE_SECURE: false,
+      PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, AUTH_RATE_LIMIT_MAX: 1,
+      RATE_LIMIT_NETWORK_MULTIPLIER: 1,
+    };
+    const auth = {
+      issueCsrf: async () => ({
+        sid: 'session-token-with-sufficient-entropy',
+        csrfToken: 'csrf-token-with-sufficient-entropy',
+        expiresAt: new Date('2030-01-01T00:00:00.000Z'),
+      }),
+    } as AuthService;
+    await request(createApp(config, { auth, sensitiveRateLimits: sharedStore })).get('/api/v1/auth/csrf').expect(200);
+    const limited = await request(createApp(config, { auth, sensitiveRateLimits: sharedStore })).get('/api/v1/auth/csrf').expect(429);
+    expect(limited.body.code).toBe('RATE_LIMITED');
+
+    const metrics = new OperationalMetrics();
+    const unavailableStore: RateLimitStore = { increment: async () => { throw new Error('database address must stay private'); } };
+    const unavailable = await request(createApp(config, { auth, metrics, sensitiveRateLimits: unavailableStore }))
+      .get('/api/v1/auth/csrf')
+      .expect(503);
+    expect(unavailable.body.code).toBe('RATE_LIMIT_UNAVAILABLE');
+    expect(JSON.stringify(unavailable.body)).not.toContain('database address');
+    expect(metrics.renderPrometheus()).toContain('mcap_rate_limit_store_failure_total{scope="CSRF_NETWORK"} 1');
   });
 
   it('prevents caching of authentication bootstrap and API error responses', async () => {

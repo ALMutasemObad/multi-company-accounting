@@ -1,13 +1,18 @@
 import type { Prisma, PrismaClient, SecuritySeverity } from '@prisma/client';
 import type { AuthStore, ClientMetadata } from './auth-store.js';
+import type { SecurityEventAppendPort } from '../platform/security-event-append-port.js';
+import { PrismaSecurityEventAppendAdapter } from '../security/prisma-security-event-append-adapter.js';
 
 export class PrismaAuthStore implements AuthStore {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(
+    private readonly prisma: PrismaClient,
+    private readonly security: SecurityEventAppendPort = new PrismaSecurityEventAppendAdapter(),
+  ) {}
 
   private async createUserEvents(tx: Prisma.TransactionClient, input: { userId: bigint; sessionId?: bigint | undefined; eventType: string; severity: SecuritySeverity; metadata?: ClientMetadata | undefined; details?: Prisma.InputJsonValue | undefined }) {
     const user = await tx.user.findUniqueOrThrow({ where: { id: input.userId }, select: { emailNormalized: true, assignments: { where: { isActive: true, company: { isActive: true } }, select: { companyId: true } } } });
     if (!user.assignments.length) return;
-    await tx.securityEvent.createMany({ data: user.assignments.map(({ companyId }) => ({ companyId, userId: input.userId, sessionId: input.sessionId ?? null, eventType: input.eventType, severity: input.severity, emailSnapshot: user.emailNormalized, ipAddress: input.metadata?.ipAddress ?? null, userAgent: input.metadata?.userAgent ?? null, ...(input.details !== undefined ? { details: input.details } : {}) })) });
+    await this.security.appendMany(tx, user.assignments.map(({ companyId }) => ({ companyId, userId: input.userId, sessionId: input.sessionId ?? null, eventType: input.eventType, severity: input.severity, emailSnapshot: user.emailNormalized, ipAddress: input.metadata?.ipAddress ?? null, userAgent: input.metadata?.userAgent ?? null, ...(input.details !== undefined ? { details: input.details } : {}) })));
   }
 
   private async recordAccessEvent(userId: bigint, eventType: string, severity: SecuritySeverity, now: Date, metadata?: ClientMetadata | undefined) {
@@ -91,7 +96,7 @@ export class PrismaAuthStore implements AuthStore {
         where: { id: input.sessionId, userId: input.userId, state: 'AUTHENTICATED', revokedAt: null },
         data: { selectedCompanyId: input.companyId },
       });
-      if (updated.count === 1) await tx.securityEvent.create({ data: { companyId: input.companyId, userId: input.userId, sessionId: input.sessionId, eventType: 'COMPANY_CONTEXT_SELECTED', severity: 'INFO', emailSnapshot: assignment.userId ? (await tx.user.findUniqueOrThrow({ where: { id: input.userId }, select: { emailNormalized: true } })).emailNormalized : null, ipAddress: input.metadata?.ipAddress ?? null, userAgent: input.metadata?.userAgent ?? null } });
+      if (updated.count === 1) await this.security.append(tx, { companyId: input.companyId, userId: input.userId, sessionId: input.sessionId, eventType: 'COMPANY_CONTEXT_SELECTED', severity: 'INFO', emailSnapshot: assignment.userId ? (await tx.user.findUniqueOrThrow({ where: { id: input.userId }, select: { emailNormalized: true } })).emailNormalized : null, ipAddress: input.metadata?.ipAddress ?? null, userAgent: input.metadata?.userAgent ?? null });
       return updated.count === 1;
     });
   }
@@ -101,7 +106,7 @@ export class PrismaAuthStore implements AuthStore {
       const session = await tx.session.findFirst({ where: { id: sessionId, revokedAt: null }, select: { userId: true, selectedCompanyId: true, user: { select: { emailNormalized: true } } } });
       if (!session) return;
       await tx.session.update({ where: { id: sessionId }, data: { revokedAt: new Date() } });
-      if (session.userId && session.selectedCompanyId) await tx.securityEvent.create({ data: { companyId: session.selectedCompanyId, userId: session.userId, sessionId, eventType: 'LOGOUT', severity: 'INFO', emailSnapshot: session.user?.emailNormalized ?? null, ipAddress: metadata?.ipAddress ?? null, userAgent: metadata?.userAgent ?? null } });
+      if (session.userId && session.selectedCompanyId) await this.security.append(tx, { companyId: session.selectedCompanyId, userId: session.userId, sessionId, eventType: 'LOGOUT', severity: 'INFO', emailSnapshot: session.user?.emailNormalized ?? null, ipAddress: metadata?.ipAddress ?? null, userAgent: metadata?.userAgent ?? null });
     });
   }
 
@@ -133,7 +138,7 @@ export class PrismaAuthStore implements AuthStore {
       const target = await tx.session.findFirst({ where: { id: input.sessionId, userId: input.userId, revokedAt: null }, select: { id: true, user: { select: { emailNormalized: true } } } });
       if (!target) return;
       await tx.session.update({ where: { id: target.id }, data: { revokedAt: new Date() } });
-      if (actorSession?.selectedCompanyId) await tx.securityEvent.create({ data: { companyId: actorSession.selectedCompanyId, userId: input.userId, sessionId: target.id, eventType: 'SESSION_REVOKED', severity: target.id === input.actorSessionId ? 'INFO' : 'HIGH', emailSnapshot: target.user?.emailNormalized ?? null, ipAddress: input.metadata?.ipAddress ?? null, userAgent: input.metadata?.userAgent ?? null, details: { self: target.id === input.actorSessionId } } });
+      if (actorSession?.selectedCompanyId) await this.security.append(tx, { companyId: actorSession.selectedCompanyId, userId: input.userId, sessionId: target.id, eventType: 'SESSION_REVOKED', severity: target.id === input.actorSessionId ? 'INFO' : 'HIGH', emailSnapshot: target.user?.emailNormalized ?? null, ipAddress: input.metadata?.ipAddress ?? null, userAgent: input.metadata?.userAgent ?? null, details: { self: target.id === input.actorSessionId } });
     });
   }
 }

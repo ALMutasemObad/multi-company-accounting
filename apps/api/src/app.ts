@@ -17,11 +17,11 @@ import type { AccountService } from './accounts/account-service.js';
 import { createAccountRouter } from './accounts/account-router.js';
 import type { ManualJournalService } from './journals/manual-journal-service.js';
 import { createManualJournalRouter } from './journals/manual-journal-router.js';
-import type { ReceiptReferenceService } from './receipts/reference-service.js';
-import { createReceiptReferenceRouter } from './receipts/reference-router.js';
+import type { CustomerService } from './sales/customer-service.js';
+import { createCustomerRouter } from './sales/customer-router.js';
 import type { ReceiptService } from './receipts/receipt-service.js';
 import { createReceiptRouter } from './receipts/receipt-router.js';
-import type { SupplierReferenceService } from './suppliers/supplier-service.js';
+import type { SupplierService } from './suppliers/supplier-service.js';
 import { createSupplierRouter } from './suppliers/supplier-router.js';
 import type { PaymentService } from './payments/payment-service.js';
 import { createPaymentRouter } from './payments/payment-router.js';
@@ -43,7 +43,13 @@ import { createPurchaseInvoiceRouter } from './purchases/purchase-invoice-router
 import type { SecurityEventService } from './security/security-event-service.js';
 import { createSecurityEventRouter } from './security/security-event-router.js';
 import type { ReadinessCheck } from './operations/readiness-service.js';
-import { createRateLimiter } from './operations/rate-limit.js';
+import {
+  createRateLimiter,
+  credentialOrNetworkRateLimitIdentity,
+  networkRateLimitIdentity,
+  sessionOrNetworkRateLimitIdentity,
+  type RateLimitStore,
+} from './operations/rate-limit.js';
 import { logEvent, requestLogger } from './operations/logger.js';
 import { operationalMetrics, type OperationalMetrics } from './operations/metrics.js';
 import {
@@ -134,7 +140,54 @@ function clientRequestProblem(error: unknown): ClientRequestProblem | undefined 
   return undefined;
 }
 
-export function createApp(config: AppConfig, services: { readiness?: ReadinessCheck; metrics?: OperationalMetrics; auth?: AuthService; registration?: RegistrationService; passwordReset?: PasswordResetService; users?: UserService; workforceAccess?: WorkforceAccessService; platformOperations?: PlatformOperationsService; companies?: CompanyService; printing?: PrintService; audit?: AuditService; security?: SecurityEventService; fiscal?: FiscalService; financialClose?: FinancialCloseService; approvals?: ApprovalService; professionalProjects?: ProfessionalProjectService; professionalProjectPlanning?: ProfessionalProjectPlanningService; professionalBilling?: ProfessionalBillingService; professionalProjectAccess?: ProfessionalProjectAccessService; hr?: HrService; accounts?: AccountService; journals?: ManualJournalService; receiptReferences?: ReceiptReferenceService; treasury?: TreasuryService; bankReconciliation?: BankReconciliationService; inventory?: InventoryService; inventoryCatalog?: InventoryCatalogService; inventoryMovements?: InventoryMovementService; receipts?: ReceiptService; suppliers?: SupplierReferenceService; payments?: PaymentService; reports?: ReportService; cashFlow?: CashFlowService; taxSummary?: TaxSummaryService; costCenterActivity?: CostCenterActivityService; taxes?: TaxService; salesInvoices?: SalesInvoiceService; purchaseInvoices?: PurchaseInvoiceService; dataImports?: DataImportService; pos?: PosService } = {}) {
+export type AppServices = {
+  readiness?: ReadinessCheck;
+  metrics?: OperationalMetrics;
+  sensitiveRateLimits?: RateLimitStore;
+  auth?: AuthService;
+  registration?: RegistrationService;
+  passwordReset?: PasswordResetService;
+  users?: UserService;
+  workforceAccess?: WorkforceAccessService;
+  platformOperations?: PlatformOperationsService;
+  companies?: CompanyService;
+  printing?: PrintService;
+  audit?: AuditService;
+  security?: SecurityEventService;
+  fiscal?: FiscalService;
+  financialClose?: FinancialCloseService;
+  approvals?: ApprovalService;
+  professionalProjects?: ProfessionalProjectService;
+  professionalProjectPlanning?: ProfessionalProjectPlanningService;
+  professionalBilling?: ProfessionalBillingService;
+  professionalProjectAccess?: ProfessionalProjectAccessService;
+  hr?: HrService;
+  accounts?: AccountService;
+  journals?: ManualJournalService;
+  customers?: CustomerService;
+  treasury?: TreasuryService;
+  bankReconciliation?: BankReconciliationService;
+  inventory?: InventoryService;
+  inventoryCatalog?: InventoryCatalogService;
+  inventoryMovements?: InventoryMovementService;
+  receipts?: ReceiptService;
+  suppliers?: SupplierService;
+  payments?: PaymentService;
+  reports?: ReportService;
+  cashFlow?: CashFlowService;
+  taxSummary?: TaxSummaryService;
+  costCenterActivity?: CostCenterActivityService;
+  taxes?: TaxService;
+  salesInvoices?: SalesInvoiceService;
+  purchaseInvoices?: PurchaseInvoiceService;
+  dataImports?: DataImportService;
+  pos?: PosService;
+};
+
+export function createApp(config: AppConfig, services: AppServices = {}) {
+  if (config.NODE_ENV === 'production' && !services.sensitiveRateLimits) {
+    throw new Error('A shared security-sensitive rate-limit store is required in production');
+  }
   const app = express();
   const metrics = services.metrics ?? operationalMetrics;
 
@@ -209,12 +262,51 @@ export function createApp(config: AppConfig, services: { readiness?: ReadinessCh
     response.setHeader('Expires', '0');
     next();
   });
-  app.use('/api/v1', createRateLimiter({ scope: 'api', windowMs, max: config.RATE_LIMIT_MAX ?? 300 }));
-  app.use('/api/v1/auth/csrf', createRateLimiter({ scope: 'csrf', windowMs, max: config.AUTH_RATE_LIMIT_MAX ?? 20 }));
-  app.use('/api/v1/auth/login', createRateLimiter({ scope: 'login', windowMs, max: config.AUTH_RATE_LIMIT_MAX ?? 20 }));
-  const registrationLimiter = createRateLimiter({ scope: 'registration', windowMs, max: config.REGISTRATION_RATE_LIMIT_MAX ?? 5 });
-  app.use('/api/v1/auth/register', (request, response, next) => request.method === 'GET' ? next() : registrationLimiter(request, response, next));
-  app.use('/api/v1/auth/password', createRateLimiter({ scope: 'password-reset', windowMs, max: config.PASSWORD_RESET_RATE_LIMIT_MAX ?? 5 }));
+  const networkMultiplier = config.RATE_LIMIT_NETWORK_MULTIPLIER ?? 10;
+  const generalMax = config.RATE_LIMIT_MAX ?? 300;
+  app.use('/api/v1', createRateLimiter({
+    scope: 'api-network',
+    windowMs,
+    max: generalMax * networkMultiplier,
+    metrics,
+  }));
+  app.use('/api/v1', createRateLimiter({
+    scope: 'api-session',
+    windowMs,
+    max: generalMax,
+    identity: sessionOrNetworkRateLimitIdentity,
+    metrics,
+  }));
+  const sensitiveLimiter = (scope: string, max: number, identity = networkRateLimitIdentity) => createRateLimiter({
+    scope,
+    windowMs,
+    max,
+    identity,
+    ...(services.sensitiveRateLimits ? { store: services.sensitiveRateLimits } : {}),
+    metrics,
+  });
+  const sensitivePair = (scope: string, principalMax: number) => [
+    sensitiveLimiter(
+      `${scope}-network`,
+      principalMax * networkMultiplier,
+    ),
+    sensitiveLimiter(`${scope}-principal`, principalMax, credentialOrNetworkRateLimitIdentity),
+  ] as const;
+  app.get(
+    '/api/v1/auth/csrf',
+    sensitiveLimiter(
+      'csrf-network',
+      (config.AUTH_RATE_LIMIT_MAX ?? 20) * networkMultiplier,
+    ),
+  );
+  app.post('/api/v1/auth/login', ...sensitivePair('login', config.AUTH_RATE_LIMIT_MAX ?? 20));
+  const registrationLimiters = sensitivePair('registration', config.REGISTRATION_RATE_LIMIT_MAX ?? 5);
+  app.post('/api/v1/auth/register', ...registrationLimiters);
+  app.post('/api/v1/auth/register/resend', ...registrationLimiters);
+  app.post('/api/v1/auth/register/verify', ...registrationLimiters);
+  const passwordResetLimiters = sensitivePair('password-reset', config.PASSWORD_RESET_RATE_LIMIT_MAX ?? 5);
+  app.post('/api/v1/auth/password/forgot', ...passwordResetLimiters);
+  app.post('/api/v1/auth/password/reset', ...passwordResetLimiters);
   if (services.auth) app.use('/api/v1/auth', createAuthRouter(services.auth, config.SESSION_COOKIE_SECURE));
   if (services.auth && services.registration) app.use('/api/v1/auth/register', createRegistrationRouter(services.auth, services.registration));
   if (services.auth && services.passwordReset) app.use('/api/v1/auth/password', createPasswordResetRouter(services.auth, services.passwordReset));
@@ -233,7 +325,7 @@ export function createApp(config: AppConfig, services: { readiness?: ReadinessCh
   if (services.auth && services.hr) app.use('/api/v1', createHrRouter(services.auth, services.hr));
   if (services.auth && services.accounts) app.use('/api/v1', createAccountRouter(services.auth, services.accounts));
   if (services.auth && services.journals) app.use('/api/v1', createManualJournalRouter(services.auth, services.journals));
-  if (services.auth && services.receiptReferences) app.use('/api/v1', createReceiptReferenceRouter(services.auth, services.receiptReferences));
+  if (services.auth && services.customers) app.use('/api/v1', createCustomerRouter(services.auth, services.customers));
   if (services.auth && services.treasury) app.use('/api/v1', createTreasuryRouter(services.auth, services.treasury));
   if (services.auth && services.bankReconciliation) app.use('/api/v1', createBankReconciliationRouter(
     services.auth,

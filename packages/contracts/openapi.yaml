@@ -216,6 +216,8 @@ paths:
           $ref: '#/components/responses/BusinessRuleViolation'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/RateLimitUnavailable'
         '500':
           $ref: '#/components/responses/InternalError'
       description: ينشئ جلسة تمهيدية عند الحاجة ويعيد رمز CSRF. تُرسل Cookie الجلسة بخصائص HttpOnly وSameSite، وSecure في
@@ -260,7 +262,7 @@ paths:
         '400': { $ref: '#/components/responses/ValidationError' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '429': { $ref: '#/components/responses/RateLimited' }
-        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '503': { $ref: '#/components/responses/RegistrationUnavailable' }
         '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
         '500': { $ref: '#/components/responses/InternalError' }
   /auth/register/resend:
@@ -286,7 +288,7 @@ paths:
         '400': { $ref: '#/components/responses/ValidationError' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '429': { $ref: '#/components/responses/RateLimited' }
-        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '503': { $ref: '#/components/responses/RegistrationUnavailable' }
         '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
         '500': { $ref: '#/components/responses/InternalError' }
   /auth/register/verify:
@@ -319,11 +321,7 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/InternalError' }
-        '503':
-          description: تعذر تجهيز الشركة مؤقتًا أو استُنفدت إعادة المعاملة، ويمكن إعادة رابط التحقق بأمان
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Problem' }
+        '503': { $ref: '#/components/responses/RegistrationUnavailable' }
         '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
   /auth/login:
     post:
@@ -352,6 +350,8 @@ paths:
           $ref: '#/components/responses/BusinessRuleViolation'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/RateLimitUnavailable'
         '500':
           $ref: '#/components/responses/InternalError'
       description: رسالة الخطأ لا تكشف ما إذا كان البريد موجوداً. بعد خمس محاولات فاشلة يُقفل الحساب 15 دقيقة وفق السياسة
@@ -390,6 +390,7 @@ paths:
         '400': { $ref: '#/components/responses/ValidationError' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/RateLimitUnavailable' }
         '500': { $ref: '#/components/responses/InternalError' }
       parameters:
       - $ref: '#/components/parameters/RequestId'
@@ -411,6 +412,7 @@ paths:
         '400': { $ref: '#/components/responses/ValidationError' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/RateLimitUnavailable' }
         '500': { $ref: '#/components/responses/InternalError' }
       parameters:
       - $ref: '#/components/parameters/RequestId'
@@ -8832,6 +8834,18 @@ components:
         Retry-After:
           schema:
             type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    RateLimitUnavailable:
+      description: تعذر تطبيق الحماية المشتركة من إساءة الاستخدام؛ يفشل المسار الحساس مغلقًا
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    RegistrationUnavailable:
+      description: تعذر تطبيق الحماية المشتركة من إساءة الاستخدام أو تعذر تجهيز التسجيل مؤقتًا؛ يمكن إعادة الطلب بأمان
       content:
         application/json:
           schema:

@@ -1,8 +1,9 @@
 import type { PrismaClient } from "@prisma/client";
+import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import type { PosReceiptCheckoutPort } from "../receipts/receipt-service.js";
 import type { PosSalesCheckoutPort } from "../sales/sales-invoice-service.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
-import type { ActorContext } from "../users/user-service.js";
+import type { ActorContext } from "../platform/actor-context.js";
 import type { PosCheckoutInput, PosSaleQueryPort, PosSaleView } from "./pos-types.js";
 
 export type PosErrorReason =
@@ -119,7 +120,7 @@ export class PosService {
             completedById: context.userId,
           },
         });
-        await tx.auditLog.create({
+        await appendAudit(tx, {
           data: {
             companyId: context.companyId,
             actorUserId: context.userId,

@@ -90,15 +90,21 @@ registered_root() {
 }
 
 validate_registered_environment() {
-  local expected_root=$1 expect_metrics=${2:-false}
+  local expected_root=$1 expect_metrics=${2:-false} allow_missing_limiter_secret=${3:-false}
   "$node_bin" -e '
     const fs = require("node:fs");
     const payload = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-    const [version, user, root, domain, startup, expectMetrics] = process.argv.slice(2);
+    const [version, user, root, domain, startup, expectMetrics, allowMissingLimiterSecret] = process.argv.slice(2);
     const app = payload.available_versions?.[version]?.users?.[user]?.applications?.[root];
     if (!app || app.domain !== domain || app.startup_file !== startup) process.exit(2);
     for (const key of ["DATABASE_URL", "WEB_ORIGIN", "SESSION_COOKIE_SECURE", "TRUST_PROXY"]) {
       if (!(key in (app.env_vars || {}))) process.exit(3);
+    }
+    const limiterSecret = app.env_vars?.RATE_LIMIT_IDENTITY_SECRET;
+    if (limiterSecret === undefined) {
+      if (allowMissingLimiterSecret !== "true") process.exit(5);
+    } else if (typeof limiterSecret !== "string" || limiterSecret.length < 32 || limiterSecret.length > 500) {
+      process.exit(5);
     }
     if (expectMetrics === "true") {
       const token = app.env_vars?.METRICS_BEARER_TOKEN;
@@ -106,7 +112,7 @@ validate_registered_environment() {
         process.exit(4);
       }
     }
-  ' "$state_file" "$cloudlinux_version" "$cloudlinux_user" "$expected_root" "$cloudlinux_domain" "$startup_file" "$expect_metrics"
+  ' "$state_file" "$cloudlinux_version" "$cloudlinux_user" "$expected_root" "$cloudlinux_domain" "$startup_file" "$expect_metrics" "$allow_missing_limiter_secret"
 }
 
 write_environment_snapshot() {
@@ -123,6 +129,7 @@ write_environment_snapshot() {
 
 write_target_environment_snapshot() {
   "$node_bin" -e '
+    const { randomBytes } = require("node:crypto");
     const fs = require("node:fs");
     const [source, destination, tokenPath] = process.argv.slice(1);
     const environment = JSON.parse(fs.readFileSync(source, "utf8"));
@@ -130,6 +137,12 @@ write_target_environment_snapshot() {
       ? fs.readFileSync(tokenPath, "utf8")
       : environment.METRICS_BEARER_TOKEN;
     if (typeof token !== "string" || token.length < 32 || token.length > 500 || /[\r\n]/u.test(token)) process.exit(2);
+    const limiterSecret = environment.RATE_LIMIT_IDENTITY_SECRET;
+    if (limiterSecret === undefined) {
+      environment.RATE_LIMIT_IDENTITY_SECRET = randomBytes(48).toString("base64url");
+    } else if (typeof limiterSecret !== "string" || limiterSecret.length < 32 || limiterSecret.length > 500 || /[\r\n]/u.test(limiterSecret)) {
+      process.exit(3);
+    }
     environment.METRICS_ENABLED = "true";
     environment.METRICS_BEARER_TOKEN = token;
     fs.writeFileSync(destination, JSON.stringify(environment), { mode: 0o600 });
@@ -272,7 +285,7 @@ cleanup() {
 trap 'status=$?; trap - EXIT; cleanup "$status"' EXIT
 
 [[ "$(registered_root)" == "$source_root" ]] || fail "registered production root does not match the source release"
-validate_registered_environment "$source_root"
+validate_registered_environment "$source_root" false true
 cp -p -- "$state_file" "$registry_backup"
 chmod 0600 -- "$registry_backup"
 cp -p -- "$passenger_config_file" "$config_backup"

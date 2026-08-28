@@ -6,7 +6,8 @@ import {
   type HrPosition,
   type PrismaClient,
 } from "@prisma/client";
-import type { ActorContext } from "../users/user-service.js";
+import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
+import type { ActorContext } from "../platform/actor-context.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
 import { reserveMasterDataCode } from "../platform/master-data-code-service.js";
 import { TransactionExecutor } from "../platform/transaction-executor.js";
@@ -633,7 +634,7 @@ export class HrService {
     entityId: string,
     details?: Prisma.InputJsonObject,
   ) {
-    return tx.auditLog.create({
+    return appendAudit(tx, {
       data: {
         companyId: context.companyId,
         actorUserId: context.userId,

@@ -1,5 +1,5 @@
 import type { Prisma } from "@prisma/client";
-import type { ActorContext } from "../users/user-service.js";
+import type { ActorContext } from "../platform/actor-context.js";
 import type { SalesInvoiceLineInput } from "../sales/sales-invoice-service.js";
 
 export type PosCheckoutInput = {

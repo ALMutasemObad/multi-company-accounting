@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { Prisma, type PrismaClient } from "@prisma/client";
+import { Prisma, type AccountingDocument, type PrismaClient } from "@prisma/client";
+import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import {
   PostingEngine,
   type PostingEntryPlan,
@@ -20,7 +21,7 @@ import {
   type TreasuryInstrumentPort,
   type TreasuryInstrumentQuote,
 } from "../treasury/treasury-service.js";
-import type { ActorContext } from "../users/user-service.js";
+import type { ActorContext } from "../platform/actor-context.js";
 import { archiveDocument } from "../printing/print-archive.js";
 
 export type PaymentErrorReason =
@@ -76,7 +77,7 @@ export type PaymentUpdate = { version: number } & Partial<PaymentInput>;
 const date = (v: string) => new Date(`${v}T00:00:00.000Z`);
 const last4 = (v?: string | null) =>
   v ? v.replace(/\s/g, "").slice(-4) : null;
-const documentJson = (v: any) => ({
+const documentJson = (v: AccountingDocument) => ({
   id: v.id.toString(),
   documentType: v.documentType,
   documentNumber: v.documentNumber,
@@ -91,6 +92,19 @@ const documentJson = (v: any) => ({
   postedAt: v.postedAt?.toISOString() ?? null,
   reversedByDocumentId: v.reversedByDocumentId?.toString() ?? null,
 });
+
+const paymentInclude = {
+  accountingDocument: true,
+  allocations: { orderBy: { id: "asc" as const } },
+} as const;
+type PaymentRecord = Prisma.PaymentGetPayload<{ include: typeof paymentInclude }>;
+type SerializedAccountingDocument = ReturnType<typeof documentJson>;
+type PaymentCommandJsonInput = {
+  document: AccountingDocument | SerializedAccountingDocument;
+  generatedJournalEntryIds?: string[];
+  ids?: string[];
+  requestId: string;
+};
 
 export class PaymentService {
   private readonly fiscal: FiscalService;
@@ -112,10 +126,7 @@ export class PaymentService {
     this.commands = new IdempotentCommandExecutor(prisma, this.transactions);
   }
   private include() {
-    return {
-      accountingDocument: true,
-      allocations: { orderBy: { id: "asc" as const } },
-    } as const;
+    return paymentInclude;
   }
   async list(
     context: ActorContext,
@@ -483,9 +494,9 @@ export class PaymentService {
       },
     );
   }
-  static json(v: any) {
+  static json(v: PaymentRecord) {
     const realizedFxBaseAmount = v.allocations.reduce(
-      (sum: Prisma.Decimal, allocation: any) =>
+      (sum, allocation) =>
         sum.add(allocation.realizedFxBaseAmount ?? 0),
       new Prisma.Decimal(0),
     );
@@ -508,7 +519,7 @@ export class PaymentService {
         : null,
       counterpartyAddressSnapshot: v.counterpartyAddressSnapshot,
       notes: v.notes,
-      allocations: v.allocations.map((a: any) => ({
+      allocations: v.allocations.map((a) => ({
         id: a.id.toString(),
         payableItemId: a.payableItemId.toString(),
         allocatedAmount: a.allocatedAmount.toFixed(4),
@@ -518,18 +529,16 @@ export class PaymentService {
       })),
     };
   }
-  static commandJson(v: any) {
+  static commandJson(v: PaymentCommandJsonInput) {
     return {
       document:
-        typeof v.document.id === "string"
-          ? v.document
-          : documentJson(v.document),
+        "companyId" in v.document ? documentJson(v.document) : v.document,
       generatedJournalEntryIds: v.generatedJournalEntryIds ?? v.ids ?? [],
       requestId: v.requestId,
     };
   }
   private postingEntry(
-    payment: any,
+    payment: PaymentRecord,
     prepared: {
       cashBankLedgerAccountId: bigint;
       counterLedgerAccountId: bigint;
@@ -747,7 +756,7 @@ export class PaymentService {
       counterLedgerAccountId,
     };
   }
-  private inputFrom(v: any): PaymentInput {
+  private inputFrom(v: PaymentRecord): PaymentInput {
     return {
       fiscalPeriodId: v.accountingDocument.fiscalPeriodId,
       documentDate: v.accountingDocument.documentDate
@@ -765,7 +774,7 @@ export class PaymentService {
       counterpartyName: v.counterpartyNameSnapshot,
       counterpartyAddress: v.counterpartyAddressSnapshot,
       notes: v.notes,
-      allocations: v.allocations.map((a: any) => ({
+      allocations: v.allocations.map((a) => ({
         payableItemId: a.payableItemId,
         allocatedAmount: a.allocatedAmount.toFixed(4),
       })),
@@ -800,7 +809,7 @@ export class PaymentService {
     id: bigint,
     details?: Prisma.InputJsonValue,
   ) {
-    return tx.auditLog.create({
+    return appendAudit(tx, {
       data: {
         companyId: context.companyId,
         actorUserId: context.userId,
@@ -819,8 +828,8 @@ export class PaymentService {
     fingerprint: string,
     execute: (
       tx: Prisma.TransactionClient,
-      payment: any,
-    ) => Promise<{ document: any; ids: string[] }>,
+      payment: PaymentRecord,
+    ) => Promise<{ document: AccountingDocument; ids: string[] }>,
   ) {
     return this.commands.execute(
       {

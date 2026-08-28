@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { hash } from "argon2";
 import { Prisma, type PrismaClient } from "@prisma/client";
-import type { ActorContext } from "../users/user-service.js";
+import type { ActorContext } from "../platform/actor-context.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
 import type {
   EmployeeAccountPort,

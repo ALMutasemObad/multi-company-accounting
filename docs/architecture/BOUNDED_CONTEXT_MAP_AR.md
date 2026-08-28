@@ -1,7 +1,7 @@
 ---
 title: "Bounded Context Map"
 status: "accepted target architecture"
-version: "2.6"
+version: "2.8"
 last_updated: "2026-08-28"
 ---
 
@@ -19,7 +19,7 @@ last_updated: "2026-08-28"
 
 | Context | المسؤولية | ملكية الكتابة المستهدفة | ملاحظات |
 |---|---|---|---|
-| Identity & Access | الهوية والجلسات والأدوار والصلاحيات واستعادة كلمة المرور | `User`, `Session`, `PasswordResetRequest`, `UserCompany`, `Role`, `Permission`, `RolePermission`, `UserCompanyRole` | يقدم Actor/Application Context لبقية النظام؛ بريد الاستعادة أثر Outbox |
+| Identity & Access | الهوية والجلسات والأدوار والصلاحيات واستعادة كلمة المرور | `User`, `Session`, `PasswordResetRequest`, `UserCompany`, `Role`, `Permission`, `RolePermission`, `UserCompanyRole` | يقدم منافذ الهوية؛ `ActorContext` نوع محايد في Application Kernel، وبريد الاستعادة أثر Outbox |
 | Tenant & Company Configuration | المؤسسة والشركة والعملات والإعدادات | `Organization`, `Company`, `Currency`, `CompanyCurrency`, `CompanyExchangeRate` | Organization تجمع الشركات فقط حاليًا؛ لا أدوار مجموعة أو تجميع مالي. فحص الاستخدام عبر Ports، لا عبر معرفة كل جداول المستندات |
 | Registration & Onboarding | دورة التسجيل والتحقق والتنسيق | `RegistrationRequest`, `RegistrationEvent` | Process Manager؛ لا يملك User/Company/Account |
 | Core Accounting | السنة والفترة والدليل والمستند والدفتر والترحيل وحسابات فروقات العملة | `FiscalYear`, `FiscalPeriod`, `DocumentSequence`, `AccountingDocument`, `JournalEntry`, `JournalLine`, `AccountType`, `Account`, `CostCenter` | المالك الوحيد للـPosting Engine ويحل حسابي ربح/خسارة فرق العملة عبر منفذ صغير |
@@ -39,7 +39,7 @@ last_updated: "2026-08-28"
 | Data Import | تنسيق القوالب والمعاينة والاعتماد الجماعي | `DataImportBatch` فقط | Process Manager؛ يستدعي منافذ المالكين ولا يخزن الملف أو يرحّل الفواتير |
 | Audit | سجل الأعمال والامتثال | `AuditLog` | Append-only، وليس Event Bus |
 | Security Monitoring | أحداث المخاطر والإقرار | `SecurityEvent` | يمكنه إصدار تنبيه Integration بعد حفظ الحدث |
-| Application Infrastructure | Idempotency وOutbox والتسلسلات التقنية والتشغيل | `IdempotencyRecord`, `OutboxEvent`, `MasterDataCodeSequence` | ليست Bounded Context أعمال؛ توفر حجز الرمز الذري للكيانات المرجعية ولا تملك تلك الكيانات |
+| Application Infrastructure | Idempotency وOutbox والتسلسلات التقنية والتشغيل والحماية المشتركة من إساءة الاستخدام | `IdempotencyRecord`, `OutboxEvent`, `MasterDataCodeSequence`, `RateLimitCounter` | ليست Bounded Context أعمال؛ تخزن HMAC هوية بسر تشغيل مستقل لا IP أو بريدًا أو رمزًا خامًا، وتوفر حجز الرمز الذري للكيانات المرجعية ولا تملك تلك الكيانات |
 
 ## 4. اتجاهات الاعتماد المسموحة
 
@@ -47,7 +47,9 @@ last_updated: "2026-08-28"
 Registration/Onboarding
     ├──> Identity & Access ports
     ├──> Tenant Configuration ports
-    └──> Accounting Setup ports
+    ├──> Accounting Setup ports
+    ├──> Treasury Setup port
+    └──> Security append port
 
 Sales/AR ─────────────> Core Accounting posting port
 Purchases/AP ─────────> Core Accounting posting port
@@ -68,6 +70,7 @@ Professional Projects ──> Tenant currency query port and Sales professional-
 Human Resources ────────> Identity membership query port
 Workforce Access workflow ──> Human Resources employee-account port + Identity account port
 All operational contexts ──> Audit append port
+Authentication/Identity ───> Security append port
 
 Reporting <────────── read/query ports or dedicated read models
 Platform Operations <── aggregate query ports + Identity operator query port
@@ -126,12 +129,23 @@ Printing  <────────── immutable document snapshot port
 
 واعتمد [ADR-014](ADR-014-crm-business-development-priority.md) سياق `CRM / Business Development` كهدف المرحلة التالية: يملك Lead وOpportunity وActivity قبل العميل، ويحول عبر منفذ Sales من دون كتابة Customer مباشرة أو نسخ حقائق الفاتورة والذمة. لا ينشئ CRM الأول مشروعًا أو قضية؛ يلزم F2 قبل إضافة هذا الربط لشركات المحاماة.
 
-الاستثناءات التالية ما زالت موجودة ولا تعد نمطًا مسموحًا للنسخ:
+وفي دفعة التثبيت السابقة لـCRM نُقل CRUD العميل وعناوينه من وحدة Receipts إلى Sales،
+وأصبح Data Import يستهلك `CustomerImportPort`. يكشف Sales كذلك
+`CrmCustomerQueryPort/CrmCustomerProvisioningPort` داخل `TransactionClient` المستدعي؛
+وبذلك لا يحتاج CRM إلى Prisma أو إلى استيراد خدمة التطبيق الخاصة بالعميل.
 
-- `CompanyService` يفحص جداول عدة Contexts مباشرة عند تعطيل العملات.
-- Onboarding يكتب مباشرة في بعض جداول IAM/Tenant/Accounting Setup؛ أصبحت طرق الدفع تمر عبر Treasury setup port.
+وفي دفعة السداد المعماري اللاحقة أزيلت الاستثناءات الانتقالية عالية المخاطر:
 
-أي Feature جديد يجب ألا يزيد هذه الاستثناءات. إزالتها تتم حسب أولويات الضوابط المعمارية.
+- أصبح `CompanyService` يسأل منافذ Core Accounting وSales وPurchases وTreasury عن
+  استعمال العملة بدل قراءة جداولها مباشرة.
+- أصبح تجهيز الشركة والتسجيل Process Managers يعتمدان منافذ Tenant وIdentity وAccounting
+  وTreasury وSecurity ولا يكتبان حقائق المالكين مباشرة.
+- أصبح `AuditLog` append-only خلف حد Audit و`SecurityEvent` خلف حد Security، وانتقلت
+  قراءة المستخدمين لكل منهما إلى Identity Query Ports.
+- انتقلت قراءات الحسابات المرجعية والطباعة وتجميع لقطاتها إلى Query Adapters مملوكة
+  للجهة المصدر، وأضيفت حواجز آلية تمنع عودة الكتابات والقراءات المباشرة المحظورة.
+
+لا توجد حاليًا قائمة استثناءات ملكية مسموح بنسخها؛ أي استثناء جديد يحتاج ADR صريحًا.
 
 ## 7. حدود Aggregates المقترحة
 

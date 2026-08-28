@@ -49,6 +49,9 @@ test("CloudLinux registration switching recreates immutable release roots and re
   assert.doesNotMatch(switcher, /https:\/\/%\{HTTP_HOST\}/u);
   assert.match(switcher, /restore_passenger_config/u);
   assert.match(switcher, /chmod "\$config_mode"/u);
+  assert.match(switcher, /randomBytes\(48\)\.toString\("base64url"\)/u);
+  assert.match(switcher, /environment\.RATE_LIMIT_IDENTITY_SECRET/u);
+  assert.match(switcher, /validate_registered_environment "\$target_root" true/u);
   assert.doesNotMatch(switcher, /printf[^\n]*environment_json/u);
   assert.match(installer, /MCAP_CLOUDLINUX_SWITCHER/u);
   assert.match(installer, /activate_release "\$old_release" "\$release_dir"/u);
@@ -101,12 +104,15 @@ test("cPanel production pipeline backs up before invoking the atomic installer",
   assert.ok(installerIndex > backupIndex, "backup must complete before installation");
 });
 
-test("CI deploys main only after both database gates and uses pinned SSH identity", async () => {
+test("CI deploys main only after all database and upgrade gates and uses pinned SSH identity", async () => {
   const source = await readFile(path.join(repositoryRoot, ".github", "workflows", "ci.yml"), "utf8");
   const provenanceIndex = source.indexOf("Verify merged pull request provenance");
   const sshSecretIndex = source.indexOf("CPANEL_SSH_PRIVATE_KEY: ${{ secrets.CPANEL_SSH_PRIVATE_KEY }}");
 
-  assert.match(source, /deploy-production:[\s\S]*needs: \[hosting-compatibility, verify\]/u);
+  assert.match(
+    source,
+    /deploy-production:[\s\S]*needs: \[hosting-compatibility, migration-upgrade-compatibility, verify\]/u,
+  );
   assert.match(source, /github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/u);
   assert.match(source, /cancel-in-progress: \$\{\{ github\.ref != 'refs\/heads\/main' \}\}/u);
   assert.match(source, /pull-requests: read/u);

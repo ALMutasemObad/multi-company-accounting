@@ -139,7 +139,7 @@ jobs:
               tail -n 160 -- "$passenger_log" |
                 sed -E \
                   -e 's#(mysql://)[^/@[:space:]]+:[^@[:space:]]+@#\1[redacted]@#g' \
-                  -e 's/(RESEND_API_KEY|REGISTRATION_TOKEN_SECRET|REGISTRATION_AUDIT_PEPPER|DATABASE_URL)=([^[:space:]]+)/\1=[redacted]/g' \
+                  -e 's/(RESEND_API_KEY|REGISTRATION_TOKEN_SECRET|REGISTRATION_AUDIT_PEPPER|RATE_LIMIT_IDENTITY_SECRET|DATABASE_URL)=([^[:space:]]+)/\1=[redacted]/g' \
                   -e 's/re_[A-Za-z0-9_-]{16,}/re_[redacted]/g' \
                   -e 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/[redacted-email]/g'
             fi

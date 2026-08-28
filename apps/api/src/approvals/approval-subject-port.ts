@@ -1,5 +1,5 @@
 import type { Prisma } from "@prisma/client";
-import type { ActorContext } from "../users/user-service.js";
+import type { ActorContext } from "../platform/actor-context.js";
 
 export type SupportedApprovalSubjectType = "FINANCIAL_CLOSE_RUN" | "PROFESSIONAL_TIMESHEET";
 

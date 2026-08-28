@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
-import type { ActorContext } from "../users/user-service.js";
+import type { ActorContext } from "../platform/actor-context.js";
 import { calculateCostCenterActivity } from "./cost-center-activity-calculator.js";
 import type { CostCenterActivityLedgerQueryPort, CostCenterActivityQuery } from "./cost-center-activity-types.js";
 

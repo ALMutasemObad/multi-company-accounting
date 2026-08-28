@@ -1,5 +1,5 @@
 import { Prisma, type PrismaClient, type ProfessionalProject } from "@prisma/client";
-import type { ActorContext } from "../users/user-service.js";
+import type { ActorContext } from "../platform/actor-context.js";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 

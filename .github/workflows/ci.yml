@@ -99,6 +99,66 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  migration-upgrade-compatibility:
+    name: Production upgrade compatibility (${{ matrix.engine_name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - engine_name: MariaDB 10.11
+            image: mariadb:10.11.11@sha256:96be0d3dfbeb07bc420e5fb8a6dc05c492676f1f89980a497a55e6fbbba3f1c4
+            expected_version: 10.11.11-MariaDB
+            health_command: mariadb-admin ping -h 127.0.0.1 -umcap_test -ptest_database_password
+          - engine_name: MySQL 8.4
+            image: mysql:8.4.11@sha256:b3b90af2a6552ae30c266fdb7d5dd55f3afb72404bb78d37fe8a23eb857fd3fb
+            expected_version: '8.4.'
+            health_command: mysqladmin ping -h 127.0.0.1 -umcap_test -ptest_database_password
+    services:
+      database:
+        image: ${{ matrix.image }}
+        env:
+          MYSQL_DATABASE: mcap_finance_test
+          MYSQL_USER: mcap_test
+          MYSQL_PASSWORD: test_database_password
+          MYSQL_ROOT_PASSWORD: test_root_password
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="${{ matrix.health_command }}"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    env:
+      DATABASE_URL: mysql://mcap_test:test_database_password@127.0.0.1:3306/mcap_finance_test
+      SEED_ADMIN_PASSWORD: CI-Only-Admin-Password-2026!
+      RUN_DB_TESTS: 'true'
+      EXPECTED_DATABASE_VERSION_PREFIX: ${{ matrix.expected_version }}
+      PRODUCTION_BASELINE_COMMIT: c39b97949655f43c9fe35f98b3d47cce5c6c6054
+      PRODUCTION_BASELINE_MIGRATION_COUNT: '38'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.23.2
+          cache: npm
+      - name: Pin the package manager
+        run: npm install --global npm@12.0.2
+      - name: Install candidate locked dependencies
+        run: npm ci
+      - name: Generate the candidate Prisma client
+        run: npm run prisma:generate
+      - name: Verify the upgrade database engine
+        run: npm run database:verify-engine -w @mcap/api
+      - name: Upgrade the populated production baseline and prove old-application compatibility
+        run: bash scripts/ci/database-upgrade-compatibility.sh
+      - name: Seed current deterministic fixtures after the upgrade
+        run: |
+          npm run prisma:seed -w @mcap/api
+          npm run prisma:seed:demo -w @mcap/api
+      - name: Test the candidate API on the upgraded production baseline
+        run: npm run test:db -w @mcap/api
+
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -238,6 +298,7 @@ jobs:
             deploy/scripts/deploy-cpanel-release.sh deploy/scripts/switch-cloudlinux-registration.sh \
             deploy/scripts/create-cpanel-offsite-backup.sh \
             scripts/ci/database-roundtrip.sh scripts/ci/database-identities.integration.sh \
+            scripts/ci/database-upgrade-compatibility.sh \
             scripts/tests/deployment-rollback.integration.sh \
             scripts/tests/cloudlinux-registration.integration.sh
           curl --fail --silent --show-error --location \
@@ -251,7 +312,9 @@ jobs:
             deploy/scripts/install-cpanel-release.sh deploy/scripts/rollback-cpanel-release.sh \
             deploy/scripts/deploy-cpanel-release.sh deploy/scripts/switch-cloudlinux-registration.sh \
             deploy/scripts/create-cpanel-offsite-backup.sh \
-            scripts/ci/database-identities.integration.sh scripts/tests/cloudlinux-registration.integration.sh
+            scripts/ci/database-identities.integration.sh \
+            scripts/ci/database-upgrade-compatibility.sh \
+            scripts/tests/cloudlinux-registration.integration.sh
           bash scripts/tests/deployment-rollback.integration.sh
           bash scripts/tests/cloudlinux-registration.integration.sh
       - name: Create reproducible verified release
@@ -294,7 +357,7 @@ jobs:
 
   deploy-production:
     name: Deploy production to iFastNet
-    needs: [hosting-compatibility, verify]
+    needs: [hosting-compatibility, migration-upgrade-compatibility, verify]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 35

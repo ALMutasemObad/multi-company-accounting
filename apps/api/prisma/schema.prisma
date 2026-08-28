@@ -638,6 +638,18 @@ model OutboxEvent {
   @@map("outbox_events")
 }
 
+model RateLimitCounter {
+  scope           String   @db.VarChar(40)
+  identityHash    Bytes    @map("identity_hash") @db.Binary(32)
+  windowStartedAt DateTime @map("window_started_at") @db.DateTime(3)
+  requestCount    Int      @default(1) @map("request_count") @db.UnsignedInt
+  expiresAt       DateTime @map("expires_at") @db.DateTime(3)
+
+  @@id([scope, identityHash, windowStartedAt])
+  @@index([expiresAt])
+  @@map("rate_limit_counters")
+}
+
 model DataImportBatch {
   id            BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
   publicId      String           @unique @default(uuid()) @map("public_id") @db.Char(36)

@@ -8,18 +8,13 @@ function setup(used: boolean) {
   const updateMany = vi.fn(async () => ({ count: 1 }));
   const upsert = vi.fn(async () => ({}));
   const audit = vi.fn(async () => ({}));
-  const findUsage = vi.fn(async () => used ? { id: 99n } : null);
+  const findUsage = vi.fn(async () => used);
   const tx = {
     companyCurrency: {
       findMany: vi.fn(async () => [{ currencyId: 2n }]),
       updateMany,
       upsert,
     },
-    journalLine: { findFirst: findUsage },
-    receipt: { findFirst: vi.fn(async () => null) },
-    payment: { findFirst: vi.fn(async () => null) },
-    salesInvoice: { findFirst: vi.fn(async () => null) },
-    purchaseInvoice: { findFirst: vi.fn(async () => null) },
     auditLog: { create: audit },
   };
   const prisma = {
@@ -27,7 +22,7 @@ function setup(used: boolean) {
     currency: { findMany: vi.fn(async () => [{ id: 1n, code: 'SAR' }]) },
     $transaction: vi.fn(async (operation: (client: typeof tx) => unknown) => operation(tx)),
   } as unknown as PrismaClient;
-  const service = new CompanyService(prisma);
+  const service = new CompanyService(prisma, [{ isAnyCurrencyUsed: findUsage }]);
   vi.spyOn(service, 'listCurrencyCatalog').mockResolvedValue([]);
   return { service, tx, updateMany, upsert, audit };
 }

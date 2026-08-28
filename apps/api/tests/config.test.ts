@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config.js';
 
+const rateLimitIdentitySecret = 'test-rate-limit-identity-secret-1234567890';
+
 describe('production configuration', () => {
   it('fails fast when production transport settings are unsafe', () => {
     expect(() => loadConfig({
@@ -19,6 +21,7 @@ describe('production configuration', () => {
       WEB_ORIGIN: 'https://finance.example.com',
       SESSION_COOKIE_SECURE: 'true',
       TRUST_PROXY: 'true',
+      RATE_LIMIT_IDENTITY_SECRET: rateLimitIdentitySecret,
       SELF_REGISTRATION_ENABLED: 'false',
     });
     expect(config.SESSION_COOKIE_SECURE).toBe(true);
@@ -26,6 +29,7 @@ describe('production configuration', () => {
     expect(config.SERVE_WEB_ASSETS).toBe(false);
     expect(config.RATE_LIMIT_MAX).toBe(300);
     expect(config.AUTH_RATE_LIMIT_MAX).toBe(20);
+    expect(config.RATE_LIMIT_NETWORK_MULTIPLIER).toBe(10);
     expect(config.REGISTRATION_RATE_LIMIT_MAX).toBe(5);
     expect(config.PASSWORD_RESET_ENABLED).toBe(false);
     expect(config.BANK_RECONCILIATION_ENABLED).toBe(false);
@@ -44,6 +48,17 @@ describe('production configuration', () => {
     expect(config.METRICS_ENABLED).toBe(false);
   });
 
+  it('requires a stable keyed identity secret for the shared production limiter', () => {
+    expect(() => loadConfig({
+      NODE_ENV: 'production',
+      DATABASE_URL: 'mysql://runtime:secret@db.internal/mcap',
+      WEB_ORIGIN: 'https://finance.example.com',
+      SESSION_COOKIE_SECURE: 'true',
+      TRUST_PROXY: 'true',
+      SELF_REGISTRATION_ENABLED: 'false',
+    })).toThrow(/RATE_LIMIT_IDENTITY_SECRET/);
+  });
+
   it('requires a real email provider when production self-registration is enabled', () => {
     expect(() => loadConfig({
       NODE_ENV: 'production',
@@ -51,6 +66,7 @@ describe('production configuration', () => {
       WEB_ORIGIN: 'https://finance.example.com',
       SESSION_COOKIE_SECURE: 'true',
       TRUST_PROXY: 'true',
+      RATE_LIMIT_IDENTITY_SECRET: rateLimitIdentitySecret,
       SELF_REGISTRATION_ENABLED: 'true',
       REGISTRATION_EMAIL_MODE: 'log',
     })).toThrow();
@@ -61,6 +77,7 @@ describe('production configuration', () => {
       WEB_ORIGIN: 'https://finance.example.com',
       SESSION_COOKIE_SECURE: 'true',
       TRUST_PROXY: 'true',
+      RATE_LIMIT_IDENTITY_SECRET: rateLimitIdentitySecret,
       SELF_REGISTRATION_ENABLED: 'true',
       REGISTRATION_EMAIL_MODE: 'resend',
       REGISTRATION_EMAIL_FROM: 'accounts@example.com',
@@ -78,6 +95,7 @@ describe('production configuration', () => {
       WEB_ORIGIN: 'https://finance.example.com',
       SESSION_COOKIE_SECURE: 'true',
       TRUST_PROXY: 'true',
+      RATE_LIMIT_IDENTITY_SECRET: rateLimitIdentitySecret,
       SELF_REGISTRATION_ENABLED: 'false',
       BANK_RECONCILIATION_ENABLED: 'true',
       BANK_RECONCILIATION_ROLLOUT_STAGE: 'SHADOW',
@@ -94,6 +112,7 @@ describe('production configuration', () => {
       WEB_ORIGIN: 'https://finance.example.com',
       SESSION_COOKIE_SECURE: 'true',
       TRUST_PROXY: 'true',
+      RATE_LIMIT_IDENTITY_SECRET: rateLimitIdentitySecret,
       SELF_REGISTRATION_ENABLED: 'false',
       PASSWORD_RESET_ENABLED: 'true',
       REGISTRATION_EMAIL_MODE: 'log',
@@ -105,6 +124,7 @@ describe('production configuration', () => {
       WEB_ORIGIN: 'https://finance.example.com',
       SESSION_COOKIE_SECURE: 'true',
       TRUST_PROXY: 'true',
+      RATE_LIMIT_IDENTITY_SECRET: rateLimitIdentitySecret,
       SELF_REGISTRATION_ENABLED: 'false',
       PASSWORD_RESET_ENABLED: 'true',
       REGISTRATION_EMAIL_MODE: 'resend',
@@ -166,6 +186,7 @@ describe('production configuration', () => {
       WEB_ORIGIN: 'https://finance.example.com',
       SESSION_COOKIE_SECURE: 'true',
       TRUST_PROXY: 'true',
+      RATE_LIMIT_IDENTITY_SECRET: rateLimitIdentitySecret,
       SELF_REGISTRATION_ENABLED: 'false',
       METRICS_ENABLED: 'true',
       METRICS_BEARER_TOKEN: 'test-metrics-bearer-token-1234567890',

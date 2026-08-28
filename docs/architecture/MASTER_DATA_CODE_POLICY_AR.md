@@ -79,7 +79,7 @@ related:
 | مخطط البيانات | `apps/api/prisma/schema.prisma` — `MasterDataCodeSequence` |
 | الترحيل | `20260822150000_auto_master_data_codes` ثم `20260822210000_expand_auto_codes_and_password_reset` ثم `20260827180000_professional_projects_time` ثم `20260827210000_hr_foundation` |
 | الحجز الذري | `apps/api/src/platform/master-data-code-service.ts` |
-| العملاء | `apps/api/src/receipts/reference-service.ts` و`reference-router.ts` |
+| العملاء | `apps/api/src/sales/customer-service.ts` و`customer-router.ts`؛ ويكشف Sales منافذ الاستيراد وCRM في `customer-ports.ts` |
 | الخزينة وطرق الدفع | `apps/api/src/treasury/treasury-service.ts` و`treasury-router.ts` |
 | المستودعات والكتالوج | `apps/api/src/inventory/inventory-service.ts` و`inventory-catalog-service.ts` مع موجهيهما |
 | الموردون | `apps/api/src/suppliers/supplier-service.ts` و`supplier-router.ts` |

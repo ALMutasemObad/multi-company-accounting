@@ -1,13 +1,15 @@
 import { hash } from 'argon2';
 import { Prisma, type PrismaClient } from '@prisma/client';
-import { DEFAULT_CHART_TEMPLATE_CODE } from '../accounts/default-chart-template.js';
 import { createOpaqueToken, hashToken } from '../auth/session-tokens.js';
 import {
   REGISTRATION_REQUEST_AGGREGATE,
   REGISTRATION_VERIFICATION_REQUESTED,
   type OutboxAppender,
 } from '../outbox/outbox.js';
-import { CompanyProvisioningError, type CompanyProvisioningService } from '../platform/company-provisioning-service.js';
+import {
+  CompanyProvisioningError,
+  type CompanyProvisioningPort,
+} from '../platform/company-provisioning-ports.js';
 import {
   TransactionDeadlineExceededError,
   TransactionExecutor,
@@ -16,6 +18,7 @@ import {
 import { RegistrationEventRecorder, type RegistrationMetadata } from './registration-event-recorder.js';
 import { assertRequestActive, ClientDisconnectedError, sleepWithinRequest } from '../operations/request-context.js';
 import { supportedLocales, type SupportedLocale } from './supported-locales.js';
+import type { RegistrationOwnerPorts } from './registration-owner-ports.js';
 
 export type { RegistrationMetadata } from './registration-event-recorder.js';
 
@@ -51,8 +54,9 @@ export class RegistrationService {
 
   constructor(
     private readonly prisma: PrismaClient,
-    private readonly provisioning: CompanyProvisioningService,
+    private readonly provisioning: CompanyProvisioningPort,
     private readonly outbox: OutboxAppender,
+    private readonly owners: RegistrationOwnerPorts,
     optionsConfig: RegistrationOptions,
   ) {
     this.now = optionsConfig.now ?? (() => new Date());
@@ -63,17 +67,13 @@ export class RegistrationService {
   }
 
   async options() {
-    const currencies = await this.prisma.currency.findMany({
-      where: { scope: 'GLOBAL', scopeKey: 'GLOBAL', isActive: true },
-      orderBy: { code: 'asc' },
-      select: { code: true, nameAr: true, decimals: true },
-    });
+    const currencies = await this.owners.tenant.listGlobalCurrencies();
     const timezones = [...new Set(['UTC', ...Intl.supportedValuesOf('timeZone')])];
     return {
       currencies,
       locales: supportedLocales,
       timezones,
-      chartTemplates: [{ code: DEFAULT_CHART_TEMPLATE_CODE, nameAr: 'دليل عام للمنشآت الصغيرة', nameEn: 'Small business general chart' }],
+      chartTemplates: this.owners.accounting.listChartTemplates(),
       passwordPolicy: { minLength: 12, maxLength: 1024 },
     };
   }
@@ -101,11 +101,13 @@ export class RegistrationService {
       timeoutMs: 30_000,
       deadlineMs: 40_000,
     }, async (tx) => {
-      const currency = await tx.currency.findUnique({ where: { scopeKey_code: { scopeKey: 'GLOBAL', code: baseCurrencyCode } }, select: { isActive: true } });
-      if (!currency?.isActive) throw new RegistrationError('INVALID_OPTION');
-      if (input.chartTemplateCode !== DEFAULT_CHART_TEMPLATE_CODE) throw new RegistrationError('INVALID_OPTION');
-      const existingUser = await tx.user.findUnique({ where: { emailNormalized }, select: { id: true } });
-      if (existingUser) {
+      if (!(await this.owners.tenant.isActiveGlobalCurrency(tx, baseCurrencyCode))) {
+        throw new RegistrationError('INVALID_OPTION');
+      }
+      if (!this.owners.accounting.isSupportedChartTemplate(input.chartTemplateCode)) {
+        throw new RegistrationError('INVALID_OPTION');
+      }
+      if (await this.owners.identity.identityExists(tx, emailNormalized)) {
         await this.recordEvent(tx, {
           emailNormalized,
           eventType: 'REGISTRATION_EXISTING_IDENTITY_ATTEMPT',
@@ -292,17 +294,13 @@ export class RegistrationService {
           },
         });
         await this.recordEvent(tx, { registrationRequestId: request.id, emailNormalized: request.emailNormalized, eventType: 'REGISTRATION_COMPLETED', metadata, details: { companyId: result.company.id } });
-        await tx.securityEvent.create({
-          data: {
-            companyId: BigInt(result.company.id),
-            userId: BigInt(result.administrator.id),
-            eventType: 'SELF_REGISTRATION_COMPLETED',
-            severity: 'INFO',
-            emailSnapshot: request.emailNormalized,
-            ...(metadata.ipAddress ? { ipAddress: metadata.ipAddress } : {}),
-            ...(metadata.userAgent ? { userAgent: metadata.userAgent } : {}),
-            details: { registrationPublicId: request.publicId },
-          },
+        await this.owners.security.recordCompletion(tx, {
+          companyId: BigInt(result.company.id),
+          userId: BigInt(result.administrator.id),
+          emailNormalized: request.emailNormalized,
+          registrationPublicId: request.publicId,
+          ...(metadata.ipAddress ? { ipAddress: metadata.ipAddress } : {}),
+          ...(metadata.userAgent ? { userAgent: metadata.userAgent } : {}),
         });
         return { companyId: result.company.id, userId: result.administrator.id };
       });

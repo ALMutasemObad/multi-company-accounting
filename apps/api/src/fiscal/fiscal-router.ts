@@ -1,3 +1,4 @@
+import type { FiscalPeriod, FiscalYear } from '@prisma/client';
 import { Router, type ErrorRequestHandler, type Request } from 'express';
 import { z, ZodError } from 'zod';
 import type { AuthService } from '../auth/auth-service.js';
@@ -17,7 +18,8 @@ const reviewedCloseRequest = z.object({
 });
 
 function sid(request: Request) { return Object.fromEntries((request.headers.cookie ?? '').split(';').map((part) => part.trim().split('=', 2)).filter(([key, value]) => key && value)).sid; }
-function serializeYear(year: any) { return { id: year.id.toString(), name: year.name, startDate: year.startDate.toISOString().slice(0, 10), endDate: year.endDate.toISOString().slice(0, 10), status: year.status, ...(year.periods ? { periods: year.periods.map(FiscalService.serializePeriod) } : {}) }; }
+type FiscalYearWithPeriods = FiscalYear & { periods?: FiscalPeriod[] | undefined };
+function serializeYear(year: FiscalYearWithPeriods) { return { id: year.id.toString(), name: year.name, startDate: year.startDate.toISOString().slice(0, 10), endDate: year.endDate.toISOString().slice(0, 10), status: year.status, ...(year.periods ? { periods: year.periods.map(FiscalService.serializePeriod) } : {}) }; }
 
 export function createFiscalRouter(auth: AuthService, fiscal: FiscalService, financialClose?: FinancialCloseService) {
   const router = Router();

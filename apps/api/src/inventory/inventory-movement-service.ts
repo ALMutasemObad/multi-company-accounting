@@ -1,4 +1,5 @@
 import { Prisma, type InventoryMovementType, type PrismaClient } from "@prisma/client";
+import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import {
   lockFiscalPeriod,
   PostingEngine,
@@ -6,7 +7,7 @@ import {
   type PostingFailureReason,
 } from "../core-accounting/posting-engine.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
-import type { ActorContext } from "../users/user-service.js";
+import type { ActorContext } from "../platform/actor-context.js";
 
 export type InventoryMovementErrorReason =
   | "NOT_FOUND"
@@ -509,7 +510,7 @@ export class InventoryMovementService implements InventoryInvoiceStockPort {
           data: { status: "REVERSED", version: { increment: 1 } },
         });
         if (changed.count !== 1) throw new InventoryMovementError("VERSION_CONFLICT");
-        await tx.auditLog.create({
+        await appendAudit(tx, {
           data: {
             companyId: context.companyId,
             actorUserId: context.userId,
@@ -642,7 +643,7 @@ export class InventoryMovementService implements InventoryInvoiceStockPort {
       where: { id: movementId },
       data: { accountingDocumentId: document.id, offsetAccountId },
     });
-    await tx.auditLog.create({
+    await appendAudit(tx, {
       data: {
         companyId: context.companyId,
         actorUserId: context.userId,
@@ -727,7 +728,7 @@ export class InventoryMovementService implements InventoryInvoiceStockPort {
             createdById: context.userId,
           },
         });
-        await tx.auditLog.create({
+        await appendAudit(tx, {
           data: {
             companyId: context.companyId,
             actorUserId: context.userId,
@@ -1091,7 +1092,7 @@ export class InventoryMovementService implements InventoryInvoiceStockPort {
       if (changed.count !== 1) throw new InventoryMovementError("INSUFFICIENT_STOCK");
     }
 
-    await tx.auditLog.create({
+    await appendAudit(tx, {
       data: {
         companyId: context.companyId,
         actorUserId: context.userId,

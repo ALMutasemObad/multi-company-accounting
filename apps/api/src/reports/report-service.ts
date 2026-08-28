@@ -1,5 +1,6 @@
 import { Prisma, type AccountingDocumentType, type PrismaClient } from "@prisma/client";
-import type { ActorContext } from "../users/user-service.js";
+import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
+import type { ActorContext } from "../platform/actor-context.js";
 import { buildStatementRows, decimalMoney, syntheticStatementRow, type AccountBalanceInput } from "./financial-statement-calculator.js";
 
 export type ReportRange = { dateFrom: string; dateTo: string };
@@ -18,6 +19,17 @@ export type JournalReportQuery = ReportRange & {
 export class ReportError extends Error { constructor(public readonly reason: "NOT_FOUND") { super(reason); } }
 
 type CashMovement = { documentDate: Date; baseAmount: Prisma.Decimal };
+type RecentCashActivity = {
+  id: bigint;
+  baseAmount: Prisma.Decimal;
+  counterpartyNameSnapshot: string;
+  accountingDocument: {
+    documentNumber: string;
+    documentDate: Date;
+    status: string;
+    description: string;
+  };
+};
 const asDate = (value: string) => new Date(`${value}T00:00:00.000Z`);
 const money = (value: Prisma.Decimal.Value) => new Prisma.Decimal(value).toFixed(4);
 
@@ -269,10 +281,10 @@ export class ReportService {
 
   async recordExport(context: ActorContext, report: string, format: string, parameters: Record<string, unknown>) {
     const safeParameters = JSON.parse(JSON.stringify(parameters, (_key, value) => typeof value === "bigint" ? value.toString() : value)) as Prisma.InputJsonObject;
-    await this.prisma.auditLog.create({ data: { companyId: context.companyId, actorUserId: context.userId, action: "FINANCIAL_REPORT_EXPORTED", entityType: "REPORT", entityId: report, details: { format, parameters: safeParameters } as Prisma.InputJsonObject } });
+    await appendAudit(this.prisma, { data: { companyId: context.companyId, actorUserId: context.userId, action: "FINANCIAL_REPORT_EXPORTED", entityType: "REPORT", entityId: report, details: { format, parameters: safeParameters } as Prisma.InputJsonObject } });
   }
 
-  private activityJson(type: "RECEIPT" | "PAYMENT", row: any) {
+  private activityJson(type: "RECEIPT" | "PAYMENT", row: RecentCashActivity) {
     return { id: row.id.toString(), type, documentNumber: row.accountingDocument.documentNumber, documentDate: row.accountingDocument.documentDate.toISOString().slice(0, 10), status: row.accountingDocument.status, description: row.accountingDocument.description, counterpartyName: row.counterpartyNameSnapshot, amount: row.baseAmount.toFixed(4) };
   }
 

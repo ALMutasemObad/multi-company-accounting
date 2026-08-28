@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { createDatabase } from '../database.js';
-import { CompanyProvisioningService, companyProvisioningSchema } from './company-provisioning-service.js';
+import { createCompanyProvisioningService } from '../composition/create-company-provisioning-service.js';
+import { companyProvisioningSchema } from './company-provisioning-service.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required');
@@ -24,7 +25,7 @@ if (process.env.PROVISION_CONFIRM !== expectedConfirmation) {
 
 const prisma = createDatabase(databaseUrl);
 try {
-  const result = await new CompanyProvisioningService(prisma).provision(input);
+  const result = await createCompanyProvisioningService(prisma).provision(input);
   console.log(JSON.stringify({ status: 'ok', ...result }, null, 2));
 } finally {
   await prisma.$disconnect();

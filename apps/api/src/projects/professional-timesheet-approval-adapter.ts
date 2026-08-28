@@ -4,7 +4,7 @@ import {
   type ApprovalSubjectPort,
   type ApprovalSubjectReference,
 } from "../approvals/approval-subject-port.js";
-import type { ActorContext } from "../users/user-service.js";
+import type { ActorContext } from "../platform/actor-context.js";
 import {
   ProfessionalProjectError,
   type ProfessionalProjectService,

@@ -1,11 +1,13 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
+import { appendAudit } from '../audit/prisma-audit-append-adapter.js';
+import type { ActorContext } from '../platform/actor-context.js';
 import { reserveMasterDataCode } from '../platform/master-data-code-service.js';
+
+export type { ActorContext } from '../platform/actor-context.js';
 
 export class UserManagementError extends Error {
   constructor(public readonly reason: 'NOT_FOUND' | 'EMAIL_EXISTS' | 'SELF_ROLE_CHANGE' | 'SELF_DISABLE' | 'INVALID_ROLE' | 'ROLE_CODE_EXISTS' | 'INVALID_PERMISSION' | 'SYSTEM_ROLE_PROTECTED') { super(reason); }
 }
-
-export type ActorContext = { userId: bigint; companyId: bigint };
 
 const userSelect = {
   id: true, emailNormalized: true, displayName: true, nameEn: true, isActive: true,
@@ -43,7 +45,7 @@ export class UserService {
     await this.get(context, userId);
     return this.prisma.$transaction(async (tx) => {
       const user = await tx.user.update({ where: { id: userId }, data: { ...(input.nameAr !== undefined ? { displayName: input.nameAr } : {}), ...(input.nameEn !== undefined ? { nameEn: input.nameEn } : {}) }, select: userSelect });
-      await tx.auditLog.create({ data: { companyId: context.companyId, actorUserId: context.userId, action: 'USER_UPDATED', entityType: 'USER', entityId: userId.toString(), details: input } });
+      await appendAudit(tx, { data: { companyId: context.companyId, actorUserId: context.userId, action: 'USER_UPDATED', entityType: 'USER', entityId: userId.toString(), details: input } });
       return user;
     });
   }
@@ -54,7 +56,7 @@ export class UserService {
     return this.prisma.$transaction(async (tx) => {
       const user = await tx.user.update({ where: { id: userId }, data: { isActive: false }, select: userSelect });
       await tx.session.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } });
-      await tx.auditLog.create({ data: { companyId: context.companyId, actorUserId: context.userId, action: 'USER_DISABLED', entityType: 'USER', entityId: userId.toString(), details: { reason } } });
+      await appendAudit(tx, { data: { companyId: context.companyId, actorUserId: context.userId, action: 'USER_DISABLED', entityType: 'USER', entityId: userId.toString(), details: { reason } } });
       return user;
     });
   }
@@ -73,7 +75,7 @@ export class UserService {
       await tx.userCompanyRole.deleteMany({ where: { userId, companyId: context.companyId } });
       if (roleIds.length) await tx.userCompanyRole.createMany({ data: roleIds.map((roleId) => ({ userId, companyId: context.companyId, roleId })) });
       await tx.session.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } });
-      await tx.auditLog.create({ data: { companyId: context.companyId, actorUserId: context.userId, action: 'USER_ROLES_REPLACED', entityType: 'USER', entityId: userId.toString(), details: { roleIds: roleIds.map(String) } } });
+      await appendAudit(tx, { data: { companyId: context.companyId, actorUserId: context.userId, action: 'USER_ROLES_REPLACED', entityType: 'USER', entityId: userId.toString(), details: { roleIds: roleIds.map(String) } } });
     });
     return this.roles(context, userId);
   }
@@ -91,7 +93,7 @@ export class UserService {
         const code = await reserveMasterDataCode(tx, context.companyId, 'CUSTOM_ROLE');
         const role = await tx.role.create({ data: { companyId: context.companyId, code, nameAr: input.nameAr, nameEn: input.nameEn ?? null } });
         if (input.permissionIds.length) await tx.rolePermission.createMany({ data: input.permissionIds.map((permissionId) => ({ roleId: role.id, permissionId })) });
-        await tx.auditLog.create({ data: { companyId: context.companyId, actorUserId: context.userId, action: 'ROLE_CREATED', entityType: 'ROLE', entityId: role.id.toString(), details: { code: role.code, permissionIds: input.permissionIds.map(String) } } });
+        await appendAudit(tx, { data: { companyId: context.companyId, actorUserId: context.userId, action: 'ROLE_CREATED', entityType: 'ROLE', entityId: role.id.toString(), details: { code: role.code, permissionIds: input.permissionIds.map(String) } } });
         return tx.role.findUniqueOrThrow({ where: { id: role.id }, include: { permissions: { include: { permission: true } }, _count: { select: { assignments: true } } } });
       });
     } catch (error) {
@@ -105,7 +107,7 @@ export class UserService {
     const data = { ...(input.nameAr !== undefined ? { nameAr: input.nameAr } : {}), ...(input.nameEn !== undefined ? { nameEn: input.nameEn } : {}) };
     await this.prisma.$transaction(async (tx) => {
       await tx.role.update({ where: { id: roleId }, data });
-      await tx.auditLog.create({ data: { companyId: context.companyId, actorUserId: context.userId, action: 'ROLE_UPDATED', entityType: 'ROLE', entityId: roleId.toString(), details: input } });
+      await appendAudit(tx, { data: { companyId: context.companyId, actorUserId: context.userId, action: 'ROLE_UPDATED', entityType: 'ROLE', entityId: roleId.toString(), details: input } });
     });
     return this.getRole(context, roleId);
   }
@@ -118,7 +120,7 @@ export class UserService {
       await tx.rolePermission.deleteMany({ where: { roleId } });
       if (permissionIds.length) await tx.rolePermission.createMany({ data: permissionIds.map((permissionId) => ({ roleId, permissionId })) });
       if (affected.length) await tx.session.updateMany({ where: { userId: { in: affected.map((item) => item.userId) }, selectedCompanyId: context.companyId, revokedAt: null }, data: { revokedAt: new Date() } });
-      await tx.auditLog.create({ data: { companyId: context.companyId, actorUserId: context.userId, action: 'ROLE_PERMISSIONS_REPLACED', entityType: 'ROLE', entityId: roleId.toString(), details: { permissionIds: permissionIds.map(String) } } });
+      await appendAudit(tx, { data: { companyId: context.companyId, actorUserId: context.userId, action: 'ROLE_PERMISSIONS_REPLACED', entityType: 'ROLE', entityId: roleId.toString(), details: { permissionIds: permissionIds.map(String) } } });
     });
     return this.getRole(context, roleId);
   }
@@ -130,7 +132,7 @@ export class UserService {
       await tx.role.update({ where: { id: roleId }, data: { isActive: false } });
       await tx.userCompanyRole.deleteMany({ where: { companyId: context.companyId, roleId } });
       if (affected.length) await tx.session.updateMany({ where: { userId: { in: affected.map((item) => item.userId) }, selectedCompanyId: context.companyId, revokedAt: null }, data: { revokedAt: new Date() } });
-      await tx.auditLog.create({ data: { companyId: context.companyId, actorUserId: context.userId, action: 'ROLE_DEACTIVATED', entityType: 'ROLE', entityId: roleId.toString(), details: { reason, affectedUsers: affected.length } } });
+      await appendAudit(tx, { data: { companyId: context.companyId, actorUserId: context.userId, action: 'ROLE_DEACTIVATED', entityType: 'ROLE', entityId: roleId.toString(), details: { reason, affectedUsers: affected.length } } });
     });
     return this.getRole(context, roleId);
   }

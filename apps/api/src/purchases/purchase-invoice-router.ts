@@ -33,7 +33,7 @@ export function createPurchaseInvoiceRouter(auth: AuthService, service: Purchase
   router.get("/purchase-invoices", async (request, response) => {
     const context = await authorize(request, "purchase_invoices.view", false);
     const parsed = query.parse(request.query);
-    const result = await service.list(context, parsed as any);
+    const result = await service.list(context, parsed);
     response.json({ data: result.data.map(PurchaseInvoiceService.json), meta: { page: parsed.page, pageSize: parsed.pageSize, total: result.total, totalPages: Math.ceil(result.total / parsed.pageSize) } });
   });
 
@@ -73,7 +73,7 @@ export function createPurchaseInvoiceRouter(auth: AuthService, service: Purchase
   router.get("/reports/payables-aging", async (request, response) => {
     const context = await authorize(request, "reports.payables.view", false);
     const parsed = z.object({ asOf: isoDate, supplierId: id.optional() }).parse(request.query);
-    response.json(await service.payablesAging(context, parsed as any));
+    response.json(await service.payablesAging(context, parsed));
   });
 
   const errors: ErrorRequestHandler = (error, _request, response, next) => {

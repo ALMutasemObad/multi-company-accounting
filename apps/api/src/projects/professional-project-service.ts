@@ -7,11 +7,12 @@ import {
   type ProfessionalTimeEntry,
   type ProfessionalTimesheet,
 } from "@prisma/client";
+import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import { createHash } from "node:crypto";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
 import { reserveMasterDataCode } from "../platform/master-data-code-service.js";
 import { TransactionExecutor } from "../platform/transaction-executor.js";
-import type { ActorContext } from "../users/user-service.js";
+import type { ActorContext } from "../platform/actor-context.js";
 import type {
   ProfessionalCustomerPort,
   ProfessionalCustomerReference,
@@ -1272,7 +1273,7 @@ export class ProfessionalProjectService {
     entityId: string,
     details?: Prisma.InputJsonObject,
   ) {
-    return tx.auditLog.create({
+    return appendAudit(tx, {
       data: {
         companyId: context.companyId,
         actorUserId: context.userId,

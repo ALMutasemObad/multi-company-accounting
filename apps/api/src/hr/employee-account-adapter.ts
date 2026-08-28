@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
+import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import type {
   EmployeeAccountCandidate,
   EmployeeAccountPort,
@@ -88,7 +89,7 @@ export class HrEmployeeAccountAdapter implements EmployeeAccountPort {
       },
     });
     if (changed.count !== 1) return false;
-    await tx.auditLog.create({
+    await appendAudit(tx, {
       data: {
         companyId: input.companyId,
         actorUserId: input.actorUserId,
