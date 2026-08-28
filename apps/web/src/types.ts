@@ -7,7 +7,8 @@ export type PageMeta = {
 
 export type Company = { id: string; name: string };
 export type User = { id: string; displayName: string };
-export type AdminUser = { id: string; email: string; nameAr: string; nameEn: string | null; status: "ACTIVE" | "LOCKED" | "DISABLED"; lastLoginAt: string | null; createdAt: string; updatedAt: string };
+export type EmployeeAccountOption = { id: string; employeeNumber: string; nameAr: string; nameEn: string | null; status: "ACTIVE" | "ON_LEAVE" | "TERMINATED" };
+export type AdminUser = { id: string; email: string; nameAr: string; nameEn: string | null; status: "ACTIVE" | "LOCKED" | "DISABLED"; lastLoginAt: string | null; createdAt: string; updatedAt: string; employee: EmployeeAccountOption | null };
 export type Permission = { id: string; code: string; module: string; descriptionAr: string };
 export type Role = { id: string; code: string; nameAr: string; nameEn: string | null; isSystemRole: boolean; isActive: boolean; assignedUsers: number; permissionIds: string[]; permissions: string[] };
 export type UserRole = { roleId: string; roleCode: string; isActive: boolean; assignedAt: string };

@@ -689,6 +689,29 @@ paths:
         CsrfToken: []
       parameters:
       - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      x-idempotency-scope: user + company + operation + key
+  /users/employee-options:
+    get:
+      tags: [Users]
+      summary: عرض الموظفين المؤهلين لإنشاء أو ربط حساب دخول
+      operationId: listUserEmployeeOptions
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: موظفو الشركة غير المنتهين وغير المرتبطين بحساب
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeeAccountOptionListResponse'
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: users.create
+      security:
+      - SessionCookie: []
   /users/{userId}:
     get:
       tags:
@@ -781,6 +804,34 @@ paths:
       security:
       - SessionCookie: []
         CsrfToken: []
+  /users/{userId}/employee-link:
+    post:
+      tags: [Users]
+      summary: ربط حساب شركة قديم بموظف موجود
+      operationId: linkUserEmployee
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: userId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Id' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LinkUserEmployeeRequest' }
+      responses:
+        '200': { description: الحساب المرتبط, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: users.update
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
   /users/{userId}/disable:
     post:
       tags:
@@ -2832,21 +2883,6 @@ paths:
         '422': { $ref: '#/components/responses/BusinessRuleViolation' }
       x-permission: hr.structure.manage
       security: [{ SessionCookie: [], CsrfToken: [] }]
-  /hr/user-options:
-    get:
-      tags: [Human Resources]
-      summary: عرض عضويات الدخول غير المرتبطة بموظف
-      operationId: listHrUserOptions
-      parameters:
-      - $ref: '#/components/parameters/RequestId'
-      - $ref: '#/components/parameters/Search'
-      responses:
-        '200': { description: مستخدمو الشركة النشطون غير المرتبطين, content: { application/json: { schema: { $ref: '#/components/schemas/HrIdentityReferenceListResponse' } } } }
-        '400': { $ref: '#/components/responses/ValidationError' }
-        '401': { $ref: '#/components/responses/Unauthenticated' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-      x-permission: hr.employees.view
-      security: [{ SessionCookie: [] }]
   /hr/employees:
     get:
       tags: [Human Resources]
@@ -9169,6 +9205,7 @@ components:
       - email
       - nameAr
       - status
+      - employee
       - createdAt
       - updatedAt
       properties:
@@ -9204,33 +9241,36 @@ components:
           type: string
           format: date-time
           example: '2026-07-30T06:00:00.000Z'
+        employee:
+          oneOf:
+          - $ref: '#/components/schemas/EmployeeAccountOption'
+          - type: 'null'
     UserCreateRequest:
       type: object
       additionalProperties: false
       required:
+      - employeeId
       - email
-      - nameAr
+      - temporaryPassword
       properties:
+        employeeId:
+          type: string
+          format: uuid
         email:
           type: string
           format: email
           maxLength: 254
-        nameAr:
-          type: string
-          x-trim: true
-          minLength: 1
-          maxLength: 160
-        nameEn:
-          type:
-          - string
-          - 'null'
-          maxLength: 160
         temporaryPassword:
-          type:
-          - string
-          - 'null'
+          type: string
           minLength: 12
-          description: اختياري؛ لا يعاد في الاستجابة.
+          maxLength: 1024
+          description: كلمة مرور مؤقتة لا تعاد في الاستجابة؛ أسماء الحساب تؤخذ من الموظف.
+    LinkUserEmployeeRequest:
+      type: object
+      additionalProperties: false
+      required: [employeeId]
+      properties:
+        employeeId: { type: string, format: uuid }
     UserUpdateRequest:
       type: object
       additionalProperties: false
@@ -15124,11 +15164,6 @@ components:
         id: { $ref: '#/components/schemas/Id' }
         displayName: { type: string, maxLength: 160 }
         nameEn: { type: [string, 'null'], maxLength: 160 }
-    HrIdentityReferenceListResponse:
-      type: object
-      required: [data]
-      properties:
-        data: { type: array, items: { $ref: '#/components/schemas/HrIdentityReference' } }
     EmployeeReference:
       type: object
       required: [id, employeeNumber, nameAr, nameEn]
@@ -15137,6 +15172,22 @@ components:
         employeeNumber: { type: string, maxLength: 40, readOnly: true }
         nameAr: { type: string, maxLength: 160 }
         nameEn: { type: [string, 'null'], maxLength: 160 }
+    EmployeeAccountOption:
+      type: object
+      additionalProperties: false
+      required: [id, employeeNumber, nameAr, nameEn, status]
+      properties:
+        id: { type: string, format: uuid }
+        employeeNumber: { type: string, maxLength: 40, readOnly: true }
+        nameAr: { type: string, maxLength: 160 }
+        nameEn: { type: [string, 'null'], maxLength: 160 }
+        status: { $ref: '#/components/schemas/HrEmploymentStatus' }
+    EmployeeAccountOptionListResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/EmployeeAccountOption' } }
     Employee:
       type: object
       required:
@@ -15207,10 +15258,6 @@ components:
       properties:
         nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 160 }
         nameEn: { type: [string, 'null'], x-trim: true, maxLength: 160 }
-        userId:
-          oneOf:
-          - { $ref: '#/components/schemas/Id' }
-          - { type: 'null' }
         departmentId: { type: [string, 'null'], format: uuid }
         positionId: { type: [string, 'null'], format: uuid }
         managerEmployeeId: { type: [string, 'null'], format: uuid }
@@ -15226,10 +15273,6 @@ components:
         version: { type: integer, minimum: 0 }
         nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 160 }
         nameEn: { type: [string, 'null'], x-trim: true, maxLength: 160 }
-        userId:
-          oneOf:
-          - { $ref: '#/components/schemas/Id' }
-          - { type: 'null' }
         departmentId: { type: [string, 'null'], format: uuid }
         positionId: { type: [string, 'null'], format: uuid }
         managerEmployeeId: { type: [string, 'null'], format: uuid }

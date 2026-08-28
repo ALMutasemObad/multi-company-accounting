@@ -58,7 +58,6 @@ test("creates an independent employee record and a non-financial contract", asyn
     if (path === "/auth/context") return route.fulfill({ status: 204, body: "" });
     if (path === "/hr/departments") return json({ data: [department] });
     if (path === "/hr/positions") return json({ data: [position] });
-    if (path === "/hr/user-options") return json({ data: [] });
     if (path === "/hr/employees" && method === "POST") {
       employeeCreated = true;
       return json({ employee: employee() }, 201);

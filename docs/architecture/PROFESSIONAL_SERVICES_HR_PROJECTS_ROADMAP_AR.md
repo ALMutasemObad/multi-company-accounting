@@ -1,8 +1,8 @@
 ---
 title: "Professional Services, HR, and Projects Roadmap"
-status: "approved sequencing; phases A through E1 complete locally; E2 deferred"
-version: "1.4"
-date: "2026-08-27"
+status: "approved sequencing; phases A through E1 and B1 complete locally; E2 deferred"
+version: "1.5"
+date: "2026-08-28"
 related:
   - "ADR-006-professional-services-projects-priority.md"
   - "PROFESSIONAL_PROJECTS_TIME_SLICE_AR.md"
@@ -24,6 +24,7 @@ related:
 |---:|---|---|---|---|
 | A | المشاريع/القضايا والوقت الشخصي | مشروع مرتبط بعميل، فريق، وقت خام، حالات وتدقيق | Sales customers + Identity users | منفذة محليًا |
 | B | أساس HR | ملف موظف، رقم وظيفي، قسم، منصب، عقد/حالة عمل غير مالي | Identity reference only | منفذة محليًا |
+| B1 | وصول القوى العاملة | إنشاء حساب الشركة من موظف موجود وربط الحسابات القديمة دون تكرار الاسم | B + Identity | منفذة محليًا |
 | C | Timesheets والموافقة | فترة وقت immutable عند الإرسال وقرار Maker/Checker | A + Approvals + B | منفذة محليًا |
 | D | العقود والأسعار وفوترة الخدمات | أسعار مؤرخة ولقطة تسعير وفاتورة عبر Sales port | C + Sales + Tax | D1 منفذة محليًا |
 | E1 | تخطيط المشروع وميزانية الوقت | مراحل ومهام واعتماديات ومسؤول ومخطط/فعلي | A + C | منفذة محليًا |
@@ -44,6 +45,10 @@ related:
 ### خارج النطاق
 
 الرواتب والحضور البيومتري والتوظيف وتقييم الأداء وطلبات وأرصدة الإجازة. لا يخزن الرقم الوطني أو البنكي بلا سياسة تشفير/وصول وRetention محددة. تبقى الإجازة مرحلة مستقلة بعد اعتماد سياسة الرصيد وربط Subject واضح بمحرك الموافقات.
+
+### B1 — وصول القوى العاملة
+
+اعتمد [ADR-012](ADR-012-employee-first-user-provisioning.md) الموظف شرطًا لكل حساب شركة ينشأ تفاعليًا. يختار مسؤول المستخدمين الموظف ويدخل البريد وكلمة المرور فقط، وينسق التطبيق إنشاء Identity وربط HR ذريًا عبر المنافذ. حساب التأسيس وحسابات النظام استثناءات يمكن ربطها لاحقًا، ولا يتغير فصل ملكية السجلين.
 
 ## المرحلة C — Timesheets ومحرك الموافقات
 

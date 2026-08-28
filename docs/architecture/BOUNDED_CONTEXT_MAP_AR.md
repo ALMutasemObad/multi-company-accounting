@@ -1,8 +1,8 @@
 ---
 title: "Bounded Context Map"
 status: "accepted target architecture"
-version: "2.3"
-last_updated: "2026-08-27"
+version: "2.4"
+last_updated: "2026-08-28"
 ---
 
 # خريطة الـBounded Contexts وملكية البيانات
@@ -62,6 +62,7 @@ Professional Projects ──> Sales customer query port and Identity people quer
 Professional Projects ──> Human Resources employee query port
 Professional Projects ──> Tenant currency query port and Sales professional-billing application/query port
 Human Resources ────────> Identity membership query port
+Workforce Access workflow ──> Human Resources employee-account port + Identity account port
 All operational contexts ──> Audit append port
 
 Reporting <────────── read/query ports or dedicated read models
@@ -107,6 +108,8 @@ Printing  <────────── immutable document snapshot port
 وأضيف سياق Professional Services & Projects وفق [ADR-006](ADR-006-professional-services-projects-priority.md): يملك المشروع المهني وعضويته وسجل الوقت الشخصي الخام، ويربط القضية أو التكليف بعميل Sales وبأعضاء Identity عبر منفذين يملكهما السياقان المصدران. لا يكتب في العميل أو المستخدم أو المخزون أو الخزينة أو Ledger.
 
 ثم أضيف سياق Human Resources وفق [ADR-007](ADR-007-human-resources-foundation.md): يملك الأقسام والمناصب والموظف والعقد المؤرخ غير المالي. يظل `Employee` هوية عمل مستقلة عن `User`، ويتحقق من الرابط الاختياري بعضوية الشركة عبر `HrIdentityPort` دون تحديث Identity. لا يكتب HR في المشاريع أو الموافقات أو الفواتير أو المخزون أو الخزينة أو Ledger، وتبقى الرواتب والإجازات والبيانات الحساسة خارج الشريحة.
+
+وفي 28 أغسطس اعتمد [ADR-012](ADR-012-employee-first-user-provisioning.md) اتجاه إنشاء حساب الشركة من موظف موجود. ينسق `WorkforceAccessService` بين منفذ HR ومنفذ Identity داخل معاملة واحدة، ولا يملك جدولًا. أزيل اختيار المستخدم من أوامر إنشاء/تعديل الموظف، وأصبح `/users` يتطلب موظفًا مؤهلًا، مع مسار انتقالي لربط حسابات التأسيس والحسابات القديمة.
 
 ثم أضيفت فترة Timesheet الأسبوعية وفق [ADR-008](ADR-008-professional-timesheets-approval.md): يملك سياق المشاريع حالة الفترة ومحاولات إرسالها immutable، ويقرأ الموظف النشط عبر HR port، ويرسل `PROFESSIONAL_TIMESHEET` إلى Approvals. يحتفظ Approvals بالطلب والقرار وحدهما، ولا تنسخ الفترة قرار Checker أو حقائق الوقت الخام.
 

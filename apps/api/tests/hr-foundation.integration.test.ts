@@ -135,10 +135,9 @@ describe.runIf(enabled)("HR foundation with MariaDB", () => {
       .rejects.toMatchObject({ reason: "IDEMPOTENCY_MISMATCH" });
   });
 
-  it("links identity only inside the company and prevents manager cycles", async () => {
+  it("creates employees without login accounts and prevents manager cycles", async () => {
     const employeeB = await service.createEmployee(context(), {
       nameAr: "IT-HR-الموظف ب",
-      userId: linkedUserId,
       positionId,
       managerEmployeeId: employeeAId,
       employmentType: "CONTRACTOR",
@@ -146,22 +145,7 @@ describe.runIf(enabled)("HR foundation with MariaDB", () => {
       idempotencyKey: "it-hr-employee-create-0002",
     });
     employeeBId = employeeB.employee.id;
-    expect(employeeB.employee.linkedUser?.id).toBe(linkedUserId.toString());
-
-    await expect(service.createEmployee(context(), {
-      nameAr: "IT-HR-ربط مكرر",
-      userId: linkedUserId,
-      employmentType: "FULL_TIME",
-      hireDate: "2058-01-03",
-      idempotencyKey: "it-hr-employee-duplicate-user",
-    })).rejects.toMatchObject({ reason: "USER_ALREADY_LINKED" });
-    await expect(service.createEmployee(context(), {
-      nameAr: "IT-HR-ربط عابر للشركة",
-      userId: foreignUserId,
-      employmentType: "FULL_TIME",
-      hireDate: "2058-01-03",
-      idempotencyKey: "it-hr-employee-foreign-user",
-    })).rejects.toMatchObject({ reason: "USER_NOT_FOUND" });
+    expect(employeeB.employee.linkedUser).toBeNull();
 
     await expect(service.updateEmployee(context(), employeeAId, { version: 0, managerEmployeeId: employeeBId }))
       .rejects.toMatchObject({ reason: "MANAGER_CYCLE" });

@@ -148,12 +148,27 @@ describe("core accounting architecture guardrails", () => {
     expect(schema).not.toMatch(/model ProfessionalBillingRun[\s\S]{0,1600}\b(?:total|taxAmount|outstandingAmount|journalEntryId)\b/u);
   });
 
-  it("keeps HR identity behind its port and away from IAM and financial writes", async () => {
-    const service = await source("hr/hr-service.ts");
+  it("keeps employee-first provisioning behind owner ports and away from direct cross-context writes", async () => {
+    const [service, workflow, employeeAdapter, identityAdapter, userService] = await Promise.all([
+      source("hr/hr-service.ts"),
+      source("workforce-access/workforce-access-service.ts"),
+      source("hr/employee-account-adapter.ts"),
+      source("users/identity-account-adapter.ts"),
+      source("users/user-service.ts"),
+    ]);
     expect(service).not.toMatch(/\.(?:user|userCompany|professionalProject|professionalTimeEntry|salesInvoice|purchaseInvoice|accountingDocument|journalEntry|journalLine|inventoryMovement|posSale)\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
-    expect(service).toContain("this.identity.findActiveInCompany");
     expect(service).toContain("this.identity.findInCompany");
+    expect(service).not.toContain("input.userId");
     expect(service).not.toContain("PostingEngine");
+    expect(workflow).toContain("this.employees.lockCandidate");
+    expect(workflow).toContain("this.identities.createForEmployee");
+    expect(workflow).not.toMatch(/\.(?:employee|user|userCompany)\./u);
+    expect(employeeAdapter).toMatch(/employee\.updateMany\s*\(/u);
+    expect(employeeAdapter).not.toMatch(/\.(?:user|userCompany)\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
+    expect(identityAdapter).toMatch(/user\.create\s*\(/u);
+    expect(identityAdapter).toMatch(/userCompany\.create\s*\(/u);
+    expect(identityAdapter).not.toMatch(/employee\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
+    expect(userService).not.toContain("async create(");
   });
 
   it("keeps open-source bank file parsers behind Treasury adapters", async () => {

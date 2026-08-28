@@ -45,7 +45,7 @@ const routers = [
   { prefix: '/auth', router: createAuthRouter(stub, false) },
   { prefix: '/auth/password', router: createPasswordResetRouter(stub, stub) },
   { prefix: '/auth/register', router: createRegistrationRouter(stub, stub) },
-  { prefix: '', router: createUserRouter(stub, stub) },
+  { prefix: '', router: createUserRouter(stub, stub, stub) },
   { prefix: '', router: createCompanyRouter(stub, stub) },
   { prefix: '', router: createPrintRouter(stub, stub) },
   { prefix: '', router: createAuditRouter(stub, stub) },

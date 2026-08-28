@@ -1,5 +1,3 @@
-import { randomBytes } from 'node:crypto';
-import { hash } from 'argon2';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { reserveMasterDataCode } from '../platform/master-data-code-service.js';
 
@@ -39,23 +37,6 @@ export class UserService {
     const user = await this.prisma.user.findFirst({ where: { id: userId, assignments: { some: { companyId: context.companyId, isActive: true } } }, select: userSelect });
     if (!user) throw new UserManagementError('NOT_FOUND');
     return user;
-  }
-
-  async create(context: ActorContext, input: { email: string; nameAr: string; nameEn?: string | null | undefined; temporaryPassword?: string | null | undefined }) {
-    const emailNormalized = input.email.trim().toLocaleLowerCase('en-US');
-    const password = input.temporaryPassword ?? randomBytes(32).toString('base64url');
-    const passwordHash = await hash(password);
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        const user = await tx.user.create({ data: { emailNormalized, displayName: input.nameAr, nameEn: input.nameEn ?? null, passwordHash }, select: userSelect });
-        await tx.userCompany.create({ data: { userId: user.id, companyId: context.companyId } });
-        await tx.auditLog.create({ data: { companyId: context.companyId, actorUserId: context.userId, action: 'USER_CREATED', entityType: 'USER', entityId: user.id.toString(), details: { email: emailNormalized } } });
-        return user;
-      });
-    } catch (error) {
-      if (typeof error === 'object' && error && 'code' in error && error.code === 'P2002') throw new UserManagementError('EMAIL_EXISTS');
-      throw error;
-    }
   }
 
   async update(context: ActorContext, userId: bigint, input: { nameAr?: string | undefined; nameEn?: string | null | undefined }) {

@@ -65,6 +65,9 @@ import { ProfessionalCustomerAdapter } from './sales/professional-customer-adapt
 import { ProfessionalPeopleAdapter } from './users/professional-people-adapter.js';
 import { HrService } from './hr/hr-service.js';
 import { HrIdentityAdapter } from './users/hr-identity-adapter.js';
+import { HrEmployeeAccountAdapter } from './hr/employee-account-adapter.js';
+import { IdentityAccountAdapter } from './users/identity-account-adapter.js';
+import { WorkforceAccessService } from './workforce-access/workforce-access-service.js';
 import { ProfessionalEmployeeAdapter } from './hr/professional-employee-adapter.js';
 import { ProfessionalTimesheetApprovalAdapter } from './projects/professional-timesheet-approval-adapter.js';
 import { ProfessionalBillingCurrencyAdapter } from './companies/professional-billing-currency-adapter.js';
@@ -176,13 +179,20 @@ const approvals = new ApprovalService(database, {
   PROFESSIONAL_TIMESHEET: new ProfessionalTimesheetApprovalAdapter(professionalProjects),
 });
 const hr = new HrService(database, new HrIdentityAdapter(database));
+const users = new UserService(database);
+const workforceAccess = new WorkforceAccessService(
+  database,
+  new HrEmployeeAccountAdapter(database),
+  new IdentityAccountAdapter(database),
+);
 const app = createApp(config, {
   readiness: new DatabaseReadinessService(database, config.READINESS_TIMEOUT_MS),
   metrics: operationalMetrics,
   auth,
   ...(registration ? { registration } : {}),
   ...(passwordReset ? { passwordReset } : {}),
-  users: new UserService(database),
+  users,
+  workforceAccess,
   companies: new CompanyService(database),
   printing: new PrintService(database),
   audit: new AuditService(database),

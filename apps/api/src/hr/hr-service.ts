@@ -207,16 +207,6 @@ export class HrService {
     return { position };
   }
 
-  async listUserOptions(context: ActorContext, search?: string) {
-    const rows = await this.identity.listInCompany(context.companyId, { search, limit: 100 });
-    const linked = await this.prisma.employee.findMany({
-      where: { companyId: context.companyId, userId: { in: rows.map((row) => row.id) } },
-      select: { userId: true },
-    });
-    const linkedIds = new Set(linked.flatMap((row) => row.userId === null ? [] : [row.userId.toString()]));
-    return { data: rows.filter((row) => !linkedIds.has(row.id.toString())).map(identityJson) };
-  }
-
   async listEmployees(context: ActorContext, input: { page: number; pageSize: number; search?: string | undefined; status?: EmploymentStatus | undefined; departmentId?: string | undefined }) {
     const where: Prisma.EmployeeWhereInput = {
       companyId: context.companyId,
@@ -256,7 +246,6 @@ export class HrService {
   async createEmployee(context: ActorContext, input: {
     nameAr: string;
     nameEn?: string | null;
-    userId?: bigint | null | undefined;
     departmentId?: string | null;
     positionId?: string | null;
     managerEmployeeId?: string | null;
@@ -271,17 +260,9 @@ export class HrService {
         const position = input.positionId ? await this.requirePosition(tx, context.companyId, input.positionId, true) : null;
         if (input.managerEmployeeId) await this.lockEmployeeHierarchy(tx, context.companyId);
         const manager = input.managerEmployeeId ? await this.requireManager(tx, context.companyId, input.managerEmployeeId) : null;
-        const linkedUser = input.userId === null || input.userId === undefined
-          ? null
-          : await this.identity.findActiveInCompany(tx, context.companyId, input.userId);
-        if (input.userId !== null && input.userId !== undefined && !linkedUser) throw new HrError("USER_NOT_FOUND");
-        if (input.userId !== null && input.userId !== undefined && await tx.employee.count({ where: { companyId: context.companyId, userId: input.userId } })) {
-          throw new HrError("USER_ALREADY_LINKED");
-        }
         const employee = await tx.employee.create({
           data: {
             companyId: context.companyId,
-            userId: input.userId ?? null,
             departmentId: department?.id ?? null,
             positionId: position?.id ?? null,
             managerEmployeeId: manager?.id ?? null,
@@ -297,10 +278,10 @@ export class HrService {
         });
         await this.audit(tx, context, "EMPLOYEE_CREATED", "EMPLOYEE", employee.publicId, {
           employmentType: employee.employmentType,
-          linkedToUser: employee.userId !== null,
+          linkedToUser: false,
         });
         const complete = await tx.employee.findUniqueOrThrow({ where: { id: employee.id }, include: employeeInclude });
-        return { employee: employeeJson(complete, linkedUser) };
+        return { employee: employeeJson(complete, null) };
       });
     } catch (error) {
       this.mapEmployeeUniqueConflict(error);
@@ -312,7 +293,6 @@ export class HrService {
     version: number;
     nameAr?: string;
     nameEn?: string | null;
-    userId?: bigint | null;
     departmentId?: string | null;
     positionId?: string | null;
     managerEmployeeId?: string | null;
@@ -330,13 +310,7 @@ export class HrService {
         if (!employee) throw new HrError("NOT_FOUND");
         if (employee.version !== input.version) throw new HrError("VERSION_CONFLICT");
         if (employee.status === "TERMINATED") throw new HrError("EMPLOYEE_TERMINATED");
-        const linkedUser = input.userId === undefined
-          ? employee.userId === null ? null : await this.identity.findInCompany(tx, context.companyId, employee.userId)
-          : input.userId === null ? null : await this.identity.findActiveInCompany(tx, context.companyId, input.userId);
-        if (input.userId !== undefined && input.userId !== null && !linkedUser) throw new HrError("USER_NOT_FOUND");
-        if (input.userId !== undefined && input.userId !== null && await tx.employee.count({ where: { companyId: context.companyId, userId: input.userId, id: { not: employee.id } } })) {
-          throw new HrError("USER_ALREADY_LINKED");
-        }
+        const linkedUser = employee.userId === null ? null : await this.identity.findInCompany(tx, context.companyId, employee.userId);
         const manager = input.managerEmployeeId === undefined
           ? undefined
           : input.managerEmployeeId === null ? null : await this.requireManager(tx, context.companyId, input.managerEmployeeId);
@@ -353,7 +327,6 @@ export class HrService {
           data: {
             ...(input.nameAr !== undefined ? { nameAr: input.nameAr } : {}),
             ...(input.nameEn !== undefined ? { nameEn: input.nameEn } : {}),
-            ...(input.userId !== undefined ? { userId: input.userId } : {}),
             ...(input.departmentId !== undefined ? { departmentId: department?.id ?? null } : {}),
             ...(input.positionId !== undefined ? { positionId: position?.id ?? null } : {}),
             ...(input.managerEmployeeId !== undefined ? { managerEmployeeId: manager?.id ?? null } : {}),

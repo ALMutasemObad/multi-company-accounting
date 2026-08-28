@@ -22,10 +22,10 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 268, requestBodies: 143, responseBodies: 1761 });
-    expect(guardedOpenApiOperations).toHaveLength(143);
+    expect(openApiContractCoverage).toEqual({ operations: 269, requestBodies: 144, responseBodies: 1768 });
+    expect(guardedOpenApiOperations).toHaveLength(144);
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
-      'login', 'createUser', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'initializeInventoryBalanceValuation', 'reverseInventoryMovement', 'previewDataImport', 'commitDataImport', 'previewBankStatement', 'commitBankStatementImport', 'createBankReconciliationSession', 'generateBankReconciliationSuggestions', 'approveBankReconciliationMatch', 'createManualBankReconciliationMatch', 'releaseBankReconciliationMatch', 'classifyBankStatementLine', 'closeBankReconciliationSession', 'startFinancialCloseRun', 'refreshFinancialCloseRun', 'createApprovalRequest', 'approveApprovalRequest', 'rejectApprovalRequest', 'createProfessionalProject', 'assignProfessionalProjectMember', 'createProfessionalTimeEntry', 'createProfessionalTimesheet', 'createProfessionalServiceContract', 'endProfessionalServiceContract', 'createProfessionalServiceRate', 'endProfessionalServiceRate', 'createProfessionalBillingRun', 'updateProfessionalProjectAccess', 'grantProfessionalProjectAccess', 'revokeProfessionalProjectAccess', 'updateProfessionalProjectTimeBudget', 'createProfessionalProjectStage', 'updateProfessionalProjectStage', 'transitionProfessionalProjectStage', 'createProfessionalProjectTask', 'updateProfessionalProjectTask', 'transitionProfessionalProjectTask', 'createProfessionalProjectTaskDependency', 'removeProfessionalProjectTaskDependency', 'createHrDepartment', 'updateHrDepartment', 'createHrPosition', 'updateHrPosition', 'createEmployee', 'updateEmployee', 'transitionEmployee', 'createEmploymentContract', 'endEmploymentContract', 'returnFinancialCloseRun', 'updateCashFlowMapping',
+      'login', 'createUser', 'linkUserEmployee', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'initializeInventoryBalanceValuation', 'reverseInventoryMovement', 'previewDataImport', 'commitDataImport', 'previewBankStatement', 'commitBankStatementImport', 'createBankReconciliationSession', 'generateBankReconciliationSuggestions', 'approveBankReconciliationMatch', 'createManualBankReconciliationMatch', 'releaseBankReconciliationMatch', 'classifyBankStatementLine', 'closeBankReconciliationSession', 'startFinancialCloseRun', 'refreshFinancialCloseRun', 'createApprovalRequest', 'approveApprovalRequest', 'rejectApprovalRequest', 'createProfessionalProject', 'assignProfessionalProjectMember', 'createProfessionalTimeEntry', 'createProfessionalTimesheet', 'createProfessionalServiceContract', 'endProfessionalServiceContract', 'createProfessionalServiceRate', 'endProfessionalServiceRate', 'createProfessionalBillingRun', 'updateProfessionalProjectAccess', 'grantProfessionalProjectAccess', 'revokeProfessionalProjectAccess', 'updateProfessionalProjectTimeBudget', 'createProfessionalProjectStage', 'updateProfessionalProjectStage', 'transitionProfessionalProjectStage', 'createProfessionalProjectTask', 'updateProfessionalProjectTask', 'transitionProfessionalProjectTask', 'createProfessionalProjectTaskDependency', 'removeProfessionalProjectTaskDependency', 'createHrDepartment', 'updateHrDepartment', 'createHrPosition', 'updateHrPosition', 'createEmployee', 'updateEmployee', 'transitionEmployee', 'createEmploymentContract', 'endEmploymentContract', 'returnFinancialCloseRun', 'updateCashFlowMapping',
     ]));
   });
 
@@ -318,8 +318,25 @@ describe('generated OpenAPI request guards', () => {
       version: 0, isActive: false,
     }).success).toBe(true);
     expect(openApiRequestBodySchemas.createEmployee.parse({
-      nameAr: '  مستشار قانوني  ', employmentType: 'FULL_TIME', hireDate: '2057-08-27', userId: '12',
-    })).toMatchObject({ nameAr: 'مستشار قانوني', employmentType: 'FULL_TIME', userId: 12n });
+      nameAr: '  مستشار قانوني  ', employmentType: 'FULL_TIME', hireDate: '2057-08-27',
+    })).toMatchObject({ nameAr: 'مستشار قانوني', employmentType: 'FULL_TIME' });
+    expect(openApiRequestBodySchemas.createEmployee.safeParse({
+      nameAr: 'مستشار قانوني', employmentType: 'FULL_TIME', hireDate: '2057-08-27', userId: '12',
+    }).success).toBe(false);
+    expect(openApiRequestBodySchemas.createUser.parse({
+      employeeId: 'f219c95d-f972-4943-badc-9a84aa78c0a3',
+      email: 'counsel@example.com',
+      temporaryPassword: 'temporary-secret',
+    })).toMatchObject({ email: 'counsel@example.com' });
+    expect(openApiRequestBodySchemas.createUser.safeParse({
+      employeeId: 'f219c95d-f972-4943-badc-9a84aa78c0a3',
+      email: 'counsel@example.com',
+      temporaryPassword: 'temporary-secret',
+      nameAr: 'اسم مكرر',
+    }).success).toBe(false);
+    expect(openApiRequestBodySchemas.linkUserEmployee.safeParse({
+      employeeId: 'f219c95d-f972-4943-badc-9a84aa78c0a3',
+    }).success).toBe(true);
     expect(openApiRequestBodySchemas.createEmployee.safeParse({
       employeeNumber: 'EMP-MANUAL', nameAr: 'مستشار', employmentType: 'FULL_TIME', hireDate: '2057-08-27',
     }).success).toBe(false);

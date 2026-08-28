@@ -18,7 +18,6 @@ const employeeQuery = z.object({
   status: z.enum(["ACTIVE", "ON_LEAVE", "TERMINATED"]).optional(),
   departmentId: publicId.optional(),
 });
-const optionQuery = z.object({ search: z.string().trim().min(1).max(160).optional() });
 
 function sid(request: Request) {
   return Object.fromEntries((request.headers.cookie ?? "").split(";").map((part) => part.trim().split("=", 2)).filter(([key, value]) => key && value)).sid;
@@ -56,10 +55,6 @@ export function createHrRouter(auth: AuthService, hr: HrService) {
   router.patch("/hr/positions/:positionId", async (request, response) => {
     const context = await authorize(request, "hr.structure.manage", true);
     response.json(await hr.updatePosition(context, publicId.parse(request.params.positionId), bodies.updateHrPosition.parse(request.body)));
-  });
-  router.get("/hr/user-options", async (request, response) => {
-    const context = await authorize(request, "hr.employees.view", false);
-    response.json(await hr.listUserOptions(context, optionQuery.parse(request.query).search));
   });
   router.get("/hr/employees", async (request, response) => {
     const context = await authorize(request, "hr.employees.view", false);

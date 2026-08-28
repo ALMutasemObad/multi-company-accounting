@@ -7,7 +7,6 @@ import type {
   HrContractType,
   HrEmploymentStatus,
   HrEmploymentType,
-  HrIdentityReference,
   HrStructureReference,
   ListResponse,
 } from "./types";
@@ -28,7 +27,6 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
   const [contracts, setContracts] = useState<EmploymentContract[]>([]);
   const [departments, setDepartments] = useState<HrStructureReference[]>([]);
   const [positions, setPositions] = useState<HrStructureReference[]>([]);
-  const [users, setUsers] = useState<HrIdentityReference[]>([]);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
@@ -55,14 +53,12 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
 
   const loadStructure = useCallback(async () => {
     try {
-      const [departmentResult, positionResult, userResult] = await Promise.all([
+      const [departmentResult, positionResult] = await Promise.all([
         api<{ data: HrStructureReference[] }>("/hr/departments"),
         api<{ data: HrStructureReference[] }>("/hr/positions"),
-        api<{ data: HrIdentityReference[] }>("/hr/user-options"),
       ]);
       setDepartments(departmentResult.data);
       setPositions(positionResult.data);
-      setUsers(userResult.data);
     } catch (cause) {
       notify(cause instanceof Error ? cause.message : t("hr.optionsError"), "error");
     }
@@ -106,7 +102,6 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
         body: JSON.stringify({
           nameAr: String(data.get("nameAr") ?? "").trim(),
           nameEn: String(data.get("nameEn") ?? "").trim() || null,
-          userId: String(data.get("userId") ?? "") || null,
           departmentId: String(data.get("departmentId") ?? "") || null,
           positionId: String(data.get("positionId") ?? "") || null,
           managerEmployeeId: String(data.get("managerEmployeeId") ?? "") || null,
@@ -138,7 +133,6 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
           version: selected.version,
           nameAr: String(data.get("nameAr") ?? "").trim(),
           nameEn: String(data.get("nameEn") ?? "").trim() || null,
-          userId: String(data.get("userId") ?? "") || null,
           departmentId: String(data.get("departmentId") ?? "") || null,
           positionId: String(data.get("positionId") ?? "") || null,
           managerEmployeeId: String(data.get("managerEmployeeId") ?? "") || null,
@@ -276,9 +270,6 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
   const activePositions = positions.filter((item) => item.isActive);
   const availableManagers = employees.filter((item) => item.status !== "TERMINATED");
   const managerOptions = availableManagers.filter((item) => item.id !== selected?.id);
-  const linkedUserOptions = selected?.linkedUser && !users.some((user) => user.id === selected.linkedUser?.id)
-    ? [selected.linkedUser, ...users]
-    : users;
 
   return <section className="workspace-page hr-workspace">
     <PageHeader kicker={t("hr.kicker")} title={t("hr.title")} description={t("hr.description")}
@@ -335,8 +326,8 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
       <StructurePanel title={t("hr.positions")} addLabel={t("hr.addPosition")} items={positions} working={working} onCreate={(event) => void createStructure("positions", event)} onDeactivate={(item) => void deactivateStructure("positions", item)} />
     </div>}
 
-    {createEmployeeOpen && <EmployeeModal title={t("hr.createTitle")} description={t("hr.createDescription")} employees={availableManagers} departments={activeDepartments} positions={activePositions} users={users} working={working} onClose={() => setCreateEmployeeOpen(false)} onSubmit={createEmployee} />}
-    {editEmployeeOpen && selected && <EmployeeModal key={selected.id} title={t("hr.editEmployee")} description={t("hr.editDescription")} employee={selected} employees={managerOptions} departments={activeDepartments} positions={activePositions} users={linkedUserOptions} working={working} onClose={() => setEditEmployeeOpen(false)} onSubmit={editEmployee} />}
+    {createEmployeeOpen && <EmployeeModal title={t("hr.createTitle")} description={t("hr.createDescription")} employees={availableManagers} departments={activeDepartments} positions={activePositions} working={working} onClose={() => setCreateEmployeeOpen(false)} onSubmit={createEmployee} />}
+    {editEmployeeOpen && selected && <EmployeeModal key={selected.id} title={t("hr.editEmployee")} description={t("hr.editDescription")} employee={selected} employees={managerOptions} departments={activeDepartments} positions={activePositions} working={working} onClose={() => setEditEmployeeOpen(false)} onSubmit={editEmployee} />}
     {contractOpen && <Modal title={t("hr.newContract")} description={t("hr.contractsDescription")} onClose={() => setContractOpen(false)} wide><form className="modal-form form-grid" onSubmit={createContract}>
       <label><span>{t("hr.contractTitle")}</span><input name="titleAr" maxLength={200} required /></label>
       <label><span>{t("hr.nameEn")}</span><input name="titleEn" maxLength={200} dir="ltr" /></label>
@@ -371,14 +362,13 @@ function StructurePanel({ title, addLabel, items, working, onCreate, onDeactivat
   </article>;
 }
 
-function EmployeeModal({ title, description, employee, employees, departments, positions, users, working, onClose, onSubmit }: {
+function EmployeeModal({ title, description, employee, employees, departments, positions, working, onClose, onSubmit }: {
   title: string;
   description: string;
   employee?: Employee;
   employees: Employee[];
   departments: HrStructureReference[];
   positions: HrStructureReference[];
-  users: HrIdentityReference[];
   working: boolean;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -387,7 +377,6 @@ function EmployeeModal({ title, description, employee, employees, departments, p
   return <Modal title={title} description={description} onClose={onClose} wide><form className="modal-form form-grid" onSubmit={onSubmit}>
     <label><span>{t("hr.nameAr")}</span><input name="nameAr" maxLength={160} defaultValue={employee?.nameAr ?? ""} required /></label>
     <label><span>{t("hr.nameEn")}</span><input name="nameEn" maxLength={160} dir="ltr" defaultValue={employee?.nameEn ?? ""} /></label>
-    <label><span>{t("hr.linkedUser")}</span><select name="userId" defaultValue={employee?.linkedUser?.id ?? ""}><option value="">{t("hr.notLinked")}</option>{users.map((user) => <option key={user.id} value={user.id}>{user.displayName}</option>)}</select></label>
     <label><span>{t("hr.department")}</span><select name="departmentId" defaultValue={employee?.department?.id ?? ""}><option value="">{t("hr.notAssigned")}</option>{departments.map((item) => <option key={item.id} value={item.id}>{item.code} — {localizedReferenceName(item)}</option>)}</select></label>
     <label><span>{t("hr.position")}</span><select name="positionId" defaultValue={employee?.position?.id ?? ""}><option value="">{t("hr.notAssigned")}</option>{positions.map((item) => <option key={item.id} value={item.id}>{item.code} — {localizedReferenceName(item)}</option>)}</select></label>
     <label><span>{t("hr.manager")}</span><select name="managerEmployeeId" defaultValue={employee?.manager?.id ?? ""}><option value="">{t("hr.notAssigned")}</option>{employees.map((item) => <option key={item.id} value={item.id}>{item.employeeNumber} — {localizedReferenceName(item)}</option>)}</select></label>
