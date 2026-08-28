@@ -1,8 +1,8 @@
 ---
 title: "Master Data Code Policy"
 status: "mandatory"
-version: "1.5"
-last_updated: "2026-08-27"
+version: "1.6"
+last_updated: "2026-08-28"
 related:
   - "ARCHITECTURE_GUARDRAILS_AR.md"
   - "BOUNDED_CONTEXT_MAP_AR.md"
@@ -28,6 +28,8 @@ related:
 | طريقة الدفع الخاصة بالشركة | الشركة + نوع الكيان، مع تفرد عمومي للحقل | `PM-{companyId}-` | `PM-42-000001` | Treasury |
 | معدل الضريبة | الشركة + نوع الكيان | `TAX-` | `TAX-000001` | Tax Configuration |
 | الدور المخصص | الشركة + نوع الكيان | `ROL-` | `ROL-000001` | Identity & Access |
+| العميل المحتمل | الشركة + نوع الكيان | `LED-` | `LED-000001` | CRM / Business Development |
+| فرصة البيع | الشركة + نوع الكيان | `OPP-` | `OPP-000001` | CRM / Business Development |
 | المشروع/القضية المهنية | الشركة + نوع الكيان | `PRJ-` | `PRJ-000001` | Professional Services & Projects |
 | قسم الموارد البشرية | الشركة + نوع الكيان | `DEP-` | `DEP-000001` | Human Resources |
 | المنصب الوظيفي | الشركة + نوع الكيان | `JOB-` | `JOB-000001` | Human Resources |
