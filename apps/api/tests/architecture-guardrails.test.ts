@@ -195,20 +195,40 @@ describe("core accounting architecture guardrails", () => {
     ]);
   });
 
-  it("keeps cross-context JournalEntry and JournalLine writes inside PostingEngine", async () => {
-    const services = await Promise.all(
-      [
-        "receipts/receipt-service.ts",
-        "payments/payment-service.ts",
-        "sales/sales-invoice-service.ts",
-        "purchases/purchase-invoice-service.ts",
-      ].map(source),
-    );
-    const directLedgerWrite =
-      /\b(?:tx|this\.prisma)\.journal(?:Entry|Line)\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u;
+  it("keeps every JournalEntry and JournalLine write inside explicit Core Accounting owners", async () => {
+    const [sources, services] = await Promise.all([
+      allTypeScriptSources(),
+      Promise.all(
+        [
+          "receipts/receipt-service.ts",
+          "payments/payment-service.ts",
+          "sales/sales-invoice-service.ts",
+          "purchases/purchase-invoice-service.ts",
+        ].map(source),
+      ),
+    ]);
+    const directLedgerWrite = /(?:\.journal(?:Entry|Line)|\[\s*["']journal(?:Entry|Line)["']\s*\])\s*\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u;
+    const nestedLedgerWrite = /\bjournal(?:Entries|Lines)\s*:\s*\{\s*(?:create|createMany|update|updateMany|delete|deleteMany|upsert|connect|connectOrCreate|disconnect|set)\b/u;
+    const rawLedgerWrite = /\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|REPLACE\s+INTO)\s+[`"]?journal_(?:entries|lines)\b/iu;
+
+    expect("database['journalLine'].deleteMany(").toMatch(directLedgerWrite);
+    expect("journalEntries: {\n createMany:").toMatch(nestedLedgerWrite);
+    expect("DELETE FROM `journal_lines`").toMatch(rawLedgerWrite);
+
+    const ledgerWriters = sources
+      .filter(({ content }) => directLedgerWrite.test(content) || nestedLedgerWrite.test(content) || rawLedgerWrite.test(content))
+      .map(({ path }) => path)
+      .sort();
+
+    expect(ledgerWriters).toEqual([
+      "core-accounting/posting-engine.ts",
+      "journals/manual-journal-service.ts",
+    ]);
 
     for (const service of services) {
       expect(service).not.toMatch(directLedgerWrite);
+      expect(service).not.toMatch(nestedLedgerWrite);
+      expect(service).not.toMatch(rawLedgerWrite);
       expect(service).toContain("this.posting.postPlan");
       expect(service).toContain("this.posting.reverse");
       expect(service).not.toContain('"P2034"');
