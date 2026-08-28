@@ -198,20 +198,7 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
       - name: Reject unapproved dependency install scripts
-        shell: bash
-        run: |
-          npm install-scripts ls --json | node -e '
-            let input = "";
-            process.stdin.on("data", (chunk) => input += chunk);
-            process.stdin.on("end", () => {
-              const report = JSON.parse(input);
-              const pending = Object.values(report).flatMap((value) => Array.isArray(value) ? value : []);
-              if (pending.length) {
-                console.error(`Unapproved install scripts: ${pending.join(", ")}`);
-                process.exit(1);
-              }
-            });
-          '
+        run: npm run audit:install-scripts
       - name: Block critical build dependency vulnerabilities
         run: npm run audit:critical
       - name: Generate Prisma client
@@ -404,18 +391,7 @@ jobs:
           VERIFIED_MANIFEST_SHA256: ${{ needs.verify.outputs.release_manifest_sha256 }}
         run: |
           npm ci
-          npm install-scripts ls --json | node -e '
-            let input = "";
-            process.stdin.on("data", (chunk) => input += chunk);
-            process.stdin.on("end", () => {
-              const report = JSON.parse(input);
-              const pending = Object.values(report).flatMap((value) => Array.isArray(value) ? value : []);
-              if (pending.length) {
-                console.error(`Unapproved install scripts: ${pending.join(", ")}`);
-                process.exit(1);
-              }
-            });
-          '
+          npm run audit:install-scripts
           npm run audit:critical
           npm run prisma:generate
           npm run contracts:check
