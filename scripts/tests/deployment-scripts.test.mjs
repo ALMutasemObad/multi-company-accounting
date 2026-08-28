@@ -183,6 +183,10 @@ test("CI deploys main only after all database and upgrade gates and uses pinned 
   assert.match(source, /release_manifest_sha256: \$\{\{ steps\.release\.outputs\.manifest_sha256 \}\}/u);
   assert.match(source, /VERIFIED_ARCHIVE_SHA256: \$\{\{ needs\.verify\.outputs\.release_archive_sha256 \}\}/u);
   assert.match(source, /VERIFIED_MANIFEST_SHA256: \$\{\{ needs\.verify\.outputs\.release_manifest_sha256 \}\}/u);
+  assert.match(
+    source,
+    /Rebuild the verified release from the merged revision[\s\S]*DATABASE_URL: mysql:\/\/release_build:release_build@127\.0\.0\.1:3306\/release_build[\s\S]*npm run prisma:generate/u,
+  );
   assert.match(source, /test "\$\{#VERIFIED_ARCHIVE_SHA256\}" -eq 64/u);
   assert.match(source, /test "\$\{#VERIFIED_MANIFEST_SHA256\}" -eq 64/u);
   assert.doesNotMatch(source, /Upload verified production release/u);

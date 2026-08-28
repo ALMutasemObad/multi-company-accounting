@@ -394,6 +394,10 @@ jobs:
         run: npm install --global npm@12.0.2
       - name: Rebuild the verified release from the merged revision
         env:
+          # Prisma loads its configuration while generating the client. This URL is
+          # syntactically valid but deliberately points at an unused local database;
+          # release construction never connects to it.
+          DATABASE_URL: mysql://release_build:release_build@127.0.0.1:3306/release_build
           RELEASE_COMMIT: ${{ github.sha }}
           RELEASE_TARGET: linux-x64
           VERIFIED_ARCHIVE_SHA256: ${{ needs.verify.outputs.release_archive_sha256 }}
