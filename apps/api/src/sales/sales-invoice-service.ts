@@ -838,7 +838,15 @@ export class SalesInvoiceService implements ProfessionalBillingSalesPort {
     const paid = value.receivableItem ? value.receivableItem.receiptAllocations.filter((allocation) => allocation.receipt.accountingDocument.status === "POSTED").reduce((sum: Prisma.Decimal, allocation) => sum.add(allocation.allocatedAmount), decimal(0)) : decimal(0);
     const credited = value.creditNotes.filter((note) => note.accountingDocument.status === "POSTED").reduce((sum: Prisma.Decimal, note) => sum.add(note.total), decimal(0));
     const outstanding = value.accountingDocument.documentType === "SALES_INVOICE" ? value.receivableItem?.outstandingAmount ?? value.total.sub(paid).sub(credited) : decimal(0);
-    const outstandingBase = value.accountingDocument.documentType === "SALES_INVOICE" ? value.receivableItem?.outstandingBaseAmount ?? value.baseTotal : decimal(0);
+    const outstandingBase = value.accountingDocument.documentType !== "SALES_INVOICE"
+      ? decimal(0)
+      : !value.receivableItem
+        ? value.baseTotal
+        : value.receivableItem.originalBaseAmount.gt(0)
+          ? value.receivableItem.outstandingBaseAmount
+          : outstanding.equals(0) || value.total.lte(0)
+            ? decimal(0)
+            : money(value.baseTotal.mul(outstanding).div(value.total));
     return {
       id: value.id.toString(),
       document: documentJson(value.accountingDocument),

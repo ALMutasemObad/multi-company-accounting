@@ -708,7 +708,15 @@ export class PurchaseInvoiceService {
     const paid = value.payableItem ? value.payableItem.paymentAllocations.filter((allocation) => allocation.payment.accountingDocument.status === "POSTED").reduce((sum: Prisma.Decimal, allocation) => sum.add(allocation.allocatedAmount), decimal(0)) : decimal(0);
     const debited = value.debitNotes.filter((note) => note.accountingDocument.status === "POSTED").reduce((sum: Prisma.Decimal, note) => sum.add(note.total), decimal(0));
     const outstanding = value.accountingDocument.documentType === "PURCHASE_INVOICE" ? value.payableItem?.outstandingAmount ?? value.total.sub(paid).sub(debited) : decimal(0);
-    const outstandingBase = value.accountingDocument.documentType === "PURCHASE_INVOICE" ? value.payableItem?.outstandingBaseAmount ?? value.baseTotal : decimal(0);
+    const outstandingBase = value.accountingDocument.documentType !== "PURCHASE_INVOICE"
+      ? decimal(0)
+      : !value.payableItem
+        ? value.baseTotal
+        : value.payableItem.originalBaseAmount.gt(0)
+          ? value.payableItem.outstandingBaseAmount
+          : outstanding.equals(0) || value.total.lte(0)
+            ? decimal(0)
+            : money(value.baseTotal.mul(outstanding).div(value.total));
     return {
       id: value.id.toString(),
       document: documentJson(value.accountingDocument),

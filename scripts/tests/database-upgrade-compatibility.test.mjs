@@ -67,15 +67,12 @@ test("expand migrations preserve writes from the previous production application
     "an old writer must not silently mark newly stocked balances as valued",
   );
 
-  for (const owner of ["receivable", "payable"]) {
-    assert.ok(
-      settlementFxMigration.includes("CREATE TRIGGER `" + owner + "_items_base_amounts_before_insert`"),
-    );
-    assert.ok(
-      settlementFxMigration.includes("CREATE TRIGGER `" + owner + "_items_base_amounts_before_update`"),
-    );
-  }
   assert.match(settlementFxMigration, /original_base_amount` DECIMAL\(19,4\) NOT NULL DEFAULT 0\.0000/u);
   assert.match(settlementFxMigration, /outstanding_base_amount` DECIMAL\(19,4\) NOT NULL DEFAULT 0\.0000/u);
-  assert.match(settlementFxMigration, /SELECT `invoice`\.`base_total`/u);
+  assert.match(settlementFxMigration, /`original_base_amount` = 0 AND `outstanding_base_amount` = 0/u);
+  assert.doesNotMatch(
+    settlementFxMigration,
+    /CREATE TRIGGER/u,
+    "shared-host migration users must not require SUPER or trusted function creators",
+  );
 });
