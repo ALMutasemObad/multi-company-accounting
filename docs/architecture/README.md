@@ -1,7 +1,7 @@
 ---
 title: "Architecture Governance Index"
 status: "mandatory"
-last_updated: "2026-08-28"
+last_updated: "2026-08-29"
 ---
 
 # فهرس الحوكمة المعمارية
@@ -59,6 +59,7 @@ last_updated: "2026-08-28"
 44. [شريحة لوحة تشغيل المنصة ودليل الأنظمة](PLATFORM_OPERATIONS_DASHBOARD_SLICE_AR.md): النطاق والمقاييس والمنافذ والخصوصية والعقد والواجهة والاختبارات والعكس.
 45. [ADR-014 لـCRM وتطوير الأعمال](ADR-014-crm-business-development-priority.md): قبول السياق، مقارنة F2 والمرشحين المفتوحين، وحدود Customer والمشاريع.
 46. [أول شريحة CRM](CRM_BUSINESS_DEVELOPMENT_SLICE_AR.md): Lead وOpportunity وActivity والتحويل عبر Sales والصلاحيات والعقد والتزامن والعكس.
+47. [هدف تطبيقات الهاتف والباركود الشامل](MOBILE_AND_BARCODE_CHANNELS_GOAL_AR.md): تطبيقات المتجر كقناة لنفس OpenAPI، وملكية الباركود وإدخاله وتوليده وطباعته وحواجز العزل والأمن والاختبارات.
 
 التقرير [ARCHITECTURE_AUDIT_DDD_EVENT_DRIVEN_AR.md](../ARCHITECTURE_AUDIT_DDD_EVENT_DRIVEN_AR.md) وثيقة تقييم وأدلة، وليس بديلًا عن القرارات الحاكمة أعلاه.
 
