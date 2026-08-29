@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.38.0
+  version: 1.39.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -72,6 +72,8 @@ tags:
   description: فحوص حياة الخدمة وجاهزية قاعدة البيانات.
 - name: Operations
   description: مخرجات تشغيلية آمنة للمراقبة ولا تحتوي بيانات شركات أو حمولات مالية.
+- name: Platform Operations
+  description: تشغيل المنصة وفوترة اشتراكات الشركات للمشغلين المدرجين في قائمة السماح المستقلة.
 - name: Authentication
   description: المصادقة والجلسات واختيار سياق الشركة.
 - name: Users
@@ -650,6 +652,231 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /platform/analytics:
+    get:
+      tags: [Platform Operations]
+      summary: تحليلات تشغيل وفوترة المنصة ضمن نطاق زمني مرن
+      operationId: getPlatformAnalytics
+      description: يعرض المقارنة والنمو والاستخدام والتحصيل والأرصدة حسب العملة، مع نطاق اختياري لشركة واحدة، دون جمع عملات مختلفة.
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: from
+        in: query
+        required: true
+        schema: { type: string, format: date }
+      - name: to
+        in: query
+        required: true
+        schema: { type: string, format: date }
+      - name: comparison
+        in: query
+        schema: { type: string, enum: [PREVIOUS_PERIOD, PREVIOUS_YEAR, NONE], default: PREVIOUS_PERIOD }
+      - name: companyId
+        in: query
+        required: false
+        schema: { type: string, pattern: '^[1-9][0-9]*$' }
+      responses:
+        '200':
+          description: لوحة التحليلات للفترة والنطاق المطلوبين
+          content: { application/json: { schema: { $ref: '#/components/schemas/PlatformAnalyticsDashboard' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /platform/companies:
+    get:
+      tags: [Platform Operations]
+      summary: قائمة الشركات مع مؤشرات الاستخدام التفصيلية
+      operationId: listPlatformCompanies
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - $ref: '#/components/parameters/Search'
+      - name: days
+        in: query
+        schema: { type: integer, enum: [7, 30, 90], default: 30 }
+      - name: status
+        in: query
+        schema: { type: string, enum: [ALL, ACTIVE, INACTIVE], default: ALL }
+      responses:
+        '200':
+          description: الشركات ومؤشرات استخدامها ضمن النافذة
+          content: { application/json: { schema: { $ref: '#/components/schemas/PlatformCompanyListResponse' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /platform/companies/{companyId}:
+    get:
+      tags: [Platform Operations]
+      summary: لوحة استخدام مفصلة لشركة واحدة دون بيانات شخصية أو مبالغ دفاترها
+      operationId: getPlatformCompanyDetails
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: companyId
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[1-9][0-9]*$' }
+      - name: days
+        in: query
+        schema: { type: integer, enum: [7, 30, 90], default: 30 }
+      responses:
+        '200':
+          description: إحصاءات الشركة
+          content: { application/json: { schema: { $ref: '#/components/schemas/PlatformCompanyDetails' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /platform/billing/summary:
+    get:
+      tags: [Platform Operations]
+      summary: ملخص فوترة المنصة وأرصدة الشركات مجمعة حسب العملة
+      operationId: getPlatformBillingSummary
+      security: [{ SessionCookie: [] }]
+      parameters: [{ $ref: '#/components/parameters/RequestId' }]
+      responses:
+        '200':
+          description: ملخص الفوترة دون جمع عملات مختلفة
+          content: { application/json: { schema: { $ref: '#/components/schemas/PlatformBillingSummary' } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /platform/companies/{companyId}/billing:
+    get:
+      tags: [Platform Operations]
+      summary: حساب الفوترة وفواتير ومدفوعات شركة واحدة
+      operationId: getPlatformCompanyBilling
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: companyId
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[1-9][0-9]*$' }
+      responses:
+        '200':
+          description: ملف فوترة الشركة
+          content: { application/json: { schema: { $ref: '#/components/schemas/PlatformCompanyBilling' } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /platform/companies/{companyId}/billing-account:
+    put:
+      tags: [Platform Operations]
+      summary: إنشاء أو تحديث تسعير وحساب فوترة الشركة
+      operationId: upsertPlatformBillingAccount
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: companyId
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[1-9][0-9]*$' }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PlatformBillingAccountRequest' } } }
+      responses:
+        '200':
+          description: حساب الفوترة المحفوظ
+          content: { application/json: { schema: { $ref: '#/components/schemas/PlatformBillingAccountResult' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /platform/companies/{companyId}/invoices:
+    post:
+      tags: [Platform Operations]
+      summary: إصدار فاتورة منصة من إعداد التسعير ولقطة استخدام خادمية
+      operationId: issuePlatformBillingInvoice
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: companyId
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[1-9][0-9]*$' }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PlatformInvoiceIssueRequest' } } }
+      responses:
+        '201':
+          description: الفاتورة المصدرة
+          content: { application/json: { schema: { $ref: '#/components/schemas/PlatformInvoiceResult' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /platform/invoices/{invoiceId}/payments:
+    post:
+      tags: [Platform Operations]
+      summary: تسجيل دفعة على فاتورة منصة دون أثر في دفاتر الشركة
+      operationId: recordPlatformBillingPayment
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: invoiceId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PlatformPaymentRequest' } } }
+      responses:
+        '201':
+          description: الفاتورة بعد الدفعة
+          content: { application/json: { schema: { $ref: '#/components/schemas/PlatformInvoiceResult' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /platform/invoices/{invoiceId}/void:
+    post:
+      tags: [Platform Operations]
+      summary: إبطال فاتورة منصة غير محصلة مع توثيق السبب
+      operationId: voidPlatformBillingInvoice
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: invoiceId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PlatformInvoiceVoidRequest' } } }
+      responses:
+        '200':
+          description: الفاتورة المبطلة
+          content: { application/json: { schema: { $ref: '#/components/schemas/PlatformInvoiceResult' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
         '500': { $ref: '#/components/responses/InternalError' }
   /users:
     get:
@@ -9010,8 +9237,11 @@ components:
           const: mcap-finance-api
         checks:
           type: object
-          additionalProperties:
-            type: string
+          additionalProperties: false
+          required: [database]
+          properties:
+            database: { type: string, enum: [ok, error] }
+            latencyMs: { type: number, minimum: 0 }
     CsrfTokenResponse:
       type: object
       required:
@@ -9259,6 +9489,10 @@ components:
       - ACTIVE
       - LOCKED
       - DISABLED
+    Money:
+      type: string
+      pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$'
+      description: مبلغ DECIMAL(19,4) غير سالب منقول كنص للحفاظ على الدقة.
     PlatformCapabilitiesResponse:
       type: object
       additionalProperties: false
@@ -9346,6 +9580,510 @@ components:
               name: { type: string, minLength: 1, maxLength: 200 }
               operations: { type: integer, minimum: 1 }
               lastActivityAt: { type: string, format: date-time }
+    PlatformComparedNumber:
+      type: object
+      additionalProperties: false
+      required: [current, previous, changePercent]
+      properties:
+        current: { type: number, minimum: 0 }
+        previous:
+          oneOf: [{ type: number, minimum: 0 }, { type: 'null' }]
+        changePercent:
+          oneOf: [{ type: number }, { type: 'null' }]
+    PlatformComparedMoney:
+      type: object
+      additionalProperties: false
+      required: [current, previous, changePercent]
+      properties:
+        current: { $ref: '#/components/schemas/Money' }
+        previous:
+          oneOf: [{ $ref: '#/components/schemas/Money' }, { type: 'null' }]
+        changePercent:
+          oneOf: [{ type: number }, { type: 'null' }]
+    PlatformAnalyticsDashboard:
+      type: object
+      additionalProperties: false
+      required: [generatedAt, scope, period, companyOptions, metrics, activityTimeline, financials, modules, companies, alerts]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        scope:
+          type: object
+          additionalProperties: false
+          required: [company]
+          properties:
+            company:
+              oneOf: [{ $ref: '#/components/schemas/PlatformCompanyReference' }, { type: 'null' }]
+        period:
+          type: object
+          additionalProperties: false
+          required: [from, to, days, comparison, comparisonFrom, comparisonTo]
+          properties:
+            from: { type: string, format: date }
+            to: { type: string, format: date }
+            days: { type: integer, minimum: 1, maximum: 366 }
+            comparison: { type: string, enum: [PREVIOUS_PERIOD, PREVIOUS_YEAR, NONE] }
+            comparisonFrom:
+              oneOf: [{ type: string, format: date }, { type: 'null' }]
+            comparisonTo:
+              oneOf: [{ type: string, format: date }, { type: 'null' }]
+        companyOptions:
+          type: array
+          items: { $ref: '#/components/schemas/PlatformCompanyReference' }
+        metrics:
+          type: object
+          additionalProperties: false
+          required: [operations, postedDocuments, activeCompanies, newCompanies, securityAlerts]
+          properties:
+            operations: { $ref: '#/components/schemas/PlatformComparedNumber' }
+            postedDocuments: { $ref: '#/components/schemas/PlatformComparedNumber' }
+            activeCompanies: { $ref: '#/components/schemas/PlatformComparedNumber' }
+            newCompanies: { $ref: '#/components/schemas/PlatformComparedNumber' }
+            securityAlerts: { $ref: '#/components/schemas/PlatformComparedNumber' }
+        activityTimeline:
+          type: array
+          minItems: 1
+          maxItems: 12
+          items:
+            type: object
+            additionalProperties: false
+            required: [key, from, to, operations, previousOperations, postedDocuments, previousPostedDocuments, securityAlerts, newCompanies]
+            properties:
+              key: { type: string, format: date }
+              from: { type: string, format: date }
+              to: { type: string, format: date }
+              operations: { type: integer, minimum: 0 }
+              previousOperations:
+                oneOf: [{ type: integer, minimum: 0 }, { type: 'null' }]
+              postedDocuments: { type: integer, minimum: 0 }
+              previousPostedDocuments:
+                oneOf: [{ type: integer, minimum: 0 }, { type: 'null' }]
+              securityAlerts: { type: integer, minimum: 0 }
+              newCompanies: { type: integer, minimum: 0 }
+        financials:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [currencyCode, recurringMonthly, billed, collected, collectionRate, outstanding, overdue, invoiceCount, timeline, aging]
+            properties:
+              currencyCode: { type: string, pattern: '^[A-Z]{3}$' }
+              recurringMonthly: { $ref: '#/components/schemas/Money' }
+              billed: { $ref: '#/components/schemas/PlatformComparedMoney' }
+              collected: { $ref: '#/components/schemas/PlatformComparedMoney' }
+              collectionRate: { $ref: '#/components/schemas/PlatformComparedNumber' }
+              outstanding: { $ref: '#/components/schemas/Money' }
+              overdue: { $ref: '#/components/schemas/Money' }
+              invoiceCount: { $ref: '#/components/schemas/PlatformComparedNumber' }
+              timeline:
+                type: array
+                minItems: 1
+                maxItems: 12
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [key, from, to, billed, previousBilled, collected, previousCollected]
+                  properties:
+                    key: { type: string, format: date }
+                    from: { type: string, format: date }
+                    to: { type: string, format: date }
+                    billed: { $ref: '#/components/schemas/Money' }
+                    previousBilled:
+                      oneOf: [{ $ref: '#/components/schemas/Money' }, { type: 'null' }]
+                    collected: { $ref: '#/components/schemas/Money' }
+                    previousCollected:
+                      oneOf: [{ $ref: '#/components/schemas/Money' }, { type: 'null' }]
+              aging:
+                type: object
+                additionalProperties: false
+                required: [notDue, days1To30, days31To60, days61Plus]
+                properties:
+                  notDue: { $ref: '#/components/schemas/Money' }
+                  days1To30: { $ref: '#/components/schemas/Money' }
+                  days31To60: { $ref: '#/components/schemas/Money' }
+                  days61Plus: { $ref: '#/components/schemas/Money' }
+        modules:
+          type: array
+          minItems: 9
+          maxItems: 9
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, current, previous, changePercent]
+            properties:
+              code: { type: string, enum: [SALES, PURCHASES, TREASURY, POS, INVENTORY, PROJECTS, HR, APPROVALS, IMPORTS] }
+              current: { type: integer, minimum: 0 }
+              previous:
+                oneOf: [{ type: integer, minimum: 0 }, { type: 'null' }]
+              changePercent:
+                oneOf: [{ type: number }, { type: 'null' }]
+        companies:
+          type: array
+          maxItems: 12
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, name, currencyCode, operations, postedDocuments, billed, collected, outstanding, overdue, lastActivityAt]
+            properties:
+              id: { type: string, pattern: '^[1-9][0-9]*$' }
+              name: { type: string, minLength: 1, maxLength: 200 }
+              currencyCode: { type: string, pattern: '^[A-Z]{3}$' }
+              operations: { type: integer, minimum: 0 }
+              postedDocuments: { type: integer, minimum: 0 }
+              billed: { $ref: '#/components/schemas/Money' }
+              collected: { $ref: '#/components/schemas/Money' }
+              outstanding: { $ref: '#/components/schemas/Money' }
+              overdue: { $ref: '#/components/schemas/Money' }
+              lastActivityAt:
+                oneOf: [{ type: string, format: date-time }, { type: 'null' }]
+        alerts:
+          type: object
+          additionalProperties: false
+          required: [overdueInvoices, dueSoonInvoices, unacknowledgedSecurity, pendingOutbox, failedOutbox, staleCompanies]
+          properties:
+            overdueInvoices: { type: integer, minimum: 0 }
+            dueSoonInvoices: { type: integer, minimum: 0 }
+            unacknowledgedSecurity: { type: integer, minimum: 0 }
+            pendingOutbox: { type: integer, minimum: 0 }
+            failedOutbox: { type: integer, minimum: 0 }
+            staleCompanies: { type: integer, minimum: 0 }
+    PlatformCompanySummary:
+      type: object
+      additionalProperties: false
+      required: [id, code, name, organizationName, baseCurrencyCode, timezone, isActive, createdAt, activeUsers, activeEmployees, operations, postedDocuments, lastActivityAt]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        code: { type: string, minLength: 1, maxLength: 80 }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        organizationName: { type: string, minLength: 1, maxLength: 200 }
+        baseCurrencyCode: { type: string, pattern: '^[A-Z]{3}$' }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+        isActive: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        activeUsers: { type: integer, minimum: 0 }
+        activeEmployees: { type: integer, minimum: 0 }
+        operations: { type: integer, minimum: 0 }
+        postedDocuments: { type: integer, minimum: 0 }
+        lastActivityAt:
+          oneOf: [{ type: string, format: date-time }, { type: 'null' }]
+    PlatformCompanyReference:
+      type: object
+      additionalProperties: false
+      required: [id, name, isActive, baseCurrencyCode]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        isActive: { type: boolean }
+        baseCurrencyCode: { type: string, pattern: '^[A-Z]{3}$' }
+    PlatformCompanyListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, total, page, pageSize]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/PlatformCompanySummary' } }
+        total: { type: integer, minimum: 0 }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+    PlatformCompanyDetails:
+      type: object
+      additionalProperties: false
+      required: [id, code, name, organizationName, baseCurrencyCode, timezone, isActive, createdAt, activeUsers, activeEmployees, operations, postedDocuments, lastActivityAt, metrics, trends, modules, documentsByType]
+      properties:
+          id: { type: string, pattern: '^[1-9][0-9]*$' }
+          code: { type: string, minLength: 1, maxLength: 80 }
+          name: { type: string, minLength: 1, maxLength: 200 }
+          organizationName: { type: string, minLength: 1, maxLength: 200 }
+          baseCurrencyCode: { type: string, pattern: '^[A-Z]{3}$' }
+          timezone: { type: string, minLength: 1, maxLength: 64 }
+          isActive: { type: boolean }
+          createdAt: { type: string, format: date-time }
+          activeUsers: { type: integer, minimum: 0 }
+          activeEmployees: { type: integer, minimum: 0 }
+          operations: { type: integer, minimum: 0 }
+          postedDocuments: { type: integer, minimum: 0 }
+          lastActivityAt:
+            oneOf: [{ type: string, format: date-time }, { type: 'null' }]
+          metrics:
+            type: object
+            additionalProperties: false
+            required: [totalUsers, activeUsers, totalEmployees, activeEmployees, linkedEmployees, activeSessions, totalDocuments, financialDocuments, postedDocuments, operations, securityAlerts]
+            properties:
+              totalUsers: { type: integer, minimum: 0 }
+              activeUsers: { type: integer, minimum: 0 }
+              totalEmployees: { type: integer, minimum: 0 }
+              activeEmployees: { type: integer, minimum: 0 }
+              linkedEmployees: { type: integer, minimum: 0 }
+              activeSessions: { type: integer, minimum: 0 }
+              totalDocuments: { type: integer, minimum: 0 }
+              financialDocuments: { type: integer, minimum: 0 }
+              postedDocuments: { type: integer, minimum: 0 }
+              operations: { type: integer, minimum: 0 }
+              securityAlerts: { type: integer, minimum: 0 }
+          trends:
+            type: array
+            minItems: 6
+            maxItems: 6
+            items:
+              type: object
+              additionalProperties: false
+              required: [month, operations, postedDocuments]
+              properties:
+                month: { type: string, pattern: '^[0-9]{4}-(?:0[1-9]|1[0-2])$' }
+                operations: { type: integer, minimum: 0 }
+                postedDocuments: { type: integer, minimum: 0 }
+          modules:
+            type: array
+            minItems: 9
+            maxItems: 9
+            items:
+              type: object
+              additionalProperties: false
+              required: [code, total, recent]
+              properties:
+                code: { type: string, enum: [SALES, PURCHASES, TREASURY, POS, INVENTORY, PROJECTS, HR, APPROVALS, IMPORTS] }
+                total: { type: integer, minimum: 0 }
+                recent: { type: integer, minimum: 0 }
+          documentsByType:
+            type: array
+            items:
+              type: object
+              additionalProperties: false
+              required: [type, total, posted]
+              properties:
+                type: { type: string, minLength: 1, maxLength: 80 }
+                total: { type: integer, minimum: 0 }
+                posted: { type: integer, minimum: 0 }
+    PlatformBillingAccountRequest:
+      type: object
+      additionalProperties: false
+      required: [status, planName, billingCycle, currencyCode, recurringFee, includedUsers, pricePerAdditionalUser, includedEmployees, pricePerAdditionalEmployee, includedPostedDocuments, pricePerAdditionalPostedDocument, taxRate, paymentTermsDays]
+      properties:
+        status: { type: string, enum: [TRIAL, ACTIVE, PAUSED, CLOSED] }
+        planName: { type: string, x-trim: true, minLength: 1, maxLength: 160 }
+        billingCycle: { type: string, enum: [MONTHLY, QUARTERLY, ANNUAL] }
+        currencyCode: { type: string, x-trim: true, pattern: '^[A-Z]{3}$' }
+        recurringFee: { type: string, pattern: '^(0|[1-9][0-9]{0,14})(\.[0-9]{1,4})?$' }
+        includedUsers: { type: integer, minimum: 0, maximum: 1000000 }
+        pricePerAdditionalUser: { type: string, pattern: '^(0|[1-9][0-9]{0,14})(\.[0-9]{1,4})?$' }
+        includedEmployees: { type: integer, minimum: 0, maximum: 1000000 }
+        pricePerAdditionalEmployee: { type: string, pattern: '^(0|[1-9][0-9]{0,14})(\.[0-9]{1,4})?$' }
+        includedPostedDocuments: { type: integer, minimum: 0, maximum: 100000000 }
+        pricePerAdditionalPostedDocument: { type: string, pattern: '^(0|[1-9][0-9]{0,14})(\.[0-9]{1,4})?$' }
+        taxRate: { type: string, pattern: '^(?:[0-9]{1,2}(?:\.[0-9]{1,4})?|100(?:\.0{1,4})?)$' }
+        paymentTermsDays: { type: integer, minimum: 0, maximum: 365 }
+        nextBillingDate:
+          oneOf: [{ type: string, format: date }, { type: 'null' }]
+        notes:
+          oneOf: [{ type: string, x-trim: true, minLength: 1, maxLength: 1000 }, { type: 'null' }]
+        version:
+          oneOf: [{ type: integer, minimum: 0 }, { type: 'null' }]
+    PlatformBillingAccount:
+      type: object
+      additionalProperties: false
+      required: [id, companyId, status, planName, billingCycle, currencyCode, recurringFee, includedUsers, pricePerAdditionalUser, includedEmployees, pricePerAdditionalEmployee, includedPostedDocuments, pricePerAdditionalPostedDocument, taxRate, paymentTermsDays, nextBillingDate, notes, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        companyId: { type: string, pattern: '^[1-9][0-9]*$' }
+        status: { type: string, enum: [TRIAL, ACTIVE, PAUSED, CLOSED] }
+        planName: { type: string, minLength: 1, maxLength: 160 }
+        billingCycle: { type: string, enum: [MONTHLY, QUARTERLY, ANNUAL] }
+        currencyCode: { type: string, pattern: '^[A-Z]{3}$' }
+        recurringFee: { $ref: '#/components/schemas/Money' }
+        includedUsers: { type: integer, minimum: 0 }
+        pricePerAdditionalUser: { $ref: '#/components/schemas/Money' }
+        includedEmployees: { type: integer, minimum: 0 }
+        pricePerAdditionalEmployee: { $ref: '#/components/schemas/Money' }
+        includedPostedDocuments: { type: integer, minimum: 0 }
+        pricePerAdditionalPostedDocument: { $ref: '#/components/schemas/Money' }
+        taxRate: { type: string, pattern: '^(?:[0-9]{1,2}|100)\.[0-9]{4}$' }
+        paymentTermsDays: { type: integer, minimum: 0, maximum: 365 }
+        nextBillingDate:
+          oneOf: [{ type: string, format: date }, { type: 'null' }]
+        notes:
+          oneOf: [{ type: string, maxLength: 1000 }, { type: 'null' }]
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PlatformInvoiceIssueRequest:
+      type: object
+      additionalProperties: false
+      required: [periodStart, periodEnd, issueDate, adjustments]
+      properties:
+        periodStart: { type: string, format: date }
+        periodEnd: { type: string, format: date }
+        issueDate: { type: string, format: date }
+        notes:
+          oneOf: [{ type: string, x-trim: true, minLength: 1, maxLength: 1000 }, { type: 'null' }]
+        adjustments:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            additionalProperties: false
+            required: [description, amount]
+            properties:
+              description: { type: string, x-trim: true, minLength: 1, maxLength: 255 }
+              amount: { type: string, pattern: '^-?(0|[1-9][0-9]{0,14})(\.[0-9]{1,4})?$' }
+    PlatformPaymentRequest:
+      type: object
+      additionalProperties: false
+      required: [invoiceVersion, paymentDate, amount, method]
+      properties:
+        invoiceVersion: { type: integer, minimum: 0 }
+        paymentDate: { type: string, format: date }
+        amount: { type: string, pattern: '^(0|[1-9][0-9]{0,14})(\.[0-9]{1,4})?$' }
+        method: { type: string, enum: [BANK_TRANSFER, CARD, CASH, OTHER] }
+        reference:
+          oneOf: [{ type: string, x-trim: true, minLength: 1, maxLength: 160 }, { type: 'null' }]
+        notes:
+          oneOf: [{ type: string, x-trim: true, minLength: 1, maxLength: 1000 }, { type: 'null' }]
+    PlatformInvoiceVoidRequest:
+      type: object
+      additionalProperties: false
+      required: [version, reason]
+      properties:
+        version: { type: integer, minimum: 0 }
+        reason: { type: string, x-trim: true, minLength: 3, maxLength: 500 }
+    PlatformInvoiceLine:
+      type: object
+      additionalProperties: false
+      required: [id, lineNumber, lineType, description, quantity, unitPrice, amount]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        lineNumber: { type: integer, minimum: 1 }
+        lineType: { type: string, enum: [RECURRING_FEE, ADDITIONAL_USERS, ADDITIONAL_EMPLOYEES, ADDITIONAL_POSTED_DOCUMENTS, ADJUSTMENT] }
+        description: { type: string, minLength: 1, maxLength: 255 }
+        quantity: { type: integer, minimum: 1 }
+        unitPrice: { type: string, pattern: '^-?(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        amount: { type: string, pattern: '^-?(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+    PlatformBillingPayment:
+      type: object
+      additionalProperties: false
+      required: [id, paymentDate, amount, method, reference, notes, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        paymentDate: { type: string, format: date }
+        amount: { $ref: '#/components/schemas/Money' }
+        method: { type: string, enum: [BANK_TRANSFER, CARD, CASH, OTHER] }
+        reference:
+          oneOf: [{ type: string, maxLength: 160 }, { type: 'null' }]
+        notes:
+          oneOf: [{ type: string, maxLength: 1000 }, { type: 'null' }]
+        createdAt: { type: string, format: date-time }
+    PlatformBillingInvoice:
+      type: object
+      additionalProperties: false
+      required: [id, companyId, billingAccountId, invoiceNumber, state, status, periodStart, periodEnd, issueDate, dueDate, currencyCode, usage, subtotal, taxRate, taxAmount, totalAmount, paidAmount, balance, notes, version, voidedAt, voidReason, createdAt, lines, payments]
+      properties:
+        id: { type: string, format: uuid }
+        companyId: { type: string, pattern: '^[1-9][0-9]*$' }
+        billingAccountId: { type: string, pattern: '^[1-9][0-9]*$' }
+        invoiceNumber: { type: string, minLength: 1, maxLength: 60 }
+        state: { type: string, enum: [ISSUED, VOID] }
+        status: { type: string, enum: [ISSUED, PARTIALLY_PAID, PAID, OVERDUE, VOID] }
+        periodStart: { type: string, format: date }
+        periodEnd: { type: string, format: date }
+        issueDate: { type: string, format: date }
+        dueDate: { type: string, format: date }
+        currencyCode: { type: string, pattern: '^[A-Z]{3}$' }
+        usage:
+          type: object
+          additionalProperties: false
+          required: [users, employees, postedDocuments, operations]
+          properties:
+            users: { type: integer, minimum: 0 }
+            employees: { type: integer, minimum: 0 }
+            postedDocuments: { type: integer, minimum: 0 }
+            operations: { type: integer, minimum: 0 }
+        subtotal: { $ref: '#/components/schemas/Money' }
+        taxRate: { type: string, pattern: '^(?:[0-9]{1,2}|100)\.[0-9]{4}$' }
+        taxAmount: { $ref: '#/components/schemas/Money' }
+        totalAmount: { $ref: '#/components/schemas/Money' }
+        paidAmount: { $ref: '#/components/schemas/Money' }
+        balance: { $ref: '#/components/schemas/Money' }
+        notes:
+          oneOf: [{ type: string, maxLength: 1000 }, { type: 'null' }]
+        version: { type: integer, minimum: 0 }
+        voidedAt:
+          oneOf: [{ type: string, format: date-time }, { type: 'null' }]
+        voidReason:
+          oneOf: [{ type: string, maxLength: 500 }, { type: 'null' }]
+        createdAt: { type: string, format: date-time }
+        lines: { type: array, minItems: 1, items: { $ref: '#/components/schemas/PlatformInvoiceLine' } }
+        payments: { type: array, items: { $ref: '#/components/schemas/PlatformBillingPayment' } }
+    PlatformBillingTotals:
+      type: object
+      additionalProperties: false
+      required: [billed, paid, balance, overdue]
+      properties:
+        billed: { $ref: '#/components/schemas/Money' }
+        paid: { $ref: '#/components/schemas/Money' }
+        balance: { $ref: '#/components/schemas/Money' }
+        overdue: { $ref: '#/components/schemas/Money' }
+    PlatformCompanyBilling:
+      type: object
+      additionalProperties: false
+      required: [company, account, totals, invoices]
+      properties:
+        company: { $ref: '#/components/schemas/PlatformCompanyReference' }
+        account:
+          oneOf: [{ $ref: '#/components/schemas/PlatformBillingAccount' }, { type: 'null' }]
+        totals: { $ref: '#/components/schemas/PlatformBillingTotals' }
+        invoices: { type: array, items: { $ref: '#/components/schemas/PlatformBillingInvoice' } }
+    PlatformBillingSummary:
+      type: object
+      additionalProperties: false
+      required: [generatedAt, metrics, currencies, accounts]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        metrics:
+          type: object
+          additionalProperties: false
+          required: [totalCompanies, configuredCompanies, unconfiguredCompanies, activeAccounts, overdueInvoices]
+          properties:
+            totalCompanies: { type: integer, minimum: 0 }
+            configuredCompanies: { type: integer, minimum: 0 }
+            unconfiguredCompanies: { type: integer, minimum: 0 }
+            activeAccounts: { type: integer, minimum: 0 }
+            overdueInvoices: { type: integer, minimum: 0 }
+        currencies:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [currencyCode, recurringMonthly, billed, paid, balance, overdue, collectionRate]
+            properties:
+              currencyCode: { type: string, pattern: '^[A-Z]{3}$' }
+              recurringMonthly: { $ref: '#/components/schemas/Money' }
+              billed: { $ref: '#/components/schemas/Money' }
+              paid: { $ref: '#/components/schemas/Money' }
+              balance: { $ref: '#/components/schemas/Money' }
+              overdue: { $ref: '#/components/schemas/Money' }
+              collectionRate: { type: string, pattern: '^(?:[0-9]{1,3})\.[0-9]$' }
+        accounts:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [companyId, companyName, companyActive, account, billed, paid, balance, overdue]
+            properties:
+              companyId: { type: string, pattern: '^[1-9][0-9]*$' }
+              companyName: { type: string, minLength: 1, maxLength: 200 }
+              companyActive: { type: boolean }
+              account: { $ref: '#/components/schemas/PlatformBillingAccount' }
+              billed: { $ref: '#/components/schemas/Money' }
+              paid: { $ref: '#/components/schemas/Money' }
+              balance: { $ref: '#/components/schemas/Money' }
+              overdue: { $ref: '#/components/schemas/Money' }
+    PlatformBillingAccountResult:
+      type: object
+      additionalProperties: false
+      required: [account]
+      properties: { account: { $ref: '#/components/schemas/PlatformBillingAccount' } }
+    PlatformInvoiceResult:
+      type: object
+      additionalProperties: false
+      required: [invoice]
+      properties: { invoice: { $ref: '#/components/schemas/PlatformBillingInvoice' } }
     User:
       type: object
       required:

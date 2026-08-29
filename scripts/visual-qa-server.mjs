@@ -72,6 +72,89 @@ const platformOverview = {
     { id: "company-legal", name: "شركة الاستشارات القانونية", operations: 1180, lastActivityAt: "2026-08-28T08:44:00.000Z" },
   ],
 };
+const platformCompanyOptions = [
+  { id: "101", name: "شركة جوار التجريبية", isActive: true, baseCurrencyCode: "SAR" },
+  { id: "102", name: "شركة الاستشارات القانونية", isActive: true, baseCurrencyCode: "SAR" },
+  { id: "103", name: "مجموعة المدار الرقمية", isActive: true, baseCurrencyCode: "USD" },
+];
+const compared = (current, previous) => ({
+  current,
+  previous,
+  changePercent: previous === null ? null : previous === 0 ? (current === 0 ? 0 : null) : Math.round((current - previous) / previous * 1000) / 10,
+});
+const analyticsTimeline = [
+  ["2026-07-31", "2026-08-03", 920, 790, 215, 180, 0, 1],
+  ["2026-08-04", "2026-08-07", 1080, 880, 248, 201, 1, 0],
+  ["2026-08-08", "2026-08-11", 1170, 1020, 271, 236, 0, 1],
+  ["2026-08-12", "2026-08-15", 1260, 1090, 294, 252, 2, 0],
+  ["2026-08-16", "2026-08-19", 1420, 1180, 318, 280, 0, 0],
+  ["2026-08-20", "2026-08-23", 1560, 1310, 354, 299, 1, 1],
+  ["2026-08-24", "2026-08-26", 1710, 1440, 401, 331, 0, 0],
+  ["2026-08-27", "2026-08-29", 1880, 1520, 438, 365, 1, 0],
+].map(([from, to, operations, previousOperations, postedDocuments, previousPostedDocuments, securityAlerts, newCompanies]) => ({
+  key: from, from, to, operations, previousOperations, postedDocuments, previousPostedDocuments, securityAlerts, newCompanies,
+}));
+const financialTimeline = [
+  ["2026-07-31", "2026-08-03", "18400.0000", "16200.0000", "11900.0000", "10800.0000"],
+  ["2026-08-04", "2026-08-07", "22000.0000", "19600.0000", "17100.0000", "14200.0000"],
+  ["2026-08-08", "2026-08-11", "24800.0000", "21400.0000", "19600.0000", "17300.0000"],
+  ["2026-08-12", "2026-08-15", "27600.0000", "23500.0000", "21800.0000", "18900.0000"],
+  ["2026-08-16", "2026-08-19", "31500.0000", "26100.0000", "26700.0000", "22100.0000"],
+  ["2026-08-20", "2026-08-23", "35200.0000", "29400.0000", "30100.0000", "24300.0000"],
+  ["2026-08-24", "2026-08-26", "38900.0000", "32200.0000", "34400.0000", "27600.0000"],
+  ["2026-08-27", "2026-08-29", "42800.0000", "35600.0000", "39100.0000", "30900.0000"],
+].map(([from, to, billed, previousBilled, collected, previousCollected]) => ({
+  key: from, from, to, billed, previousBilled, collected, previousCollected,
+}));
+function platformAnalytics(url) {
+  const selectedId = url.searchParams.get("companyId");
+  const scopedCompany = selectedId ? platformCompanyOptions.find((item) => item.id === selectedId) ?? null : null;
+  const allCompanies = [
+    { id: "101", name: "شركة جوار التجريبية", currencyCode: "SAR", operations: 3640, postedDocuments: 810, billed: "92000.0000", collected: "84400.0000", outstanding: "18400.0000", overdue: "4200.0000", lastActivityAt: "2026-08-29T08:57:00.000Z" },
+    { id: "102", name: "شركة الاستشارات القانونية", currencyCode: "SAR", operations: 2810, postedDocuments: 624, billed: "77800.0000", collected: "70100.0000", outstanding: "12600.0000", overdue: "0.0000", lastActivityAt: "2026-08-29T08:44:00.000Z" },
+    { id: "103", name: "مجموعة المدار الرقمية", currencyCode: "USD", operations: 2140, postedDocuments: 510, billed: "28400.0000", collected: "24600.0000", outstanding: "7100.0000", overdue: "1300.0000", lastActivityAt: "2026-08-29T07:31:00.000Z" },
+  ];
+  return {
+    generatedAt: "2026-08-29T09:00:00.000Z",
+    scope: { company: scopedCompany },
+    period: { from: "2026-07-31", to: "2026-08-29", days: 30, comparison: "PREVIOUS_PERIOD", comparisonFrom: "2026-07-01", comparisonTo: "2026-07-30" },
+    companyOptions: platformCompanyOptions,
+    metrics: {
+      operations: compared(scopedCompany ? 3640 : 11000, scopedCompany ? 3020 : 9140),
+      postedDocuments: compared(scopedCompany ? 810 : 2531, scopedCompany ? 691 : 2144),
+      activeCompanies: compared(scopedCompany ? 1 : 15, scopedCompany ? 1 : 13),
+      newCompanies: compared(scopedCompany ? 0 : 3, scopedCompany ? 0 : 2),
+      securityAlerts: compared(scopedCompany ? 1 : 5, scopedCompany ? 0 : 7),
+    },
+    activityTimeline: analyticsTimeline,
+    financials: [{
+      currencyCode: "SAR", recurringMonthly: "118500.0000",
+      billed: { current: "241200.0000", previous: "204000.0000", changePercent: 18.2 },
+      collected: { current: "200700.0000", previous: "166100.0000", changePercent: 20.8 },
+      collectionRate: compared(83.2, 81.4), outstanding: "49700.0000", overdue: "5500.0000",
+      invoiceCount: compared(27, 23), timeline: financialTimeline,
+      aging: { notDue: "32000.0000", days1To30: "12200.0000", days31To60: "4200.0000", days61Plus: "1300.0000" },
+    }, {
+      currencyCode: "USD", recurringMonthly: "12600.0000",
+      billed: { current: "28400.0000", previous: "23200.0000", changePercent: 22.4 },
+      collected: { current: "24600.0000", previous: "19000.0000", changePercent: 29.5 },
+      collectionRate: compared(86.6, 81.9), outstanding: "7100.0000", overdue: "1300.0000",
+      invoiceCount: compared(4, 3), timeline: financialTimeline.map((item) => ({
+        ...item,
+        billed: (Number(item.billed) / 8).toFixed(4), previousBilled: (Number(item.previousBilled) / 8).toFixed(4),
+        collected: (Number(item.collected) / 8).toFixed(4), previousCollected: (Number(item.previousCollected) / 8).toFixed(4),
+      })),
+      aging: { notDue: "4800.0000", days1To30: "1000.0000", days31To60: "300.0000", days61Plus: "1000.0000" },
+    }],
+    modules: [
+      ["SALES", 1420, 1160], ["PURCHASES", 910, 820], ["TREASURY", 780, 650],
+      ["POS", 1220, 980], ["INVENTORY", 540, 490], ["PROJECTS", 610, 530],
+      ["HR", 230, 218], ["APPROVALS", 365, 298], ["IMPORTS", 144, 121],
+    ].map(([code, current, previous]) => ({ code, current, previous, changePercent: Math.round((current - previous) / previous * 1000) / 10 })),
+    companies: selectedId ? allCompanies.filter((item) => item.id === selectedId) : allCompanies,
+    alerts: { overdueInvoices: 3, dueSoonInvoices: 5, unacknowledgedSecurity: 2, pendingOutbox: 0, failedOutbox: 0, staleCompanies: 1 },
+  };
+}
 const professionalProjectId = "b1af217e-7c7b-43bb-b15f-61184df1d6b9";
 const professionalStageId = "44b23a51-b68c-4e35-a252-d577c3021c2a";
 const professionalResearchTaskId = "49e2bc47-bf40-4bf7-a40a-3408b77cfba5";
@@ -201,6 +284,7 @@ function responseFor(url, method) {
   if (pathname === "/auth/context" || pathname === "/auth/logout") return null;
   if (pathname === "/platform/capabilities") return { platformOperations: true };
   if (pathname === "/platform/overview") return platformOverview;
+  if (pathname === "/platform/analytics") return platformAnalytics(url);
   if (pathname === "/companies/current") return company;
   if (pathname === "/professional-projects/customer-options") return { data: [professionalCustomer] };
   if (pathname === "/professional-projects/member-options") return { data: [professionalManager] };

@@ -99,6 +99,7 @@ import { createProfessionalProjectAccessRouter } from './projects/professional-p
 import type { HrService } from './hr/hr-service.js';
 import { createHrRouter } from './hr/hr-router.js';
 import type { PlatformOperationsService } from './platform-operations/platform-operations-service.js';
+import type { PlatformBillingService } from './platform-operations/platform-billing-service.js';
 import { createPlatformOperationsRouter } from './platform-operations/platform-operations-router.js';
 
 type ClientRequestProblem = {
@@ -150,6 +151,7 @@ export type AppServices = {
   users?: UserService;
   workforceAccess?: WorkforceAccessService;
   platformOperations?: PlatformOperationsService;
+  platformBilling?: PlatformBillingService;
   companies?: CompanyService;
   printing?: PrintService;
   audit?: AuditService;
@@ -310,7 +312,7 @@ export function createApp(config: AppConfig, services: AppServices = {}) {
   if (services.auth) app.use('/api/v1/auth', createAuthRouter(services.auth, config.SESSION_COOKIE_SECURE));
   if (services.auth && services.registration) app.use('/api/v1/auth/register', createRegistrationRouter(services.auth, services.registration));
   if (services.auth && services.passwordReset) app.use('/api/v1/auth/password', createPasswordResetRouter(services.auth, services.passwordReset));
-  if (services.auth && services.platformOperations) app.use('/api/v1', createPlatformOperationsRouter(services.auth, services.platformOperations));
+  if (services.auth && services.platformOperations && services.platformBilling) app.use('/api/v1', createPlatformOperationsRouter(services.auth, services.platformOperations, services.platformBilling));
   if (services.auth && services.users && services.workforceAccess) app.use('/api/v1', createUserRouter(services.auth, services.users, services.workforceAccess));
   if (services.auth && services.companies) app.use('/api/v1', createCompanyRouter(services.auth, services.companies));
   if (services.auth && services.printing) app.use('/api/v1', createPrintRouter(services.auth, services.printing));

@@ -77,6 +77,16 @@ describe('AuthService', () => {
     await expect(auth.validatePreAuth({ sid: preAuth.sid, csrfToken: 'wrong' })).rejects.toEqual(new AuthError('INVALID_CSRF'));
   });
 
+  it('requires the authenticated CSRF pair for platform write authentication', async () => {
+    const { auth } = fixture();
+    const preAuth = await auth.issueCsrf();
+    const login = await auth.login({ sid: preAuth.sid, csrfToken: preAuth.csrfToken, email: user.emailNormalized, password: 'correct-password' });
+
+    await expect(auth.authenticate({ sid: login.sid, requireCsrf: true })).rejects.toEqual(new AuthError('INVALID_CSRF'));
+    await expect(auth.authenticate({ sid: login.sid, csrfToken: login.csrfToken, requireCsrf: true })).resolves.toMatchObject({ userId: user.id });
+    await expect(auth.authenticate({ sid: login.sid })).resolves.toMatchObject({ userId: user.id });
+  });
+
   it('uses the same public error for an unknown email and a wrong password', async () => {
     const { auth, store } = fixture();
     for (const email of ['missing@example.com', user.emailNormalized]) {

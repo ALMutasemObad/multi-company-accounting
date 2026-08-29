@@ -17,7 +17,7 @@ function readBase64(file: File) {
 }
 
 export function DataImportsPage({ notify }: { notify: (message: string, tone?: "success" | "error") => void }) {
-  const { locale, t } = useI18n();
+  const { intlLocale, t } = useI18n();
   const [importType, setImportType] = useState<DataImportType>("CUSTOMERS");
   const [sourceFormat, setSourceFormat] = useState<DataImportFormat>("XLSX");
   const [file, setFile] = useState<File | null>(null);
@@ -97,6 +97,6 @@ export function DataImportsPage({ notify }: { notify: (message: string, tone?: "
         </div> : <div className="import-empty"><span aria-hidden="true">⇧</span><h3>{t("imports.emptyTitle")}</h3><p>{t("imports.emptyText")}</p></div>}
       </article>
     </div>
-    <article className="panel import-history"><header><div><h2>{t("imports.historyTitle")}</h2><p>{t("imports.historyDescription")}</p></div></header><div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("imports.createdAt")}</th><th>{t("imports.dataType")}</th><th>{t("imports.fileFormat")}</th><th>{t("imports.rows")}</th><th>{t("imports.status")}</th></tr></thead><tbody>{history.length ? history.map((item) => <tr key={item.id}><td>{new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.createdAt))}</td><td>{typeLabel(item.importType)}</td><td>{item.sourceFormat === "XLSX" ? "Excel" : "CSV"}</td><td>{item.rowCount}</td><td><span className={`status-chip ${item.status.toLowerCase()}`}>{statusLabel(item.status)}</span></td></tr>) : <tr><td colSpan={5}>{t("imports.noHistory")}</td></tr>}</tbody></table></div></article>
+    <article className="panel import-history"><header><div><h2>{t("imports.historyTitle")}</h2><p>{t("imports.historyDescription")}</p></div></header><div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("imports.createdAt")}</th><th>{t("imports.dataType")}</th><th>{t("imports.fileFormat")}</th><th>{t("imports.rows")}</th><th>{t("imports.status")}</th></tr></thead><tbody>{history.length ? history.map((item) => <tr key={item.id}><td>{new Intl.DateTimeFormat(intlLocale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.createdAt))}</td><td>{typeLabel(item.importType)}</td><td>{item.sourceFormat === "XLSX" ? "Excel" : "CSV"}</td><td>{item.rowCount}</td><td><span className={`status-chip ${item.status.toLowerCase()}`}>{statusLabel(item.status)}</span></td></tr>) : <tr><td colSpan={5}>{t("imports.noHistory")}</td></tr>}</tbody></table></div></article>
   </section>;
 }

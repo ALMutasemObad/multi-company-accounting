@@ -100,8 +100,10 @@ export class AuthService {
     return { sessionId: session.id, userId: session.userId!, companyId: session.selectedCompanyId! };
   }
 
-  async authenticate(input: { sid?: string | undefined }) {
-    const session = await this.requireAuthenticated(input.sid);
+  async authenticate(input: { sid?: string | undefined; csrfToken?: string | undefined; requireCsrf?: boolean | undefined }) {
+    const session = input.requireCsrf
+      ? await this.requireSession(input.sid, input.csrfToken, 'AUTHENTICATED')
+      : await this.requireAuthenticated(input.sid);
     return { sessionId: session.id, userId: session.userId! };
   }
 

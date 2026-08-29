@@ -1,4 +1,5 @@
 import {
+  activeIntlLocale,
   hasTranslation,
   translate as t,
   type TranslationKey } from "./i18n";
@@ -79,7 +80,7 @@ export function AuditLogsPage({ notify, onNavigate }: { notify: Notice; onNaviga
       <div className="audit-filter-actions"><Button type="submit">{t("pages.audit-logs.020")}</Button><Button type="button" variant="ghost" onClick={clear}>{t("pages.audit-logs.021")}</Button></div>
     </form>
     {error ? <div className="error-panel" role="alert"><p>{error}</p><Button variant="secondary" onClick={() => void load()}>{t("pages.accounts.030")}</Button></div> : loading ? <Spinner label={t("pages.audit-logs.023")} /> : !rows.length ? <EmptyState title={t("pages.audit-logs.024")} description={t("pages.audit-logs.025")} /> : <>
-      <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table audit-table"><thead><tr><th>{t("pages.audit-logs.026")}</th><th>{t("pages.admin.021")}</th><th>{t("pages.audit-logs.014")}</th><th>{t("pages.audit-logs.027")}</th><th>{t("pages.audit-logs.028")}</th><th></th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td className="audit-time">{new Date(row.createdAt).toLocaleString()}</td><td><strong>{row.actor.name}</strong><small dir="ltr">{row.actor.email}</small></td><td><span className="audit-action">{actionLabel(row.action)}</span><small dir="ltr">{row.action}</small></td><td>{entityLabel(row.entityType)}</td><td dir="ltr">#{row.entityId}</td><td><Button variant="ghost" onClick={() => setSelected(row)}>{t("pages.audit-logs.029")}</Button></td></tr>)}</tbody></table></div>
+      <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table audit-table"><thead><tr><th>{t("pages.audit-logs.026")}</th><th>{t("pages.admin.021")}</th><th>{t("pages.audit-logs.014")}</th><th>{t("pages.audit-logs.027")}</th><th>{t("pages.audit-logs.028")}</th><th></th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td className="audit-time">{new Date(row.createdAt).toLocaleString(activeIntlLocale())}</td><td><strong>{row.actor.name}</strong><small dir="ltr">{row.actor.email}</small></td><td><span className="audit-action">{actionLabel(row.action)}</span><small dir="ltr">{row.action}</small></td><td>{entityLabel(row.entityType)}</td><td dir="ltr">#{row.entityId}</td><td><Button variant="ghost" onClick={() => setSelected(row)}>{t("pages.audit-logs.029")}</Button></td></tr>)}</tbody></table></div>
       <Pagination {...meta} page={page} onChange={setPage} />
     </>}
     {selected && <AuditDetails item={selected} onClose={() => setSelected(null)} onNavigate={(view) => { setSelected(null); onNavigate(view); }} />}
@@ -89,7 +90,7 @@ export function AuditLogsPage({ notify, onNavigate }: { notify: Notice; onNaviga
 function AuditDetails({ item, onClose, onNavigate }: { item: AuditLog; onClose: () => void; onNavigate: (view: TargetView) => void }) {
   const target = targetFor(item.entityType);
   return <Modal title={actionLabel(item.action)} description={t("pages.audit-logs.030", { value1: item.id })} onClose={onClose} wide>
-    <dl className="detail-grid audit-detail-grid"><div><dt>{t("pages.audit-logs.031")}</dt><dd>{new Date(item.createdAt).toLocaleString()}</dd></div><div><dt>{t("pages.admin.021")}</dt><dd>{item.actor.name}<small dir="ltr">{item.actor.email}</small></dd></div><div><dt>{t("pages.audit-logs.016")}</dt><dd>{entityLabel(item.entityType)}</dd></div><div><dt>{t("pages.audit-logs.032")}</dt><dd dir="ltr">{item.entityId}</dd></div><div className="full"><dt>{t("pages.audit-logs.033")}</dt><dd dir="ltr">{item.action}</dd></div></dl>
+    <dl className="detail-grid audit-detail-grid"><div><dt>{t("pages.audit-logs.031")}</dt><dd>{new Date(item.createdAt).toLocaleString(activeIntlLocale())}</dd></div><div><dt>{t("pages.admin.021")}</dt><dd>{item.actor.name}<small dir="ltr">{item.actor.email}</small></dd></div><div><dt>{t("pages.audit-logs.016")}</dt><dd>{entityLabel(item.entityType)}</dd></div><div><dt>{t("pages.audit-logs.032")}</dt><dd dir="ltr">{item.entityId}</dd></div><div className="full"><dt>{t("pages.audit-logs.033")}</dt><dd dir="ltr">{item.action}</dd></div></dl>
     <section className="audit-details-json"><h3>{t("pages.audit-logs.034")}</h3>{item.details ? <pre dir="ltr">{JSON.stringify(item.details, null, 2)}</pre> : <p>{t("pages.audit-logs.035")}</p>}</section>
     <div className="form-actions">{target && <Button variant="secondary" onClick={() => onNavigate(target)}>{t("pages.audit-logs.036")}</Button>}<Button variant="ghost" onClick={onClose}>{t("pages.audit-logs.037")}</Button></div>
   </Modal>;
