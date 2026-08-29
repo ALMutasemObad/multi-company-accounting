@@ -22,8 +22,9 @@ related:
 ## الأمان والخصوصية
 
 - `/platform/capabilities` متاح للجلسة المصادق عليها ويكشف boolean فقط.
-- `/platform/overview` يحتاج مستخدمًا مطابقًا لقائمة
-  `PLATFORM_OPERATOR_EMAILS`؛ لا تكفي صلاحية أو دور داخل شركة.
+- `/platform/overview` يحتاج مستخدمًا نشطًا ذا معرّف موجود في
+  `PLATFORM_OPERATOR_USER_IDS`؛ لا تكفي صلاحية أو دور داخل شركة، ولا يطابق البريد
+  وقت الطلب.
 - لا بريد ولا أسماء أفراد ولا IP ولا User-Agent ولا وصف مستند أو مبلغ مالي في
   الاستجابة.
 - الاستجابة `no-store` وتخضع لمحدد المعدل والـdeadline ومدقق OpenAPI المركزي.
@@ -32,7 +33,9 @@ related:
 
 - لا نموذج بيانات جديد.
 - `PlatformOperationsService` ينسق التفويض والنافذة الزمنية فقط.
-- Identity يملك `PlatformIdentityQueryPort` لقراءة بريد المستخدم داخليًا.
+- Identity يملك `PlatformOperatorIdentityQueryPort` للتحقق من وجود المعرّفات عند
+  التهيئة ومن نشاط المعرّف في كل طلب. يحوّل fallback البريد في التطوير فقط إلى معرّف
+  ثابت قبل `listen`.
 - `PrismaPlatformAnalyticsQueryAdapter` Query Layer للقراءة المجمعة فقط؛ لا توجد
   عمليات create/update/delete ولا معاملة كتابة.
 
@@ -41,7 +44,7 @@ related:
 - `GET /platform/capabilities`.
 - `GET /platform/overview?days=7|30|90`.
 - العكس تشغيلي بإرجاع نسخة التطبيق؛ لا بيانات أو مخطط يلزمان تنظيفًا.
-- تعطيل اللوحة دون rollback يتم بإفراغ `PLATFORM_OPERATOR_EMAILS` في الإنتاج.
+- تعطيل اللوحة دون rollback يتم بإفراغ `PLATFORM_OPERATOR_USER_IDS` في الإنتاج.
 
 ## بوابة الإغلاق
 
