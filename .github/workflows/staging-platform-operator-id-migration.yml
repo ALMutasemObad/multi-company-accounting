@@ -1,0 +1,99 @@
+name: Staging platform operator ID migration (manual)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-platform-operator-id-migration-manual
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Replace the Staging operator email allowlist with user IDs
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Covers the bounded 15-minute shared lock wait plus worst-case forward and rollback probes.
+    timeout-minutes: 45
+    environment:
+      # Legacy secret scope only; the remote target is classified as Staging.
+      name: production
+      url: https://accounting.doralashab.com
+    env:
+      CPANEL_SSH_HOST: sv13.byethost13.org
+      CPANEL_SSH_PORT: '1394'
+      CPANEL_SSH_USER: doralash
+      CPANEL_DEPLOY_ROOT: /home/doralash/accounting-app
+      CPANEL_PASSENGER_CONFIG_FILE: /home/doralash/accounting.doralashab.com/.htaccess
+      CPANEL_APP_URL: https://accounting.doralashab.com
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify this manual Staging migration uses current main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          current_main=$(gh api "/repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          test "$GITHUB_REF" = refs/heads/main
+          test "$current_main" = "$GITHUB_SHA"
+      - name: Configure the pinned Staging SSH identity
+        env:
+          CPANEL_SSH_PRIVATE_KEY: ${{ secrets.CPANEL_SSH_PRIVATE_KEY }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$CPANEL_SSH_PRIVATE_KEY"
+          install -m 0700 -d "$HOME/.ssh"
+          printf '%s\n' "$CPANEL_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+          chmod 0600 "$HOME/.ssh/id_ed25519"
+          install -m 0600 deploy/ssh/ifastnet_known_hosts "$HOME/.ssh/known_hosts"
+      - name: Migrate and verify the Staging operator configuration
+        env:
+          MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+        run: |
+          set -Eeuo pipefail
+          case "$MIGRATION_DATABASE_URL" in mysql://*) ;; *) exit 1 ;; esac
+          test "${#MIGRATION_DATABASE_URL}" -le 2048
+          node -e '
+            const value = process.env.MIGRATION_DATABASE_URL;
+            if (!value || /[\u0000-\u001f\u007f]/u.test(value)) process.exit(2);
+          '
+          migration_database_url_base64=$(printf '%s' "$MIGRATION_DATABASE_URL" | base64 --wrap=0)
+          unset MIGRATION_DATABASE_URL
+          [[ "$migration_database_url_base64" =~ ^[A-Za-z0-9+/]+={0,2}$ ]]
+          test "${#migration_database_url_base64}" -le 4096
+          remote_wrapper='set -Eeuo pipefail
+          IFS= read -r encoded_database_url
+          [[ "$encoded_database_url" =~ ^[A-Za-z0-9+/]+={0,2}$ ]]
+          test "${#encoded_database_url}" -le 4096
+          secret_file=$(mktemp /tmp/mcap-staging-migration-target.XXXXXX)
+          cleanup() { rm -f -- "$secret_file"; }
+          trap cleanup EXIT
+          printf "%s" "$encoded_database_url" | base64 --decode > "$secret_file"
+          chmod 0600 -- "$secret_file"
+          unset encoded_database_url
+          bash -s -- "$secret_file"'
+
+          {
+            printf '%s\n' "$migration_database_url_base64"
+            sed 's/\r$//' deploy/scripts/migrate-staging-platform-operator-ids.sh
+          } | ssh -i "$HOME/.ssh/id_ed25519" -p "$CPANEL_SSH_PORT" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            "$CPANEL_SSH_USER@$CPANEL_SSH_HOST" \
+            env \
+              MCAP_DEPLOY_ROOT="$CPANEL_DEPLOY_ROOT" \
+              MCAP_PASSENGER_CONFIG_FILE="$CPANEL_PASSENGER_CONFIG_FILE" \
+              MCAP_NODE_BIN=/opt/alt/alt-nodejs22/root/usr/bin/node \
+              MCAP_CLOUDLINUX_SELECTOR=/usr/sbin/cloudlinux-selector \
+              MCAP_CLOUDLINUX_USER="$CPANEL_SSH_USER" \
+              MCAP_CLOUDLINUX_DOMAIN=accounting.doralashab.com \
+              MCAP_CLOUDLINUX_VERSION=22.23.2 \
+              MCAP_CLOUDLINUX_BACKUP_DIRECTORY="$CPANEL_DEPLOY_ROOT/recovery-backups" \
+              MCAP_PIPELINE_LOCK_WAIT_SECONDS=900 \
+              MCAP_LIVE_URL="$CPANEL_APP_URL/live" \
+              MCAP_READY_URL="$CPANEL_APP_URL/ready" \
+              bash -c "'$remote_wrapper'"

@@ -79,6 +79,16 @@ jobs:
           [[ -f "$target_release/apps/api/dist/server.js" && ! -L "$target_release/apps/api/dist/server.js" ]] \
             || fail "target server entrypoint is invalid"
 
+          pipeline_lock="$deploy_root/.pipeline.lock"
+          if [[ ! -e "$pipeline_lock" && ! -L "$pipeline_lock" ]]; then
+            (set -o noclobber; umask 077; : > "$pipeline_lock") 2>/dev/null || true
+          fi
+          [[ -f "$pipeline_lock" && ! -L "$pipeline_lock" ]] || fail "the shared Staging pipeline lock is unsafe"
+          [[ "$(stat -c '%U' -- "$pipeline_lock")" == doralash ]] || fail "the shared Staging pipeline lock owner is invalid"
+          chmod 0600 -- "$pipeline_lock"
+          exec 8>>"$pipeline_lock"
+          flock -w 60 8 || fail "timed out waiting for another Staging operation"
+
           node -e '
             const fs = require("node:fs");
             const manifest = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
@@ -136,9 +146,15 @@ jobs:
             for (const name of required) {
               if (!(name in (app.env_vars || {}))) throw new Error(`registry backup is missing ${name}`);
             }
+            const legacyOperatorEmails = app.env_vars?.PLATFORM_OPERATOR_EMAILS;
+            if (typeof legacyOperatorEmails === "string" && legacyOperatorEmails.trim().length > 0) {
+              throw new Error("registry backup contains the retired platform operator email allowlist");
+            }
+            const environment = { ...app.env_vars, PASSWORD_RESET_ENABLED: "false" };
+            delete environment.PLATFORM_OPERATOR_EMAILS;
             fs.writeFileSync(
               process.argv[2],
-              JSON.stringify({ ...app.env_vars, PASSWORD_RESET_ENABLED: "false" }),
+              JSON.stringify(environment),
               { mode: 0o600 }
             );
             console.log("Protected environment backup validated without revealing values.");
