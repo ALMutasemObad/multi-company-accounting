@@ -26,6 +26,11 @@ describe('production configuration', () => {
     });
     expect(config.SESSION_COOKIE_SECURE).toBe(true);
     expect(config.TRUST_PROXY).toBe(true);
+    expect(config.DATABASE_POOL_CONNECTION_LIMIT).toBe(10);
+    expect(config.DATABASE_POOL_MIN_IDLE).toBe(1);
+    expect(config.DATABASE_POOL_ACQUIRE_TIMEOUT_MS).toBe(10_000);
+    expect(config.DATABASE_CONNECT_TIMEOUT_MS).toBe(1_000);
+    expect(config.DATABASE_POOL_IDLE_TIMEOUT_SECONDS).toBe(1_800);
     expect(config.SERVE_WEB_ASSETS).toBe(false);
     expect(config.RATE_LIMIT_MAX).toBe(300);
     expect(config.AUTH_RATE_LIMIT_MAX).toBe(20);
@@ -46,6 +51,24 @@ describe('production configuration', () => {
     expect(config.API_WRITE_DEADLINE_MS).toBe(15_000);
     expect(config.API_REGISTRATION_WRITE_DEADLINE_MS).toBe(65_000);
     expect(config.METRICS_ENABLED).toBe(false);
+  });
+
+  it('rejects a deployed schema name that still carries the retired product brand', () => {
+    for (const legacySchema of [
+      ["ji", "war_finance"].join(""),
+      ["je", "war_finance"].join(""),
+      ["ja", "waar_finance"].join(""),
+    ]) {
+      expect(() => loadConfig({
+        NODE_ENV: 'production',
+        DATABASE_URL: `mysql://runtime:secret@db.internal/${legacySchema}`,
+        WEB_ORIGIN: 'https://finance.example.com',
+        SESSION_COOKIE_SECURE: 'true',
+        TRUST_PROXY: 'true',
+        RATE_LIMIT_IDENTITY_SECRET: rateLimitIdentitySecret,
+        SELF_REGISTRATION_ENABLED: 'false',
+      })).toThrow(/neutral identifier/);
+    }
   });
 
   it('requires a stable keyed identity secret for the shared production limiter', () => {
@@ -169,6 +192,43 @@ describe('production configuration', () => {
     })).toThrow(/API_WRITE_DEADLINE_MS/);
   });
 
+  it('rejects an invalid database pool hierarchy', () => {
+    expect(() => loadConfig({
+      NODE_ENV: 'test',
+      DATABASE_POOL_MIN_IDLE: '0',
+    })).toThrow(/DATABASE_POOL_MIN_IDLE/);
+    expect(() => loadConfig({
+      NODE_ENV: 'test',
+      DATABASE_POOL_CONNECTION_LIMIT: '4',
+      DATABASE_POOL_MIN_IDLE: '5',
+    })).toThrow(/DATABASE_POOL_MIN_IDLE/);
+    expect(() => loadConfig({
+      NODE_ENV: 'test',
+      DATABASE_POOL_ACQUIRE_TIMEOUT_MS: '1000',
+      DATABASE_CONNECT_TIMEOUT_MS: '2000',
+    })).toThrow(/DATABASE_CONNECT_TIMEOUT_MS/);
+  });
+
+  it('applies validated database pool settings to the connector URL', () => {
+    const config = loadConfig({
+      NODE_ENV: 'test',
+      DATABASE_URL: 'mysql://runtime:secret@db.internal/mcap?ssl=true',
+      DATABASE_POOL_CONNECTION_LIMIT: '6',
+      DATABASE_POOL_MIN_IDLE: '2',
+      DATABASE_POOL_ACQUIRE_TIMEOUT_MS: '4000',
+      DATABASE_CONNECT_TIMEOUT_MS: '800',
+      DATABASE_POOL_IDLE_TIMEOUT_SECONDS: '300',
+    });
+    const url = new URL(config.DATABASE_URL!);
+
+    expect(url.searchParams.get('ssl')).toBe('true');
+    expect(url.searchParams.get('connectionLimit')).toBe('6');
+    expect(url.searchParams.get('minimumIdle')).toBe('2');
+    expect(url.searchParams.get('acquireTimeout')).toBe('4000');
+    expect(url.searchParams.get('connectTimeout')).toBe('800');
+    expect(url.searchParams.get('idleTimeout')).toBe('300');
+  });
+
   it('requires a bearer secret for production metric exposition', () => {
     expect(() => loadConfig({
       NODE_ENV: 'production',
@@ -193,7 +253,12 @@ describe('production configuration', () => {
     }).METRICS_ENABLED).toBe(true);
   });
 
-  it('accepts an explicit comma-separated platform operator allowlist', () => {
+  it('accepts fixed platform operator IDs and only permits the legacy email fallback outside production', () => {
+    expect(loadConfig({
+      NODE_ENV: 'test',
+      PLATFORM_OPERATOR_USER_IDS: '42, 9007199254740993',
+      PLATFORM_OPERATOR_EMAILS: 'owner@example.com, operations@example.com',
+    }).PLATFORM_OPERATOR_USER_IDS).toBe('42, 9007199254740993');
     expect(loadConfig({
       NODE_ENV: 'test',
       PLATFORM_OPERATOR_EMAILS: 'owner@example.com, operations@example.com',
@@ -201,8 +266,23 @@ describe('production configuration', () => {
 
     expect(() => loadConfig({
       NODE_ENV: 'test',
-      PLATFORM_OPERATOR_EMAILS: 'owner@example.com,*',
-    })).toThrow(/PLATFORM_OPERATOR_EMAILS/);
+      PLATFORM_OPERATOR_USER_IDS: '42,0',
+    })).toThrow(/PLATFORM_OPERATOR_USER_IDS/);
+    expect(() => loadConfig({
+      NODE_ENV: 'test',
+      PLATFORM_OPERATOR_USER_IDS: '18446744073709551616',
+    })).toThrow(/unsigned BIGINT/);
+
+    expect(() => loadConfig({
+      NODE_ENV: 'production',
+      DATABASE_URL: 'mysql://runtime:secret@db.internal/mcap',
+      WEB_ORIGIN: 'https://finance.example.com',
+      SESSION_COOKIE_SECURE: 'true',
+      TRUST_PROXY: 'true',
+      RATE_LIMIT_IDENTITY_SECRET: rateLimitIdentitySecret,
+      SELF_REGISTRATION_ENABLED: 'false',
+      PLATFORM_OPERATOR_EMAILS: 'owner@example.com',
+    })).toThrow(/PLATFORM_OPERATOR_EMAILS is development-only/);
   });
 
   it('allows verification capture only outside production', () => {

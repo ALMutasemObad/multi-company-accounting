@@ -8,6 +8,10 @@
 - [حالة التنفيذ](implementation-status.md): سجل زمني تفصيلي للمراحل؛ الأرقام داخل مرحلة
   قديمة تخص وقتها ولا تستبدل لقطة الحالة الحالية.
 - [فهرس الحوكمة المعمارية](architecture/README.md): ADR والسياسات وحدود الملكية.
+- [تصنيف البيئات](ENVIRONMENT_CLASSIFICATION_AR.md): يثبت أن النسخة المنشورة الحالية
+  Staging، ويفصلها عن الإنتاج الحي المستقبلي.
+- [إزالة الاسم القديم وإعادة تسمية قاعدة Staging](BRAND_REMOVAL_AND_DATABASE_RENAME_AR.md):
+  نطاق التنظيف وبوابة عدم الرجوع ومسار قاعدة محايد قابل للاستعادة.
 
 ## المنتج وتجربة الاستخدام
 
@@ -16,9 +20,9 @@
 - [سياسة محتوى الواجهة والتجاوب](UI_CONTENT_RESPONSIVE_POLICY_AR.md).
 - [الفحص البصري](visual-qa.md).
 
-## التشغيل والإنتاج
+## التشغيل والبيئات
 
-- [دليل التشغيل الإنتاجي](production-operations.md).
+- [دليل التشغيل الإنتاجي المستقبلي](production-operations.md).
 - [النشر على iFastNet/cPanel](ifastnet-cpanel-deployment.md).
 - [التعافي من الكوارث](production-disaster-recovery.md).
 - [المهلات والقياسات والتنبيهات](operational-resilience.md).
@@ -30,8 +34,8 @@
 
 - [سجل أعمال التدقيق والتقوية الهندسية — 28 أغسطس 2026](ENGINEERING_HARDENING_WORKLOG_2026-08-28_AR.md).
 - [تدقيق DDD وEvent-Driven](ARCHITECTURE_AUDIT_DDD_EVENT_DRIVEN_AR.md).
-- [تدقيق بيئة الإنتاج](PRODUCTION_ENVIRONMENT_AUDIT_AR.md).
-- [تدقيق الاستخدام وتجربة المستخدم في الإنتاج](PRODUCTION_END_TO_END_UX_AUDIT_AR.md).
+- [تدقيق البيئة المنشورة التاريخي](PRODUCTION_ENVIRONMENT_AUDIT_AR.md).
+- [تدقيق الاستخدام وتجربة المستخدم في البيئة المنشورة](PRODUCTION_END_TO_END_UX_AUDIT_AR.md).
 
 ## قاعدة التحديث
 

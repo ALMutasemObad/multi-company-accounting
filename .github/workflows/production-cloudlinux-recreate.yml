@@ -1,31 +1,43 @@
-name: production-cloudlinux-recreate
+name: Staging CloudLinux recreate (manual)
 
 on:
-  push:
-    branches:
-      - ops/cloudlinux-recreate
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: production-cloudlinux-recreate
+  group: staging-cloudlinux-recreate-manual
   cancel-in-progress: false
 
 jobs:
   recover:
-    name: Recreate the production CloudLinux registration
+    name: Recreate the Staging CloudLinux registration manually
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
+      # Legacy secret scope only; the remote target is classified as Staging.
       name: production
+      url: https://accounting.doralashab.com
     env:
       CPANEL_SSH_HOST: sv13.byethost13.org
       CPANEL_SSH_PORT: '1394'
       CPANEL_SSH_USER: doralash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Configure the pinned production SSH identity
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify this manual Staging recovery uses current main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          current_main=$(gh api "/repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          test "$GITHUB_REF" = refs/heads/main
+          test "$current_main" = "$GITHUB_SHA"
+      - name: Configure the pinned Staging SSH identity
         env:
           CPANEL_SSH_PRIVATE_KEY: ${{ secrets.CPANEL_SSH_PRIVATE_KEY }}
         run: |
@@ -34,7 +46,7 @@ jobs:
           printf '%s\n' "$CPANEL_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
           chmod 0600 "$HOME/.ssh/id_ed25519"
           install -m 0600 deploy/ssh/ifastnet_known_hosts "$HOME/.ssh/known_hosts"
-      - name: Recreate and verify the production registration
+      - name: Recreate and verify the Staging registration
         run: |
           ssh -i "$HOME/.ssh/id_ed25519" -p "$CPANEL_SSH_PORT" -o IdentitiesOnly=yes \
             "$CPANEL_SSH_USER@$CPANEL_SSH_HOST" bash -s <<'REMOTE'

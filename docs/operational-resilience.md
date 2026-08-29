@@ -49,6 +49,35 @@ Reverse proxy / hosting timeout             > 70s
 
 يفشل `loadConfig` مبكرًا إذا انعكس ترتيب المهلات أو فُعّلت القياسات في الإنتاج دون الرمز المستقل.
 
+## Connection Pool لقاعدة البيانات
+
+يمرر التطبيق إعدادات الـPool صراحة إلى MariaDB Connector عبر Prisma adapter بدل
+تركها ضمن defaults غير المرئية. القيم التالية **Baseline تشغيل أولي وليست سعة نهائية
+ولا SLO**:
+
+| المتغير | الافتراضي | الغرض |
+|---|---:|---|
+| `DATABASE_POOL_CONNECTION_LIMIT` | 10 | الحد الأقصى للاتصالات لكل عملية API، لا لكل النشر كاملًا |
+| `DATABASE_POOL_MIN_IDLE` | 1 | إبقاء اتصال واحد جاهزًا لكل عملية؛ الموصل الحالي لا يكتسب اتصالًا عند ضبط القيمة على صفر |
+| `DATABASE_POOL_ACQUIRE_TIMEOUT_MS` | 10000 | أقصى انتظار لاتصال متاح؛ راقبه مع Deadline القراءة ولا ترفعه لإخفاء التشبع |
+| `DATABASE_CONNECT_TIMEOUT_MS` | 1000 | مهلة إنشاء اتصال جديد، ويجب ألا تتجاوز مهلة acquire |
+| `DATABASE_POOL_IDLE_TIMEOUT_SECONDS` | 1800 | عمر الاتصال الخامل قبل إغلاقه |
+
+قبل تغيير `DATABASE_POOL_CONNECTION_LIMIT` احسب الميزانية الكلية:
+
+```text
+maximum database connections used by the app
+  = API process/Passenger worker count × connection limit per process
+    + migration/backup/administrative headroom
+```
+
+لا ترفع الحد من اختبار معاملة منفرد. عايره باختبار حمل متعدد الشركات يقيس p50/p95/p99،
+زمن انتظار acquire، الاتصالات الفعالة، CPU/IO قاعدة البيانات، deadlocks، ونسبة deadlines.
+إذا زاد عدد عمليات Passenger يجب إعادة الحساب حتى لو لم تتغير قيمة المتغير. نقطة البدء
+`10` تحافظ على حد الموصل السابق، بينما `minimumIdle=1` يمنع كل عملية من الاحتفاظ بالحد
+كله ويجتنب فشل الاكتساب المثبت محليًا عند الصفر. توثق أي قيمة إنتاجية لاحقة مع عدد
+العمليات ونتيجة القياس وتاريخها.
+
 ## Nginx وPassenger
 
 في VPS يضبط Reverse Proxy بمهلة تتجاوز Node وتترك هامشًا للشبكة. Baseline مناسب للقيم الافتراضية:
@@ -111,11 +140,11 @@ unset MCAP_METRICS_TOKEN
 
 تُصدر الانتقالات Logs باسم `operational_alert_firing` و`operational_alert_resolved` دون بيانات حساسة. ويجب على منصة المراقبة أيضًا التنبيه على Gauge؛ السجل المدمج ليس بديلًا عن Prometheus/Alertmanager أو المنصة المعتمدة.
 
-### مراقب الإنتاج في GitHub Actions
+### مراقب Staging اليدوي في GitHub Actions
 
-يشغّل `.github/workflows/production-metrics-monitor.yml` كشطًا خارجيًا كل ساعة من بيئة `production`. يتحقق أولًا من أن الطلب دون رمز يعيد `401`، ثم يستخدم `METRICS_BEARER_TOKEN` من أسرار البيئة ويصدر فشلًا وGitHub annotation عند وجود تنبيه نشط أو إطلاق حدث خلال آخر 65 دقيقة. لا يُطبع الرمز ولا يُحفظ في Artifact، وتبقى المراقبة خارج عملية Passenger نفسها.
+بعد إعادة تصنيف الهدف الحالي، لا يملك `.github/workflows/production-metrics-monitor.yml` جدولًا تلقائيًا؛ يعمل بـ`workflow_dispatch` فقط ضد Staging. يستعمل مؤقتًا GitHub Environment ذات الاسم الإرثي `production` لأن `METRICS_BEARER_TOKEN` محفوظ فيها كـEnvironment secret وحُذفت نسخة Repository؛ الاسم نطاق سر قديم وليس تصنيفًا للهدف. يتحقق أولًا من أن الطلب دون رمز يعيد `401`، ثم يستخدم الرمز ويصدر فشلًا وGitHub annotation عند وجود تنبيه نشط أو إطلاق حدث خلال آخر 65 دقيقة. لا يُطبع الرمز ولا يُحفظ في Artifact. لا تدّع هذه الحالة مراقبة ساعية أو SLO إنتاجيًا؛ يجب نقل السر إلى Environment باسم `staging` وفق دليل التشغيل، وإنشاء مراقب مجدول منفصل قبل إطلاق Production الحقيقي.
 
-يتيح `workflow_dispatch` إدخال `test_alert=true`. بعد نجاح الكشط الفعلي يصدر هذا الخيار تنبيهًا تركيبيًا متعمدًا ويفشل التشغيل، لإثبات وصول قناة التنبيه دون حقن خطأ في قاعدة الإنتاج. شغّل الاختبار مرة عند التفعيل، ووثّق رابط التشغيل الفاشل المقصود، ثم شغّل مراقبة يدوية عادية ناجحة. إذا توقفت GitHub Actions بسبب الحصة أو عطل المنصة، تعامل مع غياب التشغيل الدوري كعطل مراقبة ولا تعتبر سجلات Passenger بديلًا دائمًا.
+يتيح `workflow_dispatch` إدخال `test_alert=true`. بعد نجاح الكشط الفعلي يصدر هذا الخيار تنبيهًا تركيبيًا متعمدًا ويفشل التشغيل، لإثبات وصول قناة التنبيه دون حقن خطأ في قاعدة Staging. وثّق رابط التشغيل الفاشل المقصود، ثم شغّل مراقبة يدوية عادية ناجحة.
 
 ## الاستجابة للحوادث
 

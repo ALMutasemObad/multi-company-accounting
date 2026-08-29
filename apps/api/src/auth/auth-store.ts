@@ -19,6 +19,11 @@ export type StoredUser = {
 };
 
 export type CompanyAccess = { id: bigint; name: string; timezone: string };
+export type AuthorizationSnapshot = {
+  user: { id: bigint; displayName: string };
+  selectedCompany: CompanyAccess | null;
+  permissions: string[];
+};
 export type SessionSummary = { id: bigint; createdAt: Date; lastSeenAt: Date; expiresAt: Date; revokedAt: Date | null };
 export type ClientMetadata = { ipAddress?: string | undefined; userAgent?: string | undefined };
 
@@ -39,6 +44,7 @@ export interface AuthStore {
     metadata?: ClientMetadata | undefined;
   }): Promise<void>;
   listCompanies(userId: bigint): Promise<CompanyAccess[]>;
+  readAuthorizationSnapshot(input: { userId: bigint; companyId: bigint | null }): Promise<AuthorizationSnapshot | null>;
   selectCompany(input: { sessionId: bigint; userId: bigint; companyId: bigint; metadata?: ClientMetadata | undefined }): Promise<boolean>;
   revokeCurrentSession(sessionId: bigint, metadata?: ClientMetadata | undefined): Promise<void>;
   hasPermission(input: { userId: bigint; companyId: bigint; code: string }): Promise<boolean>;

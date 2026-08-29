@@ -10,21 +10,19 @@ import {
 } from "../core-accounting/posting-engine.js";
 import { FiscalService } from "../fiscal/fiscal-service.js";
 import {
-  InventoryCatalogService,
   InventoryInvoiceSelectionError,
   inventoryQuantityFitsUnit,
   type InventoryInvoiceCatalogPort,
 } from "../inventory/inventory-catalog-service.js";
 import {
   InventoryMovementError,
-  InventoryMovementService,
   type InventoryInvoiceStockPort,
 } from "../inventory/inventory-movement-service.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
 import { archiveDocument } from "../printing/print-archive.js";
-import { ReceivableItemService } from "../receivables/receivable-item-service.js";
+import type { ReceivableInvoicePort } from "../receivables/receivable-item-service.js";
 import { calculateTaxDocument, TaxCalculationError } from "../tax/tax-calculator.js";
-import { TaxError, TaxService, type TaxQuotePort } from "../tax/tax-service.js";
+import { TaxError, type TaxQuotePort } from "../tax/tax-service.js";
 import type { ActorContext } from "../platform/actor-context.js";
 import type {
   ProfessionalBillingInvoiceInput,
@@ -65,6 +63,13 @@ type SalesInvoiceStockSnapshot = {
     inventoryItemId: bigint | null;
     quantity: Prisma.Decimal;
   }>;
+};
+
+export type SalesInvoiceDependencies = {
+  taxes: TaxQuotePort;
+  inventory: InventoryInvoiceCatalogPort;
+  stock: InventoryInvoiceStockPort;
+  receivables: ReceivableInvoicePort;
 };
 
 const asDate = (value: string) => new Date(`${value}T00:00:00.000Z`);
@@ -141,7 +146,7 @@ type AgingBucket = "current" | "days1To30" | "days31To60" | "days61To90" | "days
 export class SalesInvoiceService implements ProfessionalBillingSalesPort, SalesInvoiceImportPort, PosSalesCheckoutPort {
   private readonly fiscal: FiscalService;
   private readonly posting = new PostingEngine();
-  private readonly receivables = new ReceivableItemService();
+  private readonly receivables: ReceivableInvoicePort;
   private readonly taxes: TaxQuotePort;
   private readonly inventory: InventoryInvoiceCatalogPort;
   private readonly stock: InventoryInvoiceStockPort;
@@ -149,14 +154,13 @@ export class SalesInvoiceService implements ProfessionalBillingSalesPort, SalesI
 
   constructor(
     private readonly prisma: PrismaClient,
-    taxes?: TaxQuotePort,
-    inventory?: InventoryInvoiceCatalogPort,
-    stock?: InventoryInvoiceStockPort,
+    dependencies: SalesInvoiceDependencies,
   ) {
     this.fiscal = new FiscalService(prisma);
-    this.taxes = taxes ?? new TaxService(prisma);
-    this.inventory = inventory ?? new InventoryCatalogService(prisma);
-    this.stock = stock ?? new InventoryMovementService(prisma);
+    this.taxes = dependencies.taxes;
+    this.inventory = dependencies.inventory;
+    this.stock = dependencies.stock;
+    this.receivables = dependencies.receivables;
     this.commands = new IdempotentCommandExecutor(prisma);
   }
 
@@ -189,14 +193,26 @@ export class SalesInvoiceService implements ProfessionalBillingSalesPort, SalesI
       },
       ...(input.search ? { OR: [{ customerNameSnapshot: { contains: input.search } }, { accountingDocument: { OR: [{ documentNumber: { contains: input.search } }, { description: { contains: input.search } }] } }] } : {}),
     };
-    const all = await this.prisma.salesInvoice.findMany({
-      where,
-      include: this.include(),
-      orderBy: [{ accountingDocument: { documentDate: "desc" } }, { id: "desc" }],
-    });
-    const rows = input.outstandingOnly ? all.filter((invoice) => invoice.accountingDocument.documentType === "SALES_INVOICE" && invoice.accountingDocument.status === "POSTED" && this.outstanding(invoice).gt(0)) : all;
-    const offset = (input.page - 1) * input.pageSize;
-    return { data: rows.slice(offset, offset + input.pageSize), total: rows.length };
+    const filteredWhere: Prisma.SalesInvoiceWhereInput = input.outstandingOnly
+      ? {
+          AND: [
+            where,
+            { accountingDocument: { documentType: "SALES_INVOICE", status: "POSTED" } },
+            { receivableItem: { is: { outstandingAmount: { gt: 0 } } } },
+          ],
+        }
+      : where;
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.salesInvoice.findMany({
+        where: filteredWhere,
+        include: this.include(),
+        orderBy: [{ accountingDocument: { documentDate: "desc" } }, { id: "desc" }],
+        skip: (input.page - 1) * input.pageSize,
+        take: input.pageSize,
+      }),
+      this.prisma.salesInvoice.count({ where: filteredWhere }),
+    ]);
+    return { data, total };
   }
 
   async get(context: ActorContext, id: bigint) {

@@ -9,6 +9,7 @@ import type {
   PlatformModuleActivity,
   PlatformOverview,
 } from "./platform-operations-ports.js";
+import { calculatePlatformRecurringMonthly } from "./platform-billing-service.js";
 
 type CountPair = { total: number; recent: number };
 
@@ -18,9 +19,12 @@ const percentage = (part: number, total: number) =>
 const dayMilliseconds = 86_400_000;
 const dateOnly = (value: Date) => value.toISOString().slice(0, 10);
 const addDays = (value: Date, days: number) => new Date(value.getTime() + days * dayMilliseconds);
-const decimal = (value: Prisma.Decimal.Value) => new Prisma.Decimal(value);
+const PlatformAnalyticsDecimal = Prisma.Decimal.clone({
+  precision: 80,
+  rounding: Prisma.Decimal.ROUND_HALF_UP,
+});
+const decimal = (value: Prisma.Decimal.Value) => new PlatformAnalyticsDecimal(value.toString());
 const fixed = (value: Prisma.Decimal) => value.toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP).toFixed(4);
-const decimalSum = (values: Prisma.Decimal[]) => values.reduce((sum, value) => sum.plus(value), decimal(0));
 const changePercent = (current: number, previous: number | null) => {
   if (previous === null) return null;
   if (previous === 0) return current === 0 ? 0 : null;
@@ -43,6 +47,44 @@ const comparedMoney = (current: Prisma.Decimal, previous: Prisma.Decimal | null)
 });
 
 type AnalyticsBucket = { from: Date; toExclusive: Date };
+
+export const PLATFORM_ANALYTICS_BILLING_BATCH_SIZE = 500;
+
+type PlatformBillingTimelineAggregate = {
+  billed: Prisma.Decimal;
+  collected: Prisma.Decimal;
+};
+
+type PlatformBillingCurrencyAggregate = {
+  recurring: Array<{
+    billingCycle: "MONTHLY" | "QUARTERLY" | "ANNUAL";
+    recurringFee: Prisma.Decimal.Value;
+  }>;
+  billed: Prisma.Decimal;
+  priorBilled: Prisma.Decimal;
+  collected: Prisma.Decimal;
+  priorCollected: Prisma.Decimal;
+  invoiceCount: number;
+  priorInvoiceCount: number;
+  outstanding: Prisma.Decimal;
+  overdue: Prisma.Decimal;
+  aging: {
+    notDue: Prisma.Decimal;
+    days1To30: Prisma.Decimal;
+    days31To60: Prisma.Decimal;
+    days61Plus: Prisma.Decimal;
+  };
+  currentTimeline: PlatformBillingTimelineAggregate[];
+  previousTimeline: PlatformBillingTimelineAggregate[] | null;
+};
+
+type PlatformBillingCompanyAggregate = {
+  currencyCode: string;
+  billed: Prisma.Decimal;
+  collected: Prisma.Decimal;
+  outstanding: Prisma.Decimal;
+  overdue: Prisma.Decimal;
+};
 
 const analyticsBuckets = (from: Date, toExclusive: Date, requestedCount = 12): AnalyticsBucket[] => {
   const totalDays = Math.max(1, Math.round((toExclusive.getTime() - from.getTime()) / dayMilliseconds));
@@ -73,6 +115,7 @@ export class PrismaPlatformAnalyticsQueryAdapter implements PlatformAnalyticsQue
       ? null
       : companyOptions.find((company) => company.id === input.companyId!.toString()) ?? null;
     if (input.companyId !== undefined && !scopedCompany) return null;
+    const references = scopedCompany ? [scopedCompany] : companyOptions;
 
     const companyWhere = input.companyId === undefined ? {} : { companyId: input.companyId };
     const companyEntityWhere = input.companyId === undefined ? {} : { id: input.companyId };
@@ -136,8 +179,7 @@ export class PrismaPlatformAnalyticsQueryAdapter implements PlatformAnalyticsQue
       previousTimeline,
       currentModules,
       previousModules,
-      accounts,
-      invoices,
+      billing,
       unacknowledgedSecurity,
       pendingOutbox,
       failedOutbox,
@@ -148,16 +190,11 @@ export class PrismaPlatformAnalyticsQueryAdapter implements PlatformAnalyticsQue
       previousTimelinePromise,
       this.modulePairs(input.from, input.toExclusive, input.companyId),
       previousModulesPromise,
-      this.prisma.platformBillingAccount.findMany({
-        where: companyWhere,
-        orderBy: [{ currencyCode: "asc" }, { companyId: "asc" }],
-      }),
-      this.prisma.platformBillingInvoice.findMany({
-        where: { ...companyWhere, state: "ISSUED" },
-        select: {
-          companyId: true, currencyCode: true, issueDate: true, dueDate: true, totalAmount: true,
-          payments: { select: { paymentDate: true, amount: true } },
-        },
+      this.billingAnalytics({
+        ...input,
+        references,
+        currentBuckets,
+        previousBuckets,
       }),
       this.prisma.securityEvent.count({
         where: { ...companyWhere, acknowledgedAt: null, severity: { in: ["HIGH", "CRITICAL"] } },
@@ -170,107 +207,22 @@ export class PrismaPlatformAnalyticsQueryAdapter implements PlatformAnalyticsQue
 
     const previousValue = <T>(selector: (snapshot: NonNullable<typeof previousSnapshot>) => T): T | null =>
       previousSnapshot ? selector(previousSnapshot) : null;
-    const today = new Date(`${dateOnly(input.now)}T00:00:00.000Z`);
-    const dueSoonCutoff = addDays(today, 8);
-    const balanceOf = (invoice: (typeof invoices)[number]) => Prisma.Decimal.max(
-      decimal(0),
-      invoice.totalAmount.minus(decimalSum(invoice.payments.map((payment) => payment.amount))),
-    );
-    const currencyCodes = [...new Set([
-      ...accounts.map((account) => account.currencyCode),
-      ...invoices.map((invoice) => invoice.currencyCode),
-    ])].sort();
-
-    const financials = currencyCodes.map((currencyCode) => {
-      const currencyInvoices = invoices.filter((invoice) => invoice.currencyCode === currencyCode);
-      const currentInvoices = currencyInvoices.filter((invoice) => within(invoice.issueDate, input.from, input.toExclusive));
-      const priorInvoices = input.comparisonFrom && input.comparisonToExclusive
-        ? currencyInvoices.filter((invoice) => within(invoice.issueDate, input.comparisonFrom!, input.comparisonToExclusive!))
-        : null;
-      const paymentsIn = (from: Date, toExclusive: Date) => currencyInvoices.flatMap((invoice) =>
-        invoice.payments.filter((payment) => within(payment.paymentDate, from, toExclusive)).map((payment) => payment.amount));
-      const billed = decimalSum(currentInvoices.map((invoice) => invoice.totalAmount));
-      const priorBilled = priorInvoices === null ? null : decimalSum(priorInvoices.map((invoice) => invoice.totalAmount));
-      const collected = decimalSum(paymentsIn(input.from, input.toExclusive));
-      const priorCollected = input.comparisonFrom && input.comparisonToExclusive
-        ? decimalSum(paymentsIn(input.comparisonFrom, input.comparisonToExclusive))
-        : null;
-      const balances = currencyInvoices.map((invoice) => ({ invoice, balance: balanceOf(invoice) }))
-        .filter((item) => item.balance.gt(0));
-      const overdue = balances.filter((item) => item.invoice.dueDate < today);
-      const aging = {
-        notDue: decimalSum(balances.filter((item) => item.invoice.dueDate >= today).map((item) => item.balance)),
-        days1To30: decimalSum(overdue.filter((item) => (today.getTime() - item.invoice.dueDate.getTime()) / dayMilliseconds <= 30).map((item) => item.balance)),
-        days31To60: decimalSum(overdue.filter((item) => {
-          const age = (today.getTime() - item.invoice.dueDate.getTime()) / dayMilliseconds;
-          return age > 30 && age <= 60;
-        }).map((item) => item.balance)),
-        days61Plus: decimalSum(overdue.filter((item) => (today.getTime() - item.invoice.dueDate.getTime()) / dayMilliseconds > 60).map((item) => item.balance)),
-      };
-      const rate = billed.gt(0) ? collected.div(billed).mul(100).toDecimalPlaces(1).toNumber() : 0;
-      const priorRate = priorBilled && priorCollected && priorBilled.gt(0)
-        ? priorCollected.div(priorBilled).mul(100).toDecimalPlaces(1).toNumber()
-        : priorBilled === null ? null : 0;
-      const recurringMonthly = accounts
-        .filter((account) => account.currencyCode === currencyCode && ["TRIAL", "ACTIVE"].includes(account.status))
-        .reduce((sum, account) => sum.plus(
-          account.billingCycle === "MONTHLY" ? account.recurringFee
-            : account.billingCycle === "QUARTERLY" ? account.recurringFee.div(3)
-              : account.recurringFee.div(12),
-        ), decimal(0));
-      return {
-        currencyCode,
-        recurringMonthly: fixed(recurringMonthly),
-        billed: comparedMoney(billed, priorBilled),
-        collected: comparedMoney(collected, priorCollected),
-        collectionRate: comparedNumber(rate, priorRate),
-        outstanding: fixed(decimalSum(balances.map((item) => item.balance))),
-        overdue: fixed(decimalSum(overdue.map((item) => item.balance))),
-        invoiceCount: comparedNumber(currentInvoices.length, priorInvoices?.length ?? null),
-        timeline: currentBuckets.map((bucket, index) => {
-          const previousBucket = previousBuckets?.[index] ?? null;
-          const currentBucketInvoices = currencyInvoices.filter((invoice) => within(invoice.issueDate, bucket.from, bucket.toExclusive));
-          const previousBucketInvoices = previousBucket
-            ? currencyInvoices.filter((invoice) => within(invoice.issueDate, previousBucket.from, previousBucket.toExclusive))
-            : null;
-          return {
-            key: dateOnly(bucket.from), from: dateOnly(bucket.from), to: dateOnly(addDays(bucket.toExclusive, -1)),
-            billed: fixed(decimalSum(currentBucketInvoices.map((invoice) => invoice.totalAmount))),
-            previousBilled: previousBucketInvoices === null ? null : fixed(decimalSum(previousBucketInvoices.map((invoice) => invoice.totalAmount))),
-            collected: fixed(decimalSum(paymentsIn(bucket.from, bucket.toExclusive))),
-            previousCollected: previousBucket === null ? null : fixed(decimalSum(paymentsIn(previousBucket.from, previousBucket.toExclusive))),
-          };
-        }),
-        aging: {
-          notDue: fixed(aging.notDue), days1To30: fixed(aging.days1To30),
-          days31To60: fixed(aging.days31To60), days61Plus: fixed(aging.days61Plus),
-        },
-      };
-    });
-
     const activityByCompany = new Map(currentSnapshot.activity.map((row) => [row.companyId.toString(), row]));
     const documentsByCompany = new Map(currentSnapshot.documents.map((row) => [row.companyId.toString(), row._count._all]));
-    const accountByCompany = new Map(accounts.map((account) => [account.companyId.toString(), account]));
-    const references = scopedCompany ? [scopedCompany] : companyOptions;
     const companies = references.map((company) => {
-      const companyInvoices = invoices.filter((invoice) => invoice.companyId.toString() === company.id);
-      const account = accountByCompany.get(company.id);
-      const currencyCode = account?.currencyCode ?? company.baseCurrencyCode;
-      const currencyInvoices = companyInvoices.filter((invoice) => invoice.currencyCode === currencyCode);
-      const currentInvoices = currencyInvoices.filter((invoice) => within(invoice.issueDate, input.from, input.toExclusive));
-      const collected = decimalSum(currencyInvoices.flatMap((invoice) => invoice.payments
-        .filter((payment) => within(payment.paymentDate, input.from, input.toExclusive))
-        .map((payment) => payment.amount)));
-      const open = currencyInvoices.map((invoice) => ({ invoice, balance: balanceOf(invoice) })).filter((item) => item.balance.gt(0));
+      const financial = billing.companies.get(company.id) ?? {
+        currencyCode: company.baseCurrencyCode,
+        billed: decimal(0), collected: decimal(0), outstanding: decimal(0), overdue: decimal(0),
+      };
       const activity = activityByCompany.get(company.id);
       return {
-        id: company.id, name: company.name, currencyCode,
+        id: company.id, name: company.name, currencyCode: financial.currencyCode,
         operations: activity?._count._all ?? 0,
         postedDocuments: documentsByCompany.get(company.id) ?? 0,
-        billed: fixed(decimalSum(currentInvoices.map((invoice) => invoice.totalAmount))),
-        collected: fixed(collected),
-        outstanding: fixed(decimalSum(open.map((item) => item.balance))),
-        overdue: fixed(decimalSum(open.filter((item) => item.invoice.dueDate < today).map((item) => item.balance))),
+        billed: fixed(financial.billed),
+        collected: fixed(financial.collected),
+        outstanding: fixed(financial.outstanding),
+        overdue: fixed(financial.overdue),
         lastActivityAt: activity?._max.createdAt?.toISOString() ?? null,
       };
     }).sort((left, right) =>
@@ -279,7 +231,6 @@ export class PrismaPlatformAnalyticsQueryAdapter implements PlatformAnalyticsQue
       || left.name.localeCompare(right.name, "ar"),
     ).slice(0, 12);
 
-    const openInvoices = invoices.map((invoice) => ({ invoice, balance: balanceOf(invoice) })).filter((item) => item.balance.gt(0));
     const activeReferenceIds = new Set(references.filter((company) => company.isActive).map((company) => company.id));
 
     return {
@@ -309,7 +260,7 @@ export class PrismaPlatformAnalyticsQueryAdapter implements PlatformAnalyticsQue
         securityAlerts: currentTimeline[index]!.securityAlerts,
         newCompanies: currentTimeline[index]!.newCompanies,
       })),
-      financials,
+      financials: billing.financials,
       modules: currentModules.map((module, index) => ({
         code: module.code,
         current: module.recent,
@@ -318,14 +269,235 @@ export class PrismaPlatformAnalyticsQueryAdapter implements PlatformAnalyticsQue
       })),
       companies,
       alerts: {
-        overdueInvoices: openInvoices.filter((item) => item.invoice.dueDate < today).length,
-        dueSoonInvoices: openInvoices.filter((item) => item.invoice.dueDate >= today && item.invoice.dueDate < dueSoonCutoff).length,
+        overdueInvoices: billing.overdueInvoices,
+        dueSoonInvoices: billing.dueSoonInvoices,
         unacknowledgedSecurity,
         pendingOutbox,
         failedOutbox,
         staleCompanies: [...activeReferenceIds].filter((id) => !activityByCompany.has(id)).length,
       },
     };
+  }
+
+  private async billingAnalytics(input: Parameters<PlatformAnalyticsQueryPort["analytics"]>[0] & {
+    references: PlatformCompanyReference[];
+    currentBuckets: AnalyticsBucket[];
+    previousBuckets: AnalyticsBucket[] | null;
+  }) {
+    const companyWhere = input.companyId === undefined ? {} : { companyId: input.companyId };
+    const zeroTimeline = (buckets: AnalyticsBucket[]): PlatformBillingTimelineAggregate[] =>
+      buckets.map(() => ({ billed: decimal(0), collected: decimal(0) }));
+    const currencyAggregates = new Map<string, PlatformBillingCurrencyAggregate>();
+    const currencyAggregate = (currencyCode: string) => {
+      const existing = currencyAggregates.get(currencyCode);
+      if (existing) return existing;
+      const created: PlatformBillingCurrencyAggregate = {
+        recurring: [],
+        billed: decimal(0), priorBilled: decimal(0),
+        collected: decimal(0), priorCollected: decimal(0),
+        invoiceCount: 0, priorInvoiceCount: 0,
+        outstanding: decimal(0), overdue: decimal(0),
+        aging: {
+          notDue: decimal(0), days1To30: decimal(0),
+          days31To60: decimal(0), days61Plus: decimal(0),
+        },
+        currentTimeline: zeroTimeline(input.currentBuckets),
+        previousTimeline: input.previousBuckets ? zeroTimeline(input.previousBuckets) : null,
+      };
+      currencyAggregates.set(currencyCode, created);
+      return created;
+    };
+    const [accountCurrencies, recurringRows] = await Promise.all([
+      this.prisma.platformBillingAccount.findMany({
+        where: companyWhere,
+        select: { companyId: true, currencyCode: true },
+        orderBy: { companyId: "asc" },
+      }),
+      this.prisma.platformBillingAccount.groupBy({
+        by: ["currencyCode", "billingCycle"],
+        where: { ...companyWhere, status: { in: ["TRIAL", "ACTIVE"] } },
+        _sum: { recurringFee: true },
+        orderBy: [{ currencyCode: "asc" }, { billingCycle: "asc" }],
+      }),
+    ]);
+    const companyCurrency = new Map(input.references.map((company) => [company.id, company.baseCurrencyCode]));
+    for (const account of accountCurrencies) {
+      companyCurrency.set(account.companyId.toString(), account.currencyCode);
+      currencyAggregate(account.currencyCode);
+    }
+    for (const row of recurringRows) {
+      currencyAggregate(row.currencyCode).recurring.push({
+        billingCycle: row.billingCycle,
+        recurringFee: row._sum.recurringFee ?? decimal(0),
+      });
+    }
+    const companies = new Map<string, PlatformBillingCompanyAggregate>();
+    for (const company of input.references) {
+      companies.set(company.id, {
+        currencyCode: companyCurrency.get(company.id) ?? company.baseCurrencyCode,
+        billed: decimal(0), collected: decimal(0), outstanding: decimal(0), overdue: decimal(0),
+      });
+    }
+    const today = new Date(`${dateOnly(input.now)}T00:00:00.000Z`);
+    const dueSoonCutoff = addDays(today, 8);
+    let overdueInvoices = 0;
+    let dueSoonInvoices = 0;
+    let invoiceCursor: bigint | undefined;
+    while (true) {
+      const invoices = await this.prisma.platformBillingInvoice.findMany({
+        where: { ...companyWhere, state: "ISSUED" },
+        select: {
+          id: true, companyId: true, currencyCode: true,
+          issueDate: true, dueDate: true, totalAmount: true,
+        },
+        orderBy: { id: "asc" },
+        take: PLATFORM_ANALYTICS_BILLING_BATCH_SIZE,
+        ...(invoiceCursor === undefined ? {} : { cursor: { id: invoiceCursor }, skip: 1 }),
+      });
+      if (!invoices.length) break;
+      const paymentTotals = await this.prisma.platformBillingPayment.groupBy({
+        by: ["invoiceId"],
+        where: { invoiceId: { in: invoices.map((invoice) => invoice.id) } },
+        _sum: { amount: true },
+      });
+      const paidByInvoice = new Map(paymentTotals.map((row) => [row.invoiceId.toString(), row._sum.amount]));
+      for (const invoice of invoices) {
+        const aggregate = currencyAggregate(invoice.currencyCode);
+        const company = companies.get(invoice.companyId.toString());
+        const companyMatchesCurrency = company?.currencyCode === invoice.currencyCode;
+        if (within(invoice.issueDate, input.from, input.toExclusive)) {
+          aggregate.billed = aggregate.billed.plus(invoice.totalAmount);
+          aggregate.invoiceCount += 1;
+          if (companyMatchesCurrency) company.billed = company.billed.plus(invoice.totalAmount);
+        }
+        if (input.comparisonFrom && input.comparisonToExclusive
+          && within(invoice.issueDate, input.comparisonFrom, input.comparisonToExclusive)) {
+          aggregate.priorBilled = aggregate.priorBilled.plus(invoice.totalAmount);
+          aggregate.priorInvoiceCount += 1;
+        }
+        const currentBucketIndex = input.currentBuckets.findIndex((bucket) =>
+          within(invoice.issueDate, bucket.from, bucket.toExclusive));
+        if (currentBucketIndex >= 0) {
+          aggregate.currentTimeline[currentBucketIndex]!.billed =
+            aggregate.currentTimeline[currentBucketIndex]!.billed.plus(invoice.totalAmount);
+        }
+        const previousBucketIndex = input.previousBuckets?.findIndex((bucket) =>
+          within(invoice.issueDate, bucket.from, bucket.toExclusive)) ?? -1;
+        if (previousBucketIndex >= 0 && aggregate.previousTimeline) {
+          aggregate.previousTimeline[previousBucketIndex]!.billed =
+            aggregate.previousTimeline[previousBucketIndex]!.billed.plus(invoice.totalAmount);
+        }
+        const paid = paidByInvoice.get(invoice.id.toString()) ?? decimal(0);
+        const difference = decimal(invoice.totalAmount).minus(paid);
+        const balance = difference.gt(0) ? difference : decimal(0);
+        if (balance.eq(0)) continue;
+        aggregate.outstanding = aggregate.outstanding.plus(balance);
+        if (companyMatchesCurrency) company.outstanding = company.outstanding.plus(balance);
+        if (invoice.dueDate >= today) {
+          aggregate.aging.notDue = aggregate.aging.notDue.plus(balance);
+          if (invoice.dueDate < dueSoonCutoff) dueSoonInvoices += 1;
+          continue;
+        }
+        overdueInvoices += 1;
+        aggregate.overdue = aggregate.overdue.plus(balance);
+        if (companyMatchesCurrency) company.overdue = company.overdue.plus(balance);
+        const age = (today.getTime() - invoice.dueDate.getTime()) / dayMilliseconds;
+        if (age <= 30) aggregate.aging.days1To30 = aggregate.aging.days1To30.plus(balance);
+        else if (age <= 60) aggregate.aging.days31To60 = aggregate.aging.days31To60.plus(balance);
+        else aggregate.aging.days61Plus = aggregate.aging.days61Plus.plus(balance);
+      }
+      if (invoices.length < PLATFORM_ANALYTICS_BILLING_BATCH_SIZE) break;
+      invoiceCursor = invoices.at(-1)!.id;
+    }
+
+    const paymentStarts = [input.from, input.comparisonFrom].filter((value): value is Date => value !== null);
+    const paymentEnds = [input.toExclusive, input.comparisonToExclusive].filter((value): value is Date => value !== null);
+    const paymentFrom = new Date(Math.min(...paymentStarts.map((value) => value.getTime())));
+    const paymentToExclusive = new Date(Math.max(...paymentEnds.map((value) => value.getTime())));
+    let paymentCursor: bigint | undefined;
+    while (true) {
+      const payments = await this.prisma.platformBillingPayment.findMany({
+        where: {
+          ...companyWhere,
+          paymentDate: { gte: paymentFrom, lt: paymentToExclusive },
+          invoice: { state: "ISSUED" },
+        },
+        select: {
+          id: true, companyId: true, paymentDate: true, amount: true,
+          invoice: { select: { currencyCode: true } },
+        },
+        orderBy: { id: "asc" },
+        take: PLATFORM_ANALYTICS_BILLING_BATCH_SIZE,
+        ...(paymentCursor === undefined ? {} : { cursor: { id: paymentCursor }, skip: 1 }),
+      });
+      if (!payments.length) break;
+      for (const payment of payments) {
+        const aggregate = currencyAggregate(payment.invoice.currencyCode);
+        const company = companies.get(payment.companyId.toString());
+        const companyMatchesCurrency = company?.currencyCode === payment.invoice.currencyCode;
+        if (within(payment.paymentDate, input.from, input.toExclusive)) {
+          aggregate.collected = aggregate.collected.plus(payment.amount);
+          if (companyMatchesCurrency) company.collected = company.collected.plus(payment.amount);
+        }
+        if (input.comparisonFrom && input.comparisonToExclusive
+          && within(payment.paymentDate, input.comparisonFrom, input.comparisonToExclusive)) {
+          aggregate.priorCollected = aggregate.priorCollected.plus(payment.amount);
+        }
+        const currentBucketIndex = input.currentBuckets.findIndex((bucket) =>
+          within(payment.paymentDate, bucket.from, bucket.toExclusive));
+        if (currentBucketIndex >= 0) {
+          aggregate.currentTimeline[currentBucketIndex]!.collected =
+            aggregate.currentTimeline[currentBucketIndex]!.collected.plus(payment.amount);
+        }
+        const previousBucketIndex = input.previousBuckets?.findIndex((bucket) =>
+          within(payment.paymentDate, bucket.from, bucket.toExclusive)) ?? -1;
+        if (previousBucketIndex >= 0 && aggregate.previousTimeline) {
+          aggregate.previousTimeline[previousBucketIndex]!.collected =
+            aggregate.previousTimeline[previousBucketIndex]!.collected.plus(payment.amount);
+        }
+      }
+      if (payments.length < PLATFORM_ANALYTICS_BILLING_BATCH_SIZE) break;
+      paymentCursor = payments.at(-1)!.id;
+    }
+
+    const financials = [...currencyAggregates.entries()].sort(([left], [right]) => left.localeCompare(right))
+      .map(([currencyCode, aggregate]) => {
+        const priorBilled = input.comparisonFrom ? aggregate.priorBilled : null;
+        const priorCollected = input.comparisonFrom ? aggregate.priorCollected : null;
+        const rate = aggregate.billed.gt(0)
+          ? aggregate.collected.div(aggregate.billed).mul(100).toDecimalPlaces(1).toNumber()
+          : 0;
+        const priorRate = priorBilled && priorCollected && priorBilled.gt(0)
+          ? priorCollected.div(priorBilled).mul(100).toDecimalPlaces(1).toNumber()
+          : priorBilled === null ? null : 0;
+        return {
+          currencyCode,
+          recurringMonthly: calculatePlatformRecurringMonthly(aggregate.recurring).toFixed(4),
+          billed: comparedMoney(aggregate.billed, priorBilled),
+          collected: comparedMoney(aggregate.collected, priorCollected),
+          collectionRate: comparedNumber(rate, priorRate),
+          outstanding: fixed(aggregate.outstanding),
+          overdue: fixed(aggregate.overdue),
+          invoiceCount: comparedNumber(
+            aggregate.invoiceCount,
+            input.comparisonFrom ? aggregate.priorInvoiceCount : null,
+          ),
+          timeline: input.currentBuckets.map((bucket, index) => ({
+            key: dateOnly(bucket.from), from: dateOnly(bucket.from), to: dateOnly(addDays(bucket.toExclusive, -1)),
+            billed: fixed(aggregate.currentTimeline[index]!.billed),
+            previousBilled: aggregate.previousTimeline ? fixed(aggregate.previousTimeline[index]!.billed) : null,
+            collected: fixed(aggregate.currentTimeline[index]!.collected),
+            previousCollected: aggregate.previousTimeline ? fixed(aggregate.previousTimeline[index]!.collected) : null,
+          })),
+          aging: {
+            notDue: fixed(aggregate.aging.notDue),
+            days1To30: fixed(aggregate.aging.days1To30),
+            days31To60: fixed(aggregate.aging.days31To60),
+            days61Plus: fixed(aggregate.aging.days61Plus),
+          },
+        };
+      });
+    return { financials, companies, overdueInvoices, dueSoonInvoices };
   }
 
   async overview(input: { now: Date; days: 7 | 30 | 90 }): Promise<PlatformOverview> {
@@ -489,7 +661,7 @@ export class PrismaPlatformAnalyticsQueryAdapter implements PlatformAnalyticsQue
     const [users, employees, operations, documents] = ids.length
       ? await Promise.all([
         this.prisma.userCompany.groupBy({
-          by: ["companyId"], where: { companyId: { in: ids }, isActive: true }, _count: { _all: true },
+          by: ["companyId"], where: { companyId: { in: ids }, isActive: true, user: { isActive: true } }, _count: { _all: true },
         }),
         this.prisma.employee.groupBy({
           by: ["companyId"], where: { companyId: { in: ids }, status: { in: ["ACTIVE", "ON_LEAVE"] } }, _count: { _all: true },
@@ -554,7 +726,7 @@ export class PrismaPlatformAnalyticsQueryAdapter implements PlatformAnalyticsQue
       lastActivity, modules, documentsByType, trends,
     ] = await Promise.all([
       this.prisma.userCompany.count({ where: { companyId: input.companyId } }),
-      this.prisma.userCompany.count({ where: { companyId: input.companyId, isActive: true } }),
+      this.prisma.userCompany.count({ where: { companyId: input.companyId, isActive: true, user: { isActive: true } } }),
       this.prisma.employee.count({ where: { companyId: input.companyId } }),
       this.prisma.employee.count({ where: { companyId: input.companyId, status: { in: ["ACTIVE", "ON_LEAVE"] } } }),
       this.prisma.employee.count({ where: { companyId: input.companyId, userId: { not: null } } }),
@@ -614,12 +786,16 @@ export class PrismaPlatformAnalyticsQueryAdapter implements PlatformAnalyticsQue
     if (!await this.prisma.company.findUnique({ where: { id: input.companyId }, select: { id: true } })) return null;
     const range = { gte: input.periodStart, lt: input.periodEndExclusive };
     const [users, employees, postedDocuments, operations] = await Promise.all([
-      this.prisma.userCompany.count({ where: { companyId: input.companyId, isActive: true } }),
+      this.prisma.userCompany.count({ where: { companyId: input.companyId, isActive: true, user: { isActive: true } } }),
       this.prisma.employee.count({ where: { companyId: input.companyId, status: { in: ["ACTIVE", "ON_LEAVE"] } } }),
       this.prisma.accountingDocument.count({ where: { companyId: input.companyId, postedAt: range } }),
       this.prisma.auditLog.count({ where: { companyId: input.companyId, createdAt: range } }),
     ]);
     return { users, employees, postedDocuments, operations };
+  }
+
+  companyCount(): Promise<number> {
+    return this.prisma.company.count();
   }
 
   async companyReferences(companyIds?: bigint[]): Promise<PlatformCompanyReference[]> {

@@ -11,6 +11,13 @@ import { api,
   ApiError,
   downloadPdf,
   idempotencyKey } from "./api";
+import { actionPermissionPolicies } from "./action-permissions";
+import { allows,
+  firstRequestFailure,
+  requestIfAllowed,
+  requestValue } from "./authorization";
+import { Can, useAuthorization } from "./authorization-context";
+import { endpointPermissionPolicies } from "./endpoint-permissions";
 import { exchangeRateForDocumentDate,
   missingDatedRateMessage } from "./currency-rates";
 import {
@@ -65,6 +72,8 @@ const emptyReferences: References = {
 };
 
 export function PaymentsPage({ notify }: { notify: Notice }) {
+  const { permissionSet } = useAuthorization();
+  const permissions = actionPermissionPolicies.payments;
   const [items, setItems] = useState<Payment[]>([]);
   const [meta, setMeta] = useState({ page: 1, pageSize: 10, total: 0, totalPages: 0 });
   const [page, setPage] = useState(1);
@@ -106,30 +115,43 @@ export function PaymentsPage({ notify }: { notify: Notice }) {
   }, [load]);
 
   useEffect(() => {
-    void Promise.all([
-      api<ListResponse<Supplier>>("/suppliers?page=1&pageSize=100&active=true"),
-      api<ListResponse<Account>>("/accounts?page=1&pageSize=100&active=true"),
-      api<ListResponse<FiscalPeriod>>("/fiscal-periods?page=1&pageSize=100"),
-      api<ListResponse<CashBankAccount>>("/cash-bank-accounts?page=1&pageSize=100"),
-      api<{ data: PaymentMethod[] }>("/payment-methods"),
-      api<{ data: Currency[] }>("/currencies"),
-      api<ListResponse<PurchaseInvoice>>("/purchase-invoices?page=1&pageSize=100&documentType=PURCHASE_INVOICE&status=POSTED&outstandingOnly=true"),
-    ])
-      .then(([suppliers, accounts, periods, cashBanks, methods, currencies, purchaseInvoices]) =>
-        setReferences({
-          suppliers: suppliers.data.filter((item) => item.isActive),
-          accounts: accounts.data.filter((item) => item.isActive && item.allowsPosting),
-          periods: periods.data.filter((item) => item.status !== "CLOSED"),
-          cashBanks: cashBanks.data.filter((item) => item.isActive),
-          methods: methods.data,
-          currencies: currencies.data,
-          purchaseInvoices: purchaseInvoices.data,
-        }),
-      )
-      .catch((cause) =>
-        notify(cause instanceof Error ? cause.message : t("pages.manual-journals.002"), "error"),
-      );
-  }, [notify]);
+    void (async () => {
+      const results = await Promise.all([
+        requestIfAllowed(permissionSet, endpointPermissionPolicies.suppliers, () =>
+          api<ListResponse<Supplier>>("/suppliers?page=1&pageSize=100&active=true")),
+        requestIfAllowed(permissionSet, endpointPermissionPolicies.accounts, () =>
+          api<ListResponse<Account>>("/accounts?page=1&pageSize=100&active=true")),
+        requestIfAllowed(permissionSet, endpointPermissionPolicies.fiscalPeriods, () =>
+          api<ListResponse<FiscalPeriod>>("/fiscal-periods?page=1&pageSize=100")),
+        requestIfAllowed(permissionSet, endpointPermissionPolicies.cashBankAccounts, () =>
+          api<ListResponse<CashBankAccount>>("/cash-bank-accounts?page=1&pageSize=100")),
+        requestIfAllowed(permissionSet, endpointPermissionPolicies.paymentMethods, () =>
+          api<{ data: PaymentMethod[] }>("/payment-methods")),
+        requestIfAllowed(permissionSet, endpointPermissionPolicies.currencies, () =>
+          api<{ data: Currency[] }>("/currencies")),
+        requestIfAllowed(permissionSet, endpointPermissionPolicies.purchaseInvoices, () =>
+          api<ListResponse<PurchaseInvoice>>("/purchase-invoices?page=1&pageSize=100&documentType=PURCHASE_INVOICE&status=POSTED&outstandingOnly=true")),
+      ]);
+      const suppliers = requestValue(results[0]);
+      const accounts = requestValue(results[1]);
+      const periods = requestValue(results[2]);
+      const cashBanks = requestValue(results[3]);
+      const methods = requestValue(results[4]);
+      const currencies = requestValue(results[5]);
+      const purchaseInvoices = requestValue(results[6]);
+      setReferences({
+        suppliers: suppliers?.data.filter((item) => item.isActive) ?? [],
+        accounts: accounts?.data.filter((item) => item.isActive && item.allowsPosting) ?? [],
+        periods: periods?.data.filter((item) => item.status !== "CLOSED") ?? [],
+        cashBanks: cashBanks?.data.filter((item) => item.isActive) ?? [],
+        methods: methods?.data ?? [],
+        currencies: currencies?.data ?? [],
+        purchaseInvoices: purchaseInvoices?.data ?? [],
+      });
+      const cause = firstRequestFailure(results);
+      if (cause) notify(cause instanceof Error ? cause.message : t("pages.manual-journals.002"), "error");
+    })();
+  }, [notify, permissionSet]);
 
   async function openDetails(id: string) {
     try {
@@ -143,6 +165,7 @@ export function PaymentsPage({ notify }: { notify: Notice }) {
     operation: "post" | "cancel" | "reverse",
     payment: Payment,
   ) {
+    if (!allows(permissionSet, permissions[operation])) return;
     const labels = { post: t("pages.manual-journals.004"), cancel: t("pages.accounts.065"), reverse: t("pages.manual-journals.006") };
     if (!window.confirm(t("pages.payments.007", { value1: labels[operation], value2: payment.document.documentNumber })))
       return;
@@ -184,7 +207,7 @@ export function PaymentsPage({ notify }: { notify: Notice }) {
 
   return (
     <section className="workspace-page">
-      <PageHeader kicker={t("pages.payments.013")} title={t("pages.payments.014")} description={t("pages.payments.015")} actions={<Button icon="plus" onClick={() => setForm("create")}>{t("pages.payments.016")}</Button>} />
+      <PageHeader kicker={t("pages.payments.013")} title={t("pages.payments.014")} description={t("pages.payments.015")} actions={<Can policy={permissions.create}><Button icon="plus" onClick={() => setForm("create")}>{t("pages.payments.016")}</Button></Can>} />
 
       <div className="toolbar payment-filters">
         <form
@@ -226,7 +249,7 @@ export function PaymentsPage({ notify }: { notify: Notice }) {
         <EmptyState
           title={t("pages.payments.030")}
           description={t("pages.payments.031")}
-          action={<Button icon="plus" onClick={() => setForm("create")}>{t("pages.payments.032")}</Button>}
+          action={<Can policy={permissions.create}><Button icon="plus" onClick={() => setForm("create")}>{t("pages.payments.032")}</Button></Can>}
         />
       ) : (
         <>
@@ -252,7 +275,7 @@ export function PaymentsPage({ notify }: { notify: Notice }) {
         </>
       )}
 
-      {form && (
+      {form && allows(permissionSet, form === "edit" ? permissions.update : permissions.create) && (
         <PaymentForm
           payment={form === "edit" ? selected : null}
           references={references}
@@ -270,9 +293,9 @@ export function PaymentsPage({ notify }: { notify: Notice }) {
           payment={selected}
           references={references}
           onClose={() => setSelected(null)}
-          onEdit={() => setForm("edit")}
+          onEdit={() => { if (allows(permissionSet, permissions.update)) setForm("edit"); }}
           onCommand={(operation) => void command(operation, selected)}
-          onPrint={() => void downloadPdf(`/payments/${selected.id}/pdf`).catch((cause) => notify(cause instanceof Error ? cause.message : t("pages.payments.043"), "error"))}
+          onPrint={() => { if (allows(permissionSet, permissions.print)) void downloadPdf(`/payments/${selected.id}/pdf`).catch((cause) => notify(cause instanceof Error ? cause.message : t("pages.payments.043"), "error")); }}
         />
       )}
     </section>
@@ -290,6 +313,7 @@ function PaymentForm({
   onClose: () => void;
   onSaved: (payment: Payment) => void;
 }) {
+  const { permissionSet } = useAuthorization();
   const [counterpartyType, setCounterpartyType] = useState<"supplier" | "account">(
     payment?.counterAccountId ? "account" : "supplier",
   );
@@ -344,6 +368,7 @@ function PaymentForm({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!allows(permissionSet, payment ? actionPermissionPolicies.payments.update : actionPermissionPolicies.payments.create)) return;
     const clientErrors = validatePaymentDraft({
       supplierId: counterpartyType === "supplier" ? supplierId : "",
       counterAccountId: counterpartyType === "account" ? counterAccountId : "",
@@ -518,6 +543,7 @@ function PaymentDetails({
   onCommand: (operation: "post" | "cancel" | "reverse") => void;
   onPrint: () => void;
 }) {
+  const permissions = actionPermissionPolicies.payments;
   const supplier = references.suppliers.find((item) => item.id === payment.supplierId);
   const cash = references.cashBanks.find((item) => item.id === payment.cashBankAccountId);
   const method = references.methods.find((item) => item.id === payment.paymentMethodId);
@@ -526,17 +552,17 @@ function PaymentDetails({
     <Modal title={payment.document.documentNumber} description={payment.document.description} onClose={onClose} wide>
       <div className="detail-actions">
         {(payment.document.status === "POSTED" || payment.document.status === "REVERSED") && (
-          <Button variant="secondary" icon="print" onClick={onPrint}>{t("pages.payments.087")}</Button>
+          <Can policy={permissions.print}><Button variant="secondary" icon="print" onClick={onPrint}>{t("pages.payments.087")}</Button></Can>
         )}
         {payment.document.status === "DRAFT" && (
           <>
-            <Button variant="secondary" icon="edit" onClick={onEdit}>{t("pages.accounts.048")}</Button>
-            <Button icon="check" onClick={() => onCommand("post")}>{t("pages.manual-journals.004")}</Button>
-            <Button variant="danger" icon="ban" onClick={() => onCommand("cancel")}>{t("pages.accounts.065")}</Button>
+            <Can policy={permissions.update}><Button variant="secondary" icon="edit" onClick={onEdit}>{t("pages.accounts.048")}</Button></Can>
+            <Can policy={permissions.post}><Button icon="check" onClick={() => onCommand("post")}>{t("pages.manual-journals.004")}</Button></Can>
+            <Can policy={permissions.cancel}><Button variant="danger" icon="ban" onClick={() => onCommand("cancel")}>{t("pages.accounts.065")}</Button></Can>
           </>
         )}
         {payment.document.status === "POSTED" && (
-          <Button variant="danger" icon="reverse" onClick={() => onCommand("reverse")}>{t("pages.payments.089")}</Button>
+          <Can policy={permissions.reverse}><Button variant="danger" icon="reverse" onClick={() => onCommand("reverse")}>{t("pages.payments.089")}</Button></Can>
         )}
       </div>
       <div className="document-summary">

@@ -1,4 +1,14 @@
 import { expect, test, type Page } from "@playwright/test";
+import { authMeResponse } from "./auth-me-mock.js";
+
+const tenantCompany = { id: "1", name: "North Star Services", timezone: "Asia/Riyadh" };
+const tenantPermissions = [
+  "pos.view",
+  "professional_projects.view",
+  "hr.employees.view",
+  "hr.structure.view",
+  "hr.contracts.view",
+];
 
 const analytics = {
   generatedAt: "2026-08-28T09:00:00.000Z",
@@ -58,7 +68,8 @@ async function mockBootstrap(page: Page, platformOperations: boolean) {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace(/^\/api\/v1/u, "");
     const json = (body: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
-    if (path === "/auth/companies") return json({ data: [{ id: "company-1", name: "North Star Services" }] });
+    if (path === "/auth/companies") return json({ data: [tenantCompany] });
+    if (path === "/auth/me") return json(authMeResponse(tenantPermissions, tenantCompany));
     if (path === "/auth/context") return route.fulfill({ status: 204, body: "" });
     if (path === "/platform/capabilities") return json({ platformOperations });
     if (path === "/platform/analytics") return json(analytics);

@@ -1,31 +1,43 @@
-name: production-cloudlinux-root-recovery
+name: Staging CloudLinux root recovery (manual)
 
 on:
-  push:
-    branches:
-      - ops/cloudlinux-root-recovery
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: production-cloudlinux-root-recovery
+  group: staging-cloudlinux-root-recovery-manual
   cancel-in-progress: false
 
 jobs:
   recover:
-    name: Synchronize CloudLinux app root and restore production
+    name: Synchronize the Staging CloudLinux app root manually
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 8
     environment:
+      # Legacy secret scope only; the remote target is classified as Staging.
       name: production
+      url: https://accounting.doralashab.com
     env:
       CPANEL_SSH_HOST: sv13.byethost13.org
       CPANEL_SSH_PORT: '1394'
       CPANEL_SSH_USER: doralash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Configure the pinned production SSH identity
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify this manual Staging recovery uses current main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          current_main=$(gh api "/repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          test "$GITHUB_REF" = refs/heads/main
+          test "$current_main" = "$GITHUB_SHA"
+      - name: Configure the pinned Staging SSH identity
         env:
           CPANEL_SSH_PRIVATE_KEY: ${{ secrets.CPANEL_SSH_PRIVATE_KEY }}
         run: |

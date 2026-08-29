@@ -6,15 +6,55 @@ const currency = { id: "currency-sar", code: "SAR", nameAr: "ريال سعودي
 const company = {
   id: "company-qa",
   code: "JWR-QA",
-  name: "شركة جوار التجريبية",
-  nameAr: "شركة جوار التجريبية",
-  nameEn: "Jowar Demo Company",
+  name: "المنشأة التجريبية",
+  nameAr: "المنشأة التجريبية",
+  nameEn: "Demo Business",
   baseCurrencyId: currency.id,
   baseCurrency: currency,
   timezone: "Asia/Riyadh",
   isActive: true,
   manualJournalMakerCheckerEnabled: true,
   updatedAt: "2026-08-21T12:00:00.000Z",
+};
+const visualQaPermissions = [
+  "accounts.view",
+  "approvals.view",
+  "audit_logs.view",
+  "bank_reconciliation.view",
+  "cash_bank_accounts.view",
+  "companies.view",
+  "cost_centers.manage",
+  "currencies.view",
+  "customers.view",
+  "dashboard.view",
+  "data_imports.view",
+  "fiscal_periods.view",
+  "hr.contracts.view",
+  "hr.employees.view",
+  "hr.structure.view",
+  "inventory_catalog.view",
+  "manual_journals.view",
+  "payments.view",
+  "pos.view",
+  "professional_projects.view",
+  "purchase_invoices.create",
+  "purchase_invoices.view",
+  "receipts.view",
+  "reports.cash_flow.view",
+  "roles.view",
+  "sales_invoices.create",
+  "sales_invoices.view",
+  "security_events.view",
+  "settings.manage",
+  "suppliers.view",
+  "users.view",
+  "warehouses.view",
+];
+/** @satisfies {import("../apps/web/src/types.ts").CurrentAuthorization} */
+const currentAuthorization = {
+  user: { id: "1", displayName: "Visual QA User" },
+  selectedCompany: { id: "1", name: company.name, timezone: company.timezone },
+  permissions: visualQaPermissions,
 };
 const zeroSection = { rows: [], total: "0.00", comparisonTotal: null, variance: null, variancePercent: null };
 const fiscalPeriod = { id: "1001", fiscalYearId: "1001", periodNumber: 12, name: "ديسمبر 2026", startDate: "2026-12-01", endDate: "2026-12-31", status: "OPEN", closedAt: null, reopenedAt: null, reopenReason: null, version: 0 };
@@ -68,12 +108,12 @@ const platformOverview = {
     { code: "IMPORTS", total: 270, recent: 18 },
   ],
   topCompanies: [
-    { id: "company-qa", name: "شركة جوار التجريبية", operations: 1640, lastActivityAt: "2026-08-28T08:57:00.000Z" },
+    { id: "company-qa", name: "المنشأة التجريبية", operations: 1640, lastActivityAt: "2026-08-28T08:57:00.000Z" },
     { id: "company-legal", name: "شركة الاستشارات القانونية", operations: 1180, lastActivityAt: "2026-08-28T08:44:00.000Z" },
   ],
 };
 const platformCompanyOptions = [
-  { id: "101", name: "شركة جوار التجريبية", isActive: true, baseCurrencyCode: "SAR" },
+  { id: "101", name: "المنشأة التجريبية", isActive: true, baseCurrencyCode: "SAR" },
   { id: "102", name: "شركة الاستشارات القانونية", isActive: true, baseCurrencyCode: "SAR" },
   { id: "103", name: "مجموعة المدار الرقمية", isActive: true, baseCurrencyCode: "USD" },
 ];
@@ -110,7 +150,7 @@ function platformAnalytics(url) {
   const selectedId = url.searchParams.get("companyId");
   const scopedCompany = selectedId ? platformCompanyOptions.find((item) => item.id === selectedId) ?? null : null;
   const allCompanies = [
-    { id: "101", name: "شركة جوار التجريبية", currencyCode: "SAR", operations: 3640, postedDocuments: 810, billed: "92000.0000", collected: "84400.0000", outstanding: "18400.0000", overdue: "4200.0000", lastActivityAt: "2026-08-29T08:57:00.000Z" },
+    { id: "101", name: "المنشأة التجريبية", currencyCode: "SAR", operations: 3640, postedDocuments: 810, billed: "92000.0000", collected: "84400.0000", outstanding: "18400.0000", overdue: "4200.0000", lastActivityAt: "2026-08-29T08:57:00.000Z" },
     { id: "102", name: "شركة الاستشارات القانونية", currencyCode: "SAR", operations: 2810, postedDocuments: 624, billed: "77800.0000", collected: "70100.0000", outstanding: "12600.0000", overdue: "0.0000", lastActivityAt: "2026-08-29T08:44:00.000Z" },
     { id: "103", name: "مجموعة المدار الرقمية", currencyCode: "USD", operations: 2140, postedDocuments: 510, billed: "28400.0000", collected: "24600.0000", outstanding: "7100.0000", overdue: "1300.0000", lastActivityAt: "2026-08-29T07:31:00.000Z" },
   ];
@@ -280,6 +320,7 @@ function list(data = []) {
 function responseFor(url, method) {
   const pathname = url.pathname.replace(/^\/api\/v1/, "");
   if (pathname === "/auth/csrf") return { csrfToken: "visual-qa-csrf" };
+  if (pathname === "/auth/me") return currentAuthorization;
   if (pathname === "/auth/companies") return { data: [company] };
   if (pathname === "/auth/context" || pathname === "/auth/logout") return null;
   if (pathname === "/platform/capabilities") return { platformOperations: true };
@@ -339,7 +380,7 @@ function responseFor(url, method) {
   ] };
   if (pathname === "/exchange-rates") return list([{ id: "rate-yer", currency: { id: "currency-yer", code: "YER", nameAr: "ريال يمني", nameEn: "Yemeni Rial" }, rateDate: "2026-08-21", rate: "0.00610000", source: "Visual QA", updatedAt: "2026-08-21T12:00:00.000Z", updatedBy: { id: "user-qa", displayName: "مدير النظام" } }]);
   if (pathname === "/bank-reconciliation/capabilities") return { enabled: true, stage: "CLOSE", canImport: true, canSuggest: true, canReview: true, canClose: true };
-  if (pathname === "/cash-bank-accounts") return list([{ id: "bank-qa", ledgerAccountId: "account-bank-qa", code: "CB-000001", nameAr: "الحساب البنكي التجريبي", nameEn: "Demo bank account", accountType: "BANK", bankName: "Jowar Test Bank", accountNumberMasked: "****2042", ibanMasked: null, isActive: true, version: 0 }]);
+  if (pathname === "/cash-bank-accounts") return list([{ id: "bank-qa", ledgerAccountId: "account-bank-qa", code: "CB-000001", nameAr: "الحساب البنكي التجريبي", nameEn: "Demo bank account", accountType: "BANK", bankName: "Test Bank", accountNumberMasked: "****2042", ibanMasked: null, isActive: true, version: 0 }]);
   if (pathname === "/bank-statement-imports") return list([]);
   if (pathname === "/bank-reconciliation/sessions") return list([]);
   if (pathname === "/audit-logs/options") return { actions: ["CREATE", "UPDATE"], entityTypes: ["COMPANY", "CURRENCY"], users: [{ id: "user-qa", name: "مدير النظام", email: "qa@example.test" }] };

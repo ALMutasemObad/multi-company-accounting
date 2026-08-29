@@ -49,7 +49,7 @@ test("CI runs the upgrade gate on both supported release engines", () => {
   assert.match(
     workflow,
     /needs: \[hosting-compatibility, migration-upgrade-compatibility, verify\]/u,
-    "production deployment must wait for the populated upgrade gate",
+    "staging deployment must wait for the populated upgrade gate",
   );
   assert.match(
     workflow,

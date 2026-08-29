@@ -1,13 +1,14 @@
 ---
 title: "ADR-004 — POS Cash-Sale Orchestration"
 status: "accepted"
-version: "1.1"
+version: "1.2"
 date: "2026-08-27"
 related:
   - "ARCHITECTURE_GUARDRAILS_AR.md"
   - "BOUNDED_CONTEXT_MAP_AR.md"
   - "POS_CASH_SALE_VERTICAL_SLICE_AR.md"
   - "CONCURRENCY_DEADLOCK_DEADLINE_POLICY_AR.md"
+  - "MOBILE_AND_BARCODE_CHANNELS_GOAL_AR.md"
 ---
 
 # ADR-004: اعتماد أول شريحة لنقاط البيع كمنسق لبيع نقدي
@@ -58,6 +59,11 @@ POS checkout
 تدعم المرحلة الأولى بيعًا نقديًا حضوريًا واحدًا، بعملة واحدة وسعر صرف واحد، ومستودع واحد، وعميل مسجل واحد، وطريقة تحصيل واحدة، وتسوية كاملة لمبلغ الفاتورة. تحسب Sales الإجمالي ولا يقبله POS من العميل، وتحرك Inventory الأصناف المخزنية عند ترحيل الفاتورة، وتسجل Treasury سند قبض مخصصًا بالكامل لعنصر الذمة الناتج، وينشئ `PostingEngine` القيود.
 
 خارج النطاق: تعليق السلة، العمل دون اتصال، أكثر من Tender، دفع جزئي، مرتجع POS مستقل، قارئ باركود أو طابعة/درج نقد خارجي، ورديات الصندوق والتسليم، خصومات الصلاحية، عميل نقدي مجهول، مزامنة فروع، وبرنامج ولاء.
+
+هذه حدود شريحة Checkout الأصلية وليست وصفًا لقدرات المنتج الراهنة. أضيف لاحقًا إدخال
+POS يدوي/HID وحل باركود الصنف وفق
+[هدف الهاتف والباركود](MOBILE_AND_BARCODE_CHANNELS_GOAL_AR.md)، من دون تغيير ملكية
+Checkout أو إضافة طابعة/درج نقد أو بقية نطاق B2/B3.
 
 ## الترحيل والعكس
 

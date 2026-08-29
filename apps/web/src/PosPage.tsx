@@ -1,5 +1,20 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, idempotencyKey } from "./api";
+import { actionPermissionPolicies } from "./action-permissions";
+import { allows,
+  firstRequestFailure,
+  requestIfAllowed,
+  requestValue } from "./authorization";
+import { Can, useAuthorization } from "./authorization-context";
+import {
+  applyResolvedBarcodeToLines,
+  appendBarcodeScanToQueue,
+  canApplyQueuedBarcodeScan,
+  canUsePosBarcodeScanner,
+  POS_BARCODE_QUEUE_LIMIT,
+  type QueuedBarcodeScan,
+} from "./barcode";
+import { endpointPermissionPolicies } from "./endpoint-permissions";
 import { formatMoney, statusLabel, taxReadinessLabel, toMoney, toQuantity } from "./domain";
 import { activeIntlLocale, localizedReferenceName, useI18n } from "./i18n";
 import { ReferenceCombobox } from "./ReferenceCombobox";
@@ -14,6 +29,7 @@ import type {
   PaymentMethod,
   PosCheckoutResult,
   PosSale,
+  ResolvedInventoryBarcode,
   TaxRate,
   Warehouse,
 } from "./types";
@@ -53,6 +69,15 @@ export const normalizePosRate = (value: string) => {
 
 export function PosPage({ notify }: { notify: Notice }) {
   const { t } = useI18n();
+  const { permissionSet } = useAuthorization();
+  const checkoutPolicy = actionPermissionPolicies.pos.checkout;
+  const canCheckout = allows(permissionSet, checkoutPolicy);
+  const canReadCashBankAccounts = canCheckout && allows(permissionSet, endpointPermissionPolicies.cashBankAccounts);
+  const canReadCustomers = canCheckout && allows(permissionSet, endpointPermissionPolicies.customers);
+  const canReadCurrencies = canCheckout && allows(permissionSet, endpointPermissionPolicies.currencies);
+  const canReadFiscalPeriods = canCheckout && allows(permissionSet, endpointPermissionPolicies.fiscalPeriods);
+  const canReadWarehouses = canCheckout && allows(permissionSet, endpointPermissionPolicies.warehouses);
+  const canScanBarcodes = canUsePosBarcodeScanner(permissionSet);
   const [sales, setSales] = useState<PosSale[]>([]);
   const [meta, setMeta] = useState({ page: 1, pageSize: 10, total: 0, totalPages: 0 });
   const [page, setPage] = useState(1);
@@ -72,6 +97,16 @@ export function PosPage({ notify }: { notify: Notice }) {
   const [cashAccountLabel, setCashAccountLabel] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
   const [lines, setLines] = useState<DraftLine[]>([blankLine()]);
+  const linesRef = useRef(lines);
+  const [barcodeValue, setBarcodeValue] = useState("");
+  const [barcodeLoading, setBarcodeLoading] = useState(false);
+  const [barcodeFeedback, setBarcodeFeedback] = useState<{ tone: "success" | "error" | "neutral"; message: string } | null>(null);
+  const barcodeInputRef = useRef<HTMLInputElement>(null);
+  const barcodeQueueRef = useRef<QueuedBarcodeScan[]>([]);
+  const barcodeWorkerRunning = useRef(false);
+  const barcodeEpochRef = useRef(0);
+  const checkoutInFlightRef = useRef(false);
+  const [barcodePendingCount, setBarcodePendingCount] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -89,18 +124,30 @@ export function PosPage({ notify }: { notify: Notice }) {
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
-    void Promise.all([
-      api<ListResponse<FiscalPeriod>>("/fiscal-periods?page=1&pageSize=100"),
-      api<{ data: Currency[] }>("/currencies"),
-    ]).then(([periodResult, currencyResult]) => {
-      const openPeriods = periodResult.data.filter((period) => period.status !== "CLOSED");
+    if (!canCheckout) {
+      setPeriods([]);
+      setCurrencies([]);
+      return;
+    }
+    void (async () => {
+      const [periodResult, currencyResult] = await Promise.all([
+        requestIfAllowed(permissionSet, endpointPermissionPolicies.fiscalPeriods, () =>
+          api<ListResponse<FiscalPeriod>>("/fiscal-periods?page=1&pageSize=100")),
+        requestIfAllowed(permissionSet, endpointPermissionPolicies.currencies, () =>
+          api<{ data: Currency[] }>("/currencies")),
+      ]);
+      const periodData = requestValue(periodResult);
+      const currencyData = requestValue(currencyResult);
+      const openPeriods = periodData?.data.filter((period) => period.status !== "CLOSED") ?? [];
       setPeriods(openPeriods);
-      setCurrencies(currencyResult.data);
+      setCurrencies(currencyData?.data ?? []);
       setPeriodId((current) => current || openPeriods[0]?.id || "");
-      const base = currencyResult.data.find((currency) => currency.isBase) ?? currencyResult.data[0];
+      const base = currencyData?.data.find((currency) => currency.isBase) ?? currencyData?.data[0];
       setCurrencyId((current) => current || base?.id || "");
-    }).catch((cause) => notify(cause instanceof Error ? cause.message : t("pos.loadError"), "error"));
-  }, [notify, t]);
+      const cause = firstRequestFailure([periodResult, currencyResult]);
+      if (cause) notify(cause instanceof Error ? cause.message : t("pos.loadError"), "error");
+    })();
+  }, [canCheckout, notify, permissionSet, t]);
 
   const displayTotal = useMemo(() => lines.reduce((sum, line) => {
     const quantity = Number(line.quantity) || 0;
@@ -109,16 +156,145 @@ export function PosPage({ notify }: { notify: Notice }) {
     return sum + Math.max(0, quantity * price - discount);
   }, 0), [lines]);
 
+  const updateLines = (update: (current: readonly DraftLine[]) => DraftLine[]) => {
+    const next = update(linesRef.current);
+    linesRef.current = next;
+    setLines(next);
+  };
+
   const updateLine = (index: number, patch: Partial<DraftLine>) =>
-    setLines((current) => current.map((line, position) => position === index ? { ...line, ...patch } : line));
+    updateLines((current) => current.map((line, position) => position === index ? { ...line, ...patch } : line));
+
+  const updateBarcodeQueue = (queue: QueuedBarcodeScan[]) => {
+    barcodeQueueRef.current = queue;
+    setBarcodePendingCount(queue.length);
+  };
+
+  const clearBarcodeBuffer = (input: HTMLInputElement | null) => {
+    if (input) input.value = "";
+    setBarcodeValue("");
+  };
+
+  async function drainBarcodeQueue() {
+    if (barcodeWorkerRunning.current) return;
+    barcodeWorkerRunning.current = true;
+    setBarcodeLoading(true);
+    try {
+      while (barcodeQueueRef.current.length > 0) {
+        const entry = barcodeQueueRef.current[0]!;
+        if (entry.epoch === barcodeEpochRef.current) {
+          try {
+            const resolved = await api<ResolvedInventoryBarcode>("/inventory-barcodes/resolve", {
+              method: "POST",
+              body: JSON.stringify({ value: entry.value }),
+            });
+            if (canApplyQueuedBarcodeScan(
+              entry,
+              barcodeEpochRef.current,
+              checkoutInFlightRef.current,
+            )) {
+              const itemName = localizedReferenceName(resolved.inventoryItem);
+              const result = applyResolvedBarcodeToLines(
+                linesRef.current,
+                {
+                  id: resolved.inventoryItem.id,
+                  label: `${resolved.inventoryItem.code} — ${itemName} (${resolved.inventoryItem.unitOfMeasure.code})`,
+                  description: itemName,
+                },
+                blankLine,
+                50,
+              );
+              if (result.status === "invalid-quantity") {
+                setBarcodeFeedback({ tone: "error", message: t("pos.barcode.quantityInvalid") });
+              } else if (result.status === "line-limit") {
+                setBarcodeFeedback({ tone: "error", message: t("pos.barcode.lineLimit") });
+              } else {
+                linesRef.current = result.lines;
+                setLines(result.lines);
+                setBarcodeFeedback({
+                  tone: "success",
+                  message: t(result.status === "incremented" ? "pos.barcode.incremented" : "pos.barcode.added", {
+                    item: `${resolved.inventoryItem.code} — ${itemName}`,
+                  }),
+                });
+              }
+            }
+          } catch (cause) {
+            if (entry.epoch === barcodeEpochRef.current) {
+              setBarcodeFeedback({
+                tone: "error",
+                message: cause instanceof Error ? cause.message : t("pos.barcode.resolveError"),
+              });
+            }
+          }
+        }
+        const currentQueue = barcodeQueueRef.current;
+        updateBarcodeQueue(currentQueue[0] === entry
+          ? currentQueue.slice(1)
+          : currentQueue.filter((queued) => queued !== entry));
+      }
+    } finally {
+      barcodeWorkerRunning.current = false;
+      setBarcodeLoading(false);
+      window.requestAnimationFrame(() => {
+        barcodeInputRef.current?.focus();
+        barcodeInputRef.current?.select();
+      });
+    }
+  }
+
+  function enqueueBarcodeScan(rawValue: string, input: HTMLInputElement | null) {
+    if (!canScanBarcodes) return;
+    clearBarcodeBuffer(input);
+    if (checkoutInFlightRef.current) {
+      setBarcodeFeedback({ tone: "error", message: t("pos.barcode.checkoutInProgress") });
+      return;
+    }
+    const admission = appendBarcodeScanToQueue(
+      barcodeQueueRef.current,
+      rawValue,
+      barcodeEpochRef.current,
+    );
+    if (admission.status === "empty") {
+      setBarcodeFeedback({ tone: "error", message: t("pos.barcode.empty") });
+      barcodeInputRef.current?.focus();
+      return;
+    }
+    if (admission.status === "full") {
+      setBarcodeFeedback({
+        tone: "error",
+        message: t("pos.barcode.queueFull", { count: POS_BARCODE_QUEUE_LIMIT }),
+      });
+      barcodeInputRef.current?.focus();
+      return;
+    }
+    updateBarcodeQueue(admission.queue);
+    if (admission.queue.length > 1) {
+      setBarcodeFeedback({
+        tone: "neutral",
+        message: t("pos.barcode.queued", { count: admission.queue.length }),
+      });
+    } else {
+      setBarcodeFeedback(null);
+    }
+    void drainBarcodeQueue();
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canCheckout) return;
+    if (barcodeWorkerRunning.current || barcodeQueueRef.current.length > 0) {
+      setBarcodeFeedback({ tone: "error", message: t("pos.barcode.checkoutBlocked") });
+      barcodeInputRef.current?.focus();
+      return;
+    }
     const data = new FormData(event.currentTarget);
     if (paymentMethod?.requiresReference && !String(data.get("referenceNumber") ?? "").trim()) {
       notify(t("pos.referenceRequired"), "error");
       return;
     }
+    checkoutInFlightRef.current = true;
+    barcodeEpochRef.current += 1;
     setSaving(true);
     try {
       await api<PosCheckoutResult>("/pos/checkouts", {
@@ -136,7 +312,7 @@ export function PosPage({ notify }: { notify: Notice }) {
           paymentMethodId: paymentMethod?.id ?? "",
           referenceNumber: String(data.get("referenceNumber") ?? "").trim() || null,
           notes: String(data.get("notes") ?? "").trim() || null,
-          lines: lines.map((line) => ({
+          lines: linesRef.current.map((line) => ({
             inventoryItemId: line.inventoryItemId,
             description: line.description.trim(),
             quantity: toQuantity(line.quantity),
@@ -149,11 +325,15 @@ export function PosPage({ notify }: { notify: Notice }) {
         }),
       });
       notify(t("pos.completed"));
-      setLines([blankLine()]);
+      updateBarcodeQueue([]);
+      updateLines(() => [blankLine()]);
+      clearBarcodeBuffer(barcodeInputRef.current);
+      setBarcodeFeedback(null);
       await load();
     } catch (cause) {
       notify(cause instanceof Error ? cause.message : t("pos.checkoutError"), "error");
     } finally {
+      checkoutInFlightRef.current = false;
       setSaving(false);
     }
   }
@@ -163,19 +343,25 @@ export function PosPage({ notify }: { notify: Notice }) {
     <div className="pos-layout">
       <form className="panel pos-checkout-form" onSubmit={submit}>
         <header><div><h2>{t("pos.newSale")}</h2><p>{t("pos.inventoryOnly")}</p></div></header>
+        {canScanBarcodes && <div className="pos-barcode-scanner" aria-busy={barcodeLoading}>
+          <div className="pos-barcode-copy"><strong>{t("pos.barcode.title")}</strong><span>{t("pos.barcode.keyboardHint")}</span></div>
+          <label><span>{t("pos.barcode.inputLabel")}</span><input ref={barcodeInputRef} dir="ltr" inputMode="text" autoComplete="off" autoFocus maxLength={255} value={barcodeValue} onChange={(event) => { setBarcodeValue(event.target.value); setBarcodeFeedback(null); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); enqueueBarcodeScan(event.currentTarget.value, event.currentTarget); } }} placeholder={t("pos.barcode.placeholder")} /></label>
+          <Button type="button" icon="search" disabled={!barcodeValue.trim()} onClick={() => enqueueBarcodeScan(barcodeInputRef.current?.value ?? barcodeValue, barcodeInputRef.current)}>{barcodeLoading ? t("pos.barcode.enqueue") : t("pos.barcode.scan")}</Button>
+          {barcodeFeedback && <div className={`pos-barcode-feedback ${barcodeFeedback.tone}`} role={barcodeFeedback.tone === "error" ? "alert" : "status"}>{barcodeFeedback.message}</div>}
+        </div>}
         <div className="pos-reference-grid">
-          <label><span>{t("pos.period")}</span><select value={periodId} onChange={(event) => setPeriodId(event.target.value)} required><option value="" />{periods.map((period) => <option value={period.id} key={period.id}>{period.name}</option>)}</select></label>
+          <label><span>{t("pos.period")}</span><select value={periodId} onChange={(event) => setPeriodId(event.target.value)} disabled={!canReadFiscalPeriods} required><option value="" />{periods.map((period) => <option value={period.id} key={period.id}>{period.name}</option>)}</select></label>
           <label><span>{t("pos.date")}</span><input name="documentDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required /></label>
           <label className="pos-description"><span>{t("pos.descriptionLabel")}</span><input name="description" maxLength={500} required /></label>
-          <label><span>{t("pos.customer")}</span><ReferenceCombobox<Customer> endpoint="/customers?active=true" value={customerId} selectedLabel={customerLabel} onChange={(customer) => { setCustomerId(customer?.id ?? ""); setCustomerLabel(customer ? `${customer.code} — ${localizedReferenceName(customer)}` : ""); }} optionLabel={(customer) => `${customer.code} — ${localizedReferenceName(customer)}`} placeholder={t("pos.customer")} searchLabel={t("pos.customer")} required /></label>
-          <label><span>{t("pos.warehouse")}</span><ReferenceCombobox<Warehouse> endpoint="/warehouses?active=true" value={warehouseId} selectedLabel={warehouseLabel} onChange={(warehouse) => { setWarehouseId(warehouse?.id ?? ""); setWarehouseLabel(warehouse ? `${warehouse.code} — ${localizedReferenceName(warehouse)}` : ""); }} optionLabel={(warehouse) => `${warehouse.code} — ${localizedReferenceName(warehouse)}`} placeholder={t("pos.warehouse")} searchLabel={t("pos.warehouse")} required /></label>
-          <label><span>{t("pos.currency")}</span><select value={currencyId} onChange={(event) => setCurrencyId(event.target.value)} required><option value="" />{currencies.map((currency) => <option value={currency.id} key={currency.id}>{currency.code} — {currency.nameAr}</option>)}</select></label>
+          <label><span>{t("pos.customer")}</span><ReferenceCombobox<Customer> endpoint="/customers?active=true" value={customerId} selectedLabel={customerLabel} onChange={(customer) => { setCustomerId(customer?.id ?? ""); setCustomerLabel(customer ? `${customer.code} — ${localizedReferenceName(customer)}` : ""); }} optionLabel={(customer) => `${customer.code} — ${localizedReferenceName(customer)}`} placeholder={t("pos.customer")} searchLabel={t("pos.customer")} required disabled={!canReadCustomers} /></label>
+          <label><span>{t("pos.warehouse")}</span><ReferenceCombobox<Warehouse> endpoint="/warehouses?active=true" value={warehouseId} selectedLabel={warehouseLabel} onChange={(warehouse) => { setWarehouseId(warehouse?.id ?? ""); setWarehouseLabel(warehouse ? `${warehouse.code} — ${localizedReferenceName(warehouse)}` : ""); }} optionLabel={(warehouse) => `${warehouse.code} — ${localizedReferenceName(warehouse)}`} placeholder={t("pos.warehouse")} searchLabel={t("pos.warehouse")} required disabled={!canReadWarehouses} /></label>
+          <label><span>{t("pos.currency")}</span><select value={currencyId} onChange={(event) => setCurrencyId(event.target.value)} disabled={!canReadCurrencies} required><option value="" />{currencies.map((currency) => <option value={currency.id} key={currency.id}>{currency.code} — {currency.nameAr}</option>)}</select></label>
           <label><span>{t("pos.exchangeRate")}</span><input dir="ltr" inputMode="decimal" value={exchangeRate} onChange={(event) => setExchangeRate(event.target.value)} required /></label>
-          <label><span>{t("pos.cashAccount")}</span><ReferenceCombobox<CashBankAccount> endpoint="/cash-bank-accounts?active=true" value={cashAccountId} selectedLabel={cashAccountLabel} onChange={(account) => { setCashAccountId(account?.id ?? ""); setCashAccountLabel(account ? `${account.code} — ${localizedReferenceName(account)}` : ""); }} optionLabel={(account) => `${account.code} — ${localizedReferenceName(account)}`} placeholder={t("pos.cashAccount")} searchLabel={t("pos.cashAccount")} required /></label>
-          <label><span>{t("pos.paymentMethod")}</span><ReferenceCombobox<PaymentMethod> endpoint="/payment-methods?active=true" value={paymentMethod?.id ?? ""} selectedLabel={paymentMethod ? `${paymentMethod.code} — ${paymentMethod.nameAr}` : ""} onChange={setPaymentMethod} optionLabel={(method) => `${method.code} — ${method.nameAr}`} placeholder={t("pos.paymentMethod")} searchLabel={t("pos.paymentMethod")} required /></label>
+          <label><span>{t("pos.cashAccount")}</span><ReferenceCombobox<CashBankAccount> endpoint="/cash-bank-accounts?active=true" value={cashAccountId} selectedLabel={cashAccountLabel} onChange={(account) => { setCashAccountId(account?.id ?? ""); setCashAccountLabel(account ? `${account.code} — ${localizedReferenceName(account)}` : ""); }} optionLabel={(account) => `${account.code} — ${localizedReferenceName(account)}`} placeholder={t("pos.cashAccount")} searchLabel={t("pos.cashAccount")} required disabled={!canReadCashBankAccounts} /></label>
+          <label><span>{t("pos.paymentMethod")}</span><ReferenceCombobox<PaymentMethod> endpoint="/payment-methods?active=true" value={paymentMethod?.id ?? ""} selectedLabel={paymentMethod ? `${paymentMethod.code} — ${paymentMethod.nameAr}` : ""} onChange={setPaymentMethod} optionLabel={(method) => `${method.code} — ${method.nameAr}`} placeholder={t("pos.paymentMethod")} searchLabel={t("pos.paymentMethod")} required disabled={!canReadCashBankAccounts} /></label>
           <label><span>{t("pos.reference")}</span><input name="referenceNumber" maxLength={100} required={paymentMethod?.requiresReference} /></label>
         </div>
-        <fieldset className="pos-lines"><legend>{t("pos.lines")}</legend>{lines.map((line, index) => <div className="pos-line" key={index}>
+        <fieldset className="pos-lines" disabled={!canCheckout}><legend>{t("pos.lines")}</legend>{lines.map((line, index) => <div className="pos-line" key={index}>
           <span className="line-index">{index + 1}</span>
           <label className="pos-item"><span>{t("pos.item")}</span><ReferenceCombobox<InventoryItem> endpoint="/inventory-items?active=true" value={line.inventoryItemId} selectedLabel={line.inventoryItemLabel} onChange={(item) => updateLine(index, { inventoryItemId: item?.id ?? "", inventoryItemLabel: item ? `${item.code} — ${localizedReferenceName(item)}` : "", description: item ? localizedReferenceName(item) : line.description })} optionLabel={(item) => `${item.code} — ${localizedReferenceName(item)}`} placeholder={t("pos.item")} searchLabel={t("pos.item")} required /></label>
           <label><span>{t("pos.quantity")}</span><input dir="ltr" inputMode="decimal" value={line.quantity} onChange={(event) => updateLine(index, { quantity: event.target.value })} required /></label>
@@ -183,9 +369,9 @@ export function PosPage({ notify }: { notify: Notice }) {
           <label><span>{t("pos.discount")}</span><input dir="ltr" inputMode="decimal" value={line.discountAmount} onChange={(event) => updateLine(index, { discountAmount: event.target.value })} required /></label>
           <label className="pos-revenue"><span>{t("pos.revenueAccount")}</span><ReferenceCombobox<Account> endpoint="/accounts?active=true&allowsPosting=true&accountClasses=REVENUE" value={line.revenueAccountId} selectedLabel={line.revenueAccountLabel} onChange={(account) => updateLine(index, { revenueAccountId: account?.id ?? "", revenueAccountLabel: account ? `${account.code} — ${localizedReferenceName(account)}` : "" })} optionLabel={(account) => `${account.code} — ${localizedReferenceName(account)}`} placeholder={t("pos.revenueAccount")} searchLabel={t("pos.revenueAccount")} required /></label>
           <label className="pos-tax"><span>{t("pos.tax")}</span><ReferenceCombobox<TaxRate> endpoint="/tax-rates?activeOnly=true" value={line.taxRateId} selectedLabel={line.taxRateLabel} onChange={(tax) => updateLine(index, { taxRateId: tax?.id ?? "", taxRateLabel: tax ? `${localizedReferenceName(tax)} (${Number(tax.rate)}%)` : "" })} optionLabel={(tax) => `${localizedReferenceName(tax)} (${Number(tax.rate)}%)${tax.isReady ? "" : ` — ${taxReadinessLabel(tax)}`}`} optionDisabled={(tax) => !tax.isReady} placeholder={t("pos.tax")} searchLabel={t("pos.tax")} optionalLabel={t("pos.tax")} /></label>
-          <Button type="button" variant="ghost" icon="trash" disabled={lines.length === 1} onClick={() => setLines((current) => current.filter((_, position) => position !== index))}>{t("pos.removeLine")}</Button>
-        </div>)}<Button type="button" variant="secondary" icon="plus" disabled={lines.length >= 50} onClick={() => setLines((current) => [...current, blankLine()])}>{t("pos.addLine")}</Button></fieldset>
-        <div className="pos-checkout-footer"><label><span>{t("pos.notes")}</span><textarea name="notes" maxLength={1000} rows={2} /></label><div className="pos-total"><span>{t("pos.total")}</span><strong>{formatMoney(displayTotal)}</strong></div><Button type="submit" icon="check" disabled={saving || !periodId || !currencyId || !customerId || !warehouseId || !cashAccountId || !paymentMethod}>{saving ? t("pos.checkingOut") : t("pos.checkout")}</Button></div>
+          <Button type="button" variant="ghost" icon="trash" disabled={lines.length === 1} onClick={() => updateLines((current) => current.filter((_, position) => position !== index))}>{t("pos.removeLine")}</Button>
+        </div>)}<Button type="button" variant="secondary" icon="plus" disabled={lines.length >= 50} onClick={() => updateLines((current) => [...current, blankLine()])}>{t("pos.addLine")}</Button></fieldset>
+        <div className="pos-checkout-footer"><label><span>{t("pos.notes")}</span><textarea name="notes" maxLength={1000} rows={2} /></label><div className="pos-total"><span>{t("pos.total")}</span><strong>{formatMoney(displayTotal)}</strong></div><Can policy={checkoutPolicy}><Button type="submit" icon="check" disabled={saving || barcodeLoading || barcodePendingCount > 0 || !periodId || !currencyId || !customerId || !warehouseId || !cashAccountId || !paymentMethod}>{saving ? t("pos.checkingOut") : t("pos.checkout")}</Button></Can></div>
       </form>
       <article className="panel pos-history"><header><div><h2>{t("pos.recentSales")}</h2><p>{t("pos.recentDescription")}</p></div></header>
         {error ? <div className="error-panel" role="alert"><p>{error}</p><Button variant="secondary" onClick={() => void load()}>{t("common.retry")}</Button></div> : loading ? <Spinner label={t("common.loading")} /> : sales.length === 0 ? <EmptyState title={t("pos.emptyTitle")} description={t("pos.emptyDescription")} /> : <><div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("pos.invoice")}</th><th>{t("pos.receipt")}</th><th>{t("pos.customer")}</th><th>{t("pos.total")}</th><th>{t("pos.completedAt")}</th><th>{t("pos.status")}</th></tr></thead><tbody>{sales.map((sale) => <tr key={sale.id}><td dir="ltr">{sale.invoice.documentNumber}</td><td dir="ltr">{sale.receipt.documentNumber}</td><td>{sale.invoice.customerName}</td><td className="money-cell">{formatMoney(sale.invoice.total)}</td><td>{new Date(sale.completedAt).toLocaleString(activeIntlLocale())}</td><td><div className="pos-statuses"><span><small>{t("pos.invoice")}</small><span className={`status-chip ${sale.invoice.status.toLowerCase()}`}>{statusLabel(sale.invoice.status)}</span></span><span><small>{t("pos.receipt")}</small><span className={`status-chip ${sale.receipt.status.toLowerCase()}`}>{statusLabel(sale.receipt.status)}</span></span></div></td></tr>)}</tbody></table></div><Pagination {...meta} page={page} onChange={setPage} /></>}

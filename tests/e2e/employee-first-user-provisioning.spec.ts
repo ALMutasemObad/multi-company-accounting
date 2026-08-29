@@ -1,4 +1,7 @@
 import { expect, test } from "@playwright/test";
+import { authMeResponse, e2eCompany } from "./auth-me-mock.js";
+
+const permissions = ["users.view", "users.create", "roles.view"];
 
 test("creates a user by selecting an existing employee without re-entering names", async ({ page }) => {
   const employee = {
@@ -30,7 +33,8 @@ test("creates a user by selecting an existing employee without re-entering names
     const method = request.method();
     const json = (body: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 
-    if (path === "/auth/companies") return json({ data: [{ id: "1", name: "E2E Company" }] });
+    if (path === "/auth/companies") return json({ data: [e2eCompany] });
+    if (path === "/auth/me") return json(authMeResponse(permissions));
     if (path === "/auth/context") return route.fulfill({ status: 204, body: "" });
     if (path === "/roles") return json({ data: [] });
     if (path === "/users/employee-options") return json({ data: created ? [] : [employee] });

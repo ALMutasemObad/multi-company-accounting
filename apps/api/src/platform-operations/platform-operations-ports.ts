@@ -183,8 +183,17 @@ export type PlatformCompanyDetails = PlatformCompanySummary & {
   documentsByType: Array<{ type: string; total: number; posted: number }>;
 };
 
-export interface PlatformIdentityQueryPort {
-  activeEmailForUser(userId: bigint): Promise<string | null>;
+export interface PlatformOperatorIdentityQueryPort {
+  existingUserIds(userIds: readonly bigint[]): Promise<bigint[]>;
+  usersByNormalizedEmails(emails: readonly string[]): Promise<Array<{
+    id: bigint;
+    emailNormalized: string;
+  }>>;
+  isActiveUser(userId: bigint): Promise<boolean>;
+}
+
+export interface PlatformOperatorAuthorizationPort {
+  isActiveOperator(userId: bigint): Promise<boolean>;
 }
 
 export interface PlatformAnalyticsQueryPort {
@@ -216,5 +225,6 @@ export interface PlatformAnalyticsQueryPort {
     periodStart: Date;
     periodEndExclusive: Date;
   }): Promise<PlatformCompanyUsage | null>;
+  companyCount(): Promise<number>;
   companyReferences(companyIds?: bigint[]): Promise<PlatformCompanyReference[]>;
 }

@@ -41,6 +41,55 @@ export interface PayableSettlementPort {
   ): Promise<void>;
 }
 
+export type PayableInvoiceCreateInput = {
+  companyId: bigint;
+  purchaseInvoiceId: bigint;
+  supplierId: bigint;
+  currencyId: bigint;
+  dueDate: Date;
+  originalAmount: Prisma.Decimal.Value;
+  originalBaseAmount: Prisma.Decimal.Value;
+};
+
+export type PayableDebitInput = {
+  companyId: bigint;
+  sourceInvoiceId: bigint;
+  amount: Prisma.Decimal.Value;
+  baseAmount: Prisma.Decimal.Value;
+  invalid: () => Error;
+  overAllocation: () => Error;
+  conflict: () => Error;
+};
+
+export type PayableDebitReversalInput = Omit<PayableDebitInput, "overAllocation">;
+
+export type PayableInvoiceReversalInput = {
+  companyId: bigint;
+  purchaseInvoiceId: bigint;
+  invalid: () => Error;
+  hasSettlements: () => Error;
+  conflict: () => Error;
+};
+
+export interface PayableInvoicePort {
+  createForInvoice(
+    tx: Prisma.TransactionClient,
+    input: PayableInvoiceCreateInput,
+  ): Promise<PayableItem>;
+  applyDebit(
+    tx: Prisma.TransactionClient,
+    input: PayableDebitInput,
+  ): Promise<void>;
+  reverseDebit(
+    tx: Prisma.TransactionClient,
+    input: PayableDebitReversalInput,
+  ): Promise<void>;
+  reverseInvoice(
+    tx: Prisma.TransactionClient,
+    input: PayableInvoiceReversalInput,
+  ): Promise<void>;
+}
+
 type LockedRow = { id: bigint };
 
 function orderedIds(values: bigint[]) {
@@ -76,7 +125,7 @@ function statusFor(outstanding: Prisma.Decimal, original: Prisma.Decimal) {
 const money = (value: Prisma.Decimal.Value) =>
   new Prisma.Decimal(value).toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP);
 
-export class PayableItemService implements PayableSettlementPort {
+export class PayableItemService implements PayableSettlementPort, PayableInvoicePort {
   async validateDraftTargets(
     tx: Prisma.TransactionClient,
     command: SettlementCommand,
@@ -111,15 +160,7 @@ export class PayableItemService implements PayableSettlementPort {
 
   createForInvoice(
     tx: Prisma.TransactionClient,
-    input: {
-      companyId: bigint;
-      purchaseInvoiceId: bigint;
-      supplierId: bigint;
-      currencyId: bigint;
-      dueDate: Date;
-      originalAmount: Prisma.Decimal.Value;
-      originalBaseAmount: Prisma.Decimal.Value;
-    },
+    input: PayableInvoiceCreateInput,
   ) {
     const originalAmount = new Prisma.Decimal(input.originalAmount);
     const originalBaseAmount = money(input.originalBaseAmount);
@@ -137,15 +178,7 @@ export class PayableItemService implements PayableSettlementPort {
 
   async applyDebit(
     tx: Prisma.TransactionClient,
-    input: {
-      companyId: bigint;
-      sourceInvoiceId: bigint;
-      amount: Prisma.Decimal.Value;
-      baseAmount: Prisma.Decimal.Value;
-      invalid: () => Error;
-      overAllocation: () => Error;
-      conflict: () => Error;
-    },
+    input: PayableDebitInput,
   ) {
     const item = await this.lockByInvoice(
       tx,
@@ -174,14 +207,7 @@ export class PayableItemService implements PayableSettlementPort {
 
   async reverseDebit(
     tx: Prisma.TransactionClient,
-    input: {
-      companyId: bigint;
-      sourceInvoiceId: bigint;
-      amount: Prisma.Decimal.Value;
-      baseAmount: Prisma.Decimal.Value;
-      invalid: () => Error;
-      conflict: () => Error;
-    },
+    input: PayableDebitReversalInput,
   ) {
     const item = await this.lockByInvoice(
       tx,
@@ -203,13 +229,7 @@ export class PayableItemService implements PayableSettlementPort {
 
   async reverseInvoice(
     tx: Prisma.TransactionClient,
-    input: {
-      companyId: bigint;
-      purchaseInvoiceId: bigint;
-      invalid: () => Error;
-      hasSettlements: () => Error;
-      conflict: () => Error;
-    },
+    input: PayableInvoiceReversalInput,
   ) {
     const item = await this.lockByInvoice(
       tx,

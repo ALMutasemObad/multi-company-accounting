@@ -3,6 +3,8 @@ import { z } from "zod";
 import type { AuthService } from "../auth/auth-service.js";
 import { openApiRequestBodySchemas as bodies } from "../generated/openapi-request-guards.js";
 import {
+  PLATFORM_BILLING_DEFAULT_PAGE_SIZE,
+  PLATFORM_BILLING_MAX_PAGE_SIZE,
   PlatformBillingError,
   type PlatformBillingService,
 } from "./platform-billing-service.js";
@@ -19,6 +21,11 @@ const companyListQuery = querySchema.extend({
   status: z.enum(["ALL", "ACTIVE", "INACTIVE"]).default("ALL"),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
+const billingListQuery = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(PLATFORM_BILLING_MAX_PAGE_SIZE)
+    .default(PLATFORM_BILLING_DEFAULT_PAGE_SIZE),
 });
 const companyId = z.string().regex(/^[1-9][0-9]*$/u).transform(BigInt);
 const publicId = z.string().uuid();
@@ -115,13 +122,17 @@ export function createPlatformOperationsRouter(
   });
 
   router.get("/platform/billing/summary", async (request, response) => {
-      const actor = await authenticate(request);
-      response.json(await billing.summary(actor.userId));
+    const actor = await authenticate(request);
+    response.json(await billing.summary(actor.userId, billingListQuery.parse(request.query)));
   });
 
   router.get("/platform/companies/:companyId/billing", async (request, response) => {
-      const actor = await authenticate(request);
-      response.json(await billing.companyBilling(actor.userId, companyId.parse(request.params.companyId)));
+    const actor = await authenticate(request);
+    response.json(await billing.companyBilling(
+      actor.userId,
+      companyId.parse(request.params.companyId),
+      billingListQuery.parse(request.query),
+    ));
   });
 
   router.put("/platform/companies/:companyId/billing-account", async (request, response) => {

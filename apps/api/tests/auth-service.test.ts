@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { AuthError, AuthService } from '../src/auth/auth-service.js';
-import type { AuthStore, CompanyAccess, StoredSession, StoredUser } from '../src/auth/auth-store.js';
+import type { AuthStore, AuthorizationSnapshot, CompanyAccess, StoredSession, StoredUser } from '../src/auth/auth-store.js';
 
 class TestStore implements AuthStore {
   sessions = new Map<string, StoredSession>();
   users = new Map<string, StoredUser>();
   companies: CompanyAccess[] = [];
+  permissions: string[] = [];
+  authorizationSnapshot: AuthorizationSnapshot | null | undefined;
   failedLogins = 0;
   selectedCompanyId: bigint | null = null;
   private nextSessionId = 1n;
@@ -23,9 +25,30 @@ class TestStore implements AuthStore {
     this.sessions.set(Buffer.from(input.tokenHash).toString('hex'), { id: this.nextSessionId++, state: 'AUTHENTICATED', userId: input.userId, selectedCompanyId: null, csrfHash: input.csrfHash, expiresAt: input.expiresAt, revokedAt: null });
   }
   async listCompanies() { return this.companies; }
+  async readAuthorizationSnapshot(input: { userId: bigint; companyId: bigint | null }) {
+    if (this.authorizationSnapshot !== undefined) return this.authorizationSnapshot;
+    const storedUser = [...this.users.values()].find((candidate) => candidate.id === input.userId && candidate.isActive);
+    if (!storedUser) return null;
+    const selectedCompany = input.companyId === null
+      ? null
+      : this.companies.find((company) => company.id === input.companyId) ?? null;
+    if (input.companyId !== null && !selectedCompany) return null;
+    return {
+      user: { id: storedUser.id, displayName: storedUser.displayName },
+      selectedCompany,
+      permissions: selectedCompany ? [...new Set(this.permissions)].sort() : [],
+    };
+  }
   async selectCompany(input: { sessionId: bigint; userId: bigint; companyId: bigint }) {
     const allowed = this.companies.some((company) => company.id === input.companyId);
-    if (allowed) this.selectedCompanyId = input.companyId;
+    if (allowed) {
+      this.selectedCompanyId = input.companyId;
+      for (const session of this.sessions.values()) {
+        if (session.id === input.sessionId && session.userId === input.userId) {
+          session.selectedCompanyId = input.companyId;
+        }
+      }
+    }
     return allowed;
   }
   async revokeCurrentSession(sessionId: bigint) {
@@ -104,5 +127,43 @@ describe('AuthService', () => {
     await expect(auth.selectCompany({ sid: login.sid, csrfToken: login.csrfToken, companyId: 11n })).rejects.toMatchObject({ reason: 'FORBIDDEN' });
     await auth.selectCompany({ sid: login.sid, csrfToken: login.csrfToken, companyId: 10n });
     expect(store.selectedCompanyId).toBe(10n);
+  });
+
+  it('returns the authenticated identity without company capabilities before selection', async () => {
+    const { auth } = fixture();
+    const preAuth = await auth.issueCsrf();
+    const login = await auth.login({ sid: preAuth.sid, csrfToken: preAuth.csrfToken, email: user.emailNormalized, password: 'correct-password' });
+
+    await expect(auth.me({ sid: login.sid })).resolves.toEqual({
+      user: { id: user.id, displayName: user.displayName },
+      selectedCompany: null,
+      permissions: [],
+    });
+  });
+
+  it('returns sorted unique permissions only for the selected company context', async () => {
+    const { auth, store } = fixture();
+    store.companies = [{ id: 10n, name: 'الشركة التجريبية', timezone: 'Asia/Riyadh' }];
+    store.permissions = ['sales_invoices.view', 'receipts.view', 'sales_invoices.view'];
+    const preAuth = await auth.issueCsrf();
+    const login = await auth.login({ sid: preAuth.sid, csrfToken: preAuth.csrfToken, email: user.emailNormalized, password: 'correct-password' });
+    await auth.selectCompany({ sid: login.sid, csrfToken: login.csrfToken, companyId: 10n });
+
+    await expect(auth.me({ sid: login.sid })).resolves.toEqual({
+      user: { id: user.id, displayName: user.displayName },
+      selectedCompany: store.companies[0],
+      permissions: ['receipts.view', 'sales_invoices.view'],
+    });
+  });
+
+  it('rejects a stale selected company context', async () => {
+    const { auth, store } = fixture();
+    store.companies = [{ id: 10n, name: 'الشركة التجريبية', timezone: 'Asia/Riyadh' }];
+    const preAuth = await auth.issueCsrf();
+    const login = await auth.login({ sid: preAuth.sid, csrfToken: preAuth.csrfToken, email: user.emailNormalized, password: 'correct-password' });
+    await auth.selectCompany({ sid: login.sid, csrfToken: login.csrfToken, companyId: 10n });
+    store.authorizationSnapshot = null;
+
+    await expect(auth.me({ sid: login.sid })).rejects.toEqual(new AuthError('FORBIDDEN'));
   });
 });

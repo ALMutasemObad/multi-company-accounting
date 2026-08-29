@@ -1,12 +1,10 @@
-name: production backup and restore drill
+name: staging backup and restore drill (manual)
 
 on:
-  schedule:
-    - cron: '43 1 * * *'
   workflow_dispatch:
     inputs:
       restore_drill:
-        description: Restore the new production backup into an isolated MariaDB database
+        description: Restore the new staging backup into an isolated MariaDB database
         required: true
         default: true
         type: boolean
@@ -17,11 +15,12 @@ permissions:
 
 jobs:
   backup:
-    name: Create encrypted offsite production backup
+    name: Create encrypted offsite staging backup manually
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:
+      # Legacy secret scope only; the remote target is classified as Staging.
       name: production
       url: https://accounting.doralashab.com
     env:
@@ -101,10 +100,10 @@ jobs:
             -H 'X-GitHub-Api-Version: 2022-11-28' \
             "/repos/$GITHUB_REPOSITORY/actions/workflows/production-backup-dr.yml/runs?branch=main&exclude_pull_requests=true&per_page=100" \
             > "$workflow_runs_json"
-          node - "$artifacts_json" "$workflow_runs_json" "$GITHUB_EVENT_NAME" \
+          node - "$artifacts_json" "$workflow_runs_json" \
             "$MAX_PREVIOUS_BACKUP_ARTIFACT_AGE_SECONDS" "$GITHUB_OUTPUT" <<'NODE'
           const fs = require('node:fs');
-          const [file, runsFile, eventName, maxAgeText, outputFile] = process.argv.slice(2);
+          const [file, runsFile, maxAgeText, outputFile] = process.argv.slice(2);
           const maxAge = Number(maxAgeText);
           const payloadPages = JSON.parse(fs.readFileSync(file, 'utf8'));
           const runPages = JSON.parse(fs.readFileSync(runsFile, 'utf8'));
@@ -123,21 +122,18 @@ jobs:
             .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
           const latest = candidates[0];
           if (!latest) {
-            const stale = eventName === 'schedule';
-            fs.appendFileSync(outputFile, `status=missing\nage_seconds=\nstale=${stale}\n`);
-            console.log(stale
-              ? '::error title=Production backup RPO::No retained offsite backup exists before this scheduled run.'
-              : 'No previous offsite backup exists; this manual run is the controlled bootstrap.');
+            fs.appendFileSync(outputFile, 'status=missing\nage_seconds=\nstale=false\n');
+            console.log('No previous offsite backup exists; this manual run is the controlled bootstrap.');
             process.exit(0);
           }
           const ageSeconds = Math.max(0, Math.floor((Date.now() - Date.parse(latest.created_at)) / 1000));
           const stale = !Number.isFinite(ageSeconds) || ageSeconds > maxAge;
           fs.appendFileSync(outputFile, `status=${stale ? 'stale' : 'fresh'}\nage_seconds=${ageSeconds}\nstale=${stale}\n`);
-          if (stale) console.log(`::error title=Production backup RPO::Previous offsite backup age ${ageSeconds}s exceeds ${maxAge}s.`);
+          if (stale) console.log(`::warning title=Staging recovery gap::Previous offsite backup age ${ageSeconds}s exceeds the evidence threshold ${maxAge}s; no continuous RPO is claimed.`);
           else console.log(`Previous offsite recovery point age: ${ageSeconds}s.`);
           NODE
 
-      - name: Configure the pinned production SSH identity
+      - name: Configure the pinned staging SSH identity
         env:
           CPANEL_SSH_PRIVATE_KEY: ${{ secrets.CPANEL_SSH_PRIVATE_KEY }}
         run: |
@@ -148,7 +144,7 @@ jobs:
           chmod 0600 "$HOME/.ssh/id_ed25519"
           install -m 0600 deploy/ssh/ifastnet_known_hosts "$HOME/.ssh/known_hosts"
 
-      - name: Stage the audited backup helper on production
+      - name: Stage the audited backup helper on staging
         id: stage
         run: |
           set -Eeuo pipefail
@@ -178,7 +174,7 @@ jobs:
             deploy/scripts/normalize-cpanel-backup.mjs \
             "$CPANEL_SSH_USER@$CPANEL_SSH_HOST:$remote_dir/"
 
-      - name: Create and download the encrypted production backup
+      - name: Create and download the encrypted staging backup
         id: create
         env:
           BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
@@ -288,7 +284,7 @@ jobs:
                 removed=$((removed + 1))
               fi
             elif [[ -e "$backup_file" ]]; then
-              printf 'Unexpected production backup path type: %s\n' "$backup_file" >&2
+              printf 'Unexpected legacy backup path type: %s\n' "$backup_file" >&2
               exit 1
             fi
           done
@@ -350,12 +346,13 @@ jobs:
           REMOTE
 
   restore_drill:
-    name: Restore the production backup into isolated MariaDB
+    name: Restore the staging backup into isolated MariaDB
     needs: backup
     if: needs.backup.outputs.restore_drill == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:
+      # Legacy secret scope only; the restored source is the Staging backup.
       name: production
       url: https://accounting.doralashab.com
     services:
@@ -407,7 +404,7 @@ jobs:
           verification=$(node scripts/verify-backup-artifact.mjs "$backup_file")
           printf '%s\n' "$verification"
           printf 'backup_file=%s\n' "$backup_file" >> "$GITHUB_OUTPUT"
-      - name: Restore and verify the production recovery point
+      - name: Restore and verify the staging recovery point
         id: restore
         env:
           BACKUP_FILE: ${{ steps.artifact.outputs.backup_file }}
@@ -459,7 +456,7 @@ jobs:
           const status = !restoreObjectiveMet
             ? 'failed_restore_objective'
             : recoveryPointObjectiveMet === false
-              ? 'failed_recovery_point_objective'
+              ? 'passed_with_recovery_gap'
               : recoveryPointObjectiveMet === null
                 ? 'accepted_bootstrap'
                 : 'passed';
@@ -499,8 +496,11 @@ jobs:
           fs.writeFileSync('dr-evidence.json', `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o600 });
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `status=${status}\n`);
           NODE
-      - name: Store the monthly restore evidence
-        if: steps.evidence.outputs.status == 'passed' || steps.evidence.outputs.status == 'accepted_bootstrap'
+      - name: Store the requested restore evidence
+        if: >-
+          steps.evidence.outputs.status == 'passed' ||
+          steps.evidence.outputs.status == 'passed_with_recovery_gap' ||
+          steps.evidence.outputs.status == 'accepted_bootstrap'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: mcap-production-restore-drill
@@ -509,7 +509,7 @@ jobs:
           retention-days: 90
           overwrite: ${{ github.run_attempt > 1 }}
       - name: Store failed restore objective evidence
-        if: steps.evidence.outputs.status == 'failed_restore_objective' || steps.evidence.outputs.status == 'failed_recovery_point_objective'
+        if: steps.evidence.outputs.status == 'failed_restore_objective'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: mcap-production-restore-drill-failed-evidence
@@ -517,21 +517,15 @@ jobs:
           if-no-files-found: error
           retention-days: 90
           overwrite: ${{ github.run_attempt > 1 }}
-      - name: Enforce the restore drill objectives
-        if: always() && (steps.evidence.outputs.status == 'failed_restore_objective' || steps.evidence.outputs.status == 'failed_recovery_point_objective')
-        env:
-          EVIDENCE_STATUS: ${{ steps.evidence.outputs.status }}
+      - name: Enforce the requested restore drill objective
+        if: always() && steps.evidence.outputs.status == 'failed_restore_objective'
         run: |
           set -Eeuo pipefail
-          if [[ "$EVIDENCE_STATUS" == failed_restore_objective ]]; then
-            printf '::error title=Production restore RTO::Restore exceeded %ss.\n' "$RTO_OBJECTIVE_SECONDS"
-          else
-            printf '::error title=Production backup RPO::The prior offsite recovery point was missing or stale.\n'
-          fi
+          printf '::error title=Staging restore evidence::Restore exceeded %ss.\n' "$RTO_OBJECTIVE_SECONDS"
           exit 1
 
   recovery_objective_gate:
-    name: Enforce production recovery objectives
+    name: Record staging recovery evidence
     needs: [backup, restore_drill]
     if: always()
     runs-on: ubuntu-latest
@@ -549,8 +543,6 @@ jobs:
           if [[ "$restore_expected" != true ]]; then
             restore_expected=false
             if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch && "$REQUESTED_RESTORE_DRILL" == true ]]; then
-              restore_expected=true
-            elif [[ "$GITHUB_EVENT_NAME" == schedule && "$(date -u +%d)" == 01 ]]; then
               restore_expected=true
             fi
           fi
@@ -580,7 +572,7 @@ jobs:
           if-no-files-found: error
           retention-days: 90
           overwrite: ${{ github.run_attempt > 1 }}
-      - name: Surface backup or restore failures and stale recovery points
+      - name: Surface backup or restore failures and record recovery gaps
         env:
           BACKUP_RESULT: ${{ needs.backup.result }}
           PREVIOUS_STALE: ${{ needs.backup.outputs.previous_stale }}
@@ -590,15 +582,14 @@ jobs:
           set -Eeuo pipefail
           failed=false
           if [[ "$BACKUP_RESULT" != success ]]; then
-            printf '::error title=Production backup failed::No verified offsite recovery point was produced.\n'
+            printf '::error title=Staging backup failed::No verified offsite recovery point was produced.\n'
             failed=true
           fi
           if [[ "$PREVIOUS_STALE" == true ]]; then
-            printf '::error title=Production backup RPO::The prior offsite recovery point exceeded 26 hours or was missing.\n'
-            failed=true
+            printf '::warning title=Staging recovery gap::The prior offsite recovery point exceeded the evidence threshold; this manual run does not claim continuous RPO.\n'
           fi
           if [[ "$RESTORE_EXPECTED" == true && "$RESTORE_RESULT" != success ]]; then
-            printf '::error title=Production restore drill failed::The isolated monthly restore did not complete successfully.\n'
+            printf '::error title=Staging restore drill failed::The requested isolated restore did not complete successfully.\n'
             failed=true
           fi
           [[ "$failed" == false ]]

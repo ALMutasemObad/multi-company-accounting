@@ -7,17 +7,15 @@ import {
   type PostingFailureReason,
 } from "../core-accounting/posting-engine.js";
 import {
-  RealizedFxAccountService,
   type RealizedFxAccountPort,
   type RealizedFxAccounts,
 } from "../core-accounting/realized-fx-account-service.js";
 import { FiscalService } from "../fiscal/fiscal-service.js";
-import { PayableItemService } from "../payables/payable-item-service.js";
+import type { PayableSettlementPort } from "../payables/payable-item-service.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
 import { TransactionExecutor } from "../platform/transaction-executor.js";
 import {
   TreasuryError,
-  TreasuryService,
   type TreasuryInstrumentPort,
   type TreasuryInstrumentQuote,
 } from "../treasury/treasury-service.js";
@@ -54,6 +52,12 @@ export class PaymentError extends Error {
 export type AllocationInput = {
   payableItemId: bigint;
   allocatedAmount: string;
+};
+
+export type PaymentDependencies = {
+  treasury: TreasuryInstrumentPort;
+  fxAccounts: RealizedFxAccountPort;
+  payables: PayableSettlementPort;
 };
 export type PaymentInput = {
   fiscalPeriodId: bigint;
@@ -109,20 +113,20 @@ type PaymentCommandJsonInput = {
 export class PaymentService {
   private readonly fiscal: FiscalService;
   private readonly posting = new PostingEngine();
-  private readonly payables = new PayableItemService();
+  private readonly payables: PayableSettlementPort;
   private readonly transactions: TransactionExecutor;
   private readonly treasury: TreasuryInstrumentPort;
   private readonly fxAccounts: RealizedFxAccountPort;
   private readonly commands: IdempotentCommandExecutor;
   constructor(
     private readonly prisma: PrismaClient,
-    treasury?: TreasuryInstrumentPort,
-    fxAccounts?: RealizedFxAccountPort,
+    dependencies: PaymentDependencies,
   ) {
     this.fiscal = new FiscalService(prisma);
     this.transactions = new TransactionExecutor(prisma);
-    this.treasury = treasury ?? new TreasuryService(prisma);
-    this.fxAccounts = fxAccounts ?? new RealizedFxAccountService();
+    this.treasury = dependencies.treasury;
+    this.fxAccounts = dependencies.fxAccounts;
+    this.payables = dependencies.payables;
     this.commands = new IdempotentCommandExecutor(prisma, this.transactions);
   }
   private include() {

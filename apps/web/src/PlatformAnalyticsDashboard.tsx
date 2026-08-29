@@ -8,6 +8,7 @@ import type {
   PlatformComparedNumber,
 } from "./types";
 import { Button, EmptyState, Icon, Spinner, type IconName } from "./ui";
+import { decimalChartValue, formatCurrencyDecimal, isPositiveDecimal } from "./decimal-format";
 
 type CompanyTarget = { id: string; name: string };
 type RangePreset = "7D" | "30D" | "90D" | "YTD" | "CUSTOM";
@@ -25,7 +26,6 @@ function presetRange(preset: Exclude<RangePreset, "CUSTOM">) {
   return { from: isoDate(addDays(today, -(days - 1))), to: isoDate(today) };
 }
 
-const moneyValue = (value: string) => Number(value);
 const moduleLabels: Record<PlatformAnalyticsDashboard["modules"][number]["code"], TranslationKey> = {
   SALES: "nav.sales", PURCHASES: "nav.purchases", TREASURY: "nav.treasury", POS: "nav.pos",
   INVENTORY: "nav.inventory", PROJECTS: "nav.professionalProjects", HR: "nav.humanResources",
@@ -160,7 +160,7 @@ function AnalyticsBody({
     ...(financial ? [
       { icon: "document" as IconName, label: "platform.analytics.kpi.billed" as TranslationKey, value: formatMoney(financial.billed.current, financial.currencyCode), comparison: financial.billed },
       { icon: "receipts" as IconName, label: "platform.analytics.kpi.collected" as TranslationKey, value: formatMoney(financial.collected.current, financial.currencyCode), comparison: financial.collected },
-      { icon: "wallet" as IconName, label: "platform.analytics.kpi.balance" as TranslationKey, value: formatMoney(financial.outstanding, financial.currencyCode), comparison: { current: moneyValue(financial.outstanding), previous: null, changePercent: null } },
+      { icon: "wallet" as IconName, label: "platform.analytics.kpi.balance" as TranslationKey, value: formatMoney(financial.outstanding, financial.currencyCode), comparison: { current: financial.outstanding, previous: null, changePercent: null } },
       { icon: "check" as IconName, label: "platform.analytics.kpi.collectionRate" as TranslationKey, value: `${formatNumber(financial.collectionRate.current)}%`, comparison: financial.collectionRate, tone: financial.collectionRate.current >= 80 ? "positive" : "warning" },
     ] : []),
     { icon: "audit", label: "platform.analytics.kpi.operations", value: formatNumber(dashboard.metrics.operations.current), comparison: dashboard.metrics.operations },
@@ -210,7 +210,7 @@ function AnalyticsBody({
         <td><strong>{company.name}</strong><small>{company.lastActivityAt ? new Date(company.lastActivityAt).toLocaleString(activeIntlLocale()) : t("platform.analytics.noRecentActivity")}</small></td>
         <td>{formatNumber(company.operations)}</td><td>{formatNumber(company.postedDocuments)}</td>
         <td>{formatMoney(company.billed, company.currencyCode)}</td><td>{formatMoney(company.collected, company.currencyCode)}</td>
-        <td>{formatMoney(company.outstanding, company.currencyCode)}</td><td className={moneyValue(company.overdue) > 0 ? "platform-overdue" : ""}>{formatMoney(company.overdue, company.currencyCode)}</td>
+        <td>{formatMoney(company.outstanding, company.currencyCode)}</td><td className={isPositiveDecimal(company.overdue) ? "platform-overdue" : ""}>{formatMoney(company.overdue, company.currencyCode)}</td>
         <td><div className="platform-row-actions"><Button variant="ghost" onClick={() => onDrillCompany(company)}>{t("platform.analytics.explore")}</Button><Button variant="ghost" onClick={() => onOpenCompany(company)}>{t("platform.companies.open")}</Button></div></td>
       </tr>)}</tbody></table></div> : <EmptyState title={t("platform.noActivity")} description={t("platform.noActivityDescription")} />}
     </article>
@@ -246,7 +246,7 @@ function ChartLegend({ items }: { items: Array<[string, string]> }) {
 function FinancialChart({ financial }: { financial: PlatformAnalyticsDashboard["financials"][number] }) {
   const { t } = useI18n();
   const [active, setActive] = useState(Math.max(0, financial.timeline.length - 1));
-  const values = financial.timeline.flatMap((point) => [moneyValue(point.billed), moneyValue(point.collected), moneyValue(point.previousBilled ?? "0"), moneyValue(point.previousCollected ?? "0")]);
+  const values = financial.timeline.flatMap((point) => [decimalChartValue(point.billed), decimalChartValue(point.collected), decimalChartValue(point.previousBilled ?? "0"), decimalChartValue(point.previousCollected ?? "0")]);
   const maximum = Math.max(1, ...values);
   const width = 760;
   const height = 250;
@@ -261,9 +261,9 @@ function FinancialChart({ financial }: { financial: PlatformAnalyticsDashboard["
       {[0, .25, .5, .75, 1].map((ratio) => <line key={ratio} x1="24" x2={width - 24} y1={top + chartHeight * ratio} y2={top + chartHeight * ratio} className="platform-chart-gridline" />)}
       {financial.timeline.map((point, index) => {
         const center = 24 + slot * index + slot / 2;
-        const billedHeight = moneyValue(point.billed) / maximum * chartHeight;
-        const collectedHeight = moneyValue(point.collected) / maximum * chartHeight;
-        const previousHeight = moneyValue(point.previousBilled ?? "0") / maximum * chartHeight;
+        const billedHeight = decimalChartValue(point.billed) / maximum * chartHeight;
+        const collectedHeight = decimalChartValue(point.collected) / maximum * chartHeight;
+        const previousHeight = decimalChartValue(point.previousBilled ?? "0") / maximum * chartHeight;
         return <g key={point.key} className={active === index ? "active" : ""}>
           <rect x={center - barWidth - 2} y={top + chartHeight - billedHeight} width={barWidth} height={Math.max(1, billedHeight)} rx="4" className="platform-bar billed" />
           <rect x={center + 2} y={top + chartHeight - collectedHeight} width={barWidth} height={Math.max(1, collectedHeight)} rx="4" className="platform-bar collected" />
@@ -312,24 +312,24 @@ function ActivityChart({ dashboard }: { dashboard: PlatformAnalyticsDashboard })
 function AgingDonut({ financial }: { financial: PlatformAnalyticsDashboard["financials"][number] }) {
   const { t } = useI18n();
   const items = [
-    { key: "notDue", label: t("platform.analytics.aging.notDue"), value: moneyValue(financial.aging.notDue), color: "#2d795d" },
-    { key: "days1To30", label: t("platform.analytics.aging.1to30"), value: moneyValue(financial.aging.days1To30), color: "#d7a13b" },
-    { key: "days31To60", label: t("platform.analytics.aging.31to60"), value: moneyValue(financial.aging.days31To60), color: "#d57943" },
-    { key: "days61Plus", label: t("platform.analytics.aging.61plus"), value: moneyValue(financial.aging.days61Plus), color: "#a8463b" },
+    { key: "notDue", label: t("platform.analytics.aging.notDue"), rawValue: financial.aging.notDue, chartValue: decimalChartValue(financial.aging.notDue), color: "#2d795d" },
+    { key: "days1To30", label: t("platform.analytics.aging.1to30"), rawValue: financial.aging.days1To30, chartValue: decimalChartValue(financial.aging.days1To30), color: "#d7a13b" },
+    { key: "days31To60", label: t("platform.analytics.aging.31to60"), rawValue: financial.aging.days31To60, chartValue: decimalChartValue(financial.aging.days31To60), color: "#d57943" },
+    { key: "days61Plus", label: t("platform.analytics.aging.61plus"), rawValue: financial.aging.days61Plus, chartValue: decimalChartValue(financial.aging.days61Plus), color: "#a8463b" },
   ];
   const [activeKey, setActiveKey] = useState(items[0]!.key);
-  const total = items.reduce((sum, item) => sum + item.value, 0);
+  const total = items.reduce((sum, item) => sum + item.chartValue, 0);
   let cursor = 0;
   const stops = items.map((item) => {
     const start = cursor;
-    cursor += total ? item.value / total * 100 : 0;
+    cursor += total ? item.chartValue / total * 100 : 0;
     return `${item.color} ${start}% ${cursor}%`;
   });
   const active = items.find((item) => item.key === activeKey) ?? items[0]!;
   const style = { "--platform-donut": total ? `conic-gradient(${stops.join(",")})` : "#edf3ef" } as CSSProperties;
   return <div className="platform-aging">
-    <div className="platform-donut" style={style} role="img" aria-label={t("platform.analytics.agingTitle")}><div><strong>{formatMoney(active.value.toFixed(4), financial.currencyCode)}</strong><span>{active.label}</span></div></div>
-    <div className="platform-aging-legend">{items.map((item) => <button type="button" key={item.key} className={active.key === item.key ? "active" : ""} onClick={() => setActiveKey(item.key)}><i style={{ background: item.color }} /><span>{item.label}</span><strong>{formatMoney(item.value.toFixed(4), financial.currencyCode)}</strong></button>)}</div>
+    <div className="platform-donut" style={style} role="img" aria-label={t("platform.analytics.agingTitle")}><div><strong>{formatMoney(active.rawValue, financial.currencyCode)}</strong><span>{active.label}</span></div></div>
+    <div className="platform-aging-legend">{items.map((item) => <button type="button" key={item.key} className={active.key === item.key ? "active" : ""} onClick={() => setActiveKey(item.key)}><i style={{ background: item.color }} /><span>{item.label}</span><strong>{formatMoney(item.rawValue, financial.currencyCode)}</strong></button>)}</div>
   </div>;
 }
 
@@ -375,7 +375,11 @@ function AnalyticsError({ error, retry }: { error: string; retry: () => Promise<
 }
 
 function formatMoney(value: string, currency: string) {
-  return new Intl.NumberFormat(activeIntlLocale(), { style: "currency", currency, maximumFractionDigits: 2 }).format(Number(value));
+  return formatCurrencyDecimal(value, currency, activeIntlLocale(), {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    currencyDisplay: "symbol",
+  });
 }
 
 function formatDateRange(from: string, to: string) {

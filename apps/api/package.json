@@ -15,6 +15,7 @@
     "database:verify-engine": "tsx src/platform/verify-database.ts"
   },
   "dependencies": {
+    "@bwip-js/node": "4.11.2",
     "@fontsource/noto-sans-arabic": "^5.3.0",
     "@prisma/adapter-mariadb": "^7.9.1",
     "@prisma/client": "7.9.1",

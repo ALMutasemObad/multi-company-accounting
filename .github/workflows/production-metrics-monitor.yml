@@ -1,8 +1,6 @@
-name: production-metrics-monitor
+name: staging-metrics-monitor-manual
 
 on:
-  schedule:
-    - cron: '17 * * * *'
   workflow_dispatch:
     inputs:
       test_alert:
@@ -16,15 +14,16 @@ permissions:
   actions: read
 
 concurrency:
-  group: production-metrics-monitor
+  group: staging-metrics-monitor-manual
   cancel-in-progress: false
 
 jobs:
   scrape:
-    name: Scrape production metrics and surface alerts
+    name: Scrape staging metrics and surface alerts manually
     runs-on: ubuntu-latest
     timeout-minutes: 2
     environment:
+      # Legacy secret scope only; APP_URL is the current Staging endpoint.
       name: production
       url: https://accounting.doralashab.com
     env:
@@ -65,14 +64,14 @@ jobs:
           }
           if (alerts.size) {
             for (const alert of [...alerts].sort()) {
-              console.error(`::error title=Production operational alert::${alert}`);
+              console.error(`::error title=Staging operational alert::${alert}`);
             }
             process.exit(1);
           }
           NODE
 
           if [[ "$TEST_ALERT" == true ]]; then
-            printf '::error title=Production monitoring test alert::Synthetic delivery test after a successful authenticated scrape\n'
+            printf '::error title=Staging monitoring test alert::Synthetic delivery test after a successful authenticated scrape\n'
             exit 1
           fi
       - name: Verify offsite backup and restore evidence freshness
@@ -137,13 +136,13 @@ jobs:
           let failed = false;
           const latestBackup = latestTrusted(backupPayload, 'mcap-production-database-backup');
           if (!latestBackup) {
-            console.error('::error title=Production backup missing::No retained encrypted offsite recovery point exists.');
+            console.error('::error title=Staging backup missing::No retained encrypted offsite recovery point exists.');
             failed = true;
           } else {
             const backupAge = ageSeconds(latestBackup);
             const maxBackupAge = Number(maxBackupAgeText);
             if (!Number.isFinite(backupAge) || backupAge > maxBackupAge) {
-              console.error(`::error title=Production backup stale::Latest trusted offsite artifact age ${backupAge}s exceeds ${maxBackupAge}s.`);
+              console.error(`::error title=Staging backup stale::Latest trusted offsite artifact age ${backupAge}s exceeds ${maxBackupAge}s.`);
               failed = true;
             } else {
               console.log(`Latest trusted offsite backup artifact age: ${backupAge}s.`);
@@ -155,23 +154,23 @@ jobs:
             'mcap-production-restore-drill-failure',
           );
           if (!latestRestore) {
-            console.error('::error title=Production restore drill missing::No retained successful production restore evidence exists.');
+            console.error('::error title=Staging restore drill missing::No retained successful restore evidence exists.');
             failed = true;
           } else {
             const restoreAge = ageSeconds(latestRestore);
             const maxRestoreAge = Number(maxRestoreAgeText);
             if (!Number.isFinite(restoreAge) || restoreAge > maxRestoreAge) {
-              console.error(`::error title=Production restore drill stale::Latest successful drill evidence age ${restoreAge}s exceeds ${maxRestoreAge}s.`);
+              console.error(`::error title=Staging restore drill stale::Latest successful drill evidence age ${restoreAge}s exceeds ${maxRestoreAge}s.`);
               failed = true;
             } else {
-              console.log(`Latest successful production restore drill evidence age: ${restoreAge}s.`);
+              console.log(`Latest successful staging restore drill evidence age: ${restoreAge}s.`);
             }
           }
           if (
             latestRestoreFailure &&
             (!latestRestore || Date.parse(latestRestoreFailure.created_at) > Date.parse(latestRestore.created_at))
           ) {
-            console.error('::error title=Production restore drill failed::A required restore drill failed after the latest successful drill.');
+            console.error('::error title=Staging restore drill failed::A requested restore drill failed after the latest successful drill.');
             failed = true;
           }
           if (failed) process.exit(1);

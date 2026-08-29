@@ -105,7 +105,7 @@ function sourceFiles(directory) {
 for (const fullPath of sourceFiles(sourceRoot).sort()) {
   const relativePath = path.relative(sourceRoot, fullPath).replaceAll("\\", "/");
   const isLocaleDictionary = relativePath.startsWith("i18n/locales/");
-  const isTest = /(?:^|\/)\w+\.test\.tsx?$/u.test(relativePath);
+  const isTest = /(?:^|\/)[^/]+\.test\.tsx?$/u.test(relativePath);
   const source = fs.readFileSync(fullPath, "utf8");
   if (!isLocaleDictionary && !isTest && /\p{Script=Arabic}/u.test(source)) {
     findings.push(`${path.relative(process.cwd(), fullPath)} contains Arabic text outside a locale dictionary`);

@@ -34,11 +34,18 @@ export type TaxSummarySourceData = {
   invoices: TaxSummarySourceInvoice[];
 };
 
+export type TaxSummarySourceHeader = Omit<TaxSummarySourceData, "invoices">;
+
 export interface TaxSummaryQueryPort {
-  load(
+  loadHeader(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+  ): Promise<TaxSummarySourceHeader | null>;
+  scanInvoices(
     tx: Prisma.TransactionClient,
     companyId: bigint,
     dateFrom: Date,
     dateTo: Date,
-  ): Promise<TaxSummarySourceData | null>;
+    consume: (batch: TaxSummarySourceInvoice[]) => void | Promise<void>,
+  ): Promise<void>;
 }

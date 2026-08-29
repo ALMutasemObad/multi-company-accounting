@@ -1,8 +1,8 @@
 ---
 title: "Bounded Context Map"
 status: "accepted target architecture"
-version: "2.9"
-last_updated: "2026-08-28"
+version: "3.0"
+last_updated: "2026-08-29"
 ---
 
 # خريطة الـBounded Contexts وملكية البيانات
@@ -30,12 +30,14 @@ last_updated: "2026-08-28"
 | Point of Sale | تنسيق البيع النقدي الحضوري وربط نتيجة الـCheckout | `PosSale` فقط | Process Manager؛ لا يملك بنودًا أو مبالغ أو فاتورة أو حركة مخزون/نقد أو قيدًا، ويستدعي منافذ Sales وTreasury الحالية |
 | Approvals | تنسيق طلبات وقرارات Maker/Checker المشتركة | `ApprovalRequest`, `ApprovalDecision` | يربط الموضوع ونسخته وبصمته فقط؛ يطبق المالك انتقال الموضوع عبر `ApprovalSubjectPort` ولا يملك حالته أو أثره المالي |
 | CRM / Business Development | الاستقطاب قبل العميل، التأهيل، فرصة البيع، مراحلها، وتتبعاتها التجارية | `CrmLead`, `CrmOpportunity`, `CrmActivity` | سياق مستهدف وفق ADR-014؛ يحول Lead إلى Customer عبر Sales Port ولا يملك Customer أو الفاتورة أو المشروع أو أي حقيقة مالية |
-| Professional Services & Projects | القضايا والتكليفات والمشاريع المهنية، فرقها ووصولها، خطة المراحل والمهام، الوقت المعتمد، والعقود والأسعار ومصدر الفوترة | `ProfessionalProject`, `ProfessionalProjectMember`, `ProfessionalProjectAccessGrant`, `ProfessionalProjectStage`, `ProfessionalProjectTask`, `ProfessionalTaskDependency`, `ProfessionalTimeEntry`, `ProfessionalTimesheet`, `ProfessionalTimesheetSubmission`, `ProfessionalServiceContract`, `ProfessionalServiceRate`, `ProfessionalBillingRun`, `ProfessionalBillingSourceLine` | يملك الجدار الأخلاقي وميزانية دقائق المشروع والخطة؛ يقرأ العميل والفاتورة من Sales والشخص من Identity والموظف من HR والعملة من Tenant عبر Ports، ولا يملك المصروف أو حقائق الفاتورة أو الذمة أو الضريبة أو القيد |
+| Service Catalog & Pricing | تعريف الخدمات التجارية وتصنيفها ووحدات تسعيرها وأسعارها المؤرخة | `ServiceCategory`, `ServiceOffering`, `ServicePrice` (مستهدفة) | سياق مستقل مستهدف وفق ADR-016؛ لا يمثل InventoryItem ولا مشروعًا، ويكشف Query Ports لـSales وCRM وProjects ولا يكتب فاتورة أو مخزونًا أو Ledger |
+| Professional Project Delivery | القضايا والتكليفات والمشاريع المهنية، فرقها ووصولها، خطة المراحل والمهام، الوقت المعتمد، وشروط فوترة المشروع ومصدرها | `ProfessionalProject`, `ProfessionalProjectMember`, `ProfessionalProjectAccessGrant`, `ProfessionalProjectStage`, `ProfessionalProjectTask`, `ProfessionalTaskDependency`, `ProfessionalTimeEntry`, `ProfessionalTimesheet`, `ProfessionalTimesheetSubmission`, `ProfessionalServiceContract`, `ProfessionalServiceRate`, `ProfessionalBillingRun`, `ProfessionalBillingSourceLine` | يملك الجدار الأخلاقي وميزانية دقائق المشروع والخطة؛ تبقى العقود والأسعار الحالية خاصة بالمشروع وليست دليل خدمات عامًا، ويقرأ المالكين الآخرين عبر Ports ولا يملك المصروف أو حقائق الفاتورة أو الذمة أو الضريبة أو القيد |
 | Human Resources | الهيكل التنظيمي وهوية الموظف وحالة العمل والعقد غير المالي | `HrDepartment`, `HrPosition`, `Employee`, `EmploymentContract` | الموظف مستقل عن `User` ويرتبط اختياريًا بعضوية الشركة عبر Identity Port؛ لا يملك رواتب أو بيانات بنكية أو قرار موافقة أو وقت مشروع |
 | Tax | معدلات الضرائب وربط حساباتها والحساب والتقريب | `TaxRate` | يكشف `TaxQuotePort` للمبيعات والمشتريات ويملك النسخ المتفائلة |
 | Printing & Document Output | اللقطات التاريخية والتوليد | `DocumentPrintArchive` | يقرأ عبر Document Snapshot Port |
 | Reporting | التقارير والقوائم وRead Models | لا يملك حقائق مالية تشغيلية | قراءة فقط، ويمكنه امتلاك projections مستقبلًا |
-| Platform Operations & Billing | مؤشرات تبني وصحة المنصة، وملف الشركة المستأجرة، وتسعير اشتراكها وفواتير المنصة وسدادها | `PlatformBillingAccount`, `PlatformBillingInvoice`, `PlatformBillingInvoiceLine`, `PlatformBillingPayment` | يقرأ الاستخدام تجميعيًا عبر Query Ports؛ مبالغ الفوترة تخص علاقة الشركة المطوّرة بالمستأجر ولا تكتب في Ledger أو Sales/AR للشركة العميلة؛ التفويض منصّي مستقل عن أدوار الشركات |
+| Platform Operations | مؤشرات تبني وصحة المنصة وملف الشركة المستأجرة | لا يملك حقائق تشغيلية للشركات | Read Model منصّي يقرأ الاستخدام تجميعيًا عبر Query Ports ولا يعرض بيانات أفراد أو حقائق Ledger؛ التفويض منصّي مستقل عن أدوار الشركات |
+| Platform Subscriptions & Billing | كتالوج الخطط والموديولات، اشتراك الشركة واستحقاقاتها، فواتير المنصة وسدادها ومحاولات الدفع الإلكتروني | `PlatformBillingAccount`, `PlatformBillingInvoice`, `PlatformBillingInvoiceLine`, `PlatformBillingPayment` حاليًا؛ و`PlatformModule`, `PlatformPlan*`, `PlatformSubscription*`, `PlatformWebhookReceipt` مستهدفة | سياق تجاري منصّي وفق ADR-015 وADR-017؛ لا يكتب Sales/AR أو Treasury أو Ledger للشركة العميلة، ولا يساوي الاستحقاق التجاري صلاحية المستخدم |
 | Data Import | تنسيق القوالب والمعاينة والاعتماد الجماعي | `DataImportBatch` فقط | Process Manager؛ يستدعي منافذ المالكين ولا يخزن الملف أو يرحّل الفواتير |
 | Audit | سجل الأعمال والامتثال | `AuditLog` | Append-only، وليس Event Bus |
 | Security Monitoring | أحداث المخاطر والإقرار | `SecurityEvent` | يمكنه إصدار تنبيه Integration بعد حفظ الحدث |
@@ -64,6 +66,7 @@ POS ─────────────────> Sales cash-checkout and
 Approvals ───────────> owning context approval-subject application ports
 CRM ─────────────────> Sales customer query/provisioning ports
 CRM ─────────────────> Human Resources workforce and Tenant currency query ports
+Sales/CRM/Projects ──> Service Catalog query ports
 Professional Projects ──> Sales customer query port and Identity people query port
 Professional Projects ──> Human Resources employee query port
 Professional Projects ──> Tenant currency query port and Sales professional-billing application/query port
@@ -73,7 +76,8 @@ All operational contexts ──> Audit append port
 Authentication/Identity ───> Security append port
 
 Reporting <────────── read/query ports or dedicated read models
-Platform Operations & Billing <── aggregate query ports + Identity operator query port
+Platform Operations <──── aggregate query ports + Identity operator query port
+Platform Subscriptions & Billing <── aggregate usage ports + entitlement/RBAC composition + payment-provider adapters
 Printing  <────────── immutable document snapshot port
 ```
 

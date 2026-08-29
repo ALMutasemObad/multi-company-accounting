@@ -6,6 +6,9 @@ import {
   type KeyboardEvent,
 } from "react";
 import { api } from "./api";
+import { allows } from "./authorization";
+import { useAuthorization } from "./authorization-context";
+import { referenceEndpointPermission } from "./endpoint-permissions";
 import { translate as t } from "./i18n";
 import type { ListResponse } from "./types";
 
@@ -54,6 +57,9 @@ export function ReferenceCombobox<T extends ReferenceRecord>({
   disabled?: boolean;
   optionDisabled?: (value: T) => boolean;
 }) {
+  const { permissionSet } = useAuthorization();
+  const endpointPolicy = referenceEndpointPermission(endpoint);
+  const isDisabled = disabled || (endpointPolicy ? !allows(permissionSet, endpointPolicy) : false);
   const listboxId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -68,6 +74,10 @@ export function ReferenceCombobox<T extends ReferenceRecord>({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [activeIndex, setActiveIndex] = useState(-1);
+
+  useEffect(() => {
+    if (isDisabled && open) setOpen(false);
+  }, [isDisabled, open]);
 
   useEffect(() => {
     if (!open && !value) {
@@ -209,7 +219,7 @@ export function ReferenceCombobox<T extends ReferenceRecord>({
         aria-activedescendant={activeIndex >= 0 ? `${listboxId}-${options[activeIndex]?.id}` : undefined}
         aria-label={searchLabel}
         aria-required={required}
-        disabled={disabled}
+        disabled={isDisabled}
         placeholder={placeholder}
         value={query}
         onFocus={() => setOpen(true)}
@@ -222,7 +232,7 @@ export function ReferenceCombobox<T extends ReferenceRecord>({
           setOpen(true);
         }}
       />
-      {value && !disabled && <button type="button" className="reference-combobox-clear" aria-label={t("referencePicker.clear")} onClick={() => select(null)}>×</button>}
+      {value && !isDisabled && <button type="button" className="reference-combobox-clear" aria-label={t("referencePicker.clear")} onClick={() => select(null)}>×</button>}
     </div>
     {open && <div className="reference-combobox-panel">
       <div id={listboxId} role="listbox" aria-label={searchLabel} className="reference-combobox-options">

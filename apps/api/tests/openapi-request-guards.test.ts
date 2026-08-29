@@ -22,10 +22,10 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 280, requestBodies: 148, responseBodies: 1841 });
-    expect(guardedOpenApiOperations).toHaveLength(148);
+    expect(openApiContractCoverage).toEqual({ operations: 289, requestBodies: 154, responseBodies: 1904 });
+    expect(guardedOpenApiOperations).toHaveLength(154);
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
-      'login', 'upsertPlatformBillingAccount', 'issuePlatformBillingInvoice', 'recordPlatformBillingPayment', 'voidPlatformBillingInvoice', 'createUser', 'linkUserEmployee', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'initializeInventoryBalanceValuation', 'reverseInventoryMovement', 'previewDataImport', 'commitDataImport', 'previewBankStatement', 'commitBankStatementImport', 'createBankReconciliationSession', 'generateBankReconciliationSuggestions', 'approveBankReconciliationMatch', 'createManualBankReconciliationMatch', 'releaseBankReconciliationMatch', 'classifyBankStatementLine', 'closeBankReconciliationSession', 'startFinancialCloseRun', 'refreshFinancialCloseRun', 'createApprovalRequest', 'approveApprovalRequest', 'rejectApprovalRequest', 'createProfessionalProject', 'assignProfessionalProjectMember', 'createProfessionalTimeEntry', 'createProfessionalTimesheet', 'createProfessionalServiceContract', 'endProfessionalServiceContract', 'createProfessionalServiceRate', 'endProfessionalServiceRate', 'createProfessionalBillingRun', 'updateProfessionalProjectAccess', 'grantProfessionalProjectAccess', 'revokeProfessionalProjectAccess', 'updateProfessionalProjectTimeBudget', 'createProfessionalProjectStage', 'updateProfessionalProjectStage', 'transitionProfessionalProjectStage', 'createProfessionalProjectTask', 'updateProfessionalProjectTask', 'transitionProfessionalProjectTask', 'createProfessionalProjectTaskDependency', 'removeProfessionalProjectTaskDependency', 'createHrDepartment', 'updateHrDepartment', 'createHrPosition', 'updateHrPosition', 'createEmployee', 'updateEmployee', 'transitionEmployee', 'createEmploymentContract', 'endEmploymentContract', 'returnFinancialCloseRun', 'updateCashFlowMapping',
+      'login', 'upsertPlatformBillingAccount', 'issuePlatformBillingInvoice', 'recordPlatformBillingPayment', 'voidPlatformBillingInvoice', 'createUser', 'linkUserEmployee', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'initializeInventoryBalanceValuation', 'reverseInventoryMovement', 'createInventoryItemBarcode', 'updateInventoryItemBarcode', 'setPrimaryInventoryItemBarcode', 'deactivateInventoryItemBarcode', 'resolveInventoryBarcode', 'resolveInventoryBarcodeBatch', 'previewDataImport', 'commitDataImport', 'previewBankStatement', 'commitBankStatementImport', 'createBankReconciliationSession', 'generateBankReconciliationSuggestions', 'approveBankReconciliationMatch', 'createManualBankReconciliationMatch', 'releaseBankReconciliationMatch', 'classifyBankStatementLine', 'closeBankReconciliationSession', 'startFinancialCloseRun', 'refreshFinancialCloseRun', 'createApprovalRequest', 'approveApprovalRequest', 'rejectApprovalRequest', 'createProfessionalProject', 'assignProfessionalProjectMember', 'createProfessionalTimeEntry', 'createProfessionalTimesheet', 'createProfessionalServiceContract', 'endProfessionalServiceContract', 'createProfessionalServiceRate', 'endProfessionalServiceRate', 'createProfessionalBillingRun', 'updateProfessionalProjectAccess', 'grantProfessionalProjectAccess', 'revokeProfessionalProjectAccess', 'updateProfessionalProjectTimeBudget', 'createProfessionalProjectStage', 'updateProfessionalProjectStage', 'transitionProfessionalProjectStage', 'createProfessionalProjectTask', 'updateProfessionalProjectTask', 'transitionProfessionalProjectTask', 'createProfessionalProjectTaskDependency', 'removeProfessionalProjectTaskDependency', 'createHrDepartment', 'updateHrDepartment', 'createHrPosition', 'updateHrPosition', 'createEmployee', 'updateEmployee', 'transitionEmployee', 'createEmploymentContract', 'endEmploymentContract', 'returnFinancialCloseRun', 'updateCashFlowMapping',
     ]));
   });
 
@@ -502,12 +502,46 @@ describe('generated OpenAPI request guards', () => {
   });
 
   it('validates generated JSON response bodies', () => {
+    expect(parseOpenApiResponseBody('getCurrentAuthorization', 200, {
+      user: { id: '7', displayName: 'مستخدم' },
+      selectedCompany: { id: '12', name: 'المنشأة التجريبية', timezone: 'Asia/Riyadh' },
+      permissions: ['receipts.view', 'sales_invoices.view'],
+    })).toMatchObject({ selectedCompany: { id: '12' }, permissions: ['receipts.view', 'sales_invoices.view'] });
+    expect(() => parseOpenApiResponseBody('getCurrentAuthorization', 200, {
+      user: { id: '7', displayName: 'مستخدم' },
+      selectedCompany: null,
+      permissions: [],
+      roleNames: ['ADMINISTRATOR'],
+    })).toThrow();
     expect(parseOpenApiResponseBody('getHealth', 200, {
       status: 'ok', service: 'mcap-finance-api', checks: { database: 'ok', latencyMs: 2.5 },
     })).toMatchObject({ status: 'ok', service: 'mcap-finance-api' });
     expect(() => parseOpenApiResponseBody('getHealth', 200, {
       status: 'invalid', service: 'mcap-finance-api',
     })).toThrow();
+    const billingSummary = {
+      generatedAt: '2026-08-29T12:00:00.000Z',
+      metrics: {
+        totalCompanies: 100, configuredCompanies: 41, unconfiguredCompanies: 59,
+        activeAccounts: 20, overdueInvoices: 5,
+      },
+      currencies: [],
+      accounts: [],
+      meta: { page: 3, pageSize: 10, total: 41, totalPages: 5 },
+    };
+    expect(parseOpenApiResponseBody('getPlatformBillingSummary', 200, billingSummary))
+      .toMatchObject({ meta: { page: 3, total: 41 } });
+    expect(() => parseOpenApiResponseBody('getPlatformBillingSummary', 200, {
+      ...billingSummary,
+      meta: undefined,
+    })).toThrow();
+    expect(parseOpenApiResponseBody('getPlatformCompanyBilling', 200, {
+      company: { id: '9', name: 'شركة تسعة', isActive: true, baseCurrencyCode: 'SAR' },
+      account: null,
+      totals: { billed: '0.0000', paid: '0.0000', balance: '0.0000', overdue: '0.0000' },
+      invoices: [],
+      meta: { page: 1, pageSize: 10, total: 0, totalPages: 0 },
+    })).toMatchObject({ meta: { page: 1, totalPages: 0 } });
     expect(parseOpenApiResponseBody('getCurrentFinancialCloseRun', 200, { run: null })).toEqual({ run: null });
     expect(parseOpenApiResponseBody('createProfessionalBillingRun', 201, {
       run: {

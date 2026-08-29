@@ -18,6 +18,7 @@ export type PlatformBillingFailureReason =
   | "INVALID_DATE_RANGE"
   | "INVALID_ACCOUNT_STATE"
   | "ACCOUNT_NOT_CONFIGURED"
+  | "CURRENCY_CHANGE_WITH_HISTORY"
   | "PERIOD_ALREADY_INVOICED"
   | "VERSION_CONFLICT"
   | "INVOICE_NOT_OPEN"
@@ -71,19 +72,148 @@ export type PlatformPaymentInput = {
   idempotencyKey: string;
 };
 
+export type PlatformBillingPagination = {
+  page: number;
+  pageSize: number;
+};
+
+export const PLATFORM_BILLING_DEFAULT_PAGE_SIZE = 10;
+export const PLATFORM_BILLING_MAX_PAGE_SIZE = 25;
+export const PLATFORM_BILLING_RECENT_PAYMENT_LIMIT = 5;
+
 type InvoiceGraph = PlatformBillingInvoice & {
   lines: PlatformBillingInvoiceLine[];
   payments: PlatformBillingPayment[];
+};
+
+type BillingTotals = {
+  billed: Prisma.Decimal;
+  paid: Prisma.Decimal;
+  balance: Prisma.Decimal;
+  overdue: Prisma.Decimal;
+};
+
+type AccountBillingAggregateRow = {
+  billing_account_id: bigint;
+  billed: Prisma.Decimal;
+  paid: Prisma.Decimal;
+  balance: Prisma.Decimal;
+  overdue: Prisma.Decimal;
+  overdue_invoices: bigint | Prisma.Decimal;
+};
+
+type CurrencyBillingAggregateRow = BillingTotals & {
+  currency_code: string;
+  configured_accounts: bigint;
+  active_accounts: bigint;
+  overdue_invoices: bigint | Prisma.Decimal;
+};
+
+type CurrencyRecurringFeeAggregateRow = {
+  currency_code: string;
+  billing_cycle: "MONTHLY" | "QUARTERLY" | "ANNUAL";
+  recurring_fee: Prisma.Decimal;
 };
 
 const date = (value: string) => new Date(`${value}T00:00:00.000Z`);
 const dateString = (value: Date) => value.toISOString().slice(0, 10);
 const addDays = (value: Date, days: number) => new Date(value.getTime() + days * 86_400_000);
 const money = (value: Prisma.Decimal.Value) => new Prisma.Decimal(value);
+// MySQL/MariaDB DECIMAL SUM may return up to 65 digits. Keep this reporting-only
+// arithmetic local so monthly normalization cannot lose fractional money through
+// Decimal.js' default 20-significant-digit operation precision.
+const PlatformReportingDecimal = Prisma.Decimal.clone({
+  precision: 80,
+  rounding: Prisma.Decimal.ROUND_HALF_UP,
+});
 const rounded = (value: Prisma.Decimal) => value.toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP);
 const nonNegative = (value: Prisma.Decimal) => value.gte(0) && value.isFinite();
+const emptyBillingTotals = (): BillingTotals => ({
+  billed: money(0),
+  paid: money(0),
+  balance: money(0),
+  overdue: money(0),
+});
+const countFromDatabase = (value: bigint | number | Prisma.Decimal) => {
+  if (typeof value === "number") {
+    if (!Number.isSafeInteger(value) || value < 0) throw new Error(`Invalid aggregate count: ${value}`);
+    return value;
+  }
+  const text = value.toString();
+  if (!/^\d+$/u.test(text)) throw new Error(`Invalid aggregate count: ${text}`);
+  const exact = BigInt(text);
+  if (exact > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error(`Aggregate count exceeds Number.MAX_SAFE_INTEGER: ${text}`);
+  return Number(exact);
+};
+const paginationMeta = (input: PlatformBillingPagination, total: number) => ({
+  page: input.page,
+  pageSize: input.pageSize,
+  total,
+  totalPages: Math.ceil(total / input.pageSize),
+});
 const invoicePaid = (invoice: Pick<InvoiceGraph, "payments">) =>
   invoice.payments.reduce((sum, payment) => sum.plus(payment.amount), money(0));
+
+export function calculatePlatformRecurringMonthly(
+  rows: Array<{
+    billingCycle: "MONTHLY" | "QUARTERLY" | "ANNUAL";
+    recurringFee: Prisma.Decimal.Value;
+  }>,
+) {
+  const total = rows.reduce((sum, row) => {
+    const fee = new PlatformReportingDecimal(row.recurringFee.toString());
+    if (row.billingCycle === "QUARTERLY") return sum.plus(fee.div(3));
+    if (row.billingCycle === "ANNUAL") return sum.plus(fee.div(12));
+    return sum.plus(fee);
+  }, new PlatformReportingDecimal(0));
+  return money(total.toDecimalPlaces(4, PlatformReportingDecimal.ROUND_HALF_UP).toFixed(4));
+}
+
+const invoicePaymentRowsSql = (where: Prisma.Sql) => Prisma.sql`
+  SELECT
+    invoice.id,
+    invoice.company_id,
+    invoice.billing_account_id,
+    invoice.state,
+    invoice.due_date,
+    invoice.total_amount,
+    COALESCE(SUM(payment.amount), 0) AS paid_amount
+  FROM platform_billing_invoices AS invoice
+  LEFT JOIN platform_billing_payments AS payment
+    ON payment.invoice_id = invoice.id
+   AND payment.company_id = invoice.company_id
+  WHERE ${where}
+  GROUP BY
+    invoice.id,
+    invoice.company_id,
+    invoice.billing_account_id,
+    invoice.state,
+    invoice.due_date,
+    invoice.total_amount
+`;
+
+const accountFinancialAggregatesSql = (where: Prisma.Sql, today: Date) => Prisma.sql`
+  SELECT
+    invoice_row.billing_account_id,
+    COALESCE(SUM(invoice_row.total_amount), 0) AS billed,
+    COALESCE(SUM(invoice_row.paid_amount), 0) AS paid,
+    GREATEST(COALESCE(SUM(invoice_row.total_amount), 0) - COALESCE(SUM(invoice_row.paid_amount), 0), 0) AS balance,
+    COALESCE(SUM(
+      CASE
+        WHEN invoice_row.due_date < ${today} AND invoice_row.paid_amount < invoice_row.total_amount
+          THEN invoice_row.total_amount - invoice_row.paid_amount
+        ELSE 0
+      END
+    ), 0) AS overdue,
+    COUNT(
+      CASE
+        WHEN invoice_row.due_date < ${today} AND invoice_row.paid_amount < invoice_row.total_amount THEN 1
+      END
+    ) AS overdue_invoices
+  FROM (${invoicePaymentRowsSql(where)}) AS invoice_row
+  WHERE invoice_row.state <> 'VOID'
+  GROUP BY invoice_row.billing_account_id
+`;
 
 function accountJson(account: PlatformBillingAccount) {
   return {
@@ -110,17 +240,25 @@ function accountJson(account: PlatformBillingAccount) {
   };
 }
 
-function invoiceStatus(invoice: InvoiceGraph, now: Date) {
+function invoiceStatus(
+  invoice: Pick<InvoiceGraph, "state" | "totalAmount" | "dueDate">,
+  paid: Prisma.Decimal,
+  now: Date,
+) {
   if (invoice.state === "VOID") return "VOID" as const;
-  const paid = invoicePaid(invoice);
   if (paid.gte(invoice.totalAmount)) return "PAID" as const;
   if (invoice.dueDate < date(dateString(now))) return "OVERDUE" as const;
   if (paid.gt(0)) return "PARTIALLY_PAID" as const;
   return "ISSUED" as const;
 }
 
-function invoiceJson(invoice: InvoiceGraph, now: Date) {
-  const paid = rounded(invoicePaid(invoice));
+function invoiceJson(
+  invoice: InvoiceGraph,
+  now: Date,
+  paymentAggregate?: { paid: Prisma.Decimal.Value; count: number },
+) {
+  const paid = rounded(paymentAggregate ? money(paymentAggregate.paid) : invoicePaid(invoice));
+  const paymentCount = paymentAggregate?.count ?? invoice.payments.length;
   const balance = Prisma.Decimal.max(money(0), invoice.totalAmount.minus(paid));
   return {
     id: invoice.publicId,
@@ -128,7 +266,7 @@ function invoiceJson(invoice: InvoiceGraph, now: Date) {
     billingAccountId: invoice.billingAccountId.toString(),
     invoiceNumber: invoice.invoiceNumber,
     state: invoice.state,
-    status: invoiceStatus(invoice, now),
+    status: invoiceStatus(invoice, paid, now),
     periodStart: dateString(invoice.periodStart),
     periodEnd: dateString(invoice.periodEnd),
     issueDate: dateString(invoice.issueDate),
@@ -151,12 +289,13 @@ function invoiceJson(invoice: InvoiceGraph, now: Date) {
     voidedAt: invoice.voidedAt?.toISOString() ?? null,
     voidReason: invoice.voidReason,
     createdAt: invoice.createdAt.toISOString(),
+    paymentCount,
     lines: invoice.lines.map((line) => ({
       id: line.id.toString(), lineNumber: line.lineNumber, lineType: line.lineType,
       description: line.description, quantity: line.quantity,
       unitPrice: line.unitPrice.toFixed(4), amount: line.amount.toFixed(4),
     })),
-    payments: invoice.payments.map((payment) => ({
+    payments: invoice.payments.slice(0, PLATFORM_BILLING_RECENT_PAYMENT_LIMIT).map((payment) => ({
       id: payment.publicId, paymentDate: dateString(payment.paymentDate),
       amount: payment.amount.toFixed(4), method: payment.method,
       reference: payment.reference, notes: payment.notes, createdAt: payment.createdAt.toISOString(),
@@ -209,6 +348,28 @@ export function calculatePlatformInvoice(
   return { lines, subtotal, taxAmount, totalAmount };
 }
 
+async function lockPlatformBillingAccount(
+  tx: Prisma.TransactionClient,
+  companyId: bigint,
+) {
+  await tx.$queryRaw<Array<{ id: bigint }>>`
+    SELECT id
+    FROM platform_billing_accounts
+    WHERE company_id = ${companyId}
+    FOR UPDATE
+  `;
+}
+
+export function assertPlatformBillingCurrencyChangeAllowed(
+  existingCurrencyCode: string,
+  requestedCurrencyCode: string,
+  hasInvoiceHistory: boolean,
+) {
+  if (existingCurrencyCode !== requestedCurrencyCode && hasInvoiceHistory) {
+    throw new PlatformBillingError("CURRENCY_CHANGE_WITH_HISTORY");
+  }
+}
+
 export class PlatformBillingService {
   private readonly commands: IdempotentCommandExecutor;
 
@@ -222,79 +383,135 @@ export class PlatformBillingService {
     this.commands = new IdempotentCommandExecutor(prisma);
   }
 
-  async summary(userId: bigint) {
+  async summary(
+    userId: bigint,
+    pagination: PlatformBillingPagination = { page: 1, pageSize: PLATFORM_BILLING_DEFAULT_PAGE_SIZE },
+  ) {
     await this.operators.requireOperator(userId);
     const now = this.now();
-    const [references, accounts, invoices] = await Promise.all([
-      this.analytics.companyReferences(),
-      this.prisma.platformBillingAccount.findMany({ orderBy: [{ nextBillingDate: "asc" }, { id: "asc" }] }),
-      this.prisma.platformBillingInvoice.findMany({ include: { lines: true, payments: true } }),
+    const [totalCompanies, accounts, currencyAggregates] = await Promise.all([
+      this.analytics.companyCount(),
+      this.prisma.platformBillingAccount.findMany({
+        orderBy: [{ nextBillingDate: "asc" }, { id: "asc" }],
+        skip: (pagination.page - 1) * pagination.pageSize,
+        take: pagination.pageSize,
+      }),
+      this.currencyBillingAggregates(now),
     ]);
+    const { financial: currencyRows, recurring: recurringRows } = currencyAggregates;
+    const [references, accountTotals] = accounts.length
+      ? await Promise.all([
+        this.analytics.companyReferences(accounts.map((account) => account.companyId)),
+        this.accountBillingAggregates(accounts.map((account) => account.id), now),
+      ])
+      : [[], []];
     const names = new Map(references.map((company) => [company.id, company]));
+    const totalsByAccount = new Map(accountTotals.map((row) => [row.billing_account_id.toString(), row]));
     const accountRows = accounts.map((account) => {
-      const companyInvoices = invoices.filter((invoice) => invoice.companyId === account.companyId);
-      const billed = companyInvoices.filter((invoice) => invoice.state !== "VOID")
-        .reduce((sum, invoice) => sum.plus(invoice.totalAmount), money(0));
-      const paid = companyInvoices.filter((invoice) => invoice.state !== "VOID")
-        .reduce((sum, invoice) => sum.plus(invoicePaid(invoice)), money(0));
-      const overdue = companyInvoices.filter((invoice) => invoiceStatus(invoice, now) === "OVERDUE")
-        .reduce((sum, invoice) => sum.plus(invoice.totalAmount.minus(invoicePaid(invoice))), money(0));
+      const aggregate = totalsByAccount.get(account.id.toString()) ?? emptyBillingTotals();
       const company = names.get(account.companyId.toString());
       return {
         companyId: account.companyId.toString(), companyName: company?.name ?? "—",
         companyActive: company?.isActive ?? false, account: accountJson(account),
-        billed: rounded(billed).toFixed(4), paid: rounded(paid).toFixed(4),
-        balance: rounded(Prisma.Decimal.max(money(0), billed.minus(paid))).toFixed(4),
-        overdue: rounded(Prisma.Decimal.max(money(0), overdue)).toFixed(4),
+        ...this.billingTotalsJson(aggregate),
       };
     });
-    const currencies = [...new Set(accounts.map((account) => account.currencyCode))].sort().map((currencyCode) => {
-      const rows = accountRows.filter((row) => row.account.currencyCode === currencyCode);
-      const sum = (field: "billed" | "paid" | "balance" | "overdue") =>
-        rounded(rows.reduce((total, row) => total.plus(row[field]), money(0)));
-      const billed = sum("billed");
-      const mrr = accounts.filter((account) => account.currencyCode === currencyCode && ["TRIAL", "ACTIVE"].includes(account.status))
-        .reduce((total, account) => total.plus(
-          account.billingCycle === "MONTHLY" ? account.recurringFee
-            : account.billingCycle === "QUARTERLY" ? account.recurringFee.div(3)
-              : account.recurringFee.div(12),
-        ), money(0));
-      const paid = sum("paid");
+    const recurringByCurrency = new Map<string, CurrencyRecurringFeeAggregateRow[]>();
+    for (const row of recurringRows) {
+      const rows = recurringByCurrency.get(row.currency_code) ?? [];
+      rows.push(row);
+      recurringByCurrency.set(row.currency_code, rows);
+    }
+    const currencies = currencyRows.map((row) => {
+      const billed = rounded(money(row.billed));
+      const paid = rounded(money(row.paid));
+      const recurringMonthly = calculatePlatformRecurringMonthly(
+        (recurringByCurrency.get(row.currency_code) ?? []).map((recurring) => ({
+          billingCycle: recurring.billing_cycle,
+          recurringFee: recurring.recurring_fee,
+        })),
+      );
       return {
-        currencyCode, recurringMonthly: rounded(mrr).toFixed(4), billed: billed.toFixed(4),
-        paid: paid.toFixed(4), balance: sum("balance").toFixed(4), overdue: sum("overdue").toFixed(4),
-        collectionRate: billed.gt(0) ? paid.div(billed).mul(100).toDecimalPlaces(1).toString() : "0.0",
+        currencyCode: row.currency_code,
+        recurringMonthly: recurringMonthly.toFixed(4),
+        billed: billed.toFixed(4), paid: paid.toFixed(4),
+        balance: rounded(money(row.balance)).toFixed(4), overdue: rounded(money(row.overdue)).toFixed(4),
+        collectionRate: billed.gt(0) ? paid.div(billed).mul(100).toFixed(1) : "0.0",
       };
     });
+    const configuredCompanies = currencyRows.reduce(
+      (total, row) => total + countFromDatabase(row.configured_accounts),
+      0,
+    );
+    const activeAccounts = currencyRows.reduce(
+      (total, row) => total + countFromDatabase(row.active_accounts),
+      0,
+    );
+    const overdueInvoices = currencyRows.reduce(
+      (total, row) => total + countFromDatabase(row.overdue_invoices),
+      0,
+    );
     return {
       generatedAt: now.toISOString(),
       metrics: {
-        totalCompanies: references.length, configuredCompanies: accounts.length,
-        unconfiguredCompanies: Math.max(0, references.length - accounts.length),
-        activeAccounts: accounts.filter((account) => account.status === "ACTIVE").length,
-        overdueInvoices: invoices.filter((invoice) => invoiceStatus(invoice, now) === "OVERDUE").length,
+        totalCompanies, configuredCompanies,
+        unconfiguredCompanies: Math.max(0, totalCompanies - configuredCompanies),
+        activeAccounts, overdueInvoices,
       },
       currencies,
       accounts: accountRows,
+      meta: paginationMeta(pagination, configuredCompanies),
     };
   }
 
-  async companyBilling(userId: bigint, companyId: bigint) {
+  async companyBilling(
+    userId: bigint,
+    companyId: bigint,
+    pagination: PlatformBillingPagination = { page: 1, pageSize: PLATFORM_BILLING_DEFAULT_PAGE_SIZE },
+  ) {
     await this.operators.requireOperator(userId);
     const [reference] = await this.analytics.companyReferences([companyId]);
     if (!reference) throw new PlatformBillingError("NOT_FOUND");
-    const [account, invoices] = await Promise.all([
+    const now = this.now();
+    const [account, invoiceTotal, invoices, aggregate] = await Promise.all([
       this.prisma.platformBillingAccount.findUnique({ where: { companyId } }),
+      this.prisma.platformBillingInvoice.count({ where: { companyId } }),
       this.prisma.platformBillingInvoice.findMany({
-        where: { companyId }, include: { lines: { orderBy: { lineNumber: "asc" } }, payments: { orderBy: [{ paymentDate: "desc" }, { id: "desc" }] } },
+        where: { companyId },
+        include: {
+          lines: { orderBy: { lineNumber: "asc" } },
+          payments: {
+            orderBy: [{ paymentDate: "desc" }, { id: "desc" }],
+            take: PLATFORM_BILLING_RECENT_PAYMENT_LIMIT,
+          },
+        },
         orderBy: [{ issueDate: "desc" }, { id: "desc" }],
+        skip: (pagination.page - 1) * pagination.pageSize,
+        take: pagination.pageSize,
       }),
+      this.companyBillingAggregate(companyId, now),
     ]);
+    const paymentAggregates = invoices.length
+      ? await this.prisma.platformBillingPayment.groupBy({
+        by: ["invoiceId"],
+        where: { companyId, invoiceId: { in: invoices.map((invoice) => invoice.id) } },
+        _sum: { amount: true },
+        _count: { _all: true },
+      })
+      : [];
+    const paymentsByInvoice = new Map(paymentAggregates.map((payment) => [payment.invoiceId.toString(), payment]));
     return {
       company: reference,
       account: account ? accountJson(account) : null,
-      totals: this.companyTotals(invoices),
-      invoices: invoices.map((invoice) => invoiceJson(invoice, this.now())),
+      totals: this.billingTotalsJson(aggregate),
+      invoices: invoices.map((invoice) => {
+        const payments = paymentsByInvoice.get(invoice.id.toString());
+        return invoiceJson(invoice, now, {
+          paid: payments?._sum.amount ?? money(0),
+          count: payments?._count._all ?? 0,
+        });
+      }),
+      meta: paginationMeta(pagination, invoiceTotal),
     };
   }
 
@@ -307,12 +524,28 @@ export class PlatformBillingService {
     ];
     if (pricing.some((value) => !nonNegative(value)) || pricing[4]!.gt(100)) throw new PlatformBillingError("INVALID_AMOUNT");
     return this.execute(userId, companyId, "UPSERT_PLATFORM_BILLING_ACCOUNT", input.idempotencyKey, input, 200, async (tx) => {
+      await lockPlatformBillingAccount(tx, companyId);
       const existing = await tx.platformBillingAccount.findUnique({ where: { companyId } });
+      const requestedCurrencyCode = input.currencyCode.toUpperCase();
+      if (existing && (input.version === null || input.version === undefined || existing.version !== input.version)) {
+        throw new PlatformBillingError("VERSION_CONFLICT");
+      }
+      if (existing && existing.currencyCode !== requestedCurrencyCode) {
+        const invoiceHistory = await tx.platformBillingInvoice.findFirst({
+          where: { companyId, billingAccountId: existing.id },
+          select: { id: true },
+        });
+        assertPlatformBillingCurrencyChangeAllowed(
+          existing.currencyCode,
+          requestedCurrencyCode,
+          invoiceHistory !== null,
+        );
+      }
       const common = {
         status: input.status,
         planName: input.planName,
         billingCycle: input.billingCycle,
-        currencyCode: input.currencyCode.toUpperCase(),
+        currencyCode: requestedCurrencyCode,
         recurringFee: pricing[0]!, includedUsers: input.includedUsers,
         pricePerAdditionalUser: pricing[1]!, includedEmployees: input.includedEmployees,
         pricePerAdditionalEmployee: pricing[2]!, includedPostedDocuments: input.includedPostedDocuments,
@@ -323,11 +556,8 @@ export class PlatformBillingService {
       };
       let account: PlatformBillingAccount;
       if (existing) {
-        if (input.version === null || input.version === undefined || existing.version !== input.version) {
-          throw new PlatformBillingError("VERSION_CONFLICT");
-        }
         const changed = await tx.platformBillingAccount.updateMany({
-          where: { id: existing.id, companyId, version: input.version }, data: { ...common, version: { increment: 1 } },
+          where: { id: existing.id, companyId, version: existing.version }, data: { ...common, version: { increment: 1 } },
         });
         if (changed.count !== 1) throw new PlatformBillingError("VERSION_CONFLICT");
         account = await tx.platformBillingAccount.findUniqueOrThrow({ where: { id: existing.id } });
@@ -357,6 +587,7 @@ export class PlatformBillingService {
     if (!usage) throw new PlatformBillingError("NOT_FOUND");
     try {
       return await this.execute(userId, companyId, "ISSUE_PLATFORM_BILLING_INVOICE", input.idempotencyKey, input, 201, async (tx) => {
+        await lockPlatformBillingAccount(tx, companyId);
         const account = await tx.platformBillingAccount.findUnique({ where: { companyId } });
         if (!account) throw new PlatformBillingError("ACCOUNT_NOT_CONFIGURED");
         if (account.status !== "ACTIVE" && account.status !== "TRIAL") throw new PlatformBillingError("INVALID_ACCOUNT_STATE");
@@ -375,7 +606,7 @@ export class PlatformBillingService {
             taxAmount: calculation.taxAmount, totalAmount: calculation.totalAmount,
             notes: input.notes ?? null, issuedById: userId,
             lines: { create: calculation.lines.map((line, index) => ({
-              companyId, lineNumber: index + 1, lineType: line.lineType, description: line.description,
+              lineNumber: index + 1, lineType: line.lineType, description: line.description,
               quantity: line.quantity, unitPrice: line.unitPrice, amount: line.amount,
             })) },
           },
@@ -388,7 +619,11 @@ export class PlatformBillingService {
           details: { invoiceNumber, periodStart: input.periodStart, periodEnd: input.periodEnd, totalAmount: calculation.totalAmount.toFixed(4), currencyCode: account.currencyCode, usage },
         });
         const saved = await tx.platformBillingInvoice.findUniqueOrThrow({
-          where: { id: invoice.id }, include: { lines: { orderBy: { lineNumber: "asc" } }, payments: true },
+          where: { id: invoice.id },
+          include: {
+            lines: { orderBy: { lineNumber: "asc" } },
+            payments: { take: PLATFORM_BILLING_RECENT_PAYMENT_LIMIT },
+          },
         });
         return { invoice: invoiceJson(saved, this.now()) };
       });
@@ -408,12 +643,18 @@ export class PlatformBillingService {
     if (!amount.isFinite() || amount.lte(0)) throw new PlatformBillingError("INVALID_AMOUNT");
     return this.execute(userId, target.companyId, "RECORD_PLATFORM_BILLING_PAYMENT", input.idempotencyKey, { invoiceId, ...input }, 201, async (tx) => {
       const invoice = await tx.platformBillingInvoice.findUnique({
-        where: { publicId: invoiceId }, include: { lines: true, payments: true },
+        where: { publicId: invoiceId },
       });
       if (!invoice) throw new PlatformBillingError("NOT_FOUND");
       if (invoice.state !== "ISSUED") throw new PlatformBillingError("INVOICE_NOT_OPEN");
       if (invoice.version !== input.invoiceVersion) throw new PlatformBillingError("VERSION_CONFLICT");
-      const balance = invoice.totalAmount.minus(invoicePaid(invoice));
+      const existingPayments = await tx.platformBillingPayment.aggregate({
+        where: { companyId: invoice.companyId, invoiceId: invoice.id },
+        _sum: { amount: true },
+        _count: { _all: true },
+      });
+      const paidBefore = money(existingPayments._sum.amount ?? 0);
+      const balance = invoice.totalAmount.minus(paidBefore);
       if (amount.gt(balance)) throw new PlatformBillingError("PAYMENT_EXCEEDS_BALANCE");
       const payment = await tx.platformBillingPayment.create({ data: {
         companyId: invoice.companyId, invoiceId: invoice.id, paymentDate: date(input.paymentDate), amount,
@@ -429,9 +670,19 @@ export class PlatformBillingService {
         details: { invoiceId, invoiceNumber: invoice.invoiceNumber, amount: amount.toFixed(4), method: input.method, reference: input.reference ?? null },
       });
       const saved = await tx.platformBillingInvoice.findUniqueOrThrow({
-        where: { id: invoice.id }, include: { lines: { orderBy: { lineNumber: "asc" } }, payments: { orderBy: [{ paymentDate: "desc" }, { id: "desc" }] } },
+        where: { id: invoice.id },
+        include: {
+          lines: { orderBy: { lineNumber: "asc" } },
+          payments: {
+            orderBy: [{ paymentDate: "desc" }, { id: "desc" }],
+            take: PLATFORM_BILLING_RECENT_PAYMENT_LIMIT,
+          },
+        },
       });
-      return { invoice: invoiceJson(saved, this.now()) };
+      return { invoice: invoiceJson(saved, this.now(), {
+        paid: paidBefore.plus(amount),
+        count: existingPayments._count._all + 1,
+      }) };
     });
   }
 
@@ -440,11 +691,13 @@ export class PlatformBillingService {
     const target = await this.prisma.platformBillingInvoice.findUnique({ where: { publicId: invoiceId }, select: { companyId: true } });
     if (!target) throw new PlatformBillingError("NOT_FOUND");
     return this.execute(userId, target.companyId, "VOID_PLATFORM_BILLING_INVOICE", input.idempotencyKey, { invoiceId, ...input }, 200, async (tx) => {
-      const invoice = await tx.platformBillingInvoice.findUnique({ where: { publicId: invoiceId }, include: { lines: true, payments: true } });
+      const invoice = await tx.platformBillingInvoice.findUnique({ where: { publicId: invoiceId } });
       if (!invoice) throw new PlatformBillingError("NOT_FOUND");
       if (invoice.state !== "ISSUED") throw new PlatformBillingError("INVOICE_NOT_OPEN");
       if (invoice.version !== input.version) throw new PlatformBillingError("VERSION_CONFLICT");
-      if (invoice.payments.length) throw new PlatformBillingError("INVOICE_HAS_PAYMENTS");
+      if (await tx.platformBillingPayment.count({
+        where: { companyId: invoice.companyId, invoiceId: invoice.id },
+      })) throw new PlatformBillingError("INVOICE_HAS_PAYMENTS");
       const voidedAt = this.now();
       const changed = await tx.platformBillingInvoice.updateMany({
         where: { id: invoice.id, companyId: invoice.companyId, state: "ISSUED", version: input.version },
@@ -456,22 +709,71 @@ export class PlatformBillingService {
         entityType: "PLATFORM_BILLING_INVOICE", entityId: invoice.publicId,
         details: { invoiceNumber: invoice.invoiceNumber, reason: input.reason },
       });
-      const saved = await tx.platformBillingInvoice.findUniqueOrThrow({ where: { id: invoice.id }, include: { lines: true, payments: true } });
-      return { invoice: invoiceJson(saved, this.now()) };
+      const saved = await tx.platformBillingInvoice.findUniqueOrThrow({
+        where: { id: invoice.id },
+        include: {
+          lines: { orderBy: { lineNumber: "asc" } },
+          payments: { take: PLATFORM_BILLING_RECENT_PAYMENT_LIMIT },
+        },
+      });
+      return { invoice: invoiceJson(saved, this.now(), { paid: money(0), count: 0 }) };
     });
   }
 
-  private companyTotals(invoices: InvoiceGraph[]) {
-    const active = invoices.filter((invoice) => invoice.state !== "VOID");
-    const billed = active.reduce((sum, invoice) => sum.plus(invoice.totalAmount), money(0));
-    const paid = active.reduce((sum, invoice) => sum.plus(invoicePaid(invoice)), money(0));
-    const overdue = active.filter((invoice) => invoiceStatus(invoice, this.now()) === "OVERDUE")
-      .reduce((sum, invoice) => sum.plus(invoice.totalAmount.minus(invoicePaid(invoice))), money(0));
+  private billingTotalsJson(totals: BillingTotals) {
     return {
-      billed: rounded(billed).toFixed(4), paid: rounded(paid).toFixed(4),
-      balance: rounded(Prisma.Decimal.max(money(0), billed.minus(paid))).toFixed(4),
-      overdue: rounded(Prisma.Decimal.max(money(0), overdue)).toFixed(4),
+      billed: rounded(money(totals.billed)).toFixed(4),
+      paid: rounded(money(totals.paid)).toFixed(4),
+      balance: rounded(Prisma.Decimal.max(money(0), money(totals.balance))).toFixed(4),
+      overdue: rounded(Prisma.Decimal.max(money(0), money(totals.overdue))).toFixed(4),
     };
+  }
+
+  private accountBillingAggregates(accountIds: bigint[], now: Date) {
+    if (!accountIds.length) return Promise.resolve([] as AccountBillingAggregateRow[]);
+    return this.prisma.$queryRaw<AccountBillingAggregateRow[]>(accountFinancialAggregatesSql(
+      Prisma.sql`invoice.billing_account_id IN (${Prisma.join(accountIds)})`,
+      date(dateString(now)),
+    ));
+  }
+
+  private companyBillingAggregate(companyId: bigint, now: Date) {
+    return this.prisma.$queryRaw<AccountBillingAggregateRow[]>(accountFinancialAggregatesSql(
+      Prisma.sql`invoice.company_id = ${companyId}`,
+      date(dateString(now)),
+    )).then((rows) => rows[0] ?? emptyBillingTotals());
+  }
+
+  private currencyBillingAggregates(now: Date) {
+    const accountAggregates = accountFinancialAggregatesSql(Prisma.sql`TRUE`, date(dateString(now)));
+    return Promise.all([
+      this.prisma.$queryRaw<CurrencyBillingAggregateRow[]>(Prisma.sql`
+        SELECT
+          account.currency_code,
+          COUNT(*) AS configured_accounts,
+          COUNT(CASE WHEN account.status = 'ACTIVE' THEN 1 END) AS active_accounts,
+          COALESCE(SUM(financial.billed), 0) AS billed,
+          COALESCE(SUM(financial.paid), 0) AS paid,
+          COALESCE(SUM(financial.balance), 0) AS balance,
+          COALESCE(SUM(financial.overdue), 0) AS overdue,
+          COALESCE(SUM(financial.overdue_invoices), 0) AS overdue_invoices
+        FROM platform_billing_accounts AS account
+        LEFT JOIN (${accountAggregates}) AS financial
+          ON financial.billing_account_id = account.id
+        GROUP BY account.currency_code
+        ORDER BY account.currency_code ASC
+      `),
+      this.prisma.$queryRaw<CurrencyRecurringFeeAggregateRow[]>(Prisma.sql`
+        SELECT
+          account.currency_code,
+          account.billing_cycle,
+          COALESCE(SUM(account.recurring_fee), 0) AS recurring_fee
+        FROM platform_billing_accounts AS account
+        WHERE account.status IN ('TRIAL', 'ACTIVE')
+        GROUP BY account.currency_code, account.billing_cycle
+        ORDER BY account.currency_code ASC, account.billing_cycle ASC
+      `),
+    ]).then(([financial, recurring]) => ({ financial, recurring }));
   }
 
   private execute<T>(

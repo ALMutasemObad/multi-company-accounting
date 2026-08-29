@@ -1,9 +1,16 @@
-import { systemGroups, type View } from "./app-navigation";
+import { visibleSystemGroups, type View } from "./app-navigation";
+import { useAuthorization } from "./authorization-context";
 import { useI18n } from "./i18n";
 import { Icon, PageHeader } from "./ui";
 
 export function SystemHomePage({ onNavigate }: { onNavigate: (view: View) => void }) {
   const { t } = useI18n();
+  const { permissionSet, selectedCompany } = useAuthorization();
+  const groups = visibleSystemGroups({
+    permissionSet,
+    hasSelectedCompany: Boolean(selectedCompany),
+    platformOperations: false,
+  });
   return (
     <section className="workspace-page system-home-page">
       <div className="system-home-hero">
@@ -14,7 +21,7 @@ export function SystemHomePage({ onNavigate }: { onNavigate: (view: View) => voi
         />
         <div className="home-hero-badge"><Icon name="home" size={26} /><span>{t("home.badge")}</span></div>
       </div>
-      {systemGroups.map((group) => (
+      {groups.map((group) => (
         <section className="system-group" key={group.key} aria-labelledby={`system-group-${group.key}`}>
           <header>
             <div>

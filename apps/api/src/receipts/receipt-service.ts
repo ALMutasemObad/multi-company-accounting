@@ -7,16 +7,14 @@ import {
   type PostingEntryPlan,
 } from "../core-accounting/posting-engine.js";
 import {
-  RealizedFxAccountService,
   type RealizedFxAccountPort,
   type RealizedFxAccounts,
 } from "../core-accounting/realized-fx-account-service.js";
 import { FiscalService } from "../fiscal/fiscal-service.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
-import { ReceivableItemService } from "../receivables/receivable-item-service.js";
+import type { ReceivableSettlementPort } from "../receivables/receivable-item-service.js";
 import {
   TreasuryError,
-  TreasuryService,
   type TreasuryInstrumentPort,
   type TreasuryInstrumentQuote,
 } from "../treasury/treasury-service.js";
@@ -53,6 +51,12 @@ export class ReceiptError extends Error {
 export type AllocationInput = {
   receivableItemId: bigint;
   allocatedAmount: string;
+};
+
+export type ReceiptDependencies = {
+  treasury: TreasuryInstrumentPort;
+  fxAccounts: RealizedFxAccountPort;
+  receivables: ReceivableSettlementPort;
 };
 export type ReceiptInput = {
   fiscalPeriodId: bigint;
@@ -133,18 +137,18 @@ type ReceiptCommandJsonInput = {
 export class ReceiptService {
   private readonly fiscal: FiscalService;
   private readonly posting = new PostingEngine();
-  private readonly receivables = new ReceivableItemService();
+  private readonly receivables: ReceivableSettlementPort;
   private readonly treasury: TreasuryInstrumentPort;
   private readonly fxAccounts: RealizedFxAccountPort;
   private readonly commands: IdempotentCommandExecutor;
   constructor(
     private readonly prisma: PrismaClient,
-    treasury?: TreasuryInstrumentPort,
-    fxAccounts?: RealizedFxAccountPort,
+    dependencies: ReceiptDependencies,
   ) {
     this.fiscal = new FiscalService(prisma);
-    this.treasury = treasury ?? new TreasuryService(prisma);
-    this.fxAccounts = fxAccounts ?? new RealizedFxAccountService();
+    this.treasury = dependencies.treasury;
+    this.fxAccounts = dependencies.fxAccounts;
+    this.receivables = dependencies.receivables;
     this.commands = new IdempotentCommandExecutor(prisma);
   }
   private include() {

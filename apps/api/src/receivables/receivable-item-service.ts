@@ -41,6 +41,55 @@ export interface ReceivableSettlementPort {
   ): Promise<void>;
 }
 
+export type ReceivableInvoiceCreateInput = {
+  companyId: bigint;
+  salesInvoiceId: bigint;
+  customerId: bigint;
+  currencyId: bigint;
+  dueDate: Date;
+  originalAmount: Prisma.Decimal.Value;
+  originalBaseAmount: Prisma.Decimal.Value;
+};
+
+export type ReceivableCreditInput = {
+  companyId: bigint;
+  sourceInvoiceId: bigint;
+  amount: Prisma.Decimal.Value;
+  baseAmount: Prisma.Decimal.Value;
+  invalid: () => Error;
+  overAllocation: () => Error;
+  conflict: () => Error;
+};
+
+export type ReceivableCreditReversalInput = Omit<ReceivableCreditInput, "overAllocation">;
+
+export type ReceivableInvoiceReversalInput = {
+  companyId: bigint;
+  salesInvoiceId: bigint;
+  invalid: () => Error;
+  hasSettlements: () => Error;
+  conflict: () => Error;
+};
+
+export interface ReceivableInvoicePort {
+  createForInvoice(
+    tx: Prisma.TransactionClient,
+    input: ReceivableInvoiceCreateInput,
+  ): Promise<ReceivableItem>;
+  applyCredit(
+    tx: Prisma.TransactionClient,
+    input: ReceivableCreditInput,
+  ): Promise<void>;
+  reverseCredit(
+    tx: Prisma.TransactionClient,
+    input: ReceivableCreditReversalInput,
+  ): Promise<void>;
+  reverseInvoice(
+    tx: Prisma.TransactionClient,
+    input: ReceivableInvoiceReversalInput,
+  ): Promise<void>;
+}
+
 type LockedRow = { id: bigint };
 
 function orderedIds(values: bigint[]) {
@@ -76,7 +125,7 @@ function statusFor(outstanding: Prisma.Decimal, original: Prisma.Decimal) {
 const money = (value: Prisma.Decimal.Value) =>
   new Prisma.Decimal(value).toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP);
 
-export class ReceivableItemService implements ReceivableSettlementPort {
+export class ReceivableItemService implements ReceivableSettlementPort, ReceivableInvoicePort {
   async validateDraftTargets(
     tx: Prisma.TransactionClient,
     command: SettlementCommand,
@@ -111,15 +160,7 @@ export class ReceivableItemService implements ReceivableSettlementPort {
 
   createForInvoice(
     tx: Prisma.TransactionClient,
-    input: {
-      companyId: bigint;
-      salesInvoiceId: bigint;
-      customerId: bigint;
-      currencyId: bigint;
-      dueDate: Date;
-      originalAmount: Prisma.Decimal.Value;
-      originalBaseAmount: Prisma.Decimal.Value;
-    },
+    input: ReceivableInvoiceCreateInput,
   ) {
     const originalAmount = new Prisma.Decimal(input.originalAmount);
     const originalBaseAmount = money(input.originalBaseAmount);
@@ -137,15 +178,7 @@ export class ReceivableItemService implements ReceivableSettlementPort {
 
   async applyCredit(
     tx: Prisma.TransactionClient,
-    input: {
-      companyId: bigint;
-      sourceInvoiceId: bigint;
-      amount: Prisma.Decimal.Value;
-      baseAmount: Prisma.Decimal.Value;
-      invalid: () => Error;
-      overAllocation: () => Error;
-      conflict: () => Error;
-    },
+    input: ReceivableCreditInput,
   ) {
     const item = await this.lockByInvoice(
       tx,
@@ -174,14 +207,7 @@ export class ReceivableItemService implements ReceivableSettlementPort {
 
   async reverseCredit(
     tx: Prisma.TransactionClient,
-    input: {
-      companyId: bigint;
-      sourceInvoiceId: bigint;
-      amount: Prisma.Decimal.Value;
-      baseAmount: Prisma.Decimal.Value;
-      invalid: () => Error;
-      conflict: () => Error;
-    },
+    input: ReceivableCreditReversalInput,
   ) {
     const item = await this.lockByInvoice(
       tx,
@@ -203,13 +229,7 @@ export class ReceivableItemService implements ReceivableSettlementPort {
 
   async reverseInvoice(
     tx: Prisma.TransactionClient,
-    input: {
-      companyId: bigint;
-      salesInvoiceId: bigint;
-      invalid: () => Error;
-      hasSettlements: () => Error;
-      conflict: () => Error;
-    },
+    input: ReceivableInvoiceReversalInput,
   ) {
     const item = await this.lockByInvoice(
       tx,

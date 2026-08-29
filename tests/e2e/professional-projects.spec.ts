@@ -1,4 +1,27 @@
 import { expect, test } from "@playwright/test";
+import { authMeResponse, e2eCompany } from "./auth-me-mock.js";
+
+const permissions = [
+  "professional_projects.view",
+  "professional_projects.manage",
+  "professional_access.manage",
+  "professional_planning.view",
+  "professional_planning.manage",
+  "professional_time.view",
+  "professional_time.log",
+  "professional_timesheets.view",
+  "professional_timesheets.submit",
+  "professional_contracts.view",
+  "professional_contracts.manage",
+  "professional_rates.view",
+  "professional_rates.manage",
+  "professional_billing.view",
+  "professional_billing.execute",
+  "fiscal_periods.view",
+  "accounts.view",
+  "sales_invoices.create",
+  "sales_invoices.post",
+];
 
 test("creates a legal matter, approves time, configures rates, and posts professional billing", async ({ page }) => {
   const projectId = "b1af217e-7c7b-43bb-b15f-61184df1d6b9";
@@ -204,7 +227,8 @@ test("creates a legal matter, approves time, configures rates, and posts profess
     const method = request.method();
     const json = (body: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 
-    if (path === "/auth/companies") return json({ data: [{ id: "1", name: "E2E Company" }] });
+    if (path === "/auth/companies") return json({ data: [e2eCompany] });
+    if (path === "/auth/me") return json(authMeResponse(permissions));
     if (path === "/auth/context") return route.fulfill({ status: 204, body: "" });
     if (path === "/professional-projects/customer-options") return json({ data: [customer] });
     if (path === "/professional-projects/member-options") return json({ data: [manager, consultant] });

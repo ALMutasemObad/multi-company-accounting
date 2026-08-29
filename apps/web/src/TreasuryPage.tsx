@@ -7,7 +7,12 @@ import { FormEvent,
   useMemo,
   useState } from "react";
 import { api } from "./api";
+import { allows,
+  requestIfAllowed,
+  requestValue } from "./authorization";
+import { useAuthorization } from "./authorization-context";
 import { BankReconciliationPage } from "./BankReconciliationPage";
+import { endpointPermissionPolicies } from "./endpoint-permissions";
 import { validateTreasuryAccount } from "./domain";
 import type { Account,
   BankReconciliationCapabilities,
@@ -27,23 +32,51 @@ type Notice = (message: string, tone?: "success" | "error") => void;
 type Tab = "accounts" | "methods" | "reconciliation";
 
 export function TreasuryPage({ notify }: { notify: Notice }) {
+  const { permissionSet } = useAuthorization();
+  const canViewReconciliation = allows(permissionSet, endpointPermissionPolicies.bankReconciliation);
   const [tab, setTab] = useState<Tab>("accounts"); const [items, setItems] = useState<CashBankAccount[]>([]); const [methods, setMethods] = useState<PaymentMethod[]>([]); const [ledgerAccounts, setLedgerAccounts] = useState<Account[]>([]);
   const [meta, setMeta] = useState({ page: 1, pageSize: 10, total: 0, totalPages: 0 }); const [page, setPage] = useState(1); const [search, setSearch] = useState(""); const [submittedSearch, setSubmittedSearch] = useState(""); const [type, setType] = useState(""); const [status, setStatus] = useState(""); const [loading, setLoading] = useState(true); const [error, setError] = useState("");
   const [cashForm, setCashForm] = useState<CashBankAccount | "new" | null>(null); const [methodForm, setMethodForm] = useState<PaymentMethod | "new" | null>(null);
   const [reconciliationCapabilities, setReconciliationCapabilities] = useState<BankReconciliationCapabilities | null>(null);
-  const load = useCallback(async () => { setLoading(true); setError(""); try { const query = new URLSearchParams({ page: String(page), pageSize: "10", ...(submittedSearch ? { search: submittedSearch } : {}), ...(type ? { type } : {}), ...(status ? { active: status } : {}) }); const [cash, paymentMethods, accounts] = await Promise.all([api<ListResponse<CashBankAccount>>(`/cash-bank-accounts?${query}`), api<{ data: PaymentMethod[] }>("/payment-methods?includeInactive=true"), api<ListResponse<Account>>("/accounts?page=1&pageSize=100&active=true")]); setItems(cash.data); setMeta(cash.meta); setMethods(paymentMethods.data); setLedgerAccounts(accounts.data.filter((item) => item.isActive && item.allowsPosting)); } catch (cause) { setError(cause instanceof Error ? cause.message : t("pages.treasury.001")); } finally { setLoading(false); } }, [page, submittedSearch, type, status]);
+  const load = useCallback(async () => {
+    setLoading(true); setError("");
+    try {
+      const query = new URLSearchParams({ page: String(page), pageSize: "10", ...(submittedSearch ? { search: submittedSearch } : {}), ...(type ? { type } : {}), ...(status ? { active: status } : {}) });
+      const [cash, paymentMethods] = await Promise.all([
+        api<ListResponse<CashBankAccount>>(`/cash-bank-accounts?${query}`),
+        api<{ data: PaymentMethod[] }>("/payment-methods?includeInactive=true"),
+      ]);
+      const accountResult = await requestIfAllowed(
+        permissionSet,
+        endpointPermissionPolicies.accounts,
+        () => api<ListResponse<Account>>("/accounts?page=1&pageSize=100&active=true"),
+      );
+      const accounts = requestValue(accountResult);
+      setItems(cash.data); setMeta(cash.meta); setMethods(paymentMethods.data);
+      setLedgerAccounts(accounts?.data.filter((item) => item.isActive && item.allowsPosting) ?? []);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : t("pages.treasury.001")); }
+    finally { setLoading(false); }
+  }, [page, permissionSet, status, submittedSearch, type]);
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
-    void api<BankReconciliationCapabilities>("/bank-reconciliation/capabilities")
-      .then((capabilities) => setReconciliationCapabilities(capabilities.enabled ? capabilities : null))
-      .catch(() => setReconciliationCapabilities(null));
-  }, []);
+    void requestIfAllowed(
+      permissionSet,
+      endpointPermissionPolicies.bankReconciliation,
+      () => api<BankReconciliationCapabilities>("/bank-reconciliation/capabilities"),
+    ).then((result) => {
+      const capabilities = requestValue(result);
+      setReconciliationCapabilities(capabilities?.enabled ? capabilities : null);
+    });
+  }, [permissionSet]);
+  useEffect(() => {
+    if (tab === "reconciliation" && !canViewReconciliation) setTab("accounts");
+  }, [canViewReconciliation, tab]);
   const visibleCash = useMemo(() => items.filter((item) => !status || String(item.isActive) === status), [items, status]); const visibleMethods = useMemo(() => methods.filter((item) => !status || String(item.isActive) === status), [methods, status]);
   async function deactivate(kind: Tab, item: CashBankAccount | PaymentMethod) { const reason = window.prompt(t("pages.accounts.002", { value1: localizedReferenceName(item) })); if (!reason || reason.trim().length < 3) return; try { await api(`/${kind === "accounts" ? "cash-bank-accounts" : "payment-methods"}/${item.id}/deactivate`, { method: "POST", body: JSON.stringify({ version: item.version, reason: reason.trim() }) }); notify(t("pages.treasury.003")); await load(); } catch (cause) { notify(cause instanceof Error ? cause.message : t("pages.accounts.005"), "error"); } }
   return <section className="workspace-page"><PageHeader kicker={t("pages.treasury.005")} title={t("pages.treasury.006")} description={t("pages.treasury.007")} actions={tab !== "reconciliation" ? <Button icon="plus" onClick={() => tab === "accounts" ? setCashForm("new") : setMethodForm("new")}>{tab === "accounts" ? t("pages.treasury.008") : t("pages.treasury.009")}</Button> : undefined} />
-    <div className="section-tabs" role="tablist" aria-label={t("reconciliation.treasuryTabsLabel")}><button type="button" role="tab" aria-selected={tab === "accounts"} className={tab === "accounts" ? "active" : ""} onClick={() => setTab("accounts")}>{t("pages.treasury.010")}</button><button type="button" role="tab" aria-selected={tab === "methods"} className={tab === "methods" ? "active" : ""} onClick={() => setTab("methods")}>{t("pages.treasury.011")}</button>{reconciliationCapabilities && <button type="button" role="tab" aria-selected={tab === "reconciliation"} className={tab === "reconciliation" ? "active" : ""} onClick={() => setTab("reconciliation")}>{t("reconciliation.treasuryTab")}</button>}</div>
+    <div className="section-tabs" role="tablist" aria-label={t("reconciliation.treasuryTabsLabel")}><button type="button" role="tab" aria-selected={tab === "accounts"} className={tab === "accounts" ? "active" : ""} onClick={() => setTab("accounts")}>{t("pages.treasury.010")}</button><button type="button" role="tab" aria-selected={tab === "methods"} className={tab === "methods" ? "active" : ""} onClick={() => setTab("methods")}>{t("pages.treasury.011")}</button>{canViewReconciliation && reconciliationCapabilities && <button type="button" role="tab" aria-selected={tab === "reconciliation"} className={tab === "reconciliation" ? "active" : ""} onClick={() => setTab("reconciliation")}>{t("reconciliation.treasuryTab")}</button>}</div>
     {tab !== "reconciliation" && <div className="toolbar treasury-filters">{tab === "accounts" && <form className="search-box" onSubmit={(e) => { e.preventDefault(); setPage(1); setSubmittedSearch(search.trim()); }}><Icon name="search" size={18} /><input aria-label={t("pages.treasury.012")} value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("pages.treasury.012")} /><button type="submit">{t("pages.accounts.026")}</button></form>}{tab === "accounts" && <select aria-label={t("pages.treasury.014")} value={type} onChange={(e) => { setPage(1); setType(e.target.value); }}><option value="">{t("pages.treasury.014")}</option><option value="CASH">{t("pages.treasury.015")}</option><option value="BANK">{t("pages.treasury.016")}</option></select>}<select aria-label={t("pages.accounts.027")} value={status} onChange={(e) => setStatus(e.target.value)}><option value="">{t("pages.accounts.027")}</option><option value="true">{t("pages.accounts.028")}</option><option value="false">{t("pages.accounts.029")}</option></select></div>}
-    {tab === "reconciliation" && reconciliationCapabilities ? <BankReconciliationPage capabilities={reconciliationCapabilities} notify={notify} /> : error ? <div className="error-panel" role="alert"><p>{error}</p><Button variant="secondary" onClick={() => void load()}>{t("pages.accounts.030")}</Button></div> : loading ? <Spinner label={t("pages.treasury.021")} /> : tab === "accounts" ? <CashTable items={visibleCash} ledgerAccounts={ledgerAccounts} onEdit={setCashForm} onDeactivate={(item) => void deactivate("accounts", item)} onCreate={() => setCashForm("new")} /> : <MethodsTable items={visibleMethods} onEdit={setMethodForm} onDeactivate={(item) => void deactivate("methods", item)} onCreate={() => setMethodForm("new")} />}
+    {tab === "reconciliation" && canViewReconciliation && reconciliationCapabilities ? <BankReconciliationPage capabilities={reconciliationCapabilities} notify={notify} /> : error ? <div className="error-panel" role="alert"><p>{error}</p><Button variant="secondary" onClick={() => void load()}>{t("pages.accounts.030")}</Button></div> : loading ? <Spinner label={t("pages.treasury.021")} /> : tab === "accounts" ? <CashTable items={visibleCash} ledgerAccounts={ledgerAccounts} onEdit={setCashForm} onDeactivate={(item) => void deactivate("accounts", item)} onCreate={() => setCashForm("new")} /> : <MethodsTable items={visibleMethods} onEdit={setMethodForm} onDeactivate={(item) => void deactivate("methods", item)} onCreate={() => setMethodForm("new")} />}
     {tab === "accounts" && <Pagination {...meta} page={page} onChange={setPage} />}
     {cashForm && <CashForm account={cashForm === "new" ? null : cashForm} ledgerAccounts={ledgerAccounts} onClose={() => setCashForm(null)} onSaved={async () => { setCashForm(null); notify(cashForm === "new" ? t("pages.treasury.022") : t("pages.treasury.023")); await load(); }} />}
     {methodForm && <MethodForm method={methodForm === "new" ? null : methodForm} onClose={() => setMethodForm(null)} onSaved={async () => { setMethodForm(null); notify(methodForm === "new" ? t("pages.treasury.024") : t("pages.treasury.025")); await load(); }} />}

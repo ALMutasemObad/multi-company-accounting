@@ -1,8 +1,8 @@
 ---
 title: "Architecture Guardrails"
 status: "mandatory"
-version: "1.4"
-last_updated: "2026-08-28"
+version: "1.5"
+last_updated: "2026-08-29"
 related:
   - "BOUNDED_CONTEXT_MAP_AR.md"
   - "ADR-003-domain-boundaries-and-eventing.md"
@@ -11,10 +11,11 @@ related:
   - "CONCURRENCY_DEADLOCK_DEADLINE_POLICY_AR.md"
   - "TAX_CONTEXT_OWNERSHIP_AR.md"
   - "TREASURY_CONTEXT_OWNERSHIP_AR.md"
+  - "MOBILE_AND_BARCODE_CHANNELS_GOAL_AR.md"
   - "../ARCHITECTURE_AUDIT_DDD_EVENT_DRIVEN_AR.md"
 ---
 
-# الضوابط المعمارية لنظام جوار المالي
+# الضوابط المعمارية للنظام المحاسبي متعدد الشركات
 
 ## 1. طريقة قراءة القواعد
 
@@ -188,6 +189,9 @@ related:
 - يجب تحديث خريطة السياقات عند تغير الملكية أو اتجاه الاعتماد.
 - يجب إضافة اختبارات تمنع تكرار الخلل المعماري عند كل عملية نقل جوهرية.
 - لا يعتبر التغيير منتهيًا إذا كانت الوثائق أو OpenAPI أو Migration غير متوافقة معه.
+- لا تراجع توسعات Inventory/Sales/Purchases/POS/Data Import/Printing/Export أو اختيار
+  الأصناف دون `Barcode Impact` صريح واجتياز قسم الباركود في قائمة المراجعة وفق
+  [متطلب الهاتف والباركود](MOBILE_AND_BARCODE_CHANNELS_GOAL_AR.md).
 
 ### 4.6 قواعد التزامن والمهل
 

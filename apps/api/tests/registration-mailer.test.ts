@@ -57,7 +57,7 @@ describe('registration mailers', () => {
   it('renders Urdu RTL verification and Hindi LTR password-reset messages', async () => {
     const provider = vi.fn().mockResolvedValue({ ok: true });
     vi.stubGlobal('fetch', provider);
-    const mailer = new ResendRegistrationMailer('test-key', 'Jawar <no-reply@example.com>');
+    const mailer = new ResendRegistrationMailer('test-key', 'Accounting Platform <no-reply@example.com>');
     const expiresAt = new Date('2026-08-22T01:00:00.000Z');
 
     await mailer.sendVerification({

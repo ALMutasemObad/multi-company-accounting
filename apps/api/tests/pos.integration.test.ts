@@ -4,13 +4,15 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { AuthService } from "../src/auth/auth-service.js";
 import { PrismaAuthStore } from "../src/auth/prisma-auth-store.js";
+import {
+  createReceiptService,
+  createSalesInvoiceService,
+} from "../src/composition/create-financial-document-services.js";
 import { createDatabase } from "../src/database.js";
 import { InventoryCatalogService } from "../src/inventory/inventory-catalog-service.js";
 import { InventoryMovementService } from "../src/inventory/inventory-movement-service.js";
 import { PrismaPosSaleQueryAdapter } from "../src/pos/adapters/prisma-pos-sale-query-adapter.js";
 import { PosService } from "../src/pos/pos-service.js";
-import { ReceiptService } from "../src/receipts/receipt-service.js";
-import { SalesInvoiceService } from "../src/sales/sales-invoice-service.js";
 import { TaxService } from "../src/tax/tax-service.js";
 import { TreasuryService } from "../src/treasury/treasury-service.js";
 
@@ -136,8 +138,8 @@ describe.runIf(enabled)("POS cash-sale vertical slice with MariaDB", () => {
     const treasury = new TreasuryService(prisma!);
     const inventory = new InventoryCatalogService(prisma!);
     const stock = new InventoryMovementService(prisma!);
-    const sales = new SalesInvoiceService(prisma!, taxes, inventory, stock);
-    const receipts = new ReceiptService(prisma!, treasury);
+    const sales = createSalesInvoiceService(prisma!, { taxes, inventory, stock });
+    const receipts = createReceiptService(prisma!, { treasury });
     const pos = new PosService(prisma!, sales, receipts, new PrismaPosSaleQueryAdapter(prisma!));
     app = createApp({
       NODE_ENV: "test",

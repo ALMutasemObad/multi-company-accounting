@@ -7,6 +7,11 @@ export type PageMeta = {
 
 export type Company = { id: string; name: string };
 export type User = { id: string; displayName: string };
+export type CurrentAuthorization = {
+  user: User;
+  selectedCompany: (Company & { timezone: string }) | null;
+  permissions: string[];
+};
 export type EmployeeAccountOption = { id: string; employeeNumber: string; nameAr: string; nameEn: string | null; status: "ACTIVE" | "ON_LEAVE" | "TERMINATED" };
 export type AdminUser = { id: string; email: string; nameAr: string; nameEn: string | null; status: "ACTIVE" | "LOCKED" | "DISABLED"; lastLoginAt: string | null; createdAt: string; updatedAt: string; employee: EmployeeAccountOption | null };
 export type Permission = { id: string; code: string; module: string; descriptionAr: string };
@@ -107,6 +112,7 @@ export type PlatformBillingInvoice = {
   subtotal: string; taxRate: string; taxAmount: string; totalAmount: string; paidAmount: string; balance: string;
   notes: string | null; version: number; voidedAt: string | null; voidReason: string | null; createdAt: string;
   lines: Array<{ id: string; lineNumber: number; lineType: "RECURRING_FEE" | "ADDITIONAL_USERS" | "ADDITIONAL_EMPLOYEES" | "ADDITIONAL_POSTED_DOCUMENTS" | "ADJUSTMENT"; description: string; quantity: number; unitPrice: string; amount: string }>;
+  paymentCount: number;
   payments: Array<{ id: string; paymentDate: string; amount: string; method: "BANK_TRANSFER" | "CARD" | "CASH" | "OTHER"; reference: string | null; notes: string | null; createdAt: string }>;
 };
 export type PlatformCompanyBilling = {
@@ -114,12 +120,14 @@ export type PlatformCompanyBilling = {
   account: PlatformBillingAccount | null;
   totals: { billed: string; paid: string; balance: string; overdue: string };
   invoices: PlatformBillingInvoice[];
+  meta: PageMeta;
 };
 export type PlatformBillingSummary = {
   generatedAt: string;
   metrics: { totalCompanies: number; configuredCompanies: number; unconfiguredCompanies: number; activeAccounts: number; overdueInvoices: number };
   currencies: Array<{ currencyCode: string; recurringMonthly: string; billed: string; paid: string; balance: string; overdue: string; collectionRate: string }>;
   accounts: Array<{ companyId: string; companyName: string; companyActive: boolean; account: PlatformBillingAccount; billed: string; paid: string; balance: string; overdue: string }>;
+  meta: PageMeta;
 };
 export type CompanyDetails = { id: string; name: string; baseCurrencyId: string; baseCurrency: { code: string; nameAr: string }; timezone: string; isActive: boolean; manualJournalMakerCheckerEnabled: boolean; updatedAt: string };
 export type AuditLog = { id: string; actor: { id: string; name: string; email: string }; action: string; entityType: string; entityId: string; details: Record<string, unknown> | null; createdAt: string };
@@ -446,6 +454,44 @@ export type InventoryItem = {
   isActive: boolean;
   version: number;
   unitOfMeasure: UnitOfMeasure;
+};
+
+export type InventoryBarcodeSymbology =
+  | "EAN_13"
+  | "EAN_8"
+  | "UPC_A"
+  | "CODE_128"
+  | "QR";
+
+export type InventoryItemBarcode = {
+  id: string;
+  inventoryItemId: string;
+  symbology: InventoryBarcodeSymbology;
+  value: string;
+  isPrimary: boolean;
+  isActive: boolean;
+  version: number;
+};
+
+export type ResolvedInventoryBarcode = {
+  barcode: {
+    id: string;
+    symbology: InventoryBarcodeSymbology;
+    isPrimary: boolean;
+  };
+  inventoryItem: {
+    id: string;
+    code: string;
+    nameAr: string;
+    nameEn: string | null;
+    description: string | null;
+    unitOfMeasure: {
+      id: string;
+      code: string;
+      nameAr: string;
+      decimalPlaces: number;
+    };
+  };
 };
 
 export type InventoryMovementType =

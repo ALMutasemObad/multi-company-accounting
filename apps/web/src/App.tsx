@@ -1,12 +1,20 @@
-import { FormEvent, lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { FormEvent, lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiError, beginLogin, login, logout } from "./api";
-import { localizedBrand, storageKey } from "./branding";
+import { localizedBrand } from "./branding";
 import { LanguageSwitcher, useI18n } from "./i18n";
-import type { Company, User } from "./types";
+import type { Company, CurrentAuthorization, User } from "./types";
 import { Button, Icon, Spinner, Toast } from "./ui";
 import { RegistrationPage } from "./RegistrationPage";
 import { PasswordResetPage } from "./PasswordResetPage";
-import { navigationItems, viewTitleKey, views, type View } from "./app-navigation";
+import {
+  resolveAuthorizedView,
+  viewTitleKey,
+  views,
+  visibleNavigationItems,
+  type NavigationAccess,
+  type View,
+} from "./app-navigation";
+import { AuthorizationProvider } from "./authorization-context";
 
 const SystemHomePage = lazy(() => import("./SystemHomePage").then((module) => ({ default: module.SystemHomePage })));
 const DashboardPage = lazy(() => import("./DashboardPage").then((module) => ({ default: module.DashboardPage })));
@@ -38,13 +46,20 @@ const viewFromHash = (): View => {
   return views.has(value as View) ? value as View : "home";
 };
 
+type PlatformCapabilities = { platformOperations: boolean };
+const noPlatformCapabilities: PlatformCapabilities = { platformOperations: false };
+
+const replaceHash = (view: View) => {
+  const url = new URL(location.href);
+  history.replaceState(null, "", `${url.pathname}${url.search}#${view}`);
+};
+
 export default function App() {
   const { dir, t } = useI18n();
   const brand = localizedBrand(t);
   const [state, setState] = useState<"booting" | "login" | "register" | "password-reset" | "company" | "ready">("booting");
-  const [user, setUser] = useState<User | null>(null);
+  const [authorization, setAuthorization] = useState<CurrentAuthorization | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [company, setCompany] = useState<Company | null>(null);
   const [view, setView] = useState<View>(viewFromHash);
   const [platformOperator, setPlatformOperator] = useState<boolean | null>(null);
   const [mobileNav, setMobileNav] = useState(false);
@@ -59,25 +74,80 @@ export default function App() {
     window.setTimeout(() => setToast(null), 4500);
   }, []);
 
+  const activateAuthorization = useCallback((
+    snapshot: CurrentAuthorization,
+    capabilities: PlatformCapabilities,
+  ) => {
+    setAuthorization(snapshot);
+    setPlatformOperator(capabilities.platformOperations);
+    if (!snapshot.selectedCompany && capabilities.platformOperations) {
+      setView("platform");
+      replaceHash("platform");
+    }
+    setState("ready");
+  }, []);
+
   const chooseCompany = useCallback(async (selected: Company) => {
     await api<void>("/auth/context", {
       method: "PUT",
       body: JSON.stringify({ companyId: selected.id }),
     });
-    setCompany(selected);
-    const capabilities = await api<{ platformOperations: boolean }>("/platform/capabilities")
-      .catch(() => ({ platformOperations: false }));
+    const [snapshot, capabilities] = await Promise.all([
+      api<CurrentAuthorization>("/auth/me"),
+      api<PlatformCapabilities>("/platform/capabilities").catch(() => noPlatformCapabilities),
+    ]);
+    if (snapshot.selectedCompany?.id !== selected.id) {
+      throw new Error(t("app.chooseCompanyError"));
+    }
+    activateAuthorization(snapshot, capabilities);
+  }, [activateAuthorization, t]);
+
+  const loadAuthenticatedShell = useCallback(async (autoSelectSingleCompany: boolean) => {
+    const [companyResult, snapshot, capabilities] = await Promise.all([
+      api<{ data: Company[] }>("/auth/companies"),
+      api<CurrentAuthorization>("/auth/me"),
+      api<PlatformCapabilities>("/platform/capabilities").catch(() => noPlatformCapabilities),
+    ]);
+    setCompanies(companyResult.data);
+    if (snapshot.selectedCompany) {
+      activateAuthorization(snapshot, capabilities);
+      return;
+    }
+    if (companyResult.data.length === 0 && capabilities.platformOperations) {
+      activateAuthorization(snapshot, capabilities);
+      return;
+    }
+    setAuthorization(snapshot);
     setPlatformOperator(capabilities.platformOperations);
-    localStorage.setItem(storageKey("company"), selected.id);
-    setState("ready");
+    if (autoSelectSingleCompany && companyResult.data.length === 1) {
+      await chooseCompany(companyResult.data[0]!);
+      return;
+    }
+    setState("company");
+  }, [activateAuthorization, chooseCompany]);
+
+  const navigationAccess = useMemo<NavigationAccess>(() => ({
+    permissionSet: new Set(authorization?.permissions ?? []),
+    hasSelectedCompany: Boolean(authorization?.selectedCompany),
+    platformOperations: platformOperator === true,
+  }), [authorization, platformOperator]);
+  const allowedNavigationItems = useMemo(
+    () => visibleNavigationItems(navigationAccess),
+    [navigationAccess],
+  );
+  const activeView = resolveAuthorizedView(view, navigationAccess);
+
+  useEffect(() => {
+    const onHashChange = () => setView(viewFromHash());
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
 
   useEffect(() => {
-    if (state === "ready" && platformOperator === false && view === "platform") {
-      setView("home");
-      location.hash = "home";
-    }
-  }, [platformOperator, state, view]);
+    if (state !== "ready" || activeView === view) return;
+    setView(activeView);
+    replaceHash(activeView);
+  }, [activeView, state, view]);
 
   useEffect(() => {
     void (async () => {
@@ -92,36 +162,18 @@ export default function App() {
         return;
       }
       try {
-        const result = await api<{ data: Company[] }>("/auth/companies");
-        setCompanies(result.data);
-        const saved = localStorage.getItem(storageKey("company"));
-        const selected =
-          result.data.find((item) => item.id === saved) ?? result.data[0];
-        if (!selected) {
-          setState("company");
-          return;
-        }
-        try {
-          await chooseCompany(selected);
-          setUser({
-            id: "current",
-            displayName:
-              sessionStorage.getItem(storageKey("userName")) ?? "",
-          });
-        } catch {
-          await beginLogin();
-          setState("login");
-        }
+        await loadAuthenticatedShell(false);
       } catch {
         await beginLogin().catch(() => undefined);
         setState("login");
       }
     })();
-  }, [chooseCompany]);
+  }, [loadAuthenticatedShell]);
 
   function navigate(next: View) {
-    setView(next);
-    location.hash = next;
+    const authorized = resolveAuthorizedView(next, navigationAccess);
+    setView(authorized);
+    location.hash = authorized;
     setMobileNav(false);
   }
 
@@ -144,14 +196,7 @@ export default function App() {
           location.hash = "register";
           setState("register");
         }}
-        onLoggedIn={async (loggedInUser) => {
-          setUser(loggedInUser);
-          sessionStorage.setItem(storageKey("userName"), loggedInUser.displayName);
-          const result = await api<{ data: Company[] }>("/auth/companies");
-          setCompanies(result.data);
-          if (result.data.length === 1) await chooseCompany(result.data[0]!);
-          else setState("company");
-        }}
+        onLoggedIn={async () => loadAuthenticatedShell(true)}
       />
     );
 
@@ -189,7 +234,19 @@ export default function App() {
       />
     );
 
+  if (!authorization) {
+    return (
+      <main className="center-screen">
+        <Spinner label={t("app.booting", { productName: brand.name })} />
+      </main>
+    );
+  }
+
+  const user = authorization.user;
+  const company = authorization.selectedCompany;
+
   return (
+    <AuthorizationProvider authorization={authorization}>
     <div className="app-shell" dir={dir}>
       <a className="skip-link" href="#main-content">{t("common.skipToContent")}</a>
       <aside className={`sidebar ${mobileNav ? "open" : ""}`}>
@@ -198,32 +255,31 @@ export default function App() {
           <div><strong>{brand.shortName}</strong><span>{t("app.trustedFinance")}</span></div>
         </div>
         <nav aria-label={t("app.mainNavigation")}>
-          {navigationItems.filter((item) => !item.platformOnly || platformOperator).map((item) => (
-            <button type="button" key={item.view} className={view === item.view ? "active" : ""} aria-current={view === item.view ? "page" : undefined} onClick={() => navigate(item.view)}>
+          {allowedNavigationItems.map((item) => (
+            <button type="button" key={item.view} className={activeView === item.view ? "active" : ""} aria-current={activeView === item.view ? "page" : undefined} onClick={() => navigate(item.view)}>
               <Icon name={item.icon} /><span>{t(item.label)}</span>
             </button>
           ))}
         </nav>
-        <div className="sidebar-footer">
-          <div className="company-badge"><Icon name="building" /><div><span>{t("app.currentCompany")}</span><strong>{company?.name}</strong></div></div>
-          <button
+        {(company || companies.length > 1) && <div className="sidebar-footer">
+          {company && <div className="company-badge"><Icon name="building" /><div><span>{t("app.currentCompany")}</span><strong>{company.name}</strong></div></div>}
+          {companies.length > 1 && <button
             type="button"
             className="switch-company"
             onClick={() => setState("company")}
-            disabled={companies.length < 2}
           >
             {t("app.switchCompany")}
-          </button>
-        </div>
+          </button>}
+        </div>}
       </aside>
       {mobileNav && <button type="button" className="nav-scrim" aria-label={t("app.closeNavigation")} onClick={() => setMobileNav(false)} />}
       <div className="app-main">
         <header className="topbar">
           <button type="button" className="menu-button" aria-label={t("app.openNavigation")} onClick={() => setMobileNav(true)}><Icon name="menu" /></button>
-          <div className="topbar-title"><span>{t(viewTitleKey[view])}</span><small>{company?.name}</small></div>
+          <div className="topbar-title"><span>{t(viewTitleKey[activeView])}</span><small>{company?.name ?? (activeView === "platform" ? t("nav.platform") : "")}</small></div>
           <div className="user-menu">
-            <div className="avatar">{user?.displayName?.slice(0, 1) || brand.mark.slice(0, 1)}</div>
-            <span>{user?.displayName || t("app.currentUser")}</span>
+            <div className="avatar">{user.displayName.slice(0, 1) || brand.mark.slice(0, 1)}</div>
+            <span>{user.displayName || t("app.currentUser")}</span>
             <LanguageSwitcher compact />
             <button
               type="button"
@@ -231,7 +287,9 @@ export default function App() {
               title={t("app.logout")}
               onClick={() =>
                 void logout().finally(() => {
-                  sessionStorage.removeItem(storageKey("userName"));
+                  setAuthorization(null);
+                  setCompanies([]);
+                  setPlatformOperator(null);
                   void beginLogin().finally(() => setState("login"));
                 })
               }
@@ -242,35 +300,36 @@ export default function App() {
         </header>
         <main id="main-content" className="content" tabIndex={-1}>
           <Suspense fallback={<div className="loading"><Spinner /><span>{t("app.loadingModule")}</span></div>}>
-            {view === "home" && <SystemHomePage onNavigate={navigate} />}
-            {view === "dashboard" && <DashboardPage onNavigate={navigate} />}
-            {view === "platform" && platformOperator && <PlatformOperationsPage />}
-            {view === "pos" && <PosPage notify={notify} />}
-            {view === "customers" && <CustomersPage notify={notify} />}
-            {view === "professionalProjects" && <ProfessionalProjectsPage notify={notify} />}
-            {view === "humanResources" && <HumanResourcesPage notify={notify} />}
-            {view === "sales" && <SalesInvoicesPage notify={notify} />}
-            {view === "receipts" && <ReceiptsPage notify={notify} />}
-            {view === "suppliers" && <SuppliersPage notify={notify} />}
-            {view === "purchases" && <PurchaseInvoicesPage notify={notify} />}
-            {view === "payments" && <PaymentsPage notify={notify} />}
-            {view === "journals" && <ManualJournalsPage notify={notify} />}
-            {view === "fiscal" && <FiscalPage notify={notify} />}
-            {view === "approvals" && <ApprovalsPage notify={notify} />}
-            {view === "accounts" && <AccountsPage notify={notify} />}
-            {view === "treasury" && <TreasuryPage notify={notify} />}
-            {view === "inventory" && <InventoryPage notify={notify} />}
-            {view === "reports" && <ReportsPage />}
-            {view === "imports" && <DataImportsPage notify={notify} />}
-            {view === "admin" && <AdminPage notify={notify} />}
-            {view === "audit" && <AuditLogsPage notify={notify} onNavigate={navigate} />}
-            {view === "security" && <SecurityEventsPage notify={notify} />}
-            {view === "settings" && <CompanySettingsPage notify={notify} />}
+            {activeView === "home" && <SystemHomePage onNavigate={navigate} />}
+            {activeView === "dashboard" && <DashboardPage onNavigate={navigate} />}
+            {activeView === "platform" && platformOperator && <PlatformOperationsPage />}
+            {activeView === "pos" && <PosPage notify={notify} />}
+            {activeView === "customers" && <CustomersPage notify={notify} />}
+            {activeView === "professionalProjects" && <ProfessionalProjectsPage notify={notify} />}
+            {activeView === "humanResources" && <HumanResourcesPage notify={notify} />}
+            {activeView === "sales" && <SalesInvoicesPage notify={notify} />}
+            {activeView === "receipts" && <ReceiptsPage notify={notify} />}
+            {activeView === "suppliers" && <SuppliersPage notify={notify} />}
+            {activeView === "purchases" && <PurchaseInvoicesPage notify={notify} />}
+            {activeView === "payments" && <PaymentsPage notify={notify} />}
+            {activeView === "journals" && <ManualJournalsPage notify={notify} />}
+            {activeView === "fiscal" && <FiscalPage notify={notify} />}
+            {activeView === "approvals" && <ApprovalsPage notify={notify} />}
+            {activeView === "accounts" && <AccountsPage notify={notify} />}
+            {activeView === "treasury" && <TreasuryPage notify={notify} />}
+            {activeView === "inventory" && <InventoryPage notify={notify} />}
+            {activeView === "reports" && <ReportsPage />}
+            {activeView === "imports" && <DataImportsPage notify={notify} />}
+            {activeView === "admin" && <AdminPage notify={notify} />}
+            {activeView === "audit" && <AuditLogsPage notify={notify} onNavigate={navigate} />}
+            {activeView === "security" && <SecurityEventsPage notify={notify} />}
+            {activeView === "settings" && <CompanySettingsPage notify={notify} />}
           </Suspense>
         </main>
       </div>
       {toast && <Toast {...toast} onClose={() => setToast(null)} />}
     </div>
+    </AuthorizationProvider>
   );
 }
 

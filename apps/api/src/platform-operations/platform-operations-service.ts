@@ -1,7 +1,7 @@
 import type {
   PlatformAnalyticsComparison,
   PlatformAnalyticsQueryPort,
-  PlatformIdentityQueryPort,
+  PlatformOperatorAuthorizationPort,
 } from "./platform-operations-ports.js";
 
 export class PlatformOperationsError extends Error {
@@ -11,20 +11,11 @@ export class PlatformOperationsError extends Error {
 }
 
 export class PlatformOperationsService {
-  private readonly operators: Set<string>;
-
   constructor(
-    private readonly identities: PlatformIdentityQueryPort,
+    private readonly operatorAuthorization: PlatformOperatorAuthorizationPort,
     private readonly analytics: PlatformAnalyticsQueryPort,
-    operatorEmails: Iterable<string>,
     private readonly now: () => Date = () => new Date(),
-  ) {
-    this.operators = new Set(
-      [...operatorEmails]
-        .map((email) => email.trim().toLocaleLowerCase("en-US"))
-        .filter(Boolean),
-    );
-  }
+  ) {}
 
   async capabilities(userId: bigint) {
     return { platformOperations: await this.isOperator(userId) };
@@ -72,8 +63,6 @@ export class PlatformOperationsService {
   }
 
   private async isOperator(userId: bigint) {
-    if (!this.operators.size) return false;
-    const email = await this.identities.activeEmailForUser(userId);
-    return email !== null && this.operators.has(email.toLocaleLowerCase("en-US"));
+    return this.operatorAuthorization.isActiveOperator(userId);
   }
 }

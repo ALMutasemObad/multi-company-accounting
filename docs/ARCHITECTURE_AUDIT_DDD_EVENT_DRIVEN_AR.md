@@ -1,6 +1,6 @@
 ---
 title: "Architecture Audit — DDD and Event-Driven"
-project: "نظام جوار المالي"
+project: "النظام المحاسبي متعدد الشركات"
 language: "ar"
 audit_type: "read-only architecture assessment"
 focus:
@@ -15,7 +15,7 @@ implementation_changes: false
 confidence: "high for static architecture findings"
 ---
 
-# تقرير تدقيق معمارية نظام جوار المالي
+# تقرير تدقيق معمارية النظام المحاسبي متعدد الشركات
 
 ## الغرض من المستند
 

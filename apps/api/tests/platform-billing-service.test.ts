@@ -1,7 +1,9 @@
 import { Prisma } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 import {
+  assertPlatformBillingCurrencyChangeAllowed,
   calculatePlatformInvoice,
+  calculatePlatformRecurringMonthly,
   PlatformBillingError,
 } from "../src/platform-operations/platform-billing-service.js";
 
@@ -50,5 +52,32 @@ describe("platform commercial invoice calculation", () => {
       { users: 0, employees: 0, postedDocuments: 0, operations: 0 },
       [{ description: "Invalid discount", amount: "-101" }],
     )).toThrow(new PlatformBillingError("INVALID_AMOUNT"));
+  });
+
+  it("freezes the billing currency after the first invoice while allowing non-currency edits", () => {
+    expect(() => assertPlatformBillingCurrencyChangeAllowed("SAR", "SAR", true)).not.toThrow();
+    expect(() => assertPlatformBillingCurrencyChangeAllowed("SAR", "USD", false)).not.toThrow();
+    expect(() => assertPlatformBillingCurrencyChangeAllowed("SAR", "USD", true))
+      .toThrow(new PlatformBillingError("CURRENCY_CHANGE_WITH_HISTORY"));
+  });
+
+  it("rounds recurring revenue once after SQL has aggregated a billing cycle", () => {
+    const recurringMonthly = calculatePlatformRecurringMonthly([{
+      billingCycle: "QUARTERLY",
+      recurringFee: decimal("599900.0000"),
+    }]);
+
+    expect(recurringMonthly.toFixed(4)).toBe("199966.6667");
+    expect(decimal("33.33333333").mul(5_999).toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP).toFixed(4))
+      .toBe("199966.6666");
+  });
+
+  it("keeps four decimal places when an aggregate exceeds Decimal.js default precision", () => {
+    const recurringMonthly = calculatePlatformRecurringMonthly([{
+      billingCycle: "QUARTERLY",
+      recurringFee: decimal("999999999999999999.9999"),
+    }]);
+
+    expect(recurringMonthly.toFixed(4)).toBe("333333333333333333.3333");
   });
 });
