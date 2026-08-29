@@ -7,6 +7,11 @@ export type PageMeta = {
 
 export type Company = { id: string; name: string };
 export type User = { id: string; displayName: string };
+export type CurrentAuthorization = {
+  user: User;
+  selectedCompany: (Company & { timezone: string }) | null;
+  permissions: string[];
+};
 export type EmployeeAccountOption = { id: string; employeeNumber: string; nameAr: string; nameEn: string | null; status: "ACTIVE" | "ON_LEAVE" | "TERMINATED" };
 export type AdminUser = { id: string; email: string; nameAr: string; nameEn: string | null; status: "ACTIVE" | "LOCKED" | "DISABLED"; lastLoginAt: string | null; createdAt: string; updatedAt: string; employee: EmployeeAccountOption | null };
 export type Permission = { id: string; code: string; module: string; descriptionAr: string };

@@ -1,5 +1,8 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { api, idempotencyKey } from "./api";
+import { actionPermissionPolicies } from "./action-permissions";
+import { allows } from "./authorization";
+import { Can, useAuthorization } from "./authorization-context";
 import { formatMoney, statusLabel, taxReadinessLabel, toMoney, toQuantity } from "./domain";
 import { activeIntlLocale, localizedReferenceName, useI18n } from "./i18n";
 import { ReferenceCombobox } from "./ReferenceCombobox";
@@ -53,6 +56,8 @@ export const normalizePosRate = (value: string) => {
 
 export function PosPage({ notify }: { notify: Notice }) {
   const { t } = useI18n();
+  const { permissionSet } = useAuthorization();
+  const checkoutPolicy = actionPermissionPolicies.pos.checkout;
   const [sales, setSales] = useState<PosSale[]>([]);
   const [meta, setMeta] = useState({ page: 1, pageSize: 10, total: 0, totalPages: 0 });
   const [page, setPage] = useState(1);
@@ -114,6 +119,7 @@ export function PosPage({ notify }: { notify: Notice }) {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!allows(permissionSet, checkoutPolicy)) return;
     const data = new FormData(event.currentTarget);
     if (paymentMethod?.requiresReference && !String(data.get("referenceNumber") ?? "").trim()) {
       notify(t("pos.referenceRequired"), "error");
@@ -185,7 +191,7 @@ export function PosPage({ notify }: { notify: Notice }) {
           <label className="pos-tax"><span>{t("pos.tax")}</span><ReferenceCombobox<TaxRate> endpoint="/tax-rates?activeOnly=true" value={line.taxRateId} selectedLabel={line.taxRateLabel} onChange={(tax) => updateLine(index, { taxRateId: tax?.id ?? "", taxRateLabel: tax ? `${localizedReferenceName(tax)} (${Number(tax.rate)}%)` : "" })} optionLabel={(tax) => `${localizedReferenceName(tax)} (${Number(tax.rate)}%)${tax.isReady ? "" : ` — ${taxReadinessLabel(tax)}`}`} optionDisabled={(tax) => !tax.isReady} placeholder={t("pos.tax")} searchLabel={t("pos.tax")} optionalLabel={t("pos.tax")} /></label>
           <Button type="button" variant="ghost" icon="trash" disabled={lines.length === 1} onClick={() => setLines((current) => current.filter((_, position) => position !== index))}>{t("pos.removeLine")}</Button>
         </div>)}<Button type="button" variant="secondary" icon="plus" disabled={lines.length >= 50} onClick={() => setLines((current) => [...current, blankLine()])}>{t("pos.addLine")}</Button></fieldset>
-        <div className="pos-checkout-footer"><label><span>{t("pos.notes")}</span><textarea name="notes" maxLength={1000} rows={2} /></label><div className="pos-total"><span>{t("pos.total")}</span><strong>{formatMoney(displayTotal)}</strong></div><Button type="submit" icon="check" disabled={saving || !periodId || !currencyId || !customerId || !warehouseId || !cashAccountId || !paymentMethod}>{saving ? t("pos.checkingOut") : t("pos.checkout")}</Button></div>
+        <div className="pos-checkout-footer"><label><span>{t("pos.notes")}</span><textarea name="notes" maxLength={1000} rows={2} /></label><div className="pos-total"><span>{t("pos.total")}</span><strong>{formatMoney(displayTotal)}</strong></div><Can policy={checkoutPolicy}><Button type="submit" icon="check" disabled={saving || !periodId || !currencyId || !customerId || !warehouseId || !cashAccountId || !paymentMethod}>{saving ? t("pos.checkingOut") : t("pos.checkout")}</Button></Can></div>
       </form>
       <article className="panel pos-history"><header><div><h2>{t("pos.recentSales")}</h2><p>{t("pos.recentDescription")}</p></div></header>
         {error ? <div className="error-panel" role="alert"><p>{error}</p><Button variant="secondary" onClick={() => void load()}>{t("common.retry")}</Button></div> : loading ? <Spinner label={t("common.loading")} /> : sales.length === 0 ? <EmptyState title={t("pos.emptyTitle")} description={t("pos.emptyDescription")} /> : <><div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("pos.invoice")}</th><th>{t("pos.receipt")}</th><th>{t("pos.customer")}</th><th>{t("pos.total")}</th><th>{t("pos.completedAt")}</th><th>{t("pos.status")}</th></tr></thead><tbody>{sales.map((sale) => <tr key={sale.id}><td dir="ltr">{sale.invoice.documentNumber}</td><td dir="ltr">{sale.receipt.documentNumber}</td><td>{sale.invoice.customerName}</td><td className="money-cell">{formatMoney(sale.invoice.total)}</td><td>{new Date(sale.completedAt).toLocaleString(activeIntlLocale())}</td><td><div className="pos-statuses"><span><small>{t("pos.invoice")}</small><span className={`status-chip ${sale.invoice.status.toLowerCase()}`}>{statusLabel(sale.invoice.status)}</span></span><span><small>{t("pos.receipt")}</small><span className={`status-chip ${sale.receipt.status.toLowerCase()}`}>{statusLabel(sale.receipt.status)}</span></span></div></td></tr>)}</tbody></table></div><Pagination {...meta} page={page} onChange={setPage} /></>}

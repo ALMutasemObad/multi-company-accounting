@@ -7,6 +7,9 @@ import { FormEvent,
   useState } from "react";
 import { api,
   ApiError } from "./api";
+import { actionPermissionPolicies } from "./action-permissions";
+import { allows } from "./authorization";
+import { Can, useAuthorization } from "./authorization-context";
 import type { Account,
   Address,
   ListResponse,
@@ -24,6 +27,9 @@ import {
 type Notice = (message: string, tone?: "success" | "error") => void;
 
 export function CustomersPage({ notify }: { notify: Notice }) {
+  const { permissionSet } = useAuthorization();
+  const managePolicy = actionPermissionPolicies.customers.manage;
+  const canManage = allows(permissionSet, managePolicy);
   const [items, setItems] = useState<Customer[]>([]);
   const [meta, setMeta] = useState({ page: 1, pageSize: 10, total: 0, totalPages: 0 });
   const [page, setPage] = useState(1);
@@ -84,7 +90,7 @@ export function CustomersPage({ notify }: { notify: Notice }) {
   }
 
   async function deactivate() {
-    if (!selected || !window.confirm(t("pages.customers.003", { value1: localizedReferenceName(selected) })))
+    if (!canManage || !selected || !window.confirm(t("pages.customers.003", { value1: localizedReferenceName(selected) })))
       return;
     const reason = window.prompt(t("pages.customers.004"));
     if (!reason || reason.trim().length < 3) return;
@@ -102,7 +108,7 @@ export function CustomersPage({ notify }: { notify: Notice }) {
   }
 
   async function removeAddress(address: Address) {
-    if (!selected || !window.confirm(t("pages.customers.007"))) return;
+    if (!canManage || !selected || !window.confirm(t("pages.customers.007"))) return;
     try {
       await api<void>(
         `/customers/${selected.id}/addresses/${address.id}`,
@@ -117,7 +123,7 @@ export function CustomersPage({ notify }: { notify: Notice }) {
 
   return (
     <section className="workspace-page">
-      <PageHeader kicker={t("pages.customers.010")} title={t("pages.customers.011")} description={t("pages.customers.012")} actions={<Button icon="plus" onClick={() => setForm("create")}>{t("pages.customers.013")}</Button>} />
+      <PageHeader kicker={t("pages.customers.010")} title={t("pages.customers.011")} description={t("pages.customers.012")} actions={<Can policy={managePolicy}><Button icon="plus" onClick={() => setForm("create")}>{t("pages.customers.013")}</Button></Can>} />
 
       <div className="toolbar">
         <form
@@ -168,7 +174,7 @@ export function CustomersPage({ notify }: { notify: Notice }) {
           }
           action={
             !submittedSearch && (
-              <Button icon="plus" onClick={() => setForm("create")}>{t("pages.customers.026")}</Button>
+              <Can policy={managePolicy}><Button icon="plus" onClick={() => setForm("create")}>{t("pages.customers.026")}</Button></Can>
             )
           }
         />
@@ -221,7 +227,7 @@ export function CustomersPage({ notify }: { notify: Notice }) {
         </>
       )}
 
-      {form && (
+      {form && canManage && (
         <CustomerForm
           customer={form === "edit" ? selected : null}
           accounts={accounts}
@@ -240,15 +246,15 @@ export function CustomersPage({ notify }: { notify: Notice }) {
           customer={selected}
           accounts={accounts}
           onClose={() => setSelected(null)}
-          onEdit={() => setForm("edit")}
+          onEdit={() => { if (canManage) setForm("edit"); }}
           onDeactivate={() => void deactivate()}
-          onAddAddress={() => setAddressForm("new")}
-          onEditAddress={setAddressForm}
+          onAddAddress={() => { if (canManage) setAddressForm("new"); }}
+          onEditAddress={(address) => { if (canManage) setAddressForm(address); }}
           onDeleteAddress={(address) => void removeAddress(address)}
         />
       )}
 
-      {addressForm && selected && (
+      {addressForm && selected && canManage && (
         <AddressForm
           customerId={selected.id}
           address={addressForm === "new" ? null : addressForm}
@@ -275,10 +281,12 @@ function CustomerForm({
   onClose: () => void;
   onSaved: (customer: Customer) => void;
 }) {
+  const { permissionSet } = useAuthorization();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!allows(permissionSet, actionPermissionPolicies.customers.manage)) return;
     setSaving(true);
     setError("");
     const data = new FormData(event.currentTarget);
@@ -418,10 +426,10 @@ function CustomerDetails({
   return (
     <Modal title={localizedReferenceName(customer)} description={t("pages.customers.059", { value1: customer.code })} onClose={onClose} wide>
       <div className="detail-actions">
-        <Button variant="secondary" icon="edit" onClick={onEdit}>{t("pages.accounts.048")}</Button>
-        {customer.isActive && (
+        <Can policy={actionPermissionPolicies.customers.manage}><Button variant="secondary" icon="edit" onClick={onEdit}>{t("pages.accounts.048")}</Button></Can>
+        {customer.isActive && <Can policy={actionPermissionPolicies.customers.manage}>
           <Button variant="danger" icon="ban" onClick={onDeactivate}>{t("pages.accounts.049")}</Button>
-        )}
+        </Can>}
       </div>
       <dl className="detail-grid">
         <div><dt>{t("pages.customers.062")}</dt><dd>{account ? `${account.code} — ${localizedReferenceName(account)}` : customer.receivableAccountId}</dd></div>
@@ -432,7 +440,7 @@ function CustomerDetails({
       </dl>
       <div className="subsection-heading">
         <div><h3>{t("pages.customers.066")}</h3><p>{customer.addresses.length}{t("pages.customers.067")}</p></div>
-        <Button variant="secondary" icon="plus" onClick={onAddAddress}>{t("pages.customers.068")}</Button>
+        <Can policy={actionPermissionPolicies.customers.manage}><Button variant="secondary" icon="plus" onClick={onAddAddress}>{t("pages.customers.068")}</Button></Can>
       </div>
       {customer.addresses.length === 0 ? (
         <div className="compact-empty">{t("pages.customers.069")}</div>
@@ -447,8 +455,8 @@ function CustomerDetails({
                 <p>{[address.line1, address.line2, address.city, address.region, address.postalCode, address.countryCode].filter(Boolean).join(t("pages.customers.071"))}</p>
               </div>
               <div className="row-actions">
-                <button aria-label={t("pages.customers.072")} onClick={() => onEditAddress(address)}><Icon name="edit" size={17} /></button>
-                <button aria-label={t("pages.customers.073")} className="danger-text" onClick={() => onDeleteAddress(address)}><Icon name="trash" size={17} /></button>
+                <Can policy={actionPermissionPolicies.customers.manage}><button aria-label={t("pages.customers.072")} onClick={() => onEditAddress(address)}><Icon name="edit" size={17} /></button></Can>
+                <Can policy={actionPermissionPolicies.customers.manage}><button aria-label={t("pages.customers.073")} className="danger-text" onClick={() => onDeleteAddress(address)}><Icon name="trash" size={17} /></button></Can>
               </div>
             </article>
           ))}
@@ -469,10 +477,12 @@ function AddressForm({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { permissionSet } = useAuthorization();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!allows(permissionSet, actionPermissionPolicies.customers.manage)) return;
     setSaving(true);
     const data = new FormData(event.currentTarget);
     const value = (name: string) => String(data.get(name) ?? "").trim();

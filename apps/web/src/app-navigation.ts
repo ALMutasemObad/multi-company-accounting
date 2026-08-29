@@ -1,5 +1,6 @@
 import type { TranslationKey } from "./i18n";
 import type { IconName } from "./ui";
+import { allows, type PermissionPolicy } from "./authorization";
 
 export type View =
   | "home"
@@ -32,6 +33,39 @@ export type NavigationItem = {
   icon: IconName;
   label: TranslationKey;
   platformOnly?: boolean;
+};
+
+export type NavigationAccess = {
+  permissionSet: ReadonlySet<string>;
+  hasSelectedCompany: boolean;
+  platformOperations: boolean;
+};
+
+type TenantProtectedView = Exclude<View, "home" | "platform">;
+
+export const viewPermissionPolicies: Record<TenantProtectedView, PermissionPolicy> = {
+  dashboard: { permission: "dashboard.view" },
+  pos: { permission: "pos.view" },
+  customers: { permission: "customers.view" },
+  professionalProjects: { permission: "professional_projects.view" },
+  humanResources: { allOf: ["hr.employees.view", "hr.structure.view", "hr.contracts.view"] },
+  sales: { permission: "sales_invoices.view" },
+  receipts: { permission: "receipts.view" },
+  suppliers: { permission: "suppliers.view" },
+  purchases: { permission: "purchase_invoices.view" },
+  payments: { permission: "payments.view" },
+  journals: { permission: "manual_journals.view" },
+  fiscal: { permission: "fiscal_periods.view" },
+  approvals: { permission: "approvals.view" },
+  accounts: { allOf: ["accounts.view", "cost_centers.manage"] },
+  treasury: { permission: "cash_bank_accounts.view" },
+  inventory: { permission: "warehouses.view" },
+  reports: { permission: "reports.cash_flow.view" },
+  imports: { permission: "data_imports.view" },
+  admin: { allOf: ["users.view", "roles.view"] },
+  audit: { permission: "audit_logs.view" },
+  security: { permission: "security_events.view" },
+  settings: { allOf: ["companies.view", "settings.manage", "currencies.view"] },
 };
 
 export const navigationItems: NavigationItem[] = [
@@ -67,13 +101,34 @@ export const viewTitleKey = Object.fromEntries(
 
 export const views = new Set<View>(navigationItems.map((item) => item.view));
 
-type ModuleCard = NavigationItem & { description: TranslationKey };
-export const systemGroups: Array<{
+export function isNavigationItemVisible(
+  item: NavigationItem,
+  access: NavigationAccess,
+) {
+  if (item.view === "platform") return item.platformOnly === true && access.platformOperations;
+  if (!access.hasSelectedCompany) return false;
+  if (item.view === "home") return true;
+  return allows(access.permissionSet, viewPermissionPolicies[item.view]);
+}
+
+export const visibleNavigationItems = (access: NavigationAccess) =>
+  navigationItems.filter((item) => isNavigationItemVisible(item, access));
+
+export function resolveAuthorizedView(requested: View, access: NavigationAccess): View {
+  const requestedItem = navigationItems.find((item) => item.view === requested);
+  if (requestedItem && isNavigationItemVisible(requestedItem, access)) return requested;
+  return access.hasSelectedCompany ? "home" : access.platformOperations ? "platform" : "home";
+}
+
+export type ModuleCard = NavigationItem & { description: TranslationKey };
+export type SystemGroup = {
   key: "business" | "workforce" | "finance" | "administration";
   title: TranslationKey;
   description: TranslationKey;
   modules: ModuleCard[];
-}> = [
+};
+
+export const systemGroups: SystemGroup[] = [
   {
     key: "business",
     title: "home.group.business",
@@ -103,3 +158,11 @@ export const systemGroups: Array<{
       .map((item) => ({ ...item, description: `home.module.${item.view}` as TranslationKey })),
   },
 ];
+
+export const visibleSystemGroups = (access: NavigationAccess): SystemGroup[] =>
+  systemGroups
+    .map((group) => ({
+      ...group,
+      modules: group.modules.filter((item) => isNavigationItemVisible(item, access)),
+    }))
+    .filter((group) => group.modules.length > 0);

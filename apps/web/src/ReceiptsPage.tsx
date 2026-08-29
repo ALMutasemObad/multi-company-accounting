@@ -11,6 +11,9 @@ import { api,
   ApiError,
   downloadPdf,
   idempotencyKey } from "./api";
+import { actionPermissionPolicies } from "./action-permissions";
+import { allows } from "./authorization";
+import { Can, useAuthorization } from "./authorization-context";
 import { exchangeRateForDocumentDate,
   missingDatedRateMessage } from "./currency-rates";
 import {
@@ -65,6 +68,8 @@ const emptyReferences: References = {
 };
 
 export function ReceiptsPage({ notify }: { notify: Notice }) {
+  const { permissionSet } = useAuthorization();
+  const permissions = actionPermissionPolicies.receipts;
   const [items, setItems] = useState<Receipt[]>([]);
   const [meta, setMeta] = useState({ page: 1, pageSize: 10, total: 0, totalPages: 0 });
   const [page, setPage] = useState(1);
@@ -143,6 +148,7 @@ export function ReceiptsPage({ notify }: { notify: Notice }) {
     operation: "post" | "cancel" | "reverse",
     receipt: Receipt,
   ) {
+    if (!allows(permissionSet, permissions[operation])) return;
     const labels = { post: t("pages.manual-journals.004"), cancel: t("pages.accounts.065"), reverse: t("pages.manual-journals.006") };
     if (!window.confirm(t("pages.payments.007", { value1: labels[operation], value2: receipt.document.documentNumber })))
       return;
@@ -184,7 +190,7 @@ export function ReceiptsPage({ notify }: { notify: Notice }) {
 
   return (
     <section className="workspace-page">
-      <PageHeader kicker={t("pages.receipts.013")} title={t("pages.receipts.014")} description={t("pages.payments.015")} actions={<Button icon="plus" onClick={() => setForm("create")}>{t("pages.receipts.016")}</Button>} />
+      <PageHeader kicker={t("pages.receipts.013")} title={t("pages.receipts.014")} description={t("pages.payments.015")} actions={<Can policy={permissions.create}><Button icon="plus" onClick={() => setForm("create")}>{t("pages.receipts.016")}</Button></Can>} />
 
       <div className="toolbar receipt-filters">
         <form
@@ -226,7 +232,7 @@ export function ReceiptsPage({ notify }: { notify: Notice }) {
         <EmptyState
           title={t("pages.receipts.030")}
           description={t("pages.receipts.031")}
-          action={<Button icon="plus" onClick={() => setForm("create")}>{t("pages.payments.032")}</Button>}
+          action={<Can policy={permissions.create}><Button icon="plus" onClick={() => setForm("create")}>{t("pages.payments.032")}</Button></Can>}
         />
       ) : (
         <>
@@ -252,7 +258,7 @@ export function ReceiptsPage({ notify }: { notify: Notice }) {
         </>
       )}
 
-      {form && (
+      {form && allows(permissionSet, form === "edit" ? permissions.update : permissions.create) && (
         <ReceiptForm
           receipt={form === "edit" ? selected : null}
           references={references}
@@ -270,9 +276,9 @@ export function ReceiptsPage({ notify }: { notify: Notice }) {
           receipt={selected}
           references={references}
           onClose={() => setSelected(null)}
-          onEdit={() => setForm("edit")}
+          onEdit={() => { if (allows(permissionSet, permissions.update)) setForm("edit"); }}
           onCommand={(operation) => void command(operation, selected)}
-          onPrint={() => void downloadPdf(`/receipts/${selected.id}/pdf`).catch((cause) => notify(cause instanceof Error ? cause.message : t("pages.receipts.043"), "error"))}
+          onPrint={() => { if (allows(permissionSet, permissions.print)) void downloadPdf(`/receipts/${selected.id}/pdf`).catch((cause) => notify(cause instanceof Error ? cause.message : t("pages.receipts.043"), "error")); }}
         />
       )}
     </section>
@@ -290,6 +296,7 @@ function ReceiptForm({
   onClose: () => void;
   onSaved: (receipt: Receipt) => void;
 }) {
+  const { permissionSet } = useAuthorization();
   const [counterpartyType, setCounterpartyType] = useState<"customer" | "account">(
     receipt?.counterAccountId ? "account" : "customer",
   );
@@ -364,6 +371,7 @@ function ReceiptForm({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!allows(permissionSet, receipt ? actionPermissionPolicies.receipts.update : actionPermissionPolicies.receipts.create)) return;
     const clientErrors = validateReceiptDraft({
       customerId: counterpartyType === "customer" ? customerId : "",
       counterAccountId: counterpartyType === "account" ? counterAccountId : "",
@@ -538,6 +546,7 @@ function ReceiptDetails({
   onCommand: (operation: "post" | "cancel" | "reverse") => void;
   onPrint: () => void;
 }) {
+  const permissions = actionPermissionPolicies.receipts;
   const customer = references.customers.find((item) => item.id === receipt.customerId);
   const cash = references.cashBanks.find((item) => item.id === receipt.cashBankAccountId);
   const method = references.methods.find((item) => item.id === receipt.paymentMethodId);
@@ -546,17 +555,17 @@ function ReceiptDetails({
     <Modal title={receipt.document.documentNumber} description={receipt.document.description} onClose={onClose} wide>
       <div className="detail-actions">
         {(receipt.document.status === "POSTED" || receipt.document.status === "REVERSED") && (
-          <Button variant="secondary" icon="print" onClick={onPrint}>{t("pages.payments.087")}</Button>
+          <Can policy={permissions.print}><Button variant="secondary" icon="print" onClick={onPrint}>{t("pages.payments.087")}</Button></Can>
         )}
         {receipt.document.status === "DRAFT" && (
           <>
-            <Button variant="secondary" icon="edit" onClick={onEdit}>{t("pages.accounts.048")}</Button>
-            <Button icon="check" onClick={() => onCommand("post")}>{t("pages.manual-journals.004")}</Button>
-            <Button variant="danger" icon="ban" onClick={() => onCommand("cancel")}>{t("pages.accounts.065")}</Button>
+            <Can policy={permissions.update}><Button variant="secondary" icon="edit" onClick={onEdit}>{t("pages.accounts.048")}</Button></Can>
+            <Can policy={permissions.post}><Button icon="check" onClick={() => onCommand("post")}>{t("pages.manual-journals.004")}</Button></Can>
+            <Can policy={permissions.cancel}><Button variant="danger" icon="ban" onClick={() => onCommand("cancel")}>{t("pages.accounts.065")}</Button></Can>
           </>
         )}
         {receipt.document.status === "POSTED" && (
-          <Button variant="danger" icon="reverse" onClick={() => onCommand("reverse")}>{t("pages.payments.089")}</Button>
+          <Can policy={permissions.reverse}><Button variant="danger" icon="reverse" onClick={() => onCommand("reverse")}>{t("pages.payments.089")}</Button></Can>
         )}
       </div>
       <div className="document-summary">
