@@ -59,7 +59,8 @@ last_updated: "2026-08-29"
 44. [شريحة لوحة تشغيل المنصة ودليل الأنظمة](PLATFORM_OPERATIONS_DASHBOARD_SLICE_AR.md): النطاق والمقاييس والمنافذ والخصوصية والعقد والواجهة والاختبارات والعكس.
 45. [ADR-014 لـCRM وتطوير الأعمال](ADR-014-crm-business-development-priority.md): قبول السياق، مقارنة F2 والمرشحين المفتوحين، وحدود Customer والمشاريع.
 46. [أول شريحة CRM](CRM_BUSINESS_DEVELOPMENT_SLICE_AR.md): Lead وOpportunity وActivity والتحويل عبر Sales والصلاحيات والعقد والتزامن والعكس.
-47. [هدف تطبيقات الهاتف والباركود الشامل](MOBILE_AND_BARCODE_CHANNELS_GOAL_AR.md): تطبيقات المتجر كقناة لنفس OpenAPI، وملكية الباركود وإدخاله وتوليده وطباعته وحواجز العزل والأمن والاختبارات.
+47. [متطلب تطبيقات الهاتف والباركود الشامل](MOBILE_AND_BARCODE_CHANNELS_GOAL_AR.md): متطلب عاجل لكل توسع جديد وخطة Retrofit للمدخلات والمخرجات القائمة، مع تطبيقات المتجر كقناة لنفس OpenAPI وحواجز GS1 والعزل والأمن واختبارات الأجهزة.
+48. [تركيب خدمات المستندات المالية عبر Ports](FINANCIAL_DOCUMENT_PORT_COMPOSITION_AR.md): حصر إنشاء التنفيذات الخرسانية لـSales/Purchases/Receipts/Payments في composition مع بقاء ملكية الكتابة لدى السياقات المصدرية.
 
 التقرير [ARCHITECTURE_AUDIT_DDD_EVENT_DRIVEN_AR.md](../ARCHITECTURE_AUDIT_DDD_EVENT_DRIVEN_AR.md) وثيقة تقييم وأدلة، وليس بديلًا عن القرارات الحاكمة أعلاه.
 
