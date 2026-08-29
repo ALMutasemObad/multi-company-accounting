@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.39.0
+  version: 1.40.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -447,7 +447,32 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '500':
           $ref: '#/components/responses/InternalError'
-      x-permission: companies.view
+      security:
+      - SessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+  /auth/me:
+    get:
+      tags:
+      - Authentication
+      summary: هوية الجلسة وسياق الشركة والصلاحيات الفعلية
+      description: يعيد سياق التفويض المشتق من الجلسة الحالية فقط. لا يقبل companyId من العميل، وتستخدم الواجهة النتيجة للعرض بينما يبقى إنفاذ الصلاحيات على الخادم.
+      operationId: getCurrentAuthorization
+      responses:
+        '200':
+          description: سياق التفويض الحالي
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentAuthorization'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
       security:
       - SessionCookie: []
       parameters:
@@ -484,7 +509,6 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/SelectCompanyRequest'
-      x-permission: companies.view
       security:
       - SessionCookie: []
         CsrfToken: []
@@ -9386,6 +9410,7 @@ components:
           description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
     CompanyAccess:
       type: object
+      additionalProperties: false
       required:
       - id
       - name
@@ -9411,6 +9436,7 @@ components:
             $ref: '#/components/schemas/CompanyAccess'
     AuthenticatedUser:
       type: object
+      additionalProperties: false
       required:
       - id
       - displayName
@@ -9422,6 +9448,26 @@ components:
           description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
         displayName:
           type: string
+    CurrentAuthorization:
+      type: object
+      additionalProperties: false
+      required:
+      - user
+      - selectedCompany
+      - permissions
+      properties:
+        user:
+          $ref: '#/components/schemas/AuthenticatedUser'
+        selectedCompany:
+          oneOf:
+          - $ref: '#/components/schemas/CompanyAccess'
+          - type: 'null'
+        permissions:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            pattern: ^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$
     AuthSessionResponse:
       type: object
       required:

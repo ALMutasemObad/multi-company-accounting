@@ -22,7 +22,7 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 280, requestBodies: 148, responseBodies: 1841 });
+    expect(openApiContractCoverage).toEqual({ operations: 281, requestBodies: 148, responseBodies: 1846 });
     expect(guardedOpenApiOperations).toHaveLength(148);
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
       'login', 'upsertPlatformBillingAccount', 'issuePlatformBillingInvoice', 'recordPlatformBillingPayment', 'voidPlatformBillingInvoice', 'createUser', 'linkUserEmployee', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'initializeInventoryBalanceValuation', 'reverseInventoryMovement', 'previewDataImport', 'commitDataImport', 'previewBankStatement', 'commitBankStatementImport', 'createBankReconciliationSession', 'generateBankReconciliationSuggestions', 'approveBankReconciliationMatch', 'createManualBankReconciliationMatch', 'releaseBankReconciliationMatch', 'classifyBankStatementLine', 'closeBankReconciliationSession', 'startFinancialCloseRun', 'refreshFinancialCloseRun', 'createApprovalRequest', 'approveApprovalRequest', 'rejectApprovalRequest', 'createProfessionalProject', 'assignProfessionalProjectMember', 'createProfessionalTimeEntry', 'createProfessionalTimesheet', 'createProfessionalServiceContract', 'endProfessionalServiceContract', 'createProfessionalServiceRate', 'endProfessionalServiceRate', 'createProfessionalBillingRun', 'updateProfessionalProjectAccess', 'grantProfessionalProjectAccess', 'revokeProfessionalProjectAccess', 'updateProfessionalProjectTimeBudget', 'createProfessionalProjectStage', 'updateProfessionalProjectStage', 'transitionProfessionalProjectStage', 'createProfessionalProjectTask', 'updateProfessionalProjectTask', 'transitionProfessionalProjectTask', 'createProfessionalProjectTaskDependency', 'removeProfessionalProjectTaskDependency', 'createHrDepartment', 'updateHrDepartment', 'createHrPosition', 'updateHrPosition', 'createEmployee', 'updateEmployee', 'transitionEmployee', 'createEmploymentContract', 'endEmploymentContract', 'returnFinancialCloseRun', 'updateCashFlowMapping',
@@ -502,6 +502,17 @@ describe('generated OpenAPI request guards', () => {
   });
 
   it('validates generated JSON response bodies', () => {
+    expect(parseOpenApiResponseBody('getCurrentAuthorization', 200, {
+      user: { id: '7', displayName: 'مستخدم' },
+      selectedCompany: { id: '12', name: 'شركة جوار', timezone: 'Asia/Riyadh' },
+      permissions: ['receipts.view', 'sales_invoices.view'],
+    })).toMatchObject({ selectedCompany: { id: '12' }, permissions: ['receipts.view', 'sales_invoices.view'] });
+    expect(() => parseOpenApiResponseBody('getCurrentAuthorization', 200, {
+      user: { id: '7', displayName: 'مستخدم' },
+      selectedCompany: null,
+      permissions: [],
+      roleNames: ['ADMINISTRATOR'],
+    })).toThrow();
     expect(parseOpenApiResponseBody('getHealth', 200, {
       status: 'ok', service: 'mcap-finance-api', checks: { database: 'ok', latencyMs: 2.5 },
     })).toMatchObject({ status: 'ok', service: 'mcap-finance-api' });

@@ -85,6 +85,52 @@ export class PrismaAuthStore implements AuthStore {
     return assignments.map(({ company }) => company);
   }
 
+  async readAuthorizationSnapshot(input: { userId: bigint; companyId: bigint | null }) {
+    if (!input.companyId) {
+      const user = await this.prisma.user.findFirst({
+        where: { id: input.userId, isActive: true },
+        select: { id: true, displayName: true },
+      });
+      return user ? { user, selectedCompany: null, permissions: [] } : null;
+    }
+
+    const assignment = await this.prisma.userCompany.findFirst({
+      where: {
+        userId: input.userId,
+        companyId: input.companyId,
+        isActive: true,
+        user: { isActive: true },
+        company: { isActive: true },
+      },
+      select: {
+        user: { select: { id: true, displayName: true } },
+        company: { select: { id: true, name: true, timezone: true } },
+        roles: {
+          where: { role: { isActive: true } },
+          select: {
+            role: {
+              select: {
+                permissions: {
+                  select: { permission: { select: { code: true } } },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!assignment) return null;
+
+    const permissions = [...new Set(assignment.roles.flatMap(({ role }) =>
+      role.permissions.map(({ permission }) => permission.code),
+    ))].sort();
+    return {
+      user: assignment.user,
+      selectedCompany: assignment.company,
+      permissions,
+    };
+  }
+
   async selectCompany(input: { sessionId: bigint; userId: bigint; companyId: bigint; metadata?: ClientMetadata | undefined }) {
     return this.prisma.$transaction(async (tx) => {
       const assignment = await tx.userCompany.findUnique({
@@ -115,7 +161,7 @@ export class PrismaAuthStore implements AuthStore {
       where: {
         userId: input.userId,
         companyId: input.companyId,
-        assignment: { isActive: true },
+        assignment: { isActive: true, user: { isActive: true }, company: { isActive: true } },
         role: { isActive: true, permissions: { some: { permission: { code: input.code } } } },
       },
       select: { roleId: true },

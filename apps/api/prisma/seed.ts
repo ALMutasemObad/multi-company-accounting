@@ -148,6 +148,7 @@ try {
     ['reports.financial_position.view', 'reports', 'عرض تقرير المركز المالي'],
     ['reports.income_statement.view', 'reports', 'عرض تقرير قائمة الدخل'],
     ['reports.ledger.view', 'reports', 'عرض تقرير الأستاذ العام وكشف الحساب'],
+    ['reports.ledger.export', 'reports', 'تصدير كشف حساب الأستاذ أو العميل أو المورد'],
     ['reports.financial_statements.export', 'reports', 'تصدير القوائم المالية'],
     ['reports.journal.view', 'reports', 'عرض تقرير دفتر اليومية'],
     ['reports.journal.export', 'reports', 'تصدير تقرير دفتر اليومية'],

@@ -75,6 +75,7 @@ export const permissionDefinitions = [
   ['inventory_catalog.manage', 'inventory', 'إدارة وحدات القياس وكتالوج الأصناف'],
   ['inventory_movements.view', 'inventory', 'عرض أرصدة وحركات المخزون'],
   ['inventory_movements.create', 'inventory', 'إنشاء حركات المخزون'],
+  ['inventory_movements.reverse', 'inventory', 'عكس حركات المخزون اليدوية'],
   ['pos.view', 'pos', 'عرض شاشة نقاط البيع والمبيعات النقدية'],
   ['pos.checkout', 'pos', 'تنفيذ بيع نقدي كامل عبر نقاط البيع'],
   ['receipts.view', 'receipts', 'عرض سندات القبض'],

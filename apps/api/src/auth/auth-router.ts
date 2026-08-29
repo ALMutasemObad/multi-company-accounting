@@ -41,6 +41,17 @@ export function createAuthRouter(auth: AuthService, secureCookie: boolean) {
     response.json({ data: companies.map((company) => ({ ...company, id: company.id.toString() })) });
   });
 
+  router.get('/me', async (request, response) => {
+    const result = await auth.me({ sid: cookies(request.headers.cookie).sid });
+    response.json({
+      user: { ...result.user, id: result.user.id.toString() },
+      selectedCompany: result.selectedCompany
+        ? { ...result.selectedCompany, id: result.selectedCompany.id.toString() }
+        : null,
+      permissions: result.permissions,
+    });
+  });
+
   router.put('/context', async (request, response) => {
     const body = selectCompanyContextRequestSchema.parse(request.body);
     await auth.selectCompany({

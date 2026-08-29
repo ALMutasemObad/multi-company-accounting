@@ -104,6 +104,17 @@ describe("Application dependency boundaries", () => {
     expect(imports).not.toMatch(/(?:sales-invoice|purchase-invoice|supplier)-service\.js|reports\//u);
     expect(`${sales}\n${purchases}\n${suppliers}`).not.toContain("../imports/");
   });
+
+  it("keeps the development seed aligned with the canonical permission catalog", async () => {
+    const [catalog, seed] = await Promise.all([
+      source("platform/reference-data.ts"),
+      projectFile("apps/api/prisma/seed.ts"),
+    ]);
+    const permissionCode = /\['([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+)'\s*,/gu;
+    const codes = (content: string) => [...content.matchAll(permissionCode)].map((match) => match[1]!).sort();
+
+    expect(codes(seed)).toEqual(codes(catalog));
+  });
 });
 
 describe("OpenAPI executable-contract guardrails", () => {

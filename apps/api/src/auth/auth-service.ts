@@ -66,6 +66,18 @@ export class AuthService {
     return this.store.listCompanies(session.userId!);
   }
 
+  async me(input: { sid?: string | undefined }) {
+    const session = await this.requireAuthenticated(input.sid);
+    const snapshot = await this.store.readAuthorizationSnapshot({
+      userId: session.userId!,
+      companyId: session.selectedCompanyId,
+    });
+    if (!snapshot) {
+      throw new AuthError(session.selectedCompanyId ? 'FORBIDDEN' : 'UNAUTHENTICATED');
+    }
+    return snapshot;
+  }
+
   async selectCompany(input: { sid?: string | undefined; csrfToken?: string | undefined; companyId: bigint; metadata?: ClientMetadata }) {
     const session = await this.requireSession(input.sid, input.csrfToken, 'AUTHENTICATED');
     if (input.companyId <= 0n) throw new AuthError('FORBIDDEN');
