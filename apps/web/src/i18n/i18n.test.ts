@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createTranslator, dictionaryFor, loadLocale, localeDetails, localizedReferenceName, resolveLocale, supportedLocales } from "./index";
+import { activeIntlLocale, createTranslator, dictionaryFor, loadLocale, localeDetails, localizedReferenceName, resolveLocale, supportedLocales } from "./index";
 import { setActiveLocale } from "./core";
 
 beforeAll(async () => Promise.all(supportedLocales.map(loadLocale)));
@@ -36,9 +36,13 @@ describe("translation dictionaries", () => {
     expect(createTranslator("en")("app.booting")).toContain("{productName}");
   });
 
-  it("uses the correct direction and Intl locale for the new languages", () => {
-    expect(localeDetails.ur).toMatchObject({ dir: "rtl", intl: "ur-PK" });
-    expect(localeDetails.hi).toMatchObject({ dir: "ltr", intl: "hi-IN" });
+  it("uses the correct direction and Latin digits for every Intl locale", () => {
+    expect(localeDetails.ur).toMatchObject({ dir: "rtl", intl: "ur-PK-u-nu-latn" });
+    expect(localeDetails.hi).toMatchObject({ dir: "ltr", intl: "hi-IN-u-nu-latn" });
+    for (const locale of supportedLocales) {
+      setActiveLocale(locale);
+      expect(new Intl.NumberFormat(activeIntlLocale()).format(1234567890)).not.toMatch(/[٠-٩۰-۹०-९]/u);
+    }
   });
 
   it("preserves Arabic as the safe default for unknown or empty locale values", () => {

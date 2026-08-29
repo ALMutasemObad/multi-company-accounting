@@ -28,6 +28,7 @@
 
 الملفات التالية أدلة للحالة وقت تنفيذها، وليست إثباتًا أن الالتزام المحلي الحالي منشور:
 
+- [سجل أعمال التدقيق والتقوية الهندسية — 28 أغسطس 2026](ENGINEERING_HARDENING_WORKLOG_2026-08-28_AR.md).
 - [تدقيق DDD وEvent-Driven](ARCHITECTURE_AUDIT_DDD_EVENT_DRIVEN_AR.md).
 - [تدقيق بيئة الإنتاج](PRODUCTION_ENVIRONMENT_AUDIT_AR.md).
 - [تدقيق الاستخدام وتجربة المستخدم في الإنتاج](PRODUCTION_END_TO_END_UX_AUDIT_AR.md).

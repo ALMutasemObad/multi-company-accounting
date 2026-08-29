@@ -1,13 +1,9 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import "@fontsource/noto-kufi-arabic/arabic-400.css";
-import "@fontsource/noto-kufi-arabic/arabic-500.css";
-import "@fontsource/noto-kufi-arabic/arabic-600.css";
-import "@fontsource/noto-kufi-arabic/arabic-700.css";
-import "@fontsource/noto-sans-arabic/arabic-400.css";
-import "@fontsource/noto-sans-arabic/arabic-500.css";
-import "@fontsource/noto-sans-arabic/arabic-600.css";
-import "@fontsource/noto-sans-arabic/arabic-700.css";
+import "@fontsource/cairo/400.css";
+import "@fontsource/cairo/500.css";
+import "@fontsource/cairo/600.css";
+import "@fontsource/cairo/700.css";
 import "@fontsource/noto-sans-devanagari/devanagari-400.css";
 import "@fontsource/noto-sans-devanagari/devanagari-500.css";
 import "@fontsource/noto-sans-devanagari/devanagari-600.css";

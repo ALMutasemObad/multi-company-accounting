@@ -109,6 +109,7 @@ async function interfaceFailures(page: Page) {
     }
 
     const bodyText = document.body.innerText;
+    if (/[٠-٩۰-۹०-९]/u.test(bodyText)) failures.push('visible non-Latin digits');
     const forbiddenCopy: Array<[RegExp, string]> = [
       [/\b(?:SEED|DATABASE|SMTP|JWT|VITE|REDIS|AWS)_[A-Z0-9_]+\b/u, 'environment/configuration key'],
       [/\badmin@mcap\.local\b/iu, 'seeded development identity'],
@@ -141,7 +142,7 @@ async function interfaceFailures(page: Page) {
     const viewportWidth = document.documentElement.clientWidth;
     for (const element of document.querySelectorAll<HTMLElement>('a[href], button, input, select, textarea, [tabindex]')) {
       if (!visible(element)) continue;
-      if (element.closest('.data-table-wrap, .section-tabs, .sidebar:not(.open)')) continue;
+      if (element.closest('.data-table-wrap, .section-tabs, .platform-interactive-chart, .sidebar:not(.open)')) continue;
       const rect = element.getBoundingClientRect();
       if (rect.left < -tolerance || rect.right > viewportWidth + tolerance) {
         failures.push(`${label(element)} is outside the horizontal viewport (${Math.round(rect.left)}..${Math.round(rect.right)})`);

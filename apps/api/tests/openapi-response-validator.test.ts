@@ -10,7 +10,7 @@ function contractApp(mode: "valid" | "legacy-problem" | "invalid" | "missing-sch
   const app = express();
   app.use(createOpenApiResponseValidator());
   app.get("/health", (_request, response) => {
-    response.json({ status: "ok", service: "mcap-finance-api", checks: { database: "up" } });
+    response.json({ status: "ok", service: "mcap-finance-api", checks: { database: "ok" } });
   });
   app.get("/api/v1/auth/csrf", (_request, response) => {
     if (mode === "legacy-problem") {
@@ -50,7 +50,7 @@ describe("OpenAPI response contract validator", () => {
   it("accepts declared API and root health responses", async () => {
     const app = contractApp("valid");
     await request(app).get("/health").expect(200, {
-      status: "ok", service: "mcap-finance-api", checks: { database: "up" },
+      status: "ok", service: "mcap-finance-api", checks: { database: "ok" },
     });
     await request(app).get("/api/v1/auth/csrf").expect(200, {
       csrfToken: "x".repeat(32), expiresAt: "2026-08-22T12:00:00.000Z",
