@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -320,13 +321,17 @@ jobs:
           bash scripts/release/package-release.sh . . | tee release-digests.txt
           cat release-digests.txt >> "$GITHUB_OUTPUT"
 
-  deploy-production:
-    name: Deploy production to iFastNet
+  deploy-staging:
+    name: Deploy staging to iFastNet
     needs: [hosting-compatibility, migration-upgrade-compatibility, verify]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 35
     environment:
+      # Legacy secret scope only. The URL below is Staging; this name must not be
+      # interpreted as a live-production target or reused by a future production workflow.
       name: production
       url: https://accounting.doralashab.com
     env:
@@ -341,7 +346,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
-      - name: Verify merged pull request provenance
+      - name: Verify merged pull request provenance for staging
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -366,20 +372,26 @@ jobs:
               pullRequest.merge_commit_sha === sha
             );
             if (event.forced || matches.length !== 1) {
-              console.error("Production deployment requires exactly one merged pull request into main and rejects forced pushes.");
+              console.error("Staging deployment requires exactly one merged pull request into main and rejects forced pushes.");
               process.exit(1);
             }
-            console.log(`Verified merged pull request #${matches[0].number} for production deployment.`);
+            console.log(`Verified merged pull request #${matches[0].number} for staging deployment.`);
           ' "$pull_requests" "$GITHUB_EVENT_PATH" "$GITHUB_REPOSITORY" "$GITHUB_SHA"
           rm -f -- "$pull_requests"
           trap - EXIT
+      - name: Verify a manual staging deployment uses the current main revision
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          current_main=$(git ls-remote origin refs/heads/main | awk '{print $1}')
+          test "${#current_main}" -eq 40
+          test "$current_main" = "$GITHUB_SHA"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24.19.0
           cache: npm
       - name: Pin the package manager
         run: npm install --global npm@12.0.2
-      - name: Rebuild the verified release from the merged revision
+      - name: Rebuild the verified staging release from the selected revision
         env:
           # Prisma loads its configuration while generating the client. This URL is
           # syntactically valid but deliberately points at an unused local database;
@@ -399,7 +411,7 @@ jobs:
           npm prune --omit=dev --omit=optional
           npm run audit:production
 
-          bash scripts/release/package-release.sh . production-artifact
+          bash scripts/release/package-release.sh . staging-artifact
 
           case "$VERIFIED_ARCHIVE_SHA256" in
             ''|*[!0-9a-f]*) printf 'invalid verified archive digest\n' >&2; exit 1 ;;
@@ -409,11 +421,11 @@ jobs:
           esac
           test "${#VERIFIED_ARCHIVE_SHA256}" -eq 64
           test "${#VERIFIED_MANIFEST_SHA256}" -eq 64
-          test "$(sha256sum production-artifact/mcap-finance-linux-x64.tgz | awk '{print $1}')" \
+          test "$(sha256sum staging-artifact/mcap-finance-linux-x64.tgz | awk '{print $1}')" \
             = "$VERIFIED_ARCHIVE_SHA256"
-          test "$(sha256sum production-artifact/mcap-finance-linux-x64.manifest.json | awk '{print $1}')" \
+          test "$(sha256sum staging-artifact/mcap-finance-linux-x64.manifest.json | awk '{print $1}')" \
             = "$VERIFIED_MANIFEST_SHA256"
-      - name: Configure the pinned production SSH identity
+      - name: Configure the pinned staging SSH identity
         env:
           CPANEL_SSH_PRIVATE_KEY: ${{ secrets.CPANEL_SSH_PRIVATE_KEY }}
         run: |
@@ -422,7 +434,165 @@ jobs:
           printf '%s\n' "$CPANEL_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
           chmod 0600 "$HOME/.ssh/id_ed25519"
           install -m 0600 deploy/ssh/ifastnet_known_hosts "$HOME/.ssh/known_hosts"
-      - name: Upload the immutable production artifact
+      - name: Preflight the Staging database and operator identity read-only
+        env:
+          MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+        run: |
+          set -Eeuo pipefail
+
+          node --input-type=module <<'NODE'
+          const value = process.env.MIGRATION_DATABASE_URL;
+          const retiredDatabaseBrand = new RegExp(["j", "[aeiou]", "wa{1,2}r"].join(""), "iu");
+          if (!value || value.length > 2_048) {
+            throw new Error("The Staging migration database URL is missing or exceeds the accepted bound.");
+          }
+          let parsed;
+          try {
+            parsed = new URL(value);
+          } catch {
+            throw new Error("The Staging migration database URL is invalid.");
+          }
+          if (parsed.protocol !== "mysql:") {
+            throw new Error("The Staging migration database URL must use MySQL.");
+          }
+          let schemaName;
+          try {
+            schemaName = decodeURIComponent(parsed.pathname);
+          } catch {
+            throw new Error("The Staging migration schema identifier is invalid.");
+          }
+          if (retiredDatabaseBrand.test(schemaName)) {
+            throw new Error("The Staging migration schema still carries the retired product identifier.");
+          }
+          console.log("Validated the Staging migration target without revealing its value.");
+          NODE
+
+          ssh -i "$HOME/.ssh/id_ed25519" -p "$CPANEL_SSH_PORT" -o IdentitiesOnly=yes \
+            "$CPANEL_SSH_USER@$CPANEL_SSH_HOST" \
+            env \
+              MCAP_DEPLOY_ROOT="$CPANEL_DEPLOY_ROOT" \
+              MCAP_PASSENGER_CONFIG_FILE="$CPANEL_PASSENGER_CONFIG_FILE" \
+              MCAP_NODE_BIN=/opt/alt/alt-nodejs22/root/usr/bin/node \
+              MCAP_CLOUDLINUX_SELECTOR=/usr/sbin/cloudlinux-selector \
+              MCAP_CLOUDLINUX_USER="$CPANEL_SSH_USER" \
+              MCAP_CLOUDLINUX_DOMAIN=accounting.doralashab.com \
+              MCAP_CLOUDLINUX_VERSION=22.23.2 \
+              bash -s <<'REMOTE'
+          set -Eeuo pipefail
+
+          deploy_root=${MCAP_DEPLOY_ROOT:?}
+          passenger_config=${MCAP_PASSENGER_CONFIG_FILE:?}
+          node_bin=${MCAP_NODE_BIN:?}
+          selector=${MCAP_CLOUDLINUX_SELECTOR:?}
+
+          "$node_bin" --input-type=module - \
+            "$deploy_root/shared/passenger.env" \
+            "$passenger_config" \
+            "$selector" \
+            "$MCAP_CLOUDLINUX_VERSION" \
+            "$MCAP_CLOUDLINUX_USER" \
+            "$MCAP_CLOUDLINUX_DOMAIN" <<'NODE'
+          import fs from "node:fs";
+          import { spawnSync } from "node:child_process";
+
+          const [environmentFile, passengerConfig, selector, version, user, domain] = process.argv.slice(2);
+          const retiredDatabaseBrand = new RegExp(["j", "[aeiou]", "wa{1,2}r"].join(""), "iu");
+          const sources = [];
+
+          const unquote = (value) => {
+            const trimmed = value.trim();
+            if (trimmed.length >= 2 && ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+                (trimmed.startsWith("'") && trimmed.endsWith("'")))) {
+              return trimmed.slice(1, -1);
+            }
+            return trimmed;
+          };
+
+          if (fs.existsSync(environmentFile)) {
+            const environment = {};
+            for (const line of fs.readFileSync(environmentFile, "utf8").split(/\r?\n/u)) {
+              const match = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/u);
+              if (match) environment[match[1]] = unquote(match[2]);
+            }
+            sources.push({ label: "protected environment file", environment });
+          }
+
+          if (fs.existsSync(passengerConfig)) {
+            const environment = {};
+            for (const line of fs.readFileSync(passengerConfig, "utf8").split(/\r?\n/u)) {
+              const match = line.match(/^\s*SetEnv\s+([A-Za-z_][A-Za-z0-9_]*)\s+(.+?)\s*$/u);
+              if (match) environment[match[1]] = unquote(match[2]);
+            }
+            if (Object.keys(environment).length > 0) {
+              sources.push({ label: "Passenger configuration", environment });
+            }
+          }
+
+          let selectorAvailable = true;
+          try {
+            fs.accessSync(selector, fs.constants.X_OK);
+          } catch {
+            // A protected environment file or Passenger SetEnv remains a valid runtime source.
+            selectorAvailable = false;
+          }
+          if (selectorAvailable) {
+            const selectorResult = spawnSync(
+              selector,
+              ["get", "--json", "--interpreter", "nodejs", "--user", user],
+              { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 4 * 1_024 * 1_024 },
+            );
+            if (selectorResult.status !== 0 || typeof selectorResult.stdout !== "string" ||
+                !selectorResult.stdout.trim()) {
+              throw new Error("The active Staging CloudLinux registry could not be read.");
+            }
+            let payload;
+            try {
+              payload = JSON.parse(selectorResult.stdout);
+            } catch {
+              throw new Error("The CloudLinux runtime registry could not be parsed.");
+            }
+            const applications = payload.available_versions?.[version]?.users?.[user]?.applications || {};
+            const matches = Object.values(applications).filter((application) => application?.domain === domain);
+            if (payload.result !== "success" || matches.length !== 1) {
+              throw new Error("The active Staging CloudLinux registration is ambiguous or unavailable.");
+            }
+            sources.push({ label: "CloudLinux registration", environment: matches[0].env_vars || {} });
+          }
+
+          const databaseSources = sources.filter(({ environment }) =>
+            typeof environment.DATABASE_URL === "string" && environment.DATABASE_URL.length > 0,
+          );
+          if (databaseSources.length === 0) {
+            throw new Error("No bounded Staging runtime DATABASE_URL source was found.");
+          }
+
+          for (const { label, environment } of sources) {
+            if (typeof environment.PLATFORM_OPERATOR_EMAILS === "string" &&
+                environment.PLATFORM_OPERATOR_EMAILS.trim().length > 0) {
+              throw new Error(`${label} still enables the development-only platform operator email allowlist.`);
+            }
+            if (typeof environment.DATABASE_URL !== "string" || environment.DATABASE_URL.length === 0) continue;
+            let parsed;
+            try {
+              parsed = new URL(environment.DATABASE_URL);
+            } catch {
+              throw new Error(`${label} contains an invalid runtime database URL.`);
+            }
+            let schemaName;
+            try {
+              schemaName = decodeURIComponent(parsed.pathname);
+            } catch {
+              throw new Error(`${label} contains an invalid runtime schema identifier.`);
+            }
+            if (parsed.protocol !== "mysql:" || retiredDatabaseBrand.test(schemaName)) {
+              throw new Error(`${label} does not point to an approved neutral MySQL schema.`);
+            }
+          }
+
+          console.log(`Validated ${sources.length} Staging runtime configuration source(s) without revealing values.`);
+          NODE
+          REMOTE
+      - name: Upload the immutable staging artifact
         run: |
           test "${#GITHUB_SHA}" -eq 40
           remote_dir="$CPANEL_DEPLOY_ROOT/incoming/github-$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
@@ -440,13 +610,13 @@ jobs:
           mkdir -m 0700 -- "$remote_dir"
           REMOTE
           scp -i "$HOME/.ssh/id_ed25519" -P "$CPANEL_SSH_PORT" -o IdentitiesOnly=yes \
-            production-artifact/mcap-finance-linux-x64.tgz \
-            production-artifact/mcap-finance-linux-x64.tgz.sha256 \
+            staging-artifact/mcap-finance-linux-x64.tgz \
+            staging-artifact/mcap-finance-linux-x64.tgz.sha256 \
             deploy/scripts/install-cpanel-release.sh \
             deploy/scripts/deploy-cpanel-release.sh \
             deploy/scripts/switch-cloudlinux-registration.sh \
             "$CPANEL_SSH_USER@$CPANEL_SSH_HOST:$remote_dir/"
-      - name: Back up, migrate, and activate production atomically
+      - name: Back up, migrate, and activate staging atomically
         env:
           BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
           METRICS_BEARER_TOKEN: ${{ secrets.METRICS_BEARER_TOKEN }}
@@ -482,7 +652,7 @@ jobs:
                 bash "$remote_dir/deploy-cpanel-release.sh" \
                   "$remote_dir/mcap-finance-linux-x64.tgz" \
                   "$remote_dir/mcap-finance-linux-x64.tgz.sha256"
-      - name: Verify the public production endpoints
+      - name: Verify the public staging endpoints
         env:
           METRICS_BEARER_TOKEN: ${{ secrets.METRICS_BEARER_TOKEN }}
         run: |
@@ -516,10 +686,13 @@ jobs:
           ' "$metrics_output")
           if test -n "$active_alerts"; then
             while IFS= read -r alert; do
-              printf '::error title=Production operational alert::%s\n' "$alert"
+              printf '::error title=Staging operational alert::%s\n' "$alert"
             done <<< "$active_alerts"
             exit 1
           fi
           rm -f -- "$redirect_headers"
           rm -f -- "$metrics_output"
           trap - EXIT
+
+  # Intentionally no production deployment job. A future live target must use a
+  # separate workflow_dispatch-only workflow and a reviewer-protected production environment.

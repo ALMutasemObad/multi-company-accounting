@@ -171,18 +171,27 @@ test("cPanel production pipeline backs up before invoking the atomic installer",
   assert.ok(installerIndex > backupIndex, "backup must complete before installation");
 });
 
-test("CI deploys main only after all database and upgrade gates and uses pinned SSH identity", async () => {
+test("CI deploys only staging from current main after all database and upgrade gates", async () => {
   const source = await readFile(path.join(repositoryRoot, ".github", "workflows", "ci.yml"), "utf8");
-  const provenanceIndex = source.indexOf("Verify merged pull request provenance");
-  const rebuildIndex = source.indexOf("Rebuild the verified release from the merged revision");
+  const provenanceIndex = source.indexOf("Verify merged pull request provenance for staging");
+  const rebuildIndex = source.indexOf("Rebuild the verified staging release from the selected revision");
   const sshSecretIndex = source.indexOf("CPANEL_SSH_PRIVATE_KEY: ${{ secrets.CPANEL_SSH_PRIVATE_KEY }}");
+  const preflightIndex = source.indexOf("Preflight the Staging database and operator identity read-only");
+  const uploadIndex = source.indexOf("Upload the immutable staging artifact");
+  const activationIndex = source.indexOf("Back up, migrate, and activate staging atomically");
 
   assert.match(
     source,
-    /deploy-production:[\s\S]*needs: \[hosting-compatibility, migration-upgrade-compatibility, verify\]/u,
+    /deploy-staging:[\s\S]*needs: \[hosting-compatibility, migration-upgrade-compatibility, verify\]/u,
   );
-  assert.match(source, /on:\s+push:\s+branches: \[main\]\s+pull_request:/u);
+  assert.match(source, /on:\s+push:\s+branches: \[main\]\s+pull_request:\s+workflow_dispatch:/u);
   assert.match(source, /github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/u);
+  assert.match(source, /github\.event_name == 'workflow_dispatch' && github\.ref == 'refs\/heads\/main'/u);
+  assert.match(source, /Verify a manual staging deployment uses the current main revision/u);
+  assert.match(source, /test "\$current_main" = "\$GITHUB_SHA"/u);
+  assert.match(source, /environment:\s+# Legacy secret scope only[\s\S]*name: production/u);
+  assert.doesNotMatch(source, /deploy-production:/u);
+  assert.doesNotMatch(source, /name: Deploy production/u);
   assert.match(source, /cancel-in-progress: \$\{\{ github\.ref != 'refs\/heads\/main' \}\}/u);
   assert.match(source, /pull-requests: read/u);
   assert.match(source, /pullRequest\.merge_commit_sha === sha/u);
@@ -210,7 +219,7 @@ test("CI deploys main only after all database and upgrade gates and uses pinned 
   assert.match(source, /VERIFIED_MANIFEST_SHA256: \$\{\{ needs\.verify\.outputs\.release_manifest_sha256 \}\}/u);
   assert.match(
     source,
-    /Rebuild the verified release from the merged revision[\s\S]*DATABASE_URL: mysql:\/\/release_build:release_build@127\.0\.0\.1:3306\/release_build[\s\S]*npm run prisma:generate/u,
+    /Rebuild the verified staging release from the selected revision[\s\S]*DATABASE_URL: mysql:\/\/release_build:release_build@127\.0\.0\.1:3306\/release_build[\s\S]*npm run prisma:generate/u,
   );
   assert.match(source, /test "\$\{#VERIFIED_ARCHIVE_SHA256\}" -eq 64/u);
   assert.match(source, /test "\$\{#VERIFIED_MANIFEST_SHA256\}" -eq 64/u);
@@ -218,10 +227,52 @@ test("CI deploys main only after all database and upgrade gates and uses pinned 
   assert.doesNotMatch(source, /actions\/download-artifact/u);
   assert.match(source, /mariadb:10\.11\.11@sha256:96be0d3dfbeb07bc420e5fb8a6dc05c492676f1f89980a497a55e6fbbba3f1c4/u);
   assert.match(source, /mysql:8\.4\.11@sha256:b3b90af2a6552ae30c266fdb7d5dd55f3afb72404bb78d37fe8a23eb857fd3fb/u);
-  assert.ok(provenanceIndex > 0, "production provenance verification must be present");
+  assert.ok(provenanceIndex > 0, "staging provenance verification must be present");
   assert.ok(rebuildIndex > provenanceIndex, "the release must be rebuilt only after merge provenance is verified");
-  assert.ok(sshSecretIndex > rebuildIndex, "release reproduction must complete before production secrets are read");
-  assert.ok(sshSecretIndex > provenanceIndex, "PR provenance must be verified before production secrets are read");
+  assert.ok(sshSecretIndex > rebuildIndex, "release reproduction must complete before staging secrets are read");
+  assert.ok(sshSecretIndex > provenanceIndex, "PR provenance must be verified before staging secrets are read");
+  assert.ok(preflightIndex > sshSecretIndex, "the remote preflight must run only after the pinned SSH identity is configured");
+  assert.ok(uploadIndex > preflightIndex, "the read-only identity preflight must precede remote artifact creation");
+  assert.ok(activationIndex > uploadIndex, "migration and activation must remain after the immutable artifact upload");
+  assert.match(source, /Preflight the Staging database and operator identity read-only[\s\S]*MIGRATION_DATABASE_URL: \$\{\{ secrets\.MIGRATION_DATABASE_URL \}\}/u);
+  assert.match(source, /retiredDatabaseBrand = new RegExp\(\["j", "\[aeiou\]", "wa\{1,2\}r"\]/u);
+  assert.match(source, /decodeURIComponent\(parsed\.pathname\)/u);
+  assert.match(source, /PLATFORM_OPERATOR_EMAILS\.trim\(\)\.length > 0/u);
+  assert.match(source, /spawnSync\([\s\S]*\["get", "--json", "--interpreter", "nodejs", "--user", user\]/u);
+  assert.match(source, /without revealing (?:its value|values)/u);
+  const preflightSource = source.slice(preflightIndex, uploadIndex);
+  assert.doesNotMatch(preflightSource, /console\.log\([^\n]*(?:MIGRATION_DATABASE_URL|DATABASE_URL|PLATFORM_OPERATOR_EMAILS)/u);
+  assert.doesNotMatch(preflightSource, /(?:echo|printf)[^\n]*(?:MIGRATION_DATABASE_URL|DATABASE_URL|PLATFORM_OPERATOR_EMAILS)/u);
+});
+
+test("legacy recovery workflows are manual Staging operations pinned to current main", async () => {
+  const workflowSignatures = new Map([
+    ["production-cloudlinux-recreate.yml", /"\$selector" create --json --interpreter nodejs/u],
+    ["production-cloudlinux-root-recovery.yml", /Synchronize the registered application root and restart/u],
+    ["production-passenger-loader-recovery.yml", /Install protected startup loader and force a fresh app group/u],
+    ["production-passenger-recovery.yml", /Install a protected Node environment wrapper/u],
+  ]);
+
+  for (const [workflowFile, operationalSignature] of workflowSignatures) {
+    const source = await readFile(path.join(repositoryRoot, ".github", "workflows", workflowFile), "utf8");
+    const currentMainIndex = source.indexOf("Verify this manual Staging recovery uses current main");
+    const secretIndex = source.indexOf("CPANEL_SSH_PRIVATE_KEY: ${{ secrets.CPANEL_SSH_PRIVATE_KEY }}");
+
+    assert.match(source, /^name: Staging .+ \(manual\)$/mu);
+    assert.match(source, /on:\s+workflow_dispatch:/u);
+    assert.doesNotMatch(source, /(?:^|\n)\s*push:/u);
+    assert.doesNotMatch(source, /ops\//u);
+    assert.match(source, /if: github\.ref == 'refs\/heads\/main'/u);
+    assert.match(source, /ref: \$\{\{ github\.sha \}\}/u);
+    assert.match(source, /persist-credentials: false/u);
+    assert.match(source, /current_main=\$\(gh api "\/repos\/\$GITHUB_REPOSITORY\/git\/ref\/heads\/main"/u);
+    assert.match(source, /test "\$current_main" = "\$GITHUB_SHA"/u);
+    assert.match(source, /environment:\s+# Legacy secret scope only; the remote target is classified as Staging\.[\s\S]*name: production/u);
+    assert.doesNotMatch(source, /environment:\s+name: staging/u);
+    assert.match(source, operationalSignature);
+    assert.ok(currentMainIndex > 0, `${workflowFile} must verify current main before reading secrets`);
+    assert.ok(secretIndex > currentMainIndex, `${workflowFile} must not read the SSH secret before current-main verification`);
+  }
 });
 
 test("release packaging is shared by verification and deployment and emits only immutable digests", async () => {
@@ -251,28 +302,51 @@ test("production runtime smoke test supplies every required security setting", a
   );
 });
 
-test("production metrics monitor protects the scrape and surfaces recent or synthetic alerts", async () => {
+test("staging metrics monitor is manual and protects the scrape and evidence checks", async () => {
   const source = await readFile(
     path.join(repositoryRoot, ".github", "workflows", "production-metrics-monitor.yml"),
     "utf8",
   );
 
-  assert.match(source, /cron: '17 \* \* \* \*'/u);
-  assert.match(source, /environment:\s+name: production/u);
+  assert.doesNotMatch(source, /schedule:|cron:/u);
+  assert.match(source, /workflow_dispatch:/u);
+  assert.match(source, /environment:\s+# Legacy secret scope only[\s\S]*name: production/u);
   assert.match(source, /secrets\.METRICS_BEARER_TOKEN/u);
   assert.match(source, /actions: read/u);
   assert.match(source, /test "\$unauthenticated_status" = 401/u);
   assert.match(source, /mcap_operational_alert_active/u);
   assert.match(source, /mcap_operational_alert_last_fired_timestamp_seconds/u);
-  assert.match(source, /Production monitoring test alert/u);
+  assert.match(source, /Staging monitoring test alert/u);
   assert.match(source, /mcap-production-database-backup/u);
   assert.match(source, /mcap-production-restore-drill/u);
   assert.match(source, /MAX_BACKUP_ARTIFACT_AGE_SECONDS: '91800'/u);
   assert.match(source, /MAX_RESTORE_DRILL_AGE_SECONDS: '3024000'/u);
   assert.match(source, /production-backup-dr\.yml\/runs/u);
   assert.match(source, /trustedRunIds/u);
-  assert.match(source, /Production backup stale/u);
-  assert.match(source, /Production restore drill stale/u);
+  assert.match(source, /Staging backup stale/u);
+  assert.match(source, /Staging restore drill stale/u);
+});
+
+test("staging workflows keep the temporary environment-scoped secret boundary explicit", async () => {
+  const [ci, monitor, backup, operations, resilience, hosting] = await Promise.all([
+    readFile(path.join(repositoryRoot, ".github", "workflows", "ci.yml"), "utf8"),
+    readFile(path.join(repositoryRoot, ".github", "workflows", "production-metrics-monitor.yml"), "utf8"),
+    readFile(path.join(repositoryRoot, ".github", "workflows", "production-backup-dr.yml"), "utf8"),
+    readFile(path.join(repositoryRoot, "docs", "production-operations.md"), "utf8"),
+    readFile(path.join(repositoryRoot, "docs", "operational-resilience.md"), "utf8"),
+    readFile(path.join(repositoryRoot, "docs", "ifastnet-cpanel-deployment.md"), "utf8"),
+  ]);
+
+  for (const workflow of [ci, monitor, backup]) {
+    assert.match(workflow, /Legacy secret scope only/u);
+    assert.doesNotMatch(workflow, /environment:\s+name: staging/u);
+  }
+  assert.doesNotMatch(ci, /deploy-production:|name: Deploy production/u);
+  assert.match(operations, /GitHub Environment ذات الاسم القديم `production` \*\*كنطاق أسرار إرثي فقط\*\*/u);
+  assert.match(operations, /حُذفت نسخها على مستوى Repository/u);
+  assert.match(operations, /خطة إزالة الاسم الإرثي/u);
+  assert.match(resilience, /Environment ذات الاسم الإرثي `production`/u);
+  assert.match(hosting, /اسم GitHub Environment القديم `production` كنطاق للأسرار الموجودة/u);
 });
 
 test("production offsite backup helper keeps credentials on stdin and exports verified encrypted artifacts only", async () => {
@@ -312,7 +386,7 @@ test("production offsite backup helper keeps credentials on stdin and exports ve
   assert.doesNotMatch(source, /printf[^\n]*(backup_passphrase|migration_database_url)/u);
 });
 
-test("scheduled production DR stores immutable offsite recovery points and restores them monthly", async () => {
+test("manual staging DR stores immutable offsite recovery points and can run a restore drill", async () => {
   const source = await readFile(
     path.join(repositoryRoot, ".github", "workflows", "production-backup-dr.yml"),
     "utf8",
@@ -321,13 +395,13 @@ test("scheduled production DR stores immutable offsite recovery points and resto
   const restoreJobStart = source.indexOf("  restore_drill:");
   const restoreJobOutputs = source.indexOf("    outputs:", restoreJobStart);
 
-  assert.match(source, /cron: '43 1 \* \* \*'/u);
+  assert.doesNotMatch(source, /schedule:|cron:/u);
   assert.match(source, /workflow_dispatch:/u);
   assert.match(source, /if: github\.ref == 'refs\/heads\/main'/u);
   assert.match(source, /Verify this is the current main revision/u);
   assert.match(source, /test "\$current_main" = "\$GITHUB_SHA"/u);
   assert.match(source, /persist-credentials: false/u);
-  assert.match(source, /environment:\s+name: production/u);
+  assert.match(source, /environment:\s+# Legacy secret scope only[\s\S]*name: production/u);
   assert.doesNotMatch(source, /group: production-database-operation/u);
   assert.match(source, /MCAP_PIPELINE_LOCK_WAIT_SECONDS=900/u);
   assert.match(source, /actions: read/u);
@@ -365,7 +439,13 @@ test("scheduled production DR stores immutable offsite recovery points and resto
   assert.match(source, /recovery_objective_gate:/u);
   assert.match(source, /overwrite: \$\{\{ github\.run_attempt > 1 \}\}/u);
   assert.match(source, /steps\.evidence\.outputs\.status == 'passed'/u);
-  assert.match(source, /failed_recovery_point_objective/u);
+  assert.match(source, /steps\.evidence\.outputs\.status == 'passed_with_recovery_gap'/u);
+  assert.doesNotMatch(source, /failed_recovery_point_objective/u);
+  assert.match(source, /::warning title=Staging recovery gap/u);
+  assert.doesNotMatch(
+    source,
+    /if \[\[ "\$PREVIOUS_STALE" == true \]\]; then\s+printf[^\n]+\n\s+failed=true/u,
+  );
   assert.doesNotMatch(restoreSource, /dotenv\/config/u);
   assert.match(restoreSource, /loadEnvFile/u);
   assert.doesNotMatch(source, /echo[^\n]*(BACKUP_ENCRYPTION_PASSPHRASE|MIGRATION_DATABASE_URL)/u);
