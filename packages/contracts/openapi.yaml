@@ -766,11 +766,15 @@ paths:
       summary: ملخص فوترة المنصة وأرصدة الشركات مجمعة حسب العملة
       operationId: getPlatformBillingSummary
       security: [{ SessionCookie: [] }]
-      parameters: [{ $ref: '#/components/parameters/RequestId' }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PlatformBillingPageSize'
       responses:
         '200':
           description: ملخص الفوترة دون جمع عملات مختلفة
           content: { application/json: { schema: { $ref: '#/components/schemas/PlatformBillingSummary' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '500': { $ref: '#/components/responses/InternalError' }
@@ -786,10 +790,13 @@ paths:
         in: path
         required: true
         schema: { type: string, pattern: '^[1-9][0-9]*$' }
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PlatformBillingPageSize'
       responses:
         '200':
           description: ملف فوترة الشركة
           content: { application/json: { schema: { $ref: '#/components/schemas/PlatformCompanyBilling' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -5685,6 +5692,299 @@ paths:
       security:
       - SessionCookie: []
         CsrfToken: []
+  /inventory-items/{inventoryItemId}/barcodes:
+    get:
+      tags:
+      - Inventory
+      summary: عرض باركودات صنف داخل الشركة الحالية
+      description: تدير شريحة B1 هويات الباركود؛ يوفر مسار B2 المنفصل توليد ملصق PNG، بينما يبقى تحليل GS1 خارج النطاق.
+      operationId: listInventoryItemBarcodes
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: inventoryItemId
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[1-9][0-9]*$' }
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - name: active
+        in: query
+        schema: { type: boolean }
+      responses:
+        '200':
+          description: قائمة باركودات الصنف
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/InventoryItemBarcode' }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-permission: inventory_barcodes.view
+      security:
+      - SessionCookie: []
+    post:
+      tags:
+      - Inventory
+      summary: إضافة باركود إلى صنف
+      operationId: createInventoryItemBarcode
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: inventoryItemId
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[1-9][0-9]*$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InventoryItemBarcodeCreateRequest' }
+      responses:
+        '201':
+          description: تم إنشاء باركود الصنف
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InventoryItemBarcode' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-permission: inventory_barcodes.manage
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+  /inventory-items/{inventoryItemId}/barcodes/{barcodeId}:
+    patch:
+      tags:
+      - Inventory
+      summary: تعديل قيمة أو نوع باركود صنف
+      operationId: updateInventoryItemBarcode
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: inventoryItemId
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[1-9][0-9]*$' }
+      - name: barcodeId
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[1-9][0-9]*$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InventoryItemBarcodeUpdateRequest' }
+      responses:
+        '200':
+          description: تم تعديل الباركود
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InventoryItemBarcode' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-permission: inventory_barcodes.manage
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+  /inventory-items/{inventoryItemId}/barcodes/{barcodeId}/set-primary:
+    post:
+      tags:
+      - Inventory
+      summary: تعيين باركود أساسي وحيد للصنف
+      operationId: setPrimaryInventoryItemBarcode
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: inventoryItemId
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[1-9][0-9]*$' }
+      - name: barcodeId
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[1-9][0-9]*$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InventoryItemBarcodeVersionRequest' }
+      responses:
+        '200':
+          description: الباركود الأساسي الحالي
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InventoryItemBarcode' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-permission: inventory_barcodes.manage
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+  /inventory-items/{inventoryItemId}/barcodes/{barcodeId}/deactivate:
+    post:
+      tags:
+      - Inventory
+      summary: تعطيل باركود صنف مع الاحتفاظ به للتدقيق
+      operationId: deactivateInventoryItemBarcode
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: inventoryItemId
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[1-9][0-9]*$' }
+      - name: barcodeId
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[1-9][0-9]*$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InventoryItemBarcodeDeactivateRequest' }
+      responses:
+        '200':
+          description: تم تعطيل الباركود
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InventoryItemBarcode' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-permission: inventory_barcodes.manage
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+  /inventory-items/{inventoryItemId}/barcodes/{barcodeId}/label.png:
+    get:
+      tags:
+      - Printing
+      summary: تنزيل ملصق PNG لباركود صنف نشط
+      description: يستخدم بروفايل B2 ثابتًا مناسبًا لـ 203 DPI؛ لا يقبل مقاسات أو ألوانًا أو عدد نسخ، ويعيد 404 للصنف أو الباركود المعطل أو الأجنبي دون كشف وجوده.
+      operationId: printInventoryBarcodeLabel
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: inventoryItemId
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[1-9][0-9]*$' }
+      - name: barcodeId
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[1-9][0-9]*$' }
+      responses:
+        '200':
+          description: صورة PNG بتباين أسود وأبيض ومساحات هادئة ثابتة؛ النص المقروء بشريًا مضمن للرموز الخطية.
+          headers:
+            Cache-Control:
+              description: يمنع تخزين الملصق في الكاش.
+              schema: { type: string, enum: [no-store] }
+            Content-Disposition:
+              description: اسم ملف آمن مشتق من معرفي الصنف والباركود فقط؛ لا يحمل قيمة الباركود.
+              schema: { type: string }
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-permission: inventory_barcodes.print
+      security:
+      - SessionCookie: []
+  /inventory-barcodes/resolve:
+    post:
+      tags:
+      - Inventory
+      summary: التعرف على صنف بواسطة باركود داخل الشركة الحالية
+      description: لا ينفذ أي بحث عالمي، ولا يكشف وجود قيمة في شركة أخرى، ولا يعيد القيمة الخام أو المفتاح الداخلي المطبّع.
+      operationId: resolveInventoryBarcode
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InventoryBarcodeResolveRequest' }
+      responses:
+        '200':
+          description: تم التعرف على الصنف
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResolvedInventoryBarcode' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-permission: inventory_barcodes.resolve
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+  /inventory-barcodes/resolve-batch:
+    post:
+      tags:
+      - Inventory
+      summary: التعرف الدفعي المحدود على الأصناف بواسطة الباركود
+      description: يقبل 100 قيمة كحد أقصى ويحافظ على ترتيب الإدخال؛ كل عنصر غير محلول يحمل سببًا ثابتًا دون بحث عابر للشركات.
+      operationId: resolveInventoryBarcodeBatch
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InventoryBarcodeResolveBatchRequest' }
+      responses:
+        '200':
+          description: نتائج التعرف بالترتيب نفسه
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    minItems: 1
+                    maxItems: 100
+                    items: { $ref: '#/components/schemas/InventoryBarcodeResolveBatchResult' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-permission: inventory_barcodes.resolve
+      security:
+      - SessionCookie: []
+        CsrfToken: []
   /inventory-balances:
     get:
       tags: [Inventory]
@@ -9020,6 +9320,14 @@ components:
         minimum: 1
         maximum: 100
         default: 25
+    PlatformBillingPageSize:
+      name: pageSize
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 25
+        default: 10
     Search:
       name: search
       in: query
@@ -9906,7 +10214,11 @@ components:
         status: { type: string, enum: [TRIAL, ACTIVE, PAUSED, CLOSED] }
         planName: { type: string, x-trim: true, minLength: 1, maxLength: 160 }
         billingCycle: { type: string, enum: [MONTHLY, QUARTERLY, ANNUAL] }
-        currencyCode: { type: string, x-trim: true, pattern: '^[A-Z]{3}$' }
+        currencyCode:
+          type: string
+          x-trim: true
+          pattern: '^[A-Z]{3}$'
+          description: تصبح العملة ثابتة بعد أول فاتورة تاريخية، وتُرفض محاولة تغييرها بسبب CURRENCY_CHANGE_WITH_HISTORY.
         recurringFee: { type: string, pattern: '^(0|[1-9][0-9]{0,14})(\.[0-9]{1,4})?$' }
         includedUsers: { type: integer, minimum: 0, maximum: 1000000 }
         pricePerAdditionalUser: { type: string, pattern: '^(0|[1-9][0-9]{0,14})(\.[0-9]{1,4})?$' }
@@ -10018,7 +10330,7 @@ components:
     PlatformBillingInvoice:
       type: object
       additionalProperties: false
-      required: [id, companyId, billingAccountId, invoiceNumber, state, status, periodStart, periodEnd, issueDate, dueDate, currencyCode, usage, subtotal, taxRate, taxAmount, totalAmount, paidAmount, balance, notes, version, voidedAt, voidReason, createdAt, lines, payments]
+      required: [id, companyId, billingAccountId, invoiceNumber, state, status, periodStart, periodEnd, issueDate, dueDate, currencyCode, usage, subtotal, taxRate, taxAmount, totalAmount, paidAmount, balance, notes, version, voidedAt, voidReason, createdAt, lines, paymentCount, payments]
       properties:
         id: { type: string, format: uuid }
         companyId: { type: string, pattern: '^[1-9][0-9]*$' }
@@ -10054,8 +10366,16 @@ components:
         voidReason:
           oneOf: [{ type: string, maxLength: 500 }, { type: 'null' }]
         createdAt: { type: string, format: date-time }
-        lines: { type: array, minItems: 1, items: { $ref: '#/components/schemas/PlatformInvoiceLine' } }
-        payments: { type: array, items: { $ref: '#/components/schemas/PlatformBillingPayment' } }
+        lines: { type: array, minItems: 1, maxItems: 24, items: { $ref: '#/components/schemas/PlatformInvoiceLine' } }
+        paymentCount:
+          type: integer
+          minimum: 0
+          description: العدد الكامل للدفعات المرتبطة بالفاتورة.
+        payments:
+          type: array
+          maxItems: 5
+          description: أحدث خمس دفعات فقط، مرتبة بتاريخ الدفع ثم المعرّف تنازليًا؛ استخدم paymentCount لمعرفة العدد الكامل.
+          items: { $ref: '#/components/schemas/PlatformBillingPayment' }
     PlatformBillingTotals:
       type: object
       additionalProperties: false
@@ -10068,17 +10388,18 @@ components:
     PlatformCompanyBilling:
       type: object
       additionalProperties: false
-      required: [company, account, totals, invoices]
+      required: [company, account, totals, invoices, meta]
       properties:
         company: { $ref: '#/components/schemas/PlatformCompanyReference' }
         account:
           oneOf: [{ $ref: '#/components/schemas/PlatformBillingAccount' }, { type: 'null' }]
         totals: { $ref: '#/components/schemas/PlatformBillingTotals' }
-        invoices: { type: array, items: { $ref: '#/components/schemas/PlatformBillingInvoice' } }
+        invoices: { type: array, maxItems: 25, items: { $ref: '#/components/schemas/PlatformBillingInvoice' } }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
     PlatformBillingSummary:
       type: object
       additionalProperties: false
-      required: [generatedAt, metrics, currencies, accounts]
+      required: [generatedAt, metrics, currencies, accounts, meta]
       properties:
         generatedAt: { type: string, format: date-time }
         metrics:
@@ -10107,6 +10428,7 @@ components:
               collectionRate: { type: string, pattern: '^(?:[0-9]{1,3})\.[0-9]$' }
         accounts:
           type: array
+          maxItems: 25
           items:
             type: object
             additionalProperties: false
@@ -10120,6 +10442,7 @@ components:
               paid: { $ref: '#/components/schemas/Money' }
               balance: { $ref: '#/components/schemas/Money' }
               overdue: { $ref: '#/components/schemas/Money' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
     PlatformBillingAccountResult:
       type: object
       additionalProperties: false
@@ -12073,6 +12396,150 @@ components:
           x-trim: true
           minLength: 3
           maxLength: 500
+    InventoryBarcodeSymbology:
+      type: string
+      enum: [EAN_13, EAN_8, UPC_A, CODE_128, QR]
+      description: الأنواع المدعومة في B1. لا يعني CODE_128 دعم GS1-128 أو FNC1 أو Application Identifiers.
+    InventoryItemBarcode:
+      type: object
+      additionalProperties: false
+      required: [id, inventoryItemId, symbology, value, isPrimary, isActive, version]
+      properties:
+        id:
+          type: string
+          pattern: '^[1-9][0-9]*$'
+          description: معرّف BIGINT يُنقل كنص.
+        inventoryItemId:
+          type: string
+          pattern: '^[1-9][0-9]*$'
+        symbology: { $ref: '#/components/schemas/InventoryBarcodeSymbology' }
+        value:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: القيمة الأصلية كنص؛ تحفظ الأصفار اليسرى ولا تُحوّل إلى Number.
+        isPrimary: { type: boolean }
+        isActive: { type: boolean }
+        version: { type: integer, minimum: 0 }
+    InventoryItemBarcodeCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [symbology, value]
+      properties:
+        symbology: { $ref: '#/components/schemas/InventoryBarcodeSymbology' }
+        value: { type: string, minLength: 1, maxLength: 255 }
+        isPrimary: { type: boolean, default: false }
+    InventoryItemBarcodeUpdateRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 2
+      required: [version]
+      properties:
+        version: { type: integer, minimum: 0 }
+        symbology: { $ref: '#/components/schemas/InventoryBarcodeSymbology' }
+        value: { type: string, minLength: 1, maxLength: 255 }
+    InventoryItemBarcodeVersionRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: { type: integer, minimum: 0 }
+    InventoryItemBarcodeDeactivateRequest:
+      type: object
+      additionalProperties: false
+      required: [version, reason]
+      properties:
+        version: { type: integer, minimum: 0 }
+        reason:
+          type: string
+          x-trim: true
+          minLength: 3
+          maxLength: 500
+    InventoryBarcodeResolveRequest:
+      type: object
+      additionalProperties: false
+      required: [value]
+      properties:
+        value: { type: string, minLength: 1, maxLength: 255 }
+        symbology: { $ref: '#/components/schemas/InventoryBarcodeSymbology' }
+    InventoryBarcodeResolveBatchEntry:
+      type: object
+      additionalProperties: false
+      required: [value]
+      properties:
+        value: { type: string, minLength: 1, maxLength: 255 }
+        symbology: { $ref: '#/components/schemas/InventoryBarcodeSymbology' }
+        clientReference: { type: string, minLength: 1, maxLength: 100 }
+    InventoryBarcodeResolveBatchRequest:
+      type: object
+      additionalProperties: false
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: '#/components/schemas/InventoryBarcodeResolveBatchEntry' }
+    ResolvedInventoryBarcode:
+      type: object
+      additionalProperties: false
+      required: [barcode, inventoryItem]
+      properties:
+        barcode:
+          type: object
+          additionalProperties: false
+          required: [id, symbology, isPrimary]
+          properties:
+            id: { type: string, pattern: '^[1-9][0-9]*$' }
+            symbology: { $ref: '#/components/schemas/InventoryBarcodeSymbology' }
+            isPrimary: { type: boolean }
+        inventoryItem:
+          type: object
+          additionalProperties: false
+          required: [id, code, nameAr, nameEn, description, unitOfMeasure]
+          properties:
+            id: { type: string, pattern: '^[1-9][0-9]*$' }
+            code: { type: string, maxLength: 40 }
+            nameAr: { type: string, maxLength: 200 }
+            nameEn: { type: [string, 'null'], maxLength: 200 }
+            description: { type: [string, 'null'], maxLength: 500 }
+            unitOfMeasure:
+              type: object
+              additionalProperties: false
+              required: [id, code, nameAr, decimalPlaces]
+              properties:
+                id: { type: string, pattern: '^[1-9][0-9]*$' }
+                code: { type: string, maxLength: 20 }
+                nameAr: { type: string, maxLength: 120 }
+                decimalPlaces: { type: integer, minimum: 0, maximum: 6 }
+    InventoryBarcodeResolveFailureReason:
+      type: string
+      enum:
+      - INVALID_BARCODE_VALUE
+      - INVALID_BARCODE_CHECK_DIGIT
+      - UNSUPPORTED_BARCODE_SYMBOLOGY
+      - GS1_NOT_SUPPORTED
+      - BARCODE_NOT_FOUND
+      - BARCODE_INACTIVE
+      - INVENTORY_ITEM_INACTIVE
+    InventoryBarcodeResolveBatchResult:
+      oneOf:
+      - type: object
+        additionalProperties: false
+        required: [index, status, data]
+        properties:
+          index: { type: integer, minimum: 0, maximum: 99 }
+          clientReference: { type: string, minLength: 1, maxLength: 100 }
+          status: { type: string, const: RESOLVED }
+          data: { $ref: '#/components/schemas/ResolvedInventoryBarcode' }
+      - type: object
+        additionalProperties: false
+        required: [index, status, reason]
+        properties:
+          index: { type: integer, minimum: 0, maximum: 99 }
+          clientReference: { type: string, minLength: 1, maxLength: 100 }
+          status: { type: string, const: UNRESOLVED }
+          reason: { $ref: '#/components/schemas/InventoryBarcodeResolveFailureReason' }
     InventoryMovementType:
       type: string
       enum:

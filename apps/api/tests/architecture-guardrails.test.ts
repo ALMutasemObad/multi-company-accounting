@@ -115,6 +115,30 @@ describe("Application dependency boundaries", () => {
 
     expect(codes(seed)).toEqual(codes(catalog));
   });
+
+  it("keeps web navigation and action permission literals in the canonical catalog", async () => {
+    const [catalog, navigation, actions] = await Promise.all([
+      source("platform/reference-data.ts"),
+      projectFile("apps/web/src/app-navigation.ts"),
+      projectFile("apps/web/src/action-permissions.ts"),
+    ]);
+    const catalogCode = /\['([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+)'\s*,/gu;
+    const permissionLiteral = /["']([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+)["']/gu;
+    const actionPermission = /\bpermission\(\s*["']([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+)["']\s*\)/gu;
+    const navigationPolicies = navigation.match(
+      /export const viewPermissionPolicies[\s\S]*?\n\};/u,
+    )?.[0];
+
+    expect(navigationPolicies).toBeDefined();
+    const canonical = new Set([...catalog.matchAll(catalogCode)].map((match) => match[1]!));
+    const used = new Set([
+      ...[...(navigationPolicies ?? "").matchAll(permissionLiteral)].map((match) => match[1]!),
+      ...[...actions.matchAll(actionPermission)].map((match) => match[1]!),
+    ]);
+    const missing = [...used].filter((permission) => !canonical.has(permission)).sort();
+
+    expect(missing, `Unknown web permission literals: ${missing.join(", ")}`).toEqual([]);
+  });
 });
 
 describe("OpenAPI executable-contract guardrails", () => {
@@ -252,17 +276,68 @@ describe("core accounting architecture guardrails", () => {
   });
 
   it("keeps platform operations read-only, aggregated and behind explicit identity and analytics ports", async () => {
-    const [service, analytics, identity] = await Promise.all([
+    const [service, authorization, analytics, identity, composition, server] = await Promise.all([
       source("platform-operations/platform-operations-service.ts"),
+      source("platform-operations/platform-operator-authorization.ts"),
       source("platform-operations/prisma-platform-analytics-query-adapter.ts"),
       source("users/platform-identity-query-adapter.ts"),
+      source("composition/create-platform-operations-service.ts"),
+      source("server.ts"),
     ]);
-    expect(service).toContain("PlatformIdentityQueryPort");
+    expect(service).toContain("PlatformOperatorAuthorizationPort");
     expect(service).toContain("PlatformAnalyticsQueryPort");
     expect(service).not.toContain("PrismaClient");
+    expect(authorization).toContain("PlatformOperatorIdentityQueryPort");
+    expect(authorization).toContain("isActiveUser(userId)");
+    expect(composition).toContain("initializePlatformOperatorAuthorization");
+    expect(server).toMatch(/async function startServer\(\)[\s\S]*await createPlatformOperationsService\([\s\S]*app\.listen\(/u);
     expect(analytics).not.toMatch(/\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
     expect(identity).not.toMatch(/\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
     expect(analytics).not.toMatch(/(?:emailNormalized|displayName|ipAddress|userAgent|passwordHash)/u);
+    expect(analytics.match(/user:\s*\{\s*isActive:\s*true\s*\}/gu)).toHaveLength(3);
+  });
+
+  it("keeps Platform Billing writes inside its declared owner and serializes account currency decisions", async () => {
+    const sources = await allTypeScriptSources();
+    const directWrite = /(?:\.platformBilling(?:Account|Invoice|InvoiceLine|Payment)|\[\s*["']platformBilling(?:Account|Invoice|InvoiceLine|Payment)["']\s*\])\s*\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u;
+    const nestedWrite = /\bplatformBilling(?:Account|AccountsCreated|AccountsUpdated|Invoices|InvoicesIssued|InvoicesVoided|InvoiceLines|Payments|PaymentsReceived)\s*:\s*\{\s*(?:create|createMany|update|updateMany|delete|deleteMany|upsert|connect|connectOrCreate|disconnect|set)\b/u;
+    const rawWrite = /\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|REPLACE\s+INTO)\s+[`"]?platform_billing_(?:accounts|invoices|invoice_lines|payments)\b/iu;
+
+    expect("database.platformBillingPayment.create(").toMatch(directWrite);
+    expect("platformBillingAccount: { create:").toMatch(nestedWrite);
+    expect("UPDATE platform_billing_accounts SET").toMatch(rawWrite);
+
+    const writers = sources
+      .filter(({ content }) => directWrite.test(content) || nestedWrite.test(content) || rawWrite.test(content))
+      .map(({ path }) => path)
+      .sort();
+    expect(writers).toEqual(["platform-operations/platform-billing-service.ts"]);
+
+    const owner = await source("platform-operations/platform-billing-service.ts");
+    expect(owner.match(/await lockPlatformBillingAccount\(tx, companyId\);/gu)).toHaveLength(2);
+    expect(owner).toContain('"CURRENCY_CHANGE_WITH_HISTORY"');
+    expect(owner).toContain("FROM platform_billing_accounts");
+    expect(owner).toContain("FOR UPDATE");
+
+    const summaryRead = owner.slice(owner.indexOf("async summary("), owner.indexOf("async companyBilling("));
+    const companyRead = owner.slice(owner.indexOf("async companyBilling("), owner.indexOf("async upsertAccount("));
+    expect(summaryRead).not.toMatch(/companyReferences\s*\(\s*\)/u);
+    expect(summaryRead).not.toMatch(/platformBillingInvoice\s*\.\s*findMany/u);
+    expect(companyRead).toMatch(/platformBillingInvoice\s*\.\s*count/u);
+    expect((owner.match(/\btake\s*:\s*pagination\.pageSize/gu) ?? []).length).toBeGreaterThanOrEqual(2);
+    expect(owner).toMatch(/GROUP\s+BY\s+invoice_row\.billing_account_id/iu);
+    expect(owner).toMatch(/LEFT\s+JOIN\s+platform_billing_payments\s+AS\s+payment/iu);
+  });
+
+  it("indexes the stable Platform Billing account pagination order", async () => {
+    const [schema, migration, rollback] = await Promise.all([
+      projectFile("apps/api/prisma/schema.prisma"),
+      projectFile("apps/api/prisma/migrations/20260829110000_platform_billing_pagination_index/migration.sql"),
+      projectFile("apps/api/prisma/migrations/20260829110000_platform_billing_pagination_index/rollback.sql"),
+    ]);
+    expect(schema).toContain('@@index([nextBillingDate, id], map: "platform_billing_accounts_next_id_idx")');
+    expect(migration).toMatch(/platform_billing_accounts_next_id_idx`\s*\n\s*ON `platform_billing_accounts` \(`next_billing_date`, `id`\)/u);
+    expect(rollback).toContain("DROP INDEX `platform_billing_accounts_next_id_idx`");
   });
 
   it("keeps open-source bank file parsers behind Treasury adapters", async () => {

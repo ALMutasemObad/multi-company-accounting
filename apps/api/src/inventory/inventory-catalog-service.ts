@@ -505,6 +505,15 @@ export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
           select: { id: true },
         });
         if (stocked) throw new InventoryCatalogError("ITEM_HAS_STOCK");
+        const deactivatedBarcodes = await tx.inventoryItemBarcode.updateMany({
+          where: { companyId: context.companyId, inventoryItemId: id, isActive: true },
+          data: {
+            isActive: false,
+            isPrimary: false,
+            primaryInventoryItemId: null,
+            version: { increment: 1 },
+          },
+        });
         const changed = await tx.inventoryItem.updateMany({
           where: { id, companyId: context.companyId, version: input.version, isActive: true },
           data: { isActive: false, version: { increment: 1 } },
@@ -518,6 +527,7 @@ export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
           reason: input.reason,
           fromVersion: input.version,
           toVersion: value.version,
+          deactivatedBarcodeCount: deactivatedBarcodes.count,
         });
         return value;
       },

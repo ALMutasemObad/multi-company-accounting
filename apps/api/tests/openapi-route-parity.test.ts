@@ -8,6 +8,7 @@ import { createFiscalRouter } from '../src/fiscal/fiscal-router.js';
 import { createManualJournalRouter } from '../src/journals/manual-journal-router.js';
 import { createPaymentRouter } from '../src/payments/payment-router.js';
 import { createPrintRouter } from '../src/printing/print-router.js';
+import { createBarcodeLabelRouter } from '../src/printing/barcode-label-router.js';
 import { createPurchaseInvoiceRouter } from '../src/purchases/purchase-invoice-router.js';
 import { createReceiptRouter } from '../src/receipts/receipt-router.js';
 import { createCustomerRouter } from '../src/sales/customer-router.js';
@@ -23,6 +24,7 @@ import { createTreasuryRouter } from '../src/treasury/treasury-router.js';
 import { createDataImportRouter } from '../src/imports/data-import-router.js';
 import { createInventoryRouter } from '../src/inventory/inventory-router.js';
 import { createInventoryCatalogRouter } from '../src/inventory/inventory-catalog-router.js';
+import { createInventoryBarcodeRouter } from '../src/inventory/inventory-barcode-router.js';
 import { createInventoryMovementRouter } from '../src/inventory/inventory-movement-router.js';
 import { createBankReconciliationRouter } from '../src/treasury/reconciliation/reconciliation-router.js';
 import { createPosRouter } from '../src/pos/pos-router.js';
@@ -50,6 +52,7 @@ const routers = [
   { prefix: '', router: createUserRouter(stub, stub, stub) },
   { prefix: '', router: createCompanyRouter(stub, stub) },
   { prefix: '', router: createPrintRouter(stub, stub) },
+  { prefix: '', router: createBarcodeLabelRouter(stub, stub) },
   { prefix: '', router: createAuditRouter(stub, stub) },
   { prefix: '', router: createSecurityEventRouter(stub, stub) },
   { prefix: '', router: createFiscalRouter(stub, stub, stub) },
@@ -66,6 +69,7 @@ const routers = [
   { prefix: '', router: createBankReconciliationRouter(stub, stub) },
   { prefix: '', router: createInventoryRouter(stub, stub) },
   { prefix: '', router: createInventoryCatalogRouter(stub, stub) },
+  { prefix: '', router: createInventoryBarcodeRouter(stub, stub) },
   { prefix: '', router: createInventoryMovementRouter(stub, stub) },
   { prefix: '', router: createReceiptRouter(stub, stub) },
   { prefix: '', router: createSupplierRouter(stub, stub) },

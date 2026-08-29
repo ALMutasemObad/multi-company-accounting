@@ -37,6 +37,7 @@ import { TreasuryService } from './treasury/treasury-service.js';
 import { DataImportService } from './imports/data-import-service.js';
 import { InventoryService } from './inventory/inventory-service.js';
 import { InventoryCatalogService } from './inventory/inventory-catalog-service.js';
+import { InventoryBarcodeService } from './inventory/inventory-barcode-service.js';
 import { InventoryMovementService } from './inventory/inventory-movement-service.js';
 import { BankStatementParser } from './treasury/reconciliation/bank-statement-parser.js';
 import { PrismaReconciliationLedgerQueryAdapter } from './treasury/reconciliation/adapters/prisma-reconciliation-ledger-query-adapter.js';
@@ -67,16 +68,16 @@ import { HrIdentityAdapter } from './users/hr-identity-adapter.js';
 import { HrEmployeeAccountAdapter } from './hr/employee-account-adapter.js';
 import { IdentityAccountAdapter } from './users/identity-account-adapter.js';
 import { WorkforceAccessService } from './workforce-access/workforce-access-service.js';
-import { PlatformIdentityQueryAdapter } from './users/platform-identity-query-adapter.js';
-import { PlatformOperationsService } from './platform-operations/platform-operations-service.js';
 import { PrismaPlatformAnalyticsQueryAdapter } from './platform-operations/prisma-platform-analytics-query-adapter.js';
 import { PlatformBillingService } from './platform-operations/platform-billing-service.js';
+import { createPlatformOperationsService } from './composition/create-platform-operations-service.js';
 import { PrismaAuditAppendAdapter } from './audit/prisma-audit-append-adapter.js';
 import { ProfessionalEmployeeAdapter } from './hr/professional-employee-adapter.js';
 import { ProfessionalTimesheetApprovalAdapter } from './projects/professional-timesheet-approval-adapter.js';
 import { ProfessionalBillingCurrencyAdapter } from './companies/professional-billing-currency-adapter.js';
 import { ProfessionalBillingService } from './projects/professional-billing-service.js';
 import { PrismaAccountingAccountQueryAdapter } from './accounts/prisma-account-query-adapter.js';
+import { createBarcodeLabelService } from './composition/create-barcode-label-service.js';
 
 const config = loadConfig();
 if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required to start the API');
@@ -160,6 +161,7 @@ const outboxWorker = outboxHandlers.size
 const customers = new CustomerService(database, accountQueries);
 const suppliers = new SupplierService(database, accountQueries);
 const inventoryCatalog = new InventoryCatalogService(database);
+const inventoryBarcodes = new InventoryBarcodeService(database);
 const inventoryMovements = new InventoryMovementService(database);
 const {
   salesInvoices,
@@ -205,105 +207,106 @@ const workforceAccess = new WorkforceAccessService(
   new HrEmployeeAccountAdapter(database),
   new IdentityAccountAdapter(database),
 );
-const configuredPlatformOperators = (config.PLATFORM_OPERATOR_EMAILS ?? "")
-  .split(",")
-  .map((email) => email.trim())
-  .filter(Boolean);
 const platformAnalytics = new PrismaPlatformAnalyticsQueryAdapter(database);
-const platformOperations = new PlatformOperationsService(
-  new PlatformIdentityQueryAdapter(database),
-  platformAnalytics,
-  configuredPlatformOperators.length || config.NODE_ENV === "production"
-    ? configuredPlatformOperators
-    : ["admin@mcap.local"],
-);
-const platformBilling = new PlatformBillingService(
-  database,
-  platformOperations,
-  platformAnalytics,
-  new PrismaAuditAppendAdapter(),
-);
-const app = createApp(config, {
-  readiness: new DatabaseReadinessService(database, config.READINESS_TIMEOUT_MS),
-  metrics: operationalMetrics,
-  sensitiveRateLimits: new PrismaRateLimitStore(
-    database,
-    config.RATE_LIMIT_IDENTITY_SECRET ?? 'local-development-rate-limit-identity-secret',
-  ),
-  auth,
-  ...(registration ? { registration } : {}),
-  ...(passwordReset ? { passwordReset } : {}),
-  users,
-  workforceAccess,
-  platformOperations,
-  platformBilling,
-  companies: createCompanyService(database),
-  printing: new PrintService(database),
-  audit: createAuditService(database),
-  security: createSecurityEventService(database),
-  fiscal,
-  financialClose,
-  approvals,
-  professionalProjects,
-  professionalProjectPlanning,
-  professionalProjectAccess,
-  professionalBilling,
-  hr,
-  accounts: new AccountService(database),
-  journals: new ManualJournalService(database),
-  customers,
-  treasury,
-  ...(bankReconciliation ? { bankReconciliation } : {}),
-  inventory: new InventoryService(database),
-  inventoryCatalog,
-  inventoryMovements,
-  receipts,
-  suppliers,
-  payments,
-  reports: new ReportService(database),
-  cashFlow: new CashFlowService(database, new PrismaCashFlowLedgerQueryAdapter(), new TreasuryCashFlowAccountAdapter()),
-  taxSummary: new TaxSummaryService(database, new PrismaTaxSummaryQueryAdapter()),
-  costCenterActivity: new CostCenterActivityService(database, new PrismaCostCenterActivityLedgerQueryAdapter()),
-  taxes,
-  salesInvoices,
-  purchaseInvoices,
-  dataImports,
-  pos,
-});
 
-const server = app.listen(config.PORT, () => {
-  logEvent('info', 'api_started', {
-    port: config.PORT,
-    environment: config.NODE_ENV,
+async function startServer() {
+  const platformOperations = await createPlatformOperationsService(database, platformAnalytics, config);
+  const platformBilling = new PlatformBillingService(
+    database,
+    platformOperations,
+    platformAnalytics,
+    new PrismaAuditAppendAdapter(),
+  );
+  const app = createApp(config, {
+    readiness: new DatabaseReadinessService(database, config.READINESS_TIMEOUT_MS),
+    metrics: operationalMetrics,
+    sensitiveRateLimits: new PrismaRateLimitStore(
+      database,
+      config.RATE_LIMIT_IDENTITY_SECRET ?? 'local-development-rate-limit-identity-secret',
+    ),
+    auth,
+    ...(registration ? { registration } : {}),
+    ...(passwordReset ? { passwordReset } : {}),
+    users,
+    workforceAccess,
+    platformOperations,
+    platformBilling,
+    companies: createCompanyService(database),
+    printing: new PrintService(database),
+    barcodeLabels: createBarcodeLabelService(database),
+    audit: createAuditService(database),
+    security: createSecurityEventService(database),
+    fiscal,
+    financialClose,
+    approvals,
+    professionalProjects,
+    professionalProjectPlanning,
+    professionalProjectAccess,
+    professionalBilling,
+    hr,
+    accounts: new AccountService(database),
+    journals: new ManualJournalService(database),
+    customers,
+    treasury,
+    ...(bankReconciliation ? { bankReconciliation } : {}),
+    inventory: new InventoryService(database),
+    inventoryCatalog,
+    inventoryBarcodes,
+    inventoryMovements,
+    receipts,
+    suppliers,
+    payments,
+    reports: new ReportService(database),
+    cashFlow: new CashFlowService(database, new PrismaCashFlowLedgerQueryAdapter(), new TreasuryCashFlowAccountAdapter()),
+    taxSummary: new TaxSummaryService(database, new PrismaTaxSummaryQueryAdapter()),
+    costCenterActivity: new CostCenterActivityService(database, new PrismaCostCenterActivityLedgerQueryAdapter()),
+    taxes,
+    salesInvoices,
+    purchaseInvoices,
+    dataImports,
+    pos,
+  });
+
+  const server = app.listen(config.PORT, () => {
+    logEvent('info', 'api_started', {
+      port: config.PORT,
+      environment: config.NODE_ENV,
+      requestTimeoutMs: config.HTTP_REQUEST_TIMEOUT_MS,
+      headersTimeoutMs: config.HTTP_HEADERS_TIMEOUT_MS,
+      keepAliveTimeoutMs: config.HTTP_KEEP_ALIVE_TIMEOUT_MS,
+    });
+    outboxWorker?.start();
+  });
+  configureHttpServerTimeouts(server, {
     requestTimeoutMs: config.HTTP_REQUEST_TIMEOUT_MS,
     headersTimeoutMs: config.HTTP_HEADERS_TIMEOUT_MS,
     keepAliveTimeoutMs: config.HTTP_KEEP_ALIVE_TIMEOUT_MS,
   });
-  outboxWorker?.start();
-});
-configureHttpServerTimeouts(server, {
-  requestTimeoutMs: config.HTTP_REQUEST_TIMEOUT_MS,
-  headersTimeoutMs: config.HTTP_HEADERS_TIMEOUT_MS,
-  keepAliveTimeoutMs: config.HTTP_KEEP_ALIVE_TIMEOUT_MS,
-});
 
-let shuttingDown = false;
-const shutdown = async (signal: NodeJS.Signals) => {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  logEvent('info', 'api_shutdown_started', { signal });
-  try {
-    const workerStopped = outboxWorker?.stop() ?? Promise.resolve();
-    await closeGracefully(server, async () => {
-      await workerStopped;
-      await database.$disconnect();
-    }, config.SHUTDOWN_TIMEOUT_MS);
-    logEvent('info', 'api_shutdown_completed');
-  } catch (error) {
-    process.exitCode = 1;
-    logEvent('error', 'api_shutdown_failed', { reason: error instanceof Error ? error.message : 'UNKNOWN' });
-  }
-};
+  let shuttingDown = false;
+  const shutdown = async (signal: NodeJS.Signals) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    logEvent('info', 'api_shutdown_started', { signal });
+    try {
+      const workerStopped = outboxWorker?.stop() ?? Promise.resolve();
+      await closeGracefully(server, async () => {
+        await workerStopped;
+        await database.$disconnect();
+      }, config.SHUTDOWN_TIMEOUT_MS);
+      logEvent('info', 'api_shutdown_completed');
+    } catch (error) {
+      process.exitCode = 1;
+      logEvent('error', 'api_shutdown_failed', { reason: error instanceof Error ? error.message : 'UNKNOWN' });
+    }
+  };
 
-process.once('SIGTERM', () => { void shutdown('SIGTERM'); });
-process.once('SIGINT', () => { void shutdown('SIGINT'); });
+  process.once('SIGTERM', () => { void shutdown('SIGTERM'); });
+  process.once('SIGINT', () => { void shutdown('SIGINT'); });
+}
+
+void startServer().catch(async (error) => {
+  process.exitCode = 1;
+  logEvent('error', 'api_start_failed', { reason: error instanceof Error ? error.message : 'UNKNOWN' });
+  await database.$disconnect().catch(() => undefined);
+});

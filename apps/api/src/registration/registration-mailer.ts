@@ -33,13 +33,13 @@ const emailCopy = {
     dir: 'rtl', intl: 'ar-SA',
     verification: {
       subject: 'تحقق من بريدك لإنشاء شركتك',
-      heading: 'إكمال التسجيل في نظام جوار المالي',
+      heading: 'إكمال التسجيل في النظام المحاسبي متعدد الشركات',
       action: 'تحقق وأنشئ الشركة',
       notice: (date: string) => `تنتهي صلاحية الرابط في ${date} بالتوقيت العالمي.`,
     },
     passwordReset: {
       subject: 'استعادة كلمة المرور',
-      heading: 'تعيين كلمة مرور جديدة لنظام جوار المالي',
+      heading: 'تعيين كلمة مرور جديدة للنظام المحاسبي متعدد الشركات',
       action: 'تعيين كلمة مرور جديدة',
       notice: (date: string) => `ينتهي الرابط في ${date} بالتوقيت العالمي. تجاهل الرسالة إذا لم تطلب الاستعادة.`,
     },
@@ -48,13 +48,13 @@ const emailCopy = {
     dir: 'ltr', intl: 'en-US',
     verification: {
       subject: 'Verify your email to create your company',
-      heading: 'Complete your Jawar Finance registration',
+      heading: 'Complete your multi-company accounting registration',
       action: 'Verify and create company',
       notice: (date: string) => `This link expires at ${date}.`,
     },
     passwordReset: {
       subject: 'Reset your password',
-      heading: 'Set a new Jawar Finance password',
+      heading: 'Set a new multi-company accounting password',
       action: 'Set a new password',
       notice: (date: string) => `This link expires at ${date}. Ignore this message if you did not request it.`,
     },
@@ -63,13 +63,13 @@ const emailCopy = {
     dir: 'rtl', intl: 'ur-PK',
     verification: {
       subject: 'اپنی کمپنی بنانے کے لیے اپنے ای میل کی تصدیق کریں',
-      heading: 'جوار مالیاتی نظام میں رجسٹریشن مکمل کریں',
+      heading: 'ملٹی کمپنی اکاؤنٹنگ سسٹم میں رجسٹریشن مکمل کریں',
       action: 'تصدیق کریں اور کمپنی بنائیں',
       notice: (date: string) => `یہ لنک ${date} (عالمی وقت) کو ختم ہو جائے گا۔`,
     },
     passwordReset: {
       subject: 'اپنا پاس ورڈ دوبارہ ترتیب دیں',
-      heading: 'جوار مالیاتی نظام کے لیے نیا پاس ورڈ مقرر کریں',
+      heading: 'ملٹی کمپنی اکاؤنٹنگ سسٹم کے لیے نیا پاس ورڈ مقرر کریں',
       action: 'نیا پاس ورڈ مقرر کریں',
       notice: (date: string) => `یہ لنک ${date} (عالمی وقت) کو ختم ہو جائے گا۔ اگر آپ نے یہ درخواست نہیں کی تو اس پیغام کو نظر انداز کریں۔`,
     },
@@ -78,13 +78,13 @@ const emailCopy = {
     dir: 'ltr', intl: 'hi-IN',
     verification: {
       subject: 'अपनी कंपनी बनाने के लिए ईमेल सत्यापित करें',
-      heading: 'जवार वित्तीय प्रणाली में पंजीकरण पूरा करें',
+      heading: 'बहु-कंपनी लेखा प्रणाली में पंजीकरण पूरा करें',
       action: 'सत्यापित करें और कंपनी बनाएँ',
       notice: (date: string) => `यह लिंक ${date} (UTC) पर समाप्त होगा।`,
     },
     passwordReset: {
       subject: 'अपना पासवर्ड रीसेट करें',
-      heading: 'जवार वित्तीय प्रणाली के लिए नया पासवर्ड बनाएँ',
+      heading: 'बहु-कंपनी लेखा प्रणाली के लिए नया पासवर्ड बनाएँ',
       action: 'नया पासवर्ड बनाएँ',
       notice: (date: string) => `यह लिंक ${date} (UTC) पर समाप्त होगा। यदि आपने यह अनुरोध नहीं किया है, तो इस संदेश को अनदेखा करें।`,
     },

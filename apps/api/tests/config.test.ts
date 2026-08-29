@@ -53,6 +53,24 @@ describe('production configuration', () => {
     expect(config.METRICS_ENABLED).toBe(false);
   });
 
+  it('rejects a deployed schema name that still carries the retired product brand', () => {
+    for (const legacySchema of [
+      ["ji", "war_finance"].join(""),
+      ["je", "war_finance"].join(""),
+      ["ja", "waar_finance"].join(""),
+    ]) {
+      expect(() => loadConfig({
+        NODE_ENV: 'production',
+        DATABASE_URL: `mysql://runtime:secret@db.internal/${legacySchema}`,
+        WEB_ORIGIN: 'https://finance.example.com',
+        SESSION_COOKIE_SECURE: 'true',
+        TRUST_PROXY: 'true',
+        RATE_LIMIT_IDENTITY_SECRET: rateLimitIdentitySecret,
+        SELF_REGISTRATION_ENABLED: 'false',
+      })).toThrow(/neutral identifier/);
+    }
+  });
+
   it('requires a stable keyed identity secret for the shared production limiter', () => {
     expect(() => loadConfig({
       NODE_ENV: 'production',
@@ -235,7 +253,12 @@ describe('production configuration', () => {
     }).METRICS_ENABLED).toBe(true);
   });
 
-  it('accepts an explicit comma-separated platform operator allowlist', () => {
+  it('accepts fixed platform operator IDs and only permits the legacy email fallback outside production', () => {
+    expect(loadConfig({
+      NODE_ENV: 'test',
+      PLATFORM_OPERATOR_USER_IDS: '42, 9007199254740993',
+      PLATFORM_OPERATOR_EMAILS: 'owner@example.com, operations@example.com',
+    }).PLATFORM_OPERATOR_USER_IDS).toBe('42, 9007199254740993');
     expect(loadConfig({
       NODE_ENV: 'test',
       PLATFORM_OPERATOR_EMAILS: 'owner@example.com, operations@example.com',
@@ -243,8 +266,23 @@ describe('production configuration', () => {
 
     expect(() => loadConfig({
       NODE_ENV: 'test',
-      PLATFORM_OPERATOR_EMAILS: 'owner@example.com,*',
-    })).toThrow(/PLATFORM_OPERATOR_EMAILS/);
+      PLATFORM_OPERATOR_USER_IDS: '42,0',
+    })).toThrow(/PLATFORM_OPERATOR_USER_IDS/);
+    expect(() => loadConfig({
+      NODE_ENV: 'test',
+      PLATFORM_OPERATOR_USER_IDS: '18446744073709551616',
+    })).toThrow(/unsigned BIGINT/);
+
+    expect(() => loadConfig({
+      NODE_ENV: 'production',
+      DATABASE_URL: 'mysql://runtime:secret@db.internal/mcap',
+      WEB_ORIGIN: 'https://finance.example.com',
+      SESSION_COOKIE_SECURE: 'true',
+      TRUST_PROXY: 'true',
+      RATE_LIMIT_IDENTITY_SECRET: rateLimitIdentitySecret,
+      SELF_REGISTRATION_ENABLED: 'false',
+      PLATFORM_OPERATOR_EMAILS: 'owner@example.com',
+    })).toThrow(/PLATFORM_OPERATOR_EMAILS is development-only/);
   });
 
   it('allows verification capture only outside production', () => {

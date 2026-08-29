@@ -204,6 +204,14 @@ enum InventoryMovementStatus {
   REVERSED
 }
 
+enum InventoryBarcodeSymbology {
+  EAN_13
+  EAN_8
+  UPC_A
+  CODE_128
+  QR
+}
+
 enum BankStatementFormat {
   CSV
   CAMT053
@@ -429,6 +437,7 @@ model Company {
   warehouses                        Warehouse[]
   unitsOfMeasure                    UnitOfMeasure[]
   inventoryItems                    InventoryItem[]
+  inventoryItemBarcodes             InventoryItemBarcode[]
   inventoryMovementSequence         InventoryMovementSequence?
   inventoryMovements                InventoryMovement[]
   inventoryMovementLines            InventoryMovementLine[]
@@ -2026,12 +2035,37 @@ model InventoryItem {
   purchaseInvoiceLines PurchaseInvoiceLine[]
   movementLines        InventoryMovementLine[]
   inventoryBalances    InventoryBalance[]
+  barcodes             InventoryItemBarcode[]
 
   @@unique([companyId, code])
   @@unique([id, companyId])
   @@index([companyId, unitOfMeasureId, isActive])
   @@index([companyId, isActive, nameAr])
   @@map("inventory_items")
+}
+
+model InventoryItemBarcode {
+  id                     BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId              BigInt                     @map("company_id") @db.UnsignedBigInt
+  inventoryItemId        BigInt                     @map("inventory_item_id") @db.UnsignedBigInt
+  symbology              InventoryBarcodeSymbology
+  value                   String                     @db.VarChar(255)
+  normalizedValue        String                     @map("normalized_value") @db.VarChar(255)
+  isPrimary              Boolean                    @default(false) @map("is_primary")
+  primaryInventoryItemId BigInt?                    @map("primary_inventory_item_id") @db.UnsignedBigInt
+  isActive               Boolean                    @default(true) @map("is_active")
+  version                 Int                        @default(0) @db.UnsignedInt
+  createdAt               DateTime                   @default(now()) @map("created_at")
+  updatedAt               DateTime                   @updatedAt @map("updated_at")
+  company                 Company                    @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  inventoryItem           InventoryItem              @relation(fields: [inventoryItemId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict, map: "inventory_item_barcodes_inventory_item_id_company_id_fkey")
+
+  @@unique([id, companyId], map: "inventory_barcodes_id_company_key")
+  @@unique([companyId, normalizedValue], map: "inventory_barcodes_company_normalized_key")
+  @@unique([companyId, primaryInventoryItemId], map: "inventory_barcodes_company_primary_item_key")
+  @@index([companyId, inventoryItemId, id], map: "inventory_barcodes_company_item_id_idx")
+  @@index([companyId, inventoryItemId, isActive, id], map: "inventory_barcodes_company_item_active_id_idx")
+  @@map("inventory_item_barcodes")
 }
 
 model InventoryMovementSequence {
@@ -2610,6 +2644,7 @@ model PlatformBillingAccount {
 
   @@unique([id, companyId])
   @@index([status, nextBillingDate])
+  @@index([nextBillingDate, id], map: "platform_billing_accounts_next_id_idx")
   @@map("platform_billing_accounts")
 }
 

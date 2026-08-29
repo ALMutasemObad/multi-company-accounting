@@ -3,7 +3,10 @@ import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 import type { AuthService } from "../src/auth/auth-service.js";
 import { createPlatformOperationsRouter } from "../src/platform-operations/platform-operations-router.js";
-import type { PlatformBillingService } from "../src/platform-operations/platform-billing-service.js";
+import {
+  PlatformBillingError,
+  type PlatformBillingService,
+} from "../src/platform-operations/platform-billing-service.js";
 import type { PlatformOperationsService } from "../src/platform-operations/platform-operations-service.js";
 
 function fixture() {
@@ -26,6 +29,30 @@ function fixture() {
 }
 
 describe("platform operations router guards", () => {
+  it("normalizes bounded billing pagination for summary and company history", async () => {
+    const { app, billing } = fixture();
+    vi.mocked(billing.summary).mockResolvedValue({} as never);
+    vi.mocked(billing.companyBilling).mockResolvedValueOnce({} as never);
+
+    await request(app).get("/platform/billing/summary?page=2&pageSize=25").expect(200);
+    await request(app).get("/platform/companies/10/billing?page=3&pageSize=7").expect(200);
+    await request(app).get("/platform/billing/summary").expect(200);
+
+    expect(billing.summary).toHaveBeenNthCalledWith(1, 7n, { page: 2, pageSize: 25 });
+    expect(billing.summary).toHaveBeenNthCalledWith(2, 7n, { page: 1, pageSize: 10 });
+    expect(billing.companyBilling).toHaveBeenCalledWith(7n, 10n, { page: 3, pageSize: 7 });
+  });
+
+  it("rejects platform billing pages above the small query budget", async () => {
+    const { app, billing } = fixture();
+
+    await request(app).get("/platform/billing/summary?pageSize=26").expect(400);
+    await request(app).get("/platform/companies/10/billing?page=0").expect(400);
+
+    expect(billing.summary).not.toHaveBeenCalled();
+    expect(billing.companyBilling).not.toHaveBeenCalled();
+  });
+
   it("requires authenticated CSRF and idempotency for platform billing writes", async () => {
     const { app, authenticate, billing } = fixture();
     const response = await request(app)
@@ -62,6 +89,30 @@ describe("platform operations router guards", () => {
 
     expect(response.status).toBe(400);
     expect(billing.upsertAccount).not.toHaveBeenCalled();
+  });
+
+  it("returns the stable currency-history reason as a billing business-rule violation", async () => {
+    const { app, billing } = fixture();
+    vi.mocked(billing.upsertAccount).mockRejectedValueOnce(
+      new PlatformBillingError("CURRENCY_CHANGE_WITH_HISTORY"),
+    );
+    const response = await request(app)
+      .put("/platform/companies/10/billing-account")
+      .set("Cookie", "sid=session-token")
+      .set("X-CSRF-Token", "csrf-token")
+      .set("Idempotency-Key", "platform-currency-change")
+      .send({
+        status: "ACTIVE", planName: "Business", billingCycle: "MONTHLY", currencyCode: "USD",
+        recurringFee: "100", includedUsers: 5, pricePerAdditionalUser: "10",
+        includedEmployees: 5, pricePerAdditionalEmployee: "5", includedPostedDocuments: 100,
+        pricePerAdditionalPostedDocument: "0.5", taxRate: "15", paymentTermsDays: 30, version: 0,
+      });
+
+    expect(response.status).toBe(422);
+    expect(response.body).toMatchObject({
+      code: "BUSINESS_RULE_VIOLATION",
+      reason: "CURRENCY_CHANGE_WITH_HISTORY",
+    });
   });
 
   it("normalizes an analytics range, comparison window, and company scope", async () => {

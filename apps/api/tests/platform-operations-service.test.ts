@@ -5,20 +5,20 @@ import {
 } from "../src/platform-operations/platform-operations-service.js";
 
 describe("PlatformOperationsService", () => {
-  it("normalizes the explicit operator allowlist and returns only a capability boolean", async () => {
-    const identities = { activeEmailForUser: vi.fn().mockResolvedValue("Operator@Example.com") };
+  it("returns only a capability boolean from the platform authorization port", async () => {
+    const authorization = { isActiveOperator: vi.fn().mockResolvedValue(true) };
     const analytics = { overview: vi.fn() };
-    const service = new PlatformOperationsService(identities, analytics as never, [" operator@example.com "]);
+    const service = new PlatformOperationsService(authorization, analytics as never);
 
     await expect(service.capabilities(42n)).resolves.toEqual({ platformOperations: true });
-    expect(identities.activeEmailForUser).toHaveBeenCalledWith(42n);
+    expect(authorization.isActiveOperator).toHaveBeenCalledWith(42n);
     expect(analytics.overview).not.toHaveBeenCalled();
   });
 
   it("denies a company administrator who is not an explicit platform operator", async () => {
-    const identities = { activeEmailForUser: vi.fn().mockResolvedValue("admin@customer.example") };
+    const authorization = { isActiveOperator: vi.fn().mockResolvedValue(false) };
     const analytics = { overview: vi.fn() };
-    const service = new PlatformOperationsService(identities, analytics as never, ["operator@example.com"]);
+    const service = new PlatformOperationsService(authorization, analytics as never);
 
     await expect(service.capabilities(7n)).resolves.toEqual({ platformOperations: false });
     await expect(service.overview(7n, 30)).rejects.toEqual(new PlatformOperationsError("FORBIDDEN"));
@@ -30,9 +30,8 @@ describe("PlatformOperationsService", () => {
     const expected = { generatedAt: now.toISOString() };
     const analytics = { overview: vi.fn().mockResolvedValue(expected) };
     const service = new PlatformOperationsService(
-      { activeEmailForUser: vi.fn().mockResolvedValue("operator@example.com") },
+      { isActiveOperator: vi.fn().mockResolvedValue(true) },
       analytics as never,
-      ["operator@example.com"],
       () => now,
     );
 
@@ -45,9 +44,8 @@ describe("PlatformOperationsService", () => {
     const expected = { generatedAt: now.toISOString(), scope: { company: null } };
     const analytics = { analytics: vi.fn().mockResolvedValue(expected) };
     const service = new PlatformOperationsService(
-      { activeEmailForUser: vi.fn().mockResolvedValue("operator@example.com") },
+      { isActiveOperator: vi.fn().mockResolvedValue(true) },
       analytics as never,
-      ["operator@example.com"],
       () => now,
     );
     const input = {
