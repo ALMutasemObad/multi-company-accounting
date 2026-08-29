@@ -16,6 +16,46 @@ const company = {
   manualJournalMakerCheckerEnabled: true,
   updatedAt: "2026-08-21T12:00:00.000Z",
 };
+const visualQaPermissions = [
+  "accounts.view",
+  "approvals.view",
+  "audit_logs.view",
+  "bank_reconciliation.view",
+  "cash_bank_accounts.view",
+  "companies.view",
+  "cost_centers.manage",
+  "currencies.view",
+  "customers.view",
+  "dashboard.view",
+  "data_imports.view",
+  "fiscal_periods.view",
+  "hr.contracts.view",
+  "hr.employees.view",
+  "hr.structure.view",
+  "inventory_catalog.view",
+  "manual_journals.view",
+  "payments.view",
+  "pos.view",
+  "professional_projects.view",
+  "purchase_invoices.create",
+  "purchase_invoices.view",
+  "receipts.view",
+  "reports.cash_flow.view",
+  "roles.view",
+  "sales_invoices.create",
+  "sales_invoices.view",
+  "security_events.view",
+  "settings.manage",
+  "suppliers.view",
+  "users.view",
+  "warehouses.view",
+];
+/** @satisfies {import("../apps/web/src/types.ts").CurrentAuthorization} */
+const currentAuthorization = {
+  user: { id: "1", displayName: "Visual QA User" },
+  selectedCompany: { id: "1", name: company.name, timezone: company.timezone },
+  permissions: visualQaPermissions,
+};
 const zeroSection = { rows: [], total: "0.00", comparisonTotal: null, variance: null, variancePercent: null };
 const fiscalPeriod = { id: "1001", fiscalYearId: "1001", periodNumber: 12, name: "ديسمبر 2026", startDate: "2026-12-01", endDate: "2026-12-31", status: "OPEN", closedAt: null, reopenedAt: null, reopenReason: null, version: 0 };
 const closeReadiness = {
@@ -280,6 +320,7 @@ function list(data = []) {
 function responseFor(url, method) {
   const pathname = url.pathname.replace(/^\/api\/v1/, "");
   if (pathname === "/auth/csrf") return { csrfToken: "visual-qa-csrf" };
+  if (pathname === "/auth/me") return currentAuthorization;
   if (pathname === "/auth/companies") return { data: [company] };
   if (pathname === "/auth/context" || pathname === "/auth/logout") return null;
   if (pathname === "/platform/capabilities") return { platformOperations: true };
