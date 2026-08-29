@@ -26,3 +26,35 @@ export function allows(
   if ("anyOf" in policy) return canAny(permissions, policy.anyOf);
   return canAll(permissions, policy.allOf);
 }
+
+export type PermissionAwareRequest<T> =
+  | { status: "skipped" }
+  | { status: "fulfilled"; value: T }
+  | { status: "rejected"; reason: unknown };
+
+/**
+ * Runs an optional client request only when its OpenAPI permission is present.
+ * The explicit outcome keeps skipped and failed reference loads from rejecting a
+ * page-level Promise.all while the server remains the enforcement boundary.
+ */
+export async function requestIfAllowed<T>(
+  permissions: ReadonlySet<string>,
+  policy: PermissionPolicy,
+  request: () => Promise<T>,
+): Promise<PermissionAwareRequest<T>> {
+  if (!allows(permissions, policy)) return { status: "skipped" };
+  try {
+    return { status: "fulfilled", value: await request() };
+  } catch (reason) {
+    return { status: "rejected", reason };
+  }
+}
+
+export const requestValue = <T>(result: PermissionAwareRequest<T>) =>
+  result.status === "fulfilled" ? result.value : undefined;
+
+export function firstRequestFailure(
+  results: readonly PermissionAwareRequest<unknown>[],
+) {
+  return results.find((result) => result.status === "rejected")?.reason;
+}

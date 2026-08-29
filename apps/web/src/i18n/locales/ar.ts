@@ -7,6 +7,7 @@ import { arCashFlow } from "./cash-flow";
 import { arTaxSummary } from "./tax-summary";
 import { arCostCenterActivity } from "./cost-center-activity";
 import { arPos } from "./pos";
+import { arBarcode } from "./barcode";
 import { arApprovals } from "./approvals";
 import { arProfessionalProjects } from "./professional-projects";
 import { arHumanResources } from "./human-resources";
@@ -21,6 +22,7 @@ export const ar = {
   ...arTaxSummary,
   ...arCostCenterActivity,
   ...arPos,
+  ...arBarcode,
   ...arApprovals,
   ...arProfessionalProjects,
   ...arHumanResources,

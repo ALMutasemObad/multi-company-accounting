@@ -12,8 +12,12 @@ import { api,
   downloadPdf,
   idempotencyKey } from "./api";
 import { actionPermissionPolicies } from "./action-permissions";
-import { allows } from "./authorization";
+import { allows,
+  firstRequestFailure,
+  requestIfAllowed,
+  requestValue } from "./authorization";
 import { Can, useAuthorization } from "./authorization-context";
+import { endpointPermissionPolicies } from "./endpoint-permissions";
 import { exchangeRateForDocumentDate,
   missingDatedRateMessage } from "./currency-rates";
 import {
@@ -111,30 +115,43 @@ export function ReceiptsPage({ notify }: { notify: Notice }) {
   }, [load]);
 
   useEffect(() => {
-    void Promise.all([
-      api<ListResponse<Customer>>("/customers?page=1&pageSize=100&active=true"),
-      api<ListResponse<Account>>("/accounts?page=1&pageSize=100&active=true"),
-      api<ListResponse<FiscalPeriod>>("/fiscal-periods?page=1&pageSize=100"),
-      api<ListResponse<CashBankAccount>>("/cash-bank-accounts?page=1&pageSize=100"),
-      api<{ data: PaymentMethod[] }>("/payment-methods"),
-      api<{ data: Currency[] }>("/currencies"),
-      api<ListResponse<SalesInvoice>>("/sales-invoices?page=1&pageSize=100&documentType=SALES_INVOICE&status=POSTED&outstandingOnly=true"),
-    ])
-      .then(([customers, accounts, periods, cashBanks, methods, currencies, openInvoices]) =>
-        setReferences({
-          customers: customers.data.filter((item) => item.isActive),
-          accounts: accounts.data.filter((item) => item.isActive && item.allowsPosting),
-          periods: periods.data.filter((item) => item.status !== "CLOSED"),
-          cashBanks: cashBanks.data.filter((item) => item.isActive),
-          methods: methods.data,
-          currencies: currencies.data,
-          openInvoices: openInvoices.data,
-        }),
-      )
-      .catch((cause) =>
-        notify(cause instanceof Error ? cause.message : t("pages.manual-journals.002"), "error"),
-      );
-  }, [notify]);
+    void (async () => {
+      const results = await Promise.all([
+        requestIfAllowed(permissionSet, endpointPermissionPolicies.customers, () =>
+          api<ListResponse<Customer>>("/customers?page=1&pageSize=100&active=true")),
+        requestIfAllowed(permissionSet, endpointPermissionPolicies.accounts, () =>
+          api<ListResponse<Account>>("/accounts?page=1&pageSize=100&active=true")),
+        requestIfAllowed(permissionSet, endpointPermissionPolicies.fiscalPeriods, () =>
+          api<ListResponse<FiscalPeriod>>("/fiscal-periods?page=1&pageSize=100")),
+        requestIfAllowed(permissionSet, endpointPermissionPolicies.cashBankAccounts, () =>
+          api<ListResponse<CashBankAccount>>("/cash-bank-accounts?page=1&pageSize=100")),
+        requestIfAllowed(permissionSet, endpointPermissionPolicies.paymentMethods, () =>
+          api<{ data: PaymentMethod[] }>("/payment-methods")),
+        requestIfAllowed(permissionSet, endpointPermissionPolicies.currencies, () =>
+          api<{ data: Currency[] }>("/currencies")),
+        requestIfAllowed(permissionSet, endpointPermissionPolicies.salesInvoices, () =>
+          api<ListResponse<SalesInvoice>>("/sales-invoices?page=1&pageSize=100&documentType=SALES_INVOICE&status=POSTED&outstandingOnly=true")),
+      ]);
+      const customers = requestValue(results[0]);
+      const accounts = requestValue(results[1]);
+      const periods = requestValue(results[2]);
+      const cashBanks = requestValue(results[3]);
+      const methods = requestValue(results[4]);
+      const currencies = requestValue(results[5]);
+      const openInvoices = requestValue(results[6]);
+      setReferences({
+        customers: customers?.data.filter((item) => item.isActive) ?? [],
+        accounts: accounts?.data.filter((item) => item.isActive && item.allowsPosting) ?? [],
+        periods: periods?.data.filter((item) => item.status !== "CLOSED") ?? [],
+        cashBanks: cashBanks?.data.filter((item) => item.isActive) ?? [],
+        methods: methods?.data ?? [],
+        currencies: currencies?.data ?? [],
+        openInvoices: openInvoices?.data ?? [],
+      });
+      const cause = firstRequestFailure(results);
+      if (cause) notify(cause instanceof Error ? cause.message : t("pages.manual-journals.002"), "error");
+    })();
+  }, [notify, permissionSet]);
 
   async function openDetails(id: string) {
     try {

@@ -9,6 +9,7 @@ import { enCashFlow } from "./cash-flow";
 import { enTaxSummary } from "./tax-summary";
 import { enCostCenterActivity } from "./cost-center-activity";
 import { enPos } from "./pos";
+import { enBarcode } from "./barcode";
 import { enApprovals } from "./approvals";
 import { enProfessionalProjects } from "./professional-projects";
 import { enHumanResources } from "./human-resources";
@@ -23,6 +24,7 @@ export const en = {
   ...enTaxSummary,
   ...enCostCenterActivity,
   ...enPos,
+  ...enBarcode,
   ...enApprovals,
   ...enProfessionalProjects,
   ...enHumanResources,

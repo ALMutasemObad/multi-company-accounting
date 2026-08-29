@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
-import { allows, can, canAll, canAny } from "./authorization";
+import { describe, expect, it, vi } from "vitest";
+import { allows, can, canAll, canAny, requestIfAllowed } from "./authorization";
 import { actionPermissionPolicies } from "./action-permissions";
+import { endpointPermissionPolicies, referenceEndpointPermission } from "./endpoint-permissions";
 import {
   navigationItems,
   resolveAuthorizedView,
@@ -36,6 +37,34 @@ describe("authorization predicates", () => {
     expect(can(permissions, "")).toBe(false);
     expect(canAny(permissions, [])).toBe(false);
     expect(canAll(permissions, [])).toBe(false);
+  });
+
+  it("does not invoke a request factory when its endpoint permission is absent", async () => {
+    const request = vi.fn(async () => "loaded");
+
+    await expect(requestIfAllowed(
+      new Set(["sales_invoices.view"]),
+      endpointPermissionPolicies.fiscalPeriods,
+      request,
+    )).resolves.toEqual({ status: "skipped" });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("captures an allowed optional request failure without rejecting the bundle", async () => {
+    const failure = new Error("network failure");
+
+    await expect(requestIfAllowed(
+      new Set(["accounts.view"]),
+      endpointPermissionPolicies.accounts,
+      async () => { throw failure; },
+    )).resolves.toEqual({ status: "rejected", reason: failure });
+  });
+
+  it("maps lazy reference endpoints to the same OpenAPI read permissions", () => {
+    expect(referenceEndpointPermission("/accounts?active=true")).toEqual(endpointPermissionPolicies.accounts);
+    expect(referenceEndpointPermission("/payment-methods?active=true")).toEqual(endpointPermissionPolicies.paymentMethods);
+    expect(referenceEndpointPermission("/inventory-items?active=true")).toEqual(endpointPermissionPolicies.inventoryCatalog);
+    expect(referenceEndpointPermission("/unknown-reference")).toBeUndefined();
   });
 });
 

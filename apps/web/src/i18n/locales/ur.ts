@@ -5,6 +5,7 @@ import { urCashFlow } from "./cash-flow";
 import { urTaxSummary } from "./tax-summary";
 import { urCostCenterActivity } from "./cost-center-activity";
 import { urPos } from "./pos";
+import { urBarcode } from "./barcode";
 import { urApprovals } from "./approvals";
 import { urProfessionalProjects } from "./professional-projects";
 import { urHumanResources } from "./human-resources";
@@ -17,6 +18,7 @@ export const ur = {
   ...urTaxSummary,
   ...urCostCenterActivity,
   ...urPos,
+  ...urBarcode,
   ...urApprovals,
   ...urProfessionalProjects,
   ...urHumanResources,

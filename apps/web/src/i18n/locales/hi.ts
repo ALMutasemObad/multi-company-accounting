@@ -5,6 +5,7 @@ import { hiCashFlow } from "./cash-flow";
 import { hiTaxSummary } from "./tax-summary";
 import { hiCostCenterActivity } from "./cost-center-activity";
 import { hiPos } from "./pos";
+import { hiBarcode } from "./barcode";
 import { hiApprovals } from "./approvals";
 import { hiProfessionalProjects } from "./professional-projects";
 import { hiHumanResources } from "./human-resources";
@@ -17,6 +18,7 @@ export const hi = {
   ...hiTaxSummary,
   ...hiCostCenterActivity,
   ...hiPos,
+  ...hiBarcode,
   ...hiApprovals,
   ...hiProfessionalProjects,
   ...hiHumanResources,

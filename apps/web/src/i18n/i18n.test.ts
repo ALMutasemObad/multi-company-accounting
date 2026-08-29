@@ -30,7 +30,7 @@ describe("translation dictionaries", () => {
 
   it("translates and interpolates values without hiding missing placeholders", () => {
     expect(createTranslator("ar")("settings.pageOf", { page: 2, totalPages: 5 })).toBe("صفحة 2 من 5");
-    expect(createTranslator("en")("app.booting", { productName: "Jowar" })).toBe("Preparing Jowar");
+    expect(createTranslator("en")("app.booting", { productName: "Ledger" })).toBe("Preparing Ledger");
     expect(createTranslator("ur")("language.label")).toBe("زبان");
     expect(createTranslator("hi")("language.label")).toBe("भाषा");
     expect(createTranslator("en")("app.booting")).toContain("{productName}");

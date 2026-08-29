@@ -10,6 +10,11 @@ import { FormEvent,
 import { api,
   downloadPdf,
   idempotencyKey } from "./api";
+import { firstRequestFailure,
+  requestIfAllowed,
+  requestValue } from "./authorization";
+import { useAuthorization } from "./authorization-context";
+import { endpointPermissionPolicies } from "./endpoint-permissions";
 import { exchangeRateForDocumentDate,
   missingDatedRateMessage } from "./currency-rates";
 import {
@@ -80,6 +85,7 @@ const entry = (number: number, currencyId = "", exchangeRate = "1.00000000"): Jo
 });
 
 export function ManualJournalsPage({ notify }: { notify: Notice }) {
+  const { permissionSet } = useAuthorization();
   const [items, setItems] = useState<ManualJournal[]>([]);
   const [meta, setMeta] = useState({
     page: 1,
@@ -127,35 +133,42 @@ export function ManualJournalsPage({ notify }: { notify: Notice }) {
     void load();
   }, [load]);
   useEffect(() => {
-    void Promise.all([
-      api<ListResponse<Account>>("/accounts?page=1&pageSize=100&active=true"),
-      api<ListResponse<FiscalPeriod>>("/fiscal-periods?page=1&pageSize=100"),
-      api<ListResponse<CostCenter>>(
-        "/cost-centers?page=1&pageSize=100&active=true",
-      ),
-      api<{ data: Currency[] }>("/currencies"),
-      api<ListResponse<Customer>>("/customers?page=1&pageSize=100&active=true"),
-      api<ListResponse<Supplier>>("/suppliers?page=1&pageSize=100&active=true"),
-    ])
-      .then(([accounts, periods, centers, currencies, customers, suppliers]) =>
-        setReferences({
-          accounts: accounts.data.filter((x) => x.isActive && x.allowsPosting),
-          periods: periods.data.filter((x) => x.status !== "CLOSED"),
-          costCenters: centers.data.filter((x) => x.isActive),
-          currencies: currencies.data,
-          customers: customers.data,
-          suppliers: suppliers.data,
-        }),
-      )
-      .catch((cause) =>
-        notify(
-          cause instanceof Error
-            ? cause.message
-            : t("pages.manual-journals.002"),
-          "error",
-        ),
+    void (async () => {
+      const results = await Promise.all([
+        requestIfAllowed(permissionSet, endpointPermissionPolicies.accounts, () =>
+          api<ListResponse<Account>>("/accounts?page=1&pageSize=100&active=true")),
+        requestIfAllowed(permissionSet, endpointPermissionPolicies.fiscalPeriods, () =>
+          api<ListResponse<FiscalPeriod>>("/fiscal-periods?page=1&pageSize=100")),
+        requestIfAllowed(permissionSet, endpointPermissionPolicies.costCenters, () =>
+          api<ListResponse<CostCenter>>("/cost-centers?page=1&pageSize=100&active=true")),
+        requestIfAllowed(permissionSet, endpointPermissionPolicies.currencies, () =>
+          api<{ data: Currency[] }>("/currencies")),
+        requestIfAllowed(permissionSet, endpointPermissionPolicies.customers, () =>
+          api<ListResponse<Customer>>("/customers?page=1&pageSize=100&active=true")),
+        requestIfAllowed(permissionSet, endpointPermissionPolicies.suppliers, () =>
+          api<ListResponse<Supplier>>("/suppliers?page=1&pageSize=100&active=true")),
+      ]);
+      const accounts = requestValue(results[0]);
+      const periods = requestValue(results[1]);
+      const centers = requestValue(results[2]);
+      const currencies = requestValue(results[3]);
+      const customers = requestValue(results[4]);
+      const suppliers = requestValue(results[5]);
+      setReferences({
+        accounts: accounts?.data.filter((item) => item.isActive && item.allowsPosting) ?? [],
+        periods: periods?.data.filter((item) => item.status !== "CLOSED") ?? [],
+        costCenters: centers?.data.filter((item) => item.isActive) ?? [],
+        currencies: currencies?.data ?? [],
+        customers: customers?.data ?? [],
+        suppliers: suppliers?.data ?? [],
+      });
+      const cause = firstRequestFailure(results);
+      if (cause) notify(
+        cause instanceof Error ? cause.message : t("pages.manual-journals.002"),
+        "error",
       );
-  }, [notify]);
+    })();
+  }, [notify, permissionSet]);
   async function details(id: string) {
     try {
       setSelected(await api<ManualJournal>(`/manual-journals/${id}`));

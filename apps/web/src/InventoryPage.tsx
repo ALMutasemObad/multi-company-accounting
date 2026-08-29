@@ -1,7 +1,16 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
-import { api, idempotencyKey } from "./api";
+import { api, downloadFile, idempotencyKey } from "./api";
+import { Can, useAuthorization } from "./authorization-context";
+import {
+  barcodePermissionPolicies,
+  canManageInventoryItemBarcodes,
+  canPrintInventoryBarcode,
+  canViewInventoryBarcodes,
+  inventoryBarcodeLabelFilename,
+  inventoryBarcodeSymbologies,
+} from "./barcode";
 import { activeIntlLocale, localizedReferenceName, translate as t } from "./i18n";
-import type { InventoryBalance, InventoryItem, InventoryMovement, InventoryMovementType, ListResponse, UnitOfMeasure, Warehouse } from "./types";
+import type { InventoryBalance, InventoryBarcodeSymbology, InventoryItem, InventoryItemBarcode, InventoryMovement, InventoryMovementType, ListResponse, UnitOfMeasure, Warehouse } from "./types";
 import { Button, EmptyState, Icon, Modal, PageHeader, Pagination, Spinner } from "./ui";
 
 type Notice = (message: string, tone?: "success" | "error") => void;
@@ -330,6 +339,8 @@ function UnitsPanel({ notify }: { notify: Notice }) {
 }
 
 function ItemsPanel({ notify }: { notify: Notice }) {
+  const { permissionSet } = useAuthorization();
+  const canViewBarcodes = canViewInventoryBarcodes(permissionSet);
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [units, setUnits] = useState<UnitOfMeasure[]>([]);
   const [meta, setMeta] = useState<PageMeta>(emptyMeta);
@@ -341,6 +352,7 @@ function ItemsPanel({ notify }: { notify: Notice }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [form, setForm] = useState<InventoryItem | "new" | null>(null);
+  const [barcodeItem, setBarcodeItem] = useState<InventoryItem | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -363,6 +375,9 @@ function ItemsPanel({ notify }: { notify: Notice }) {
   }, [page, status, submittedSearch, unitFilter]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (!canViewBarcodes) setBarcodeItem(null);
+  }, [canViewBarcodes]);
 
   async function deactivate(item: InventoryItem) {
     const reason = window.prompt(t("inventory.items.deactivatePrompt", { name: localizedReferenceName(item) }));
@@ -384,10 +399,163 @@ function ItemsPanel({ notify }: { notify: Notice }) {
       <Button icon="plus" disabled={!units.length} onClick={() => setForm("new")}>{t("inventory.items.create")}</Button>
     </div>
     {!loading && !units.length && <div className="inline-notice neutral">{t("inventory.items.unitRequired")}</div>}
-    {error ? <ErrorPanel error={error} retry={load} /> : loading ? <Spinner label={t("inventory.items.loading")} /> : !items.length ? <EmptyState title={t("inventory.items.emptyTitle")} description={t("inventory.items.emptyDescription")} action={units.length ? <Button icon="plus" onClick={() => setForm("new")}>{t("inventory.items.create")}</Button> : undefined} /> : <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("inventory.code")}</th><th>{t("inventory.items.name")}</th><th>{t("inventory.items.unit")}</th><th>{t("inventory.items.description")}</th><th>{t("inventory.status")}</th><th>{t("inventory.actions")}</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong dir="ltr">{item.code}</strong></td><td><strong>{localizedReferenceName(item)}</strong>{item.nameEn && <small dir="ltr">{item.nameEn}</small>}</td><td><span className="code-pill" dir="ltr">{item.unitOfMeasure.code}</span><small>{localizedReferenceName(item.unitOfMeasure)}</small></td><td>{item.description || "—"}</td><td><Status active={item.isActive} /></td><td><div className="inline-actions"><Button variant="ghost" icon="edit" onClick={() => setForm(item)}>{t("inventory.edit")}</Button>{item.isActive && <Button variant="ghost" icon="ban" onClick={() => void deactivate(item)}>{t("inventory.deactivate")}</Button>}</div></td></tr>)}</tbody></table></div>}
+    {error ? <ErrorPanel error={error} retry={load} /> : loading ? <Spinner label={t("inventory.items.loading")} /> : !items.length ? <EmptyState title={t("inventory.items.emptyTitle")} description={t("inventory.items.emptyDescription")} action={units.length ? <Button icon="plus" onClick={() => setForm("new")}>{t("inventory.items.create")}</Button> : undefined} /> : <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("inventory.code")}</th><th>{t("inventory.items.name")}</th><th>{t("inventory.items.unit")}</th><th>{t("inventory.items.description")}</th><th>{t("inventory.status")}</th><th>{t("inventory.actions")}</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong dir="ltr">{item.code}</strong></td><td><strong>{localizedReferenceName(item)}</strong>{item.nameEn && <small dir="ltr">{item.nameEn}</small>}</td><td><span className="code-pill" dir="ltr">{item.unitOfMeasure.code}</span><small>{localizedReferenceName(item.unitOfMeasure)}</small></td><td>{item.description || "—"}</td><td><Status active={item.isActive} /></td><td><div className="inline-actions"><Button variant="ghost" icon="edit" onClick={() => setForm(item)}>{t("inventory.edit")}</Button><Can policy={barcodePermissionPolicies.view}><Button variant="ghost" icon="inventory" onClick={() => setBarcodeItem(item)}>{t("inventory.barcodes.manage")}</Button></Can>{item.isActive && <Button variant="ghost" icon="ban" onClick={() => void deactivate(item)}>{t("inventory.deactivate")}</Button>}</div></td></tr>)}</tbody></table></div>}
     <Pagination {...meta} page={page} onChange={setPage} />
     {form && <ItemForm item={form === "new" ? null : form} units={units} onClose={() => setForm(null)} onSaved={async () => { const created = form === "new"; setForm(null); notify(t(created ? "inventory.items.created" : "inventory.items.updated")); await load(); }} />}
+    {barcodeItem && canViewBarcodes && <BarcodeManager item={barcodeItem} notify={notify} onClose={() => setBarcodeItem(null)} />}
   </>;
+}
+
+function BarcodeManager({ item, notify, onClose }: { item: InventoryItem; notify: Notice; onClose: () => void }) {
+  const { permissionSet } = useAuthorization();
+  const canView = canViewInventoryBarcodes(permissionSet);
+  const canManage = canManageInventoryItemBarcodes(permissionSet, item.isActive);
+  const [barcodes, setBarcodes] = useState<InventoryItemBarcode[]>([]);
+  const [meta, setMeta] = useState<PageMeta>({ page: 1, pageSize: 25, total: 0, totalPages: 0 });
+  const [page, setPage] = useState(1);
+  const [status, setStatus] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [commandError, setCommandError] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [busyBarcodeId, setBusyBarcodeId] = useState("");
+  const [downloadingBarcodeId, setDownloadingBarcodeId] = useState("");
+
+  const load = useCallback(async () => {
+    if (!canView) return;
+    setLoading(true);
+    setError("");
+    try {
+      const query = new URLSearchParams({
+        page: String(page),
+        pageSize: "25",
+        ...(status ? { active: status } : {}),
+      });
+      const result = await api<ListResponse<InventoryItemBarcode>>(`/inventory-items/${item.id}/barcodes?${query}`);
+      setBarcodes(result.data);
+      setMeta(result.meta);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t("inventory.barcodes.loadError"));
+    } finally {
+      setLoading(false);
+    }
+  }, [canView, item.id, page, status]);
+
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { if (!canView) onClose(); }, [canView, onClose]);
+
+  async function setPrimary(barcode: InventoryItemBarcode) {
+    if (!canManage || busyBarcodeId) return;
+    setBusyBarcodeId(barcode.id);
+    setCommandError("");
+    try {
+      await api(`/inventory-items/${item.id}/barcodes/${barcode.id}/set-primary`, {
+        method: "POST",
+        body: JSON.stringify({ version: barcode.version }),
+      });
+      notify(t("inventory.barcodes.primarySet"));
+      await load();
+    } catch (cause) {
+      setCommandError(cause instanceof Error ? cause.message : t("inventory.barcodes.actionError"));
+    } finally {
+      setBusyBarcodeId("");
+    }
+  }
+
+  async function deactivate(barcode: InventoryItemBarcode) {
+    if (!canManage || busyBarcodeId) return;
+    const reason = window.prompt(t("inventory.barcodes.deactivatePrompt", { value: barcode.value }));
+    if (reason === null) return;
+    if (reason.trim().length < 3) {
+      setCommandError(t("inventory.barcodes.reasonTooShort"));
+      return;
+    }
+    setBusyBarcodeId(barcode.id);
+    setCommandError("");
+    try {
+      await api(`/inventory-items/${item.id}/barcodes/${barcode.id}/deactivate`, {
+        method: "POST",
+        body: JSON.stringify({ version: barcode.version, reason: reason.trim() }),
+      });
+      notify(t("inventory.barcodes.deactivated"));
+      await load();
+    } catch (cause) {
+      setCommandError(cause instanceof Error ? cause.message : t("inventory.barcodes.actionError"));
+    } finally {
+      setBusyBarcodeId("");
+    }
+  }
+
+  async function downloadLabel(barcode: InventoryItemBarcode) {
+    if (!canPrintInventoryBarcode(permissionSet, item.isActive, barcode.isActive)
+      || busyBarcodeId
+      || downloadingBarcodeId) return;
+    setDownloadingBarcodeId(barcode.id);
+    setCommandError("");
+    try {
+      await downloadFile(
+        `/inventory-items/${encodeURIComponent(item.id)}/barcodes/${encodeURIComponent(barcode.id)}/label.png`,
+        inventoryBarcodeLabelFilename(item.id, barcode.id),
+      );
+      notify(t("inventory.barcodes.labelDownloaded"));
+    } catch (cause) {
+      setCommandError(cause instanceof Error ? cause.message : t("inventory.barcodes.labelDownloadError"));
+    } finally {
+      setDownloadingBarcodeId("");
+    }
+  }
+
+  return <Modal title={t("inventory.barcodes.title", { item: localizedReferenceName(item) })} description={t("inventory.barcodes.description", { code: item.code })} onClose={onClose} wide>
+    <div className="barcode-manager-toolbar">
+      <select aria-label={t("inventory.barcodes.statusFilter")} value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }}>
+        <option value="">{t("inventory.barcodes.all")}</option>
+        <option value="true">{t("inventory.active")}</option>
+        <option value="false">{t("inventory.inactive")}</option>
+      </select>
+      {canManage && <Button icon="plus" onClick={() => setCreating((value) => !value)}>{creating ? t("common.cancel") : t("inventory.barcodes.add")}</Button>}
+    </div>
+    {creating && canManage && <BarcodeCreateForm itemId={item.id} canManage={canManage} onCancel={() => setCreating(false)} onCreated={async () => { notify(t("inventory.barcodes.created")); await load(); setCreating(false); }} />}
+    {commandError && <div className="inline-notice" role="alert">{commandError}</div>}
+    {error ? <ErrorPanel error={error} retry={load} /> : loading ? <Spinner label={t("inventory.barcodes.loading")} /> : !barcodes.length ? <EmptyState title={t("inventory.barcodes.emptyTitle")} description={t("inventory.barcodes.emptyDescription")} /> : <div className="data-table-wrap flat barcode-table" role="region" tabIndex={0} aria-label={t("inventory.barcodes.tableLabel")}><table className="data-table"><thead><tr><th>{t("inventory.barcodes.value")}</th><th>{t("inventory.barcodes.symbology")}</th><th>{t("inventory.barcodes.primary")}</th><th>{t("inventory.status")}</th><th>{t("inventory.actions")}</th></tr></thead><tbody>{barcodes.map((barcode) => <tr key={barcode.id}><td><strong dir="ltr">{barcode.value}</strong></td><td><span className="code-pill" dir="ltr">{t(`inventory.barcodes.symbologies.${barcode.symbology}`)}</span></td><td><span className={`status-chip ${barcode.isPrimary ? "active" : "inactive"}`}>{t(barcode.isPrimary ? "inventory.barcodes.primaryYes" : "inventory.barcodes.primaryNo")}</span></td><td><Status active={barcode.isActive} /></td><td><div className="inline-actions">{canPrintInventoryBarcode(permissionSet, item.isActive, barcode.isActive) && <Button variant="ghost" icon="print" disabled={Boolean(busyBarcodeId || downloadingBarcodeId)} onClick={() => void downloadLabel(barcode)}>{downloadingBarcodeId === barcode.id ? t("inventory.barcodes.labelDownloading") : t("inventory.barcodes.downloadLabel")}</Button>}{canManage && barcode.isActive && !barcode.isPrimary && <Button variant="ghost" icon="check" disabled={Boolean(busyBarcodeId || downloadingBarcodeId)} onClick={() => void setPrimary(barcode)}>{t("inventory.barcodes.setPrimary")}</Button>}{canManage && barcode.isActive && <Button variant="ghost" icon="ban" disabled={Boolean(busyBarcodeId || downloadingBarcodeId)} onClick={() => void deactivate(barcode)}>{t("inventory.barcodes.deactivate")}</Button>}</div></td></tr>)}</tbody></table></div>}
+    <Pagination {...meta} page={page} onChange={setPage} />
+  </Modal>;
+}
+
+function BarcodeCreateForm({ itemId, canManage, onCancel, onCreated }: { itemId: string; canManage: boolean; onCancel: () => void; onCreated: () => Promise<void> }) {
+  const [symbology, setSymbology] = useState<InventoryBarcodeSymbology>("CODE_128");
+  const [value, setValue] = useState("");
+  const [isPrimary, setIsPrimary] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canManage) return;
+    setSaving(true);
+    setError("");
+    try {
+      await api<InventoryItemBarcode>(`/inventory-items/${itemId}/barcodes`, {
+        method: "POST",
+        body: JSON.stringify({ symbology, value: value.trim(), isPrimary }),
+      });
+      await onCreated();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t("inventory.barcodes.saveError"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return <form className="barcode-create-form" onSubmit={submit}>
+    <div className="barcode-create-copy"><strong>{t("inventory.barcodes.createTitle")}</strong><span>{t("inventory.barcodes.createDescription")}</span></div>
+    {error && <div className="form-error" role="alert">{error}</div>}
+    <div className="form-grid">
+      <label><span>{t("inventory.barcodes.symbology")}</span><select value={symbology} onChange={(event) => setSymbology(event.target.value as InventoryBarcodeSymbology)}>{inventoryBarcodeSymbologies.map((option) => <option key={option} value={option}>{t(`inventory.barcodes.symbologies.${option}`)}</option>)}</select></label>
+      <label><span>{t("inventory.barcodes.value")}</span><input dir="ltr" inputMode="text" autoComplete="off" maxLength={255} value={value} onChange={(event) => setValue(event.target.value)} required /></label>
+      <label className="checkbox-line"><input type="checkbox" checked={isPrimary} onChange={(event) => setIsPrimary(event.target.checked)} />{t("inventory.barcodes.makePrimary")}</label>
+    </div>
+    <div className="form-actions"><Button type="button" variant="ghost" onClick={onCancel}>{t("common.cancel")}</Button><Button type="submit" disabled={saving || !value.trim()}>{saving ? t("common.saving") : t("inventory.barcodes.add")}</Button></div>
+  </form>;
 }
 
 function CatalogToolbar({ search, status, searchLabel, createLabel, onSearch, onSubmit, onStatus, onCreate }: { search: string; status: string; searchLabel: string; createLabel: string; onSearch: (value: string) => void; onSubmit: () => void; onStatus: (value: string) => void; onCreate: () => void }) {

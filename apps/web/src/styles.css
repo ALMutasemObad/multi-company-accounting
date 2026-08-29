@@ -1184,10 +1184,30 @@ h1, h2, h3, .brand strong { font-family: "Cairo", "Noto Sans Devanagari", Tahoma
 :root[dir="ltr"] .sidebar nav button, :root[dir="ltr"] .company-grid button { text-align: start; }
 :root[dir="ltr"] .sidebar nav button.active { box-shadow: inset 3px 0 var(--gold); }
 
+.barcode-manager-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.barcode-manager-toolbar select { min-width: 210px; }
+.barcode-create-form { display: grid; gap: 14px; margin-bottom: 18px; padding: 18px; border: 1px solid #b8cdc4; border-radius: 14px; background: #f4f8f6; }
+.barcode-create-copy { display: grid; gap: 3px; }
+.barcode-create-copy strong { color: var(--green-800); }
+.barcode-create-copy span { color: var(--muted); font-size: .78rem; }
+.barcode-create-form .form-error { margin: 0; }
+.barcode-create-form .form-actions { padding-top: 0; }
+.barcode-table td:first-child strong { overflow-wrap: anywhere; }
+
 .pos-layout { display: grid; gap: 20px; }
 .pos-checkout-form, .pos-history { overflow: hidden; }
 .pos-checkout-form > header, .pos-history > header { padding: 20px 24px; border-bottom: 1px solid var(--line); }
 .pos-checkout-form > header p, .pos-history > header p { margin: 4px 0 0; color: var(--muted); font-size: .8rem; }
+.pos-barcode-scanner { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(280px, 1.5fr) auto; align-items: end; gap: 14px; margin: 18px 24px 0; padding: 16px 18px; border: 1px solid #9fbeaf; border-radius: 15px; background: #f0f7f3; }
+.pos-barcode-copy { display: grid; gap: 3px; align-self: center; }
+.pos-barcode-copy strong { color: var(--green-800); }
+.pos-barcode-copy span { color: var(--muted); font-size: .72rem; line-height: 1.55; }
+.pos-barcode-scanner label { min-width: 0; }
+.pos-barcode-scanner input { width: 100%; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; letter-spacing: .04em; }
+.pos-barcode-feedback { grid-column: 1 / -1; padding: 8px 11px; border-radius: 9px; font-size: .76rem; }
+.pos-barcode-feedback.success { background: #dff4e8; color: #17633b; }
+.pos-barcode-feedback.error { background: #fde5e1; color: #8b2f24; }
+.pos-barcode-feedback.neutral { background: #fff3d8; color: #805b00; }
 .pos-reference-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; padding: 22px 24px; }
 .pos-reference-grid .pos-description { grid-column: span 2; }
 .pos-lines { display: grid; min-inline-size: 0; gap: 14px; margin: 0 24px; padding: 18px; border: 1px solid var(--line); border-radius: 16px; }
@@ -1206,12 +1226,17 @@ h1, h2, h3, .brand strong { font-family: "Cairo", "Noto Sans Devanagari", Tahoma
 .pos-statuses small { color: var(--muted); font-size: .65rem; }
 
 @media (max-width: 1500px) {
+  .pos-barcode-scanner { grid-template-columns: minmax(220px, .8fr) minmax(260px, 1.2fr) auto; }
   .pos-reference-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .pos-line { grid-template-columns: auto repeat(3, minmax(120px, 1fr)); }
   .pos-line .pos-item, .pos-line .pos-revenue, .pos-line .pos-tax { grid-column: span 2; }
 }
 
 @media (max-width: 680px) {
+  .barcode-manager-toolbar { align-items: stretch; flex-direction: column; }
+  .barcode-manager-toolbar select { width: 100%; min-width: 0; }
+  .pos-barcode-scanner { grid-template-columns: 1fr; margin-inline: 14px; padding: 14px; }
+  .pos-barcode-feedback { grid-column: auto; }
   .pos-reference-grid, .pos-line, .pos-checkout-footer { grid-template-columns: 1fr; }
   .pos-reference-grid .pos-description, .pos-line .pos-item, .pos-line .pos-revenue, .pos-line .pos-tax { grid-column: auto; }
   .pos-lines { margin-inline: 14px; padding: 12px; }

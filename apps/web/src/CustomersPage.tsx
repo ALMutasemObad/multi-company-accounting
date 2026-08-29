@@ -8,8 +8,11 @@ import { FormEvent,
 import { api,
   ApiError } from "./api";
 import { actionPermissionPolicies } from "./action-permissions";
-import { allows } from "./authorization";
+import { allows,
+  requestIfAllowed,
+  requestValue } from "./authorization";
 import { Can, useAuthorization } from "./authorization-context";
+import { endpointPermissionPolicies } from "./endpoint-permissions";
 import type { Account,
   Address,
   ListResponse,
@@ -72,14 +75,18 @@ export function CustomersPage({ notify }: { notify: Notice }) {
   }, [load]);
 
   useEffect(() => {
-    void api<ListResponse<Account>>("/accounts?page=1&pageSize=100&active=true")
-      .then((result) =>
+    void requestIfAllowed(
+      permissionSet,
+      endpointPermissionPolicies.accounts,
+      () => api<ListResponse<Account>>("/accounts?page=1&pageSize=100&active=true"),
+    )
+      .then((outcome) => {
+        const result = requestValue(outcome);
         setAccounts(
-          result.data.filter((account) => account.allowsPosting && account.isActive),
-        ),
-      )
-      .catch(() => setAccounts([]));
-  }, []);
+          result?.data.filter((account) => account.allowsPosting && account.isActive) ?? [],
+        );
+      });
+  }, [permissionSet]);
 
   async function openDetails(id: string) {
     try {
