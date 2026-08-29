@@ -32,7 +32,11 @@ type EntryBuilder = (
 
 describe("realized FX settlement journals", () => {
   it("records a receipt loss when the collected base value is below the receivable carrying value", () => {
-    const service = new ReceiptService({} as PrismaClient) as unknown as { postingEntry: EntryBuilder };
+    const service = new ReceiptService({} as PrismaClient, {
+      treasury: {} as never,
+      fxAccounts: {} as never,
+      receivables: {} as never,
+    }) as unknown as { postingEntry: EntryBuilder };
     const entry = service.postingEntry(
       { ...document, customerId: 7n },
       { cashBankLedgerAccountId: 10n, counterLedgerAccountId: 11n },
@@ -51,7 +55,11 @@ describe("realized FX settlement journals", () => {
   });
 
   it("records a payment gain when the payable carrying value exceeds cash paid", () => {
-    const service = new PaymentService({} as PrismaClient) as unknown as { postingEntry: EntryBuilder };
+    const service = new PaymentService({} as PrismaClient, {
+      treasury: {} as never,
+      fxAccounts: {} as never,
+      payables: {} as never,
+    }) as unknown as { postingEntry: EntryBuilder };
     const entry = service.postingEntry(
       { ...document, supplierId: 8n },
       { cashBankLedgerAccountId: 10n, counterLedgerAccountId: 12n },

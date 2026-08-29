@@ -393,6 +393,31 @@ describe("AR/AP settlement boundary guardrails", () => {
     expect(purchases).not.toMatch(/\.(?:paymentAllocation|journalLine)\.(?:create|update|delete|find)/u);
   });
 
+  it("keeps financial document implementations in the composition boundary", async () => {
+    const [sales, purchases, receipts, payments, receivables, payables, composition] = await Promise.all([
+      source("sales/sales-invoice-service.ts"),
+      source("purchases/purchase-invoice-service.ts"),
+      source("receipts/receipt-service.ts"),
+      source("payments/payment-service.ts"),
+      source("receivables/receivable-item-service.ts"),
+      source("payables/payable-item-service.ts"),
+      source("composition/create-financial-document-services.ts"),
+    ]);
+    const financialServices = [sales, purchases, receipts, payments].join("\n");
+    const concreteDependencies = /\b(?:TaxService|InventoryCatalogService|InventoryMovementService|ReceivableItemService|PayableItemService|TreasuryService|RealizedFxAccountService)\b/u;
+
+    expect(receivables).toContain("interface ReceivableInvoicePort");
+    expect(payables).toContain("interface PayableInvoicePort");
+    expect(financialServices).not.toMatch(concreteDependencies);
+    expect(financialServices).not.toMatch(/\?\?\s+new\s/u);
+    expect(sales).toContain("receivables: ReceivableInvoicePort");
+    expect(purchases).toContain("payables: PayableInvoicePort");
+    expect(receipts).toContain("receivables: ReceivableSettlementPort");
+    expect(payments).toContain("payables: PayableSettlementPort");
+    expect(composition).toMatch(concreteDependencies);
+    expect(composition).toContain("createFinancialDocumentServices");
+  });
+
   it("runs domain settlement locks before Ledger line locks during reversal", async () => {
     const engine = await source("core-accounting/posting-engine.ts");
     const hook = engine.indexOf("await command.beforeLedger(tx, original, originalEntries)");

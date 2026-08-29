@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createSalesInvoiceService } from "../src/composition/create-financial-document-services.js";
 import { createDatabase } from "../src/database.js";
 import {
   ProfessionalProjectError,
@@ -12,9 +13,9 @@ import { ApprovalService } from "../src/approvals/approval-service.js";
 import { ProfessionalTimesheetApprovalAdapter } from "../src/projects/professional-timesheet-approval-adapter.js";
 import { ProfessionalBillingService } from "../src/projects/professional-billing-service.js";
 import { ProfessionalBillingCurrencyAdapter } from "../src/companies/professional-billing-currency-adapter.js";
-import { SalesInvoiceService } from "../src/sales/sales-invoice-service.js";
 import { ProfessionalProjectAccessService } from "../src/projects/professional-project-access-service.js";
 import { ProfessionalProjectPlanningService } from "../src/projects/professional-project-planning-service.js";
+import { TaxService } from "../src/tax/tax-service.js";
 
 const enabled = process.env.RUN_DB_TESTS === "true" && Boolean(process.env.DATABASE_URL);
 const prisma = enabled ? createDatabase(process.env.DATABASE_URL!) : null;
@@ -225,7 +226,7 @@ describe.runIf(enabled)("professional projects and time with MariaDB", () => {
     billing = new ProfessionalBillingService(
       prisma!,
       new ProfessionalBillingCurrencyAdapter(prisma!),
-      new SalesInvoiceService(prisma!),
+      createSalesInvoiceService(prisma!, { taxes: new TaxService(prisma!) }),
     );
     access = new ProfessionalProjectAccessService(prisma!, new ProfessionalPeopleAdapter(prisma!));
     planning = new ProfessionalProjectPlanningService(prisma!);

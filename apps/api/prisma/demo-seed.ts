@@ -1,8 +1,11 @@
 import 'dotenv/config';
 import { hash } from 'argon2';
+import {
+  createPurchaseInvoiceService,
+  createSalesInvoiceService,
+} from '../src/composition/create-financial-document-services.js';
 import { createDatabase } from '../src/database.js';
-import { SalesInvoiceService } from '../src/sales/sales-invoice-service.js';
-import { PurchaseInvoiceService } from '../src/purchases/purchase-invoice-service.js';
+import { TaxService } from '../src/tax/tax-service.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 const seedPassword = process.env.SEED_ADMIN_PASSWORD;
@@ -245,7 +248,8 @@ try {
     create: { companyId: company.id, code: 'ZERO', nameAr: 'نسبة صفرية', rate: '0' },
   });
 
-  const salesService = new SalesInvoiceService(prisma);
+  const invoiceTaxes = new TaxService(prisma);
+  const salesService = createSalesInvoiceService(prisma, { taxes: invoiceTaxes });
   const salesContext = { userId: admin.id, companyId: company.id };
   const ensureSalesDocument = async (input: {
     documentType: 'SALES_INVOICE' | 'SALES_CREDIT_NOTE';
@@ -300,7 +304,7 @@ try {
   await ensureSalesDocument({ documentType: 'SALES_INVOICE', documentDate: '2026-08-12', dueDate: '2026-09-12', description: 'عرض خدمات تحت المراجعة - مسودة تجريبية', customerIndex: 0, quantity: '5', unitPrice: '750', discountAmount: '250', post: false });
   await ensureSalesDocument({ documentType: 'SALES_CREDIT_NOTE', documentDate: '2026-08-05', dueDate: '2026-08-05', description: 'تخفيض خدمة من الفاتورة السنوية - إشعار دائن تجريبي', customerIndex: 0, sourceInvoiceId: salesInvoice1.id, quantity: '1', unitPrice: '2000' });
 
-  const purchaseService = new PurchaseInvoiceService(prisma);
+  const purchaseService = createPurchaseInvoiceService(prisma, { taxes: invoiceTaxes });
   const purchaseContext = { userId: admin.id, companyId: company.id };
   const ensurePurchaseDocument = async (input: {
     documentType: 'PURCHASE_INVOICE' | 'PURCHASE_DEBIT_NOTE'; documentDate: string; dueDate: string;

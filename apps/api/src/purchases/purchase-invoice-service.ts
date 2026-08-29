@@ -9,21 +9,19 @@ import {
 } from "../core-accounting/posting-engine.js";
 import { FiscalService } from "../fiscal/fiscal-service.js";
 import {
-  InventoryCatalogService,
   InventoryInvoiceSelectionError,
   inventoryQuantityFitsUnit,
   type InventoryInvoiceCatalogPort,
 } from "../inventory/inventory-catalog-service.js";
 import {
   InventoryMovementError,
-  InventoryMovementService,
   type InventoryInvoiceStockPort,
 } from "../inventory/inventory-movement-service.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
-import { PayableItemService } from "../payables/payable-item-service.js";
+import type { PayableInvoicePort } from "../payables/payable-item-service.js";
 import { archiveDocument } from "../printing/print-archive.js";
 import { calculateTaxDocument, TaxCalculationError } from "../tax/tax-calculator.js";
-import { TaxError, TaxService, type TaxQuotePort } from "../tax/tax-service.js";
+import { TaxError, type TaxQuotePort } from "../tax/tax-service.js";
 import type { ActorContext } from "../platform/actor-context.js";
 import {
   PurchaseInvoiceError,
@@ -57,6 +55,13 @@ type PurchaseInvoiceStockSnapshot = {
     quantity: Prisma.Decimal;
     netAmount: Prisma.Decimal;
   }>;
+};
+
+export type PurchaseInvoiceDependencies = {
+  taxes: TaxQuotePort;
+  inventory: InventoryInvoiceCatalogPort;
+  stock: InventoryInvoiceStockPort;
+  payables: PayableInvoicePort;
 };
 
 const asDate = (value: string) => new Date(`${value}T00:00:00.000Z`);
@@ -133,7 +138,7 @@ type AgingBucket = "current" | "days1To30" | "days31To60" | "days61To90" | "days
 export class PurchaseInvoiceService implements PurchaseInvoiceImportPort {
   private readonly fiscal: FiscalService;
   private readonly posting = new PostingEngine();
-  private readonly payables = new PayableItemService();
+  private readonly payables: PayableInvoicePort;
   private readonly taxes: TaxQuotePort;
   private readonly inventory: InventoryInvoiceCatalogPort;
   private readonly stock: InventoryInvoiceStockPort;
@@ -141,14 +146,13 @@ export class PurchaseInvoiceService implements PurchaseInvoiceImportPort {
 
   constructor(
     private readonly prisma: PrismaClient,
-    taxes?: TaxQuotePort,
-    inventory?: InventoryInvoiceCatalogPort,
-    stock?: InventoryInvoiceStockPort,
+    dependencies: PurchaseInvoiceDependencies,
   ) {
     this.fiscal = new FiscalService(prisma);
-    this.taxes = taxes ?? new TaxService(prisma);
-    this.inventory = inventory ?? new InventoryCatalogService(prisma);
-    this.stock = stock ?? new InventoryMovementService(prisma);
+    this.taxes = dependencies.taxes;
+    this.inventory = dependencies.inventory;
+    this.stock = dependencies.stock;
+    this.payables = dependencies.payables;
     this.commands = new IdempotentCommandExecutor(prisma);
   }
 

@@ -1,11 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  createPurchaseInvoiceService,
+  createSalesInvoiceService,
+} from "../src/composition/create-financial-document-services.js";
 import { createDatabase } from "../src/database.js";
 import { DataImportError, DataImportService } from "../src/imports/data-import-service.js";
 import { importHeaders } from "../src/imports/data-import-parser.js";
 import { PrismaOutboxAppender } from "../src/outbox/outbox.js";
-import { PurchaseInvoiceService } from "../src/purchases/purchase-invoice-service.js";
 import { CustomerService } from "../src/sales/customer-service.js";
-import { SalesInvoiceService } from "../src/sales/sales-invoice-service.js";
 import { SupplierService } from "../src/suppliers/supplier-service.js";
 import { TaxService } from "../src/tax/tax-service.js";
 
@@ -69,7 +71,14 @@ describe.runIf(enabled)("atomic data imports with MariaDB/MySQL", () => {
     const year = await prisma!.fiscalYear.create({ data: { companyId, name: "IT-IMPORT-2047", startDate: new Date("2047-01-01T00:00:00Z"), endDate: new Date("2047-12-31T00:00:00Z"), periods: { create: { periodNumber: 1, name: "فترة الاستيراد", startDate: new Date("2047-01-01T00:00:00Z"), endDate: new Date("2047-12-31T00:00:00Z") } } } });
     yearId = year.id;
     const taxes = new TaxService(prisma!);
-    service = new DataImportService(prisma!, new CustomerService(prisma!), new SupplierService(prisma!), new SalesInvoiceService(prisma!, taxes), new PurchaseInvoiceService(prisma!, taxes), new PrismaOutboxAppender(8));
+    service = new DataImportService(
+      prisma!,
+      new CustomerService(prisma!),
+      new SupplierService(prisma!),
+      createSalesInvoiceService(prisma!, { taxes }),
+      createPurchaseInvoiceService(prisma!, { taxes }),
+      new PrismaOutboxAppender(8),
+    );
   });
 
   afterAll(async () => {

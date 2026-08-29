@@ -4,10 +4,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { AuthService } from "../src/auth/auth-service.js";
 import { PrismaAuthStore } from "../src/auth/prisma-auth-store.js";
+import {
+  createPaymentService,
+  createPurchaseInvoiceService,
+} from "../src/composition/create-financial-document-services.js";
 import { createDatabase } from "../src/database.js";
 import { InventoryMovementService } from "../src/inventory/inventory-movement-service.js";
-import { PaymentService } from "../src/payments/payment-service.js";
-import { PurchaseInvoiceService } from "../src/purchases/purchase-invoice-service.js";
 import { TaxService } from "../src/tax/tax-service.js";
 import { PrintService } from "../src/printing/print-service.js";
 import { TreasuryService } from "../src/treasury/treasury-service.js";
@@ -104,7 +106,7 @@ describe.runIf(enabled)("purchase invoices and payables with MariaDB", () => {
     const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, { preAuthTtlMinutes: 10, sessionTtlHours: 12 });
     const taxes = new TaxService(prisma!);
     const treasury = new TreasuryService(prisma!);
-    app = createApp({ NODE_ENV: "test", PORT: 3000, WEB_ORIGIN: "http://localhost:5173", SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: databaseUrl }, { auth, taxes, purchaseInvoices: new PurchaseInvoiceService(prisma!, taxes), payments: new PaymentService(prisma!, treasury), printing: new PrintService(prisma!) });
+    app = createApp({ NODE_ENV: "test", PORT: 3000, WEB_ORIGIN: "http://localhost:5173", SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: databaseUrl }, { auth, taxes, purchaseInvoices: createPurchaseInvoiceService(prisma!, { taxes }), payments: createPaymentService(prisma!, { treasury }), printing: new PrintService(prisma!) });
   });
 
   afterAll(async () => {
@@ -289,7 +291,7 @@ describe.runIf(enabled)("purchase invoices and payables with MariaDB", () => {
   }, 35_000);
 
   it("prevents reversing a supplier invoice that has a posted debit note", async () => {
-    const service = new PurchaseInvoiceService(prisma!);
+    const service = createPurchaseInvoiceService(prisma!, { taxes: new TaxService(prisma!) });
     const context = { userId, companyId };
     const source = await service.create(context, { documentType: "PURCHASE_INVOICE", fiscalPeriodId: periodId, documentDate: "2045-03-01", dueDate: "2045-03-31", description: "فاتورة مرجعية لاختبار الإشعار", supplierId, currencyId, exchangeRate: "1.00000000", lines: [{ description: "خدمة أصلية", quantity: "1.0000", unitPrice: "500.0000", discountAmount: "0.0000", debitAccountId: expenseId, taxRateId: null }] });
     await service.post(context, source.id, 0, "it-post-source-with-debit-note");

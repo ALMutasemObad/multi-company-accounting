@@ -4,11 +4,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { AuthService } from "../src/auth/auth-service.js";
 import { PrismaAuthStore } from "../src/auth/prisma-auth-store.js";
+import {
+  createReceiptService,
+  createSalesInvoiceService,
+} from "../src/composition/create-financial-document-services.js";
 import { createDatabase } from "../src/database.js";
 import { InventoryMovementService } from "../src/inventory/inventory-movement-service.js";
 import { PrintService } from "../src/printing/print-service.js";
-import { ReceiptService } from "../src/receipts/receipt-service.js";
-import { SalesInvoiceService } from "../src/sales/sales-invoice-service.js";
 import { TaxService } from "../src/tax/tax-service.js";
 import { TreasuryService } from "../src/treasury/treasury-service.js";
 
@@ -120,7 +122,7 @@ describe.runIf(enabled)("sales invoices and receivables with MariaDB", () => {
     const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, { preAuthTtlMinutes: 10, sessionTtlHours: 12 });
     const taxes = new TaxService(prisma!);
     const treasury = new TreasuryService(prisma!);
-    app = createApp({ NODE_ENV: "test", PORT: 3000, WEB_ORIGIN: "http://localhost:5173", SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: databaseUrl }, { auth, taxes, salesInvoices: new SalesInvoiceService(prisma!, taxes), receipts: new ReceiptService(prisma!, treasury), printing: new PrintService(prisma!) });
+    app = createApp({ NODE_ENV: "test", PORT: 3000, WEB_ORIGIN: "http://localhost:5173", SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: databaseUrl }, { auth, taxes, salesInvoices: createSalesInvoiceService(prisma!, { taxes }), receipts: createReceiptService(prisma!, { treasury }), printing: new PrintService(prisma!) });
   });
 
   afterAll(async () => {

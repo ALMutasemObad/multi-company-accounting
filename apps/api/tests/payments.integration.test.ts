@@ -4,11 +4,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { AuthService } from "../src/auth/auth-service.js";
 import { PrismaAuthStore } from "../src/auth/prisma-auth-store.js";
+import { createPaymentService } from "../src/composition/create-financial-document-services.js";
 import { createDatabase } from "../src/database.js";
 import { SupplierService } from "../src/suppliers/supplier-service.js";
-import {
+import type {
   PaymentService,
-  type PaymentInput,
+  PaymentInput,
 } from "../src/payments/payment-service.js";
 import { ReportService } from "../src/reports/report-service.js";
 import { TreasuryService } from "../src/treasury/treasury-service.js";
@@ -229,7 +230,7 @@ describe.runIf(enabled)(
       yearId = year.id;
       periodId = year.periods[0]!.id;
       const treasury = new TreasuryService(prisma!);
-      paymentService = new PaymentService(prisma!, treasury);
+      paymentService = createPaymentService(prisma!, { treasury });
       const references = new SupplierService(prisma!);
       const auth = new AuthService(
         new PrismaAuthStore(prisma!),

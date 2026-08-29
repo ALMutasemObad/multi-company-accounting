@@ -10,15 +10,12 @@ import { FiscalService } from './fiscal/fiscal-service.js';
 import { AccountService } from './accounts/account-service.js';
 import { ManualJournalService } from './journals/manual-journal-service.js';
 import { CustomerService } from './sales/customer-service.js';
-import { ReceiptService } from './receipts/receipt-service.js';
 import { SupplierService } from './suppliers/supplier-service.js';
-import { PaymentService } from './payments/payment-service.js';
 import { ReportService } from './reports/report-service.js';
 import { createCompanyService } from './composition/create-company-service.js';
 import { PrintService } from './printing/print-service.js';
-import { SalesInvoiceService } from './sales/sales-invoice-service.js';
-import { PurchaseInvoiceService } from './purchases/purchase-invoice-service.js';
 import { createAuditService } from './composition/create-audit-service.js';
+import { createFinancialDocumentServices } from './composition/create-financial-document-services.js';
 import { createSecurityEventService } from './composition/create-security-event-service.js';
 import { DatabaseReadinessService } from './operations/readiness-service.js';
 import { closeGracefully } from './operations/graceful-shutdown.js';
@@ -164,9 +161,17 @@ const customers = new CustomerService(database, accountQueries);
 const suppliers = new SupplierService(database, accountQueries);
 const inventoryCatalog = new InventoryCatalogService(database);
 const inventoryMovements = new InventoryMovementService(database);
-const salesInvoices = new SalesInvoiceService(database, taxes, inventoryCatalog, inventoryMovements);
-const purchaseInvoices = new PurchaseInvoiceService(database, taxes, inventoryCatalog, inventoryMovements);
-const receipts = new ReceiptService(database, treasury);
+const {
+  salesInvoices,
+  purchaseInvoices,
+  receipts,
+  payments,
+} = createFinancialDocumentServices(database, {
+  taxes,
+  inventory: inventoryCatalog,
+  stock: inventoryMovements,
+  treasury,
+});
 const pos = new PosService(database, salesInvoices, receipts, new PrismaPosSaleQueryAdapter(database));
 const dataImports = new DataImportService(database, customers, suppliers, salesInvoices, purchaseInvoices, outboxAppender);
 const fiscal = new FiscalService(database);
@@ -254,7 +259,7 @@ const app = createApp(config, {
   inventoryMovements,
   receipts,
   suppliers,
-  payments: new PaymentService(database, treasury),
+  payments,
   reports: new ReportService(database),
   cashFlow: new CashFlowService(database, new PrismaCashFlowLedgerQueryAdapter(), new TreasuryCashFlowAccountAdapter()),
   taxSummary: new TaxSummaryService(database, new PrismaTaxSummaryQueryAdapter()),

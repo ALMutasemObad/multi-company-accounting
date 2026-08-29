@@ -19,7 +19,12 @@ describe('bounded invoice listing queries', () => {
     const service = new SalesInvoiceService({
       salesInvoice: { findMany, count },
       $transaction: transactionMock(),
-    } as never);
+    } as never, {
+      taxes: {} as never,
+      inventory: {} as never,
+      stock: {} as never,
+      receivables: {} as never,
+    });
 
     const result = await service.list(actor, { page: 3, pageSize: 20, outstandingOnly: true });
     const pageQuery = findMany.mock.calls[0]![0] as {
@@ -45,7 +50,12 @@ describe('bounded invoice listing queries', () => {
     const service = new PurchaseInvoiceService({
       purchaseInvoice: { findMany, count },
       $transaction: transactionMock(),
-    } as never);
+    } as never, {
+      taxes: {} as never,
+      inventory: {} as never,
+      stock: {} as never,
+      payables: {} as never,
+    });
 
     const result = await service.list(actor, { page: 2, pageSize: 10, outstandingOnly: true });
     const pageQuery = findMany.mock.calls[0]![0] as {
