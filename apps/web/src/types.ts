@@ -31,6 +31,96 @@ export type PlatformOverview = {
   modules: Array<{ code: "SALES" | "PURCHASES" | "TREASURY" | "POS" | "INVENTORY" | "PROJECTS" | "HR" | "APPROVALS" | "IMPORTS"; total: number; recent: number }>;
   topCompanies: Array<{ id: string; name: string; operations: number; lastActivityAt: string }>;
 };
+export type PlatformCompanyReference = { id: string; name: string; isActive: boolean; baseCurrencyCode: string };
+export type PlatformAnalyticsComparison = "PREVIOUS_PERIOD" | "PREVIOUS_YEAR" | "NONE";
+export type PlatformComparedNumber = { current: number; previous: number | null; changePercent: number | null };
+export type PlatformComparedMoney = { current: string; previous: string | null; changePercent: number | null };
+export type PlatformAnalyticsDashboard = {
+  generatedAt: string;
+  scope: { company: PlatformCompanyReference | null };
+  period: {
+    from: string; to: string; days: number; comparison: PlatformAnalyticsComparison;
+    comparisonFrom: string | null; comparisonTo: string | null;
+  };
+  companyOptions: PlatformCompanyReference[];
+  metrics: {
+    operations: PlatformComparedNumber; postedDocuments: PlatformComparedNumber;
+    activeCompanies: PlatformComparedNumber; newCompanies: PlatformComparedNumber;
+    securityAlerts: PlatformComparedNumber;
+  };
+  activityTimeline: Array<{
+    key: string; from: string; to: string; operations: number; previousOperations: number | null;
+    postedDocuments: number; previousPostedDocuments: number | null; securityAlerts: number; newCompanies: number;
+  }>;
+  financials: Array<{
+    currencyCode: string; recurringMonthly: string; billed: PlatformComparedMoney; collected: PlatformComparedMoney;
+    collectionRate: PlatformComparedNumber; outstanding: string; overdue: string; invoiceCount: PlatformComparedNumber;
+    timeline: Array<{
+      key: string; from: string; to: string; billed: string; previousBilled: string | null;
+      collected: string; previousCollected: string | null;
+    }>;
+    aging: { notDue: string; days1To30: string; days31To60: string; days61Plus: string };
+  }>;
+  modules: Array<{
+    code: PlatformOverview["modules"][number]["code"];
+    current: number; previous: number | null; changePercent: number | null;
+  }>;
+  companies: Array<{
+    id: string; name: string; currencyCode: string; operations: number; postedDocuments: number;
+    billed: string; collected: string; outstanding: string; overdue: string; lastActivityAt: string | null;
+  }>;
+  alerts: {
+    overdueInvoices: number; dueSoonInvoices: number; unacknowledgedSecurity: number;
+    pendingOutbox: number; failedOutbox: number; staleCompanies: number;
+  };
+};
+export type PlatformCompanySummary = {
+  id: string; code: string; name: string; organizationName: string; baseCurrencyCode: string;
+  timezone: string; isActive: boolean; createdAt: string; activeUsers: number; activeEmployees: number;
+  operations: number; postedDocuments: number; lastActivityAt: string | null;
+};
+export type PlatformCompanyList = { data: PlatformCompanySummary[]; total: number; page: number; pageSize: number };
+export type PlatformCompanyDetails = PlatformCompanySummary & {
+  metrics: {
+    totalUsers: number; activeUsers: number; totalEmployees: number; activeEmployees: number;
+    linkedEmployees: number; activeSessions: number; totalDocuments: number; financialDocuments: number;
+    postedDocuments: number; operations: number; securityAlerts: number;
+  };
+  trends: Array<{ month: string; operations: number; postedDocuments: number }>;
+  modules: PlatformOverview["modules"];
+  documentsByType: Array<{ type: string; total: number; posted: number }>;
+};
+export type PlatformBillingAccount = {
+  id: string; companyId: string; status: "TRIAL" | "ACTIVE" | "PAUSED" | "CLOSED";
+  planName: string; billingCycle: "MONTHLY" | "QUARTERLY" | "ANNUAL"; currencyCode: string;
+  recurringFee: string; includedUsers: number; pricePerAdditionalUser: string;
+  includedEmployees: number; pricePerAdditionalEmployee: string;
+  includedPostedDocuments: number; pricePerAdditionalPostedDocument: string;
+  taxRate: string; paymentTermsDays: number; nextBillingDate: string | null; notes: string | null;
+  version: number; createdAt: string; updatedAt: string;
+};
+export type PlatformBillingInvoice = {
+  id: string; companyId: string; billingAccountId: string; invoiceNumber: string;
+  state: "ISSUED" | "VOID"; status: "ISSUED" | "PARTIALLY_PAID" | "PAID" | "OVERDUE" | "VOID";
+  periodStart: string; periodEnd: string; issueDate: string; dueDate: string; currencyCode: string;
+  usage: { users: number; employees: number; postedDocuments: number; operations: number };
+  subtotal: string; taxRate: string; taxAmount: string; totalAmount: string; paidAmount: string; balance: string;
+  notes: string | null; version: number; voidedAt: string | null; voidReason: string | null; createdAt: string;
+  lines: Array<{ id: string; lineNumber: number; lineType: "RECURRING_FEE" | "ADDITIONAL_USERS" | "ADDITIONAL_EMPLOYEES" | "ADDITIONAL_POSTED_DOCUMENTS" | "ADJUSTMENT"; description: string; quantity: number; unitPrice: string; amount: string }>;
+  payments: Array<{ id: string; paymentDate: string; amount: string; method: "BANK_TRANSFER" | "CARD" | "CASH" | "OTHER"; reference: string | null; notes: string | null; createdAt: string }>;
+};
+export type PlatformCompanyBilling = {
+  company: { id: string; name: string; isActive: boolean; baseCurrencyCode: string };
+  account: PlatformBillingAccount | null;
+  totals: { billed: string; paid: string; balance: string; overdue: string };
+  invoices: PlatformBillingInvoice[];
+};
+export type PlatformBillingSummary = {
+  generatedAt: string;
+  metrics: { totalCompanies: number; configuredCompanies: number; unconfiguredCompanies: number; activeAccounts: number; overdueInvoices: number };
+  currencies: Array<{ currencyCode: string; recurringMonthly: string; billed: string; paid: string; balance: string; overdue: string; collectionRate: string }>;
+  accounts: Array<{ companyId: string; companyName: string; companyActive: boolean; account: PlatformBillingAccount; billed: string; paid: string; balance: string; overdue: string }>;
+};
 export type CompanyDetails = { id: string; name: string; baseCurrencyId: string; baseCurrency: { code: string; nameAr: string }; timezone: string; isActive: boolean; manualJournalMakerCheckerEnabled: boolean; updatedAt: string };
 export type AuditLog = { id: string; actor: { id: string; name: string; email: string }; action: string; entityType: string; entityId: string; details: Record<string, unknown> | null; createdAt: string };
 export type AuditOptions = { actions: string[]; entityTypes: string[]; users: Array<{ id: string; name: string; email: string }> };

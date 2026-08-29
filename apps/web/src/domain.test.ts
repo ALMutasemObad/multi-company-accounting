@@ -37,7 +37,8 @@ describe("واجهة سند الصرف", () => {
   it("يضبط دقة المبالغ وأسعار الصرف", () => {
     expect(toMoney("1250.5")).toBe("1250.5000");
     expect(toRate("1")).toBe("1.00000000");
-    expect(formatMoney("1250.5000")).toContain("١");
+    expect(formatMoney("1250.5000")).toMatch(/1[^0-9]*250/u);
+    expect(formatMoney("1250.5000")).not.toMatch(/[٠-٩۰-۹०-९]/u);
   });
 
   it("يقترح سعر العملة الأساسية وآخر سعر مسجل للعملة الأجنبية", () => {

@@ -324,6 +324,39 @@ enum HrContractStatus {
   ENDED
 }
 
+enum PlatformBillingAccountStatus {
+  TRIAL
+  ACTIVE
+  PAUSED
+  CLOSED
+}
+
+enum PlatformBillingCycle {
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+}
+
+enum PlatformBillingInvoiceState {
+  ISSUED
+  VOID
+}
+
+enum PlatformBillingLineType {
+  RECURRING_FEE
+  ADDITIONAL_USERS
+  ADDITIONAL_EMPLOYEES
+  ADDITIONAL_POSTED_DOCUMENTS
+  ADJUSTMENT
+}
+
+enum PlatformBillingPaymentMethod {
+  BANK_TRANSFER
+  CARD
+  CASH
+  OTHER
+}
+
 model Organization {
   id                   BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
   code                 String                @unique @default(uuid()) @db.VarChar(80)
@@ -445,6 +478,10 @@ model Company {
   hrPositions                       HrPosition[]
   employees                         Employee[]
   employmentContracts               EmploymentContract[]
+  platformBillingAccount            PlatformBillingAccount?
+  platformBillingInvoices           PlatformBillingInvoice[]
+  platformBillingInvoiceLines       PlatformBillingInvoiceLine[]
+  platformBillingPayments           PlatformBillingPayment[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -524,6 +561,11 @@ model User {
   professionalDependenciesCreated   ProfessionalTaskDependency[]       @relation("ProfessionalTaskDependencyCreatedBy")
   professionalDependenciesUpdated   ProfessionalTaskDependency[]       @relation("ProfessionalTaskDependencyUpdatedBy")
   professionalDependenciesRemoved   ProfessionalTaskDependency[]       @relation("ProfessionalTaskDependencyRemovedBy")
+  platformBillingAccountsCreated    PlatformBillingAccount[]           @relation("PlatformBillingAccountCreatedBy")
+  platformBillingAccountsUpdated    PlatformBillingAccount[]           @relation("PlatformBillingAccountUpdatedBy")
+  platformBillingInvoicesIssued     PlatformBillingInvoice[]           @relation("PlatformBillingInvoiceIssuedBy")
+  platformBillingInvoicesVoided     PlatformBillingInvoice[]           @relation("PlatformBillingInvoiceVoidedBy")
+  platformBillingPaymentsReceived   PlatformBillingPayment[]           @relation("PlatformBillingPaymentReceivedBy")
 
   @@map("users")
 }
@@ -2536,6 +2578,123 @@ model PaymentAllocation {
   @@unique([paymentId, payableItemId])
   @@index([companyId, payableItemId])
   @@map("payment_allocations")
+}
+
+model PlatformBillingAccount {
+  id                                 BigInt                       @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId                          BigInt                       @unique @map("company_id") @db.UnsignedBigInt
+  status                             PlatformBillingAccountStatus @default(TRIAL)
+  planName                           String                       @map("plan_name") @db.VarChar(160)
+  billingCycle                       PlatformBillingCycle         @default(MONTHLY) @map("billing_cycle")
+  currencyCode                       String                       @map("currency_code") @db.Char(3)
+  recurringFee                       Decimal                      @default(0) @map("recurring_fee") @db.Decimal(19, 4)
+  includedUsers                      Int                          @default(0) @map("included_users") @db.UnsignedInt
+  pricePerAdditionalUser             Decimal                      @default(0) @map("price_per_additional_user") @db.Decimal(19, 4)
+  includedEmployees                  Int                          @default(0) @map("included_employees") @db.UnsignedInt
+  pricePerAdditionalEmployee         Decimal                      @default(0) @map("price_per_additional_employee") @db.Decimal(19, 4)
+  includedPostedDocuments            Int                          @default(0) @map("included_posted_documents") @db.UnsignedInt
+  pricePerAdditionalPostedDocument   Decimal                      @default(0) @map("price_per_additional_posted_document") @db.Decimal(19, 4)
+  taxRate                            Decimal                      @default(0) @map("tax_rate") @db.Decimal(9, 4)
+  paymentTermsDays                   Int                          @default(0) @map("payment_terms_days") @db.UnsignedSmallInt
+  nextBillingDate                    DateTime?                    @map("next_billing_date") @db.Date
+  notes                              String?                      @db.VarChar(1000)
+  version                            Int                          @default(0) @db.UnsignedInt
+  createdById                        BigInt                       @map("created_by_id") @db.UnsignedBigInt
+  updatedById                        BigInt                       @map("updated_by_id") @db.UnsignedBigInt
+  createdAt                          DateTime                     @default(now()) @map("created_at")
+  updatedAt                          DateTime                     @updatedAt @map("updated_at")
+  company                            Company                      @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  createdBy                          User                         @relation("PlatformBillingAccountCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy                          User                         @relation("PlatformBillingAccountUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  invoices                           PlatformBillingInvoice[]
+
+  @@unique([id, companyId])
+  @@index([status, nextBillingDate])
+  @@map("platform_billing_accounts")
+}
+
+model PlatformBillingInvoice {
+  id                    BigInt                      @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId              String                      @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId             BigInt                      @map("company_id") @db.UnsignedBigInt
+  billingAccountId      BigInt                      @map("billing_account_id") @db.UnsignedBigInt
+  invoiceNumber         String                      @unique @map("invoice_number") @db.VarChar(60)
+  state                 PlatformBillingInvoiceState @default(ISSUED)
+  periodStart           DateTime                    @map("period_start") @db.Date
+  periodEnd             DateTime                    @map("period_end") @db.Date
+  issueDate             DateTime                    @map("issue_date") @db.Date
+  dueDate               DateTime                    @map("due_date") @db.Date
+  currencyCode          String                      @map("currency_code") @db.Char(3)
+  usageUsers            Int                         @map("usage_users") @db.UnsignedInt
+  usageEmployees        Int                         @map("usage_employees") @db.UnsignedInt
+  usagePostedDocuments  Int                         @map("usage_posted_documents") @db.UnsignedInt
+  usageOperations       Int                         @map("usage_operations") @db.UnsignedInt
+  subtotal              Decimal                     @db.Decimal(19, 4)
+  taxRateSnapshot       Decimal                     @map("tax_rate_snapshot") @db.Decimal(9, 4)
+  taxAmount             Decimal                     @map("tax_amount") @db.Decimal(19, 4)
+  totalAmount           Decimal                     @map("total_amount") @db.Decimal(19, 4)
+  notes                 String?                     @db.VarChar(1000)
+  version               Int                         @default(0) @db.UnsignedInt
+  issuedById            BigInt                      @map("issued_by_id") @db.UnsignedBigInt
+  voidedById            BigInt?                     @map("voided_by_id") @db.UnsignedBigInt
+  voidedAt              DateTime?                   @map("voided_at")
+  voidReason            String?                     @map("void_reason") @db.VarChar(500)
+  createdAt             DateTime                    @default(now()) @map("created_at")
+  updatedAt             DateTime                    @updatedAt @map("updated_at")
+  company               Company                     @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  billingAccount        PlatformBillingAccount      @relation(fields: [billingAccountId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  issuedBy              User                        @relation("PlatformBillingInvoiceIssuedBy", fields: [issuedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  voidedBy              User?                       @relation("PlatformBillingInvoiceVoidedBy", fields: [voidedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  lines                 PlatformBillingInvoiceLine[]
+  payments              PlatformBillingPayment[]
+
+  @@unique([id, companyId])
+  @@unique([companyId, periodStart, periodEnd])
+  @@index([companyId, issueDate, id])
+  @@index([state, dueDate])
+  @@map("platform_billing_invoices")
+}
+
+model PlatformBillingInvoiceLine {
+  id          BigInt                  @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId   BigInt                  @map("company_id") @db.UnsignedBigInt
+  invoiceId   BigInt                  @map("invoice_id") @db.UnsignedBigInt
+  lineNumber  Int                     @map("line_number") @db.UnsignedSmallInt
+  lineType    PlatformBillingLineType @map("line_type")
+  description String                  @db.VarChar(500)
+  quantity    Int                     @db.UnsignedInt
+  unitPrice   Decimal                 @map("unit_price") @db.Decimal(19, 4)
+  amount      Decimal                 @db.Decimal(19, 4)
+  createdAt   DateTime                @default(now()) @map("created_at")
+  company     Company                 @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  invoice     PlatformBillingInvoice  @relation(fields: [invoiceId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([invoiceId, lineNumber])
+  @@unique([id, companyId])
+  @@index([companyId, invoiceId])
+  @@map("platform_billing_invoice_lines")
+}
+
+model PlatformBillingPayment {
+  id             BigInt                       @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId       String                       @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId      BigInt                       @map("company_id") @db.UnsignedBigInt
+  invoiceId      BigInt                       @map("invoice_id") @db.UnsignedBigInt
+  paymentDate    DateTime                     @map("payment_date") @db.Date
+  amount         Decimal                      @db.Decimal(19, 4)
+  method         PlatformBillingPaymentMethod
+  reference      String?                      @db.VarChar(160)
+  notes          String?                      @db.VarChar(1000)
+  receivedById   BigInt                       @map("received_by_id") @db.UnsignedBigInt
+  createdAt      DateTime                     @default(now()) @map("created_at")
+  company        Company                      @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  invoice        PlatformBillingInvoice       @relation(fields: [invoiceId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  receivedBy     User                         @relation("PlatformBillingPaymentReceivedBy", fields: [receivedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([id, companyId])
+  @@index([companyId, paymentDate, id])
+  @@index([invoiceId, createdAt])
+  @@map("platform_billing_payments")
 }
 
 model RolePermission {

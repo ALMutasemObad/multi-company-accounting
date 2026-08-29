@@ -73,6 +73,8 @@ import { WorkforceAccessService } from './workforce-access/workforce-access-serv
 import { PlatformIdentityQueryAdapter } from './users/platform-identity-query-adapter.js';
 import { PlatformOperationsService } from './platform-operations/platform-operations-service.js';
 import { PrismaPlatformAnalyticsQueryAdapter } from './platform-operations/prisma-platform-analytics-query-adapter.js';
+import { PlatformBillingService } from './platform-operations/platform-billing-service.js';
+import { PrismaAuditAppendAdapter } from './audit/prisma-audit-append-adapter.js';
 import { ProfessionalEmployeeAdapter } from './hr/professional-employee-adapter.js';
 import { ProfessionalTimesheetApprovalAdapter } from './projects/professional-timesheet-approval-adapter.js';
 import { ProfessionalBillingCurrencyAdapter } from './companies/professional-billing-currency-adapter.js';
@@ -202,12 +204,19 @@ const configuredPlatformOperators = (config.PLATFORM_OPERATOR_EMAILS ?? "")
   .split(",")
   .map((email) => email.trim())
   .filter(Boolean);
+const platformAnalytics = new PrismaPlatformAnalyticsQueryAdapter(database);
 const platformOperations = new PlatformOperationsService(
   new PlatformIdentityQueryAdapter(database),
-  new PrismaPlatformAnalyticsQueryAdapter(database),
+  platformAnalytics,
   configuredPlatformOperators.length || config.NODE_ENV === "production"
     ? configuredPlatformOperators
     : ["admin@mcap.local"],
+);
+const platformBilling = new PlatformBillingService(
+  database,
+  platformOperations,
+  platformAnalytics,
+  new PrismaAuditAppendAdapter(),
 );
 const app = createApp(config, {
   readiness: new DatabaseReadinessService(database, config.READINESS_TIMEOUT_MS),
@@ -222,6 +231,7 @@ const app = createApp(config, {
   users,
   workforceAccess,
   platformOperations,
+  platformBilling,
   companies: createCompanyService(database),
   printing: new PrintService(database),
   audit: createAuditService(database),
