@@ -30,16 +30,32 @@ type RecentCashActivity = {
     description: string;
   };
 };
+type MonthlyCashAggregate = { month: string; amount: Prisma.Decimal };
+type LedgerPageRow = {
+  id: bigint;
+  entry_date: Date;
+  document_id: bigint;
+  document_number: string;
+  document_type: string;
+  document_status: string;
+  line_description: string | null;
+  entry_description: string;
+  debit: Prisma.Decimal;
+  credit: Prisma.Decimal;
+  range_running: Prisma.Decimal;
+};
 const asDate = (value: string) => new Date(`${value}T00:00:00.000Z`);
 const money = (value: Prisma.Decimal.Value) => new Prisma.Decimal(value).toFixed(4);
 
-export function monthlyCashFlow(receipts: CashMovement[], payments: CashMovement[]) {
+function monthlyCashFlowFromAggregates(
+  receipts: Iterable<[string, Prisma.Decimal]>,
+  payments: Iterable<[string, Prisma.Decimal]>,
+) {
   const months = new Map<string, { receipts: Prisma.Decimal; payments: Prisma.Decimal }>();
-  const add = (items: CashMovement[], field: "receipts" | "payments") => {
-    for (const item of items) {
-      const month = item.documentDate.toISOString().slice(0, 7);
+  const add = (items: Iterable<[string, Prisma.Decimal]>, field: "receipts" | "payments") => {
+    for (const [month, amount] of items) {
       const current = months.get(month) ?? { receipts: new Prisma.Decimal(0), payments: new Prisma.Decimal(0) };
-      current[field] = current[field].add(item.baseAmount);
+      current[field] = current[field].add(amount);
       months.set(month, current);
     }
   };
@@ -53,42 +69,38 @@ export function monthlyCashFlow(receipts: CashMovement[], payments: CashMovement
   }));
 }
 
+export function monthlyCashFlow(receipts: CashMovement[], payments: CashMovement[]) {
+  const aggregate = (items: CashMovement[]) => {
+    const months = new Map<string, Prisma.Decimal>();
+    for (const item of items) {
+      const month = item.documentDate.toISOString().slice(0, 7);
+      months.set(month, (months.get(month) ?? new Prisma.Decimal(0)).add(item.baseAmount));
+    }
+    return months;
+  };
+  return monthlyCashFlowFromAggregates(aggregate(receipts), aggregate(payments));
+}
+
 export class ReportService {
   constructor(private readonly prisma: PrismaClient) {}
 
   async dashboard(context: ActorContext, range: ReportRange) {
     const documentDate = { gte: asDate(range.dateFrom), lte: asDate(range.dateTo) };
-    const cashDocument = {
-      status: { in: ["POSTED" as const, "REVERSED" as const] },
-      OR: [
-        { documentDate },
-        { reversedByDocument: { documentDate } },
-      ],
-    };
-    const [company, suppliers, customers, draftPayments, draftReceipts, receiptRows, paymentRows, recentReceipts, recentPayments] = await this.prisma.$transaction([
+    const [company, suppliers, customers, draftPayments, draftReceipts, receiptMonths, paymentMonths, recentReceipts, recentPayments] = await this.prisma.$transaction([
       this.prisma.company.findUniqueOrThrow({ where: { id: context.companyId }, select: { baseCurrency: { select: { id: true, code: true, nameAr: true, decimals: true } } } }),
       this.prisma.supplier.count({ where: { companyId: context.companyId, isActive: true } }),
       this.prisma.customer.count({ where: { companyId: context.companyId, isActive: true } }),
       this.prisma.payment.count({ where: { companyId: context.companyId, accountingDocument: { status: "DRAFT" } } }),
       this.prisma.receipt.count({ where: { companyId: context.companyId, accountingDocument: { status: "DRAFT" } } }),
-      this.prisma.receipt.findMany({ where: { companyId: context.companyId, accountingDocument: cashDocument }, select: { baseAmount: true, accountingDocument: { select: { documentDate: true, status: true, reversedByDocument: { select: { documentDate: true } } } } } }),
-      this.prisma.payment.findMany({ where: { companyId: context.companyId, accountingDocument: cashDocument }, select: { baseAmount: true, accountingDocument: { select: { documentDate: true, status: true, reversedByDocument: { select: { documentDate: true } } } } } }),
+      this.monthlyCashAggregate("receipts", context.companyId, documentDate.gte, documentDate.lte),
+      this.monthlyCashAggregate("payments", context.companyId, documentDate.gte, documentDate.lte),
       this.prisma.receipt.findMany({ where: { companyId: context.companyId }, take: 6, orderBy: { accountingDocument: { documentDate: "desc" } }, select: { id: true, baseAmount: true, counterpartyNameSnapshot: true, accountingDocument: { select: { documentNumber: true, documentDate: true, status: true, description: true } } } }),
       this.prisma.payment.findMany({ where: { companyId: context.companyId }, take: 6, orderBy: { accountingDocument: { documentDate: "desc" } }, select: { id: true, baseAmount: true, counterpartyNameSnapshot: true, accountingDocument: { select: { documentNumber: true, documentDate: true, status: true, description: true } } } }),
     ]);
-    const movements = (rows: typeof receiptRows) => rows.flatMap((row) => {
-      const result: CashMovement[] = [];
-      if (row.accountingDocument.documentDate >= documentDate.gte && row.accountingDocument.documentDate <= documentDate.lte)
-        result.push({ documentDate: row.accountingDocument.documentDate, baseAmount: row.baseAmount });
-      const reversalDate = row.accountingDocument.reversedByDocument?.documentDate;
-      if (reversalDate && reversalDate >= documentDate.gte && reversalDate <= documentDate.lte)
-        result.push({ documentDate: reversalDate, baseAmount: row.baseAmount.negated() });
-      return result;
-    });
-    const receipts = movements(receiptRows);
-    const payments = movements(paymentRows);
-    const receiptsTotal = receipts.reduce((sum, row) => sum.add(row.baseAmount), new Prisma.Decimal(0));
-    const paymentsTotal = payments.reduce((sum, row) => sum.add(row.baseAmount), new Prisma.Decimal(0));
+    const receiptAggregates = new Map(receiptMonths.map((row) => [row.month, new Prisma.Decimal(row.amount)]));
+    const paymentAggregates = new Map(paymentMonths.map((row) => [row.month, new Prisma.Decimal(row.amount)]));
+    const receiptsTotal = [...receiptAggregates.values()].reduce((sum, amount) => sum.add(amount), new Prisma.Decimal(0));
+    const paymentsTotal = [...paymentAggregates.values()].reduce((sum, amount) => sum.add(amount), new Prisma.Decimal(0));
     const recentActivity = [
       ...recentReceipts.map((row) => this.activityJson("RECEIPT", row)),
       ...recentPayments.map((row) => this.activityJson("PAYMENT", row)),
@@ -97,7 +109,7 @@ export class ReportService {
       range,
       baseCurrency: { ...company.baseCurrency, id: company.baseCurrency.id.toString() },
       metrics: { receipts: money(receiptsTotal), payments: money(paymentsTotal), netCashFlow: money(receiptsTotal.sub(paymentsTotal)), activeSuppliers: suppliers, activeCustomers: customers, draftDocuments: draftPayments + draftReceipts },
-      cashFlow: monthlyCashFlow(receipts, payments),
+      cashFlow: monthlyCashFlowFromAggregates(receiptAggregates, paymentAggregates),
       recentActivity,
     };
   }
@@ -245,20 +257,30 @@ export class ReportService {
     });
     if (!subject || (input.costCenterId != null && (!costCenter || input.accountId == null))) throw new ReportError("NOT_FOUND");
     const documentStatus = { in: ["POSTED" as const, "REVERSED" as const] };
-    const [company, opening, lines] = await this.prisma.$transaction([
+    const lineWhere: Prisma.JournalLineWhereInput = {
+      companyId: context.companyId,
+      ...selector,
+      journalEntry: {
+        entryDate: { gte: asDate(input.dateFrom), lte: asDate(input.dateTo) },
+        accountingDocument: { status: documentStatus },
+      },
+    };
+    const [company, opening, rangeTotals, total, lines] = await this.prisma.$transaction([
       this.companyCurrency(context.companyId),
       this.prisma.journalLine.aggregate({ where: { companyId: context.companyId, ...selector, journalEntry: { entryDate: { lt: asDate(input.dateFrom) }, accountingDocument: { status: documentStatus } } }, _sum: { baseDebitAmount: true, baseCreditAmount: true } }),
-      this.prisma.journalLine.findMany({ where: { companyId: context.companyId, ...selector, journalEntry: { entryDate: { gte: asDate(input.dateFrom), lte: asDate(input.dateTo) }, accountingDocument: { status: documentStatus } } }, include: { journalEntry: { include: { accountingDocument: { select: { id: true, documentNumber: true, documentType: true, status: true } } } } }, orderBy: [{ journalEntry: { entryDate: "asc" } }, { id: "asc" }] }),
+      this.prisma.journalLine.aggregate({ where: lineWhere, _sum: { baseDebitAmount: true, baseCreditAmount: true } }),
+      this.prisma.journalLine.count({ where: lineWhere }),
+      this.ledgerPage(context.companyId, input),
     ]);
-    let running = new Prisma.Decimal(opening._sum.baseDebitAmount ?? 0).sub(opening._sum.baseCreditAmount ?? 0);
-    const openingSplit = this.splitBalance(running);
+    const openingBalance = new Prisma.Decimal(opening._sum.baseDebitAmount ?? 0).sub(opening._sum.baseCreditAmount ?? 0);
+    const openingSplit = this.splitBalance(openingBalance);
     const data = lines.map((line) => {
-      running = running.add(line.baseDebitAmount).sub(line.baseCreditAmount);
-      const split = this.splitBalance(running);
-      return { id: line.id.toString(), date: line.journalEntry.entryDate.toISOString().slice(0, 10), documentId: line.journalEntry.accountingDocument.id.toString(), documentNumber: line.journalEntry.accountingDocument.documentNumber, documentType: line.journalEntry.accountingDocument.documentType, status: line.journalEntry.accountingDocument.status, description: line.description ?? line.journalEntry.description, debit: line.baseDebitAmount.toFixed(4), credit: line.baseCreditAmount.toFixed(4), runningDebit: split.debit, runningCredit: split.credit };
+      const split = this.splitBalance(openingBalance.add(line.range_running));
+      return { id: line.id.toString(), date: line.entry_date.toISOString().slice(0, 10), documentId: line.document_id.toString(), documentNumber: line.document_number, documentType: line.document_type, status: line.document_status, description: line.line_description ?? line.entry_description, debit: new Prisma.Decimal(line.debit).toFixed(4), credit: new Prisma.Decimal(line.credit).toFixed(4), runningDebit: split.debit, runningCredit: split.credit };
     });
-    const start = (input.page - 1) * input.pageSize;
-    const closing = this.splitBalance(running);
+    const closing = this.splitBalance(openingBalance
+      .add(rangeTotals._sum.baseDebitAmount ?? 0)
+      .sub(rangeTotals._sum.baseCreditAmount ?? 0));
     return {
       company: { name: company.name },
       baseCurrency: this.currencyJson(company.baseCurrency),
@@ -267,8 +289,8 @@ export class ReportService {
       range: { dateFrom: input.dateFrom, dateTo: input.dateTo },
       openingDebit: openingSplit.debit,
       openingCredit: openingSplit.credit,
-      data: data.slice(start, start + input.pageSize),
-      meta: { page: input.page, pageSize: input.pageSize, total: data.length, totalPages: Math.ceil(data.length / input.pageSize) },
+      data,
+      meta: { page: input.page, pageSize: input.pageSize, total, totalPages: Math.ceil(total / input.pageSize) },
       closingDebit: closing.debit,
       closingCredit: closing.credit,
     };
@@ -290,6 +312,72 @@ export class ReportService {
 
   private companyCurrency(companyId: bigint) {
     return this.prisma.company.findUniqueOrThrow({ where: { id: companyId }, select: { name: true, baseCurrency: { select: { id: true, code: true, nameAr: true, decimals: true } } } });
+  }
+  private monthlyCashAggregate(table: "receipts" | "payments", companyId: bigint, dateFrom: Date, dateTo: Date) {
+    const tableName = table === "receipts" ? Prisma.raw("`receipts`") : Prisma.raw("`payments`");
+    return this.prisma.$queryRaw<MonthlyCashAggregate[]>(Prisma.sql`
+      SELECT DATE_FORMAT(events.document_date, '%Y-%m') AS month,
+             SUM(events.base_amount) AS amount
+      FROM (
+        SELECT document.document_date, movement.base_amount
+        FROM ${tableName} AS movement
+        INNER JOIN accounting_documents AS document
+          ON document.id = movement.accounting_document_id
+         AND document.company_id = movement.company_id
+        WHERE movement.company_id = ${companyId}
+          AND document.status IN ('POSTED', 'REVERSED')
+          AND document.document_date BETWEEN ${dateFrom} AND ${dateTo}
+        UNION ALL
+        SELECT reversal.document_date, -movement.base_amount
+        FROM ${tableName} AS movement
+        INNER JOIN accounting_documents AS document
+          ON document.id = movement.accounting_document_id
+         AND document.company_id = movement.company_id
+        INNER JOIN accounting_documents AS reversal
+          ON reversal.id = document.reversed_by_document_id
+         AND reversal.company_id = document.company_id
+        WHERE movement.company_id = ${companyId}
+          AND document.status = 'REVERSED'
+          AND reversal.document_date BETWEEN ${dateFrom} AND ${dateTo}
+      ) AS events
+      GROUP BY DATE_FORMAT(events.document_date, '%Y-%m')
+      ORDER BY month ASC
+    `);
+  }
+  private ledgerPage(companyId: bigint, input: LedgerQuery) {
+    const selector = input.accountId != null
+      ? Prisma.sql`line.account_id = ${input.accountId}${input.costCenterId != null ? Prisma.sql` AND line.cost_center_id = ${input.costCenterId}` : Prisma.empty}`
+      : input.customerId != null
+        ? Prisma.sql`line.customer_id = ${input.customerId}`
+        : Prisma.sql`line.supplier_id = ${input.supplierId!}`;
+    const offset = (input.page - 1) * input.pageSize;
+    return this.prisma.$queryRaw<LedgerPageRow[]>(Prisma.sql`
+      SELECT line.id,
+             entry.entry_date,
+             document.id AS document_id,
+             document.document_number,
+             document.document_type,
+             document.status AS document_status,
+             line.description AS line_description,
+             entry.description AS entry_description,
+             line.base_debit_amount AS debit,
+             line.base_credit_amount AS credit,
+             SUM(line.base_debit_amount - line.base_credit_amount)
+               OVER (ORDER BY entry.entry_date ASC, line.id ASC ROWS UNBOUNDED PRECEDING) AS range_running
+      FROM journal_lines AS line
+      INNER JOIN journal_entries AS entry
+        ON entry.id = line.journal_entry_id
+       AND entry.company_id = line.company_id
+      INNER JOIN accounting_documents AS document
+        ON document.id = entry.accounting_document_id
+       AND document.company_id = entry.company_id
+      WHERE line.company_id = ${companyId}
+        AND ${selector}
+        AND entry.entry_date BETWEEN ${asDate(input.dateFrom)} AND ${asDate(input.dateTo)}
+        AND document.status IN ('POSTED', 'REVERSED')
+      ORDER BY entry.entry_date ASC, line.id ASC
+      LIMIT ${input.pageSize} OFFSET ${offset}
+    `);
   }
   private balanceRows(companyId: bigint, entryDate: Prisma.DateTimeFilter) {
     return this.prisma.journalLine.groupBy({ by: ["accountId"], where: { companyId, journalEntry: { entryDate, accountingDocument: { status: { in: ["POSTED", "REVERSED"] } } } }, _sum: { baseDebitAmount: true, baseCreditAmount: true } });

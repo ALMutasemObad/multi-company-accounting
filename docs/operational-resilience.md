@@ -49,6 +49,35 @@ Reverse proxy / hosting timeout             > 70s
 
 يفشل `loadConfig` مبكرًا إذا انعكس ترتيب المهلات أو فُعّلت القياسات في الإنتاج دون الرمز المستقل.
 
+## Connection Pool لقاعدة البيانات
+
+يمرر التطبيق إعدادات الـPool صراحة إلى MariaDB Connector عبر Prisma adapter بدل
+تركها ضمن defaults غير المرئية. القيم التالية **Baseline تشغيل أولي وليست سعة نهائية
+ولا SLO**:
+
+| المتغير | الافتراضي | الغرض |
+|---|---:|---|
+| `DATABASE_POOL_CONNECTION_LIMIT` | 10 | الحد الأقصى للاتصالات لكل عملية API، لا لكل النشر كاملًا |
+| `DATABASE_POOL_MIN_IDLE` | 1 | إبقاء اتصال واحد جاهزًا لكل عملية؛ الموصل الحالي لا يكتسب اتصالًا عند ضبط القيمة على صفر |
+| `DATABASE_POOL_ACQUIRE_TIMEOUT_MS` | 10000 | أقصى انتظار لاتصال متاح؛ راقبه مع Deadline القراءة ولا ترفعه لإخفاء التشبع |
+| `DATABASE_CONNECT_TIMEOUT_MS` | 1000 | مهلة إنشاء اتصال جديد، ويجب ألا تتجاوز مهلة acquire |
+| `DATABASE_POOL_IDLE_TIMEOUT_SECONDS` | 1800 | عمر الاتصال الخامل قبل إغلاقه |
+
+قبل تغيير `DATABASE_POOL_CONNECTION_LIMIT` احسب الميزانية الكلية:
+
+```text
+maximum database connections used by the app
+  = API process/Passenger worker count × connection limit per process
+    + migration/backup/administrative headroom
+```
+
+لا ترفع الحد من اختبار معاملة منفرد. عايره باختبار حمل متعدد الشركات يقيس p50/p95/p99،
+زمن انتظار acquire، الاتصالات الفعالة، CPU/IO قاعدة البيانات، deadlocks، ونسبة deadlines.
+إذا زاد عدد عمليات Passenger يجب إعادة الحساب حتى لو لم تتغير قيمة المتغير. نقطة البدء
+`10` تحافظ على حد الموصل السابق، بينما `minimumIdle=1` يمنع كل عملية من الاحتفاظ بالحد
+كله ويجتنب فشل الاكتساب المثبت محليًا عند الصفر. توثق أي قيمة إنتاجية لاحقة مع عدد
+العمليات ونتيجة القياس وتاريخها.
+
 ## Nginx وPassenger
 
 في VPS يضبط Reverse Proxy بمهلة تتجاوز Node وتترك هامشًا للشبكة. Baseline مناسب للقيم الافتراضية:

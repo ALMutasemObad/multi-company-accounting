@@ -26,6 +26,11 @@ describe('production configuration', () => {
     });
     expect(config.SESSION_COOKIE_SECURE).toBe(true);
     expect(config.TRUST_PROXY).toBe(true);
+    expect(config.DATABASE_POOL_CONNECTION_LIMIT).toBe(10);
+    expect(config.DATABASE_POOL_MIN_IDLE).toBe(1);
+    expect(config.DATABASE_POOL_ACQUIRE_TIMEOUT_MS).toBe(10_000);
+    expect(config.DATABASE_CONNECT_TIMEOUT_MS).toBe(1_000);
+    expect(config.DATABASE_POOL_IDLE_TIMEOUT_SECONDS).toBe(1_800);
     expect(config.SERVE_WEB_ASSETS).toBe(false);
     expect(config.RATE_LIMIT_MAX).toBe(300);
     expect(config.AUTH_RATE_LIMIT_MAX).toBe(20);
@@ -167,6 +172,43 @@ describe('production configuration', () => {
       API_READ_DEADLINE_MS: '20000',
       API_WRITE_DEADLINE_MS: '10000',
     })).toThrow(/API_WRITE_DEADLINE_MS/);
+  });
+
+  it('rejects an invalid database pool hierarchy', () => {
+    expect(() => loadConfig({
+      NODE_ENV: 'test',
+      DATABASE_POOL_MIN_IDLE: '0',
+    })).toThrow(/DATABASE_POOL_MIN_IDLE/);
+    expect(() => loadConfig({
+      NODE_ENV: 'test',
+      DATABASE_POOL_CONNECTION_LIMIT: '4',
+      DATABASE_POOL_MIN_IDLE: '5',
+    })).toThrow(/DATABASE_POOL_MIN_IDLE/);
+    expect(() => loadConfig({
+      NODE_ENV: 'test',
+      DATABASE_POOL_ACQUIRE_TIMEOUT_MS: '1000',
+      DATABASE_CONNECT_TIMEOUT_MS: '2000',
+    })).toThrow(/DATABASE_CONNECT_TIMEOUT_MS/);
+  });
+
+  it('applies validated database pool settings to the connector URL', () => {
+    const config = loadConfig({
+      NODE_ENV: 'test',
+      DATABASE_URL: 'mysql://runtime:secret@db.internal/mcap?ssl=true',
+      DATABASE_POOL_CONNECTION_LIMIT: '6',
+      DATABASE_POOL_MIN_IDLE: '2',
+      DATABASE_POOL_ACQUIRE_TIMEOUT_MS: '4000',
+      DATABASE_CONNECT_TIMEOUT_MS: '800',
+      DATABASE_POOL_IDLE_TIMEOUT_SECONDS: '300',
+    });
+    const url = new URL(config.DATABASE_URL!);
+
+    expect(url.searchParams.get('ssl')).toBe('true');
+    expect(url.searchParams.get('connectionLimit')).toBe('6');
+    expect(url.searchParams.get('minimumIdle')).toBe('2');
+    expect(url.searchParams.get('acquireTimeout')).toBe('4000');
+    expect(url.searchParams.get('connectTimeout')).toBe('800');
+    expect(url.searchParams.get('idleTimeout')).toBe('300');
   });
 
   it('requires a bearer secret for production metric exposition', () => {

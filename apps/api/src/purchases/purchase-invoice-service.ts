@@ -181,14 +181,26 @@ export class PurchaseInvoiceService implements PurchaseInvoiceImportPort {
       },
       ...(input.search ? { OR: [{ supplierNameSnapshot: { contains: input.search } }, { accountingDocument: { OR: [{ documentNumber: { contains: input.search } }, { description: { contains: input.search } }] } }] } : {}),
     };
-    const all = await this.prisma.purchaseInvoice.findMany({
-      where,
-      include: this.include(),
-      orderBy: [{ accountingDocument: { documentDate: "desc" } }, { id: "desc" }],
-    });
-    const rows = input.outstandingOnly ? all.filter((invoice) => invoice.accountingDocument.documentType === "PURCHASE_INVOICE" && invoice.accountingDocument.status === "POSTED" && this.outstanding(invoice).gt(0)) : all;
-    const offset = (input.page - 1) * input.pageSize;
-    return { data: rows.slice(offset, offset + input.pageSize), total: rows.length };
+    const filteredWhere: Prisma.PurchaseInvoiceWhereInput = input.outstandingOnly
+      ? {
+          AND: [
+            where,
+            { accountingDocument: { documentType: "PURCHASE_INVOICE", status: "POSTED" } },
+            { payableItem: { is: { outstandingAmount: { gt: 0 } } } },
+          ],
+        }
+      : where;
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.purchaseInvoice.findMany({
+        where: filteredWhere,
+        include: this.include(),
+        orderBy: [{ accountingDocument: { documentDate: "desc" } }, { id: "desc" }],
+        skip: (input.page - 1) * input.pageSize,
+        take: input.pageSize,
+      }),
+      this.prisma.purchaseInvoice.count({ where: filteredWhere }),
+    ]);
+    return { data, total };
   }
 
   async get(context: ActorContext, id: bigint) {

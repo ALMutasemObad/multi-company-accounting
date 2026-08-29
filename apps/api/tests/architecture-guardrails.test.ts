@@ -686,6 +686,31 @@ describe("Security, accounting-reference and printing boundary guardrails", () =
 });
 
 describe("Reporting ownership boundary guardrails", () => {
+  it("keeps invoice and report pagination out of request memory", async () => {
+    const [sales, purchases, reports, taxAdapter] = await Promise.all([
+      source("sales/sales-invoice-service.ts"),
+      source("purchases/purchase-invoice-service.ts"),
+      source("reports/report-service.ts"),
+      source("reports/adapters/prisma-tax-summary-query-adapter.ts"),
+    ]);
+    const listBody = (content: string) => content.slice(content.indexOf("async list("), content.indexOf("async get("));
+    const ledgerBody = reports.slice(reports.indexOf("async ledger("), reports.indexOf("async ledgerExport("));
+
+    for (const body of [listBody(sales), listBody(purchases)]) {
+      expect(body).toContain("skip: (input.page - 1) * input.pageSize");
+      expect(body).toContain("take: input.pageSize");
+      expect(body).toMatch(/\.count\(\{ where: filteredWhere \}\)/u);
+      expect(body).not.toMatch(/(?:rows|all)\.(?:slice|filter)\(/u);
+    }
+    expect(ledgerBody).toContain("this.ledgerPage(context.companyId, input)");
+    expect(ledgerBody).not.toContain("journalLine.findMany");
+    expect(reports).toContain("OVER (ORDER BY entry.entry_date ASC, line.id ASC ROWS UNBOUNDED PRECEDING)");
+    expect(reports).toContain("GROUP BY DATE_FORMAT(events.document_date, '%Y-%m')");
+    expect(taxAdapter).toContain("take: TAX_SUMMARY_BATCH_SIZE");
+    expect(taxAdapter).toContain("id: { gt: salesCursor }");
+    expect(taxAdapter).toContain("id: { gt: purchaseCursor }");
+  });
+
   it("keeps indirect cash-flow reads behind Ledger and Treasury query ports", async () => {
     const [service, ledgerAdapter, treasuryAdapter, calculator] = await Promise.all([
       source("reports/cash-flow-service.ts"),

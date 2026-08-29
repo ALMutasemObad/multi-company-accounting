@@ -189,14 +189,26 @@ export class SalesInvoiceService implements ProfessionalBillingSalesPort, SalesI
       },
       ...(input.search ? { OR: [{ customerNameSnapshot: { contains: input.search } }, { accountingDocument: { OR: [{ documentNumber: { contains: input.search } }, { description: { contains: input.search } }] } }] } : {}),
     };
-    const all = await this.prisma.salesInvoice.findMany({
-      where,
-      include: this.include(),
-      orderBy: [{ accountingDocument: { documentDate: "desc" } }, { id: "desc" }],
-    });
-    const rows = input.outstandingOnly ? all.filter((invoice) => invoice.accountingDocument.documentType === "SALES_INVOICE" && invoice.accountingDocument.status === "POSTED" && this.outstanding(invoice).gt(0)) : all;
-    const offset = (input.page - 1) * input.pageSize;
-    return { data: rows.slice(offset, offset + input.pageSize), total: rows.length };
+    const filteredWhere: Prisma.SalesInvoiceWhereInput = input.outstandingOnly
+      ? {
+          AND: [
+            where,
+            { accountingDocument: { documentType: "SALES_INVOICE", status: "POSTED" } },
+            { receivableItem: { is: { outstandingAmount: { gt: 0 } } } },
+          ],
+        }
+      : where;
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.salesInvoice.findMany({
+        where: filteredWhere,
+        include: this.include(),
+        orderBy: [{ accountingDocument: { documentDate: "desc" } }, { id: "desc" }],
+        skip: (input.page - 1) * input.pageSize,
+        take: input.pageSize,
+      }),
+      this.prisma.salesInvoice.count({ where: filteredWhere }),
+    ]);
+    return { data, total };
   }
 
   async get(context: ActorContext, id: bigint) {

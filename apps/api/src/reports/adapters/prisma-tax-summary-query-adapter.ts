@@ -2,6 +2,8 @@ import type { Prisma } from "@prisma/client";
 import type { TaxSummaryQueryPort, TaxSummarySourceInvoice, TaxSummaryUsage } from "../tax-summary-types.js";
 import { taxSummaryIsoDate } from "../tax-summary-calculator.js";
 
+export const TAX_SUMMARY_BATCH_SIZE = 250;
+
 const invoiceSelection = {
   id: true,
   exchangeRate: true,
@@ -45,15 +47,8 @@ function invoiceJson(value: SalesRecord | PurchaseRecord, usage: TaxSummaryUsage
 }
 
 export class PrismaTaxSummaryQueryAdapter implements TaxSummaryQueryPort {
-  async load(tx: Prisma.TransactionClient, companyId: bigint, dateFrom: Date, dateTo: Date) {
-    const eventRange = { gte: dateFrom, lte: dateTo };
-    const documentRange = {
-      OR: [
-        { documentDate: eventRange },
-        { reversedByDocument: { documentDate: eventRange } },
-      ],
-    };
-    const [company, taxRates, sales, purchases] = await Promise.all([
+  async loadHeader(tx: Prisma.TransactionClient, companyId: bigint) {
+    const [company, taxRates] = await Promise.all([
       tx.company.findUnique({
         where: { id: companyId },
         select: { name: true, baseCurrency: { select: { id: true, code: true, nameAr: true, decimals: true } } },
@@ -63,23 +58,55 @@ export class PrismaTaxSummaryQueryAdapter implements TaxSummaryQueryPort {
         select: { id: true, code: true, nameAr: true },
         orderBy: { code: "asc" },
       }),
-      tx.salesInvoice.findMany({
-        where: { companyId, accountingDocument: documentRange },
-        select: invoiceSelection,
-        orderBy: { id: "asc" },
-      }),
-      tx.purchaseInvoice.findMany({
-        where: { companyId, accountingDocument: documentRange },
-        select: invoiceSelection,
-        orderBy: { id: "asc" },
-      }),
     ]);
     if (!company) return null;
     return {
       company: { name: company.name },
       baseCurrency: { ...company.baseCurrency, id: company.baseCurrency.id.toString() },
       taxRates: taxRates.map((rate) => ({ id: rate.id.toString(), code: rate.code, nameAr: rate.nameAr })),
-      invoices: [...sales.map((invoice) => invoiceJson(invoice, "OUTPUT")), ...purchases.map((invoice) => invoiceJson(invoice, "INPUT"))],
     };
+  }
+
+  async scanInvoices(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+    dateFrom: Date,
+    dateTo: Date,
+    consume: (batch: TaxSummarySourceInvoice[]) => void | Promise<void>,
+  ) {
+    const eventRange = { gte: dateFrom, lte: dateTo };
+    const documentRange = {
+      OR: [
+        { documentDate: eventRange },
+        { reversedByDocument: { documentDate: eventRange } },
+      ],
+    };
+    let salesCursor: bigint | undefined;
+    do {
+      const sales = await tx.salesInvoice.findMany({
+        where: { companyId, ...(salesCursor ? { id: { gt: salesCursor } } : {}), accountingDocument: documentRange },
+        select: invoiceSelection,
+        orderBy: { id: "asc" },
+        take: TAX_SUMMARY_BATCH_SIZE,
+      });
+      if (sales.length === 0) break;
+      await consume(sales.map((invoice) => invoiceJson(invoice, "OUTPUT")));
+      salesCursor = sales.at(-1)!.id;
+      if (sales.length < TAX_SUMMARY_BATCH_SIZE) break;
+    } while (true);
+
+    let purchaseCursor: bigint | undefined;
+    do {
+      const purchases = await tx.purchaseInvoice.findMany({
+        where: { companyId, ...(purchaseCursor ? { id: { gt: purchaseCursor } } : {}), accountingDocument: documentRange },
+        select: invoiceSelection,
+        orderBy: { id: "asc" },
+        take: TAX_SUMMARY_BATCH_SIZE,
+      });
+      if (purchases.length === 0) break;
+      await consume(purchases.map((invoice) => invoiceJson(invoice, "INPUT")));
+      purchaseCursor = purchases.at(-1)!.id;
+      if (purchases.length < TAX_SUMMARY_BATCH_SIZE) break;
+    } while (true);
   }
 }
