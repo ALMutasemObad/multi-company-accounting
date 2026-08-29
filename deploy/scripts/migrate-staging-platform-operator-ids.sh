@@ -185,8 +185,8 @@ NODE
 
 probe_health() {
   local attempts=${1:-30}
-  local attempt live_status ready_status
-  for attempt in $(seq 1 "$attempts"); do
+  local live_status ready_status
+  for _ in $(seq 1 "$attempts"); do
     live_status=$(curl --silent --output /dev/null --write-out '%{http_code}' --connect-timeout 2 --max-time 5 "$live_url" || true)
     ready_status=$(curl --silent --output /dev/null --write-out '%{http_code}' --connect-timeout 2 --max-time 5 "$ready_url" || true)
     if [[ "$live_status" == 200 && "$ready_status" == 200 ]]; then return 0; fi
