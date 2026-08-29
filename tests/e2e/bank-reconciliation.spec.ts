@@ -1,6 +1,14 @@
 import { expect, test } from "@playwright/test";
+import { authMeResponse, e2eCompany } from "./auth-me-mock.js";
 
 const meta = (total: number) => ({ page: 1, pageSize: 100, total, totalPages: total ? 1 : 0 });
+const permissions = [
+  "cash_bank_accounts.view",
+  "bank_reconciliation.view",
+  "bank_reconciliation.import",
+  "bank_reconciliation.review",
+  "bank_reconciliation.close",
+];
 
 test("previews a bank statement, approves its match, and closes a zero-difference session", async ({ page }) => {
   let committed = false;
@@ -24,7 +32,8 @@ test("previews a bank statement, approves its match, and closes a zero-differenc
     const method = request.method();
     const json = (body: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 
-    if (path === "/auth/companies") return json({ data: [{ id: "1", name: "E2E Company" }] });
+    if (path === "/auth/companies") return json({ data: [e2eCompany] });
+    if (path === "/auth/me") return json(authMeResponse(permissions));
     if (path === "/auth/context") return route.fulfill({ status: 204, body: "" });
     if (path === "/bank-reconciliation/capabilities") return json({ enabled: true, stage: "CLOSE", canImport: true, canSuggest: true, canReview: true, canClose: true });
     if (path === "/cash-bank-accounts") return json({ data: [bankAccount], meta: meta(1) });
