@@ -14,6 +14,7 @@ import { InventoryMovementService } from "../src/inventory/inventory-movement-se
 import { PrismaPosSaleQueryAdapter } from "../src/pos/adapters/prisma-pos-sale-query-adapter.js";
 import { PosService } from "../src/pos/pos-service.js";
 import { TaxService } from "../src/tax/tax-service.js";
+import { testAuthOptions } from "./helpers/test-auth-options.js";
 import { TreasuryService } from "../src/treasury/treasury-service.js";
 
 const enabled = process.env.RUN_DB_TESTS === "true" && Boolean(process.env.DATABASE_URL);
@@ -133,7 +134,7 @@ describe.runIf(enabled)("POS cash-sale vertical slice with MariaDB", () => {
     yearId = year.id;
     periodId = year.periods[0]!.id;
 
-    const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, { preAuthTtlMinutes: 10, sessionTtlHours: 12 });
+    const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, testAuthOptions(prisma!));
     const taxes = new TaxService(prisma!);
     const treasury = new TreasuryService(prisma!);
     const inventory = new InventoryCatalogService(prisma!);

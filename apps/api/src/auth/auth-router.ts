@@ -48,6 +48,7 @@ export function createAuthRouter(auth: AuthService, secureCookie: boolean) {
       selectedCompany: result.selectedCompany
         ? { ...result.selectedCompany, id: result.selectedCompany.id.toString() }
         : null,
+      modules: result.modules,
       permissions: result.permissions,
     });
   });

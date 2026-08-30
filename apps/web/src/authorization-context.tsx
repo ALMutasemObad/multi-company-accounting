@@ -6,9 +6,11 @@ import {
   useMemo,
 } from "react";
 import { allows, type PermissionPolicy } from "./authorization";
+import { effectivePermissionSet } from './module-entitlements';
 import type { CurrentAuthorization } from "./types";
 
 type AuthorizationContextValue = CurrentAuthorization & {
+  moduleSet: ReadonlySet<CurrentAuthorization['modules'][number]>;
   permissionSet: ReadonlySet<string>;
 };
 
@@ -18,10 +20,14 @@ export function AuthorizationProvider({
   authorization,
   children,
 }: PropsWithChildren<{ authorization: CurrentAuthorization }>) {
-  const value = useMemo<AuthorizationContextValue>(() => ({
-    ...authorization,
-    permissionSet: new Set(authorization.permissions),
-  }), [authorization]);
+  const value = useMemo<AuthorizationContextValue>(() => {
+    const moduleSet = new Set(authorization.modules);
+    return {
+      ...authorization,
+      moduleSet,
+      permissionSet: effectivePermissionSet(authorization.permissions, moduleSet),
+    };
+  }, [authorization]);
 
   return (
     <AuthorizationContext.Provider value={value}>

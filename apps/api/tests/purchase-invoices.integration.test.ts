@@ -13,6 +13,7 @@ import { InventoryMovementService } from "../src/inventory/inventory-movement-se
 import { TaxService } from "../src/tax/tax-service.js";
 import { PrintService } from "../src/printing/print-service.js";
 import { TreasuryService } from "../src/treasury/treasury-service.js";
+import { testAuthOptions } from "./helpers/test-auth-options.js";
 
 const enabled = process.env.RUN_DB_TESTS === "true";
 const databaseUrl = process.env.DATABASE_URL ?? "";
@@ -103,7 +104,7 @@ describe.runIf(enabled)("purchase invoices and payables with MariaDB", () => {
     inventoryItemId = (await prisma!.inventoryItem.create({ data: { companyId, unitOfMeasureId, code: "IT-PURCHASE-ITEM", nameAr: "صنف مشتريات اختباري" } })).id;
     const year = await prisma!.fiscalYear.create({ data: { companyId, name: "IT-PURCHASE-2045", startDate: new Date("2045-01-01T00:00:00.000Z"), endDate: new Date("2045-12-31T00:00:00.000Z"), periods: { create: { periodNumber: 1, name: "السنة الاختبارية", startDate: new Date("2045-01-01T00:00:00.000Z"), endDate: new Date("2045-12-31T00:00:00.000Z") } } }, include: { periods: true } });
     yearId = year.id; periodId = year.periods[0]!.id;
-    const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, { preAuthTtlMinutes: 10, sessionTtlHours: 12 });
+    const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, testAuthOptions(prisma!));
     const taxes = new TaxService(prisma!);
     const treasury = new TreasuryService(prisma!);
     app = createApp({ NODE_ENV: "test", PORT: 3000, WEB_ORIGIN: "http://localhost:5173", SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: databaseUrl }, { auth, taxes, purchaseInvoices: createPurchaseInvoiceService(prisma!, { taxes }), payments: createPaymentService(prisma!, { treasury }), printing: new PrintService(prisma!) });

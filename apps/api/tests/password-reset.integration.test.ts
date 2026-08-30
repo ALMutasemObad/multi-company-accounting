@@ -9,6 +9,7 @@ import { PrismaAuthStore } from '../src/auth/prisma-auth-store.js';
 import { createDatabase } from '../src/database.js';
 import { PASSWORD_RESET_REQUESTED, PrismaOutboxAppender, type OutboxEnvelope } from '../src/outbox/outbox.js';
 import type { PasswordResetMailer, PasswordResetMessage } from '../src/registration/registration-mailer.js';
+import { testAuthOptions } from './helpers/test-auth-options.js';
 
 const enabled = process.env.RUN_DB_TESTS === 'true';
 const databaseUrl = process.env.DATABASE_URL ?? '';
@@ -60,7 +61,7 @@ describe.runIf(enabled)('password reset with MariaDB', () => {
   });
 
   it('does not enumerate identities and completes a one-time reset with session revocation', async () => {
-    const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, { preAuthTtlMinutes: 10, sessionTtlHours: 12 });
+    const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, testAuthOptions(prisma!));
     const outbox = new PrismaOutboxAppender(8);
     const passwordReset = new PasswordResetService(prisma!, { hash }, outbox, { tokenTtlMinutes: 60 });
     const app = createApp({

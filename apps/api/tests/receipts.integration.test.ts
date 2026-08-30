@@ -14,6 +14,7 @@ import type {
 } from "../src/receipts/receipt-service.js";
 import { PrintService } from "../src/printing/print-service.js";
 import { TreasuryService } from "../src/treasury/treasury-service.js";
+import { testAuthOptions } from "./helpers/test-auth-options.js";
 
 const enabled = process.env.RUN_DB_TESTS === "true";
 const databaseUrl = process.env.DATABASE_URL ?? "";
@@ -251,7 +252,7 @@ describe.runIf(enabled)(
       const auth = new AuthService(
         new PrismaAuthStore(prisma!),
         { verify },
-        { preAuthTtlMinutes: 10, sessionTtlHours: 12 },
+        testAuthOptions(prisma!),
       );
       app = createApp(
         {

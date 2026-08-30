@@ -1,6 +1,7 @@
 import type { TranslationKey } from "./i18n";
 import type { IconName } from "./ui";
 import { allows, type PermissionPolicy } from "./authorization";
+import type { PlatformModuleCode } from './types';
 
 export type View =
   | "home"
@@ -32,10 +33,12 @@ export type NavigationItem = {
   view: View;
   icon: IconName;
   label: TranslationKey;
+  module?: PlatformModuleCode;
   platformOnly?: boolean;
 };
 
 export type NavigationAccess = {
+  moduleSet: ReadonlySet<PlatformModuleCode>;
   permissionSet: ReadonlySet<string>;
   hasSelectedCompany: boolean;
   platformOperations: boolean;
@@ -70,25 +73,25 @@ export const viewPermissionPolicies: Record<TenantProtectedView, PermissionPolic
 
 export const navigationItems: NavigationItem[] = [
   { view: "home", icon: "home", label: "nav.home" },
-  { view: "dashboard", icon: "dashboard", label: "nav.dashboard" },
+  { view: "dashboard", icon: "dashboard", label: "nav.dashboard", module: 'REPORTING' },
   { view: "platform", icon: "platform", label: "nav.platform", platformOnly: true },
-  { view: "pos", icon: "wallet", label: "nav.pos" },
-  { view: "customers", icon: "customers", label: "nav.customers" },
-  { view: "professionalProjects", icon: "users", label: "nav.professionalProjects" },
-  { view: "humanResources", icon: "building", label: "nav.humanResources" },
-  { view: "sales", icon: "document", label: "nav.sales" },
-  { view: "receipts", icon: "receipts", label: "nav.receipts" },
-  { view: "suppliers", icon: "suppliers", label: "nav.suppliers" },
-  { view: "purchases", icon: "document", label: "nav.purchases" },
-  { view: "payments", icon: "payments", label: "nav.payments" },
-  { view: "journals", icon: "journal", label: "nav.journals" },
-  { view: "fiscal", icon: "calendar", label: "nav.fiscal" },
-  { view: "approvals", icon: "check", label: "nav.approvals" },
-  { view: "accounts", icon: "accounts", label: "nav.accounts" },
-  { view: "treasury", icon: "treasury", label: "nav.treasury" },
-  { view: "inventory", icon: "inventory", label: "nav.inventory" },
-  { view: "reports", icon: "reports", label: "nav.reports" },
-  { view: "imports", icon: "arrowUp", label: "nav.imports" },
+  { view: "pos", icon: "wallet", label: "nav.pos", module: 'POS' },
+  { view: "customers", icon: "customers", label: "nav.customers", module: 'SALES' },
+  { view: "professionalProjects", icon: "users", label: "nav.professionalProjects", module: 'PROFESSIONAL_PROJECTS' },
+  { view: "humanResources", icon: "building", label: "nav.humanResources", module: 'HUMAN_RESOURCES' },
+  { view: "sales", icon: "document", label: "nav.sales", module: 'SALES' },
+  { view: "receipts", icon: "receipts", label: "nav.receipts", module: 'TREASURY' },
+  { view: "suppliers", icon: "suppliers", label: "nav.suppliers", module: 'PURCHASES' },
+  { view: "purchases", icon: "document", label: "nav.purchases", module: 'PURCHASES' },
+  { view: "payments", icon: "payments", label: "nav.payments", module: 'TREASURY' },
+  { view: "journals", icon: "journal", label: "nav.journals", module: 'CORE_ACCOUNTING' },
+  { view: "fiscal", icon: "calendar", label: "nav.fiscal", module: 'CORE_ACCOUNTING' },
+  { view: "approvals", icon: "check", label: "nav.approvals", module: 'APPROVALS' },
+  { view: "accounts", icon: "accounts", label: "nav.accounts", module: 'CORE_ACCOUNTING' },
+  { view: "treasury", icon: "treasury", label: "nav.treasury", module: 'TREASURY' },
+  { view: "inventory", icon: "inventory", label: "nav.inventory", module: 'INVENTORY' },
+  { view: "reports", icon: "reports", label: "nav.reports", module: 'REPORTING' },
+  { view: "imports", icon: "arrowUp", label: "nav.imports", module: 'DATA_IMPORT' },
   { view: "admin", icon: "users", label: "nav.admin" },
   { view: "audit", icon: "audit", label: "nav.audit" },
   { view: "security", icon: "audit", label: "nav.security" },
@@ -108,6 +111,7 @@ export function isNavigationItemVisible(
   if (item.view === "platform") return item.platformOnly === true && access.platformOperations;
   if (!access.hasSelectedCompany) return false;
   if (item.view === "home") return true;
+  if (item.module && !access.moduleSet.has(item.module)) return false;
   return allows(access.permissionSet, viewPermissionPolicies[item.view]);
 }
 

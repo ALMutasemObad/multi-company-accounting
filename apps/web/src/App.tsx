@@ -15,6 +15,7 @@ import {
   type View,
 } from "./app-navigation";
 import { AuthorizationProvider } from "./authorization-context";
+import { effectivePermissionSet } from './module-entitlements';
 
 const SystemHomePage = lazy(() => import("./SystemHomePage").then((module) => ({ default: module.SystemHomePage })));
 const DashboardPage = lazy(() => import("./DashboardPage").then((module) => ({ default: module.DashboardPage })));
@@ -126,11 +127,15 @@ export default function App() {
     setState("company");
   }, [activateAuthorization, chooseCompany]);
 
-  const navigationAccess = useMemo<NavigationAccess>(() => ({
-    permissionSet: new Set(authorization?.permissions ?? []),
-    hasSelectedCompany: Boolean(authorization?.selectedCompany),
-    platformOperations: platformOperator === true,
-  }), [authorization, platformOperator]);
+  const navigationAccess = useMemo<NavigationAccess>(() => {
+    const moduleSet = new Set(authorization?.modules ?? []);
+    return {
+      moduleSet,
+      permissionSet: effectivePermissionSet(authorization?.permissions ?? [], moduleSet),
+      hasSelectedCompany: Boolean(authorization?.selectedCompany),
+      platformOperations: platformOperator === true,
+    };
+  }, [authorization, platformOperator]);
   const allowedNavigationItems = useMemo(
     () => visibleNavigationItems(navigationAccess),
     [navigationAccess],

@@ -505,11 +505,13 @@ describe('generated OpenAPI request guards', () => {
     expect(parseOpenApiResponseBody('getCurrentAuthorization', 200, {
       user: { id: '7', displayName: 'مستخدم' },
       selectedCompany: { id: '12', name: 'المنشأة التجريبية', timezone: 'Asia/Riyadh' },
+      modules: ['SALES', 'TREASURY'],
       permissions: ['receipts.view', 'sales_invoices.view'],
-    })).toMatchObject({ selectedCompany: { id: '12' }, permissions: ['receipts.view', 'sales_invoices.view'] });
+    })).toMatchObject({ selectedCompany: { id: '12' }, modules: ['SALES', 'TREASURY'], permissions: ['receipts.view', 'sales_invoices.view'] });
     expect(() => parseOpenApiResponseBody('getCurrentAuthorization', 200, {
       user: { id: '7', displayName: 'مستخدم' },
       selectedCompany: null,
+      modules: [],
       permissions: [],
       roleNames: ['ADMINISTRATOR'],
     })).toThrow();

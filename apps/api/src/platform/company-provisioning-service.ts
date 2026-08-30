@@ -2,6 +2,7 @@ import { hash } from 'argon2';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import type { AuditAppendPort } from './audit-append-port.js';
+import type { PlatformSubscriptionCompanyProvisioningPort } from '../platform-subscriptions/platform-entitlement-ports.js';
 import {
   CompanyProvisioningError,
   type AccountingCompanyProvisioningPort,
@@ -40,6 +41,7 @@ export class CompanyProvisioningService {
     private readonly identity: IdentityCompanyProvisioningPort,
     private readonly accounting: AccountingCompanyProvisioningPort,
     private readonly treasury: TreasuryCompanyProvisioningPort,
+    private readonly subscriptions: PlatformSubscriptionCompanyProvisioningPort,
     private readonly audit: AuditAppendPort,
   ) {}
 
@@ -80,6 +82,13 @@ export class CompanyProvisioningService {
       tenant.created,
     );
     await this.treasury.provisionTreasury(tx);
+    if (tenant.created) {
+      await this.subscriptions.provisionGrandfatheredAccess(tx, {
+        companyId: tenant.company.id,
+        baseCurrencyCode: tenant.baseCurrency.code,
+        effectiveFrom: tenant.company.createdAt,
+      });
+    }
     await this.audit.append(tx, {
       companyId: tenant.company.id,
       actorUserId: identity.administrator.id,

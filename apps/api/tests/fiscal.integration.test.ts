@@ -6,6 +6,7 @@ import { AuthService } from '../src/auth/auth-service.js';
 import { PrismaAuthStore } from '../src/auth/prisma-auth-store.js';
 import { createDatabase } from '../src/database.js';
 import { FiscalError, FiscalService } from '../src/fiscal/fiscal-service.js';
+import { testAuthOptions } from './helpers/test-auth-options.js';
 
 const enabled = process.env.RUN_DB_TESTS === 'true';
 const databaseUrl = process.env.DATABASE_URL ?? '';
@@ -58,7 +59,7 @@ describe.runIf(enabled)('fiscal periods and document sequences with MariaDB', ()
     const creditAccount = await prisma!.account.create({ data: { companyId, accountTypeId: accountType.id, code: 'FISCAL-TEST-C', nameAr: 'حساب دائن اختباري', level: 1, allowsPosting: true } });
     debitAccountId = debitAccount.id; creditAccountId = creditAccount.id;
     fiscal = new FiscalService(prisma!);
-    const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, { preAuthTtlMinutes: 10, sessionTtlHours: 12 });
+    const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, testAuthOptions(prisma!));
     app = createApp({ NODE_ENV: 'test', PORT: 3000, WEB_ORIGIN: 'http://localhost:5173', SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: databaseUrl }, { auth, fiscal });
   });
 

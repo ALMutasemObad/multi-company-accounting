@@ -81,9 +81,9 @@ describe("PrismaCompanyEntitlementQueryAdapter", () => {
         plan: { code: "BASIC" },
       },
       entitlements: [
-        { module: { code: "SALES" } },
-        { module: { code: "SALES" } },
-        { module: { code: "UNKNOWN_FROM_FUTURE_DEPLOYMENT" } },
+        { module: { code: "SALES", dependencies: [] } },
+        { module: { code: "SALES", dependencies: [] } },
+        { module: { code: "UNKNOWN_FROM_FUTURE_DEPLOYMENT", dependencies: [] } },
       ],
     });
     const prisma = {
@@ -121,5 +121,45 @@ describe("PrismaCompanyEntitlementQueryAdapter", () => {
     await expect(
       new PrismaCompanyEntitlementQueryAdapter(prisma).findCompanyEntitlements(999n),
     ).resolves.toBeNull();
+  });
+
+  it('fails closed when an entitled module is missing an active dependency', async () => {
+    const baseSubscription = {
+      id: 10n,
+      companyId: 20n,
+      status: 'ACTIVE',
+      version: 3,
+      planVersion: {
+        versionNumber: 2,
+        displayName: 'Point of sale',
+        plan: { code: 'POS' },
+      },
+    };
+    const incomplete = {
+      platformSubscription: { findUnique: vi.fn().mockResolvedValue({
+        ...baseSubscription,
+        entitlements: [{ module: {
+          code: 'POS',
+          dependencies: [{ dependsOnModule: { code: 'SALES', isActive: true } }],
+        } }],
+      }) },
+    } as unknown as Pick<PrismaClient, 'platformSubscription'>;
+    const complete = {
+      platformSubscription: { findUnique: vi.fn().mockResolvedValue({
+        ...baseSubscription,
+        entitlements: [
+          { module: {
+            code: 'POS',
+            dependencies: [{ dependsOnModule: { code: 'SALES', isActive: true } }],
+          } },
+          { module: { code: 'SALES', dependencies: [] } },
+        ],
+      }) },
+    } as unknown as Pick<PrismaClient, 'platformSubscription'>;
+
+    await expect(new PrismaCompanyEntitlementQueryAdapter(incomplete)
+      .findCompanyEntitlements(20n)).resolves.toMatchObject({ moduleCodes: [] });
+    await expect(new PrismaCompanyEntitlementQueryAdapter(complete)
+      .findCompanyEntitlements(20n)).resolves.toMatchObject({ moduleCodes: ['POS', 'SALES'] });
   });
 });

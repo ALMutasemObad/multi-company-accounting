@@ -46,7 +46,7 @@ export class TenantCompanyProvisioningAdapter implements TenantCompanyProvisioni
 
     return {
       organization: { id: organization.id, code: organization.code, name: organization.name },
-      company: { id: company.id, code: company.code, name: company.name, timezone: company.timezone },
+      company: { id: company.id, code: company.code, name: company.name, timezone: company.timezone, createdAt: company.createdAt },
       baseCurrency: { id: currency.id, code: currency.code },
       created: !existingCompany,
     };

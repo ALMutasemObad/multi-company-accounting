@@ -9,6 +9,7 @@ import { PrismaAuthStore } from '../src/auth/prisma-auth-store.js';
 import { createDatabase } from '../src/database.js';
 import { FiscalError, FiscalService } from '../src/fiscal/fiscal-service.js';
 import { ManualJournalService, type JournalCreateInput } from '../src/journals/manual-journal-service.js';
+import { testAuthOptions } from './helpers/test-auth-options.js';
 
 const enabled = process.env.RUN_DB_TESTS === 'true';
 const databaseUrl = process.env.DATABASE_URL ?? '';
@@ -101,7 +102,7 @@ describe.runIf(enabled)('manual journal lifecycle with MariaDB', () => {
     const year = await prisma!.fiscalYear.create({ data: { companyId, name: 'IT-JRN-2042', startDate: new Date('2042-01-01'), endDate: new Date('2042-12-31'), periods: { create: [{ periodNumber: 1, name: '2042', startDate: new Date('2042-01-01'), endDate: new Date('2042-12-31') }] } }, include: { periods: true } });
     yearId = year.id; periodId = year.periods[0]!.id;
     service = new ManualJournalService(prisma!);
-    const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, { preAuthTtlMinutes: 10, sessionTtlHours: 12 });
+    const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, testAuthOptions(prisma!));
     app = createApp({ NODE_ENV: 'test', PORT: 3000, WEB_ORIGIN: 'http://localhost:5173', SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: databaseUrl }, { auth, journals: service });
     ({ agent: admin, csrf: adminCsrf } = await login('admin@mcap.local', adminPassword));
     ({ agent: maker, csrf: makerCsrf } = await login(makerEmail, makerPassword));

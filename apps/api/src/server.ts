@@ -78,6 +78,8 @@ import { ProfessionalBillingCurrencyAdapter } from './companies/professional-bil
 import { ProfessionalBillingService } from './projects/professional-billing-service.js';
 import { PrismaAccountingAccountQueryAdapter } from './accounts/prisma-account-query-adapter.js';
 import { createBarcodeLabelService } from './composition/create-barcode-label-service.js';
+import { CompanyCapabilityService } from './platform-subscriptions/company-capability-service.js';
+import { PrismaCompanyEntitlementQueryAdapter } from './platform-subscriptions/prisma-company-entitlement-query-adapter.js';
 
 const config = loadConfig();
 if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required to start the API');
@@ -105,6 +107,9 @@ const bankReconciliation = config.BANK_RECONCILIATION_ENABLED
 const auth = new AuthService(new PrismaAuthStore(database), { verify }, {
   preAuthTtlMinutes: config.PRE_AUTH_TTL_MINUTES,
   sessionTtlHours: config.SESSION_TTL_HOURS,
+  companyCapabilities: new CompanyCapabilityService(
+    new PrismaCompanyEntitlementQueryAdapter(database),
+  ),
 });
 const registrationMailer = config.REGISTRATION_EMAIL_MODE === 'resend'
   ? new ResendRegistrationMailer(config.RESEND_API_KEY!, config.REGISTRATION_EMAIL_FROM!)

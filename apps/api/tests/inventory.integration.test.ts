@@ -6,6 +6,7 @@ import { AuthService } from "../src/auth/auth-service.js";
 import { PrismaAuthStore } from "../src/auth/prisma-auth-store.js";
 import { createDatabase } from "../src/database.js";
 import { InventoryService } from "../src/inventory/inventory-service.js";
+import { testAuthOptions } from "./helpers/test-auth-options.js";
 
 const enabled = process.env.RUN_DB_TESTS === "true" && Boolean(process.env.DATABASE_URL);
 const databaseUrl = process.env.DATABASE_URL ?? "";
@@ -32,7 +33,7 @@ describe.runIf(enabled)("Inventory warehouse ownership, concurrency and company 
     const auth = new AuthService(
       new PrismaAuthStore(prisma!),
       { verify },
-      { preAuthTtlMinutes: 10, sessionTtlHours: 12 },
+      testAuthOptions(prisma!),
     );
     const app = createApp({
       NODE_ENV: "test",

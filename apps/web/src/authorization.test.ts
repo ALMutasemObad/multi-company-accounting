@@ -10,16 +10,28 @@ import {
   visibleSystemGroups,
   type NavigationAccess,
 } from "./app-navigation";
+import { effectivePermissionSet } from './module-entitlements';
+import type { PlatformModuleCode } from './types';
+
+const activeModules: PlatformModuleCode[] = [
+  'CORE_ACCOUNTING', 'SALES', 'PURCHASES', 'TREASURY', 'INVENTORY', 'POS',
+  'REPORTING', 'DATA_IMPORT', 'APPROVALS', 'PROFESSIONAL_PROJECTS',
+  'HUMAN_RESOURCES', 'TAX',
+];
 
 const access = (
   permissions: string[],
   overrides: Partial<Omit<NavigationAccess, "permissionSet">> = {},
-): NavigationAccess => ({
-  permissionSet: new Set(permissions),
-  hasSelectedCompany: true,
-  platformOperations: false,
-  ...overrides,
-});
+): NavigationAccess => {
+  const moduleSet = overrides.moduleSet ?? new Set(activeModules);
+  return {
+    moduleSet,
+    permissionSet: effectivePermissionSet(permissions, moduleSet),
+    hasSelectedCompany: true,
+    platformOperations: false,
+    ...overrides,
+  };
+};
 
 describe("authorization predicates", () => {
   const permissions = new Set(["sales_invoices.view", "sales_invoices.create", "accounts.view"]);
@@ -84,6 +96,15 @@ describe("permission-aware navigation", () => {
 
   it("routes an unauthorized direct hash back to the tenant home", () => {
     expect(resolveAuthorizedView("payments", access(["sales_invoices.view"]))).toBe("home");
+  });
+
+  it('does not expose a module from RBAC alone when its company entitlement is absent', () => {
+    const tenantAccess = access(['sales_invoices.view', 'sales_invoices.create'], {
+      moduleSet: new Set<PlatformModuleCode>(['REPORTING']),
+    });
+
+    expect(visibleNavigationItems(tenantAccess).map((item) => item.view)).toEqual(['home']);
+    expect(allows(tenantAccess.permissionSet, actionPermissionPolicies.salesInvoices.create)).toBe(false);
   });
 
   it("keeps platform capability independent from tenant permissions", () => {

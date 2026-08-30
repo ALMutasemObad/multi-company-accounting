@@ -1,4 +1,5 @@
 import type { AuthStore, ClientMetadata, PasswordVerifier, StoredSession } from './auth-store.js';
+import type { CompanyCapabilityPort } from '../platform-subscriptions/company-capability-service.js';
 import { createOpaqueToken, hashToken, tokenMatches } from './session-tokens.js';
 
 export class AuthError extends Error {
@@ -7,7 +8,11 @@ export class AuthError extends Error {
   }
 }
 
-type AuthOptions = { preAuthTtlMinutes: number; sessionTtlHours: number };
+type AuthOptions = {
+  preAuthTtlMinutes: number;
+  sessionTtlHours: number;
+  companyCapabilities: CompanyCapabilityPort;
+};
 
 export class AuthService {
   constructor(
@@ -75,7 +80,12 @@ export class AuthService {
     if (!snapshot) {
       throw new AuthError(session.selectedCompanyId ? 'FORBIDDEN' : 'UNAUTHENTICATED');
     }
-    return snapshot;
+    if (!snapshot.selectedCompany) return { ...snapshot, modules: [], permissions: [] };
+    const capabilities = await this.options.companyCapabilities.resolve(
+      snapshot.selectedCompany.id,
+      snapshot.permissions,
+    );
+    return { ...snapshot, modules: capabilities.moduleCodes, permissions: capabilities.permissions };
   }
 
   async selectCompany(input: { sid?: string | undefined; csrfToken?: string | undefined; companyId: bigint; metadata?: ClientMetadata }) {
@@ -109,6 +119,8 @@ export class AuthService {
       ? await this.requireSession(input.sid, input.csrfToken, 'AUTHENTICATED')
       : await this.requireAuthenticated(input.sid);
     await this.requirePermission(session, input.permission);
+    const entitled = await this.options.companyCapabilities.allows(session.selectedCompanyId!, input.permission);
+    if (!entitled) throw new AuthError('FORBIDDEN');
     return { sessionId: session.id, userId: session.userId!, companyId: session.selectedCompanyId! };
   }
 

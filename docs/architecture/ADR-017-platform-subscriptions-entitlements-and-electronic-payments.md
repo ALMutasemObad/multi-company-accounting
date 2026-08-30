@@ -1,13 +1,14 @@
 ---
 title: "ADR-017 — Platform Subscriptions, Module Entitlements, and Electronic Payments"
-status: "accepted; SUB-1 foundation implemented locally"
-version: "1.1"
-date: "2026-08-29"
+status: "accepted; SUB-1 merged and SUB-2 implemented locally"
+version: "1.2"
+date: "2026-08-30"
 related:
   - "ADR-013-platform-operations-and-system-home.md"
   - "ADR-015-platform-commercial-operations-and-billing.md"
   - "AUTHORIZATION_SNAPSHOT_AND_UI_CAPABILITIES_AR.md"
   - "BOUNDED_CONTEXT_MAP_AR.md"
+  - "PLATFORM_SUBSCRIPTION_CAPABILITY_ENFORCEMENT_AR.md"
 ---
 
 # ADR-017: خطط الاشتراك واستحقاقات الموديولات والدفع الإلكتروني
@@ -127,7 +128,7 @@ related:
 
 ## حالة التنفيذ
 
-بدأت `SUB-1` في 30 أغسطس 2026 بدفعة تأسيسية توسعية لا تغيّر سلوك الفوترة أو الواجهة:
+دُمجت `SUB-1` في 30 أغسطس 2026 بدفعة تأسيسية توسعية لا تغيّر سلوك الفوترة أو الواجهة:
 
 - أضيف كتالوج `PlatformModule` وأكواد تجارية مستقلة عن أكواد RBAC، مع اعتماديات
   صريحة تمنع تركيب POS بلا Sales وInventory وTreasury.
@@ -140,9 +141,20 @@ related:
   `planName` أو الفواتير أو السدادات السابقة ولا يختلق سعرًا لشركة بلا حساب فوترة.
 - CRM وService Catalog موجودان في الكتالوج بحالة غير نشطة ولا يمنحان كقدرة منفذة.
 
-لا تضيف هذه الدفعة API عامًا أو اختيار خطة ذاتيًا أو إنفاذًا على Routers أو دفعًا
-إلكترونيًا. هذه وظائف `SUB-2/SUB-3/PAY-*` التالية، ولا يجوز تفعيل الإخفاء قبل أن
-يتزامن مع إنفاذ `entitlement ∩ RBAC` خادميًا.
+تنفذ `SUB-2` فوق هذا الأساس من دون Migration جديدة:
+
+- يفرض `AuthService` مركزيًا نجاح RBAC ثم استحقاق موديول الشركة قبل وصول الطلب إلى
+  خدمة الأعمال، مع فشل مغلق للأكواد غير المعروفة أو الاشتراك المفقود.
+- يعيد `/auth/me` الموديولات الفعالة والصلاحيات الناتجة من التقاطع فقط، دون بيانات
+  الخطة أو التسعير، وتستخدم الواجهة المجموعتين في التنقل والبطاقات والأفعال.
+- يرشح قارئ الاستحقاق التاريخ وحالة تفعيل الموديول ويغلق اعتمادياته، بينما تبقى
+  حواجز rollout المتخصصة مثل المطابقة البنكية شرطًا إضافيًا بعد الاستحقاق وRBAC.
+- يحافظ مسار تجهيز الشركات الجديدة والـSeed على grandfathering عبر Port يملكه موديول
+  الاشتراكات داخل معاملة التجهيز نفسها.
+
+لا تضيف `SUB-2` اختيار خطة ذاتيًا أو تغييرًا أو Grace policy أو دفعًا إلكترونيًا.
+تبقى هذه وظائف `SUB-3/PAY-*` التالية، كما هو مفصل في
+[عقد إنفاذ القدرات](PLATFORM_SUBSCRIPTION_CAPABILITY_ENFORCEMENT_AR.md).
 
 ## بوابات القبول
 

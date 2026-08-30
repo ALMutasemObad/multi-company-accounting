@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AuthError, AuthService } from '../src/auth/auth-service.js';
 import type { AuthStore, AuthorizationSnapshot, CompanyAccess, StoredSession, StoredUser } from '../src/auth/auth-store.js';
+import type { CompanyCapabilityPort } from '../src/platform-subscriptions/company-capability-service.js';
 
 class TestStore implements AuthStore {
   sessions = new Map<string, StoredSession>();
@@ -69,11 +70,21 @@ class TestStore implements AuthStore {
 
 const now = new Date('2026-08-01T12:00:00.000Z');
 const user: StoredUser = { id: 7n, emailNormalized: 'user@example.com', passwordHash: 'valid-hash', displayName: 'مستخدم الاختبار', isActive: true, failedLoginAttempts: 0, lockedUntil: null };
+const companyCapabilities: CompanyCapabilityPort = {
+  async resolve(_companyId, rbacPermissions) {
+    return { moduleCodes: ['SALES', 'TREASURY'], permissions: [...new Set(rbacPermissions)].sort() };
+  },
+  async allows() { return true; },
+};
 
-function fixture() {
+function fixture(capabilities: CompanyCapabilityPort = companyCapabilities) {
   const store = new TestStore();
   store.users.set(user.emailNormalized, user);
-  const auth = new AuthService(store, { verify: async (hash, password) => hash === 'valid-hash' && password === 'correct-password' }, { preAuthTtlMinutes: 10, sessionTtlHours: 12 }, () => now);
+  const auth = new AuthService(store, { verify: async (hash, password) => hash === 'valid-hash' && password === 'correct-password' }, {
+    preAuthTtlMinutes: 10,
+    sessionTtlHours: 12,
+    companyCapabilities: capabilities,
+  }, () => now);
   return { store, auth };
 }
 
@@ -137,6 +148,7 @@ describe('AuthService', () => {
     await expect(auth.me({ sid: login.sid })).resolves.toEqual({
       user: { id: user.id, displayName: user.displayName },
       selectedCompany: null,
+      modules: [],
       permissions: [],
     });
   });
@@ -152,8 +164,24 @@ describe('AuthService', () => {
     await expect(auth.me({ sid: login.sid })).resolves.toEqual({
       user: { id: user.id, displayName: user.displayName },
       selectedCompany: store.companies[0],
+      modules: ['SALES', 'TREASURY'],
       permissions: ['receipts.view', 'sales_invoices.view'],
     });
+  });
+
+  it('rejects a direct API authorization when RBAC allows but the company entitlement does not', async () => {
+    const deniedCapabilities: CompanyCapabilityPort = {
+      async resolve() { return { moduleCodes: [], permissions: [] }; },
+      async allows() { return false; },
+    };
+    const { auth, store } = fixture(deniedCapabilities);
+    store.companies = [{ id: 10n, name: 'الشركة التجريبية', timezone: 'Asia/Riyadh' }];
+    const preAuth = await auth.issueCsrf();
+    const login = await auth.login({ sid: preAuth.sid, csrfToken: preAuth.csrfToken, email: user.emailNormalized, password: 'correct-password' });
+    await auth.selectCompany({ sid: login.sid, csrfToken: login.csrfToken, companyId: 10n });
+
+    await expect(auth.authorize({ sid: login.sid, permission: 'sales_invoices.view', requireCsrf: false }))
+      .rejects.toEqual(new AuthError('FORBIDDEN'));
   });
 
   it('rejects a stale selected company context', async () => {
