@@ -340,17 +340,18 @@ export class PlatformPaymentService {
           requestKeyHash: keyHash,
           requestFingerprint: fingerprint,
           requestedById: actor.userId,
-          transitions: { create: {
-            companyId: actor.companyId,
-            fromState: null,
-            toState: "CHECKOUT",
-            source: "COMPANY_OWNER",
-            actorId: actor.userId,
-            occurredAt: this.now(),
-          } },
         },
         include: { invoice: true, checkoutSession: true, billingPayment: true, refund: true },
       });
+      await tx.platformPaymentTransition.create({ data: {
+        companyId: actor.companyId,
+        paymentAttemptId: attempt.id,
+        fromState: null,
+        toState: "CHECKOUT",
+        source: "COMPANY_OWNER",
+        actorId: actor.userId,
+        occurredAt: this.now(),
+      } });
       await this.audit.append(tx, {
         companyId: actor.companyId,
         actorUserId: actor.userId,

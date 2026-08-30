@@ -367,10 +367,8 @@ describe.runIf(enabled)("platform electronic payments on a supported database", 
 
   it("lets authoritative late paid events win after cancel or failure while preserving invalid transitions", async () => {
     const company = await createCompany();
-    const [cancelledInvoice, failedInvoice] = await Promise.all([
-      createInvoice(company.id),
-      createInvoice(company.id),
-    ]);
+    const cancelledInvoice = await createInvoice(company.id);
+    const failedInvoice = await createInvoice(company.id);
     const cancelledCheckout = await createCheckout(company.id, cancelledInvoice);
     await payments().cancelCheckout({ userId: operatorUserId, companyId: company.id }, cancelledCheckout.payment.id, {
       version: cancelledCheckout.payment.version,
@@ -436,12 +434,12 @@ describe.runIf(enabled)("platform electronic payments on a supported database", 
 
   it("paginates and filters invoices and attempts in the database", async () => {
     const company = await createCompany();
-    const invoices = await Promise.all([
-      createInvoice(company.id),
-      createInvoice(company.id),
-      createInvoice(company.id),
-      createInvoice(company.id),
-    ]);
+    const invoices = [
+      await createInvoice(company.id),
+      await createInvoice(company.id),
+      await createInvoice(company.id),
+      await createInvoice(company.id),
+    ];
     const checkouts = [];
     for (const invoice of invoices) checkouts.push(await createCheckout(company.id, invoice));
     await handleSigned(await signedEvent(checkouts[0]!.payment.id, "PAYMENT_PAID"));
