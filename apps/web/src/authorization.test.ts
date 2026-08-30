@@ -109,7 +109,7 @@ describe("permission-aware navigation", () => {
 
   it("keeps platform capability independent from tenant permissions", () => {
     const tenantOperator = access([], { platformOperations: true });
-    expect(visibleNavigationItems(tenantOperator).map((item) => item.view)).toEqual(["home", "platform"]);
+    expect(visibleNavigationItems(tenantOperator).map((item) => item.view)).toEqual(["home", "platform", "platformSubscriptions"]);
 
     const permissionWithoutCapability = access(["platform.operations"]);
     expect(visibleNavigationItems(permissionWithoutCapability).some((item) => item.view === "platform")).toBe(false);
@@ -120,17 +120,25 @@ describe("permission-aware navigation", () => {
       hasSelectedCompany: false,
       platformOperations: true,
     });
-    expect(visibleNavigationItems(platformOnlyAccess).map((item) => item.view)).toEqual(["platform"]);
+    expect(visibleNavigationItems(platformOnlyAccess).map((item) => item.view)).toEqual(["platform", "platformSubscriptions"]);
     expect(visibleSystemGroups(platformOnlyAccess)).toEqual([]);
     expect(resolveAuthorizedView("sales", platformOnlyAccess)).toBe("platform");
   });
 
   it("defines a policy for every non-home tenant navigation item", () => {
     const tenantViews = navigationItems
+      .filter((item) => item.view !== "home" && !item.platformOnly)
       .map((item) => item.view)
-      .filter((view) => view !== "home" && view !== "platform")
       .sort();
     expect(Object.keys(viewPermissionPolicies).sort()).toEqual(tenantViews);
+  });
+
+  it("keeps the subscription page reachable without a business-module entitlement", () => {
+    const subscriptionAccess = access(["subscriptions.view"], {
+      moduleSet: new Set<PlatformModuleCode>(),
+    });
+    expect(visibleNavigationItems(subscriptionAccess).map((item) => item.view)).toEqual(["home", "subscription"]);
+    expect(resolveAuthorizedView("subscription", subscriptionAccess)).toBe("subscription");
   });
 });
 

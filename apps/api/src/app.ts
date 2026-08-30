@@ -105,6 +105,11 @@ import { createHrRouter } from './hr/hr-router.js';
 import type { PlatformOperationsService } from './platform-operations/platform-operations-service.js';
 import type { PlatformBillingService } from './platform-operations/platform-billing-service.js';
 import { createPlatformOperationsRouter } from './platform-operations/platform-operations-router.js';
+import type {
+  PlatformSubscriptionCatalogService,
+  PlatformSubscriptionLifecycleService,
+} from './platform-subscriptions/platform-subscription-service.js';
+import { createPlatformSubscriptionRouter } from './platform-subscriptions/platform-subscription-router.js';
 
 type ClientRequestProblem = {
   status: number;
@@ -156,6 +161,8 @@ export type AppServices = {
   workforceAccess?: WorkforceAccessService;
   platformOperations?: PlatformOperationsService;
   platformBilling?: PlatformBillingService;
+  platformSubscriptionCatalog?: PlatformSubscriptionCatalogService;
+  platformSubscriptionLifecycle?: PlatformSubscriptionLifecycleService;
   companies?: CompanyService;
   printing?: PrintService;
   barcodeLabels?: BarcodeLabelService;
@@ -319,6 +326,13 @@ export function createApp(config: AppConfig, services: AppServices = {}) {
   if (services.auth && services.registration) app.use('/api/v1/auth/register', createRegistrationRouter(services.auth, services.registration));
   if (services.auth && services.passwordReset) app.use('/api/v1/auth/password', createPasswordResetRouter(services.auth, services.passwordReset));
   if (services.auth && services.platformOperations && services.platformBilling) app.use('/api/v1', createPlatformOperationsRouter(services.auth, services.platformOperations, services.platformBilling));
+  if (services.auth && services.platformSubscriptionCatalog && services.platformSubscriptionLifecycle) {
+    app.use('/api/v1', createPlatformSubscriptionRouter(
+      services.auth,
+      services.platformSubscriptionCatalog,
+      services.platformSubscriptionLifecycle,
+    ));
+  }
   if (services.auth && services.users && services.workforceAccess) app.use('/api/v1', createUserRouter(services.auth, services.users, services.workforceAccess));
   if (services.auth && services.companies) app.use('/api/v1', createCompanyRouter(services.auth, services.companies));
   if (services.auth && services.printing) app.use('/api/v1', createPrintRouter(services.auth, services.printing));

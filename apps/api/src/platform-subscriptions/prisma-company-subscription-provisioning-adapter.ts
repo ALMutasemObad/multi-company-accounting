@@ -61,5 +61,31 @@ export class PrismaCompanySubscriptionProvisioningAdapter implements PlatformSub
         reason: "Preserve full access for companies provisioned before self-service plan selection",
       })),
     });
+    const lifecycleChange = await tx.platformSubscriptionChange.create({
+      data: {
+        companyId: input.companyId,
+        subscriptionId: subscription.id,
+        targetPlanVersionId: planVersion.id,
+        state: "APPROVED",
+        source: "MIGRATION",
+        requestedSubscriptionVersion: 0,
+        requestedAt: input.effectiveFrom,
+        effectiveAt: input.effectiveFrom,
+        decidedAt: input.effectiveFrom,
+        decisionReason: "Grandfather access provisioned before self-service plan selection",
+        currencyCode: input.baseCurrencyCode,
+        baseRecurringFee: "0",
+        optionalRecurringFee: "0",
+        totalRecurringFee: "0",
+      },
+      select: { id: true },
+    });
+    await tx.platformSubscriptionChangeModule.createMany({
+      data: modules.map(({ id }) => ({
+        changeId: lifecycleChange.id,
+        moduleId: id,
+        selectionMode: "INCLUDED",
+      })),
+    });
   }
 }

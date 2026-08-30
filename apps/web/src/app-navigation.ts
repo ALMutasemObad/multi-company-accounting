@@ -7,6 +7,8 @@ export type View =
   | "home"
   | "dashboard"
   | "platform"
+  | "platformSubscriptions"
+  | "subscription"
   | "pos"
   | "customers"
   | "professionalProjects"
@@ -44,7 +46,7 @@ export type NavigationAccess = {
   platformOperations: boolean;
 };
 
-type TenantProtectedView = Exclude<View, "home" | "platform">;
+type TenantProtectedView = Exclude<View, "home" | "platform" | "platformSubscriptions">;
 
 export const viewPermissionPolicies: Record<TenantProtectedView, PermissionPolicy> = {
   dashboard: { permission: "dashboard.view" },
@@ -69,12 +71,15 @@ export const viewPermissionPolicies: Record<TenantProtectedView, PermissionPolic
   audit: { permission: "audit_logs.view" },
   security: { permission: "security_events.view" },
   settings: { allOf: ["companies.view", "settings.manage", "currencies.view"] },
+  subscription: { permission: "subscriptions.view" },
 };
 
 export const navigationItems: NavigationItem[] = [
   { view: "home", icon: "home", label: "nav.home" },
   { view: "dashboard", icon: "dashboard", label: "nav.dashboard", module: 'REPORTING' },
   { view: "platform", icon: "platform", label: "nav.platform", platformOnly: true },
+  { view: "platformSubscriptions", icon: "calendar", label: "nav.platformSubscriptions", platformOnly: true },
+  { view: "subscription", icon: "calendar", label: "nav.subscription" },
   { view: "pos", icon: "wallet", label: "nav.pos", module: 'POS' },
   { view: "customers", icon: "customers", label: "nav.customers", module: 'SALES' },
   { view: "professionalProjects", icon: "users", label: "nav.professionalProjects", module: 'PROFESSIONAL_PROJECTS' },
@@ -108,7 +113,9 @@ export function isNavigationItemVisible(
   item: NavigationItem,
   access: NavigationAccess,
 ) {
-  if (item.view === "platform") return item.platformOnly === true && access.platformOperations;
+  if (item.view === "platform" || item.view === "platformSubscriptions") {
+    return item.platformOnly === true && access.platformOperations;
+  }
   if (!access.hasSelectedCompany) return false;
   if (item.view === "home") return true;
   if (item.module && !access.moduleSet.has(item.module)) return false;
@@ -158,7 +165,7 @@ export const systemGroups: SystemGroup[] = [
     key: "administration",
     title: "home.group.administration",
     description: "home.group.administrationDescription",
-    modules: navigationItems.filter((item) => ["imports", "admin", "audit", "security", "settings"].includes(item.view))
+    modules: navigationItems.filter((item) => ["subscription", "imports", "admin", "audit", "security", "settings"].includes(item.view))
       .map((item) => ({ ...item, description: `home.module.${item.view}` as TranslationKey })),
   },
 ];

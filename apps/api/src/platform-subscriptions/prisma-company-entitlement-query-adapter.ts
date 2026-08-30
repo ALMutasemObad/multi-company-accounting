@@ -26,6 +26,20 @@ export class PrismaCompanyEntitlementQueryAdapter implements CompanyEntitlementQ
             plan: { select: { code: true } },
           },
         },
+        changes: {
+          where: { state: "APPROVED", effectiveAt: { lte: effectiveAt } },
+          orderBy: [{ effectiveAt: "desc" as const }, { id: "desc" as const }],
+          take: 1,
+          select: {
+            targetPlanVersion: {
+              select: {
+                versionNumber: true,
+                displayName: true,
+                plan: { select: { code: true } },
+              },
+            },
+          },
+        },
         entitlements: {
           where: {
             effectiveFrom: { lte: effectiveAt },
@@ -82,15 +96,16 @@ export class PrismaCompanyEntitlementQueryAdapter implements CompanyEntitlementQ
       .filter(isPlatformModuleCode)
       .sort();
 
+    const effectivePlan = subscription.changes?.[0]?.targetPlanVersion ?? subscription.planVersion;
     return {
       subscriptionId: subscription.id,
       companyId: subscription.companyId,
       status: subscription.status,
       version: subscription.version,
       plan: {
-        code: subscription.planVersion.plan.code,
-        versionNumber: subscription.planVersion.versionNumber,
-        displayName: subscription.planVersion.displayName,
+        code: effectivePlan.plan.code,
+        versionNumber: effectivePlan.versionNumber,
+        displayName: effectivePlan.displayName,
       },
       moduleCodes,
     };

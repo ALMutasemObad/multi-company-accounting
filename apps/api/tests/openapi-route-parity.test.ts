@@ -35,6 +35,7 @@ import { createProfessionalBillingRouter } from '../src/projects/professional-bi
 import { createProfessionalProjectAccessRouter } from '../src/projects/professional-project-access-router.js';
 import { createHrRouter } from '../src/hr/hr-router.js';
 import { createPlatformOperationsRouter } from '../src/platform-operations/platform-operations-router.js';
+import { createPlatformSubscriptionRouter } from '../src/platform-subscriptions/platform-subscription-router.js';
 
 type RouteLayer = {
   route?: {
@@ -49,6 +50,7 @@ const routers = [
   { prefix: '/auth/password', router: createPasswordResetRouter(stub, stub) },
   { prefix: '/auth/register', router: createRegistrationRouter(stub, stub) },
   { prefix: '', router: createPlatformOperationsRouter(stub, stub, stub) },
+  { prefix: '', router: createPlatformSubscriptionRouter(stub, stub, stub) },
   { prefix: '', router: createUserRouter(stub, stub, stub) },
   { prefix: '', router: createCompanyRouter(stub, stub) },
   { prefix: '', router: createPrintRouter(stub, stub) },
