@@ -45,9 +45,23 @@ migration_database_url_file=${1:-}
    && $(stat -c '%s' -- "$migration_database_url_file") -ge 1 \
    && $(stat -c '%s' -- "$migration_database_url_file") -le 2048 ]] \
   || fail "the protected migration database target file is invalid"
-[[ -f "$node_bin" && ! -L "$node_bin" && -x "$node_bin" \
-   && -f "$selector" && ! -L "$selector" && -x "$selector" ]] \
-  || fail "a required Staging executable is unavailable"
+[[ "$node_bin" == /opt/alt/alt-nodejs22/root/usr/bin/node \
+   && "$selector" == /usr/sbin/cloudlinux-selector ]] \
+  || fail "a required Staging executable path is unexpected"
+node_resolved=$(readlink -f -- "$node_bin") || fail "the Staging Node executable cannot be resolved"
+selector_resolved=$(readlink -f -- "$selector") || fail "the CloudLinux Selector cannot be resolved"
+case "$node_resolved" in /opt/alt/alt-nodejs22/*) ;; *) fail "the Staging Node target is outside its trusted root" ;; esac
+case "$selector_resolved" in /usr/*) ;; *) fail "the CloudLinux Selector target is outside its trusted root" ;; esac
+for executable in "$node_resolved" "$selector_resolved"; do
+  [[ -f "$executable" && ! -L "$executable" && -x "$executable" \
+     && "$(stat -c '%U' -- "$executable")" == root ]] \
+    || fail "a required Staging executable target is unavailable"
+  executable_mode=$(stat -c '%a' -- "$executable")
+  [[ "$executable_mode" =~ ^[0-7]{3,4}$ ]] \
+    && (( (8#$executable_mode & 022) == 0 )) \
+    || fail "a required Staging executable target is writable by an untrusted principal"
+done
+unset executable executable_mode
 [[ "$(id -un)" == "$cloudlinux_user" ]] || fail "the remote Staging user is unexpected"
 [[ -d "$deploy_root" && ! -L "$deploy_root" && "$(readlink -f -- "$deploy_root")" == "$deploy_root" ]] \
   || fail "the deployment root is unsafe"

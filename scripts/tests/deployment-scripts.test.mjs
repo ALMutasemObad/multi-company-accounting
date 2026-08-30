@@ -342,6 +342,12 @@ test("manual Staging operator migration is current-main-only, recoverable, and v
   assert.match(migration, /verify-release\.mjs" --root "\$current_release"/u);
   assert.match(migration, /the Passenger configuration owner is invalid/u);
   assert.match(migration, /the shared pipeline lock owner is invalid/u);
+  assert.match(migration, /node_resolved=\$\(readlink -f -- "\$node_bin"\)/u);
+  assert.match(migration, /selector_resolved=\$\(readlink -f -- "\$selector"\)/u);
+  assert.match(migration, /case "\$node_resolved" in \/opt\/alt\/alt-nodejs22\/\*/u);
+  assert.match(migration, /case "\$selector_resolved" in \/usr\/\*/u);
+  assert.match(migration, /"\$\(stat -c '%U' -- "\$executable"\)" == root/u);
+  assert.match(migration, /8#\$executable_mode & 022/u);
   assert.match(migration, /--app-root "\$app_root" --env-vars "\$candidate_environment"/u);
   assert.match(migration, /verify_registry_environment "\$candidate_environment_json"/u);
   assert.match(migration, /mv -f -- "\$environment_candidate" "\$environment_file"/u);
