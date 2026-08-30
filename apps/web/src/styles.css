@@ -1532,8 +1532,8 @@ h1, h2, h3, .brand strong { font-family: "Cairo", "Noto Sans Devanagari", Tahoma
   .platform-payment-filter label:first-child, .platform-payment-filter label:nth-child(2) { max-width: none; }
   .subscription-payment-list article { grid-template-columns: 1fr; }
   .subscription-payment-list article .row-actions { justify-content: flex-start; }
-  .subscription-admin-tabs { width: 100%; overflow-x: auto; }
-  .subscription-admin-tabs button { flex: 1 0 auto; }
+  .subscription-admin-tabs { width: 100%; flex-wrap: wrap; overflow-x: visible; }
+  .subscription-admin-tabs button { flex: 1 1 140px; min-width: 0; }
 }
 .platform-chart-content { min-width: 0; min-height: 250px; }
 .platform-chart-content > .empty-state { margin: 24px; }
