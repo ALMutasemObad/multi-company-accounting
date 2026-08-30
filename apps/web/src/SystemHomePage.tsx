@@ -5,8 +5,9 @@ import { Icon, PageHeader } from "./ui";
 
 export function SystemHomePage({ onNavigate }: { onNavigate: (view: View) => void }) {
   const { t } = useI18n();
-  const { permissionSet, selectedCompany } = useAuthorization();
+  const { moduleSet, permissionSet, selectedCompany } = useAuthorization();
   const groups = visibleSystemGroups({
+    moduleSet,
     permissionSet,
     hasSelectedCompany: Boolean(selectedCompany),
     platformOperations: false,

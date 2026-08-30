@@ -3,6 +3,7 @@ import { AccountingCompanyProvisioningAdapter } from "../accounts/company-provis
 import { PrismaAuditAppendAdapter } from "../audit/prisma-audit-append-adapter.js";
 import { TenantCompanyProvisioningAdapter } from "../companies/company-provisioning-adapter.js";
 import { CompanyProvisioningService } from "../platform/company-provisioning-service.js";
+import { PrismaCompanySubscriptionProvisioningAdapter } from "../platform-subscriptions/prisma-company-subscription-provisioning-adapter.js";
 import { TreasuryCompanyProvisioningAdapter } from "../treasury/company-provisioning-adapter.js";
 import { IdentityCompanyProvisioningAdapter } from "../users/company-provisioning-adapter.js";
 
@@ -13,6 +14,7 @@ export function createCompanyProvisioningService(prisma: PrismaClient) {
     new IdentityCompanyProvisioningAdapter(),
     new AccountingCompanyProvisioningAdapter(),
     new TreasuryCompanyProvisioningAdapter(),
+    new PrismaCompanySubscriptionProvisioningAdapter(),
     new PrismaAuditAppendAdapter(),
   );
 }

@@ -69,6 +69,7 @@ last_updated: "2026-08-29"
 54. [ADR-017 لخطط الاشتراك والاستحقاقات والدفع الإلكتروني](ADR-017-platform-subscriptions-entitlements-and-electronic-payments.md): فصل الخطة التجارية عن RBAC، واختيار موديولات الشركة، ودورة الاشتراك والدفع عبر مزود مع Webhooks آمنة وIdempotency.
 55. [ADR-018 لملف المنشأة والاستكمال النظامي](ADR-018-business-profile-and-progressive-compliance.md): إبقاء Company وحدة الدفتر، وفصل الاسم التجاري وطبيعة النشاط والهوية القانونية، ومتطلبات تدريجية حسب الدولة مع استثناء الحقول السعودية عن اليمن.
 56. [شريحة إخراج ملصق الباركود B2](BARCODE_LABEL_RENDERING_B2_AR.md): ملكية Printing للتوليد، ومنفذ قراءة Inventory، والبروفايل الثابت، وتقييم اعتماد `@bwip-js/node` وخطة الخروج.
+57. [إنفاذ قدرات اشتراك الشركة SUB-2](PLATFORM_SUBSCRIPTION_CAPABILITY_ENFORCEMENT_AR.md): تقاطع الاستحقاق المؤرخ مع RBAC وحواجز التفعيل في الخادم، وعقد `/auth/me` ووعي التنقل والأفعال بالموديولات، وحفظ grandfathering للشركات الجديدة.
 
 التقرير [ARCHITECTURE_AUDIT_DDD_EVENT_DRIVEN_AR.md](../ARCHITECTURE_AUDIT_DDD_EVENT_DRIVEN_AR.md) وثيقة تقييم وأدلة، وليس بديلًا عن القرارات الحاكمة أعلاه.
 

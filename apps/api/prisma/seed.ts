@@ -4,6 +4,7 @@ import { applyDefaultChartTemplate } from '../src/accounts/default-chart-templat
 import { createDatabase } from '../src/database.js';
 import { currencyDefinitions } from '../src/platform/reference-data.js';
 import { paymentMethodDefinitions } from '../src/treasury/treasury-reference-data.js';
+import { PrismaCompanySubscriptionProvisioningAdapter } from '../src/platform-subscriptions/prisma-company-subscription-provisioning-adapter.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 const adminPassword = process.env.SEED_ADMIN_PASSWORD;
@@ -34,6 +35,12 @@ try {
     update: { isActive: true },
     create: { companyId: company.id, currencyId: currency.id },
   });
+  await prisma.$transaction((tx) => new PrismaCompanySubscriptionProvisioningAdapter()
+    .provisionGrandfatheredAccess(tx, {
+      companyId: company.id,
+      baseCurrencyCode: currency.code,
+      effectiveFrom: company.createdAt,
+    }));
   const user = await prisma.user.upsert({
     where: { emailNormalized: 'admin@mcap.local' },
     update: { passwordHash: await hash(adminPassword), displayName: 'مدير النظام', isActive: true },

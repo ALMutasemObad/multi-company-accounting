@@ -1,0 +1,65 @@
+import type { Prisma } from "@prisma/client";
+import type {
+  PlatformSubscriptionCompanyProvisioningInput,
+  PlatformSubscriptionCompanyProvisioningPort,
+} from "./platform-entitlement-ports.js";
+
+export class PrismaCompanySubscriptionProvisioningAdapter implements PlatformSubscriptionCompanyProvisioningPort {
+  async provisionGrandfatheredAccess(
+    tx: Prisma.TransactionClient,
+    input: PlatformSubscriptionCompanyProvisioningInput,
+  ) {
+    const existing = await tx.platformSubscription.findUnique({
+      where: { companyId: input.companyId },
+      select: { id: true },
+    });
+    if (existing) return;
+
+    const plan = await tx.platformPlan.create({
+      data: { code: `LEGACY_COMPANY_${input.companyId}` },
+      select: { id: true },
+    });
+    const planVersion = await tx.platformPlanVersion.create({
+      data: {
+        planId: plan.id,
+        versionNumber: 1,
+        displayName: "Legacy full access",
+        description: "Grandfathered from access that existed before self-service subscriptions",
+        billingCycle: "MONTHLY",
+        currencyCode: input.baseCurrencyCode,
+        recurringFee: "0",
+        effectiveFrom: input.effectiveFrom,
+        publishedAt: new Date(),
+      },
+      select: { id: true },
+    });
+    const modules = await tx.platformModule.findMany({
+      where: { isActive: true },
+      select: { id: true },
+      orderBy: { code: "asc" },
+    });
+    await tx.platformPlanEntitlement.createMany({
+      data: modules.map(({ id }) => ({ planVersionId: planVersion.id, moduleId: id })),
+      skipDuplicates: true,
+    });
+    const subscription = await tx.platformSubscription.create({
+      data: {
+        companyId: input.companyId,
+        planVersionId: planVersion.id,
+        status: "ACTIVE",
+        startsAt: input.effectiveFrom,
+      },
+      select: { id: true },
+    });
+    await tx.platformSubscriptionEntitlement.createMany({
+      data: modules.map(({ id }) => ({
+        companyId: input.companyId,
+        subscriptionId: subscription.id,
+        moduleId: id,
+        source: "GRANDFATHERED",
+        effectiveFrom: input.effectiveFrom,
+        reason: "Preserve full access for companies provisioned before self-service plan selection",
+      })),
+    });
+  }
+}

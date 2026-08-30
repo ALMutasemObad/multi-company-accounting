@@ -6,6 +6,7 @@ import { createApp } from '../src/app.js';
 import { AuthService } from '../src/auth/auth-service.js';
 import { PrismaAuthStore } from '../src/auth/prisma-auth-store.js';
 import { createDatabase } from '../src/database.js';
+import { testAuthOptions } from './helpers/test-auth-options.js';
 
 const enabled = process.env.RUN_DB_TESTS === 'true';
 const databaseUrl = process.env.DATABASE_URL ?? '';
@@ -23,7 +24,7 @@ describe.runIf(enabled)('authentication with MariaDB', () => {
   });
 
   it('completes CSRF, login, company listing and context selection', async () => {
-    const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, { preAuthTtlMinutes: 10, sessionTtlHours: 12 });
+    const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, testAuthOptions(prisma!));
     const app = createApp({
       NODE_ENV: 'test',
       PORT: 3000,
@@ -44,6 +45,7 @@ describe.runIf(enabled)('authentication with MariaDB', () => {
     expect(beforeContext.body).toEqual({
       user: login.body.user,
       selectedCompany: null,
+      modules: [],
       permissions: [],
     });
     const companies = await agent.get('/api/v1/auth/companies').expect(200);
@@ -57,6 +59,7 @@ describe.runIf(enabled)('authentication with MariaDB', () => {
     expect(current.body.selectedCompany).toEqual(companies.body.data[0]);
     expect(current.body.permissions).toEqual([...current.body.permissions].sort());
     expect(current.body.permissions).toContain('auth.sessions.view');
+    expect(current.body.modules).toContain('SALES');
     const sessions = await agent.get('/api/v1/auth/sessions').expect(200);
     expect(sessions.body.data).toHaveLength(1);
     expect(sessions.body.data[0].current).toBe(true);
@@ -69,7 +72,7 @@ describe.runIf(enabled)('authentication with MariaDB', () => {
   });
 
   it('logs out the current session and expires its cookie', async () => {
-    const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, { preAuthTtlMinutes: 10, sessionTtlHours: 12 });
+    const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, testAuthOptions(prisma!));
     const app = createApp({ NODE_ENV: 'test', PORT: 3000, WEB_ORIGIN: 'http://localhost:5173', SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: databaseUrl }, { auth });
     const agent = request.agent(app);
     const csrf = await agent.get('/api/v1/auth/csrf').expect(200);
@@ -116,7 +119,7 @@ describe.runIf(enabled)('authentication with MariaDB', () => {
         data: { userId: admin.id, companyId: isolatedCompany.id, roleId: role.id },
       });
 
-      const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, { preAuthTtlMinutes: 10, sessionTtlHours: 12 });
+      const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, testAuthOptions(prisma!));
       const app = createApp({ NODE_ENV: 'test', PORT: 3000, WEB_ORIGIN: 'http://localhost:5173', SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: databaseUrl }, { auth });
       const agent = request.agent(app);
       const csrf = await agent.get('/api/v1/auth/csrf').expect(200);
@@ -124,7 +127,8 @@ describe.runIf(enabled)('authentication with MariaDB', () => {
       await agent.put('/api/v1/auth/context').set('X-CSRF-Token', login.body.csrfToken).send({ companyId: isolatedCompany.id.toString() }).expect(204);
 
       const current = await agent.get('/api/v1/auth/me').expect(200);
-      expect(current.body.permissions).toEqual(['auth.sessions.view', 'receipts.view']);
+      expect(current.body.modules).toEqual([]);
+      expect(current.body.permissions).toEqual(['auth.sessions.view']);
 
       await prisma!.role.update({ where: { id: role.id }, data: { isActive: false } });
       expect((await agent.get('/api/v1/auth/me').expect(200)).body.permissions).toEqual([]);

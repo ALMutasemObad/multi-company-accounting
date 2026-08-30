@@ -7,9 +7,25 @@ export type PageMeta = {
 
 export type Company = { id: string; name: string };
 export type User = { id: string; displayName: string };
+export type PlatformModuleCode =
+  | "CORE_ACCOUNTING"
+  | "SALES"
+  | "PURCHASES"
+  | "TREASURY"
+  | "INVENTORY"
+  | "POS"
+  | "REPORTING"
+  | "DATA_IMPORT"
+  | "APPROVALS"
+  | "PROFESSIONAL_PROJECTS"
+  | "HUMAN_RESOURCES"
+  | "TAX"
+  | "CRM"
+  | "SERVICE_CATALOG";
 export type CurrentAuthorization = {
   user: User;
   selectedCompany: (Company & { timezone: string }) | null;
+  modules: PlatformModuleCode[];
   permissions: string[];
 };
 export type EmployeeAccountOption = { id: string; employeeNumber: string; nameAr: string; nameEn: string | null; status: "ACTIVE" | "ON_LEAVE" | "TERMINATED" };

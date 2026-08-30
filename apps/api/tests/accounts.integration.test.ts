@@ -7,6 +7,7 @@ import { DEFAULT_CHART_TEMPLATE_CODE, defaultChartDefinitions } from '../src/acc
 import { AuthService } from '../src/auth/auth-service.js';
 import { PrismaAuthStore } from '../src/auth/prisma-auth-store.js';
 import { createDatabase } from '../src/database.js';
+import { testAuthOptions } from './helpers/test-auth-options.js';
 
 const enabled = process.env.RUN_DB_TESTS === 'true'; const databaseUrl = process.env.DATABASE_URL ?? ''; const password = process.env.SEED_ADMIN_PASSWORD ?? ''; const prisma = enabled ? createDatabase(databaseUrl) : null;
 describe.runIf(enabled)('accounts and cost centers with MariaDB', () => {
@@ -23,7 +24,7 @@ describe.runIf(enabled)('accounts and cost centers with MariaDB', () => {
     await prisma!.costCenter.updateMany({ where: { companyId, code: { startsWith: 'IT-' } }, data: { parentId: null } });
     await prisma!.costCenter.deleteMany({ where: { companyId, code: { startsWith: 'IT-' } } });
     service = new AccountService(prisma!);
-    const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, { preAuthTtlMinutes: 10, sessionTtlHours: 12 });
+    const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, testAuthOptions(prisma!));
     app = createApp({ NODE_ENV: 'test', PORT: 3000, WEB_ORIGIN: 'http://localhost:5173', SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: databaseUrl }, { auth, accounts: service });
     agent = request.agent(app);
     csrf = (await agent.get('/api/v1/auth/csrf')).body.csrfToken;

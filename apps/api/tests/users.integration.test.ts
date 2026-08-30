@@ -10,6 +10,7 @@ import { createCompanyService } from '../src/composition/create-company-service.
 import { WorkforceAccessService } from '../src/workforce-access/workforce-access-service.js';
 import { HrEmployeeAccountAdapter } from '../src/hr/employee-account-adapter.js';
 import { IdentityAccountAdapter } from '../src/users/identity-account-adapter.js';
+import { testAuthOptions } from './helpers/test-auth-options.js';
 
 const enabled = process.env.RUN_DB_TESTS === 'true';
 const databaseUrl = process.env.DATABASE_URL ?? '';
@@ -59,7 +60,7 @@ describe.runIf(enabled)('users and roles with MariaDB', () => {
       },
     });
     employeePublicId = employee.publicId;
-    const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, { preAuthTtlMinutes: 10, sessionTtlHours: 12 });
+    const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, testAuthOptions(prisma!));
     const workforceAccess = new WorkforceAccessService(prisma!, new HrEmployeeAccountAdapter(prisma!), new IdentityAccountAdapter(prisma!));
     app = createApp({ NODE_ENV: 'test', PORT: 3000, WEB_ORIGIN: 'http://localhost:5173', SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: databaseUrl }, { auth, users: new UserService(prisma!), workforceAccess, companies: createCompanyService(prisma!) });
   });

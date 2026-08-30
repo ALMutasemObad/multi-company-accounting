@@ -8,6 +8,7 @@ import { createBarcodeLabelService } from "../src/composition/create-barcode-lab
 import { createDatabase } from "../src/database.js";
 import { InventoryBarcodeService } from "../src/inventory/inventory-barcode-service.js";
 import { InventoryCatalogService } from "../src/inventory/inventory-catalog-service.js";
+import { testAuthOptions } from "./helpers/test-auth-options.js";
 
 const enabled = process.env.RUN_DB_TESTS === "true" && Boolean(process.env.DATABASE_URL);
 const prisma = enabled ? createDatabase(process.env.DATABASE_URL!) : null;
@@ -63,7 +64,7 @@ describe.runIf(enabled)("barcode label input, render, resolve, and tenant isolat
     const auth = new AuthService(
       new PrismaAuthStore(prisma!),
       { verify },
-      { preAuthTtlMinutes: 10, sessionTtlHours: 12 },
+      testAuthOptions(prisma!),
     );
     const app = createApp({
       NODE_ENV: "test",

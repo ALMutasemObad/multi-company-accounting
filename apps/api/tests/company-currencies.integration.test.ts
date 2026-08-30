@@ -6,6 +6,7 @@ import { AuthService } from '../src/auth/auth-service.js';
 import { PrismaAuthStore } from '../src/auth/prisma-auth-store.js';
 import { createCompanyService } from '../src/composition/create-company-service.js';
 import { createDatabase } from '../src/database.js';
+import { testAuthOptions } from './helpers/test-auth-options.js';
 
 const enabled = process.env.RUN_DB_TESTS === 'true' && Boolean(process.env.DATABASE_URL);
 const databaseUrl = process.env.DATABASE_URL ?? '';
@@ -75,7 +76,7 @@ describe.runIf(enabled)('company currencies and dated exchange rates with MariaD
     usdId = usd.id;
     await cleanup();
 
-    const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, { preAuthTtlMinutes: 10, sessionTtlHours: 12 });
+    const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, testAuthOptions(prisma!));
     const companies = createCompanyService(prisma!);
     const app = createApp(
       { NODE_ENV: 'test', PORT: 3000, WEB_ORIGIN: 'http://localhost:5173', SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: databaseUrl },

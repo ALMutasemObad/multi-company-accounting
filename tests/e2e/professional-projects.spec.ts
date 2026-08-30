@@ -228,7 +228,12 @@ test("creates a legal matter, approves time, configures rates, and posts profess
     const json = (body: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 
     if (path === "/auth/companies") return json({ data: [e2eCompany] });
-    if (path === "/auth/me") return json(authMeResponse(permissions));
+    if (path === "/auth/me") return json(authMeResponse(permissions, [
+      "CORE_ACCOUNTING",
+      "SALES",
+      "HUMAN_RESOURCES",
+      "PROFESSIONAL_PROJECTS",
+    ]));
     if (path === "/auth/context") return route.fulfill({ status: 204, body: "" });
     if (path === "/professional-projects/customer-options") return json({ data: [customer] });
     if (path === "/professional-projects/member-options") return json({ data: [manager, consultant] });

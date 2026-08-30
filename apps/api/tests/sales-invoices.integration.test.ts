@@ -13,6 +13,7 @@ import { InventoryMovementService } from "../src/inventory/inventory-movement-se
 import { PrintService } from "../src/printing/print-service.js";
 import { TaxService } from "../src/tax/tax-service.js";
 import { TreasuryService } from "../src/treasury/treasury-service.js";
+import { testAuthOptions } from "./helpers/test-auth-options.js";
 
 const enabled = process.env.RUN_DB_TESTS === "true";
 const databaseUrl = process.env.DATABASE_URL ?? "";
@@ -119,7 +120,7 @@ describe.runIf(enabled)("sales invoices and receivables with MariaDB", () => {
     yearId = year.id;
     periodId = year.periods[0]!.id;
 
-    const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, { preAuthTtlMinutes: 10, sessionTtlHours: 12 });
+    const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, testAuthOptions(prisma!));
     const taxes = new TaxService(prisma!);
     const treasury = new TreasuryService(prisma!);
     app = createApp({ NODE_ENV: "test", PORT: 3000, WEB_ORIGIN: "http://localhost:5173", SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: databaseUrl }, { auth, taxes, salesInvoices: createSalesInvoiceService(prisma!, { taxes }), receipts: createReceiptService(prisma!, { treasury }), printing: new PrintService(prisma!) });

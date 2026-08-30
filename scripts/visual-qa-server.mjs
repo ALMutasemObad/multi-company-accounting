@@ -55,6 +55,20 @@ const visualQaPermissions = [
 const currentAuthorization = {
   user: { id: "1", displayName: "Visual QA User" },
   selectedCompany: { id: "1", name: company.name, timezone: company.timezone },
+  modules: [
+    "CORE_ACCOUNTING",
+    "SALES",
+    "PURCHASES",
+    "TREASURY",
+    "INVENTORY",
+    "POS",
+    "REPORTING",
+    "DATA_IMPORT",
+    "APPROVALS",
+    "PROFESSIONAL_PROJECTS",
+    "HUMAN_RESOURCES",
+    "TAX",
+  ],
   permissions: visualQaPermissions,
 };
 const zeroSection = { rows: [], total: "0.00", comparisonTotal: null, variance: null, variancePercent: null };

@@ -6,6 +6,7 @@ import { AuthService } from "../src/auth/auth-service.js";
 import { PrismaAuthStore } from "../src/auth/prisma-auth-store.js";
 import { createDatabase } from "../src/database.js";
 import { TreasuryService } from "../src/treasury/treasury-service.js";
+import { testAuthOptions } from "./helpers/test-auth-options.js";
 
 const enabled = process.env.RUN_DB_TESTS === "true";
 const databaseUrl = process.env.DATABASE_URL ?? "";
@@ -47,7 +48,7 @@ describe.runIf(enabled)("Treasury ownership, concurrency and company isolation",
     const auth = new AuthService(
       new PrismaAuthStore(prisma!),
       { verify },
-      { preAuthTtlMinutes: 10, sessionTtlHours: 12 },
+      testAuthOptions(prisma!),
     );
     const treasury = new TreasuryService(prisma!);
     app = createApp({

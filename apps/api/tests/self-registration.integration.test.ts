@@ -70,6 +70,17 @@ describe.runIf(enabled)('self-registration with MariaDB', () => {
     for (const email of emails) await prisma.registrationEvent.deleteMany({ where: { emailHash: emailHash(email) } });
     if (companyIds.length) {
       const roles = await prisma.role.findMany({ where: { companyId: { in: companyIds } }, select: { id: true } });
+      const subscriptions = await prisma.platformSubscription.findMany({
+        where: { companyId: { in: companyIds } },
+        select: { planVersion: { select: { id: true, planId: true } } },
+      });
+      const planVersionIds = subscriptions.map(({ planVersion }) => planVersion.id);
+      const planIds = subscriptions.map(({ planVersion }) => planVersion.planId);
+      await prisma.platformSubscriptionEntitlement.deleteMany({ where: { companyId: { in: companyIds } } });
+      await prisma.platformSubscription.deleteMany({ where: { companyId: { in: companyIds } } });
+      await prisma.platformPlanEntitlement.deleteMany({ where: { planVersionId: { in: planVersionIds } } });
+      await prisma.platformPlanVersion.deleteMany({ where: { id: { in: planVersionIds } } });
+      await prisma.platformPlan.deleteMany({ where: { id: { in: planIds } } });
       await prisma.securityEvent.deleteMany({ where: { companyId: { in: companyIds } } });
       await prisma.auditLog.deleteMany({ where: { companyId: { in: companyIds } } });
       await prisma.userCompanyRole.deleteMany({ where: { companyId: { in: companyIds } } });

@@ -18,6 +18,17 @@ suite('multi-company provisioning integration', () => {
     if (organization) {
       const companyIds = organization.companies.map(({ id }) => id);
       const roles = await prisma.role.findMany({ where: { companyId: { in: companyIds } }, select: { id: true } });
+      const subscriptions = await prisma.platformSubscription.findMany({
+        where: { companyId: { in: companyIds } },
+        select: { id: true, planVersion: { select: { id: true, planId: true } } },
+      });
+      const planVersionIds = subscriptions.map(({ planVersion }) => planVersion.id);
+      const planIds = subscriptions.map(({ planVersion }) => planVersion.planId);
+      await prisma.platformSubscriptionEntitlement.deleteMany({ where: { companyId: { in: companyIds } } });
+      await prisma.platformSubscription.deleteMany({ where: { companyId: { in: companyIds } } });
+      await prisma.platformPlanEntitlement.deleteMany({ where: { planVersionId: { in: planVersionIds } } });
+      await prisma.platformPlanVersion.deleteMany({ where: { id: { in: planVersionIds } } });
+      await prisma.platformPlan.deleteMany({ where: { id: { in: planIds } } });
       await prisma.companyExchangeRate.deleteMany({ where: { companyId: { in: companyIds } } });
       await prisma.companyCurrency.deleteMany({ where: { companyId: { in: companyIds } } });
       await prisma.auditLog.deleteMany({ where: { companyId: { in: companyIds } } });
@@ -78,6 +89,13 @@ suite('multi-company provisioning integration', () => {
       const company = await prisma.company.findUniqueOrThrow({ where: { id: companyId } });
       expect(await prisma.companyCurrency.count({ where: { companyId, currencyId: company.baseCurrencyId, isActive: true } })).toBe(1);
       expect(await prisma.account.count({ where: { companyId, sourceTemplateCode: DEFAULT_CHART_TEMPLATE_CODE } })).toBe(defaultChartDefinitions.length);
+      const subscription = await prisma.platformSubscription.findUniqueOrThrow({
+        where: { companyId },
+        include: { entitlements: true },
+      });
+      expect(subscription.status).toBe('ACTIVE');
+      expect(subscription.entitlements).toHaveLength(await prisma.platformModule.count({ where: { isActive: true } }));
+      expect(new Set(subscription.entitlements.map(({ source }) => source))).toEqual(new Set(['GRANDFATHERED']));
     }
   }, 20_000);
 });

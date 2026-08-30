@@ -23,7 +23,7 @@ export type TenantProvisioningInput = {
 
 export type TenantProvisioningResult = {
   organization: { id: bigint; code: string; name: string };
-  company: { id: bigint; code: string; name: string; timezone: string };
+  company: { id: bigint; code: string; name: string; timezone: string; createdAt: Date };
   baseCurrency: { id: bigint; code: string };
   created: boolean;
 };

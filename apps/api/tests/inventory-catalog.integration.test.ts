@@ -9,6 +9,7 @@ import {
   InventoryCatalogError,
   InventoryCatalogService,
 } from "../src/inventory/inventory-catalog-service.js";
+import { testAuthOptions } from "./helpers/test-auth-options.js";
 
 const enabled = process.env.RUN_DB_TESTS === "true" && Boolean(process.env.DATABASE_URL);
 const databaseUrl = process.env.DATABASE_URL ?? "";
@@ -35,7 +36,7 @@ describe.runIf(enabled)("Inventory catalog ownership, concurrency and company is
     const auth = new AuthService(
       new PrismaAuthStore(prisma!),
       { verify },
-      { preAuthTtlMinutes: 10, sessionTtlHours: 12 },
+      testAuthOptions(prisma!),
     );
     const app = createApp({
       NODE_ENV: "test",

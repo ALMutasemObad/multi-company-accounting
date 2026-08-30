@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.40.0
+  version: 1.41.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -456,7 +456,7 @@ paths:
       tags:
       - Authentication
       summary: هوية الجلسة وسياق الشركة والصلاحيات الفعلية
-      description: يعيد سياق التفويض المشتق من الجلسة الحالية فقط. لا يقبل companyId من العميل، وتستخدم الواجهة النتيجة للعرض بينما يبقى إنفاذ الصلاحيات على الخادم.
+      description: يعيد سياق التفويض المشتق من الجلسة الحالية فقط. عند اختيار شركة تكون modules هي الموديولات الفعالة بعد حواجز التفعيل والاستحقاقات المؤرخة، وتكون permissions هي تقاطع RBAC مع تلك الموديولات. لا يقبل companyId من العميل ولا يكشف الخطة أو التسعير أو حالة الفوترة، وتستخدم الواجهة النتيجة للعرض بينما يبقى الإنفاذ على الخادم.
       operationId: getCurrentAuthorization
       responses:
         '200':
@@ -9762,6 +9762,7 @@ components:
       required:
       - user
       - selectedCompany
+      - modules
       - permissions
       properties:
         user:
@@ -9770,8 +9771,30 @@ components:
           oneOf:
           - $ref: '#/components/schemas/CompanyAccess'
           - type: 'null'
+        modules:
+          type: array
+          description: رموز الموديولات الفعالة للشركة المختارة بعد التفعيل والاستحقاقات المؤرخة. تكون فارغة قبل اختيار شركة أو عند غياب الاشتراك.
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+            - CORE_ACCOUNTING
+            - SALES
+            - PURCHASES
+            - TREASURY
+            - INVENTORY
+            - POS
+            - REPORTING
+            - DATA_IMPORT
+            - APPROVALS
+            - PROFESSIONAL_PROJECTS
+            - HUMAN_RESOURCES
+            - TAX
+            - CRM
+            - SERVICE_CATALOG
         permissions:
           type: array
+          description: صلاحيات RBAC الفعلية بعد تقاطعها مع الموديولات الفعالة؛ لا تُعد بديلًا عن إنفاذ الخادم.
           uniqueItems: true
           items:
             type: string

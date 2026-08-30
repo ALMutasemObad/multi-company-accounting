@@ -33,7 +33,7 @@ test("previews a bank statement, approves its match, and closes a zero-differenc
     const json = (body: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 
     if (path === "/auth/companies") return json({ data: [e2eCompany] });
-    if (path === "/auth/me") return json(authMeResponse(permissions));
+    if (path === "/auth/me") return json(authMeResponse(permissions, ["CORE_ACCOUNTING", "TREASURY"]));
     if (path === "/auth/context") return route.fulfill({ status: 204, body: "" });
     if (path === "/bank-reconciliation/capabilities") return json({ enabled: true, stage: "CLOSE", canImport: true, canSuggest: true, canReview: true, canClose: true });
     if (path === "/cash-bank-accounts") return json({ data: [bankAccount], meta: meta(1) });

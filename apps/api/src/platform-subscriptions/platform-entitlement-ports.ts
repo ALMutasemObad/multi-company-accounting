@@ -39,6 +39,19 @@ export interface CompanyEntitlementQueryPort {
   ): Promise<CompanyEntitlementSnapshot | null>;
 }
 
+export type PlatformSubscriptionCompanyProvisioningInput = {
+  companyId: bigint;
+  baseCurrencyCode: string;
+  effectiveFrom: Date;
+};
+
+export interface PlatformSubscriptionCompanyProvisioningPort {
+  provisionGrandfatheredAccess(
+    tx: import("@prisma/client").Prisma.TransactionClient,
+    input: PlatformSubscriptionCompanyProvisioningInput,
+  ): Promise<void>;
+}
+
 export function isPlatformModuleCode(value: string): value is PlatformModuleCode {
   return (PLATFORM_MODULE_CODES as readonly string[]).includes(value);
 }

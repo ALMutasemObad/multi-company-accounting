@@ -365,6 +365,23 @@ describe("core accounting architecture guardrails", () => {
     expect(adapter).not.toMatch(/\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
   });
 
+  it('keeps company capabilities in the server authorization path and the web entitlement intersection', async () => {
+    const [auth, server, capabilityPolicy, webAuthorization, webNavigation] = await Promise.all([
+      source('auth/auth-service.ts'),
+      source('server.ts'),
+      source('platform-subscriptions/company-capability-service.ts'),
+      projectFile('apps/web/src/authorization-context.tsx'),
+      projectFile('apps/web/src/app-navigation.ts'),
+    ]);
+
+    expect(auth).toContain('companyCapabilities.allows');
+    expect(auth).toContain("throw new AuthError('FORBIDDEN')");
+    expect(server).toContain('new PrismaCompanyEntitlementQueryAdapter(database)');
+    expect(capabilityPolicy).toContain('permissionEntitlement(permission)');
+    expect(webAuthorization).toContain('effectivePermissionSet(authorization.permissions, moduleSet)');
+    expect(webNavigation).toContain('!access.moduleSet.has(item.module)');
+  });
+
   it("keeps open-source bank file parsers behind Treasury adapters", async () => {
     const sources = await allTypeScriptSources();
     const parserImport = /from\s+["'](?:csv-parse(?:\/sync)?|fast-xml-parser)["']/u;
