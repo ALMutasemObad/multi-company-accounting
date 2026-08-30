@@ -257,6 +257,10 @@ test("legacy recovery workflows are manual Staging operations pinned to current 
     const source = await readFile(path.join(repositoryRoot, ".github", "workflows", workflowFile), "utf8");
     const currentMainIndex = source.indexOf("Verify this manual Staging recovery uses current main");
     const secretIndex = source.indexOf("CPANEL_SSH_PRIVATE_KEY: ${{ secrets.CPANEL_SSH_PRIVATE_KEY }}");
+    const lockIndex = source.indexOf('pipeline_lock="$deploy_root/.pipeline.lock"');
+    const stateIndexes = [source.indexOf("current_release=$(readlink"), source.indexOf("old_current=$(readlink")]
+      .filter((index) => index >= 0);
+    const stateIndex = Math.min(...stateIndexes);
 
     assert.match(source, /^name: Staging .+ \(manual\)$/mu);
     assert.match(source, /on:\s+workflow_dispatch:/u);
@@ -270,9 +274,96 @@ test("legacy recovery workflows are manual Staging operations pinned to current 
     assert.match(source, /environment:\s+# Legacy secret scope only; the remote target is classified as Staging\.[\s\S]*name: production/u);
     assert.doesNotMatch(source, /environment:\s+name: staging/u);
     assert.match(source, operationalSignature);
+    assert.match(source, /pipeline_lock="\$deploy_root\/\.pipeline\.lock"/u);
+    assert.match(source, /set -o noclobber/u);
+    assert.match(source, /flock -w 60 8/u);
+    assert.ok(lockIndex > secretIndex, `${workflowFile} must take the remote lock after configuring SSH`);
+    assert.ok(Number.isFinite(stateIndex) && stateIndex > lockIndex, `${workflowFile} must lock before reading mutable release state`);
     assert.ok(currentMainIndex > 0, `${workflowFile} must verify current main before reading secrets`);
     assert.ok(secretIndex > currentMainIndex, `${workflowFile} must not read the SSH secret before current-main verification`);
   }
+});
+
+test("manual Staging operator migration is current-main-only, recoverable, and value-redacted", async () => {
+  const [workflow, migration, switcher, recreate, operations] = await Promise.all([
+    readFile(path.join(repositoryRoot, ".github", "workflows", "staging-platform-operator-id-migration.yml"), "utf8"),
+    readFile(path.join(repositoryRoot, "deploy", "scripts", "migrate-staging-platform-operator-ids.sh"), "utf8"),
+    readFile(path.join(repositoryRoot, "deploy", "scripts", "switch-cloudlinux-registration.sh"), "utf8"),
+    readFile(path.join(repositoryRoot, ".github", "workflows", "production-cloudlinux-recreate.yml"), "utf8"),
+    readFile(path.join(repositoryRoot, "docs", "production-operations.md"), "utf8"),
+  ]);
+
+  const currentMainIndex = workflow.indexOf("Verify this manual Staging migration uses current main");
+  const sshSecretIndex = workflow.indexOf("CPANEL_SSH_PRIVATE_KEY: ${{ secrets.CPANEL_SSH_PRIVATE_KEY }}");
+  const migrationSecretIndex = workflow.indexOf("MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}");
+
+  assert.match(workflow, /^name: Staging platform operator ID migration \(manual\)$/mu);
+  assert.match(workflow, /on:\s+workflow_dispatch:/u);
+  assert.doesNotMatch(workflow, /(?:^|\n)\s*(?:push|pull_request|schedule):/u);
+  assert.match(workflow, /if: github\.ref == 'refs\/heads\/main'/u);
+  assert.match(workflow, /persist-credentials: false/u);
+  assert.match(workflow, /current_main=\$\(gh api "\/repos\/\$GITHUB_REPOSITORY\/git\/ref\/heads\/main"/u);
+  assert.match(workflow, /test "\$current_main" = "\$GITHUB_SHA"/u);
+  assert.match(workflow, /deploy\/ssh\/ifastnet_known_hosts/u);
+  assert.match(workflow, /StrictHostKeyChecking=yes/u);
+  assert.match(workflow, /\\u0000-\\u001f\\u007f/u);
+  assert.match(workflow, /base64 --wrap=0/u);
+  assert.match(workflow, /base64 --decode > "\$secret_file"/u);
+  assert.match(workflow, /unset MIGRATION_DATABASE_URL/u);
+  assert.match(workflow, /bash -s -- "\$secret_file"/u);
+  assert.doesNotMatch(workflow, /printf '%s\\n' "\$MIGRATION_DATABASE_URL"/u);
+  assert.match(workflow, /cancel-in-progress: false/u);
+  assert.match(workflow, /timeout-minutes: 45/u);
+  assert.match(workflow, /Legacy secret scope only; the remote target is classified as Staging/u);
+  assert.ok(currentMainIndex > 0, "current main must be verified");
+  assert.ok(sshSecretIndex > currentMainIndex, "SSH secrets must be read only after current-main verification");
+  assert.ok(migrationSecretIndex > sshSecretIndex, "the database target must be read only in the migration step");
+
+  assert.match(migration, /^set -Eeuo pipefail$/mu);
+  assert.match(migration, /^umask 077$/mu);
+  assert.match(migration, /\.pipeline\.lock/u);
+  assert.match(migration, /flock -w "\$pipeline_lock_wait_seconds"/u);
+  assert.match(migration, /timeout --kill-after=10s 60s "\$selector"/u);
+  assert.match(migration, /platform-operator-registry-before-/u);
+  assert.match(migration, /platform-operator-htaccess-before-/u);
+  assert.match(migration, /platform-operator-env-before-/u);
+  assert.match(migration, /chmod 0600 -- "\$registry_backup" "\$passenger_backup"/u);
+  assert.match(migration, /emailNormalized: \{ in: emails \}/u);
+  assert.match(migration, /select: \{ id: true, emailNormalized: true, isActive: true \}/u);
+  assert.match(migration, /MAX_OPERATOR_COUNT = 64/u);
+  assert.match(migration, /MAX_UNSIGNED_BIGINT/u);
+  assert.match(migration, /readBounded\(migrationDatabaseUrlPath, MAX_DATABASE_URL_BYTES\)/u);
+  assert.doesNotMatch(migration, /process\.env\.MCAP_MIGRATION_DATABASE_URL/u);
+  assert.match(migration, /retiredDatabaseBrand/u);
+  assert.match(migration, /email sources differ/u);
+  assert.match(migration, /database sources differ/u);
+  assert.match(migration, /existingIdSources\.length === sources\.length \? "noop" : "migrate"/u);
+  assert.match(migration, /configuredIds\.length !== sources\.length/u);
+  assert.match(migration, /verify-release\.mjs" --root "\$current_release"/u);
+  assert.match(migration, /the Passenger configuration owner is invalid/u);
+  assert.match(migration, /the shared pipeline lock owner is invalid/u);
+  assert.match(migration, /--app-root "\$app_root" --env-vars "\$candidate_environment"/u);
+  assert.match(migration, /verify_registry_environment "\$candidate_environment_json"/u);
+  assert.match(migration, /mv -f -- "\$environment_candidate" "\$environment_file"/u);
+  assert.match(migration, /mv -f -- "\$passenger_candidate" "\$passenger_config_file"/u);
+  assert.match(migration, /rollback_configuration/u);
+  assert.match(migration, /verify_registry_environment "\$original_environment_json"/u);
+  assert.match(migration, /"\$selector" restart --json/u);
+  assert.match(migration, /probe_health 15/u);
+  assert.match(migration, /probe_health 30/u);
+  assert.match(migration, /verify_preflight/u);
+  assert.match(migration, /\[\[ "\$action" == noop \]\]/u);
+  assert.doesNotMatch(migration, /set -x/u);
+  assert.doesNotMatch(migration, /(?:echo|printf|console\.log)\s*[^\n]*(?:PLATFORM_OPERATOR_EMAILS|PLATFORM_OPERATOR_USER_IDS|DATABASE_URL)/u);
+  const ci = await readFile(path.join(repositoryRoot, ".github", "workflows", "ci.yml"), "utf8");
+  assert.equal(ci.match(/deploy\/scripts\/migrate-staging-platform-operator-ids\.sh/gmu)?.length, 2);
+
+  assert.match(switcher, /legacyOperatorEmails = environment\.PLATFORM_OPERATOR_EMAILS/u);
+  assert.match(switcher, /delete environment\.PLATFORM_OPERATOR_EMAILS/u);
+  assert.match(recreate, /registry backup contains the retired platform operator email allowlist/u);
+  assert.match(recreate, /delete environment\.PLATFORM_OPERATOR_EMAILS/u);
+  assert.match(operations, /Staging platform operator ID migration \(manual\)/u);
+  assert.match(operations, /platform-operator-registry-before-/u);
 });
 
 test("release packaging is shared by verification and deployment and emits only immutable digests", async () => {

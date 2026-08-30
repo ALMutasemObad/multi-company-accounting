@@ -72,6 +72,16 @@ jobs:
           [[ -f "$environment_file" && ! -L "$environment_file" ]] || fail "protected environment file is unavailable"
           [[ -d "$backup_dir" && ! -L "$backup_dir" ]] || fail "recovery backup directory is invalid"
 
+          pipeline_lock="$deploy_root/.pipeline.lock"
+          if [[ ! -e "$pipeline_lock" && ! -L "$pipeline_lock" ]]; then
+            (set -o noclobber; umask 077; : > "$pipeline_lock") 2>/dev/null || true
+          fi
+          [[ -f "$pipeline_lock" && ! -L "$pipeline_lock" ]] || fail "the shared Staging pipeline lock is unsafe"
+          [[ "$(stat -c '%U' -- "$pipeline_lock")" == doralash ]] || fail "the shared Staging pipeline lock owner is invalid"
+          chmod 0600 -- "$pipeline_lock"
+          exec 8>>"$pipeline_lock"
+          flock -w 60 8 || fail "timed out waiting for another Staging operation"
+
           current_release=$(readlink -f -- "$deploy_root/current") || fail "current release link is unavailable"
           case "$current_release" in
             "$deploy_root/releases/"*) ;;

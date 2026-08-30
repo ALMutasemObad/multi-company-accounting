@@ -290,6 +290,7 @@ jobs:
             deploy/scripts/install-cpanel-release.sh deploy/scripts/rollback-cpanel-release.sh \
             deploy/scripts/deploy-cpanel-release.sh deploy/scripts/switch-cloudlinux-registration.sh \
             deploy/scripts/create-cpanel-offsite-backup.sh \
+            deploy/scripts/migrate-staging-platform-operator-ids.sh \
             scripts/release/package-release.sh \
             scripts/ci/database-roundtrip.sh scripts/ci/database-identities.integration.sh \
             scripts/ci/database-upgrade-compatibility.sh \
@@ -306,6 +307,7 @@ jobs:
             deploy/scripts/install-cpanel-release.sh deploy/scripts/rollback-cpanel-release.sh \
             deploy/scripts/deploy-cpanel-release.sh deploy/scripts/switch-cloudlinux-registration.sh \
             deploy/scripts/create-cpanel-offsite-backup.sh \
+            deploy/scripts/migrate-staging-platform-operator-ids.sh \
             scripts/release/package-release.sh \
             scripts/ci/database-identities.integration.sh \
             scripts/ci/database-upgrade-compatibility.sh \

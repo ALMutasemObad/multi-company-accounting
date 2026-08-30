@@ -133,6 +133,9 @@ write_target_environment_snapshot() {
     const fs = require("node:fs");
     const [source, destination, tokenPath] = process.argv.slice(1);
     const environment = JSON.parse(fs.readFileSync(source, "utf8"));
+    const legacyOperatorEmails = environment.PLATFORM_OPERATOR_EMAILS;
+    if (typeof legacyOperatorEmails === "string" && legacyOperatorEmails.trim().length > 0) process.exit(4);
+    delete environment.PLATFORM_OPERATOR_EMAILS;
     const token = tokenPath
       ? fs.readFileSync(tokenPath, "utf8")
       : environment.METRICS_BEARER_TOKEN;
