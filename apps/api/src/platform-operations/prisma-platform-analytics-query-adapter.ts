@@ -355,12 +355,23 @@ export class PrismaPlatformAnalyticsQueryAdapter implements PlatformAnalyticsQue
         ...(invoiceCursor === undefined ? {} : { cursor: { id: invoiceCursor }, skip: 1 }),
       });
       if (!invoices.length) break;
-      const paymentTotals = await this.prisma.platformBillingPayment.groupBy({
-        by: ["invoiceId"],
-        where: { invoiceId: { in: invoices.map((invoice) => invoice.id) } },
-        _sum: { amount: true },
-      });
-      const paidByInvoice = new Map(paymentTotals.map((row) => [row.invoiceId.toString(), row._sum.amount]));
+      const invoiceIds = invoices.map((invoice) => invoice.id);
+      const [paymentTotals, succeededRefunds] = await Promise.all([
+        this.prisma.platformBillingPayment.groupBy({
+          by: ["invoiceId"],
+          where: { invoiceId: { in: invoiceIds } },
+          _sum: { amount: true },
+        }),
+        this.prisma.platformBillingRefund.findMany({
+          where: { state: "SUCCEEDED", payment: { invoiceId: { in: invoiceIds } } },
+          select: { amount: true, payment: { select: { invoiceId: true } } },
+        }),
+      ]);
+      const paidByInvoice = new Map(paymentTotals.map((row) => [row.invoiceId.toString(), decimal(row._sum.amount ?? 0)]));
+      for (const refund of succeededRefunds) {
+        const key = refund.payment.invoiceId.toString();
+        paidByInvoice.set(key, (paidByInvoice.get(key) ?? decimal(0)).minus(refund.amount));
+      }
       for (const invoice of invoices) {
         const aggregate = currencyAggregate(invoice.currencyCode);
         const company = companies.get(invoice.companyId.toString());
@@ -387,7 +398,8 @@ export class PrismaPlatformAnalyticsQueryAdapter implements PlatformAnalyticsQue
           aggregate.previousTimeline[previousBucketIndex]!.billed =
             aggregate.previousTimeline[previousBucketIndex]!.billed.plus(invoice.totalAmount);
         }
-        const paid = paidByInvoice.get(invoice.id.toString()) ?? decimal(0);
+        const rawPaid = paidByInvoice.get(invoice.id.toString()) ?? decimal(0);
+        const paid = rawPaid.gt(0) ? rawPaid : decimal(0);
         const difference = decimal(invoice.totalAmount).minus(paid);
         const balance = difference.gt(0) ? difference : decimal(0);
         if (balance.eq(0)) continue;
@@ -458,6 +470,55 @@ export class PrismaPlatformAnalyticsQueryAdapter implements PlatformAnalyticsQue
       }
       if (payments.length < PLATFORM_ANALYTICS_BILLING_BATCH_SIZE) break;
       paymentCursor = payments.at(-1)!.id;
+    }
+
+    let refundCursor: bigint | undefined;
+    while (true) {
+      const refunds = await this.prisma.platformBillingRefund.findMany({
+        where: {
+          ...companyWhere,
+          state: "SUCCEEDED",
+          completedAt: { gte: paymentFrom, lt: paymentToExclusive },
+          payment: { invoice: { state: "ISSUED" } },
+        },
+        select: {
+          id: true, companyId: true, completedAt: true, amount: true,
+          payment: { select: { invoice: { select: { currencyCode: true } } } },
+        },
+        orderBy: { id: "asc" },
+        take: PLATFORM_ANALYTICS_BILLING_BATCH_SIZE,
+        ...(refundCursor === undefined ? {} : { cursor: { id: refundCursor }, skip: 1 }),
+      });
+      if (!refunds.length) break;
+      for (const refund of refunds) {
+        if (!refund.completedAt) continue;
+        const currencyCode = refund.payment.invoice.currencyCode;
+        const aggregate = currencyAggregate(currencyCode);
+        const company = companies.get(refund.companyId.toString());
+        const companyMatchesCurrency = company?.currencyCode === currencyCode;
+        if (within(refund.completedAt, input.from, input.toExclusive)) {
+          aggregate.collected = aggregate.collected.minus(refund.amount);
+          if (companyMatchesCurrency) company.collected = company.collected.minus(refund.amount);
+        }
+        if (input.comparisonFrom && input.comparisonToExclusive
+          && within(refund.completedAt, input.comparisonFrom, input.comparisonToExclusive)) {
+          aggregate.priorCollected = aggregate.priorCollected.minus(refund.amount);
+        }
+        const currentBucketIndex = input.currentBuckets.findIndex((bucket) =>
+          within(refund.completedAt!, bucket.from, bucket.toExclusive));
+        if (currentBucketIndex >= 0) {
+          aggregate.currentTimeline[currentBucketIndex]!.collected =
+            aggregate.currentTimeline[currentBucketIndex]!.collected.minus(refund.amount);
+        }
+        const previousBucketIndex = input.previousBuckets?.findIndex((bucket) =>
+          within(refund.completedAt!, bucket.from, bucket.toExclusive)) ?? -1;
+        if (previousBucketIndex >= 0 && aggregate.previousTimeline) {
+          aggregate.previousTimeline[previousBucketIndex]!.collected =
+            aggregate.previousTimeline[previousBucketIndex]!.collected.minus(refund.amount);
+        }
+      }
+      if (refunds.length < PLATFORM_ANALYTICS_BILLING_BATCH_SIZE) break;
+      refundCursor = refunds.at(-1)!.id;
     }
 
     const financials = [...currencyAggregates.entries()].sort(([left], [right]) => left.localeCompare(right))

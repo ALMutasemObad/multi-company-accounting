@@ -84,6 +84,9 @@ import { PrismaAccountingAccountQueryAdapter } from './accounts/prisma-account-q
 import { createBarcodeLabelService } from './composition/create-barcode-label-service.js';
 import { CompanyCapabilityService } from './platform-subscriptions/company-capability-service.js';
 import { PrismaCompanyEntitlementQueryAdapter } from './platform-subscriptions/prisma-company-entitlement-query-adapter.js';
+import { PrismaPlatformBillingSubscriptionSnapshotAdapter } from './platform-subscriptions/prisma-platform-billing-subscription-snapshot-adapter.js';
+import { PlatformSubscriptionPaymentEvidenceAdapter } from './platform-operations/payments/platform-subscription-payment-evidence-adapter.js';
+import { createPlatformPaymentService } from './composition/create-platform-payment-service.js';
 
 const config = loadConfig();
 if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required to start the API');
@@ -225,6 +228,8 @@ async function startServer() {
     platformOperations,
     platformAnalytics,
     new PrismaAuditAppendAdapter(),
+    undefined,
+    new PrismaPlatformBillingSubscriptionSnapshotAdapter(),
   );
   const subscriptionAudit = new PrismaAuditAppendAdapter();
   const subscriptionOperatorAuthorization = {
@@ -240,6 +245,15 @@ async function startServer() {
     database,
     subscriptionOperatorAuthorization,
     subscriptionAudit,
+    undefined,
+    new PlatformSubscriptionPaymentEvidenceAdapter(),
+  );
+  const platformPayments = createPlatformPaymentService(
+    database,
+    platformOperations,
+    platformAnalytics,
+    new PrismaAuditAppendAdapter(),
+    config,
   );
   const app = createApp(config, {
     readiness: new DatabaseReadinessService(database, config.READINESS_TIMEOUT_MS),
@@ -257,6 +271,7 @@ async function startServer() {
     platformBilling,
     platformSubscriptionCatalog,
     platformSubscriptionLifecycle,
+    platformPayments,
     companies: createCompanyService(database),
     printing: new PrintService(database),
     barcodeLabels: createBarcodeLabelService(database),

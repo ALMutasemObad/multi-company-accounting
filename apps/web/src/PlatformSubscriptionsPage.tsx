@@ -1,5 +1,13 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { api, idempotencyKey } from "./api";
+import { formatCurrencyDecimal } from "./decimal-format";
+import {
+  canRefundElectronicPayment,
+  electronicPaymentStates,
+  type BillingPage,
+  type ElectronicPayment,
+  type ElectronicPaymentState,
+} from "./electronic-payments";
 import { useI18n } from "./i18n";
 import type { PageMeta, SubscriptionPlanVersion, SubscriptionSnapshot } from "./types";
 import { Button, PageHeader, Spinner } from "./ui";
@@ -102,8 +110,8 @@ function toggleOptionalClosure(plan: SubscriptionPlanVersion, current: string[],
 }
 
 export function PlatformSubscriptionsPage({ notify }: { notify: Notice }) {
-  const { formatDateTime, t } = useI18n();
-  const [tab, setTab] = useState<"plans" | "subscriptions">("plans");
+  const { formatDateTime, intlLocale, t } = useI18n();
+  const [tab, setTab] = useState<"plans" | "subscriptions" | "payments">("plans");
   const [plans, setPlans] = useState<PlanRow[]>([]);
   const [planMeta, setPlanMeta] = useState(emptyMeta);
   const [modules, setModules] = useState<CatalogModule[]>([]);
@@ -117,6 +125,17 @@ export function PlatformSubscriptionsPage({ notify }: { notify: Notice }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
+  const [operatorPayments, setOperatorPayments] = useState<ElectronicPayment[]>([]);
+  const [operatorPaymentMeta, setOperatorPaymentMeta] = useState(emptyMeta);
+  const [operatorPaymentState, setOperatorPaymentState] = useState<"ALL" | ElectronicPaymentState>("ALL");
+  const [operatorCompanyId, setOperatorCompanyId] = useState("");
+  const [appliedPaymentState, setAppliedPaymentState] = useState<"ALL" | ElectronicPaymentState>("ALL");
+  const [appliedCompanyId, setAppliedCompanyId] = useState("");
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [paymentError, setPaymentError] = useState("");
+  const [paymentProviderAvailable, setPaymentProviderAvailable] = useState(false);
+  const [refundTarget, setRefundTarget] = useState<ElectronicPayment | null>(null);
+  const [refundBusy, setRefundBusy] = useState(false);
 
   const loadPlans = useCallback(async (page = 1, term = "") => {
     const response = await api<{ plans: PlanRow[]; meta: PageMeta }>(`/platform/subscription-plans?page=${page}&pageSize=20&search=${encodeURIComponent(term)}&active=ALL&publicationStatus=ALL`);
@@ -126,6 +145,16 @@ export function PlatformSubscriptionsPage({ notify }: { notify: Notice }) {
     const response = await api<{ subscriptions: SubscriptionRow[]; meta: PageMeta }>(`/platform/subscriptions?page=${page}&pageSize=20&search=${encodeURIComponent(term)}&status=ALL`);
     setSubscriptions(response.subscriptions); setSubscriptionMeta(response.meta);
   }, []);
+  const loadOperatorPayments = useCallback(async (
+    page = 1,
+    state: "ALL" | ElectronicPaymentState = appliedPaymentState,
+    companyId = appliedCompanyId,
+  ) => {
+    const query = new URLSearchParams({ page: String(page), pageSize: "20", state });
+    if (companyId.trim()) query.set("companyId", companyId.trim());
+    const response = await api<BillingPage<ElectronicPayment>>(`/platform/electronic-payments?${query}`);
+    setOperatorPayments(response.items); setOperatorPaymentMeta(response.meta); setPaymentProviderAvailable(response.provider.available);
+  }, [appliedCompanyId, appliedPaymentState]);
   const loadInitial = useCallback(async () => {
     setError("");
     try {
@@ -190,29 +219,83 @@ export function PlatformSubscriptionsPage({ notify }: { notify: Notice }) {
     finally { setLoading(false); }
   }
 
+  async function selectTab(next: "plans" | "subscriptions" | "payments") {
+    setTab(next);
+    if (next !== "payments") return;
+    setPaymentsLoading(true); setPaymentError("");
+    try { await loadOperatorPayments(1); }
+    catch (cause) { setPaymentError(cause instanceof Error ? cause.message : t("platformPayments.loadError")); }
+    finally { setPaymentsLoading(false); }
+  }
+
+  async function filterPayments(event: FormEvent) {
+    event.preventDefault(); setPaymentsLoading(true); setPaymentError("");
+    setAppliedPaymentState(operatorPaymentState); setAppliedCompanyId(operatorCompanyId.trim());
+    try { await loadOperatorPayments(1, operatorPaymentState, operatorCompanyId); }
+    catch (cause) { setPaymentError(cause instanceof Error ? cause.message : t("platformPayments.loadError")); }
+    finally { setPaymentsLoading(false); }
+  }
+
+  async function pageOperatorPayments(page: number) {
+    setPaymentsLoading(true); setPaymentError("");
+    try { await loadOperatorPayments(page); }
+    catch (cause) { setPaymentError(cause instanceof Error ? cause.message : t("platformPayments.loadError")); }
+    finally { setPaymentsLoading(false); }
+  }
+
+  async function refundPayment(reason: string) {
+    if (!refundTarget) return;
+    setRefundBusy(true); setPaymentError("");
+    try {
+      await api(`/platform/electronic-payments/${refundTarget.id}/refund`, {
+        method: "POST",
+        idempotencyKey: idempotencyKey("platform-payment-refund", refundTarget.id),
+        body: JSON.stringify({ version: refundTarget.version, reason }),
+      });
+      setRefundTarget(null);
+      notify(t("platformPayments.refunded"));
+      await loadOperatorPayments(operatorPaymentMeta.page);
+    } catch (cause) {
+      setPaymentError(cause instanceof Error ? cause.message : t("platformPayments.refundError"));
+    } finally { setRefundBusy(false); }
+  }
+
   if (loading) return <Spinner label={t("platformSubscriptions.loading")} />;
   return <section className="workspace-page platform-subscriptions-page">
-    <PageHeader kicker={t("platformSubscriptions.kicker")} title={t("platformSubscriptions.title")} description={t("platformSubscriptions.description")} actions={<Button onClick={() => setShowCreate(true)} icon="plus">{t("platformSubscriptions.createPlan")}</Button>} />
+    <PageHeader kicker={t("platformSubscriptions.kicker")} title={t("platformSubscriptions.title")} description={t("platformSubscriptions.description")} actions={tab === "plans" ? <Button onClick={() => setShowCreate(true)} icon="plus">{t("platformSubscriptions.createPlan")}</Button> : undefined} />
     {error && <div className="form-error" role="alert">{error}</div>}
     <div className="subscription-admin-tabs" role="tablist">
-      <button type="button" role="tab" aria-selected={tab === "plans"} className={tab === "plans" ? "active" : ""} onClick={() => setTab("plans")}>{t("platformSubscriptions.plans")}</button>
-      <button type="button" role="tab" aria-selected={tab === "subscriptions"} className={tab === "subscriptions" ? "active" : ""} onClick={() => setTab("subscriptions")}>{t("platformSubscriptions.subscriptions")}</button>
+      <button type="button" role="tab" aria-selected={tab === "plans"} className={tab === "plans" ? "active" : ""} onClick={() => void selectTab("plans")}>{t("platformSubscriptions.plans")}</button>
+      <button type="button" role="tab" aria-selected={tab === "subscriptions"} className={tab === "subscriptions" ? "active" : ""} onClick={() => void selectTab("subscriptions")}>{t("platformSubscriptions.subscriptions")}</button>
+      <button type="button" role="tab" aria-selected={tab === "payments"} className={tab === "payments" ? "active" : ""} onClick={() => void selectTab("payments")}>{t("platformPayments.tab")}</button>
     </div>
-    <form className="toolbar" onSubmit={searchNow}><label className="search-field"><span>{t("common.search")}</span><input value={search} onChange={(event) => setSearch(event.target.value)} /></label><Button type="submit" variant="secondary">{t("common.search")}</Button></form>
+    {tab !== "payments" && <form className="toolbar" onSubmit={searchNow}><label className="search-field"><span>{t("common.search")}</span><input value={search} onChange={(event) => setSearch(event.target.value)} /></label><Button type="submit" variant="secondary">{t("common.search")}</Button></form>}
     {tab === "plans" ? <div className="subscription-admin-layout">
       <section className="panel platform-list-panel"><header><div><h2>{t("platformSubscriptions.catalog")}</h2><p>{t("platformSubscriptions.catalogDescription")}</p></div><span>{planMeta.total}</span></header>
         {plans.length ? <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("platformSubscriptions.plan")}</th><th>{t("platformSubscriptions.publication")}</th><th>{t("platformSubscriptions.updated")}</th></tr></thead><tbody>{plans.map((plan) => <tr key={plan.id} onClick={() => void openPlan(plan.id)} className={selectedPlan?.id === plan.id ? "selected-row" : ""}><td><strong>{plan.latestVersion?.displayName ?? plan.code}</strong><small>{plan.code} · {plan.active ? t("common.active") : t("common.inactive")}</small></td><td>{plan.latestVersion ? t(`platformSubscriptions.publication.${plan.latestVersion.publicationStatus}` as never) : "—"}</td><td>{formatDateTime(plan.updatedAt)}</td></tr>)}</tbody></table></div> : <div className="empty-state"><h3>{t("platformSubscriptions.noPlans")}</h3><p>{t("platformSubscriptions.noPlansDescription")}</p></div>}
         <Pager meta={planMeta} onPage={(page) => void loadPlans(page, appliedSearch)} t={t} />
       </section>
       <section className="panel subscription-admin-detail">{busy ? <Spinner /> : selectedPlan ? <PlanEditor plan={selectedPlan} modules={modules} busy={busy} t={t} onSaved={refreshSelectedPlan} onPublish={publish} onToggle={updatePlanStatus} onNewDraft={createNextDraft} /> : <div className="empty-state"><h3>{t("platformSubscriptions.selectPlan")}</h3><p>{t("platformSubscriptions.selectPlanDescription")}</p></div>}</section>
-    </div> : <div className="subscription-admin-layout">
+    </div> : tab === "subscriptions" ? <div className="subscription-admin-layout">
       <section className="panel platform-list-panel"><header><div><h2>{t("platformSubscriptions.companySubscriptions")}</h2><p>{t("platformSubscriptions.companySubscriptionsDescription")}</p></div><span>{subscriptionMeta.total}</span></header>
         {subscriptions.length ? <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("platformSubscriptions.company")}</th><th>{t("subscription.status")}</th><th>{t("subscription.currentPlan")}</th></tr></thead><tbody>{subscriptions.map((item) => <tr key={item.company.id} onClick={() => void openCompany(item.company.id)} className={selectedCompany?.company?.id === item.company.id ? "selected-row" : ""}><td>{item.company.name}<small>{item.company.code}</small></td><td>{item.status}</td><td>{item.recordedPlan.displayName}</td></tr>)}</tbody></table></div> : <div className="empty-state"><h3>{t("platformSubscriptions.noSubscriptions")}</h3><p>{t("platformSubscriptions.noSubscriptionsDescription")}</p></div>}
         <Pager meta={subscriptionMeta} onPage={(page) => void loadSubscriptions(page, appliedSearch)} t={t} />
       </section>
       <section className="panel subscription-admin-detail">{busy ? <Spinner /> : selectedCompany ? <CompanyLifecycle snapshot={selectedCompany} publishedVersions={selectedPlan?.versions.filter((version) => version.publicationStatus === "PUBLISHED") ?? []} t={t} notify={notify} reload={() => openCompany(selectedCompany.company!.id)} /> : <div className="empty-state"><h3>{t("platformSubscriptions.selectCompany")}</h3><p>{t("platformSubscriptions.selectCompanyDescription")}</p></div>}</section>
-    </div>}
+    </div> : <section className="panel platform-payment-panel">
+      <header><div><h2>{t("platformPayments.title")}</h2><p>{t("platformPayments.description")}</p></div><span>{operatorPaymentMeta.total}</span></header>
+      <form className="platform-payment-filter" onSubmit={filterPayments}>
+        <label><span>{t("platformPayments.state")}</span><select value={operatorPaymentState} onChange={(event) => setOperatorPaymentState(event.target.value as "ALL" | ElectronicPaymentState)}><option value="ALL">{t("subscriptionBilling.all")}</option>{electronicPaymentStates.map((state) => <option key={state} value={state}>{t(`subscriptionBilling.paymentState.${state}`)}</option>)}</select></label>
+        <label><span>{t("platformPayments.companyId")}</span><input dir="ltr" value={operatorCompanyId} onChange={(event) => setOperatorCompanyId(event.target.value)} placeholder={t("platformPayments.allCompanies")} /></label>
+        <Button type="submit" variant="secondary">{t("subscriptionBilling.apply")}</Button>
+      </form>
+      {paymentError && <div className="form-error" role="alert">{paymentError}</div>}
+      {!paymentsLoading && !paymentProviderAvailable && <div className="subscription-safe-note">{t("subscriptionBilling.providerUnavailable")}</div>}
+      {paymentsLoading ? <Spinner label={t("platformPayments.loading")} /> : operatorPayments.length ? <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("platformPayments.company")}</th><th>{t("subscriptionBilling.invoice")}</th><th>{t("subscriptionBilling.amounts")}</th><th>{t("platformPayments.provider")}</th><th>{t("platformPayments.state")}</th><th>{t("subscriptionBilling.actions")}</th></tr></thead><tbody>{operatorPayments.map((payment) => <tr key={payment.id}><td><strong>{payment.companyName ?? t("platformPayments.companyFallback", { value1: payment.companyId ?? "—" })}</strong>{payment.companyId && <small dir="ltr">{payment.companyId}</small>}</td><td><strong dir="ltr">{payment.invoiceNumber}</strong><small>{formatDateTime(payment.createdAt)}</small></td><td><strong dir="ltr">{formatCurrencyDecimal(payment.amount, payment.currencyCode, intlLocale)}</strong><small dir="ltr">{t("platformPayments.minorUnits", { value1: payment.amountMinor })}</small></td><td><strong>{payment.provider}</strong><small>{payment.environment}</small></td><td><span className={`payment-state ${payment.state.toLowerCase()}`}>{t(`subscriptionBilling.paymentState.${payment.state}`)}</span>{payment.lastFailureCode && <small dir="ltr">{payment.lastFailureCode}</small>}</td><td>{paymentProviderAvailable && canRefundElectronicPayment(payment.state) && <Button variant="danger" onClick={() => setRefundTarget(payment)}>{t("platformPayments.refund")}</Button>}</td></tr>)}</tbody></table></div> : <div className="empty-state"><h3>{t("platformPayments.empty")}</h3><p>{t("platformPayments.emptyDescription")}</p></div>}
+      <Pager meta={operatorPaymentMeta} onPage={(page) => void pageOperatorPayments(page)} t={t} />
+    </section>}
     {showCreate && <CreatePlan modules={modules} t={t} onClose={() => setShowCreate(false)} onCreated={async (id) => { setShowCreate(false); await loadPlans(1, appliedSearch); await openPlan(id); notify(t("platformSubscriptions.created")); }} />}
+    {refundTarget && <RefundDialog payment={refundTarget} busy={refundBusy} t={t} onClose={() => setRefundTarget(null)} onSubmit={refundPayment} />}
   </section>;
 }
 
@@ -294,7 +377,18 @@ function CompanyLifecycle({ snapshot, publishedVersions, t, notify, reload }: { 
   const optionalModules = selectedVersion?.modules.filter((module) => module.active && module.selectionMode === "OPTIONAL") ?? [];
   async function schedule(event: FormEvent) { event.preventDefault(); if (!versionId) return; setBusy(true); setError(""); try { await api(`/platform/companies/${snapshot.company!.id}/subscription-changes`, { method: "POST", idempotencyKey: idempotencyKey("operator-subscription-change", snapshot.company!.id), body: JSON.stringify({ targetPlanVersionId: versionId, optionalModuleIds: optionalIds, effectiveAt: new Date(effectiveAt).toISOString(), subscriptionVersion: snapshot.subscription.version }) }); notify(t("platformSubscriptions.changeScheduled")); await reload(); } catch (cause) { setError(cause instanceof Error ? cause.message : t("platformSubscriptions.saveError")); } finally { setBusy(false); } }
   async function decide(decision: "APPROVE" | "REJECT") { if (!snapshot.pending?.id) return; setBusy(true); setError(""); try { await api(`/platform/subscription-change-requests/${snapshot.pending.id}/decision`, { method: "POST", idempotencyKey: idempotencyKey("operator-subscription-decision", snapshot.pending.id), body: JSON.stringify({ decision, effectiveAt: decision === "APPROVE" ? new Date(effectiveAt).toISOString() : null, reason: decision === "REJECT" ? t("platformSubscriptions.rejectedReason") : null, subscriptionVersion: snapshot.subscription.version }) }); notify(t("platformSubscriptions.decisionSaved")); await reload(); } catch (cause) { setError(cause instanceof Error ? cause.message : t("platformSubscriptions.saveError")); } finally { setBusy(false); } }
-  return <><header><div><h2>{snapshot.company!.name}</h2><p>{snapshot.current.plan.displayName} · {t(`subscription.status.${snapshot.subscription.status}`)}</p></div></header><div className="subscription-admin-company">{error && <div className="form-error" role="alert">{error}</div>}<dl className="subscription-facts"><div><dt>{t("subscription.currentPlan")}</dt><dd>{snapshot.current.plan.displayName}</dd></div><div><dt>{t("subscription.modules")}</dt><dd>{snapshot.effectiveModules.length}</dd></div></dl>{snapshot.pending && <div className="subscription-safe-note"><strong>{t("subscription.pendingChange")}</strong><span>{snapshot.pending.plan.displayName} · {snapshot.pending.quote.totalRecurringFee} {snapshot.pending.quote.currencyCode}</span><div className="row-actions"><Button disabled={busy} onClick={() => void decide("APPROVE")}>{t("common.approve")}</Button><Button disabled={busy} variant="danger" onClick={() => void decide("REJECT")}>{t("common.reject")}</Button></div></div>}<form onSubmit={schedule}><label><span>{t("platformSubscriptions.targetVersion")}</span><select value={versionId} onChange={(event) => { setVersionId(event.target.value); setOptionalIds([]); }}><option value="">{t("platformSubscriptions.choosePublishedVersion")}</option>{publishedVersions.map((version) => <option key={version.id} value={version.id}>{version.displayName} · {t("subscription.versionLabel", { value1: version.versionNumber })}</option>)}</select></label>{selectedVersion && optionalModules.length > 0 && <fieldset><legend>{t("subscription.optionalModules")}</legend><div className="subscription-option-grid">{optionalModules.map((module) => <label key={module.id}><input type="checkbox" checked={optionalIds.includes(module.id)} onChange={() => setOptionalIds((current) => toggleOptionalClosure(selectedVersion, current, module.id))} /><span><strong>{module.displayName}</strong><small>{module.additionalRecurringFee} {selectedVersion.currencyCode}</small></span></label>)}</div></fieldset>}<label><span>{t("platformSubscriptions.effectiveAt")}</span><input type="datetime-local" value={effectiveAt} onChange={(event) => setEffectiveAt(event.target.value)} required /></label><Button type="submit" disabled={busy || !versionId}>{t("platformSubscriptions.schedule")}</Button><small>{publishedVersions.length ? t("platformSubscriptions.selectedCatalogHint") : t("platformSubscriptions.selectPlanFirst")}</small></form></div></>;
+  return <><header><div><h2>{snapshot.company!.name}</h2><p>{snapshot.current.plan.displayName} · {t(`subscription.status.${snapshot.subscription.status}`)}</p></div></header><div className="subscription-admin-company">{error && <div className="form-error" role="alert">{error}</div>}<dl className="subscription-facts"><div><dt>{t("subscription.currentPlan")}</dt><dd>{snapshot.current.plan.displayName}</dd></div><div><dt>{t("subscription.modules")}</dt><dd>{snapshot.effectiveModules.length}</dd></div></dl>{snapshot.pending && <div className="subscription-safe-note"><strong>{t("subscription.pendingChange")}</strong><span>{snapshot.pending.plan.displayName} · {snapshot.pending.quote.totalRecurringFee} {snapshot.pending.quote.currencyCode}</span><small dir="ltr">{t("platformSubscriptions.changeId")}: {snapshot.pending.id}</small><div className="row-actions"><Button disabled={busy} onClick={() => void decide("APPROVE")}>{t("common.approve")}</Button><Button disabled={busy} variant="danger" onClick={() => void decide("REJECT")}>{t("common.reject")}</Button></div></div>}<form onSubmit={schedule}><label><span>{t("platformSubscriptions.targetVersion")}</span><select value={versionId} onChange={(event) => { setVersionId(event.target.value); setOptionalIds([]); }}><option value="">{t("platformSubscriptions.choosePublishedVersion")}</option>{publishedVersions.map((version) => <option key={version.id} value={version.id}>{version.displayName} · {t("subscription.versionLabel", { value1: version.versionNumber })}</option>)}</select></label>{selectedVersion && optionalModules.length > 0 && <fieldset><legend>{t("subscription.optionalModules")}</legend><div className="subscription-option-grid">{optionalModules.map((module) => <label key={module.id}><input type="checkbox" checked={optionalIds.includes(module.id)} onChange={() => setOptionalIds((current) => toggleOptionalClosure(selectedVersion, current, module.id))} /><span><strong>{module.displayName}</strong><small>{module.additionalRecurringFee} {selectedVersion.currencyCode}</small></span></label>)}</div></fieldset>}<label><span>{t("platformSubscriptions.effectiveAt")}</span><input type="datetime-local" value={effectiveAt} onChange={(event) => setEffectiveAt(event.target.value)} required /></label><Button type="submit" disabled={busy || !versionId}>{t("platformSubscriptions.schedule")}</Button><small>{publishedVersions.length ? t("platformSubscriptions.selectedCatalogHint") : t("platformSubscriptions.selectPlanFirst")}</small></form></div></>;
+}
+
+function RefundDialog({ payment, busy, t, onClose, onSubmit }: {
+  payment: ElectronicPayment;
+  busy: boolean;
+  t: ReturnType<typeof useI18n>["t"];
+  onClose: () => void;
+  onSubmit: (reason: string) => Promise<void>;
+}) {
+  const [reason, setReason] = useState("");
+  return <div className="modal-backdrop" role="presentation"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="refund-payment-title"><header><div><h2 id="refund-payment-title">{t("platformPayments.refundTitle")}</h2><p dir="ltr">{payment.invoiceNumber}</p></div><button type="button" aria-label={t("common.close")} onClick={onClose}>×</button></header><form onSubmit={(event) => { event.preventDefault(); void onSubmit(reason.trim()); }}><label><span>{t("platformPayments.refundReason")}</span><textarea value={reason} onChange={(event) => setReason(event.target.value)} minLength={3} maxLength={500} required /></label><p className="subscription-safe-note">{t("platformPayments.refundSafety")}</p><div className="row-actions"><Button type="button" variant="secondary" disabled={busy} onClick={onClose}>{t("common.cancel")}</Button><Button type="submit" variant="danger" disabled={busy || reason.trim().length < 3}>{busy ? t("common.saving") : t("platformPayments.refund")}</Button></div></form></section></div>;
 }
 
 function draftToForm(draft: SubscriptionPlanVersion) { return { displayName: draft.displayName, description: draft.description ?? "", billingCycle: draft.billingCycle, currencyCode: draft.currencyCode, recurringFee: draft.recurringFee ?? "", includedUsers: draft.includedUsers?.toString() ?? "", pricePerAdditionalUser: draft.pricePerAdditionalUser ?? "", includedEmployees: draft.includedEmployees?.toString() ?? "", pricePerAdditionalEmployee: draft.pricePerAdditionalEmployee ?? "", includedPostedDocuments: draft.includedPostedDocuments?.toString() ?? "", pricePerAdditionalPostedDocument: draft.pricePerAdditionalPostedDocument ?? "", taxRate: draft.taxRate, paymentTermsDays: draft.paymentTermsDays.toString(), trialDays: draft.trialDays.toString(), effectiveFrom: localDateTimeFrom(draft.effectiveFrom), selfServicePolicy: draft.selfServicePolicy, modules: draft.modules.map((module) => ({ moduleId: module.id, selectionMode: module.selectionMode, additionalRecurringFee: module.additionalRecurringFee })) }; }

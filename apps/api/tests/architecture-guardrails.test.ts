@@ -311,7 +311,10 @@ describe("core accounting architecture guardrails", () => {
       .filter(({ content }) => directWrite.test(content) || nestedWrite.test(content) || rawWrite.test(content))
       .map(({ path }) => path)
       .sort();
-    expect(writers).toEqual(["platform-operations/platform-billing-service.ts"]);
+    expect(writers).toEqual([
+      "platform-operations/payments/platform-payment-service.ts",
+      "platform-operations/platform-billing-service.ts",
+    ]);
 
     const owner = await source("platform-operations/platform-billing-service.ts");
     expect(owner.match(/await lockPlatformBillingAccount\(tx, companyId\);/gu)).toHaveLength(2);
@@ -326,7 +329,38 @@ describe("core accounting architecture guardrails", () => {
     expect(companyRead).toMatch(/platformBillingInvoice\s*\.\s*count/u);
     expect((owner.match(/\btake\s*:\s*pagination\.pageSize/gu) ?? []).length).toBeGreaterThanOrEqual(2);
     expect(owner).toMatch(/GROUP\s+BY\s+invoice_row\.billing_account_id/iu);
-    expect(owner).toMatch(/LEFT\s+JOIN\s+platform_billing_payments\s+AS\s+payment/iu);
+    expect(owner).toMatch(/FROM\s+platform_billing_payments[\s\S]*GROUP\s+BY\s+company_id,\s*invoice_id/iu);
+  });
+
+  it("keeps electronic payments in Platform Operations and wires provider adapters only in composition", async () => {
+    const sources = await allTypeScriptSources();
+    const paymentWrite = /\.platform(?:PaymentAttempt|CheckoutSession|PaymentTransition|WebhookReceipt|BillingRefund)\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u;
+    const paymentWriters = sources
+      .filter(({ content }) => paymentWrite.test(content))
+      .map(({ path }) => path)
+      .sort();
+    const adapterImporters = sources
+      .filter(({ content }) => /development-payment-provider-adapter\.js/u.test(content))
+      .map(({ path }) => path)
+      .sort();
+    const [service, providerPort, composition, subscriptionLifecycle, billing] = await Promise.all([
+      source("platform-operations/payments/platform-payment-service.ts"),
+      source("platform-operations/payments/platform-payment-provider-port.ts"),
+      source("composition/create-platform-payment-service.ts"),
+      source("platform-subscriptions/platform-subscription-service.ts"),
+      source("platform-operations/platform-billing-service.ts"),
+    ]);
+
+    expect(paymentWriters).toEqual(["platform-operations/payments/platform-payment-service.ts"]);
+    expect(adapterImporters).toEqual(["composition/create-platform-payment-service.ts"]);
+    expect(providerPort).toContain("interface PlatformPaymentProviderPort");
+    expect(service).not.toContain("development-payment-provider-adapter");
+    expect(service).not.toMatch(/(?:cardNumber|pan|cvv|cvc|rawPayload|webhookSecret)\s*:/iu);
+    expect(service).toContain("amountMinor");
+    expect(composition).toContain('PLATFORM_PAYMENT_PROVIDER_MODE === "development"');
+    expect(composition).toContain("DisabledPlatformPaymentProvider");
+    expect(subscriptionLifecycle).toContain("PlatformSubscriptionPaymentEvidencePort");
+    expect(billing).toContain("PlatformBillingSubscriptionSnapshotPort");
   });
 
   it("indexes the stable Platform Billing account pagination order", async () => {

@@ -328,14 +328,14 @@ describe('bounded platform billing reads', () => {
       _sum: { amount: new Prisma.Decimal('7.0000') },
       _count: { _all: 7 },
     }]);
-    const queryRaw = vi.fn().mockResolvedValue([{
+    const queryRaw = vi.fn().mockResolvedValueOnce([{
       billing_account_id: 31n,
       billed: new Prisma.Decimal('1000.0000'),
       paid: new Prisma.Decimal('400.0000'),
       balance: new Prisma.Decimal('600.0000'),
       overdue: new Prisma.Decimal('250.0000'),
       overdue_invoices: 3n,
-    }]);
+    }]).mockResolvedValueOnce([{ invoice_id: 71n, amount: new Prisma.Decimal('3.0000') }]);
     const service = new PlatformBillingService({
       platformBillingAccount: { findUnique: vi.fn().mockResolvedValue(billingAccount) },
       platformBillingInvoice: { count: vi.fn().mockResolvedValue(31), findMany: invoiceFindMany },
@@ -362,11 +362,15 @@ describe('bounded platform billing reads', () => {
       by: ['invoiceId'],
       where: { companyId: 9n, invoiceId: { in: [71n] } },
     }));
-    expect(queryRaw).toHaveBeenCalledTimes(1);
+    expect(queryRaw).toHaveBeenCalledTimes(2);
+    const refundsQuery = queryRaw.mock.calls[1]![0] as Prisma.Sql;
+    expect(refundsQuery.sql).toContain('GROUP BY payment.invoice_id');
+    expect(refundsQuery.sql).toContain('payment.invoice_id IN');
+    expect(refundsQuery.values).toEqual([9n, 71n]);
     expect(result.meta).toEqual({ page: 2, pageSize: 5, total: 31, totalPages: 7 });
     expect(result.totals).toEqual({ billed: '1000.0000', paid: '400.0000', balance: '600.0000', overdue: '250.0000' });
     expect(result.invoices).toHaveLength(1);
-    expect(result.invoices[0]).toMatchObject({ paidAmount: '7.0000', balance: '3.0000', paymentCount: 7 });
+    expect(result.invoices[0]).toMatchObject({ paidAmount: '4.0000', balance: '6.0000', paymentCount: 7 });
     expect(result.invoices[0]!.payments).toHaveLength(PLATFORM_BILLING_RECENT_PAYMENT_LIMIT);
   });
 });
@@ -387,8 +391,28 @@ describe('bounded platform subscription reads', () => {
   });
 });
 
+describe('bounded platform electronic payment reads', () => {
+  it('keeps owner/operator lists and invoice filters in bounded database queries', async () => {
+    const owner = await readFile(
+      new URL('../src/platform-operations/payments/platform-payment-service.ts', import.meta.url),
+      'utf8',
+    );
+    const attempts = owner.slice(owner.indexOf('private async listAttempts('), owner.indexOf('private async attemptById('));
+    const invoices = owner.slice(owner.indexOf('async listOwnerInvoices('), owner.indexOf('async listOwnerPayments('));
+
+    expect(attempts).toMatch(/platformPaymentAttempt\.count\s*\(/u);
+    expect(attempts).toMatch(/platformPaymentAttempt\.findMany\s*\(/u);
+    expect(attempts).toMatch(/skip:\s*\(input\.page - 1\) \* input\.pageSize/u);
+    expect(attempts).toMatch(/take:\s*input\.pageSize/u);
+    expect(attempts).not.toMatch(/\.slice\s*\(/u);
+    expect(invoices).toMatch(/SELECT COUNT\(\*\) AS total/u);
+    expect(invoices).toMatch(/LIMIT \$\{input\.pageSize\} OFFSET \$\{offset\}/u);
+    expect(invoices).toMatch(/WHERE invoice\.company_id = \$\{companyId\}/u);
+  });
+});
+
 describe('bounded platform analytics billing reads', () => {
-  it('keeps invoice and payment history behind cursor batches and aggregated payment totals', async () => {
+  it('keeps invoice, payment and refund history behind cursor batches and aggregate totals', async () => {
     const source = await readFile(
       new URL('../src/platform-operations/prisma-platform-analytics-query-adapter.ts', import.meta.url),
       'utf8',
@@ -397,6 +421,7 @@ describe('bounded platform analytics billing reads', () => {
     expect(source).toMatch(/platformBillingInvoice\.findMany\([\s\S]*?take: PLATFORM_ANALYTICS_BILLING_BATCH_SIZE/u);
     expect(source).toMatch(/platformBillingPayment\.groupBy\([\s\S]*?by: \["invoiceId"\][\s\S]*?_sum: \{ amount: true \}/u);
     expect(source).toMatch(/platformBillingPayment\.findMany\([\s\S]*?take: PLATFORM_ANALYTICS_BILLING_BATCH_SIZE/u);
+    expect(source).toMatch(/platformBillingRefund\.findMany\([\s\S]*?take: PLATFORM_ANALYTICS_BILLING_BATCH_SIZE/u);
     expect(source).toMatch(/platformBillingAccount\.groupBy\([\s\S]*?by: \["currencyCode", "billingCycle"\][\s\S]*?_sum: \{ recurringFee: true \}/u);
     expect(source).not.toMatch(/platformBillingInvoice\.findMany\([\s\S]{0,1200}?payments\s*:/u);
   });

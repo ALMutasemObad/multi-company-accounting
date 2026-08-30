@@ -34,6 +34,13 @@ const snapshot = {
   scheduled: null, pending: null, history: [currentChange], meta, generatedAt: "2026-08-30T00:00:00.000Z",
 };
 
+const disabledPaymentProvider = {
+  available: false,
+  provider: "DISABLED",
+  environment: "DEVELOPMENT",
+  developmentOnly: false,
+} as const;
+
 async function json(route: Route, body: unknown, status = 200) {
   await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 }
@@ -53,6 +60,16 @@ async function mockSubscriptionApp(page: Page, permissions: string[], platformOp
     if (path === "/platform/capabilities") return json(route, { platformOperations });
     if (path === "/subscription" && request.method() === "GET") return json(route, snapshot);
     if (path === "/subscription/catalog") return json(route, { plans: [plan], meta });
+    if (path === "/subscription/billing/invoices") return json(route, {
+      provider: disabledPaymentProvider,
+      items: [],
+      meta: { ...meta, pageSize: 10, total: 0, totalPages: 0 },
+    });
+    if (path === "/subscription/billing/payments") return json(route, {
+      provider: disabledPaymentProvider,
+      items: [],
+      meta: { ...meta, pageSize: 10, total: 0, totalPages: 0 },
+    });
     if (path === "/subscription/change-requests" && request.method() === "POST") {
       submittedBody = request.postDataJSON();
       return json(route, { change: { state: "PENDING_APPROVAL" }, subscriptionVersion: 4, paymentCollected: false }, 201);
@@ -75,6 +92,8 @@ test("keeps the subscription page reachable without business modules and hides m
   await expect(page.getByRole("heading", { name: "Subscription & plan" })).toBeVisible();
   await expect(page.getByText("Basic review").first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "Included limits" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Invoices and electronic payments" })).toBeVisible();
+  await expect(page.getByText("Electronic payments are disabled in this environment; invoices remain visible and no card data is collected.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Submit change request" })).toHaveCount(0);
 });
 
@@ -82,7 +101,7 @@ test("submits a paid owner change as a pending request without claiming payment"
   const mocked = await mockSubscriptionApp(page, ["subscriptions.view", "subscriptions.manage"]);
   await page.goto("/#subscription");
 
-  await expect(page.getByText("Any paid change becomes a pending request; this flow makes no electronic-payment claim.")).toBeVisible();
+  await expect(page.getByText("A paid change remains pending until the payment provider proves its result; a browser return never activates it.")).toBeVisible();
   await page.getByLabel("Reporting").check();
   await page.getByRole("button", { name: "Submit change request" }).click();
   await expect(page.getByText("The request was stored safely and is awaiting approval.")).toBeVisible();

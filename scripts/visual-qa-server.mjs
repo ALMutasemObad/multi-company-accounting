@@ -351,6 +351,44 @@ const subscriptionCurrentChange = {
   plan: subscriptionPlanVersion,
   modules: [{ id: "3101", code: "CORE_ACCOUNTING", displayName: "المحاسبة الأساسية", selectionMode: "INCLUDED" }],
 };
+const visualPaymentProvider = {
+  available: true,
+  provider: "DEVELOPMENT_SIMULATOR",
+  environment: "DEVELOPMENT",
+  developmentOnly: true,
+};
+const visualSubscriptionInvoice = {
+  id: "4b5ec818-6f77-44f8-973f-fdf2df39ac47",
+  invoiceNumber: "SUB-2026-0001",
+  status: "ISSUED",
+  issueDate: "2026-08-29T09:00:00.000Z",
+  dueDate: "2026-09-05T09:00:00.000Z",
+  currencyCode: "SAR",
+  totalAmount: "100.0000",
+  paidAmount: "0.0000",
+  refundedAmount: "0.0000",
+  balance: "100.0000",
+  version: 1,
+  latestPaymentState: "CHECKOUT",
+};
+const visualElectronicPayment = {
+  id: "73fa19cc-474f-4a07-92a3-0376b406968a",
+  companyId: "1",
+  companyName: company.name,
+  invoiceId: visualSubscriptionInvoice.id,
+  invoiceNumber: visualSubscriptionInvoice.invoiceNumber,
+  state: "CHECKOUT",
+  provider: visualPaymentProvider.provider,
+  environment: visualPaymentProvider.environment,
+  currencyCode: visualSubscriptionInvoice.currencyCode,
+  amount: visualSubscriptionInvoice.totalAmount,
+  amountMinor: "10000",
+  checkoutUrl: "https://checkout.example.test/sub-2026-0001",
+  version: 1,
+  lastFailureCode: null,
+  createdAt: "2026-08-29T09:01:00.000Z",
+  updatedAt: "2026-08-29T09:01:00.000Z",
+};
 
 function list(data = []) {
   return { data, meta: { ...meta, total: data.length, totalPages: data.length ? 1 : 0 } };
@@ -371,6 +409,11 @@ function responseFor(url, method) {
     meta: { ...meta, total: 1, totalPages: 1 },
   };
   if (pathname === "/platform/subscriptions") return { subscriptions: [], meta };
+  if (pathname === "/platform/electronic-payments") return {
+    provider: visualPaymentProvider,
+    items: [visualElectronicPayment],
+    meta: { ...meta, pageSize: 25, total: 1, totalPages: 1 },
+  };
   if (pathname === "/subscription") return {
     subscription: { status: "ACTIVE", version: 1, startsAt: "2026-08-01T00:00:00.000Z", trialEndsAt: null, currentPeriodStart: null, currentPeriodEnd: null, cancelAtPeriodEnd: false },
     current: subscriptionCurrentChange,
@@ -379,6 +422,16 @@ function responseFor(url, method) {
     meta: { ...meta, total: 1, totalPages: 1 }, generatedAt: "2026-08-29T09:00:00.000Z",
   };
   if (pathname === "/subscription/catalog") return { plans: [subscriptionPlanVersion], meta: { ...meta, total: 1, totalPages: 1 } };
+  if (pathname === "/subscription/billing/invoices") return {
+    provider: visualPaymentProvider,
+    items: [visualSubscriptionInvoice],
+    meta: { ...meta, pageSize: 10, total: 1, totalPages: 1 },
+  };
+  if (pathname === "/subscription/billing/payments") return {
+    provider: visualPaymentProvider,
+    items: [visualElectronicPayment],
+    meta: { ...meta, pageSize: 10, total: 1, totalPages: 1 },
+  };
   if (pathname === "/companies/current") return company;
   if (pathname === "/professional-projects/customer-options") return { data: [professionalCustomer] };
   if (pathname === "/professional-projects/member-options") return { data: [professionalManager] };

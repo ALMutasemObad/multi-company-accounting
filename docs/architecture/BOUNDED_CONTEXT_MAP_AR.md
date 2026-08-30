@@ -1,8 +1,8 @@
 ---
 title: "Bounded Context Map"
 status: "accepted target architecture"
-version: "3.0"
-last_updated: "2026-08-29"
+version: "3.1"
+last_updated: "2026-08-30"
 ---
 
 # خريطة الـBounded Contexts وملكية البيانات
@@ -36,8 +36,8 @@ last_updated: "2026-08-29"
 | Tax | معدلات الضرائب وربط حساباتها والحساب والتقريب | `TaxRate` | يكشف `TaxQuotePort` للمبيعات والمشتريات ويملك النسخ المتفائلة |
 | Printing & Document Output | اللقطات التاريخية والتوليد | `DocumentPrintArchive` | يقرأ عبر Document Snapshot Port |
 | Reporting | التقارير والقوائم وRead Models | لا يملك حقائق مالية تشغيلية | قراءة فقط، ويمكنه امتلاك projections مستقبلًا |
-| Platform Operations | مؤشرات تبني وصحة المنصة وملف الشركة المستأجرة | لا يملك حقائق تشغيلية للشركات | Read Model منصّي يقرأ الاستخدام تجميعيًا عبر Query Ports ولا يعرض بيانات أفراد أو حقائق Ledger؛ التفويض منصّي مستقل عن أدوار الشركات |
-| Platform Subscriptions & Billing | كتالوج الخطط والموديولات، اشتراك الشركة واستحقاقاتها، فواتير المنصة وسدادها ومحاولات الدفع الإلكتروني | `PlatformBillingAccount`, `PlatformBillingInvoice`, `PlatformBillingInvoiceLine`, `PlatformBillingPayment` حاليًا؛ و`PlatformModule`, `PlatformPlan*`, `PlatformSubscription*`, `PlatformWebhookReceipt` مستهدفة | سياق تجاري منصّي وفق ADR-015 وADR-017؛ لا يكتب Sales/AR أو Treasury أو Ledger للشركة العميلة، ولا يساوي الاستحقاق التجاري صلاحية المستخدم |
+| Platform Operations & Billing | مؤشرات تبني وصحة المنصة وملف الشركة، وحساب الفوترة وفاتورتها وسدادها ودورة الدفع الإلكتروني | `PlatformBillingAccount`, `PlatformBillingInvoice`, `PlatformBillingInvoiceLine`, `PlatformBillingPayment`, `PlatformPaymentAttempt`, `PlatformCheckoutSession`, `PlatformPaymentTransition`, `PlatformWebhookReceipt`, `PlatformBillingRefund` | يقرأ الاستخدام ولقطة الاشتراك عبر Query Ports، ويملك `PlatformPaymentProviderPort`؛ لا يكتب حالة الاشتراك أو Sales/AR أو Treasury أو Ledger للشركة العميلة |
+| Platform Subscriptions & Entitlements | كتالوج الخطط والموديولات واشتراك الشركة واستحقاقاتها وتغييراتها المؤرخة | `PlatformModule`, `PlatformModuleDependency`, `PlatformPlan`, `PlatformPlanVersion`, `PlatformPlanEntitlement`, `PlatformSubscription`, `PlatformSubscriptionEntitlement`, `PlatformSubscriptionChange`, `PlatformSubscriptionChangeModule` | يستهلك حالة الفوترة عبر Port عند الحاجة ولا يكتب جداول الدفع؛ الاستحقاق التجاري مستقل عن RBAC ولا يتغير بمجرد Webhook دفع |
 | Data Import | تنسيق القوالب والمعاينة والاعتماد الجماعي | `DataImportBatch` فقط | Process Manager؛ يستدعي منافذ المالكين ولا يخزن الملف أو يرحّل الفواتير |
 | Audit | سجل الأعمال والامتثال | `AuditLog` | Append-only، وليس Event Bus |
 | Security Monitoring | أحداث المخاطر والإقرار | `SecurityEvent` | يمكنه إصدار تنبيه Integration بعد حفظ الحدث |
@@ -76,8 +76,9 @@ All operational contexts ──> Audit append port
 Authentication/Identity ───> Security append port
 
 Reporting <────────── read/query ports or dedicated read models
-Platform Operations <──── aggregate query ports + Identity operator query port
-Platform Subscriptions & Billing <── aggregate usage ports + entitlement/RBAC composition + payment-provider adapters
+Platform Operations & Billing <──── aggregate query ports + Identity operator query port + subscription snapshot/query port
+Platform Operations & Billing <──── payment-provider adapters at composition only
+Platform Subscriptions & Entitlements <── entitlement/RBAC composition + billing/payment query ports
 Printing  <────────── immutable document snapshot port
 ```
 
