@@ -360,6 +360,9 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
         const dialog = page.getByRole('dialog');
         await expect(dialog).toBeVisible();
         await expect(dialog).toBeFocused();
+        const barcodeScanner = dialog.locator('.pos-barcode-scanner');
+        await expect(barcodeScanner).toHaveCount(1);
+        await expect(barcodeScanner.locator('input')).toBeVisible();
 
         const dialogFailures = await dialog.evaluate((element) => {
           const failures: string[] = [];

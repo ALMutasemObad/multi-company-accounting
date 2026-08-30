@@ -8,12 +8,12 @@ import { allows,
 import { Can, useAuthorization } from "./authorization-context";
 import {
   applyResolvedBarcodeToLines,
-  appendBarcodeScanToQueue,
-  canApplyQueuedBarcodeScan,
   canUsePosBarcodeScanner,
-  POS_BARCODE_QUEUE_LIMIT,
-  type QueuedBarcodeScan,
 } from "./barcode";
+import {
+  InventoryBarcodeScanner,
+  type InventoryBarcodeScannerHandle,
+} from "./InventoryBarcodeScanner";
 import { endpointPermissionPolicies } from "./endpoint-permissions";
 import { formatMoney, statusLabel, taxReadinessLabel, toMoney, toQuantity } from "./domain";
 import { activeIntlLocale, localizedReferenceName, useI18n } from "./i18n";
@@ -29,7 +29,6 @@ import type {
   PaymentMethod,
   PosCheckoutResult,
   PosSale,
-  ResolvedInventoryBarcode,
   TaxRate,
   Warehouse,
 } from "./types";
@@ -98,14 +97,7 @@ export function PosPage({ notify }: { notify: Notice }) {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
   const [lines, setLines] = useState<DraftLine[]>([blankLine()]);
   const linesRef = useRef(lines);
-  const [barcodeValue, setBarcodeValue] = useState("");
-  const [barcodeLoading, setBarcodeLoading] = useState(false);
-  const [barcodeFeedback, setBarcodeFeedback] = useState<{ tone: "success" | "error" | "neutral"; message: string } | null>(null);
-  const barcodeInputRef = useRef<HTMLInputElement>(null);
-  const barcodeQueueRef = useRef<QueuedBarcodeScan[]>([]);
-  const barcodeWorkerRunning = useRef(false);
-  const barcodeEpochRef = useRef(0);
-  const checkoutInFlightRef = useRef(false);
+  const barcodeScannerRef = useRef<InventoryBarcodeScannerHandle>(null);
   const [barcodePendingCount, setBarcodePendingCount] = useState(0);
 
   const load = useCallback(async () => {
@@ -165,127 +157,12 @@ export function PosPage({ notify }: { notify: Notice }) {
   const updateLine = (index: number, patch: Partial<DraftLine>) =>
     updateLines((current) => current.map((line, position) => position === index ? { ...line, ...patch } : line));
 
-  const updateBarcodeQueue = (queue: QueuedBarcodeScan[]) => {
-    barcodeQueueRef.current = queue;
-    setBarcodePendingCount(queue.length);
-  };
-
-  const clearBarcodeBuffer = (input: HTMLInputElement | null) => {
-    if (input) input.value = "";
-    setBarcodeValue("");
-  };
-
-  async function drainBarcodeQueue() {
-    if (barcodeWorkerRunning.current) return;
-    barcodeWorkerRunning.current = true;
-    setBarcodeLoading(true);
-    try {
-      while (barcodeQueueRef.current.length > 0) {
-        const entry = barcodeQueueRef.current[0]!;
-        if (entry.epoch === barcodeEpochRef.current) {
-          try {
-            const resolved = await api<ResolvedInventoryBarcode>("/inventory-barcodes/resolve", {
-              method: "POST",
-              body: JSON.stringify({ value: entry.value }),
-            });
-            if (canApplyQueuedBarcodeScan(
-              entry,
-              barcodeEpochRef.current,
-              checkoutInFlightRef.current,
-            )) {
-              const itemName = localizedReferenceName(resolved.inventoryItem);
-              const result = applyResolvedBarcodeToLines(
-                linesRef.current,
-                {
-                  id: resolved.inventoryItem.id,
-                  label: `${resolved.inventoryItem.code} — ${itemName} (${resolved.inventoryItem.unitOfMeasure.code})`,
-                  description: itemName,
-                },
-                blankLine,
-                50,
-              );
-              if (result.status === "invalid-quantity") {
-                setBarcodeFeedback({ tone: "error", message: t("pos.barcode.quantityInvalid") });
-              } else if (result.status === "line-limit") {
-                setBarcodeFeedback({ tone: "error", message: t("pos.barcode.lineLimit") });
-              } else {
-                linesRef.current = result.lines;
-                setLines(result.lines);
-                setBarcodeFeedback({
-                  tone: "success",
-                  message: t(result.status === "incremented" ? "pos.barcode.incremented" : "pos.barcode.added", {
-                    item: `${resolved.inventoryItem.code} — ${itemName}`,
-                  }),
-                });
-              }
-            }
-          } catch (cause) {
-            if (entry.epoch === barcodeEpochRef.current) {
-              setBarcodeFeedback({
-                tone: "error",
-                message: cause instanceof Error ? cause.message : t("pos.barcode.resolveError"),
-              });
-            }
-          }
-        }
-        const currentQueue = barcodeQueueRef.current;
-        updateBarcodeQueue(currentQueue[0] === entry
-          ? currentQueue.slice(1)
-          : currentQueue.filter((queued) => queued !== entry));
-      }
-    } finally {
-      barcodeWorkerRunning.current = false;
-      setBarcodeLoading(false);
-      window.requestAnimationFrame(() => {
-        barcodeInputRef.current?.focus();
-        barcodeInputRef.current?.select();
-      });
-    }
-  }
-
-  function enqueueBarcodeScan(rawValue: string, input: HTMLInputElement | null) {
-    if (!canScanBarcodes) return;
-    clearBarcodeBuffer(input);
-    if (checkoutInFlightRef.current) {
-      setBarcodeFeedback({ tone: "error", message: t("pos.barcode.checkoutInProgress") });
-      return;
-    }
-    const admission = appendBarcodeScanToQueue(
-      barcodeQueueRef.current,
-      rawValue,
-      barcodeEpochRef.current,
-    );
-    if (admission.status === "empty") {
-      setBarcodeFeedback({ tone: "error", message: t("pos.barcode.empty") });
-      barcodeInputRef.current?.focus();
-      return;
-    }
-    if (admission.status === "full") {
-      setBarcodeFeedback({
-        tone: "error",
-        message: t("pos.barcode.queueFull", { count: POS_BARCODE_QUEUE_LIMIT }),
-      });
-      barcodeInputRef.current?.focus();
-      return;
-    }
-    updateBarcodeQueue(admission.queue);
-    if (admission.queue.length > 1) {
-      setBarcodeFeedback({
-        tone: "neutral",
-        message: t("pos.barcode.queued", { count: admission.queue.length }),
-      });
-    } else {
-      setBarcodeFeedback(null);
-    }
-    void drainBarcodeQueue();
-  }
-
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canCheckout) return;
-    if (barcodeWorkerRunning.current || barcodeQueueRef.current.length > 0) {
-      setBarcodeFeedback({ tone: "error", message: t("pos.barcode.checkoutBlocked") });
-      barcodeInputRef.current?.focus();
+    if (barcodeScannerRef.current?.hasPending()) {
+      notify(t("pos.barcode.checkoutBlocked"), "error");
+      barcodeScannerRef.current.focus();
       return;
     }
     const data = new FormData(event.currentTarget);
@@ -293,8 +170,6 @@ export function PosPage({ notify }: { notify: Notice }) {
       notify(t("pos.referenceRequired"), "error");
       return;
     }
-    checkoutInFlightRef.current = true;
-    barcodeEpochRef.current += 1;
     setSaving(true);
     try {
       await api<PosCheckoutResult>("/pos/checkouts", {
@@ -325,15 +200,12 @@ export function PosPage({ notify }: { notify: Notice }) {
         }),
       });
       notify(t("pos.completed"));
-      updateBarcodeQueue([]);
       updateLines(() => [blankLine()]);
-      clearBarcodeBuffer(barcodeInputRef.current);
-      setBarcodeFeedback(null);
+      barcodeScannerRef.current?.reset();
       await load();
     } catch (cause) {
       notify(cause instanceof Error ? cause.message : t("pos.checkoutError"), "error");
     } finally {
-      checkoutInFlightRef.current = false;
       setSaving(false);
     }
   }
@@ -343,12 +215,32 @@ export function PosPage({ notify }: { notify: Notice }) {
     <div className="pos-layout">
       <form className="panel pos-checkout-form" onSubmit={submit}>
         <header><div><h2>{t("pos.newSale")}</h2><p>{t("pos.inventoryOnly")}</p></div></header>
-        {canScanBarcodes && <div className="pos-barcode-scanner" aria-busy={barcodeLoading}>
-          <div className="pos-barcode-copy"><strong>{t("pos.barcode.title")}</strong><span>{t("pos.barcode.keyboardHint")}</span></div>
-          <label><span>{t("pos.barcode.inputLabel")}</span><input ref={barcodeInputRef} dir="ltr" inputMode="text" autoComplete="off" autoFocus maxLength={255} value={barcodeValue} onChange={(event) => { setBarcodeValue(event.target.value); setBarcodeFeedback(null); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); enqueueBarcodeScan(event.currentTarget.value, event.currentTarget); } }} placeholder={t("pos.barcode.placeholder")} /></label>
-          <Button type="button" icon="search" disabled={!barcodeValue.trim()} onClick={() => enqueueBarcodeScan(barcodeInputRef.current?.value ?? barcodeValue, barcodeInputRef.current)}>{barcodeLoading ? t("pos.barcode.enqueue") : t("pos.barcode.scan")}</Button>
-          {barcodeFeedback && <div className={`pos-barcode-feedback ${barcodeFeedback.tone}`} role={barcodeFeedback.tone === "error" ? "alert" : "status"}>{barcodeFeedback.message}</div>}
-        </div>}
+        <InventoryBarcodeScanner
+          ref={barcodeScannerRef}
+          enabled={canScanBarcodes}
+          blocked={saving}
+          autoFocus
+          maxLines={50}
+          onPendingChange={setBarcodePendingCount}
+          onResolved={(resolved) => {
+            const itemName = localizedReferenceName(resolved.inventoryItem);
+            const result = applyResolvedBarcodeToLines(
+              linesRef.current,
+              {
+                id: resolved.inventoryItem.id,
+                label: `${resolved.inventoryItem.code} — ${itemName} (${resolved.inventoryItem.unitOfMeasure.code})`,
+                description: itemName,
+              },
+              blankLine,
+              50,
+            );
+            if (result.status !== "invalid-quantity" && result.status !== "line-limit") {
+              linesRef.current = result.lines;
+              setLines(result.lines);
+            }
+            return result.status;
+          }}
+        />
         <div className="pos-reference-grid">
           <label><span>{t("pos.period")}</span><select value={periodId} onChange={(event) => setPeriodId(event.target.value)} disabled={!canReadFiscalPeriods} required><option value="" />{periods.map((period) => <option value={period.id} key={period.id}>{period.name}</option>)}</select></label>
           <label><span>{t("pos.date")}</span><input name="documentDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required /></label>
@@ -371,7 +263,7 @@ export function PosPage({ notify }: { notify: Notice }) {
           <label className="pos-tax"><span>{t("pos.tax")}</span><ReferenceCombobox<TaxRate> endpoint="/tax-rates?activeOnly=true" value={line.taxRateId} selectedLabel={line.taxRateLabel} onChange={(tax) => updateLine(index, { taxRateId: tax?.id ?? "", taxRateLabel: tax ? `${localizedReferenceName(tax)} (${Number(tax.rate)}%)` : "" })} optionLabel={(tax) => `${localizedReferenceName(tax)} (${Number(tax.rate)}%)${tax.isReady ? "" : ` — ${taxReadinessLabel(tax)}`}`} optionDisabled={(tax) => !tax.isReady} placeholder={t("pos.tax")} searchLabel={t("pos.tax")} optionalLabel={t("pos.tax")} /></label>
           <Button type="button" variant="ghost" icon="trash" disabled={lines.length === 1} onClick={() => updateLines((current) => current.filter((_, position) => position !== index))}>{t("pos.removeLine")}</Button>
         </div>)}<Button type="button" variant="secondary" icon="plus" disabled={lines.length >= 50} onClick={() => updateLines((current) => [...current, blankLine()])}>{t("pos.addLine")}</Button></fieldset>
-        <div className="pos-checkout-footer"><label><span>{t("pos.notes")}</span><textarea name="notes" maxLength={1000} rows={2} /></label><div className="pos-total"><span>{t("pos.total")}</span><strong>{formatMoney(displayTotal)}</strong></div><Can policy={checkoutPolicy}><Button type="submit" icon="check" disabled={saving || barcodeLoading || barcodePendingCount > 0 || !periodId || !currencyId || !customerId || !warehouseId || !cashAccountId || !paymentMethod}>{saving ? t("pos.checkingOut") : t("pos.checkout")}</Button></Can></div>
+        <div className="pos-checkout-footer"><label><span>{t("pos.notes")}</span><textarea name="notes" maxLength={1000} rows={2} /></label><div className="pos-total"><span>{t("pos.total")}</span><strong>{formatMoney(displayTotal)}</strong></div><Can policy={checkoutPolicy}><Button type="submit" icon="check" disabled={saving || barcodePendingCount > 0 || !periodId || !currencyId || !customerId || !warehouseId || !cashAccountId || !paymentMethod}>{saving ? t("pos.checkingOut") : t("pos.checkout")}</Button></Can></div>
       </form>
       <article className="panel pos-history"><header><div><h2>{t("pos.recentSales")}</h2><p>{t("pos.recentDescription")}</p></div></header>
         {error ? <div className="error-panel" role="alert"><p>{error}</p><Button variant="secondary" onClick={() => void load()}>{t("common.retry")}</Button></div> : loading ? <Spinner label={t("common.loading")} /> : sales.length === 0 ? <EmptyState title={t("pos.emptyTitle")} description={t("pos.emptyDescription")} /> : <><div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("pos.invoice")}</th><th>{t("pos.receipt")}</th><th>{t("pos.customer")}</th><th>{t("pos.total")}</th><th>{t("pos.completedAt")}</th><th>{t("pos.status")}</th></tr></thead><tbody>{sales.map((sale) => <tr key={sale.id}><td dir="ltr">{sale.invoice.documentNumber}</td><td dir="ltr">{sale.receipt.documentNumber}</td><td>{sale.invoice.customerName}</td><td className="money-cell">{formatMoney(sale.invoice.total)}</td><td>{new Date(sale.completedAt).toLocaleString(activeIntlLocale())}</td><td><div className="pos-statuses"><span><small>{t("pos.invoice")}</small><span className={`status-chip ${sale.invoice.status.toLowerCase()}`}>{statusLabel(sale.invoice.status)}</span></span><span><small>{t("pos.receipt")}</small><span className={`status-chip ${sale.receipt.status.toLowerCase()}`}>{statusLabel(sale.receipt.status)}</span></span></div></td></tr>)}</tbody></table></div><Pagination {...meta} page={page} onChange={setPage} /></>}

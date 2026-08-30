@@ -1199,6 +1199,7 @@ h1, h2, h3, .brand strong { font-family: "Cairo", "Noto Sans Devanagari", Tahoma
 .pos-checkout-form > header, .pos-history > header { padding: 20px 24px; border-bottom: 1px solid var(--line); }
 .pos-checkout-form > header p, .pos-history > header p { margin: 4px 0 0; color: var(--muted); font-size: .8rem; }
 .pos-barcode-scanner { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(280px, 1.5fr) auto; align-items: end; gap: 14px; margin: 18px 24px 0; padding: 16px 18px; border: 1px solid #9fbeaf; border-radius: 15px; background: #f0f7f3; }
+.sales-invoice-form > .pos-barcode-scanner { margin: 0; }
 .pos-barcode-copy { display: grid; gap: 3px; align-self: center; }
 .pos-barcode-copy strong { color: var(--green-800); }
 .pos-barcode-copy span { color: var(--muted); font-size: .72rem; line-height: 1.55; }
@@ -1230,6 +1231,12 @@ h1, h2, h3, .brand strong { font-family: "Cairo", "Noto Sans Devanagari", Tahoma
   .pos-reference-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .pos-line { grid-template-columns: auto repeat(3, minmax(120px, 1fr)); }
   .pos-line .pos-item, .pos-line .pos-revenue, .pos-line .pos-tax { grid-column: span 2; }
+}
+
+@media (max-width: 780px) {
+  .pos-barcode-scanner { grid-template-columns: 1fr; margin-inline: 14px; padding: 14px; }
+  .sales-invoice-form > .pos-barcode-scanner { margin: 0; }
+  .pos-barcode-feedback { grid-column: auto; }
 }
 
 @media (max-width: 680px) {

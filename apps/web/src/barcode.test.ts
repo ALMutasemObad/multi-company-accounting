@@ -6,6 +6,7 @@ import {
   canManageInventoryItemBarcodes,
   canManageInventoryBarcodes,
   canPrintInventoryBarcode,
+  canUseInventoryBarcodeScanner,
   canUsePosBarcodeScanner,
   canViewInventoryBarcodes,
   incrementQuantityText,
@@ -103,6 +104,22 @@ describe("barcode scan and permission guards", () => {
     expect(canManageInventoryItemBarcodes(manager, false)).toBe(false);
     expect(canUsePosBarcodeScanner(new Set(["inventory_barcodes.resolve"]))).toBe(false);
     expect(canUsePosBarcodeScanner(new Set(["pos.checkout", "inventory_barcodes.resolve"]))).toBe(true);
+  });
+
+  it("combines barcode resolution with each invoice operation permission", () => {
+    const createSalesInvoice = { permission: "sales_invoices.create" } as const;
+    expect(canUseInventoryBarcodeScanner(
+      new Set(["sales_invoices.create", "inventory_barcodes.resolve"]),
+      createSalesInvoice,
+    )).toBe(true);
+    expect(canUseInventoryBarcodeScanner(
+      new Set(["sales_invoices.create"]),
+      createSalesInvoice,
+    )).toBe(false);
+    expect(canUseInventoryBarcodeScanner(
+      new Set(["inventory_barcodes.resolve"]),
+      createSalesInvoice,
+    )).toBe(false);
   });
 
   it("allows label download only with print permission and active records", () => {

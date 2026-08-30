@@ -1,8 +1,8 @@
 ---
 title: "Mobile Applications and End-to-End Barcode Target"
-status: "mandatory immediate requirement; B1 and the first B2/B3 vertical slice implemented locally pending release gates; broader retrofit and mobile remain"
-version: "1.3"
-date: "2026-08-29"
+status: "mandatory immediate requirement; B1 and initial B2/B3 input/output slices implemented; broader retrofit and mobile remain"
+version: "1.4"
+date: "2026-08-30"
 related:
   - "ARCHITECTURE_GUARDRAILS_AR.md"
   - "BOUNDED_CONTEXT_MAP_AR.md"
@@ -24,11 +24,13 @@ related:
 
 الحالة الحالية لا تحقق المتطلبين كاملين: واجهة الويب متجاوبة مع عرض الهاتف، لكنها ليست
 تطبيق متجر. أصبح أساس **B1** لتعريف باركودات الصنف وإدارتها وحلها مفردة ودفعيًا منفذًا
-محليًا. كما نُفذ أول مسار رأسي من **B2/B3**: إدخال يدوي وقارئ HID في POS، وإدارة
-باركودات الصنف، وتنزيل ملصق PNG ثابت من قيمة يملكها Inventory عبر خدمة إخراج منفصلة.
-تبقى هذه الشريحة قيد بوابات MariaDB 10.11 وMySQL 8.4، ولا تشمل كاميرا الهاتف أو GS1
-أو بقية شاشات الإدخال أو PDF والمستندات التجارية والطباعة الدفعيّة؛ لذلك يظل الـRetrofit
-العاجل وقناة الهاتف هدفين ملزمين لا يُدعى اكتمالهما بهذه الشريحة.
+ومُرر إلى بوابات الإصدار. كما نُفذت مسارات رأسية أولية من **B2/B3**: إدخال يدوي وقارئ
+HID في POS وتأليف بنود فواتير المبيعات والمشتريات، وإدارة باركودات الصنف، وتنزيل ملصق
+PNG ثابت من قيمة يملكها Inventory عبر خدمة إخراج منفصلة. تستخدم شاشات الإدخال مكوّن
+مسح مشتركًا وطابورًا متسلسلًا، وتجمع صلاحية العملية مع `inventory_barcodes.resolve`،
+ولا تحفظ المستند قبل انتهاء المسحات المعلقة. لا تشمل هذه الشرائح كاميرا الهاتف أو GS1
+أو حركات المخزون والاستيراد أو PDF والمستندات التجارية والطباعة الدفعيّة؛ لذلك يظل
+الـRetrofit العاجل وقناة الهاتف هدفين ملزمين لا يُدعى اكتمالهما بهذه الشرائح.
 
 من تاريخ هذا القرار، لا يدمج أي توسع في Inventory أو Sales أو Purchases أو POS أو
 Printing/Export أو اختيار الأصناف قبل توثيق **Barcode Impact** في التغيير. إذا مس التغيير

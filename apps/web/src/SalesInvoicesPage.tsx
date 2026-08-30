@@ -5,6 +5,7 @@ import { FormEvent,
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState } from "react";
 import { api,
   ApiError,
@@ -16,6 +17,10 @@ import { allows,
   requestIfAllowed,
   requestValue } from "./authorization";
 import { Can, useAuthorization } from "./authorization-context";
+import {
+  applyResolvedBarcodeToLines,
+  canUseInventoryBarcodeScanner,
+} from "./barcode";
 import { endpointPermissionPolicies } from "./endpoint-permissions";
 import { exchangeRateForDocumentDate,
   missingDatedRateMessage } from "./currency-rates";
@@ -39,6 +44,10 @@ import type { Account,
   TaxRate,
   Warehouse } from "./types";
 import { ReferenceCombobox } from "./ReferenceCombobox";
+import {
+  InventoryBarcodeScanner,
+  type InventoryBarcodeScannerHandle,
+} from "./InventoryBarcodeScanner";
 import { Button,
   EmptyState,
   Modal,
@@ -147,6 +156,10 @@ const blankLine = (): DraftLine => ({ inventoryItemId: "", inventoryItemLabel: "
 
 function InvoiceForm({ type, invoice, references, onClose, onSaved }: { type: InvoiceType; invoice: SalesInvoice | null; references: References; onClose: () => void; onSaved: (value: SalesInvoice) => void }) {
   const { permissionSet } = useAuthorization();
+  const operationPolicy = invoice
+    ? actionPermissionPolicies.salesInvoices.update
+    : actionPermissionPolicies.salesInvoices.create;
+  const canScanBarcodes = canUseInventoryBarcodeScanner(permissionSet, operationPolicy);
   const canReadCurrencies = allows(permissionSet, endpointPermissionPolicies.currencies);
   const canReadCustomers = allows(permissionSet, endpointPermissionPolicies.customers);
   const canReadFiscalPeriods = allows(permissionSet, endpointPermissionPolicies.fiscalPeriods);
@@ -158,6 +171,9 @@ function InvoiceForm({ type, invoice, references, onClose, onSaved }: { type: In
   const [documentDate, setDocumentDate] = useState(invoice?.document.documentDate ?? new Date().toISOString().slice(0, 10));
   const [sourceInvoiceId, setSourceInvoiceId] = useState(invoice?.sourceInvoiceId ?? "");
   const [lines, setLines] = useState<DraftLine[]>(invoice?.lines.map(lineDraft) ?? [blankLine()]);
+  const linesRef = useRef(lines);
+  const barcodeScannerRef = useRef<InventoryBarcodeScannerHandle>(null);
+  const [barcodePendingCount, setBarcodePendingCount] = useState(0);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const totals = useMemo(() => lines.reduce((value, line) => { const gross = Number(line.quantity || 0) * Number(line.unitPrice || 0); const discount = Number(line.discountAmount || 0); const net = Math.max(0, gross - discount); const tax = net * Number(line.taxRateRate || 0) / 100; return { subtotal: value.subtotal + gross, discount: value.discount + discount, tax: value.tax + tax, total: value.total + net + tax }; }, { subtotal: 0, discount: 0, tax: 0, total: 0 }), [lines]);
@@ -165,7 +181,12 @@ function InvoiceForm({ type, invoice, references, onClose, onSaved }: { type: In
   useEffect(() => { if (!currencyId && references.currencies[0]) { setCurrencyId(references.currencies[0].id); setExchangeRate(exchangeRateForCurrency(references.currencies[0])); } }, [currencyId, references.currencies]);
   async function selectCurrency(id: string, date = documentDate) { const selected = references.currencies.find((currency) => currency.id === id); setCurrencyId(id); try { setExchangeRate(await exchangeRateForDocumentDate(selected, date)); setErrors((current) => current.filter((message) => message !== missingDatedRateMessage())); } catch { setExchangeRate(""); setErrors([missingDatedRateMessage()]); } }
   function changeDocumentDate(value: string) { setDocumentDate(value); if (currencyId) void selectCurrency(currencyId, value); }
-  function setLine(index: number, patch: Partial<DraftLine>) { setLines((current) => current.map((line, position) => position === index ? { ...line, ...patch } : line)); }
+  function updateLines(update: (current: readonly DraftLine[]) => DraftLine[]) {
+    const next = update(linesRef.current);
+    linesRef.current = next;
+    setLines(next);
+  }
+  function setLine(index: number, patch: Partial<DraftLine>) { updateLines((current) => current.map((line, position) => position === index ? { ...line, ...patch } : line)); }
   function selectInventoryItem(index: number, item: InventoryItem | null) {
     setLine(index, {
       inventoryItemId: item?.id ?? "",
@@ -175,7 +196,12 @@ function InvoiceForm({ type, invoice, references, onClose, onSaved }: { type: In
   }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!allows(permissionSet, invoice ? actionPermissionPolicies.salesInvoices.update : actionPermissionPolicies.salesInvoices.create)) return;
+    if (!allows(permissionSet, operationPolicy)) return;
+    if (barcodeScannerRef.current?.hasPending()) {
+      setErrors([t("pos.barcode.checkoutBlocked")]);
+      barcodeScannerRef.current.focus();
+      return;
+    }
     const data = new FormData(event.currentTarget); const value = (name: string) => String(data.get(name) ?? "").trim();
     const validation: string[] = [];
     if (!customerId) validation.push(t("pages.sales-invoices.050"));
@@ -203,10 +229,11 @@ function InvoiceForm({ type, invoice, references, onClose, onSaved }: { type: In
     <label><span>{t("pages.payments.068")}</span><input dir="ltr" inputMode="decimal" value={exchangeRate} onChange={(event) => setExchangeRate(event.target.value)} required /></label>
     <label className="full"><span>{t("invoiceInventory.warehouse")}</span><ReferenceCombobox<Warehouse> endpoint="/warehouses?active=true" value={warehouseId} selectedLabel={invoice?.warehouseId ? `${invoice.warehouseCodeSnapshot} — ${invoice.warehouseNameSnapshot}` : ""} onChange={(warehouse) => setWarehouseId(warehouse?.id ?? "")} optionLabel={(warehouse) => `${warehouse.code} — ${localizedReferenceName(warehouse)}`} placeholder={t("invoiceInventory.noWarehouse")} searchLabel={t("invoiceInventory.warehouse")} optionalLabel={t("invoiceInventory.noWarehouse")} disabled={!canReadWarehouses} /><small>{t("invoiceInventory.warehouseHint")}</small></label>
     <label className="full"><span>{t("pages.purchase-invoices.075")}</span><input name="customerAddress" defaultValue={invoice?.customerAddressSnapshot ?? ""} maxLength={500} placeholder={t("pages.sales-invoices.074")} /></label>
-    <fieldset className="full invoice-lines-field"><legend>{t("pages.purchase-invoices.077")}</legend><div className="invoice-line-list">{lines.map((line, index) => <div className="invoice-line-editor" key={index}><span className="line-index">{index + 1}</span><label className="line-item"><span>{t("invoiceInventory.item")}</span><ReferenceCombobox<InventoryItem> endpoint="/inventory-items?active=true" value={line.inventoryItemId} selectedLabel={line.inventoryItemLabel} onChange={(item) => selectInventoryItem(index, item)} optionLabel={(item) => `${item.code} — ${localizedReferenceName(item)} (${item.unitOfMeasure.code})`} placeholder={t("invoiceInventory.manualLine")} searchLabel={t("invoiceInventory.item")} optionalLabel={t("invoiceInventory.manualLine")} /></label><label className="line-description"><span>{t("pages.purchase-invoices.078")}</span><input value={line.description} onChange={(event) => setLine(index, { description: event.target.value })} required /></label><label className="line-quantity"><span>{t("pages.purchase-invoices.079")}</span><input dir="ltr" inputMode="decimal" value={line.quantity} onChange={(event) => setLine(index, { quantity: event.target.value })} required /></label><label className="line-unit-price"><span>{t("pages.purchase-invoices.080")}</span><input dir="ltr" inputMode="decimal" value={line.unitPrice} onChange={(event) => setLine(index, { unitPrice: event.target.value })} required /></label><label className="line-discount"><span>{t("pages.purchase-invoices.081")}</span><input dir="ltr" inputMode="decimal" value={line.discountAmount} onChange={(event) => setLine(index, { discountAmount: event.target.value })} required /></label><label className="line-account"><span>{t("pages.sales-invoices.080")}</span><ReferenceCombobox<Account> endpoint="/accounts?active=true&allowsPosting=true&accountClasses=REVENUE" value={line.revenueAccountId} selectedLabel={line.revenueAccountLabel} onChange={(account) => setLine(index, { revenueAccountId: account?.id ?? "", revenueAccountLabel: account ? `${account.code} — ${localizedReferenceName(account)}` : "" })} optionLabel={(account) => `${account.code} — ${localizedReferenceName(account)}`} placeholder={t("pages.purchase-invoices.083")} searchLabel={t("pages.sales-invoices.080")} required /></label><label className="line-tax"><span>{t("pages.purchase-invoices.084")}</span><ReferenceCombobox<TaxRate> endpoint="/tax-rates?activeOnly=true" value={line.taxRateId} selectedLabel={line.taxRateLabel} onChange={(tax) => setLine(index, { taxRateId: tax?.id ?? "", taxRateLabel: tax ? `${localizedReferenceName(tax)} (${Number(tax.rate)}%)${tax.isReady ? "" : ` — ${taxReadinessLabel(tax)}`}` : "", taxRateRate: tax?.rate ?? "0" })} optionLabel={(tax) => `${localizedReferenceName(tax)} (${Number(tax.rate)}%)${tax.isReady ? "" : ` — ${taxReadinessLabel(tax)}`}`} optionDisabled={(tax) => !tax.isReady} placeholder={t("pages.purchase-invoices.085")} searchLabel={t("pages.purchase-invoices.084")} optionalLabel={t("pages.purchase-invoices.085")} /></label><label className="line-cost-center"><span>{t("pages.manual-journals.057")}</span><ReferenceCombobox<CostCenter> endpoint="/cost-centers?active=true" value={line.costCenterId} selectedLabel={line.costCenterLabel} onChange={(center) => setLine(index, { costCenterId: center?.id ?? "", costCenterLabel: center ? `${center.code} — ${localizedReferenceName(center)}` : "" })} optionLabel={(center) => `${center.code} — ${localizedReferenceName(center)}`} placeholder={t("pages.purchase-invoices.087")} searchLabel={t("pages.manual-journals.057")} optionalLabel={t("pages.purchase-invoices.087")} /></label><Button type="button" className="line-delete" variant="ghost" icon="trash" disabled={lines.length === 1} onClick={() => setLines((current) => current.filter((_, position) => position !== index))}>{t("pages.accounts.050")}</Button></div>)}</div><Button type="button" variant="secondary" icon="plus" onClick={() => setLines((current) => [...current, blankLine()])}>{t("pages.purchase-invoices.089")}</Button></fieldset>
+    <InventoryBarcodeScanner ref={barcodeScannerRef} enabled={canScanBarcodes} blocked={saving} className="full" maxLines={200} onPendingChange={setBarcodePendingCount} onResolved={(resolved) => { const itemName = localizedReferenceName(resolved.inventoryItem); const result = applyResolvedBarcodeToLines(linesRef.current, { id: resolved.inventoryItem.id, label: `${resolved.inventoryItem.code} — ${itemName} (${resolved.inventoryItem.unitOfMeasure.code})`, description: resolved.inventoryItem.description || itemName }, blankLine, 200); if (result.status !== "invalid-quantity" && result.status !== "line-limit") { linesRef.current = result.lines; setLines(result.lines); } return result.status; }} />
+    <fieldset className="full invoice-lines-field"><legend>{t("pages.purchase-invoices.077")}</legend><div className="invoice-line-list">{lines.map((line, index) => <div className="invoice-line-editor" key={index}><span className="line-index">{index + 1}</span><label className="line-item"><span>{t("invoiceInventory.item")}</span><ReferenceCombobox<InventoryItem> endpoint="/inventory-items?active=true" value={line.inventoryItemId} selectedLabel={line.inventoryItemLabel} onChange={(item) => selectInventoryItem(index, item)} optionLabel={(item) => `${item.code} — ${localizedReferenceName(item)} (${item.unitOfMeasure.code})`} placeholder={t("invoiceInventory.manualLine")} searchLabel={t("invoiceInventory.item")} optionalLabel={t("invoiceInventory.manualLine")} /></label><label className="line-description"><span>{t("pages.purchase-invoices.078")}</span><input value={line.description} onChange={(event) => setLine(index, { description: event.target.value })} required /></label><label className="line-quantity"><span>{t("pages.purchase-invoices.079")}</span><input dir="ltr" inputMode="decimal" value={line.quantity} onChange={(event) => setLine(index, { quantity: event.target.value })} required /></label><label className="line-unit-price"><span>{t("pages.purchase-invoices.080")}</span><input dir="ltr" inputMode="decimal" value={line.unitPrice} onChange={(event) => setLine(index, { unitPrice: event.target.value })} required /></label><label className="line-discount"><span>{t("pages.purchase-invoices.081")}</span><input dir="ltr" inputMode="decimal" value={line.discountAmount} onChange={(event) => setLine(index, { discountAmount: event.target.value })} required /></label><label className="line-account"><span>{t("pages.sales-invoices.080")}</span><ReferenceCombobox<Account> endpoint="/accounts?active=true&allowsPosting=true&accountClasses=REVENUE" value={line.revenueAccountId} selectedLabel={line.revenueAccountLabel} onChange={(account) => setLine(index, { revenueAccountId: account?.id ?? "", revenueAccountLabel: account ? `${account.code} — ${localizedReferenceName(account)}` : "" })} optionLabel={(account) => `${account.code} — ${localizedReferenceName(account)}`} placeholder={t("pages.purchase-invoices.083")} searchLabel={t("pages.sales-invoices.080")} required /></label><label className="line-tax"><span>{t("pages.purchase-invoices.084")}</span><ReferenceCombobox<TaxRate> endpoint="/tax-rates?activeOnly=true" value={line.taxRateId} selectedLabel={line.taxRateLabel} onChange={(tax) => setLine(index, { taxRateId: tax?.id ?? "", taxRateLabel: tax ? `${localizedReferenceName(tax)} (${Number(tax.rate)}%)${tax.isReady ? "" : ` — ${taxReadinessLabel(tax)}`}` : "", taxRateRate: tax?.rate ?? "0" })} optionLabel={(tax) => `${localizedReferenceName(tax)} (${Number(tax.rate)}%)${tax.isReady ? "" : ` — ${taxReadinessLabel(tax)}`}`} optionDisabled={(tax) => !tax.isReady} placeholder={t("pages.purchase-invoices.085")} searchLabel={t("pages.purchase-invoices.084")} optionalLabel={t("pages.purchase-invoices.085")} /></label><label className="line-cost-center"><span>{t("pages.manual-journals.057")}</span><ReferenceCombobox<CostCenter> endpoint="/cost-centers?active=true" value={line.costCenterId} selectedLabel={line.costCenterLabel} onChange={(center) => setLine(index, { costCenterId: center?.id ?? "", costCenterLabel: center ? `${center.code} — ${localizedReferenceName(center)}` : "" })} optionLabel={(center) => `${center.code} — ${localizedReferenceName(center)}`} placeholder={t("pages.purchase-invoices.087")} searchLabel={t("pages.manual-journals.057")} optionalLabel={t("pages.purchase-invoices.087")} /></label><Button type="button" className="line-delete" variant="ghost" icon="trash" disabled={lines.length === 1} onClick={() => updateLines((current) => current.filter((_, position) => position !== index))}>{t("pages.accounts.050")}</Button></div>)}</div><Button type="button" variant="secondary" icon="plus" disabled={lines.length >= 200} onClick={() => updateLines((current) => [...current, blankLine()])}>{t("pages.purchase-invoices.089")}</Button></fieldset>
     <div className="invoice-live-summary full"><span>{t("pages.purchase-invoices.090")}<strong>{formatMoney(totals.subtotal)}</strong></span><span>{t("pages.purchase-invoices.091")}<strong>{formatMoney(totals.discount)}</strong></span><span>{t("pages.purchase-invoices.092")}<strong>{formatMoney(totals.tax)}</strong></span><span className="grand-total">{t("pages.purchase-invoices.093")}<strong>{formatMoney(totals.total)}</strong></span></div>
     <label className="full"><span>{t("pages.payments.074")}</span><textarea name="notes" defaultValue={invoice?.notes ?? ""} maxLength={1000} rows={3} /></label>
-    <div className="form-actions full"><Button type="button" variant="secondary" onClick={onClose}>{t("pages.accounts.065")}</Button><Button type="submit" disabled={saving}>{saving ? t("pages.purchase-invoices.095") : t("pages.manual-journals.077")}</Button></div>
+    <div className="form-actions full"><Button type="button" variant="secondary" onClick={onClose}>{t("pages.accounts.065")}</Button><Button type="submit" disabled={saving || barcodePendingCount > 0}>{saving ? t("pages.purchase-invoices.095") : t("pages.manual-journals.077")}</Button></div>
   </form></Modal>;
 }
 
