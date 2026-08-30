@@ -64,7 +64,7 @@ test("creates an independent employee record and a non-financial contract", asyn
     const json = (body: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 
     if (path === "/auth/companies") return json({ data: [e2eCompany] });
-    if (path === "/auth/me") return json(authMeResponse(permissions));
+    if (path === "/auth/me") return json(authMeResponse(permissions, ["HUMAN_RESOURCES"]));
     if (path === "/auth/context") return route.fulfill({ status: 204, body: "" });
     if (path === "/hr/departments") return json({ data: [department] });
     if (path === "/hr/positions") return json({ data: [position] });
