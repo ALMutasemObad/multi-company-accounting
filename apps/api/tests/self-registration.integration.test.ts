@@ -76,6 +76,14 @@ describe.runIf(enabled)('self-registration with MariaDB', () => {
       });
       const planVersionIds = subscriptions.map(({ planVersion }) => planVersion.id);
       const planIds = subscriptions.map(({ planVersion }) => planVersion.planId);
+      const subscriptionChanges = await prisma.platformSubscriptionChange.findMany({
+        where: { companyId: { in: companyIds } },
+        select: { id: true },
+      });
+      await prisma.platformSubscriptionChangeModule.deleteMany({
+        where: { changeId: { in: subscriptionChanges.map(({ id }) => id) } },
+      });
+      await prisma.platformSubscriptionChange.deleteMany({ where: { companyId: { in: companyIds } } });
       await prisma.platformSubscriptionEntitlement.deleteMany({ where: { companyId: { in: companyIds } } });
       await prisma.platformSubscription.deleteMany({ where: { companyId: { in: companyIds } } });
       await prisma.platformPlanEntitlement.deleteMany({ where: { planVersionId: { in: planVersionIds } } });
