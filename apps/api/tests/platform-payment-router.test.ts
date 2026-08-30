@@ -2,6 +2,7 @@ import express, { type ErrorRequestHandler } from "express";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 import { AuthError } from "../src/auth/auth-service.js";
+import { parseOpenApiResponseBody } from "../src/generated/openapi-request-guards.js";
 import {
   createPlatformPaymentRouter,
   createPlatformPaymentWebhookHandler,
@@ -34,6 +35,24 @@ function fixture(allow = true) {
 }
 
 describe("platform payment router authorization and query guards", () => {
+  it("accepts the partial invoice filter and its strict response contract", async () => {
+    const { app, payments } = fixture();
+    await request(app).get("/subscription/billing/invoices?status=PARTIALLY_PAID")
+      .set("Cookie", "sid=session").expect(200);
+    expect(payments.listOwnerInvoices).toHaveBeenCalledWith(9n, { page: 1, pageSize: 10, status: "PARTIALLY_PAID" });
+    const page = {
+      provider: payments.providerCapabilities(),
+      items: [{
+        id: "00000000-0000-4000-8000-000000000010", invoiceNumber: "SUB-0001", status: "PARTIALLY_PAID",
+        issueDate: "2051-05-01", dueDate: "2051-12-31", currencyCode: "SAR",
+        totalAmount: "100.0000", paidAmount: "25.0000", refundedAmount: "0.0000", balance: "75.0000",
+        version: 1, latestPaymentState: null,
+      }],
+      meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 },
+    };
+    expect(parseOpenApiResponseBody("listCompanySubscriptionBillingInvoices", 200, page)).toEqual(page);
+  });
+
   it("scopes owner reads to the authorized company and bounds database pagination", async () => {
     const { app, authorize, payments } = fixture();
     await request(app).get("/subscription/billing/invoices?page=2&pageSize=25&status=OVERDUE")

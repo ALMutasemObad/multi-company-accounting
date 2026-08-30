@@ -185,15 +185,16 @@ export class PlatformPaymentService {
 
   async listOwnerInvoices(
     companyId: bigint,
-    input: Pagination & { status?: "ALL" | "ISSUED" | "PAID" | "OVERDUE" | "VOID" | undefined },
+    input: Pagination & { status?: "ALL" | "ISSUED" | "PARTIALLY_PAID" | "PAID" | "OVERDUE" | "VOID" | undefined },
   ) {
     const today = new Date(`${dateString(this.now())}T00:00:00.000Z`);
     const status = input.status ?? "ALL";
     const statusSql = status === "VOID" ? Prisma.sql`invoice.state = 'VOID'`
-      : status === "ISSUED" ? Prisma.sql`invoice.state = 'ISSUED' AND COALESCE(net.net_paid_amount, 0) < invoice.total_amount AND invoice.due_date >= ${today}`
-        : status === "PAID" ? Prisma.sql`invoice.state = 'ISSUED' AND COALESCE(net.net_paid_amount, 0) >= invoice.total_amount`
-          : status === "OVERDUE" ? Prisma.sql`invoice.state = 'ISSUED' AND COALESCE(net.net_paid_amount, 0) < invoice.total_amount AND invoice.due_date < ${today}`
-            : Prisma.sql`TRUE`;
+      : status === "ISSUED" ? Prisma.sql`invoice.state = 'ISSUED' AND COALESCE(net.net_paid_amount, 0) = 0 AND invoice.total_amount > 0 AND invoice.due_date >= ${today}`
+        : status === "PARTIALLY_PAID" ? Prisma.sql`invoice.state = 'ISSUED' AND COALESCE(net.net_paid_amount, 0) > 0 AND COALESCE(net.net_paid_amount, 0) < invoice.total_amount AND invoice.due_date >= ${today}`
+          : status === "PAID" ? Prisma.sql`invoice.state = 'ISSUED' AND COALESCE(net.net_paid_amount, 0) >= invoice.total_amount`
+            : status === "OVERDUE" ? Prisma.sql`invoice.state = 'ISSUED' AND COALESCE(net.net_paid_amount, 0) < invoice.total_amount AND invoice.due_date < ${today}`
+              : Prisma.sql`TRUE`;
     const netSql = Prisma.sql`
       SELECT
         invoice_id,

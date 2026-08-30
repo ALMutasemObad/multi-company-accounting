@@ -37,7 +37,7 @@ Entitlements** مالك الخطة والاشتراك والاستحقاقات �
 المصدر والفاعل أو `providerEventId`. الوصول المتأخر إلى PAID من Attempt فاشلة أو
 ملغاة لا يرفض تلقائيًا إذا كان Webhook موثوقًا؛ أما فشل أو إلغاء متأخر بعد PAID
 فيحفظ كإيصال `IGNORED` بلا عكس حقيقة الدفع. انتقال PAID إلى REFUNDED وحده مسموح بعد
-الدفع. الخدمة المستقبلية تقفل Attempt وتستخدم `version` وconditional update؛ تفرد
+الدفع. الخدمة تقفل Attempt وتستخدم `version` وconditional update؛ تفرد
 الإيصال أو الانتقال لا يستبدل هذا القفل.
 
 الحالات تخص التحصيل فقط. لا تغير `PlatformSubscription.status` ولا تطبق
@@ -66,7 +66,7 @@ Entitlements** مالك الخطة والاشتراك والاستحقاقات �
   وتحفظ `planDisplayNameSnapshot`. الأعمدة اختيارية كي يظل التطبيق السابق قادرًا على
   إصدار الفواتير أثناء الترقية.
 
-كل قوائم التشغيل المستقبلية تستخدم فهارس `(company, state/date, id)` وcursor أو page
+كل قوائم التشغيل تستخدم فهارس `(company, state/date, id)` وcursor أو page
 محدودة في قاعدة البيانات. يمنع تحميل كل Attempts أو Webhooks أو Refunds ثم
 `filter/slice` في الذاكرة.
 
@@ -87,7 +87,7 @@ Entitlements** مالك الخطة والاشتراك والاستحقاقات �
 
 ## Port وAdapters
 
-العقد المستهدف `PlatformPaymentProviderPort` يملك أنواعًا محايدة فقط:
+العقد `PlatformPaymentProviderPort` يملك أنواعًا محايدة فقط:
 
 1. إنشاء Hosted Checkout من `attemptPublicId/provider/idempotencyReference/amountMinor/
    currency/return URLs/deadline` وإرجاع معرف Checkout وURL وانتهاء ومراجع منقحة.
@@ -96,7 +96,7 @@ Entitlements** مالك الخطة والاشتراك والاستحقاقات �
 3. طلب full refund لسداد PAID، بمفتاح مزود ثابت وdeadline، ثم انتظار Webhook مصدرًا
    للحقيقة النهائية.
 
-يركب Adapter في composition فقط. Adapter التطوير المستهدف يولد جلسة Hosted محلية
+يركب Adapter في composition فقط. Adapter التطوير يولد جلسة Hosted محلية
 ويستخدم سر اختبار منفصلًا وتوقيعًا وطابعًا زمنيًا وevent IDs حتمية لاختبار replay
 والترتيب. اسمه وبيئته `DEVELOPMENT` ولا يدعي أنه بوابة تجارية أو Sandbox. لا يسمح
 بـ`LIVE` قبل Adapter خارجي ومراجعة أمنية وتشريعية مستقلة.
@@ -108,8 +108,8 @@ Entitlements** مالك الخطة والاشتراك والاستحقاقات �
 1. داخل معاملة قصيرة: تحقق من الشركة والفاتورة والرصيد والعملة، احجز Attempt وحالة
    CHECKOUT ومفتاحها وبصمتها وانتقالها الأول.
 2. خارج المعاملة: استدع Adapter ضمن deadline صريح، بلا retry لأخطاء الأعمال.
-3. داخل معاملة ثانية: اقفل Attempt، تحقق من النسخة، احفظ Checkout وانتقل إلى PENDING
-   بصورة idempotent مع بقاء CHECKOUT حتى يصل حدث مزود موثوق؛ وإذا تغيّرت الحالة
+3. داخل معاملة ثانية: اقفل Attempt، تحقق من النسخة، واحفظ Checkout بصورة idempotent
+   مع بقاء CHECKOUT حتى يصل حدث مزود موثوق؛ وإذا تغيّرت الحالة
    بالتزامن تلغى جلسة المزود خارج المعاملة ولا تحفظ محليًا.
 
 معالجة Webhook تتحقق من التوقيع والطابع والبيئة خارج المعاملة وقبل الثقة بالحقول، ثم

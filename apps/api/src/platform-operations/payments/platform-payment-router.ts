@@ -17,7 +17,7 @@ const pagination = z.object({
   pageSize: z.coerce.number().int().min(1).max(PLATFORM_PAYMENT_MAX_PAGE_SIZE).default(PLATFORM_PAYMENT_DEFAULT_PAGE_SIZE),
 });
 const invoiceListQuery = pagination.extend({
-  status: z.enum(["ALL", "ISSUED", "PAID", "OVERDUE", "VOID"]).default("ALL"),
+  status: z.enum(["ALL", "ISSUED", "PARTIALLY_PAID", "PAID", "OVERDUE", "VOID"]).default("ALL"),
 });
 const paymentListQuery = pagination.extend({ state: state.or(z.literal("ALL")).default("ALL") });
 const operatorPaymentListQuery = paymentListQuery.extend({ companyId: companyId.optional() });

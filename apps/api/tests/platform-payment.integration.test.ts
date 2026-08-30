@@ -462,6 +462,39 @@ describe.runIf(enabled)("platform electronic payments on a supported database", 
     expect(paidInvoices.items).toEqual([expect.objectContaining({ id: invoices[0]!.publicId, status: "PAID" })]);
   });
 
+  it("filters partial, unpaid, paid and overdue balances without crossing companies", async () => {
+    const company = await createCompany();
+    const foreignCompany = await createCompany();
+    const unpaid = await createInvoice(company.id);
+    const partial = await createInvoice(company.id);
+    const paid = await createInvoice(company.id);
+    const overdue = await createInvoice(company.id);
+    const foreignPartial = await createInvoice(foreignCompany.id);
+    await prisma!.platformBillingInvoice.update({
+      where: { id: overdue.id },
+      data: { dueDate: new Date("2051-05-31T00:00:00.000Z") },
+    });
+    await prisma!.platformBillingPayment.createMany({
+      data: [partial, paid, overdue, foreignPartial].map((invoice) => ({
+        companyId: invoice.companyId,
+        invoiceId: invoice.id,
+        paymentDate: NOW,
+        amount: invoice.id === paid.id ? "100.0000" : "25.0000",
+        method: "BANK_TRANSFER" as const,
+        source: "MANUAL" as const,
+        receivedById: operatorUserId,
+      })),
+    });
+    for (const [status, invoice] of [
+      ["ISSUED", unpaid], ["PARTIALLY_PAID", partial], ["PAID", paid], ["OVERDUE", overdue],
+    ] as const) {
+      const page = await payments().listOwnerInvoices(company.id, { page: 1, pageSize: 1, status });
+      expect(page.meta).toMatchObject({ total: 1, totalPages: 1 });
+      expect(page.items).toEqual([expect.objectContaining({ id: invoice.publicId, status })]);
+      if (status === "PARTIALLY_PAID") expect(page.items[0]).toMatchObject({ paidAmount: "25.0000", balance: "75.0000" });
+    }
+  });
+
   it("accepts a paid subscription approval only after settled invoice evidence exists", async () => {
     const company = await createCompany();
     const subscription = await prisma!.platformSubscription.findUniqueOrThrow({ where: { companyId: company.id } });

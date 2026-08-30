@@ -1306,7 +1306,7 @@ paths:
         required: false
         schema:
           type: string
-          enum: [ALL, ISSUED, PAID, OVERDUE, VOID]
+          enum: [ALL, ISSUED, PARTIALLY_PAID, PAID, OVERDUE, VOID]
           default: ALL
       responses:
         '200':
@@ -11285,7 +11285,7 @@ components:
       properties:
         id: { type: string, format: uuid }
         invoiceNumber: { type: string, minLength: 1, maxLength: 60 }
-        status: { type: string, enum: [ISSUED, PAID, OVERDUE, VOID] }
+        status: { type: string, enum: [ISSUED, PARTIALLY_PAID, PAID, OVERDUE, VOID] }
         issueDate: { type: string, format: date }
         dueDate: { type: string, format: date }
         currencyCode: { type: string, pattern: '^[A-Z]{3}$' }
