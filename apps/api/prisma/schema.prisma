@@ -365,6 +365,20 @@ enum PlatformBillingPaymentMethod {
   OTHER
 }
 
+enum PlatformSubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  SUSPENDED
+  CANCELED
+}
+
+enum PlatformEntitlementSource {
+  PLAN
+  ADD_ON
+  GRANDFATHERED
+}
+
 model Organization {
   id                   BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
   code                 String                @unique @default(uuid()) @db.VarChar(80)
@@ -491,6 +505,8 @@ model Company {
   platformBillingInvoices           PlatformBillingInvoice[]
   platformBillingInvoiceLines       PlatformBillingInvoiceLine[]
   platformBillingPayments           PlatformBillingPayment[]
+  platformSubscription              PlatformSubscription?
+  platformSubscriptionEntitlements  PlatformSubscriptionEntitlement[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -2730,6 +2746,135 @@ model PlatformBillingPayment {
   @@index([companyId, paymentDate, id])
   @@index([invoiceId, createdAt])
   @@map("platform_billing_payments")
+}
+
+model PlatformModule {
+  id                       BigInt                            @id @default(autoincrement()) @db.UnsignedBigInt
+  code                     String                            @unique @db.VarChar(64)
+  displayName              String                            @map("display_name") @db.VarChar(160)
+  isActive                 Boolean                           @default(true) @map("is_active")
+  version                  Int                               @default(0) @db.UnsignedInt
+  createdAt                DateTime                          @default(now()) @map("created_at")
+  updatedAt                DateTime                          @updatedAt @map("updated_at")
+  dependencies             PlatformModuleDependency[]        @relation("PlatformModuleDependencySource")
+  requiredBy               PlatformModuleDependency[]        @relation("PlatformModuleDependencyTarget")
+  planEntitlements         PlatformPlanEntitlement[]
+  subscriptionEntitlements PlatformSubscriptionEntitlement[]
+
+  @@index([isActive, code])
+  @@map("platform_modules")
+}
+
+model PlatformModuleDependency {
+  moduleId          BigInt         @map("module_id") @db.UnsignedBigInt
+  dependsOnModuleId BigInt         @map("depends_on_module_id") @db.UnsignedBigInt
+  createdAt         DateTime       @default(now()) @map("created_at")
+  module            PlatformModule @relation("PlatformModuleDependencySource", fields: [moduleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  dependsOnModule   PlatformModule @relation("PlatformModuleDependencyTarget", fields: [dependsOnModuleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@id([moduleId, dependsOnModuleId])
+  @@index([dependsOnModuleId, moduleId])
+  @@map("platform_module_dependencies")
+}
+
+model PlatformPlan {
+  id        BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
+  code      String                @unique @db.VarChar(80)
+  isActive  Boolean               @default(true) @map("is_active")
+  version   Int                   @default(0) @db.UnsignedInt
+  createdAt DateTime              @default(now()) @map("created_at")
+  updatedAt DateTime              @updatedAt @map("updated_at")
+  versions  PlatformPlanVersion[]
+
+  @@index([isActive, code])
+  @@map("platform_plans")
+}
+
+model PlatformPlanVersion {
+  id                               BigInt                    @id @default(autoincrement()) @db.UnsignedBigInt
+  planId                           BigInt                    @map("plan_id") @db.UnsignedBigInt
+  versionNumber                    Int                       @map("version_number") @db.UnsignedInt
+  displayName                      String                    @map("display_name") @db.VarChar(160)
+  description                      String?                   @db.VarChar(1000)
+  billingCycle                     PlatformBillingCycle      @map("billing_cycle")
+  currencyCode                     String                    @map("currency_code") @db.Char(3)
+  recurringFee                     Decimal                   @default(0) @map("recurring_fee") @db.Decimal(19, 4)
+  includedUsers                    Int                       @default(0) @map("included_users") @db.UnsignedInt
+  pricePerAdditionalUser           Decimal                   @default(0) @map("price_per_additional_user") @db.Decimal(19, 4)
+  includedEmployees                Int                       @default(0) @map("included_employees") @db.UnsignedInt
+  pricePerAdditionalEmployee       Decimal                   @default(0) @map("price_per_additional_employee") @db.Decimal(19, 4)
+  includedPostedDocuments          Int                       @default(0) @map("included_posted_documents") @db.UnsignedInt
+  pricePerAdditionalPostedDocument Decimal                   @default(0) @map("price_per_additional_posted_document") @db.Decimal(19, 4)
+  taxRate                          Decimal                   @default(0) @map("tax_rate") @db.Decimal(9, 4)
+  paymentTermsDays                 Int                       @default(0) @map("payment_terms_days") @db.UnsignedSmallInt
+  trialDays                        Int                       @default(0) @map("trial_days") @db.UnsignedSmallInt
+  effectiveFrom                    DateTime                  @map("effective_from")
+  publishedAt                      DateTime                  @default(now()) @map("published_at")
+  retiredAt                        DateTime?                 @map("retired_at")
+  createdAt                        DateTime                  @default(now()) @map("created_at")
+  plan                             PlatformPlan              @relation(fields: [planId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  entitlements                     PlatformPlanEntitlement[]
+  subscriptions                    PlatformSubscription[]
+
+  @@unique([planId, versionNumber])
+  @@index([planId, effectiveFrom, id])
+  @@map("platform_plan_versions")
+}
+
+model PlatformPlanEntitlement {
+  planVersionId BigInt              @map("plan_version_id") @db.UnsignedBigInt
+  moduleId      BigInt              @map("module_id") @db.UnsignedBigInt
+  createdAt     DateTime            @default(now()) @map("created_at")
+  planVersion   PlatformPlanVersion @relation(fields: [planVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  module        PlatformModule      @relation(fields: [moduleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@id([planVersionId, moduleId])
+  @@index([moduleId, planVersionId])
+  @@map("platform_plan_entitlements")
+}
+
+model PlatformSubscription {
+  id                 BigInt                            @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId          BigInt                            @unique @map("company_id") @db.UnsignedBigInt
+  planVersionId      BigInt                            @map("plan_version_id") @db.UnsignedBigInt
+  status             PlatformSubscriptionStatus        @default(ACTIVE)
+  startsAt           DateTime                          @map("starts_at")
+  trialEndsAt        DateTime?                         @map("trial_ends_at")
+  currentPeriodStart DateTime?                         @map("current_period_start") @db.Date
+  currentPeriodEnd   DateTime?                         @map("current_period_end") @db.Date
+  cancelAtPeriodEnd  Boolean                           @default(false) @map("cancel_at_period_end")
+  version            Int                               @default(0) @db.UnsignedInt
+  createdAt          DateTime                          @default(now()) @map("created_at")
+  updatedAt          DateTime                          @updatedAt @map("updated_at")
+  company            Company                           @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  planVersion        PlatformPlanVersion               @relation(fields: [planVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  entitlements       PlatformSubscriptionEntitlement[]
+
+  @@unique([id, companyId])
+  @@index([status, currentPeriodEnd, id])
+  @@index([planVersionId, status])
+  @@map("platform_subscriptions")
+}
+
+model PlatformSubscriptionEntitlement {
+  id             BigInt                    @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId      BigInt                    @map("company_id") @db.UnsignedBigInt
+  subscriptionId BigInt                    @map("subscription_id") @db.UnsignedBigInt
+  moduleId       BigInt                    @map("module_id") @db.UnsignedBigInt
+  source         PlatformEntitlementSource
+  effectiveFrom  DateTime                  @map("effective_from")
+  effectiveUntil DateTime?                 @map("effective_until")
+  reason         String                    @db.VarChar(500)
+  createdAt      DateTime                  @default(now()) @map("created_at")
+  company        Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  subscription   PlatformSubscription      @relation(fields: [subscriptionId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  module         PlatformModule            @relation(fields: [moduleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([subscriptionId, moduleId, effectiveFrom])
+  @@unique([id, companyId])
+  @@index([companyId, effectiveFrom, effectiveUntil, id])
+  @@index([moduleId, effectiveFrom, effectiveUntil])
+  @@map("platform_subscription_entitlements")
 }
 
 model RolePermission {

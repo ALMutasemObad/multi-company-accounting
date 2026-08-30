@@ -1,7 +1,7 @@
 ---
 title: "ADR-017 — Platform Subscriptions, Module Entitlements, and Electronic Payments"
-status: "accepted target; implementation planned"
-version: "1.0"
+status: "accepted; SUB-1 foundation implemented locally"
+version: "1.1"
 date: "2026-08-29"
 related:
   - "ADR-013-platform-operations-and-system-home.md"
@@ -124,6 +124,25 @@ related:
 5. `PAY-2`: إطلاق مرحلي ومراقبة ومطابقة يومية واسترداد/نزاع وفق السياسة المعتمدة.
 
 لا يخلط تنفيذ هذه الشرائح مع CRM أو Service Catalog أو نضج Projects في PR واحد.
+
+## حالة التنفيذ
+
+بدأت `SUB-1` في 30 أغسطس 2026 بدفعة تأسيسية توسعية لا تغيّر سلوك الفوترة أو الواجهة:
+
+- أضيف كتالوج `PlatformModule` وأكواد تجارية مستقلة عن أكواد RBAC، مع اعتماديات
+  صريحة تمنع تركيب POS بلا Sales وInventory وTreasury.
+- أضيفت `PlatformPlan/PlatformPlanVersion`؛ تحفظ النسخة لقطة الدورة والعملة والسعر
+  والحصص وسياسة التجربة، ولا يوجد مسار تعديل لنسخة منشورة.
+- أضيف `PlatformSubscription` واستحقاق فعلي مؤرخ ومعزول بعلاقة مركبة مع الشركة،
+  إضافة إلى Query Port للقراءة لا يمنح أي سياق آخر حق الكتابة.
+- ينشئ الترحيل خطة Legacy ونسخة واشتراكًا لكل شركة قائمة، سواء كان حساب الفوترة
+  مهيأ أم لا، ويمنح كل الموديولات المنفذة وقت الترحيل كمصدر `GRANDFATHERED`. لا يحدّث
+  `planName` أو الفواتير أو السدادات السابقة ولا يختلق سعرًا لشركة بلا حساب فوترة.
+- CRM وService Catalog موجودان في الكتالوج بحالة غير نشطة ولا يمنحان كقدرة منفذة.
+
+لا تضيف هذه الدفعة API عامًا أو اختيار خطة ذاتيًا أو إنفاذًا على Routers أو دفعًا
+إلكترونيًا. هذه وظائف `SUB-2/SUB-3/PAY-*` التالية، ولا يجوز تفعيل الإخفاء قبل أن
+يتزامن مع إنفاذ `entitlement ∩ RBAC` خادميًا.
 
 ## بوابات القبول
 

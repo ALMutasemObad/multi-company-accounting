@@ -340,6 +340,31 @@ describe("core accounting architecture guardrails", () => {
     expect(rollback).toContain("DROP INDEX `platform_billing_accounts_next_id_idx`");
   });
 
+  it("keeps subscription catalog and entitlement writes inside their declared platform owner", async () => {
+    const sources = await allTypeScriptSources();
+    const directWrite = /\.platform(?:Module|ModuleDependency|Plan|PlanVersion|PlanEntitlement|Subscription|SubscriptionEntitlement)\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u;
+    const nestedWrite = /\bplatform(?:Modules|ModuleDependencies|Plans|PlanVersions|PlanEntitlements|Subscription|SubscriptionEntitlements)\s*:\s*\{\s*(?:create|createMany|update|updateMany|delete|deleteMany|upsert|connect|connectOrCreate|disconnect|set)\b/u;
+    const rawWrite = /\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|REPLACE\s+INTO)\s+[`"]?platform_(?:modules|module_dependencies|plans|plan_versions|plan_entitlements|subscriptions|subscription_entitlements)\b/iu;
+    const foreignWriters = sources
+      .filter(({ path }) => !path.startsWith("platform-subscriptions/"))
+      .filter(({ content }) => directWrite.test(content) || nestedWrite.test(content) || rawWrite.test(content))
+      .map(({ path }) => path)
+      .sort();
+    const mutablePublishedVersions = sources
+      .filter(({ content }) => /\.platformPlanVersion\.(?:update|updateMany|delete|deleteMany|upsert)\s*\(/u.test(content))
+      .map(({ path }) => path)
+      .sort();
+    const adapter = await source("platform-subscriptions/prisma-company-entitlement-query-adapter.ts");
+
+    expect("database.platformSubscription.create(").toMatch(directWrite);
+    expect("UPDATE platform_subscription_entitlements SET").toMatch(rawWrite);
+    expect(foreignWriters).toEqual([]);
+    expect(mutablePublishedVersions).toEqual([]);
+    expect(adapter).toContain("where: { companyId }");
+    expect(adapter).toContain("module: { isActive: true }");
+    expect(adapter).not.toMatch(/\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
+  });
+
   it("keeps open-source bank file parsers behind Treasury adapters", async () => {
     const sources = await allTypeScriptSources();
     const parserImport = /from\s+["'](?:csv-parse(?:\/sync)?|fast-xml-parser)["']/u;
