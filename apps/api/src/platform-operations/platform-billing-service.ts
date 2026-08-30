@@ -523,18 +523,19 @@ export class PlatformBillingService {
           _sum: { amount: true },
           _count: { _all: true },
         }),
-        this.prisma.platformBillingRefund.findMany({
-          where: { companyId, state: "SUCCEEDED", payment: { invoiceId: { in: invoiceIds } } },
-          select: { amount: true, payment: { select: { invoiceId: true } } },
-        }),
+        this.prisma.$queryRaw<Array<{ invoice_id: bigint; amount: Prisma.Decimal }>>(Prisma.sql`
+          SELECT payment.invoice_id, SUM(refund.amount) AS amount
+          FROM platform_billing_refunds refund
+          JOIN platform_billing_payments payment
+            ON payment.id = refund.payment_id AND payment.company_id = refund.company_id
+          WHERE refund.company_id = ${companyId} AND refund.state = 'SUCCEEDED'
+            AND payment.invoice_id IN (${Prisma.join(invoiceIds)})
+          GROUP BY payment.invoice_id
+        `),
       ])
       : [[], []] as const;
     const paymentsByInvoice = new Map(paymentAggregates.map((payment) => [payment.invoiceId.toString(), payment]));
-    const refundedByInvoice = new Map<string, Prisma.Decimal>();
-    for (const refund of succeededRefunds) {
-      const key = refund.payment.invoiceId.toString();
-      refundedByInvoice.set(key, (refundedByInvoice.get(key) ?? money(0)).plus(refund.amount));
-    }
+    const refundedByInvoice = new Map(succeededRefunds.map((refund) => [refund.invoice_id.toString(), refund.amount]));
     return {
       company: reference,
       account: account ? accountJson(account) : null,

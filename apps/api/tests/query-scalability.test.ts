@@ -328,19 +328,18 @@ describe('bounded platform billing reads', () => {
       _sum: { amount: new Prisma.Decimal('7.0000') },
       _count: { _all: 7 },
     }]);
-    const queryRaw = vi.fn().mockResolvedValue([{
+    const queryRaw = vi.fn().mockResolvedValueOnce([{
       billing_account_id: 31n,
       billed: new Prisma.Decimal('1000.0000'),
       paid: new Prisma.Decimal('400.0000'),
       balance: new Prisma.Decimal('600.0000'),
       overdue: new Prisma.Decimal('250.0000'),
       overdue_invoices: 3n,
-    }]);
+    }]).mockResolvedValueOnce([{ invoice_id: 71n, amount: new Prisma.Decimal('3.0000') }]);
     const service = new PlatformBillingService({
       platformBillingAccount: { findUnique: vi.fn().mockResolvedValue(billingAccount) },
       platformBillingInvoice: { count: vi.fn().mockResolvedValue(31), findMany: invoiceFindMany },
       platformBillingPayment: { groupBy: paymentGroupBy },
-      platformBillingRefund: { findMany: vi.fn().mockResolvedValue([]) },
       $queryRaw: queryRaw,
     } as never, { requireOperator: vi.fn() } as never, {
       companyReferences: vi.fn().mockResolvedValue([{
@@ -363,11 +362,15 @@ describe('bounded platform billing reads', () => {
       by: ['invoiceId'],
       where: { companyId: 9n, invoiceId: { in: [71n] } },
     }));
-    expect(queryRaw).toHaveBeenCalledTimes(1);
+    expect(queryRaw).toHaveBeenCalledTimes(2);
+    const refundsQuery = queryRaw.mock.calls[1]![0] as Prisma.Sql;
+    expect(refundsQuery.sql).toContain('GROUP BY payment.invoice_id');
+    expect(refundsQuery.sql).toContain('payment.invoice_id IN');
+    expect(refundsQuery.values).toEqual([9n, 71n]);
     expect(result.meta).toEqual({ page: 2, pageSize: 5, total: 31, totalPages: 7 });
     expect(result.totals).toEqual({ billed: '1000.0000', paid: '400.0000', balance: '600.0000', overdue: '250.0000' });
     expect(result.invoices).toHaveLength(1);
-    expect(result.invoices[0]).toMatchObject({ paidAmount: '7.0000', balance: '3.0000', paymentCount: 7 });
+    expect(result.invoices[0]).toMatchObject({ paidAmount: '4.0000', balance: '6.0000', paymentCount: 7 });
     expect(result.invoices[0]!.payments).toHaveLength(PLATFORM_BILLING_RECENT_PAYMENT_LIMIT);
   });
 });
