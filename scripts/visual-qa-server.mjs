@@ -33,6 +33,7 @@ const visualQaPermissions = [
   "hr.employees.view",
   "hr.structure.view",
   "inventory_catalog.view",
+  "inventory_barcodes.resolve",
   "manual_journals.view",
   "payments.view",
   "pos.view",

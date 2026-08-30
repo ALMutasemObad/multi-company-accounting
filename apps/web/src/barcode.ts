@@ -50,6 +50,14 @@ export function canUsePosBarcodeScanner(permissions: ReadonlySet<string>) {
   return allows(permissions, barcodePermissionPolicies.posScan);
 }
 
+export function canUseInventoryBarcodeScanner(
+  permissions: ReadonlySet<string>,
+  operationPolicy: PermissionPolicy,
+) {
+  return allows(permissions, operationPolicy)
+    && allows(permissions, barcodePermissionPolicies.resolve);
+}
+
 export function canPrintInventoryBarcode(
   permissions: ReadonlySet<string>,
   itemIsActive: boolean,
@@ -115,8 +123,15 @@ export type PosBarcodeItem = {
 
 export type PosBarcodeMergeResult<Line extends PosBarcodeLine> = {
   lines: Line[];
-  status: "incremented" | "filled" | "appended" | "invalid-quantity" | "line-limit";
+  status: BarcodeLineApplyStatus;
 };
+
+export type BarcodeLineApplyStatus =
+  | "incremented"
+  | "filled"
+  | "appended"
+  | "invalid-quantity"
+  | "line-limit";
 
 export function applyResolvedBarcodeToLines<Line extends PosBarcodeLine>(
   current: readonly Line[],
