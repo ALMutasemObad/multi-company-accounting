@@ -591,14 +591,19 @@ export class PlatformPaymentService {
         include: { paymentAttempt: true },
       });
       if (!session) {
-        await this.createReceipt(tx, event, payloadHash, null, "REJECTED", "CHECKOUT_NOT_FOUND");
-        return { accepted: true, duplicate: false, result: "CHECKOUT_NOT_FOUND" };
+        // The provider may deliver before checkout finalization commits. Do not
+        // acknowledge or reserve the event: a 503 lets the provider retry safely.
+        throw new PlatformPaymentError("PROVIDER_UNAVAILABLE");
       }
       await lockAttempt(tx, session.paymentAttempt.id);
       const attempt = await tx.platformPaymentAttempt.findUniqueOrThrow({ where: { id: session.paymentAttempt.id } });
       if (attempt.amountMinor !== event.amountMinor || attempt.currencyCode !== event.currencyCode) {
         await this.createReceipt(tx, event, payloadHash, attempt, "REJECTED", "AMOUNT_OR_CURRENCY_MISMATCH");
         return { accepted: true, duplicate: false, result: "AMOUNT_OR_CURRENCY_MISMATCH" };
+      }
+      if (attempt.providerPaymentId && event.providerPaymentId && attempt.providerPaymentId !== event.providerPaymentId) {
+        await this.createReceipt(tx, event, payloadHash, attempt, "REJECTED", "PROVIDER_PAYMENT_REFERENCE_MISMATCH");
+        return { accepted: true, duplicate: false, result: "PROVIDER_PAYMENT_REFERENCE_MISMATCH" };
       }
       const result = await this.applyProviderEvent(tx, attempt, event);
       await this.createReceipt(tx, event, payloadHash, attempt, result.applied ? "APPLIED" : "IGNORED", result.code);

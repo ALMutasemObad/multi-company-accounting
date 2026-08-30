@@ -55,8 +55,9 @@ Entitlements** مالك الخطة والاشتراك والاستحقاقات �
 - `PlatformPaymentTransition` append-only، ويمنع FK المركب إسناده إلى Attempt شركة أخرى.
 - `PlatformWebhookReceipt` يتفرد بـ`provider + environment + eventId`، ويخزن
   `payloadHash` فقط. يسمح بربط Attempt اختياري مقيد بالشركة، ويحمل مراجع payment/refund
-  و`amountMinor/currencyCode` الاختيارية كي يحتفظ بحدث REFUNDED المبكر حتى تظهر محاولة
-  PAID التي يمكن مطابقته بها. لا يخزن payload أو signature أو headers.
+  و`amountMinor/currencyCode` الاختيارية لتوثيق أدلة الاسترداد. حدث REFUNDED الموثوق
+  قبل PAID يثبت السداد والاسترداد الكامل معًا ذريًا عند تطابق الرصيد، دون انتظار حدث
+  PAID متأخر أو مضاعفة أثره. لا يخزن payload أو signature أو headers.
 - `PlatformBillingPayment.source` يميز `MANUAL` عن `ELECTRONIC_PROVIDER`. الكاتب القديم
   يبقى متوافقًا لأن القيمة الافتراضية MANUAL وفاعله مطلوب؛ السداد الإلكتروني يتطلب
   Attempt من الفاتورة والشركة نفسيهما ولا يملك `receivedById` وهميًا.
@@ -120,7 +121,11 @@ replay، وتقفل Attempt والفاتورة، وتطبق انتقالًا و�
 
 الحدث المكرر بالمعرف والبصمة نفسيهما يعاد بأمان. المعرف نفسه وبصمة مختلفة يرفض
 `REJECTED`. الحدث الصحيح غير القابل للتطبيق بسبب ترتيب قديم يحفظ `IGNORED`، بينما
-REFUNDED السابق لـPAID يحتفظ بمراجع المطابقة ولا يضيع.
+REFUNDED السابق لـPAID يثبت السداد ثم الاسترداد ذريًا بمراجع متطابقة ولا يضيع.
+يرفض مرجع سداد لا يطابق المرجع المثبت على Attempt بلا تغيير الحقائق المالية.
+إذا وصل Webhook صحيح قبل حفظ Checkout، تعاد `503` دون حجز event ID؛ تعاد معالجته
+بعد اكتمال الحفظ. يجب على أي Adapter خارجي لاحق ضمان إعادة تسليم استجابات `5xx`
+وتوقيع كل محاولة تسليم بطابع زمني حديث مع إبقاء event ID والجسم ثابتين.
 
 ## الاسترداد
 

@@ -116,9 +116,11 @@ Application/Query Ports صغيرة؛ لا يكتب موديول الاشتراك
 - يدعم SUB-4 استردادًا كاملًا فقط؛ لا partial refund ولا proration ولا chargeback أو
   dispute workflow. لا يغيّر `PAID/FAILED/CANCELLED/REFUNDED` قيمة
   `PlatformSubscription.status` ولا يطبق تغيير الخطة تلقائيًا.
-- قد يصل REFUNDED قبل PAID. يحفظ `PlatformWebhookReceipt` فقط بصمة payload ومراجع
-  payment/refund والمبلغ الصغير والعملة، ثم تسويه الخدمة لاحقًا بترتيب آمن؛ لا يحفظ
-  payload الخام أو التوقيع أو secret.
+- قد يصل REFUNDED قبل PAID. عند تطابق دليل المزود والمبلغ والرصيد تثبت الخدمة السداد
+  والاسترداد الكامل ذريًا، ويبقى PAID المتأخر بلا أثر مكرر. يحفظ `PlatformWebhookReceipt`
+  فقط بصمة payload ومراجع payment/refund والمبلغ الصغير والعملة؛ لا يحفظ payload الخام
+  أو التوقيع أو secret. وصول Webhook قبل حفظ Checkout يعيد `503` دون حجز الحدث،
+  ويشترط Adapter خارجي يدعم إعادة التسليم الآمن.
 
 ## واجهات العرض
 

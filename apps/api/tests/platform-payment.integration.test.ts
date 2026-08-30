@@ -188,6 +188,7 @@ describe.runIf(enabled)("platform electronic payments on a supported database", 
       amountMinor?: bigint | undefined;
       currencyCode?: string | undefined;
       occurredAt?: Date | undefined;
+      providerPaymentId?: string | undefined;
     } = {},
   ) {
     const attempt = await prisma!.platformPaymentAttempt.findUniqueOrThrow({
@@ -205,7 +206,7 @@ describe.runIf(enabled)("platform electronic payments on a supported database", 
       providerEventId,
       eventType,
       providerCheckoutId: attempt.checkoutSession.providerCheckoutId,
-      providerPaymentId,
+      providerPaymentId: overrides.providerPaymentId ?? providerPaymentId,
       providerRefundId,
       amountMinor: overrides.amountMinor ?? attempt.amountMinor,
       currencyCode: overrides.currencyCode ?? attempt.currencyCode,
@@ -336,6 +337,44 @@ describe.runIf(enabled)("platform electronic payments on a supported database", 
     expect(await prisma!.platformWebhookReceipt.count({ where: { providerEventId: eventId } })).toBe(1);
     expect((await prisma!.platformPaymentAttempt.findUniqueOrThrow({ where: { publicId: checkout.payment.id } })).state)
       .toBe("PENDING");
+  });
+
+  it("retries an early signed webhook after checkout finalization without losing the event", async () => {
+    const company = await createCompany();
+    const invoice = await createInvoice(company.id);
+    const checkout = await createCheckout(company.id, invoice);
+    const eventId = `dev_event_early_${randomUUID()}`;
+    const signed = await signedEvent(checkout.payment.id, "PAYMENT_PAID", eventId);
+    const attempt = await prisma!.platformPaymentAttempt.findUniqueOrThrow({ where: { publicId: checkout.payment.id } });
+    const session = await prisma!.platformCheckoutSession.findUniqueOrThrow({ where: { paymentAttemptId: attempt.id } });
+    await prisma!.platformCheckoutSession.delete({ where: { id: session.id } });
+
+    await expectPaymentFailure(handleSigned(signed), "PROVIDER_UNAVAILABLE");
+    expect(await prisma!.platformWebhookReceipt.count({ where: { providerEventId: eventId } })).toBe(0);
+    expect(await prisma!.platformBillingPayment.count({ where: { companyId: company.id } })).toBe(0);
+    await prisma!.platformCheckoutSession.create({ data: session });
+
+    expect(await handleSigned(signed)).toMatchObject({ duplicate: false, result: "PAYMENT_PAID" });
+    expect(await handleSigned(signed)).toMatchObject({ duplicate: true, result: "PAYMENT_PAID" });
+    expect(await prisma!.platformBillingPayment.count({ where: { companyId: company.id } })).toBe(1);
+  });
+
+  it("rejects a signed refund with a different provider payment reference without changing financial facts", async () => {
+    const company = await createCompany();
+    const invoice = await createInvoice(company.id);
+    const checkout = await createCheckout(company.id, invoice);
+    await handleSigned(await signedEvent(checkout.payment.id, "PAYMENT_PAID"));
+    const eventId = `dev_event_wrong_payment_${randomUUID()}`;
+    const mismatched = await signedEvent(checkout.payment.id, "PAYMENT_REFUNDED", eventId, {
+      providerPaymentId: "dev_payment_another_checkout",
+    });
+
+    expect(await handleSigned(mismatched)).toMatchObject({ duplicate: false, result: "PROVIDER_PAYMENT_REFERENCE_MISMATCH" });
+    expect(await handleSigned(mismatched)).toMatchObject({ duplicate: true, result: "PROVIDER_PAYMENT_REFERENCE_MISMATCH" });
+    expect((await prisma!.platformWebhookReceipt.findFirstOrThrow({ where: { providerEventId: eventId } })).processingState).toBe("REJECTED");
+    expect((await prisma!.platformPaymentAttempt.findUniqueOrThrow({ where: { publicId: checkout.payment.id } })).state).toBe("PAID");
+    expect(await prisma!.platformBillingRefund.count({ where: { companyId: company.id } })).toBe(0);
+    expect((await payments().listOwnerInvoices(company.id, { page: 1, pageSize: 10 })).items[0]?.balance).toBe("0.0000");
   });
 
   it("handles refund-before-paid once and reopens the complete invoice balance", async () => {
