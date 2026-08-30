@@ -11205,11 +11205,12 @@ components:
     PlatformPaymentProviderCapabilities:
       type: object
       additionalProperties: false
-      required: [available, provider, environment]
+      required: [available, provider, environment, developmentOnly]
       properties:
         available: { type: boolean }
         provider: { type: string, minLength: 1, maxLength: 64 }
         environment: { $ref: '#/components/schemas/PlatformPaymentEnvironment' }
+        developmentOnly: { type: boolean }
     PlatformPaymentCheckoutRequest:
       type: object
       additionalProperties: false
