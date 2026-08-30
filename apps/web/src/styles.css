@@ -1441,6 +1441,58 @@ h1, h2, h3, .brand strong { font-family: "Cairo", "Noto Sans Devanagari", Tahoma
 .platform-analytics-main-grid.equal { grid-template-columns: 1fr 1fr; }
 .platform-chart-panel { min-width: 0; overflow: hidden; }
 .platform-chart-panel > header { min-height: 78px; }
+
+.subscription-page, .platform-subscriptions-page { display: grid; gap: 22px; }
+.subscription-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.subscription-columns, .subscription-admin-layout { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
+.subscription-panel, .subscription-admin-detail { min-width: 0; overflow: hidden; }
+.subscription-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0; padding: 20px; }
+.subscription-facts > div { padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); }
+.subscription-facts dt { color: var(--muted); font-size: .75rem; }
+.subscription-facts dd { margin: 7px 0 0; color: var(--green-900); font-size: 1.05rem; font-weight: 800; }
+.subscription-module-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin: 0; padding: 20px; list-style: none; }
+.subscription-module-list li { display: grid; gap: 3px; padding: 12px; border: 1px solid var(--line); border-radius: 11px; }
+.subscription-module-list small, .subscription-plan-preview small { color: var(--muted); }
+.subscription-attention { border-color: #dfc98d; background: #fffdf7; }
+.subscription-change-card { display: flex; justify-content: space-between; gap: 12px; padding: 20px 22px; }
+.subscription-form-body, .subscription-draft-form, .subscription-admin-company { display: grid; gap: 18px; padding: 20px 22px; }
+.subscription-form-body > label, .subscription-draft-form > label, .subscription-admin-company form, .subscription-admin-company label { display: grid; gap: 7px; }
+.subscription-plan-preview, .subscription-safe-note { display: grid; gap: 5px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); }
+.subscription-safe-note { border-color: #dfc98d; background: #fffaf0; color: #67511f; }
+.subscription-option-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.subscription-option-grid label { display: flex; align-items: flex-start; gap: 9px; padding: 11px; border: 1px solid var(--line); border-radius: 10px; }
+.subscription-option-grid label > span { display: grid; gap: 3px; }
+.subscription-option-grid small { color: var(--muted); }
+.subscription-option-grid .disabled { opacity: .55; }
+.subscription-module-config-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.subscription-module-config-grid article { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.subscription-module-config-grid article.selected { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: color-mix(in srgb, var(--accent) 5%, var(--surface)); }
+.subscription-module-config-grid article > label { display: flex; align-items: flex-start; gap: 9px; }
+.subscription-module-config-grid article > label > span { display: grid; gap: 3px; }
+.subscription-module-config-grid article small { color: var(--muted); }
+.module-price-controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, .7fr); gap: 8px; }
+.subscription-admin-tabs { display: flex; gap: 8px; padding: 5px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); width: fit-content; }
+.subscription-admin-tabs button { padding: 10px 16px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font-weight: 800; }
+.subscription-admin-tabs button.active { background: var(--green-900); color: #fff; }
+.subscription-admin-layout { grid-template-columns: minmax(320px, .8fr) minmax(0, 1.2fr); }
+.subscription-admin-detail > .empty-state { margin: 20px; }
+.subscription-admin-detail > header .row-actions { flex-wrap: wrap; }
+.selected-row { background: #f2f8f5 !important; }
+.subscription-version-list { display: grid; gap: 10px; padding: 20px; }
+.subscription-version-list article { display: grid; gap: 5px; padding: 13px; border: 1px solid var(--line); border-radius: 11px; }
+.subscription-draft-form fieldset, .subscription-change-form fieldset { min-width: 0; margin: 0; padding: 14px; border: 1px solid var(--line); border-radius: 12px; }
+.subscription-draft-form textarea { min-height: 90px; }
+.subscription-admin-company form { padding: 14px; border: 1px solid var(--line); border-radius: 12px; }
+.platform-subscriptions-page .platform-list-panel tbody tr { cursor: pointer; }
+
+@media (max-width: 900px) {
+  .subscription-summary-grid, .subscription-columns, .subscription-admin-layout { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  .subscription-summary-grid, .subscription-facts, .subscription-module-list, .subscription-option-grid, .subscription-module-config-grid { grid-template-columns: 1fr; }
+  .module-price-controls { grid-template-columns: 1fr; }
+  .subscription-change-card { flex-direction: column; }
+}
 .platform-chart-content { min-width: 0; min-height: 250px; }
 .platform-chart-content > .empty-state { margin: 24px; }
 .platform-chart-legend { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; }

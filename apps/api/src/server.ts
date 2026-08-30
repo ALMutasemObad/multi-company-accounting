@@ -70,6 +70,10 @@ import { IdentityAccountAdapter } from './users/identity-account-adapter.js';
 import { WorkforceAccessService } from './workforce-access/workforce-access-service.js';
 import { PrismaPlatformAnalyticsQueryAdapter } from './platform-operations/prisma-platform-analytics-query-adapter.js';
 import { PlatformBillingService } from './platform-operations/platform-billing-service.js';
+import {
+  PlatformSubscriptionCatalogService,
+  PlatformSubscriptionLifecycleService,
+} from './platform-subscriptions/platform-subscription-service.js';
 import { createPlatformOperationsService } from './composition/create-platform-operations-service.js';
 import { PrismaAuditAppendAdapter } from './audit/prisma-audit-append-adapter.js';
 import { ProfessionalEmployeeAdapter } from './hr/professional-employee-adapter.js';
@@ -222,6 +226,21 @@ async function startServer() {
     platformAnalytics,
     new PrismaAuditAppendAdapter(),
   );
+  const subscriptionAudit = new PrismaAuditAppendAdapter();
+  const subscriptionOperatorAuthorization = {
+    async isOperator(userId: bigint) {
+      return (await platformOperations.capabilities(userId)).platformOperations;
+    },
+  };
+  const platformSubscriptionCatalog = new PlatformSubscriptionCatalogService(
+    database,
+    subscriptionOperatorAuthorization,
+  );
+  const platformSubscriptionLifecycle = new PlatformSubscriptionLifecycleService(
+    database,
+    subscriptionOperatorAuthorization,
+    subscriptionAudit,
+  );
   const app = createApp(config, {
     readiness: new DatabaseReadinessService(database, config.READINESS_TIMEOUT_MS),
     metrics: operationalMetrics,
@@ -236,6 +255,8 @@ async function startServer() {
     workforceAccess,
     platformOperations,
     platformBilling,
+    platformSubscriptionCatalog,
+    platformSubscriptionLifecycle,
     companies: createCompanyService(database),
     printing: new PrintService(database),
     barcodeLabels: createBarcodeLabelService(database),

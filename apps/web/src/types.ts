@@ -145,6 +145,44 @@ export type PlatformBillingSummary = {
   accounts: Array<{ companyId: string; companyName: string; companyActive: boolean; account: PlatformBillingAccount; billed: string; paid: string; balance: string; overdue: string }>;
   meta: PageMeta;
 };
+export type SubscriptionPlanModule = {
+  id: string; code: string; displayName: string; active: boolean;
+  selectionMode: "INCLUDED" | "OPTIONAL"; additionalRecurringFee: string | null;
+  dependencyIds: string[];
+};
+export type SubscriptionPlanVersion = {
+  id: string; planId: string; planCode: string; versionNumber: number; displayName: string;
+  description: string | null; billingCycle: "MONTHLY" | "QUARTERLY" | "ANNUAL";
+  currencyCode: string; recurringFee: string | null;
+  includedUsers: number | null; pricePerAdditionalUser: string | null;
+  includedEmployees: number | null; pricePerAdditionalEmployee: string | null;
+  includedPostedDocuments: number | null; pricePerAdditionalPostedDocument: string | null;
+  taxRate: string; paymentTermsDays: number; trialDays: number; effectiveFrom: string;
+  selfServicePolicy: "DISABLED" | "REQUEST_ONLY" | "IMMEDIATE_FREE";
+  publicationStatus: "DRAFT" | "PUBLISHED"; publishedAt: string | null; retiredAt: string | null;
+  version: number; modules: SubscriptionPlanModule[];
+};
+export type SubscriptionChange = {
+  id: string | null; state: "PENDING_APPROVAL" | "APPROVED" | "REJECTED" | "CANCELLED";
+  source: "COMPANY_OWNER" | "PLATFORM_OPERATOR" | "MIGRATION";
+  requestedAt: string; effectiveAt: string | null; decidedAt: string | null; decisionReason: string | null;
+  quote: { currencyCode: string; baseRecurringFee: string; optionalRecurringFee: string; totalRecurringFee: string };
+  plan: SubscriptionPlanVersion;
+  modules: Array<{ id: string; code: string; displayName: string; selectionMode: "INCLUDED" | "OPTIONAL" }>;
+};
+export type SubscriptionSnapshot = {
+  company?: { id: string; code: string; name: string; active: boolean };
+  subscription: {
+    status: "TRIALING" | "ACTIVE" | "PAST_DUE" | "SUSPENDED" | "CANCELED";
+    version: number; startsAt: string; trialEndsAt: string | null;
+    currentPeriodStart: string | null; currentPeriodEnd: string | null; cancelAtPeriodEnd: boolean;
+  };
+  current: SubscriptionChange;
+  effectiveModules: Array<{ id: string; code: string; displayName: string; source: "PLAN" | "ADD_ON" | "GRANDFATHERED" }>;
+  scheduled: SubscriptionChange | null; pending: SubscriptionChange | null;
+  history: SubscriptionChange[]; meta: PageMeta; generatedAt: string;
+};
+export type SubscriptionCatalog = { plans: SubscriptionPlanVersion[]; meta: PageMeta };
 export type CompanyDetails = { id: string; name: string; baseCurrencyId: string; baseCurrency: { code: string; nameAr: string }; timezone: string; isActive: boolean; manualJournalMakerCheckerEnabled: boolean; updatedAt: string };
 export type AuditLog = { id: string; actor: { id: string; name: string; email: string }; action: string; entityType: string; entityId: string; details: Record<string, unknown> | null; createdAt: string };
 export type AuditOptions = { actions: string[]; entityTypes: string[]; users: Array<{ id: string; name: string; email: string }> };

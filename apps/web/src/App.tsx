@@ -20,6 +20,8 @@ import { effectivePermissionSet } from './module-entitlements';
 const SystemHomePage = lazy(() => import("./SystemHomePage").then((module) => ({ default: module.SystemHomePage })));
 const DashboardPage = lazy(() => import("./DashboardPage").then((module) => ({ default: module.DashboardPage })));
 const PlatformOperationsPage = lazy(() => import("./PlatformOperationsPage").then((module) => ({ default: module.PlatformOperationsPage })));
+const PlatformSubscriptionsPage = lazy(() => import("./PlatformSubscriptionsPage").then((module) => ({ default: module.PlatformSubscriptionsPage })));
+const CompanySubscriptionPage = lazy(() => import("./CompanySubscriptionPage").then((module) => ({ default: module.CompanySubscriptionPage })));
 const CustomersPage = lazy(() => import("./CustomersPage").then((module) => ({ default: module.CustomersPage })));
 const SalesInvoicesPage = lazy(() => import("./SalesInvoicesPage").then((module) => ({ default: module.SalesInvoicesPage })));
 const ReceiptsPage = lazy(() => import("./ReceiptsPage").then((module) => ({ default: module.ReceiptsPage })));
@@ -281,7 +283,7 @@ export default function App() {
       <div className="app-main">
         <header className="topbar">
           <button type="button" className="menu-button" aria-label={t("app.openNavigation")} onClick={() => setMobileNav(true)}><Icon name="menu" /></button>
-          <div className="topbar-title"><span>{t(viewTitleKey[activeView])}</span><small>{company?.name ?? (activeView === "platform" ? t("nav.platform") : "")}</small></div>
+          <div className="topbar-title"><span>{t(viewTitleKey[activeView])}</span><small>{company?.name ?? (activeView === "platform" || activeView === "platformSubscriptions" ? t("nav.platform") : "")}</small></div>
           <div className="user-menu">
             <div className="avatar">{user.displayName.slice(0, 1) || brand.mark.slice(0, 1)}</div>
             <span>{user.displayName || t("app.currentUser")}</span>
@@ -308,6 +310,8 @@ export default function App() {
             {activeView === "home" && <SystemHomePage onNavigate={navigate} />}
             {activeView === "dashboard" && <DashboardPage onNavigate={navigate} />}
             {activeView === "platform" && platformOperator && <PlatformOperationsPage />}
+            {activeView === "platformSubscriptions" && platformOperator && <PlatformSubscriptionsPage notify={notify} />}
+            {activeView === "subscription" && <CompanySubscriptionPage notify={notify} />}
             {activeView === "pos" && <PosPage notify={notify} />}
             {activeView === "customers" && <CustomersPage notify={notify} />}
             {activeView === "professionalProjects" && <ProfessionalProjectsPage notify={notify} />}

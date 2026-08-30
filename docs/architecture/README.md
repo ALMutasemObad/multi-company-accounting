@@ -70,6 +70,7 @@ last_updated: "2026-08-29"
 55. [ADR-018 لملف المنشأة والاستكمال النظامي](ADR-018-business-profile-and-progressive-compliance.md): إبقاء Company وحدة الدفتر، وفصل الاسم التجاري وطبيعة النشاط والهوية القانونية، ومتطلبات تدريجية حسب الدولة مع استثناء الحقول السعودية عن اليمن.
 56. [شريحة إخراج ملصق الباركود B2](BARCODE_LABEL_RENDERING_B2_AR.md): ملكية Printing للتوليد، ومنفذ قراءة Inventory، والبروفايل الثابت، وتقييم اعتماد `@bwip-js/node` وخطة الخروج.
 57. [إنفاذ قدرات اشتراك الشركة SUB-2](PLATFORM_SUBSCRIPTION_CAPABILITY_ENFORCEMENT_AR.md): تقاطع الاستحقاق المؤرخ مع RBAC وحواجز التفعيل في الخادم، وعقد `/auth/me` ووعي التنقل والأفعال بالموديولات، وحفظ grandfathering للشركات الجديدة.
+58. [مركز الخطط ودورة حياة الاشتراك SUB-3](PLATFORM_SUBSCRIPTION_LIFECYCLE_SUB3_AR.md): إدارة DRAFT/PUBLISH الثابتة، والقوالب غير المسعرة، وتغييرات الاشتراك المؤرخة والمعلقة، وإغلاق اعتماديات الموديولات، وصفحتا المشغل والمالك من دون مزود دفع.
 
 التقرير [ARCHITECTURE_AUDIT_DDD_EVENT_DRIVEN_AR.md](../ARCHITECTURE_AUDIT_DDD_EVENT_DRIVEN_AR.md) وثيقة تقييم وأدلة، وليس بديلًا عن القرارات الحاكمة أعلاه.
 

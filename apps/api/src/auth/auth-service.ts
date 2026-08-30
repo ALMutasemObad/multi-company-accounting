@@ -128,7 +128,7 @@ export class AuthService {
     const session = input.requireCsrf
       ? await this.requireSession(input.sid, input.csrfToken, 'AUTHENTICATED')
       : await this.requireAuthenticated(input.sid);
-    return { sessionId: session.id, userId: session.userId! };
+    return { sessionId: session.id, userId: session.userId!, companyId: session.selectedCompanyId };
   }
 
   private async requirePermission(session: StoredSession, code: string) {

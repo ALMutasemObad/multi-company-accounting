@@ -371,6 +371,22 @@ describe('bounded platform billing reads', () => {
   });
 });
 
+describe('bounded platform subscription reads', () => {
+  it('guards every new list path against in-memory pagination', async () => {
+    const owner = await readFile(new URL('../src/platform-subscriptions/platform-subscription-service.ts', import.meta.url), 'utf8');
+    const listPlans = owner.slice(owner.indexOf('async listPlans('), owner.indexOf('async plan('));
+    const listSubscriptions = owner.slice(owner.indexOf('async listSubscriptions('), owner.indexOf('async operatorCompany('));
+    const ownerCatalog = owner.slice(owner.indexOf('async ownerCatalog('), owner.indexOf('async scheduleOperatorChange('));
+    for (const method of [listPlans, listSubscriptions, ownerCatalog]) {
+      expect(method).toMatch(/\.count\s*\(/u);
+      expect(method).toMatch(/\.findMany\s*\(/u);
+      expect(method).toMatch(/skip:\s*\(input\.page - 1\) \* input\.pageSize/u);
+      expect(method).toMatch(/take:\s*input\.pageSize/u);
+      expect(method).not.toMatch(/\.slice\s*\(/u);
+    }
+  });
+});
+
 describe('bounded platform analytics billing reads', () => {
   it('keeps invoice and payment history behind cursor batches and aggregated payment totals', async () => {
     const source = await readFile(

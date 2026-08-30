@@ -22,10 +22,10 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 289, requestBodies: 154, responseBodies: 1904 });
-    expect(guardedOpenApiOperations).toHaveLength(154);
+    expect(openApiContractCoverage).toEqual({ operations: 304, requestBodies: 161, responseBodies: 1998 });
+    expect(guardedOpenApiOperations).toHaveLength(161);
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
-      'login', 'upsertPlatformBillingAccount', 'issuePlatformBillingInvoice', 'recordPlatformBillingPayment', 'voidPlatformBillingInvoice', 'createUser', 'linkUserEmployee', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'initializeInventoryBalanceValuation', 'reverseInventoryMovement', 'createInventoryItemBarcode', 'updateInventoryItemBarcode', 'setPrimaryInventoryItemBarcode', 'deactivateInventoryItemBarcode', 'resolveInventoryBarcode', 'resolveInventoryBarcodeBatch', 'previewDataImport', 'commitDataImport', 'previewBankStatement', 'commitBankStatementImport', 'createBankReconciliationSession', 'generateBankReconciliationSuggestions', 'approveBankReconciliationMatch', 'createManualBankReconciliationMatch', 'releaseBankReconciliationMatch', 'classifyBankStatementLine', 'closeBankReconciliationSession', 'startFinancialCloseRun', 'refreshFinancialCloseRun', 'createApprovalRequest', 'approveApprovalRequest', 'rejectApprovalRequest', 'createProfessionalProject', 'assignProfessionalProjectMember', 'createProfessionalTimeEntry', 'createProfessionalTimesheet', 'createProfessionalServiceContract', 'endProfessionalServiceContract', 'createProfessionalServiceRate', 'endProfessionalServiceRate', 'createProfessionalBillingRun', 'updateProfessionalProjectAccess', 'grantProfessionalProjectAccess', 'revokeProfessionalProjectAccess', 'updateProfessionalProjectTimeBudget', 'createProfessionalProjectStage', 'updateProfessionalProjectStage', 'transitionProfessionalProjectStage', 'createProfessionalProjectTask', 'updateProfessionalProjectTask', 'transitionProfessionalProjectTask', 'createProfessionalProjectTaskDependency', 'removeProfessionalProjectTaskDependency', 'createHrDepartment', 'updateHrDepartment', 'createHrPosition', 'updateHrPosition', 'createEmployee', 'updateEmployee', 'transitionEmployee', 'createEmploymentContract', 'endEmploymentContract', 'returnFinancialCloseRun', 'updateCashFlowMapping',
+      'login', 'upsertPlatformBillingAccount', 'createPlatformSubscriptionPlan', 'updatePlatformSubscriptionPlanDraft', 'publishPlatformSubscriptionPlanVersion', 'schedulePlatformCompanySubscriptionChange', 'requestCompanySubscriptionChange', 'issuePlatformBillingInvoice', 'recordPlatformBillingPayment', 'voidPlatformBillingInvoice', 'createUser', 'linkUserEmployee', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'initializeInventoryBalanceValuation', 'reverseInventoryMovement', 'createInventoryItemBarcode', 'updateInventoryItemBarcode', 'setPrimaryInventoryItemBarcode', 'deactivateInventoryItemBarcode', 'resolveInventoryBarcode', 'resolveInventoryBarcodeBatch', 'previewDataImport', 'commitDataImport', 'previewBankStatement', 'commitBankStatementImport', 'createBankReconciliationSession', 'generateBankReconciliationSuggestions', 'approveBankReconciliationMatch', 'createManualBankReconciliationMatch', 'releaseBankReconciliationMatch', 'classifyBankStatementLine', 'closeBankReconciliationSession', 'startFinancialCloseRun', 'refreshFinancialCloseRun', 'createApprovalRequest', 'approveApprovalRequest', 'rejectApprovalRequest', 'createProfessionalProject', 'assignProfessionalProjectMember', 'createProfessionalTimeEntry', 'createProfessionalTimesheet', 'createProfessionalServiceContract', 'endProfessionalServiceContract', 'createProfessionalServiceRate', 'endProfessionalServiceRate', 'createProfessionalBillingRun', 'updateProfessionalProjectAccess', 'grantProfessionalProjectAccess', 'revokeProfessionalProjectAccess', 'updateProfessionalProjectTimeBudget', 'createProfessionalProjectStage', 'updateProfessionalProjectStage', 'transitionProfessionalProjectStage', 'createProfessionalProjectTask', 'updateProfessionalProjectTask', 'transitionProfessionalProjectTask', 'createProfessionalProjectTaskDependency', 'removeProfessionalProjectTaskDependency', 'createHrDepartment', 'updateHrDepartment', 'createHrPosition', 'updateHrPosition', 'createEmployee', 'updateEmployee', 'transitionEmployee', 'createEmploymentContract', 'endEmploymentContract', 'returnFinancialCloseRun', 'updateCashFlowMapping',
     ]));
   });
 
@@ -131,6 +131,31 @@ describe('generated OpenAPI request guards', () => {
     }).success).toBe(false);
     expect(openApiRequestBodySchemas.voidPlatformBillingInvoice.parse({ version: 1, reason: '  Duplicate invoice  ' }))
       .toEqual({ version: 1, reason: 'Duplicate invoice' });
+  });
+
+  it('distinguishes unpriced subscription drafts and normalizes lifecycle identifiers', () => {
+    const draft = {
+      code: 'BASIC_CONFIGURED', displayName: '  Basic  ', description: null,
+      billingCycle: 'MONTHLY', currencyCode: 'SAR', recurringFee: null,
+      includedUsers: null, pricePerAdditionalUser: null,
+      includedEmployees: null, pricePerAdditionalEmployee: null,
+      includedPostedDocuments: null, pricePerAdditionalPostedDocument: null,
+      taxRate: '0', paymentTermsDays: 0, trialDays: 0,
+      effectiveFrom: '2026-09-01T00:00:00.000Z', selfServicePolicy: 'DISABLED', modules: [],
+    };
+    expect(openApiRequestBodySchemas.createPlatformSubscriptionPlan.parse(draft)).toMatchObject({
+      code: 'BASIC_CONFIGURED', displayName: 'Basic', recurringFee: null,
+    });
+    expect(openApiRequestBodySchemas.createPlatformSubscriptionPlan.safeParse({ ...draft, recurringFee: -1 }).success).toBe(false);
+    expect(openApiRequestBodySchemas.createPlatformSubscriptionPlan.safeParse({ ...draft, paymentProviderSecret: 'forbidden' }).success).toBe(false);
+    expect(openApiRequestBodySchemas.schedulePlatformCompanySubscriptionChange.parse({
+      targetPlanVersionId: '12', optionalModuleIds: ['3', '5'],
+      effectiveAt: '2026-09-01T00:00:00.000Z', subscriptionVersion: 4,
+    })).toMatchObject({ targetPlanVersionId: 12n, optionalModuleIds: [3n, 5n], subscriptionVersion: 4 });
+    expect(parseOpenApiResponseBody('listPlatformSubscriptionPlans', 200, {
+      plans: [{ id: '11', code: 'BASIC_CONFIGURED', active: true, version: 2, latestVersion: null, updatedAt: '2026-09-01T00:00:00.000Z' }],
+      meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
+    })).toMatchObject({ plans: [{ code: 'BASIC_CONFIGURED', latestVersion: null }] });
   });
 
   it('validates professional project and personal time commands', () => {

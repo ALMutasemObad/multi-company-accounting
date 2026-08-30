@@ -342,9 +342,9 @@ describe("core accounting architecture guardrails", () => {
 
   it("keeps subscription catalog and entitlement writes inside their declared platform owner", async () => {
     const sources = await allTypeScriptSources();
-    const directWrite = /\.platform(?:Module|ModuleDependency|Plan|PlanVersion|PlanEntitlement|Subscription|SubscriptionEntitlement)\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u;
-    const nestedWrite = /\bplatform(?:Modules|ModuleDependencies|Plans|PlanVersions|PlanEntitlements|Subscription|SubscriptionEntitlements)\s*:\s*\{\s*(?:create|createMany|update|updateMany|delete|deleteMany|upsert|connect|connectOrCreate|disconnect|set)\b/u;
-    const rawWrite = /\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|REPLACE\s+INTO)\s+[`"]?platform_(?:modules|module_dependencies|plans|plan_versions|plan_entitlements|subscriptions|subscription_entitlements)\b/iu;
+    const directWrite = /\.platform(?:Module|ModuleDependency|Plan|PlanVersion|PlanEntitlement|Subscription|SubscriptionEntitlement|SubscriptionChange|SubscriptionChangeModule)\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u;
+    const nestedWrite = /\bplatform(?:Modules|ModuleDependencies|Plans|PlanVersions|PlanEntitlements|Subscription|SubscriptionEntitlements|SubscriptionChanges|SubscriptionChangeModules)\s*:\s*\{\s*(?:create|createMany|update|updateMany|delete|deleteMany|upsert|connect|connectOrCreate|disconnect|set)\b/u;
+    const rawWrite = /\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|REPLACE\s+INTO)\s+[`"]?platform_(?:modules|module_dependencies|plans|plan_versions|plan_entitlements|subscriptions|subscription_entitlements|subscription_changes|subscription_change_modules)\b/iu;
     const foreignWriters = sources
       .filter(({ path }) => !path.startsWith("platform-subscriptions/"))
       .filter(({ content }) => directWrite.test(content) || nestedWrite.test(content) || rawWrite.test(content))
@@ -354,12 +354,18 @@ describe("core accounting architecture guardrails", () => {
       .filter(({ content }) => /\.platformPlanVersion\.(?:update|updateMany|delete|deleteMany|upsert)\s*\(/u.test(content))
       .map(({ path }) => path)
       .sort();
-    const adapter = await source("platform-subscriptions/prisma-company-entitlement-query-adapter.ts");
+    const [adapter, lifecycleOwner] = await Promise.all([
+      source("platform-subscriptions/prisma-company-entitlement-query-adapter.ts"),
+      source("platform-subscriptions/platform-subscription-service.ts"),
+    ]);
 
     expect("database.platformSubscription.create(").toMatch(directWrite);
     expect("UPDATE platform_subscription_entitlements SET").toMatch(rawWrite);
     expect(foreignWriters).toEqual([]);
-    expect(mutablePublishedVersions).toEqual([]);
+    expect(mutablePublishedVersions).toEqual(["platform-subscriptions/platform-subscription-service.ts"]);
+    expect(lifecycleOwner).toContain('if (existing.publishedAt) throw new PlatformSubscriptionError("PUBLISHED_VERSION_IMMUTABLE")');
+    expect(lifecycleOwner).toMatch(/where:\s*\{ id: versionId, version: input\.version, publishedAt: null \}/u);
+    expect(lifecycleOwner).toMatch(/where:\s*\{ id: versionId, version: expectedVersion, publishedAt: null \}/u);
     expect(adapter).toContain("where: { companyId }");
     expect(adapter).toContain("module: { isActive: true }");
     expect(adapter).not.toMatch(/\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);

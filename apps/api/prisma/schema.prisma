@@ -379,6 +379,30 @@ enum PlatformEntitlementSource {
   GRANDFATHERED
 }
 
+enum PlatformPlanSelfServicePolicy {
+  DISABLED
+  REQUEST_ONLY
+  IMMEDIATE_FREE
+}
+
+enum PlatformPlanModuleSelection {
+  INCLUDED
+  OPTIONAL
+}
+
+enum PlatformSubscriptionChangeState {
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum PlatformSubscriptionChangeSource {
+  COMPANY_OWNER
+  PLATFORM_OPERATOR
+  MIGRATION
+}
+
 model Organization {
   id                   BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
   code                 String                @unique @default(uuid()) @db.VarChar(80)
@@ -507,6 +531,7 @@ model Company {
   platformBillingPayments           PlatformBillingPayment[]
   platformSubscription              PlatformSubscription?
   platformSubscriptionEntitlements  PlatformSubscriptionEntitlement[]
+  platformSubscriptionChanges       PlatformSubscriptionChange[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -529,6 +554,11 @@ model User {
   sessions                          Session[]
   idempotency                       IdempotencyRecord[]
   auditLogs                         AuditLog[]
+  platformPlansCreated              PlatformPlan[]                     @relation("PlatformPlanCreatedBy")
+  platformPlansUpdated              PlatformPlan[]                     @relation("PlatformPlanUpdatedBy")
+  platformPlanVersionsCreated       PlatformPlanVersion[]              @relation("PlatformPlanVersionCreatedBy")
+  platformPlanVersionsUpdated       PlatformPlanVersion[]              @relation("PlatformPlanVersionUpdatedBy")
+  platformPlanVersionsPublished     PlatformPlanVersion[]              @relation("PlatformPlanVersionPublishedBy")
   securityEvents                    SecurityEvent[]                    @relation("SecurityEventUser")
   securityEventsAcknowledged        SecurityEvent[]                    @relation("SecurityEventAcknowledgedBy")
   periodsClosed                     FiscalPeriod[]                     @relation("PeriodClosedBy")
@@ -591,6 +621,8 @@ model User {
   platformBillingInvoicesIssued     PlatformBillingInvoice[]           @relation("PlatformBillingInvoiceIssuedBy")
   platformBillingInvoicesVoided     PlatformBillingInvoice[]           @relation("PlatformBillingInvoiceVoidedBy")
   platformBillingPaymentsReceived   PlatformBillingPayment[]           @relation("PlatformBillingPaymentReceivedBy")
+  platformSubscriptionChangesRequested PlatformSubscriptionChange[]    @relation("PlatformSubscriptionChangeRequestedBy")
+  platformSubscriptionChangesDecided   PlatformSubscriptionChange[]    @relation("PlatformSubscriptionChangeDecidedBy")
 
   @@map("users")
 }
@@ -2760,6 +2792,7 @@ model PlatformModule {
   requiredBy               PlatformModuleDependency[]        @relation("PlatformModuleDependencyTarget")
   planEntitlements         PlatformPlanEntitlement[]
   subscriptionEntitlements PlatformSubscriptionEntitlement[]
+  subscriptionChangeModules PlatformSubscriptionChangeModule[]
 
   @@index([isActive, code])
   @@map("platform_modules")
@@ -2778,15 +2811,22 @@ model PlatformModuleDependency {
 }
 
 model PlatformPlan {
-  id        BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
-  code      String                @unique @db.VarChar(80)
-  isActive  Boolean               @default(true) @map("is_active")
-  version   Int                   @default(0) @db.UnsignedInt
-  createdAt DateTime              @default(now()) @map("created_at")
-  updatedAt DateTime              @updatedAt @map("updated_at")
-  versions  PlatformPlanVersion[]
+  id          BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
+  code        String                @unique @db.VarChar(80)
+  isActive    Boolean               @default(true) @map("is_active")
+  version     Int                   @default(0) @db.UnsignedInt
+  createdById BigInt?               @map("created_by_id") @db.UnsignedBigInt
+  updatedById BigInt?               @map("updated_by_id") @db.UnsignedBigInt
+  createdAt   DateTime              @default(now()) @map("created_at")
+  updatedAt   DateTime              @updatedAt @map("updated_at")
+  createdBy   User?                 @relation("PlatformPlanCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy   User?                 @relation("PlatformPlanUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  versions    PlatformPlanVersion[]
 
+  @@index([isActive, updatedAt, id], map: "platform_plans_active_updated_idx")
   @@index([isActive, code])
+  @@index([createdById], map: "platform_plans_created_by_idx")
+  @@index([updatedById], map: "platform_plans_updated_by_idx")
   @@map("platform_plans")
 }
 
@@ -2798,32 +2838,48 @@ model PlatformPlanVersion {
   description                      String?                   @db.VarChar(1000)
   billingCycle                     PlatformBillingCycle      @map("billing_cycle")
   currencyCode                     String                    @map("currency_code") @db.Char(3)
-  recurringFee                     Decimal                   @default(0) @map("recurring_fee") @db.Decimal(19, 4)
-  includedUsers                    Int                       @default(0) @map("included_users") @db.UnsignedInt
-  pricePerAdditionalUser           Decimal                   @default(0) @map("price_per_additional_user") @db.Decimal(19, 4)
-  includedEmployees                Int                       @default(0) @map("included_employees") @db.UnsignedInt
-  pricePerAdditionalEmployee       Decimal                   @default(0) @map("price_per_additional_employee") @db.Decimal(19, 4)
-  includedPostedDocuments          Int                       @default(0) @map("included_posted_documents") @db.UnsignedInt
-  pricePerAdditionalPostedDocument Decimal                   @default(0) @map("price_per_additional_posted_document") @db.Decimal(19, 4)
+  version                          Int                       @default(0) @db.UnsignedInt
+  recurringFee                     Decimal?                  @map("recurring_fee") @db.Decimal(19, 4)
+  includedUsers                    Int?                      @map("included_users") @db.UnsignedInt
+  pricePerAdditionalUser           Decimal?                  @map("price_per_additional_user") @db.Decimal(19, 4)
+  includedEmployees                Int?                      @map("included_employees") @db.UnsignedInt
+  pricePerAdditionalEmployee       Decimal?                  @map("price_per_additional_employee") @db.Decimal(19, 4)
+  includedPostedDocuments          Int?                      @map("included_posted_documents") @db.UnsignedInt
+  pricePerAdditionalPostedDocument Decimal?                  @map("price_per_additional_posted_document") @db.Decimal(19, 4)
   taxRate                          Decimal                   @default(0) @map("tax_rate") @db.Decimal(9, 4)
   paymentTermsDays                 Int                       @default(0) @map("payment_terms_days") @db.UnsignedSmallInt
   trialDays                        Int                       @default(0) @map("trial_days") @db.UnsignedSmallInt
   effectiveFrom                    DateTime                  @map("effective_from")
-  publishedAt                      DateTime                  @default(now()) @map("published_at")
+  selfServicePolicy                PlatformPlanSelfServicePolicy @default(DISABLED) @map("self_service_policy")
+  publishedAt                      DateTime?                 @map("published_at")
   retiredAt                        DateTime?                 @map("retired_at")
+  createdById                      BigInt?                   @map("created_by_id") @db.UnsignedBigInt
+  updatedById                      BigInt?                   @map("updated_by_id") @db.UnsignedBigInt
+  publishedById                    BigInt?                   @map("published_by_id") @db.UnsignedBigInt
   createdAt                        DateTime                  @default(now()) @map("created_at")
   plan                             PlatformPlan              @relation(fields: [planId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  createdBy                        User?                     @relation("PlatformPlanVersionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy                        User?                     @relation("PlatformPlanVersionUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  publishedBy                      User?                     @relation("PlatformPlanVersionPublishedBy", fields: [publishedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
   entitlements                     PlatformPlanEntitlement[]
   subscriptions                    PlatformSubscription[]
+  subscriptionChanges              PlatformSubscriptionChange[] @relation("PlatformSubscriptionChangeTargetVersion")
+  subscriptionChangesFrom          PlatformSubscriptionChange[] @relation("PlatformSubscriptionChangeFromVersion")
 
   @@unique([planId, versionNumber])
   @@index([planId, effectiveFrom, id])
+  @@index([publishedAt, effectiveFrom, id], map: "platform_plan_versions_catalog_idx")
+  @@index([createdById], map: "platform_plan_versions_created_by_idx")
+  @@index([updatedById], map: "platform_plan_versions_updated_by_idx")
+  @@index([publishedById], map: "platform_plan_versions_published_by_idx")
   @@map("platform_plan_versions")
 }
 
 model PlatformPlanEntitlement {
   planVersionId BigInt              @map("plan_version_id") @db.UnsignedBigInt
   moduleId      BigInt              @map("module_id") @db.UnsignedBigInt
+  selectionMode PlatformPlanModuleSelection @default(INCLUDED) @map("selection_mode")
+  additionalRecurringFee Decimal?   @map("additional_recurring_fee") @db.Decimal(19, 4)
   createdAt     DateTime            @default(now()) @map("created_at")
   planVersion   PlatformPlanVersion @relation(fields: [planVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   module        PlatformModule      @relation(fields: [moduleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
@@ -2849,6 +2905,7 @@ model PlatformSubscription {
   company            Company                           @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   planVersion        PlatformPlanVersion               @relation(fields: [planVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   entitlements       PlatformSubscriptionEntitlement[]
+  changes            PlatformSubscriptionChange[]
 
   @@unique([id, companyId])
   @@index([status, currentPeriodEnd, id])
@@ -2875,6 +2932,59 @@ model PlatformSubscriptionEntitlement {
   @@index([companyId, effectiveFrom, effectiveUntil, id])
   @@index([moduleId, effectiveFrom, effectiveUntil])
   @@map("platform_subscription_entitlements")
+}
+
+model PlatformSubscriptionChange {
+  id                           BigInt                           @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId                     String                           @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId                    BigInt                           @map("company_id") @db.UnsignedBigInt
+  subscriptionId               BigInt                           @map("subscription_id") @db.UnsignedBigInt
+  fromPlanVersionId            BigInt?                          @map("from_plan_version_id") @db.UnsignedBigInt
+  targetPlanVersionId          BigInt                           @map("target_plan_version_id") @db.UnsignedBigInt
+  state                        PlatformSubscriptionChangeState
+  source                       PlatformSubscriptionChangeSource
+  requestedById                BigInt?                          @map("requested_by_id") @db.UnsignedBigInt
+  decidedById                  BigInt?                          @map("decided_by_id") @db.UnsignedBigInt
+  requestedSubscriptionVersion Int                              @map("requested_subscription_version") @db.UnsignedInt
+  requestedAt                  DateTime                         @default(now()) @map("requested_at")
+  effectiveAt                  DateTime?                        @map("effective_at")
+  decidedAt                    DateTime?                        @map("decided_at")
+  decisionReason               String?                          @map("decision_reason") @db.VarChar(500)
+  currencyCode                 String                           @map("currency_code") @db.Char(3)
+  baseRecurringFee             Decimal                          @map("base_recurring_fee") @db.Decimal(19, 4)
+  optionalRecurringFee         Decimal                          @map("optional_recurring_fee") @db.Decimal(19, 4)
+  totalRecurringFee            Decimal                          @map("total_recurring_fee") @db.Decimal(19, 4)
+  createdAt                    DateTime                         @default(now()) @map("created_at")
+  updatedAt                    DateTime                         @updatedAt @map("updated_at")
+  company                      Company                          @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  subscription                 PlatformSubscription             @relation(fields: [subscriptionId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  fromPlanVersion              PlatformPlanVersion?             @relation("PlatformSubscriptionChangeFromVersion", fields: [fromPlanVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  targetPlanVersion            PlatformPlanVersion              @relation("PlatformSubscriptionChangeTargetVersion", fields: [targetPlanVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  requestedBy                  User?                            @relation("PlatformSubscriptionChangeRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  decidedBy                    User?                            @relation("PlatformSubscriptionChangeDecidedBy", fields: [decidedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  modules                      PlatformSubscriptionChangeModule[]
+
+  @@unique([id, companyId])
+  @@index([companyId, state, effectiveAt, id], map: "platform_subscription_changes_company_state_effective_idx")
+  @@index([subscriptionId, state, effectiveAt, id], map: "platform_subscription_changes_subscription_state_effective_idx")
+  @@index([targetPlanVersionId, state, id], map: "platform_subscription_changes_target_state_idx")
+  @@index([fromPlanVersionId], map: "platform_subscription_changes_from_version_idx")
+  @@index([requestedById], map: "platform_subscription_changes_requested_by_idx")
+  @@index([decidedById], map: "platform_subscription_changes_decided_by_idx")
+  @@map("platform_subscription_changes")
+}
+
+model PlatformSubscriptionChangeModule {
+  changeId      BigInt                       @map("change_id") @db.UnsignedBigInt
+  moduleId      BigInt                       @map("module_id") @db.UnsignedBigInt
+  selectionMode PlatformPlanModuleSelection  @map("selection_mode")
+  createdAt     DateTime                     @default(now()) @map("created_at")
+  change        PlatformSubscriptionChange   @relation(fields: [changeId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  module        PlatformModule               @relation(fields: [moduleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@id([changeId, moduleId])
+  @@index([moduleId, changeId], map: "platform_subscription_change_modules_module_idx")
+  @@map("platform_subscription_change_modules")
 }
 
 model RolePermission {

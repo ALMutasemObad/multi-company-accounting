@@ -9,6 +9,8 @@ export const permissionDefinitions = [
   ['companies.view', 'companies', 'عرض بيانات الشركة'],
   ['companies.update', 'companies', 'تعديل بيانات الشركة'],
   ['settings.manage', 'settings', 'إدارة إعدادات الشركة'],
+  ['subscriptions.view', 'subscriptions', 'عرض اشتراك الشركة وخطتها'],
+  ['subscriptions.manage', 'subscriptions', 'طلب تغيير خطة اشتراك الشركة ووحداتها الاختيارية'],
   ['currencies.view', 'currencies', 'عرض العملات المفعلة وأسعار الصرف'],
   ['currencies.manage', 'currencies', 'إدارة عملات الشركة وأسعار الصرف'],
   ['currencies.create', 'currencies', 'إنشاء عملة مخصصة للشركة'],

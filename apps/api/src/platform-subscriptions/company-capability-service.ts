@@ -11,6 +11,7 @@ const permissionEntitlementPrefixes = [
   ['security_events.', PLATFORM_FOUNDATION],
   ['companies.', PLATFORM_FOUNDATION],
   ['settings.', PLATFORM_FOUNDATION],
+  ['subscriptions.', PLATFORM_FOUNDATION],
   ['currencies.', PLATFORM_FOUNDATION],
   ['auth.', PLATFORM_FOUNDATION],
   ['users.', PLATFORM_FOUNDATION],

@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.41.0
+  version: 1.42.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -902,6 +902,267 @@ paths:
         '200':
           description: الفاتورة المبطلة
           content: { application/json: { schema: { $ref: '#/components/schemas/PlatformInvoiceResult' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /platform/subscription-modules:
+    get:
+      tags: [Platform Subscriptions]
+      summary: وحدات المنصة واعتمادياتها لإدارة كتالوج الخطط
+      operationId: listPlatformSubscriptionModules
+      security: [{ SessionCookie: [] }]
+      parameters: [{ $ref: '#/components/parameters/RequestId' }]
+      responses:
+        '200': { description: الوحدات, content: { application/json: { schema: { $ref: '#/components/schemas/PlatformSubscriptionModulesResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /platform/subscription-plans:
+    get:
+      tags: [Platform Subscriptions]
+      summary: البحث في كتالوج الخطط بصفحات قاعدة البيانات
+      operationId: listPlatformSubscriptionPlans
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - $ref: '#/components/parameters/Search'
+      - { name: active, in: query, schema: { type: string, enum: [ALL, ACTIVE, INACTIVE], default: ALL } }
+      - { name: publicationStatus, in: query, schema: { type: string, enum: [ALL, DRAFT, PUBLISHED], default: ALL } }
+      responses:
+        '200': { description: الخطط, content: { application/json: { schema: { $ref: '#/components/schemas/PlatformSubscriptionPlanListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      tags: [Platform Subscriptions]
+      summary: إنشاء خطة مع الإصدار الأول كمسودة
+      operationId: createPlatformSubscriptionPlan
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/RequestId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PlatformSubscriptionPlanCreateRequest' } } } }
+      responses:
+        '201': { description: الخطة والمسودة, content: { application/json: { schema: { $ref: '#/components/schemas/PlatformSubscriptionPlanCreateResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /platform/subscription-plans/{planId}:
+    get:
+      tags: [Platform Subscriptions]
+      summary: تفاصيل خطة وإصداراتها
+      operationId: getPlatformSubscriptionPlan
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: planId, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
+      responses:
+        '200': { description: الخطة, content: { application/json: { schema: { $ref: '#/components/schemas/PlatformSubscriptionPlanDetailResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    patch:
+      tags: [Platform Subscriptions]
+      summary: تفعيل أو تعطيل خطة بتزامن متفائل
+      operationId: updatePlatformSubscriptionPlan
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: planId, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PlatformSubscriptionPlanStatusRequest' } } } }
+      responses:
+        '200': { description: الخطة, content: { application/json: { schema: { $ref: '#/components/schemas/PlatformSubscriptionPlanStatusResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /platform/subscription-plans/{planId}/versions:
+    post:
+      tags: [Platform Subscriptions]
+      summary: إنشاء مسودة إصدار تالٍ من آخر إصدار منشور
+      operationId: createPlatformSubscriptionPlanDraft
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: planId, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
+      responses:
+        '201': { description: المسودة, content: { application/json: { schema: { $ref: '#/components/schemas/PlatformSubscriptionPlanVersionResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /platform/subscription-plan-versions/{planVersionId}:
+    put:
+      tags: [Platform Subscriptions]
+      summary: استبدال إعدادات مسودة؛ الإصدار المنشور غير قابل للتعديل
+      operationId: updatePlatformSubscriptionPlanDraft
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: planVersionId, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PlatformSubscriptionPlanDraftRequest' } } } }
+      responses:
+        '200': { description: المسودة, content: { application/json: { schema: { $ref: '#/components/schemas/PlatformSubscriptionPlanVersionResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /platform/subscription-plan-versions/{planVersionId}/publish:
+    post:
+      tags: [Platform Subscriptions]
+      summary: نشر صريح لإصدار الخطة وجعله ثابتًا
+      operationId: publishPlatformSubscriptionPlanVersion
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: planVersionId, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PlatformSubscriptionPublishRequest' } } } }
+      responses:
+        '200': { description: الإصدار المنشور, content: { application/json: { schema: { $ref: '#/components/schemas/PlatformSubscriptionPlanVersionResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /platform/subscriptions:
+    get:
+      tags: [Platform Subscriptions]
+      summary: اشتراكات الشركات ببحث وتصفية وصفحات قاعدة البيانات
+      operationId: listPlatformSubscriptions
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - $ref: '#/components/parameters/Search'
+      - { name: status, in: query, schema: { type: string, enum: [ALL, TRIALING, ACTIVE, PAST_DUE, SUSPENDED, CANCELED], default: ALL } }
+      responses:
+        '200': { description: الاشتراكات, content: { application/json: { schema: { $ref: '#/components/schemas/PlatformSubscriptionListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /platform/companies/{companyId}/subscription:
+    get:
+      tags: [Platform Subscriptions]
+      summary: اشتراك شركة وتاريخه واستحقاقاته والتغيير المجدول
+      operationId: getPlatformCompanySubscription
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - { name: companyId, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
+      responses:
+        '200': { description: الاشتراك, content: { application/json: { schema: { $ref: '#/components/schemas/PlatformSubscriptionSnapshot' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /platform/companies/{companyId}/subscription-changes:
+    post:
+      tags: [Platform Subscriptions]
+      summary: تعيين أو جدولة إصدار خطة لشركة بوقت فعالية صريح
+      operationId: schedulePlatformCompanySubscriptionChange
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: companyId, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PlatformSubscriptionScheduleRequest' } } } }
+      responses:
+        '201': { description: التغيير المجدول, content: { application/json: { schema: { $ref: '#/components/schemas/PlatformSubscriptionChangeResult' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /platform/subscription-change-requests/{changeId}/decision:
+    post:
+      tags: [Platform Subscriptions]
+      summary: قبول أو رفض طلب تغيير مالك النشاط دون تحصيل وهمي
+      operationId: decidePlatformSubscriptionChangeRequest
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: changeId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PlatformSubscriptionDecisionRequest' } } } }
+      responses:
+        '200': { description: القرار, content: { application/json: { schema: { $ref: '#/components/schemas/PlatformSubscriptionChangeResult' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /subscription:
+    get:
+      tags: [Company Subscription]
+      summary: اشتراك الشركة الحالية وخطتها واستحقاقاتها الفعالة
+      operationId: getCompanySubscription
+      x-permission: subscriptions.view
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200': { description: الاشتراك الحالي, content: { application/json: { schema: { $ref: '#/components/schemas/PlatformSubscriptionSnapshot' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /subscription/catalog:
+    get:
+      tags: [Company Subscription]
+      summary: الإصدارات المنشورة المتاحة للتغيير الذاتي
+      operationId: listCompanySubscriptionCatalog
+      x-permission: subscriptions.view
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200': { description: الخطط المتاحة, content: { application/json: { schema: { $ref: '#/components/schemas/CompanySubscriptionCatalogResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /subscription/change-requests:
+    post:
+      tags: [Company Subscription]
+      summary: طلب تغيير الخطة؛ المدفوع يبقى pending بلا مزود دفع
+      operationId: requestCompanySubscriptionChange
+      x-permission: subscriptions.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CompanySubscriptionChangeRequest' } } } }
+      responses:
+        '201': { description: الطلب أو التغيير المجاني الفوري, content: { application/json: { schema: { $ref: '#/components/schemas/PlatformSubscriptionChangeResult' } } } }
         '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -10229,6 +10490,408 @@ components:
                 type: { type: string, minLength: 1, maxLength: 80 }
                 total: { type: integer, minimum: 0 }
                 posted: { type: integer, minimum: 0 }
+    PlatformSubscriptionModuleRequest:
+      type: object
+      additionalProperties: false
+      required: [moduleId, selectionMode, additionalRecurringFee]
+      properties:
+        moduleId: { type: string, pattern: '^[1-9][0-9]*$' }
+        selectionMode: { type: string, enum: [INCLUDED, OPTIONAL] }
+        additionalRecurringFee:
+          oneOf: [{ type: string, pattern: '^(0|[1-9][0-9]{0,14})(\.[0-9]{1,4})?$' }, { type: 'null' }]
+    PlatformSubscriptionPlanCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [code, displayName, description, billingCycle, currencyCode, recurringFee, includedUsers, pricePerAdditionalUser, includedEmployees, pricePerAdditionalEmployee, includedPostedDocuments, pricePerAdditionalPostedDocument, taxRate, paymentTermsDays, trialDays, effectiveFrom, selfServicePolicy, modules]
+      properties:
+        code: { type: string, x-trim: true, pattern: '^[A-Z][A-Z0-9_]{1,79}$' }
+        displayName: { type: string, x-trim: true, minLength: 1, maxLength: 160 }
+        description:
+          oneOf: [{ type: string, x-trim: true, minLength: 1, maxLength: 1000 }, { type: 'null' }]
+        billingCycle: { type: string, enum: [MONTHLY, QUARTERLY, ANNUAL] }
+        currencyCode: { type: string, x-trim: true, pattern: '^[A-Z]{3}$' }
+        recurringFee:
+          oneOf: [{ type: string, pattern: '^(0|[1-9][0-9]{0,14})(\.[0-9]{1,4})?$' }, { type: 'null' }]
+        includedUsers:
+          oneOf: [{ type: integer, minimum: 0, maximum: 1000000 }, { type: 'null' }]
+        pricePerAdditionalUser:
+          oneOf: [{ type: string, pattern: '^(0|[1-9][0-9]{0,14})(\.[0-9]{1,4})?$' }, { type: 'null' }]
+        includedEmployees:
+          oneOf: [{ type: integer, minimum: 0, maximum: 1000000 }, { type: 'null' }]
+        pricePerAdditionalEmployee:
+          oneOf: [{ type: string, pattern: '^(0|[1-9][0-9]{0,14})(\.[0-9]{1,4})?$' }, { type: 'null' }]
+        includedPostedDocuments:
+          oneOf: [{ type: integer, minimum: 0, maximum: 100000000 }, { type: 'null' }]
+        pricePerAdditionalPostedDocument:
+          oneOf: [{ type: string, pattern: '^(0|[1-9][0-9]{0,14})(\.[0-9]{1,4})?$' }, { type: 'null' }]
+        taxRate: { type: string, pattern: '^(?:[0-9]{1,2}(?:\.[0-9]{1,4})?|100(?:\.0{1,4})?)$' }
+        paymentTermsDays: { type: integer, minimum: 0, maximum: 365 }
+        trialDays: { type: integer, minimum: 0, maximum: 365 }
+        effectiveFrom: { type: string, format: date-time }
+        selfServicePolicy: { type: string, enum: [DISABLED, REQUEST_ONLY, IMMEDIATE_FREE] }
+        modules:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/PlatformSubscriptionModuleRequest' }
+    PlatformSubscriptionPlanDraftRequest:
+      type: object
+      additionalProperties: false
+      required: [displayName, description, billingCycle, currencyCode, recurringFee, includedUsers, pricePerAdditionalUser, includedEmployees, pricePerAdditionalEmployee, includedPostedDocuments, pricePerAdditionalPostedDocument, taxRate, paymentTermsDays, trialDays, effectiveFrom, selfServicePolicy, modules, version]
+      properties:
+        displayName: { type: string, x-trim: true, minLength: 1, maxLength: 160 }
+        description:
+          oneOf: [{ type: string, x-trim: true, minLength: 1, maxLength: 1000 }, { type: 'null' }]
+        billingCycle: { type: string, enum: [MONTHLY, QUARTERLY, ANNUAL] }
+        currencyCode: { type: string, x-trim: true, pattern: '^[A-Z]{3}$' }
+        recurringFee:
+          oneOf: [{ type: string, pattern: '^(0|[1-9][0-9]{0,14})(\.[0-9]{1,4})?$' }, { type: 'null' }]
+        includedUsers:
+          oneOf: [{ type: integer, minimum: 0, maximum: 1000000 }, { type: 'null' }]
+        pricePerAdditionalUser:
+          oneOf: [{ type: string, pattern: '^(0|[1-9][0-9]{0,14})(\.[0-9]{1,4})?$' }, { type: 'null' }]
+        includedEmployees:
+          oneOf: [{ type: integer, minimum: 0, maximum: 1000000 }, { type: 'null' }]
+        pricePerAdditionalEmployee:
+          oneOf: [{ type: string, pattern: '^(0|[1-9][0-9]{0,14})(\.[0-9]{1,4})?$' }, { type: 'null' }]
+        includedPostedDocuments:
+          oneOf: [{ type: integer, minimum: 0, maximum: 100000000 }, { type: 'null' }]
+        pricePerAdditionalPostedDocument:
+          oneOf: [{ type: string, pattern: '^(0|[1-9][0-9]{0,14})(\.[0-9]{1,4})?$' }, { type: 'null' }]
+        taxRate: { type: string, pattern: '^(?:[0-9]{1,2}(?:\.[0-9]{1,4})?|100(?:\.0{1,4})?)$' }
+        paymentTermsDays: { type: integer, minimum: 0, maximum: 365 }
+        trialDays: { type: integer, minimum: 0, maximum: 365 }
+        effectiveFrom: { type: string, format: date-time }
+        selfServicePolicy: { type: string, enum: [DISABLED, REQUEST_ONLY, IMMEDIATE_FREE] }
+        modules:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/PlatformSubscriptionModuleRequest' }
+        version: { type: integer, minimum: 0 }
+    PlatformSubscriptionPlanStatusRequest:
+      type: object
+      additionalProperties: false
+      required: [active, version]
+      properties:
+        active: { type: boolean }
+        version: { type: integer, minimum: 0 }
+    PlatformSubscriptionPublishRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties: { version: { type: integer, minimum: 0 } }
+    PlatformSubscriptionScheduleRequest:
+      type: object
+      additionalProperties: false
+      required: [targetPlanVersionId, optionalModuleIds, effectiveAt, subscriptionVersion]
+      properties:
+        targetPlanVersionId: { type: string, pattern: '^[1-9][0-9]*$' }
+        optionalModuleIds:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, pattern: '^[1-9][0-9]*$' }
+        effectiveAt: { type: string, format: date-time }
+        subscriptionVersion: { type: integer, minimum: 0 }
+    CompanySubscriptionChangeRequest:
+      type: object
+      additionalProperties: false
+      required: [targetPlanVersionId, optionalModuleIds, subscriptionVersion]
+      properties:
+        targetPlanVersionId: { type: string, pattern: '^[1-9][0-9]*$' }
+        optionalModuleIds:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, pattern: '^[1-9][0-9]*$' }
+        subscriptionVersion: { type: integer, minimum: 0 }
+    PlatformSubscriptionDecisionRequest:
+      type: object
+      additionalProperties: false
+      required: [decision, effectiveAt, reason, subscriptionVersion]
+      properties:
+        decision: { type: string, enum: [APPROVE, REJECT] }
+        effectiveAt:
+          oneOf: [{ type: string, format: date-time }, { type: 'null' }]
+        reason:
+          oneOf: [{ type: string, x-trim: true, minLength: 3, maxLength: 500 }, { type: 'null' }]
+        subscriptionVersion: { type: integer, minimum: 0 }
+    PlatformSubscriptionPlanModule:
+      type: object
+      additionalProperties: false
+      required: [id, code, displayName, active, selectionMode, additionalRecurringFee, dependencyIds]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        code: { type: string, minLength: 1, maxLength: 64 }
+        displayName: { type: string, minLength: 1, maxLength: 160 }
+        active: { type: boolean }
+        selectionMode: { type: string, enum: [INCLUDED, OPTIONAL] }
+        additionalRecurringFee:
+          oneOf: [{ $ref: '#/components/schemas/Money' }, { type: 'null' }]
+        dependencyIds:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, pattern: '^[1-9][0-9]*$' }
+    PlatformSubscriptionPlanVersion:
+      type: object
+      additionalProperties: false
+      required: [id, planId, planCode, versionNumber, displayName, description, billingCycle, currencyCode, recurringFee, includedUsers, pricePerAdditionalUser, includedEmployees, pricePerAdditionalEmployee, includedPostedDocuments, pricePerAdditionalPostedDocument, taxRate, paymentTermsDays, trialDays, effectiveFrom, selfServicePolicy, publicationStatus, publishedAt, retiredAt, version, modules]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        planId: { type: string, pattern: '^[1-9][0-9]*$' }
+        planCode: { type: string, minLength: 1, maxLength: 80 }
+        versionNumber: { type: integer, minimum: 1 }
+        displayName: { type: string, minLength: 1, maxLength: 160 }
+        description:
+          oneOf: [{ type: string, maxLength: 1000 }, { type: 'null' }]
+        billingCycle: { type: string, enum: [MONTHLY, QUARTERLY, ANNUAL] }
+        currencyCode: { type: string, pattern: '^[A-Z]{3}$' }
+        recurringFee:
+          oneOf: [{ $ref: '#/components/schemas/Money' }, { type: 'null' }]
+        includedUsers:
+          oneOf: [{ type: integer, minimum: 0 }, { type: 'null' }]
+        pricePerAdditionalUser:
+          oneOf: [{ $ref: '#/components/schemas/Money' }, { type: 'null' }]
+        includedEmployees:
+          oneOf: [{ type: integer, minimum: 0 }, { type: 'null' }]
+        pricePerAdditionalEmployee:
+          oneOf: [{ $ref: '#/components/schemas/Money' }, { type: 'null' }]
+        includedPostedDocuments:
+          oneOf: [{ type: integer, minimum: 0 }, { type: 'null' }]
+        pricePerAdditionalPostedDocument:
+          oneOf: [{ $ref: '#/components/schemas/Money' }, { type: 'null' }]
+        taxRate: { type: string, pattern: '^(?:[0-9]{1,2}|100)\.[0-9]{4}$' }
+        paymentTermsDays: { type: integer, minimum: 0, maximum: 365 }
+        trialDays: { type: integer, minimum: 0, maximum: 365 }
+        effectiveFrom: { type: string, format: date-time }
+        selfServicePolicy: { type: string, enum: [DISABLED, REQUEST_ONLY, IMMEDIATE_FREE] }
+        publicationStatus: { type: string, enum: [DRAFT, PUBLISHED] }
+        publishedAt:
+          oneOf: [{ type: string, format: date-time }, { type: 'null' }]
+        retiredAt:
+          oneOf: [{ type: string, format: date-time }, { type: 'null' }]
+        version: { type: integer, minimum: 0 }
+        modules: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/PlatformSubscriptionPlanModule' } }
+    PlatformSubscriptionPlanStatus:
+      type: object
+      additionalProperties: true
+      required: [id, code, active, version]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        code: { type: string, minLength: 1, maxLength: 80 }
+        active: { type: boolean }
+        version: { type: integer, minimum: 0 }
+    PlatformSubscriptionPlanCreateResponse:
+      type: object
+      additionalProperties: false
+      required: [plan, version]
+      properties:
+        plan: { $ref: '#/components/schemas/PlatformSubscriptionPlanStatus' }
+        version: { $ref: '#/components/schemas/PlatformSubscriptionPlanVersion' }
+    PlatformSubscriptionPlanVersionResponse:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties: { version: { $ref: '#/components/schemas/PlatformSubscriptionPlanVersion' } }
+    PlatformSubscriptionPlanStatusResponse:
+      type: object
+      additionalProperties: false
+      required: [plan]
+      properties: { plan: { $ref: '#/components/schemas/PlatformSubscriptionPlanStatus' } }
+    PlatformSubscriptionPlanListResponse:
+      type: object
+      additionalProperties: false
+      required: [plans, meta]
+      properties:
+        plans:
+          type: array
+          maxItems: 100
+          items:
+            allOf:
+            - $ref: '#/components/schemas/PlatformSubscriptionPlanStatus'
+            - type: object
+              required: [latestVersion, updatedAt]
+              properties:
+                latestVersion:
+                  oneOf: [{ $ref: '#/components/schemas/PlatformSubscriptionPlanVersion' }, { type: 'null' }]
+                updatedAt: { type: string, format: date-time }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    PlatformSubscriptionPlanDetailResponse:
+      type: object
+      additionalProperties: false
+      required: [plan]
+      properties:
+        plan:
+          allOf:
+          - $ref: '#/components/schemas/PlatformSubscriptionPlanStatus'
+          - type: object
+            required: [createdAt, updatedAt, versions]
+            properties:
+              createdAt: { type: string, format: date-time }
+              updatedAt: { type: string, format: date-time }
+              versions: { type: array, items: { $ref: '#/components/schemas/PlatformSubscriptionPlanVersion' } }
+    PlatformSubscriptionModulesResponse:
+      type: object
+      additionalProperties: false
+      required: [modules]
+      properties:
+        modules:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, code, displayName, active, version, dependencies]
+            properties:
+              id: { type: string, pattern: '^[1-9][0-9]*$' }
+              code: { type: string, minLength: 1, maxLength: 64 }
+              displayName: { type: string, minLength: 1, maxLength: 160 }
+              active: { type: boolean }
+              version: { type: integer, minimum: 0 }
+              dependencies:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [id, code, active]
+                  properties:
+                    id: { type: string, pattern: '^[1-9][0-9]*$' }
+                    code: { type: string, minLength: 1, maxLength: 64 }
+                    active: { type: boolean }
+    PlatformSubscriptionChangeModule:
+      type: object
+      additionalProperties: false
+      required: [id, code, displayName, selectionMode]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        code: { type: string, minLength: 1, maxLength: 64 }
+        displayName: { type: string, minLength: 1, maxLength: 160 }
+        selectionMode: { type: string, enum: [INCLUDED, OPTIONAL] }
+    PlatformSubscriptionChange:
+      type: object
+      additionalProperties: false
+      required: [id, state, source, requestedAt, effectiveAt, decidedAt, decisionReason, quote, plan, modules]
+      properties:
+        id:
+          oneOf: [{ type: string, format: uuid }, { type: 'null' }]
+        state: { type: string, enum: [PENDING_APPROVAL, APPROVED, REJECTED, CANCELLED] }
+        source: { type: string, enum: [COMPANY_OWNER, PLATFORM_OPERATOR, MIGRATION] }
+        requestedAt: { type: string, format: date-time }
+        effectiveAt:
+          oneOf: [{ type: string, format: date-time }, { type: 'null' }]
+        decidedAt:
+          oneOf: [{ type: string, format: date-time }, { type: 'null' }]
+        decisionReason:
+          oneOf: [{ type: string, maxLength: 500 }, { type: 'null' }]
+        quote:
+          type: object
+          additionalProperties: false
+          required: [currencyCode, baseRecurringFee, optionalRecurringFee, totalRecurringFee]
+          properties:
+            currencyCode: { type: string, pattern: '^[A-Z]{3}$' }
+            baseRecurringFee: { $ref: '#/components/schemas/Money' }
+            optionalRecurringFee: { $ref: '#/components/schemas/Money' }
+            totalRecurringFee: { $ref: '#/components/schemas/Money' }
+        plan: { $ref: '#/components/schemas/PlatformSubscriptionPlanVersion' }
+        modules: { type: array, items: { $ref: '#/components/schemas/PlatformSubscriptionChangeModule' } }
+    PlatformSubscriptionChangeResult:
+      type: object
+      additionalProperties: false
+      required: [change, subscriptionVersion, paymentCollected]
+      properties:
+        change: { $ref: '#/components/schemas/PlatformSubscriptionChange' }
+        subscriptionVersion: { type: integer, minimum: 0 }
+        paymentCollected: { type: boolean, const: false }
+    PlatformSubscriptionSnapshot:
+      type: object
+      additionalProperties: false
+      required: [subscription, current, effectiveModules, scheduled, pending, history, meta, generatedAt]
+      properties:
+        company:
+          type: object
+          additionalProperties: false
+          required: [id, code, name, active]
+          properties:
+            id: { type: string, pattern: '^[1-9][0-9]*$' }
+            code: { type: string, minLength: 1, maxLength: 80 }
+            name: { type: string, minLength: 1, maxLength: 200 }
+            active: { type: boolean }
+        subscription:
+          type: object
+          additionalProperties: false
+          required: [status, version, startsAt, trialEndsAt, currentPeriodStart, currentPeriodEnd, cancelAtPeriodEnd]
+          properties:
+            status: { type: string, enum: [TRIALING, ACTIVE, PAST_DUE, SUSPENDED, CANCELED] }
+            version: { type: integer, minimum: 0 }
+            startsAt: { type: string, format: date-time }
+            trialEndsAt:
+              oneOf: [{ type: string, format: date-time }, { type: 'null' }]
+            currentPeriodStart:
+              oneOf: [{ type: string, format: date }, { type: 'null' }]
+            currentPeriodEnd:
+              oneOf: [{ type: string, format: date }, { type: 'null' }]
+            cancelAtPeriodEnd: { type: boolean }
+        current: { $ref: '#/components/schemas/PlatformSubscriptionChange' }
+        effectiveModules:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, code, displayName, source]
+            properties:
+              id: { type: string, pattern: '^[1-9][0-9]*$' }
+              code: { type: string, minLength: 1, maxLength: 64 }
+              displayName: { type: string, minLength: 1, maxLength: 160 }
+              source: { type: string, enum: [PLAN, ADD_ON, GRANDFATHERED] }
+        scheduled:
+          oneOf: [{ $ref: '#/components/schemas/PlatformSubscriptionChange' }, { type: 'null' }]
+        pending:
+          oneOf: [{ $ref: '#/components/schemas/PlatformSubscriptionChange' }, { type: 'null' }]
+        history: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/PlatformSubscriptionChange' } }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+        generatedAt: { type: string, format: date-time }
+    CompanySubscriptionCatalogResponse:
+      type: object
+      additionalProperties: false
+      required: [plans, meta]
+      properties:
+        plans: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/PlatformSubscriptionPlanVersion' } }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    PlatformSubscriptionListResponse:
+      type: object
+      additionalProperties: false
+      required: [subscriptions, meta]
+      properties:
+        subscriptions:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required: [company, status, version, recordedPlan, updatedAt]
+            properties:
+              company:
+                type: object
+                additionalProperties: false
+                required: [id, code, name, active]
+                properties:
+                  id: { type: string, pattern: '^[1-9][0-9]*$' }
+                  code: { type: string, minLength: 1, maxLength: 80 }
+                  name: { type: string, minLength: 1, maxLength: 200 }
+                  active: { type: boolean }
+              status: { type: string, enum: [TRIALING, ACTIVE, PAST_DUE, SUSPENDED, CANCELED] }
+              version: { type: integer, minimum: 0 }
+              recordedPlan:
+                type: object
+                additionalProperties: false
+                required: [id, code, displayName]
+                properties:
+                  id: { type: string, pattern: '^[1-9][0-9]*$' }
+                  code: { type: string, minLength: 1, maxLength: 80 }
+                  displayName: { type: string, minLength: 1, maxLength: 160 }
+              updatedAt: { type: string, format: date-time }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
     PlatformBillingAccountRequest:
       type: object
       additionalProperties: false

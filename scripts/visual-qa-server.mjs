@@ -47,6 +47,8 @@ const visualQaPermissions = [
   "sales_invoices.view",
   "security_events.view",
   "settings.manage",
+  "subscriptions.manage",
+  "subscriptions.view",
   "suppliers.view",
   "users.view",
   "warehouses.view",
@@ -328,6 +330,28 @@ const professionalTimeEntry = {
   updatedAt: "2026-08-27T10:00:00.000Z",
 };
 
+const subscriptionPlanVersion = {
+  id: "2101", planId: "1101", planCode: "VISUAL_BASIC", versionNumber: 1,
+  displayName: "الخطة الأساسية", description: "خطة تجريبية للفحص البصري", billingCycle: "MONTHLY",
+  currencyCode: "SAR", recurringFee: "100.0000",
+  includedUsers: 5, pricePerAdditionalUser: "10.0000",
+  includedEmployees: 10, pricePerAdditionalEmployee: null,
+  includedPostedDocuments: 100, pricePerAdditionalPostedDocument: null,
+  taxRate: "0.0000", paymentTermsDays: 0, trialDays: 0,
+  effectiveFrom: "2026-08-01T00:00:00.000Z", selfServicePolicy: "REQUEST_ONLY",
+  publicationStatus: "PUBLISHED", publishedAt: "2026-08-01T00:00:00.000Z", retiredAt: null,
+  version: 1,
+  modules: [{ id: "3101", code: "CORE_ACCOUNTING", displayName: "المحاسبة الأساسية", active: true, selectionMode: "INCLUDED", additionalRecurringFee: null, dependencyIds: [] }],
+};
+const subscriptionCurrentChange = {
+  id: "d8785179-6237-44bd-a6a1-e67987e8fb51", state: "APPROVED", source: "MIGRATION",
+  requestedAt: "2026-08-01T00:00:00.000Z", effectiveAt: "2026-08-01T00:00:00.000Z",
+  decidedAt: "2026-08-01T00:00:00.000Z", decisionReason: null,
+  quote: { currencyCode: "SAR", baseRecurringFee: "100.0000", optionalRecurringFee: "0.0000", totalRecurringFee: "100.0000" },
+  plan: subscriptionPlanVersion,
+  modules: [{ id: "3101", code: "CORE_ACCOUNTING", displayName: "المحاسبة الأساسية", selectionMode: "INCLUDED" }],
+};
+
 function list(data = []) {
   return { data, meta: { ...meta, total: data.length, totalPages: data.length ? 1 : 0 } };
 }
@@ -341,6 +365,20 @@ function responseFor(url, method) {
   if (pathname === "/platform/capabilities") return { platformOperations: true };
   if (pathname === "/platform/overview") return platformOverview;
   if (pathname === "/platform/analytics") return platformAnalytics(url);
+  if (pathname === "/platform/subscription-modules") return { modules: [] };
+  if (pathname === "/platform/subscription-plans") return {
+    plans: [{ id: "1101", code: "VISUAL_BASIC", active: true, version: 0, latestVersion: subscriptionPlanVersion, updatedAt: "2026-08-29T09:00:00.000Z" }],
+    meta: { ...meta, total: 1, totalPages: 1 },
+  };
+  if (pathname === "/platform/subscriptions") return { subscriptions: [], meta };
+  if (pathname === "/subscription") return {
+    subscription: { status: "ACTIVE", version: 1, startsAt: "2026-08-01T00:00:00.000Z", trialEndsAt: null, currentPeriodStart: null, currentPeriodEnd: null, cancelAtPeriodEnd: false },
+    current: subscriptionCurrentChange,
+    effectiveModules: [{ id: "3101", code: "CORE_ACCOUNTING", displayName: "المحاسبة الأساسية", source: "PLAN" }],
+    scheduled: null, pending: null, history: [subscriptionCurrentChange],
+    meta: { ...meta, total: 1, totalPages: 1 }, generatedAt: "2026-08-29T09:00:00.000Z",
+  };
+  if (pathname === "/subscription/catalog") return { plans: [subscriptionPlanVersion], meta: { ...meta, total: 1, totalPages: 1 } };
   if (pathname === "/companies/current") return company;
   if (pathname === "/professional-projects/customer-options") return { data: [professionalCustomer] };
   if (pathname === "/professional-projects/member-options") return { data: [professionalManager] };
