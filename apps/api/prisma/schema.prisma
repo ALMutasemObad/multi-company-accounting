@@ -365,6 +365,45 @@ enum PlatformBillingPaymentMethod {
   OTHER
 }
 
+enum PlatformElectronicPaymentState {
+  CHECKOUT
+  PENDING
+  PAID
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum PlatformPaymentEnvironment {
+  DEVELOPMENT
+  SANDBOX
+  LIVE
+}
+
+enum PlatformWebhookProcessingState {
+  APPLIED
+  IGNORED
+  REJECTED
+}
+
+enum PlatformPaymentTransitionSource {
+  COMPANY_OWNER
+  PLATFORM_OPERATOR
+  WEBHOOK
+  SYSTEM
+}
+
+enum PlatformBillingPaymentSource {
+  MANUAL
+  ELECTRONIC_PROVIDER
+}
+
+enum PlatformBillingRefundState {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
 enum PlatformSubscriptionStatus {
   TRIALING
   ACTIVE
@@ -529,6 +568,11 @@ model Company {
   platformBillingInvoices           PlatformBillingInvoice[]
   platformBillingInvoiceLines       PlatformBillingInvoiceLine[]
   platformBillingPayments           PlatformBillingPayment[]
+  platformPaymentAttempts           PlatformPaymentAttempt[]
+  platformCheckoutSessions          PlatformCheckoutSession[]
+  platformPaymentTransitions        PlatformPaymentTransition[]
+  platformWebhookReceipts           PlatformWebhookReceipt[]
+  platformBillingRefunds            PlatformBillingRefund[]
   platformSubscription              PlatformSubscription?
   platformSubscriptionEntitlements  PlatformSubscriptionEntitlement[]
   platformSubscriptionChanges       PlatformSubscriptionChange[]
@@ -621,6 +665,9 @@ model User {
   platformBillingInvoicesIssued     PlatformBillingInvoice[]           @relation("PlatformBillingInvoiceIssuedBy")
   platformBillingInvoicesVoided     PlatformBillingInvoice[]           @relation("PlatformBillingInvoiceVoidedBy")
   platformBillingPaymentsReceived   PlatformBillingPayment[]           @relation("PlatformBillingPaymentReceivedBy")
+  platformPaymentAttemptsRequested     PlatformPaymentAttempt[]           @relation("PlatformPaymentAttemptRequestedBy")
+  platformPaymentTransitionsActed      PlatformPaymentTransition[]        @relation("PlatformPaymentTransitionActor")
+  platformBillingRefundsRequested      PlatformBillingRefund[]            @relation("PlatformBillingRefundRequestedBy")
   platformSubscriptionChangesRequested PlatformSubscriptionChange[]    @relation("PlatformSubscriptionChangeRequestedBy")
   platformSubscriptionChangesDecided   PlatformSubscriptionChange[]    @relation("PlatformSubscriptionChangeDecidedBy")
 
@@ -2701,6 +2748,10 @@ model PlatformBillingInvoice {
   publicId              String                      @unique @default(uuid()) @map("public_id") @db.Char(36)
   companyId             BigInt                      @map("company_id") @db.UnsignedBigInt
   billingAccountId      BigInt                      @map("billing_account_id") @db.UnsignedBigInt
+  subscriptionId          BigInt?                      @map("subscription_id") @db.UnsignedBigInt
+  planVersionId           BigInt?                      @map("plan_version_id") @db.UnsignedBigInt
+  subscriptionChangeId    BigInt?                      @map("subscription_change_id") @db.UnsignedBigInt
+  planDisplayNameSnapshot String?                      @map("plan_display_name_snapshot") @db.VarChar(160)
   invoiceNumber         String                      @unique @map("invoice_number") @db.VarChar(60)
   state                 PlatformBillingInvoiceState @default(ISSUED)
   periodStart           DateTime                    @map("period_start") @db.Date
@@ -2726,14 +2777,21 @@ model PlatformBillingInvoice {
   updatedAt             DateTime                    @updatedAt @map("updated_at")
   company               Company                     @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   billingAccount        PlatformBillingAccount      @relation(fields: [billingAccountId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  subscription            PlatformSubscription?        @relation(fields: [subscriptionId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  planVersion             PlatformPlanVersion?         @relation(fields: [planVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  subscriptionChange      PlatformSubscriptionChange?  @relation(fields: [subscriptionChangeId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
   issuedBy              User                        @relation("PlatformBillingInvoiceIssuedBy", fields: [issuedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
   voidedBy              User?                       @relation("PlatformBillingInvoiceVoidedBy", fields: [voidedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
   lines                 PlatformBillingInvoiceLine[]
   payments              PlatformBillingPayment[]
+  paymentAttempts         PlatformPaymentAttempt[]
 
   @@unique([id, companyId])
   @@unique([companyId, periodStart, periodEnd])
   @@index([companyId, issueDate, id])
+  @@index([companyId, subscriptionId, issueDate, id], map: "platform_billing_invoices_company_subscription_idx")
+  @@index([planVersionId, issueDate, id], map: "platform_billing_invoices_plan_version_idx")
+  @@index([subscriptionChangeId], map: "platform_billing_invoices_subscription_change_idx")
   @@index([state, dueDate])
   @@map("platform_billing_invoices")
 }
@@ -2763,21 +2821,172 @@ model PlatformBillingPayment {
   publicId       String                       @unique @default(uuid()) @map("public_id") @db.Char(36)
   companyId      BigInt                       @map("company_id") @db.UnsignedBigInt
   invoiceId      BigInt                       @map("invoice_id") @db.UnsignedBigInt
+  paymentAttemptId BigInt?                      @unique @map("payment_attempt_id") @db.UnsignedBigInt
   paymentDate    DateTime                     @map("payment_date") @db.Date
   amount         Decimal                      @db.Decimal(19, 4)
   method         PlatformBillingPaymentMethod
+  source           PlatformBillingPaymentSource @default(MANUAL)
   reference      String?                      @db.VarChar(160)
   notes          String?                      @db.VarChar(1000)
-  receivedById   BigInt                       @map("received_by_id") @db.UnsignedBigInt
+  receivedById     BigInt?                      @map("received_by_id") @db.UnsignedBigInt
   createdAt      DateTime                     @default(now()) @map("created_at")
   company        Company                      @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   invoice        PlatformBillingInvoice       @relation(fields: [invoiceId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
-  receivedBy     User                         @relation("PlatformBillingPaymentReceivedBy", fields: [receivedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  paymentAttempt   PlatformPaymentAttempt?      @relation(fields: [paymentAttemptId, companyId, invoiceId], references: [id, companyId, invoiceId], onDelete: Restrict, onUpdate: Restrict)
+  receivedBy       User?                        @relation("PlatformBillingPaymentReceivedBy", fields: [receivedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  refund           PlatformBillingRefund?
 
   @@unique([id, companyId])
+  @@unique([id, companyId, paymentAttemptId], map: "platform_billing_payments_id_company_attempt_key")
+  @@unique([paymentAttemptId, companyId, invoiceId], map: "platform_billing_payments_attempt_company_invoice_key")
   @@index([companyId, paymentDate, id])
   @@index([invoiceId, createdAt])
   @@map("platform_billing_payments")
+}
+
+model PlatformPaymentAttempt {
+  id                  BigInt                         @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId            String                         @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId           BigInt                         @map("company_id") @db.UnsignedBigInt
+  invoiceId           BigInt                         @map("invoice_id") @db.UnsignedBigInt
+  state               PlatformElectronicPaymentState @default(CHECKOUT)
+  providerCode        String                         @map("provider_code") @db.VarChar(64)
+  providerEnvironment PlatformPaymentEnvironment     @map("provider_environment")
+  amount              Decimal                        @db.Decimal(19, 4)
+  amountMinor         BigInt                         @map("amount_minor") @db.UnsignedBigInt
+  currencyCode        String                         @map("currency_code") @db.Char(3)
+  requestKeyHash      Bytes                          @map("request_key_hash") @db.Binary(32)
+  requestFingerprint  Bytes                          @map("request_fingerprint") @db.Binary(32)
+  providerPaymentId   String?                        @map("provider_payment_id") @db.VarChar(191)
+  providerReference   String?                        @map("provider_reference") @db.VarChar(191)
+  failureCode         String?                        @map("failure_code") @db.VarChar(100)
+  failureReason       String?                        @map("failure_reason") @db.VarChar(500)
+  version             Int                            @default(0) @db.UnsignedInt
+  requestedById       BigInt                         @map("requested_by_id") @db.UnsignedBigInt
+  requestedAt         DateTime                       @default(now()) @map("requested_at")
+  completedAt         DateTime?                      @map("completed_at")
+  updatedAt           DateTime                       @updatedAt @map("updated_at")
+  company             Company                        @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  invoice             PlatformBillingInvoice         @relation(fields: [invoiceId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  requestedBy         User                           @relation("PlatformPaymentAttemptRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  checkoutSession     PlatformCheckoutSession?
+  transitions         PlatformPaymentTransition[]
+  webhookReceipts     PlatformWebhookReceipt[]
+  billingPayment      PlatformBillingPayment?
+  refund              PlatformBillingRefund?
+
+  @@unique([id, companyId])
+  @@unique([id, companyId, invoiceId], map: "platform_payment_attempts_id_company_invoice_key")
+  @@unique([companyId, requestKeyHash], map: "platform_payment_attempts_company_request_key")
+  @@unique([providerCode, providerEnvironment, providerPaymentId], map: "platform_payment_attempts_provider_payment_key")
+  @@index([companyId, state, requestedAt, id], map: "platform_payment_attempts_company_state_idx")
+  @@index([invoiceId, state, requestedAt, id], map: "platform_payment_attempts_invoice_state_idx")
+  @@index([requestedById], map: "platform_payment_attempts_requested_by_idx")
+  @@map("platform_payment_attempts")
+}
+
+model PlatformCheckoutSession {
+  id                  BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId           BigInt                     @map("company_id") @db.UnsignedBigInt
+  paymentAttemptId    BigInt                     @unique @map("payment_attempt_id") @db.UnsignedBigInt
+  providerCode        String                     @map("provider_code") @db.VarChar(64)
+  providerEnvironment PlatformPaymentEnvironment @map("provider_environment")
+  providerCheckoutId  String                     @map("provider_checkout_id") @db.VarChar(191)
+  hostedCheckoutUrl   String                     @map("hosted_checkout_url") @db.VarChar(2048)
+  expiresAt           DateTime                   @map("expires_at")
+  createdAt           DateTime                   @default(now()) @map("created_at")
+  company             Company                    @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  paymentAttempt      PlatformPaymentAttempt     @relation(fields: [paymentAttemptId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([paymentAttemptId, companyId], map: "platform_checkout_sessions_attempt_company_key")
+  @@unique([providerCode, providerEnvironment, providerCheckoutId], map: "platform_checkout_sessions_provider_checkout_key")
+  @@index([companyId, expiresAt, id], map: "platform_checkout_sessions_company_expiry_idx")
+  @@index([expiresAt, id], map: "platform_checkout_sessions_expiry_idx")
+  @@map("platform_checkout_sessions")
+}
+
+model PlatformPaymentTransition {
+  id               BigInt                          @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId        BigInt                          @map("company_id") @db.UnsignedBigInt
+  paymentAttemptId BigInt                          @map("payment_attempt_id") @db.UnsignedBigInt
+  fromState        PlatformElectronicPaymentState? @map("from_state")
+  toState          PlatformElectronicPaymentState  @map("to_state")
+  source           PlatformPaymentTransitionSource
+  actorId          BigInt?                         @map("actor_id") @db.UnsignedBigInt
+  providerEventId  String?                         @map("provider_event_id") @db.VarChar(191)
+  occurredAt       DateTime                        @default(now()) @map("occurred_at")
+  company          Company                         @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  paymentAttempt   PlatformPaymentAttempt          @relation(fields: [paymentAttemptId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  actor            User?                           @relation("PlatformPaymentTransitionActor", fields: [actorId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([paymentAttemptId, providerEventId], map: "platform_payment_transitions_attempt_event_key")
+  @@index([companyId, paymentAttemptId, occurredAt, id], map: "platform_payment_transitions_attempt_time_idx")
+  @@index([actorId], map: "platform_payment_transitions_actor_idx")
+  @@map("platform_payment_transitions")
+}
+
+model PlatformWebhookReceipt {
+  id                  BigInt                         @id @default(autoincrement()) @db.UnsignedBigInt
+  providerCode        String                         @map("provider_code") @db.VarChar(64)
+  providerEnvironment PlatformPaymentEnvironment     @map("provider_environment")
+  providerEventId     String                         @map("provider_event_id") @db.VarChar(191)
+  providerPaymentId   String?                        @map("provider_payment_id") @db.VarChar(191)
+  providerRefundId    String?                        @map("provider_refund_id") @db.VarChar(191)
+  amountMinor         BigInt?                        @map("amount_minor") @db.UnsignedBigInt
+  currencyCode        String?                        @map("currency_code") @db.Char(3)
+  payloadHash         Bytes                          @map("payload_hash") @db.Binary(32)
+  processingState     PlatformWebhookProcessingState @map("processing_state")
+  resultCode          String                         @map("result_code") @db.VarChar(100)
+  resultDetail        String?                        @map("result_detail") @db.VarChar(500)
+  companyId           BigInt?                        @map("company_id") @db.UnsignedBigInt
+  paymentAttemptId    BigInt?                        @map("payment_attempt_id") @db.UnsignedBigInt
+  providerOccurredAt  DateTime?                      @map("provider_occurred_at")
+  receivedAt          DateTime                       @default(now()) @map("received_at")
+  processedAt         DateTime                       @default(now()) @map("processed_at")
+  company             Company?                       @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  paymentAttempt      PlatformPaymentAttempt?        @relation(fields: [paymentAttemptId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([providerCode, providerEnvironment, providerEventId], map: "platform_webhook_receipts_provider_event_key")
+  @@index([processingState, receivedAt, id], map: "platform_webhook_receipts_state_received_idx")
+  @@index([companyId, receivedAt, id], map: "platform_webhook_receipts_company_received_idx")
+  @@index([paymentAttemptId, receivedAt, id], map: "platform_webhook_receipts_attempt_received_idx")
+  @@index([providerCode, providerEnvironment, providerPaymentId], map: "platform_webhook_receipts_provider_payment_idx")
+  @@index([providerCode, providerEnvironment, providerRefundId], map: "platform_webhook_receipts_provider_refund_idx")
+  @@map("platform_webhook_receipts")
+}
+
+model PlatformBillingRefund {
+  id                 BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId           String                     @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId          BigInt                     @map("company_id") @db.UnsignedBigInt
+  paymentId          BigInt                     @unique @map("payment_id") @db.UnsignedBigInt
+  paymentAttemptId   BigInt                     @unique @map("payment_attempt_id") @db.UnsignedBigInt
+  state              PlatformBillingRefundState @default(PENDING)
+  amount             Decimal                    @db.Decimal(19, 4)
+  amountMinor        BigInt                     @map("amount_minor") @db.UnsignedBigInt
+  currencyCode       String                     @map("currency_code") @db.Char(3)
+  providerRefundId   String?                    @unique @map("provider_refund_id") @db.VarChar(191)
+  requestKeyHash     Bytes?                     @map("request_key_hash") @db.Binary(32)
+  requestFingerprint Bytes?                     @map("request_fingerprint") @db.Binary(32)
+  failureCode        String?                    @map("failure_code") @db.VarChar(100)
+  failureReason      String?                    @map("failure_reason") @db.VarChar(500)
+  requestedById      BigInt?                    @map("requested_by_id") @db.UnsignedBigInt
+  requestedAt        DateTime                   @default(now()) @map("requested_at")
+  completedAt        DateTime?                  @map("completed_at")
+  version            Int                        @default(0) @db.UnsignedInt
+  updatedAt          DateTime                   @updatedAt @map("updated_at")
+  company            Company                    @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  payment            PlatformBillingPayment     @relation(fields: [paymentId, companyId, paymentAttemptId], references: [id, companyId, paymentAttemptId], onDelete: Restrict, onUpdate: Restrict)
+  paymentAttempt     PlatformPaymentAttempt     @relation(fields: [paymentAttemptId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  requestedBy        User?                      @relation("PlatformBillingRefundRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([id, companyId])
+  @@unique([paymentId, companyId, paymentAttemptId], map: "platform_billing_refunds_payment_company_attempt_key")
+  @@unique([paymentAttemptId, companyId], map: "platform_billing_refunds_attempt_company_key")
+  @@unique([companyId, requestKeyHash], map: "platform_billing_refunds_company_request_key")
+  @@index([companyId, state, requestedAt, id], map: "platform_billing_refunds_company_state_idx")
+  @@index([requestedById], map: "platform_billing_refunds_requested_by_idx")
+  @@map("platform_billing_refunds")
 }
 
 model PlatformModule {
@@ -2865,6 +3074,7 @@ model PlatformPlanVersion {
   subscriptions                    PlatformSubscription[]
   subscriptionChanges              PlatformSubscriptionChange[] @relation("PlatformSubscriptionChangeTargetVersion")
   subscriptionChangesFrom          PlatformSubscriptionChange[] @relation("PlatformSubscriptionChangeFromVersion")
+  billingInvoices                  PlatformBillingInvoice[]
 
   @@unique([planId, versionNumber])
   @@index([planId, effectiveFrom, id])
@@ -2906,6 +3116,7 @@ model PlatformSubscription {
   planVersion        PlatformPlanVersion               @relation(fields: [planVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   entitlements       PlatformSubscriptionEntitlement[]
   changes            PlatformSubscriptionChange[]
+  billingInvoices    PlatformBillingInvoice[]
 
   @@unique([id, companyId])
   @@index([status, currentPeriodEnd, id])
@@ -2963,6 +3174,7 @@ model PlatformSubscriptionChange {
   requestedBy                  User?                            @relation("PlatformSubscriptionChangeRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
   decidedBy                    User?                            @relation("PlatformSubscriptionChangeDecidedBy", fields: [decidedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
   modules                      PlatformSubscriptionChangeModule[]
+  billingInvoices              PlatformBillingInvoice[]
 
   @@unique([id, companyId])
   @@index([companyId, state, effectiveAt, id], map: "platform_subscription_changes_company_state_effective_idx")

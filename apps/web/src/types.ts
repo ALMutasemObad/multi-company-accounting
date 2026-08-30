@@ -122,6 +122,7 @@ export type PlatformBillingAccount = {
 };
 export type PlatformBillingInvoice = {
   id: string; companyId: string; billingAccountId: string; invoiceNumber: string;
+  subscriptionId: string | null; planVersionId: string | null; subscriptionChangeId: string | null; planDisplayNameSnapshot: string | null;
   state: "ISSUED" | "VOID"; status: "ISSUED" | "PARTIALLY_PAID" | "PAID" | "OVERDUE" | "VOID";
   periodStart: string; periodEnd: string; issueDate: string; dueDate: string; currencyCode: string;
   usage: { users: number; employees: number; postedDocuments: number; operations: number };

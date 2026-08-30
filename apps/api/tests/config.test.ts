@@ -285,6 +285,31 @@ describe('production configuration', () => {
     })).toThrow(/PLATFORM_OPERATOR_EMAILS is development-only/);
   });
 
+  it('requires an explicit signing secret for the development payment adapter and forbids it in production', () => {
+    expect(loadConfig({ NODE_ENV: 'test' }).PLATFORM_PAYMENT_PROVIDER_MODE).toBe('disabled');
+    expect(() => loadConfig({
+      NODE_ENV: 'test',
+      PLATFORM_PAYMENT_PROVIDER_MODE: 'development',
+    })).toThrow(/PLATFORM_PAYMENT_DEVELOPMENT_WEBHOOK_SECRET/);
+    expect(loadConfig({
+      NODE_ENV: 'test',
+      PLATFORM_PAYMENT_PROVIDER_MODE: 'development',
+      PLATFORM_PAYMENT_DEVELOPMENT_WEBHOOK_SECRET: 'development-payment-signing-secret-1234',
+    }).PLATFORM_PAYMENT_PROVIDER_MODE).toBe('development');
+
+    expect(() => loadConfig({
+      NODE_ENV: 'production',
+      DATABASE_URL: 'mysql://runtime:secret@db.internal/mcap',
+      WEB_ORIGIN: 'https://finance.example.com',
+      SESSION_COOKIE_SECURE: 'true',
+      TRUST_PROXY: 'true',
+      RATE_LIMIT_IDENTITY_SECRET: rateLimitIdentitySecret,
+      SELF_REGISTRATION_ENABLED: 'false',
+      PLATFORM_PAYMENT_PROVIDER_MODE: 'development',
+      PLATFORM_PAYMENT_DEVELOPMENT_WEBHOOK_SECRET: 'development-payment-signing-secret-1234',
+    })).toThrow(/development payment adapter is forbidden in production/);
+  });
+
   it('allows verification capture only outside production', () => {
     expect(loadConfig({
       NODE_ENV: 'test',

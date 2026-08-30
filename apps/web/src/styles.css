@@ -1443,6 +1443,41 @@ h1, h2, h3, .brand strong { font-family: "Cairo", "Noto Sans Devanagari", Tahoma
 .platform-chart-panel > header { min-height: 78px; }
 
 .subscription-page, .platform-subscriptions-page { display: grid; gap: 22px; }
+.subscription-billing-center { display: grid; gap: 14px; }
+.subscription-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.subscription-section-heading h2 { margin: 0 0 4px; color: var(--green-900); font-size: 1.05rem; }
+.subscription-section-heading p { margin: 0; color: var(--muted); font-size: .74rem; }
+.subscription-billing-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
+.subscription-payment-filter, .platform-payment-filter { display: flex; align-items: end; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--line); background: var(--surface-soft); }
+.subscription-payment-filter label, .platform-payment-filter label { display: grid; min-width: 0; flex: 1; gap: 6px; }
+.subscription-payment-filter label > span, .platform-payment-filter label > span { color: var(--muted); font-size: .65rem; font-weight: 800; }
+.subscription-payment-filter select, .platform-payment-filter input, .platform-payment-filter select { width: 100%; }
+.subscription-payment-list { display: grid; gap: 1px; background: var(--line); }
+.subscription-payment-list article { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(130px, auto) auto; align-items: center; gap: 14px; padding: 15px 18px; background: #fff; }
+.subscription-payment-list article > div { display: grid; min-width: 0; gap: 4px; }
+.subscription-payment-list article strong, .subscription-payment-list article span { overflow: hidden; text-overflow: ellipsis; }
+.subscription-payment-list article small { color: var(--muted); font-size: .62rem; }
+.subscription-payment-list article .row-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; }
+.payment-state { display: inline-flex; width: fit-content; align-items: center; padding: 4px 8px; border-radius: 999px; background: #edf2ef; color: #52665d; font-size: .62rem; font-weight: 900; }
+.payment-state.checkout { background: #e8f1f7; color: #235f84; }
+.payment-state.pending { background: #fff1d5; color: #865d17; }
+.payment-state.paid { background: #e2f4eb; color: #18704b; }
+.payment-state.failed { background: #fae5e2; color: #a13d32; }
+.payment-state.cancelled { background: #eef0ef; color: #68716d; }
+.payment-state.refunded { background: #f2eafa; color: #70439a; }
+.subscription-panel .data-table td > small, .platform-payment-panel .data-table td > small { display: block; margin-top: 4px; color: var(--muted); font-size: .62rem; }
+.subscription-panel > .empty-state, .platform-payment-panel > .empty-state { margin: 20px; }
+.platform-payment-panel { min-width: 0; overflow: hidden; }
+.platform-payment-filter label:first-child { max-width: 240px; }
+.platform-payment-filter label:nth-child(2) { max-width: 340px; }
+.platform-payment-panel .form-error { margin: 14px 18px 0; }
+.platform-subscriptions-page .modal > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 22px 24px; border-bottom: 1px solid var(--line); }
+.platform-subscriptions-page .modal > header h2 { margin: 0 0 3px; color: var(--green-900); }
+.platform-subscriptions-page .modal > header p { margin: 0; color: var(--muted); }
+.platform-subscriptions-page .modal > header > button { border: 0; background: transparent; color: var(--muted); font-size: 1.4rem; cursor: pointer; }
+.platform-subscriptions-page .modal > form { display: grid; gap: 14px; padding: 22px 24px; }
+.platform-subscriptions-page .modal > form > label { display: grid; gap: 6px; }
+.platform-subscriptions-page .modal textarea { min-height: 90px; }
 .subscription-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .subscription-columns, .subscription-admin-layout { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
 .subscription-panel, .subscription-admin-detail { min-width: 0; overflow: hidden; }
@@ -1486,12 +1521,19 @@ h1, h2, h3, .brand strong { font-family: "Cairo", "Noto Sans Devanagari", Tahoma
 .platform-subscriptions-page .platform-list-panel tbody tr { cursor: pointer; }
 
 @media (max-width: 900px) {
-  .subscription-summary-grid, .subscription-columns, .subscription-admin-layout { grid-template-columns: 1fr; }
+  .subscription-summary-grid, .subscription-columns, .subscription-admin-layout, .subscription-billing-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 600px) {
   .subscription-summary-grid, .subscription-facts, .subscription-module-list, .subscription-option-grid, .subscription-module-config-grid { grid-template-columns: 1fr; }
   .module-price-controls { grid-template-columns: 1fr; }
   .subscription-change-card { flex-direction: column; }
+  .subscription-section-heading, .subscription-payment-filter, .platform-payment-filter { align-items: stretch; flex-direction: column; }
+  .subscription-section-heading .button, .subscription-payment-filter .button, .platform-payment-filter .button { width: 100%; }
+  .platform-payment-filter label:first-child, .platform-payment-filter label:nth-child(2) { max-width: none; }
+  .subscription-payment-list article { grid-template-columns: 1fr; }
+  .subscription-payment-list article .row-actions { justify-content: flex-start; }
+  .subscription-admin-tabs { width: 100%; overflow-x: auto; }
+  .subscription-admin-tabs button { flex: 1 0 auto; }
 }
 .platform-chart-content { min-width: 0; min-height: 250px; }
 .platform-chart-content > .empty-state { margin: 24px; }

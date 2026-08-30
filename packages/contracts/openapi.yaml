@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.42.0
+  version: 1.43.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -909,6 +909,108 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/BusinessRuleViolation' }
         '500': { $ref: '#/components/responses/InternalError' }
+  /platform/electronic-payments:
+    get:
+      tags: [Platform Operations]
+      summary: دفعات الاشتراكات الإلكترونية لجميع الشركات
+      description: قراءة تشغيلية عابرة للشركات لمشغل منصة مدرج في قائمة السماح المستقلة، مع تصفية وصفحات منفذة في قاعدة البيانات.
+      operationId: listPlatformElectronicPayments
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PlatformBillingPageSize'
+      - name: companyId
+        in: query
+        required: false
+        description: حصر النتائج في شركة واحدة؛ لا يمنح هذا المعرف أي صلاحية بحد ذاته.
+        schema: { type: string, pattern: '^[1-9][0-9]*$' }
+      - name: state
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [ALL, CHECKOUT, PENDING, PAID, FAILED, CANCELLED, REFUNDED]
+          default: ALL
+      responses:
+        '200':
+          description: صفحة دفعات مع اسم الشركة عند توفره
+          content: { application/json: { schema: { $ref: '#/components/schemas/PlatformElectronicPaymentPage' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /platform/electronic-payments/{paymentId}/refund:
+    post:
+      tags: [Platform Operations]
+      summary: طلب استرداد كامل لدفعة اشتراك إلكترونية
+      description: للمشغل فقط. الاسترداد كامل وغير جزئي، ولا يغير حالة الاشتراك مباشرة، ويحمي version من فقد التحديث وIdempotency-Key من التكرار.
+      operationId: refundPlatformPayment
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: paymentId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PlatformElectronicPaymentRefundRequest' } } }
+      responses:
+        '202':
+          description: حُجز طلب الاسترداد أو أعيدت نتيجته المتكررة
+          content: { application/json: { schema: { $ref: '#/components/schemas/PlatformElectronicPaymentRefundResult' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/PaymentProviderUnavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /platform/payment-webhooks/{providerCode}:
+    post:
+      tags: [Platform Operations]
+      summary: استقبال webhook خام موقّع من مزود الدفع
+      description: >-
+        مسار شبكي بلا جلسة. يجب إرسال Content-Type application/json، ويحتفظ الخادم بالبايتات الخام حتى يتحقق من
+        X-Platform-Payment-Signature قبل تحليل JSON. لا تُخزن الحمولة؛ تُخزن بصمة SHA-256 فقط. مفتاح الحدث المكرر
+        مع الحمولة نفسها يعيد نتيجة آمنة، أما الحمولة المختلفة للمفتاح نفسه فتُرفض بتعارض.
+      operationId: receivePlatformPaymentWebhook
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: providerCode
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[a-z0-9_-]{1,64}$' }
+      - name: X-Platform-Payment-Signature
+        in: header
+        required: true
+        description: توقيع HMAC للـadapter الحالي بصيغة timestamp/signature؛ يُتحقق منه على البايتات الخام ضمن نافذة زمنية محدودة.
+        schema: { type: string, pattern: '^t=[0-9]{1,12},v1=[a-f0-9]{64}$' }
+      requestBody:
+        required: true
+        description: حمولة JSON الخام للـadapter. application/* مستخدمة كي تبقى المعالجة الخام خارج حراس JSON المولدة؛ النوع الفعلي المقبول هو application/json فقط.
+        content:
+          application/*:
+            schema: { $ref: '#/components/schemas/DevelopmentPlatformPaymentWebhookPayload' }
+      responses:
+        '202':
+          description: قُبل الحدث للمعالجة، بما في ذلك التكرار المطابق والحدث غير القابل للتسوية
+          content: { application/json: { schema: { $ref: '#/components/schemas/PlatformPaymentWebhookResult' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401':
+          description: التوقيع مفقود أو غير صالح أو قديم، أو أن الحمولة لا تطابق عقد المزود
+          content: { application/json: { schema: { $ref: '#/components/schemas/Problem' } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/PaymentProviderUnavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
   /platform/subscription-modules:
     get:
       tags: [Platform Subscriptions]
@@ -1169,6 +1271,202 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /subscription/billing/payment-provider:
+    get:
+      tags: [Company Subscription]
+      summary: قدرات مزود دفع اشتراك الشركة الحالية
+      description: يصف الـadapter المركب حاليًا دون كشف أسرار أو مفاتيح أو ادعاء توفر بوابة تجارية.
+      operationId: getCompanySubscriptionPaymentProvider
+      x-permission: subscriptions.view
+      security: [{ SessionCookie: [] }]
+      parameters: [{ $ref: '#/components/parameters/RequestId' }]
+      responses:
+        '200':
+          description: قدرات المزود والبيئة
+          content: { application/json: { schema: { $ref: '#/components/schemas/PlatformPaymentProviderCapabilities' } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /subscription/billing/invoices:
+    get:
+      tags: [Company Subscription]
+      summary: فواتير اشتراك الشركة الحالية
+      description: قائمة معزولة بجلسة الشركة، بصفحات وتصفية منفذة في قاعدة البيانات، وتتضمن الأرصدة الصافية وحالة أحدث محاولة دفع.
+      operationId: listCompanySubscriptionBillingInvoices
+      x-permission: subscriptions.view
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PlatformBillingPageSize'
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [ALL, ISSUED, PAID, OVERDUE, VOID]
+          default: ALL
+      responses:
+        '200':
+          description: صفحة الفواتير
+          content: { application/json: { schema: { $ref: '#/components/schemas/CompanySubscriptionBillingInvoicePage' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /subscription/billing/payments:
+    get:
+      tags: [Company Subscription]
+      summary: محاولات دفع اشتراك الشركة الحالية
+      description: قائمة معزولة بالشركة الحالية ولا تقبل companyId من العميل، بصفحات وتصفية منفذة في قاعدة البيانات.
+      operationId: listCompanySubscriptionBillingPayments
+      x-permission: subscriptions.view
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PlatformBillingPageSize'
+      - name: state
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [ALL, CHECKOUT, PENDING, PAID, FAILED, CANCELLED, REFUNDED]
+          default: ALL
+      responses:
+        '200':
+          description: صفحة محاولات الدفع
+          content: { application/json: { schema: { $ref: '#/components/schemas/PlatformElectronicPaymentPage' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /subscription/billing/invoices/{invoiceId}/checkout:
+    post:
+      tags: [Company Subscription]
+      summary: إنشاء جلسة checkout لرصيد فاتورة اشتراك
+      description: ينشئ محاولة دفع معزولة بالشركة الحالية. لا يقبل مبلغًا أو عملة من العميل، ولا يخزن بيانات بطاقة.
+      operationId: createPlatformPaymentCheckout
+      x-permission: subscriptions.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: invoiceId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PlatformPaymentCheckoutRequest' } } }
+      responses:
+        '201':
+          description: محاولة الدفع وجلسة checkout، أو النتيجة المحفوظة لنفس المفتاح والبصمة
+          content: { application/json: { schema: { $ref: '#/components/schemas/PlatformElectronicPaymentResult' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/PaymentProviderUnavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /subscription/billing/payments/{paymentId}/retry:
+    post:
+      tags: [Company Subscription]
+      summary: إعادة محاولة دفع فاشل أو ملغى
+      description: يتحقق من version للمحاولة السابقة ثم ينشئ محاولة checkout جديدة بمفتاح Idempotency مستقل.
+      operationId: retryPlatformPaymentCheckout
+      x-permission: subscriptions.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: paymentId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PlatformPaymentVersionRequest' } } }
+      responses:
+        '201':
+          description: محاولة checkout الجديدة أو نتيجتها المحفوظة
+          content: { application/json: { schema: { $ref: '#/components/schemas/PlatformElectronicPaymentResult' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/PaymentProviderUnavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /subscription/billing/payments/{paymentId}/cancel:
+    post:
+      tags: [Company Subscription]
+      summary: إلغاء checkout جارٍ
+      description: يسمح فقط لحالتي CHECKOUT وPENDING، مع CSRF وversion ومفتاح Idempotency، ولا يلغي الاشتراك.
+      operationId: cancelPlatformPaymentCheckout
+      x-permission: subscriptions.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: paymentId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PlatformPaymentVersionRequest' } } }
+      responses:
+        '200':
+          description: محاولة الدفع الملغاة أو النتيجة المحفوظة
+          content: { application/json: { schema: { $ref: '#/components/schemas/PlatformElectronicPaymentResult' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/PaymentProviderUnavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /subscription/billing/payments/{paymentId}/simulate:
+    post:
+      tags: [Company Subscription]
+      summary: محاكاة حدث مزود في بيئة التطوير
+      description: متاح فقط عندما يكون adapter التطوير مركبًا؛ ليس بوابة تجارية ولا يقبل مفتاحًا أو سرًا من العميل.
+      operationId: simulatePlatformPaymentEvent
+      x-permission: subscriptions.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: paymentId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PlatformPaymentSimulationRequest' } } }
+      responses:
+        '202':
+          description: نتيجة معالجة webhook التطويري الموقع
+          content: { application/json: { schema: { $ref: '#/components/schemas/PlatformPaymentWebhookResult' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/PaymentProviderUnavailable' }
         '500': { $ref: '#/components/responses/InternalError' }
   /users:
     get:
@@ -9648,6 +9946,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Problem'
+    PaymentProviderUnavailable:
+      description: مزود الدفع المركب غير متاح أو رفض تنفيذ العملية مؤقتًا
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Problem'
     RateLimited:
       description: تم تجاوز معدل الطلبات
       headers:
@@ -10892,6 +11196,155 @@ components:
                   displayName: { type: string, minLength: 1, maxLength: 160 }
               updatedAt: { type: string, format: date-time }
         meta: { $ref: '#/components/schemas/PaginationMeta' }
+    PlatformElectronicPaymentState:
+      type: string
+      enum: [CHECKOUT, PENDING, PAID, FAILED, CANCELLED, REFUNDED]
+    PlatformPaymentEnvironment:
+      type: string
+      enum: [DEVELOPMENT, SANDBOX, LIVE]
+    PlatformPaymentProviderCapabilities:
+      type: object
+      additionalProperties: false
+      required: [available, provider, environment]
+      properties:
+        available: { type: boolean }
+        provider: { type: string, minLength: 1, maxLength: 64 }
+        environment: { $ref: '#/components/schemas/PlatformPaymentEnvironment' }
+    PlatformPaymentCheckoutRequest:
+      type: object
+      additionalProperties: false
+      required: [invoiceVersion]
+      properties:
+        invoiceVersion: { type: integer, minimum: 0 }
+    PlatformPaymentVersionRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: { type: integer, minimum: 0 }
+    PlatformPaymentSimulationRequest:
+      type: object
+      additionalProperties: false
+      required: [eventType]
+      properties:
+        eventType:
+          type: string
+          enum: [PAYMENT_PENDING, PAYMENT_PAID, PAYMENT_FAILED, PAYMENT_CANCELLED, PAYMENT_REFUNDED]
+    PlatformElectronicPaymentRefundRequest:
+      type: object
+      additionalProperties: false
+      required: [version, reason]
+      properties:
+        version: { type: integer, minimum: 0 }
+        reason: { type: string, x-trim: true, minLength: 3, maxLength: 500 }
+    PlatformElectronicPayment:
+      type: object
+      additionalProperties: false
+      required: [id, companyId, invoiceId, invoiceNumber, state, provider, environment, currencyCode, amount, amountMinor, checkoutUrl, version, lastFailureCode, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        companyId: { type: string, pattern: '^[1-9][0-9]*$' }
+        companyName: { type: string, minLength: 1, maxLength: 200 }
+        invoiceId: { type: string, format: uuid }
+        invoiceNumber: { type: string, minLength: 1, maxLength: 60 }
+        state: { $ref: '#/components/schemas/PlatformElectronicPaymentState' }
+        provider: { type: string, minLength: 1, maxLength: 64 }
+        environment: { $ref: '#/components/schemas/PlatformPaymentEnvironment' }
+        currencyCode: { type: string, enum: [SAR, USD, YER] }
+        amount: { type: string, pattern: '^(?:0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        amountMinor: { type: string, pattern: '^[1-9][0-9]*$' }
+        checkoutUrl:
+          oneOf: [{ type: string, minLength: 1, maxLength: 2048 }, { type: 'null' }]
+        version: { type: integer, minimum: 0 }
+        lastFailureCode:
+          oneOf: [{ type: string, minLength: 1, maxLength: 100 }, { type: 'null' }]
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PlatformElectronicPaymentResult:
+      type: object
+      additionalProperties: false
+      required: [payment]
+      properties:
+        payment: { $ref: '#/components/schemas/PlatformElectronicPayment' }
+    PlatformElectronicPaymentPage:
+      type: object
+      additionalProperties: false
+      required: [provider, items, meta]
+      properties:
+        provider: { $ref: '#/components/schemas/PlatformPaymentProviderCapabilities' }
+        items:
+          type: array
+          maxItems: 25
+          items: { $ref: '#/components/schemas/PlatformElectronicPayment' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    CompanySubscriptionBillingInvoice:
+      type: object
+      additionalProperties: false
+      required: [id, invoiceNumber, status, issueDate, dueDate, currencyCode, totalAmount, paidAmount, refundedAmount, balance, version, latestPaymentState]
+      properties:
+        id: { type: string, format: uuid }
+        invoiceNumber: { type: string, minLength: 1, maxLength: 60 }
+        status: { type: string, enum: [ISSUED, PAID, OVERDUE, VOID] }
+        issueDate: { type: string, format: date }
+        dueDate: { type: string, format: date }
+        currencyCode: { type: string, pattern: '^[A-Z]{3}$' }
+        totalAmount: { type: string, pattern: '^(?:0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        paidAmount: { type: string, pattern: '^(?:0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        refundedAmount: { type: string, pattern: '^(?:0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        balance: { type: string, pattern: '^(?:0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        version: { type: integer, minimum: 0 }
+        latestPaymentState:
+          oneOf: [{ $ref: '#/components/schemas/PlatformElectronicPaymentState' }, { type: 'null' }]
+    CompanySubscriptionBillingInvoicePage:
+      type: object
+      additionalProperties: false
+      required: [provider, items, meta]
+      properties:
+        provider: { $ref: '#/components/schemas/PlatformPaymentProviderCapabilities' }
+        items:
+          type: array
+          maxItems: 25
+          items: { $ref: '#/components/schemas/CompanySubscriptionBillingInvoice' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    PlatformElectronicPaymentRefundResult:
+      type: object
+      additionalProperties: false
+      required: [refundId, state]
+      properties:
+        refundId: { type: string, format: uuid }
+        state: { type: string, enum: [PENDING, SUCCEEDED, FAILED] }
+    PlatformPaymentWebhookResult:
+      type: object
+      additionalProperties: false
+      required: [accepted, duplicate, result]
+      properties:
+        accepted: { type: boolean, const: true }
+        duplicate: { type: boolean }
+        result: { type: string, minLength: 1, maxLength: 100 }
+    DevelopmentPlatformPaymentWebhookPayload:
+      type: object
+      additionalProperties: false
+      description: عقد wire خاص بـadapter التطوير/الاختبار؛ لا يمثل عقد مزود تجاري.
+      required: [id, type, environment, occurredAt, data]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 160 }
+        type:
+          type: string
+          enum: [payment.pending, payment.paid, payment.failed, payment.cancelled, payment.refunded]
+        environment: { type: string, const: development }
+        occurredAt: { type: string, format: date-time }
+        data:
+          type: object
+          additionalProperties: false
+          required: [providerCheckoutId, amountMinor, currencyCode]
+          properties:
+            providerCheckoutId: { type: string, minLength: 1, maxLength: 160 }
+            providerPaymentId:
+              oneOf: [{ type: string, minLength: 1, maxLength: 160 }, { type: 'null' }]
+            providerRefundId:
+              oneOf: [{ type: string, minLength: 1, maxLength: 160 }, { type: 'null' }]
+            amountMinor: { type: string, pattern: '^(?:0|[1-9][0-9]*)$' }
+            currencyCode: { type: string, pattern: '^[A-Z]{3}$' }
     PlatformBillingAccountRequest:
       type: object
       additionalProperties: false
@@ -10955,6 +11408,8 @@ components:
         periodStart: { type: string, format: date }
         periodEnd: { type: string, format: date }
         issueDate: { type: string, format: date }
+        subscriptionChangeId:
+          oneOf: [{ type: string, format: uuid }, { type: 'null' }]
         notes:
           oneOf: [{ type: string, x-trim: true, minLength: 1, maxLength: 1000 }, { type: 'null' }]
         adjustments:
@@ -11016,11 +11471,19 @@ components:
     PlatformBillingInvoice:
       type: object
       additionalProperties: false
-      required: [id, companyId, billingAccountId, invoiceNumber, state, status, periodStart, periodEnd, issueDate, dueDate, currencyCode, usage, subtotal, taxRate, taxAmount, totalAmount, paidAmount, balance, notes, version, voidedAt, voidReason, createdAt, lines, paymentCount, payments]
+      required: [id, companyId, billingAccountId, subscriptionId, planVersionId, subscriptionChangeId, planDisplayNameSnapshot, invoiceNumber, state, status, periodStart, periodEnd, issueDate, dueDate, currencyCode, usage, subtotal, taxRate, taxAmount, totalAmount, paidAmount, balance, notes, version, voidedAt, voidReason, createdAt, lines, paymentCount, payments]
       properties:
         id: { type: string, format: uuid }
         companyId: { type: string, pattern: '^[1-9][0-9]*$' }
         billingAccountId: { type: string, pattern: '^[1-9][0-9]*$' }
+        subscriptionId:
+          oneOf: [{ type: string, pattern: '^[1-9][0-9]*$' }, { type: 'null' }]
+        planVersionId:
+          oneOf: [{ type: string, pattern: '^[1-9][0-9]*$' }, { type: 'null' }]
+        subscriptionChangeId:
+          oneOf: [{ type: string, pattern: '^[1-9][0-9]*$' }, { type: 'null' }]
+        planDisplayNameSnapshot:
+          oneOf: [{ type: string, minLength: 1, maxLength: 160 }, { type: 'null' }]
         invoiceNumber: { type: string, minLength: 1, maxLength: 60 }
         state: { type: string, enum: [ISSUED, VOID] }
         status: { type: string, enum: [ISSUED, PARTIALLY_PAID, PAID, OVERDUE, VOID] }

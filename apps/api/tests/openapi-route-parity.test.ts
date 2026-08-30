@@ -35,6 +35,7 @@ import { createProfessionalBillingRouter } from '../src/projects/professional-bi
 import { createProfessionalProjectAccessRouter } from '../src/projects/professional-project-access-router.js';
 import { createHrRouter } from '../src/hr/hr-router.js';
 import { createPlatformOperationsRouter } from '../src/platform-operations/platform-operations-router.js';
+import { createPlatformPaymentRouter } from '../src/platform-operations/payments/platform-payment-router.js';
 import { createPlatformSubscriptionRouter } from '../src/platform-subscriptions/platform-subscription-router.js';
 
 type RouteLayer = {
@@ -50,6 +51,7 @@ const routers = [
   { prefix: '/auth/password', router: createPasswordResetRouter(stub, stub) },
   { prefix: '/auth/register', router: createRegistrationRouter(stub, stub) },
   { prefix: '', router: createPlatformOperationsRouter(stub, stub, stub) },
+  { prefix: '', router: createPlatformPaymentRouter(stub, stub) },
   { prefix: '', router: createPlatformSubscriptionRouter(stub, stub, stub) },
   { prefix: '', router: createUserRouter(stub, stub, stub) },
   { prefix: '', router: createCompanyRouter(stub, stub) },
@@ -90,7 +92,7 @@ function normalizePath(path: string) {
 }
 
 function implementationOperations() {
-  const operations = new Set(['GET /health', 'GET /metrics']);
+  const operations = new Set(['GET /health', 'GET /metrics', 'POST /platform/payment-webhooks/{}']);
   for (const { prefix, router } of routers) {
     for (const layer of (router as unknown as { stack: RouteLayer[] }).stack) {
       if (!layer.route) continue;

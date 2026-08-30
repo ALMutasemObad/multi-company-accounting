@@ -11,6 +11,7 @@ import type { AuditAppendPort } from "../platform/audit-append-port.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
 import type { PlatformAnalyticsQueryPort, PlatformCompanyUsage } from "./platform-operations-ports.js";
 import type { PlatformOperationsService } from "./platform-operations-service.js";
+import type { PlatformBillingSubscriptionSnapshotPort } from "../platform-subscriptions/platform-billing-subscription-snapshot-port.js";
 
 export type PlatformBillingFailureReason =
   | "NOT_FOUND"
@@ -19,10 +20,12 @@ export type PlatformBillingFailureReason =
   | "INVALID_ACCOUNT_STATE"
   | "ACCOUNT_NOT_CONFIGURED"
   | "CURRENCY_CHANGE_WITH_HISTORY"
+  | "BILLING_CURRENCY_MISMATCH"
   | "PERIOD_ALREADY_INVOICED"
   | "VERSION_CONFLICT"
   | "INVOICE_NOT_OPEN"
   | "INVOICE_HAS_PAYMENTS"
+  | "INVOICE_HAS_ACTIVE_CHECKOUT"
   | "PAYMENT_EXCEEDS_BALANCE"
   | "IDEMPOTENCY_MISMATCH"
   | "IDEMPOTENCY_IN_PROGRESS";
@@ -59,6 +62,7 @@ export type PlatformInvoiceInput = {
   issueDate: string;
   notes?: string | null | undefined;
   adjustments: Array<{ description: string; amount: string }>;
+  subscriptionChangeId?: string | null | undefined;
   idempotencyKey: string;
 };
 
@@ -177,11 +181,23 @@ const invoicePaymentRowsSql = (where: Prisma.Sql) => Prisma.sql`
     invoice.state,
     invoice.due_date,
     invoice.total_amount,
-    COALESCE(SUM(payment.amount), 0) AS paid_amount
+    GREATEST(COALESCE(payment.paid_amount, 0) - COALESCE(refund.refunded_amount, 0), 0) AS paid_amount
   FROM platform_billing_invoices AS invoice
-  LEFT JOIN platform_billing_payments AS payment
-    ON payment.invoice_id = invoice.id
-   AND payment.company_id = invoice.company_id
+  LEFT JOIN (
+    SELECT company_id, invoice_id, SUM(amount) AS paid_amount
+    FROM platform_billing_payments
+    GROUP BY company_id, invoice_id
+  ) AS payment
+    ON payment.invoice_id = invoice.id AND payment.company_id = invoice.company_id
+  LEFT JOIN (
+    SELECT payment.company_id, payment.invoice_id, SUM(refund.amount) AS refunded_amount
+    FROM platform_billing_refunds AS refund
+    INNER JOIN platform_billing_payments AS payment
+      ON payment.id = refund.payment_id AND payment.company_id = refund.company_id
+    WHERE refund.state = 'SUCCEEDED'
+    GROUP BY payment.company_id, payment.invoice_id
+  ) AS refund
+    ON refund.invoice_id = invoice.id AND refund.company_id = invoice.company_id
   WHERE ${where}
   GROUP BY
     invoice.id,
@@ -189,7 +205,9 @@ const invoicePaymentRowsSql = (where: Prisma.Sql) => Prisma.sql`
     invoice.billing_account_id,
     invoice.state,
     invoice.due_date,
-    invoice.total_amount
+    invoice.total_amount,
+    payment.paid_amount,
+    refund.refunded_amount
 `;
 
 const accountFinancialAggregatesSql = (where: Prisma.Sql, today: Date) => Prisma.sql`
@@ -264,6 +282,10 @@ function invoiceJson(
     id: invoice.publicId,
     companyId: invoice.companyId.toString(),
     billingAccountId: invoice.billingAccountId.toString(),
+    subscriptionId: invoice.subscriptionId?.toString() ?? null,
+    planVersionId: invoice.planVersionId?.toString() ?? null,
+    subscriptionChangeId: invoice.subscriptionChangeId?.toString() ?? null,
+    planDisplayNameSnapshot: invoice.planDisplayNameSnapshot,
     invoiceNumber: invoice.invoiceNumber,
     state: invoice.state,
     status: invoiceStatus(invoice, paid, now),
@@ -379,6 +401,7 @@ export class PlatformBillingService {
     private readonly analytics: PlatformAnalyticsQueryPort,
     private readonly audit: AuditAppendPort,
     private readonly now: () => Date = () => new Date(),
+    private readonly subscriptionSnapshots?: PlatformBillingSubscriptionSnapshotPort,
   ) {
     this.commands = new IdempotentCommandExecutor(prisma);
   }
@@ -491,15 +514,27 @@ export class PlatformBillingService {
       }),
       this.companyBillingAggregate(companyId, now),
     ]);
-    const paymentAggregates = invoices.length
-      ? await this.prisma.platformBillingPayment.groupBy({
-        by: ["invoiceId"],
-        where: { companyId, invoiceId: { in: invoices.map((invoice) => invoice.id) } },
-        _sum: { amount: true },
-        _count: { _all: true },
-      })
-      : [];
+    const invoiceIds = invoices.map((invoice) => invoice.id);
+    const [paymentAggregates, succeededRefunds] = invoices.length
+      ? await Promise.all([
+        this.prisma.platformBillingPayment.groupBy({
+          by: ["invoiceId"],
+          where: { companyId, invoiceId: { in: invoiceIds } },
+          _sum: { amount: true },
+          _count: { _all: true },
+        }),
+        this.prisma.platformBillingRefund.findMany({
+          where: { companyId, state: "SUCCEEDED", payment: { invoiceId: { in: invoiceIds } } },
+          select: { amount: true, payment: { select: { invoiceId: true } } },
+        }),
+      ])
+      : [[], []] as const;
     const paymentsByInvoice = new Map(paymentAggregates.map((payment) => [payment.invoiceId.toString(), payment]));
+    const refundedByInvoice = new Map<string, Prisma.Decimal>();
+    for (const refund of succeededRefunds) {
+      const key = refund.payment.invoiceId.toString();
+      refundedByInvoice.set(key, (refundedByInvoice.get(key) ?? money(0)).plus(refund.amount));
+    }
     return {
       company: reference,
       account: account ? accountJson(account) : null,
@@ -507,7 +542,10 @@ export class PlatformBillingService {
       invoices: invoices.map((invoice) => {
         const payments = paymentsByInvoice.get(invoice.id.toString());
         return invoiceJson(invoice, now, {
-          paid: payments?._sum.amount ?? money(0),
+          paid: Prisma.Decimal.max(
+            money(0),
+            money(payments?._sum.amount ?? 0).minus(refundedByInvoice.get(invoice.id.toString()) ?? money(0)),
+          ),
           count: payments?._count._all ?? 0,
         });
       }),
@@ -594,15 +632,31 @@ export class PlatformBillingService {
         if (await tx.platformBillingInvoice.findUnique({ where: { companyId_periodStart_periodEnd: { companyId, periodStart, periodEnd } }, select: { id: true } })) {
           throw new PlatformBillingError("PERIOD_ALREADY_INVOICED");
         }
-        const calculation = calculatePlatformInvoice(account, usage, input.adjustments);
+        const subscriptionSnapshot = await this.subscriptionSnapshots?.resolve(tx, {
+          companyId,
+          subscriptionChangePublicId: input.subscriptionChangeId,
+          asOf: issueDate,
+        }) ?? null;
+        if (input.subscriptionChangeId && !subscriptionSnapshot) throw new PlatformBillingError("NOT_FOUND");
+        if (subscriptionSnapshot && subscriptionSnapshot.currencyCode !== account.currencyCode) {
+          throw new PlatformBillingError("BILLING_CURRENCY_MISMATCH");
+        }
+        const pricing = subscriptionSnapshot ?? account;
+        const calculation = calculatePlatformInvoice(pricing, usage, input.adjustments);
         const invoice = await tx.platformBillingInvoice.create({
           data: {
             companyId, billingAccountId: account.id, invoiceNumber: `TMP-${randomUUID()}`,
-            periodStart, periodEnd, issueDate, dueDate: addDays(issueDate, account.paymentTermsDays),
+            ...(subscriptionSnapshot ? {
+              subscriptionId: subscriptionSnapshot.subscriptionId,
+              planVersionId: subscriptionSnapshot.planVersionId,
+              subscriptionChangeId: subscriptionSnapshot.subscriptionChangeId,
+              planDisplayNameSnapshot: subscriptionSnapshot.planDisplayName,
+            } : {}),
+            periodStart, periodEnd, issueDate, dueDate: addDays(issueDate, pricing.paymentTermsDays),
             currencyCode: account.currencyCode,
             usageUsers: usage.users, usageEmployees: usage.employees,
             usagePostedDocuments: usage.postedDocuments, usageOperations: usage.operations,
-            subtotal: calculation.subtotal, taxRateSnapshot: account.taxRate,
+            subtotal: calculation.subtotal, taxRateSnapshot: pricing.taxRate,
             taxAmount: calculation.taxAmount, totalAmount: calculation.totalAmount,
             notes: input.notes ?? null, issuedById: userId,
             lines: { create: calculation.lines.map((line, index) => ({
@@ -616,7 +670,12 @@ export class PlatformBillingService {
         await this.audit.append(tx, {
           companyId, actorUserId: userId, action: "PLATFORM_BILLING_INVOICE_ISSUED",
           entityType: "PLATFORM_BILLING_INVOICE", entityId: invoice.publicId,
-          details: { invoiceNumber, periodStart: input.periodStart, periodEnd: input.periodEnd, totalAmount: calculation.totalAmount.toFixed(4), currencyCode: account.currencyCode, usage },
+          details: {
+            invoiceNumber, periodStart: input.periodStart, periodEnd: input.periodEnd,
+            totalAmount: calculation.totalAmount.toFixed(4), currencyCode: account.currencyCode, usage,
+            subscriptionChangeId: input.subscriptionChangeId ?? null,
+            planVersionId: subscriptionSnapshot?.planVersionId.toString() ?? null,
+          },
         });
         const saved = await tx.platformBillingInvoice.findUniqueOrThrow({
           where: { id: invoice.id },
@@ -648,12 +707,26 @@ export class PlatformBillingService {
       if (!invoice) throw new PlatformBillingError("NOT_FOUND");
       if (invoice.state !== "ISSUED") throw new PlatformBillingError("INVOICE_NOT_OPEN");
       if (invoice.version !== input.invoiceVersion) throw new PlatformBillingError("VERSION_CONFLICT");
-      const existingPayments = await tx.platformBillingPayment.aggregate({
-        where: { companyId: invoice.companyId, invoiceId: invoice.id },
-        _sum: { amount: true },
-        _count: { _all: true },
-      });
-      const paidBefore = money(existingPayments._sum.amount ?? 0);
+      const [existingPayments, succeededRefunds, activeCheckout] = await Promise.all([
+        tx.platformBillingPayment.aggregate({
+          where: { companyId: invoice.companyId, invoiceId: invoice.id },
+          _sum: { amount: true },
+          _count: { _all: true },
+        }),
+        tx.platformBillingRefund.aggregate({
+          where: { companyId: invoice.companyId, state: "SUCCEEDED", payment: { invoiceId: invoice.id } },
+          _sum: { amount: true },
+        }),
+        tx.platformPaymentAttempt.findFirst({
+          where: { companyId: invoice.companyId, invoiceId: invoice.id, state: { in: ["CHECKOUT", "PENDING"] } },
+          select: { id: true },
+        }),
+      ]);
+      if (activeCheckout) throw new PlatformBillingError("INVOICE_HAS_ACTIVE_CHECKOUT");
+      const paidBefore = Prisma.Decimal.max(
+        money(0),
+        money(existingPayments._sum.amount ?? 0).minus(succeededRefunds._sum.amount ?? money(0)),
+      );
       const balance = invoice.totalAmount.minus(paidBefore);
       if (amount.gt(balance)) throw new PlatformBillingError("PAYMENT_EXCEEDS_BALANCE");
       const payment = await tx.platformBillingPayment.create({ data: {
@@ -698,6 +771,9 @@ export class PlatformBillingService {
       if (await tx.platformBillingPayment.count({
         where: { companyId: invoice.companyId, invoiceId: invoice.id },
       })) throw new PlatformBillingError("INVOICE_HAS_PAYMENTS");
+      if (await tx.platformPaymentAttempt.count({
+        where: { companyId: invoice.companyId, invoiceId: invoice.id },
+      })) throw new PlatformBillingError("INVOICE_HAS_ACTIVE_CHECKOUT");
       const voidedAt = this.now();
       const changed = await tx.platformBillingInvoice.updateMany({
         where: { id: invoice.id, companyId: invoice.companyId, state: "ISSUED", version: input.version },

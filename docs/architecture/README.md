@@ -1,7 +1,7 @@
 ---
 title: "Architecture Governance Index"
 status: "mandatory"
-last_updated: "2026-08-29"
+last_updated: "2026-08-30"
 ---
 
 # فهرس الحوكمة المعمارية
@@ -71,6 +71,7 @@ last_updated: "2026-08-29"
 56. [شريحة إخراج ملصق الباركود B2](BARCODE_LABEL_RENDERING_B2_AR.md): ملكية Printing للتوليد، ومنفذ قراءة Inventory، والبروفايل الثابت، وتقييم اعتماد `@bwip-js/node` وخطة الخروج.
 57. [إنفاذ قدرات اشتراك الشركة SUB-2](PLATFORM_SUBSCRIPTION_CAPABILITY_ENFORCEMENT_AR.md): تقاطع الاستحقاق المؤرخ مع RBAC وحواجز التفعيل في الخادم، وعقد `/auth/me` ووعي التنقل والأفعال بالموديولات، وحفظ grandfathering للشركات الجديدة.
 58. [مركز الخطط ودورة حياة الاشتراك SUB-3](PLATFORM_SUBSCRIPTION_LIFECYCLE_SUB3_AR.md): إدارة DRAFT/PUBLISH الثابتة، والقوالب غير المسعرة، وتغييرات الاشتراك المؤرخة والمعلقة، وإغلاق اعتماديات الموديولات، وصفحتا المشغل والمالك من دون مزود دفع.
+59. [أساس الدفع الإلكتروني وفوترة الاشتراك SUB-4](PLATFORM_ELECTRONIC_PAYMENTS_SUB4_AR.md): ملكية الدفع لدى Platform Operations & Billing، ودورة Attempt/Checkout/Webhook/Refund، والعملات وminor units والرجوع المحروس، مع توضيح أن Adapter التطوير وAPI والواجهة ما زالت مراحل لاحقة.
 
 التقرير [ARCHITECTURE_AUDIT_DDD_EVENT_DRIVEN_AR.md](../ARCHITECTURE_AUDIT_DDD_EVENT_DRIVEN_AR.md) وثيقة تقييم وأدلة، وليس بديلًا عن القرارات الحاكمة أعلاه.
 

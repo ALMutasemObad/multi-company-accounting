@@ -7,6 +7,7 @@ import {
 import type { AuditAppendPort } from "../platform/audit-append-port.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
 import { TransactionExecutor } from "../platform/transaction-executor.js";
+import type { PlatformSubscriptionPaymentEvidencePort } from "./platform-subscription-payment-evidence-port.js";
 
 export const SUBSCRIPTION_DEFAULT_PAGE_SIZE = 20;
 export const SUBSCRIPTION_MAX_PAGE_SIZE = 100;
@@ -32,6 +33,7 @@ export type SubscriptionFailureReason =
   | "CHANGE_ALREADY_SCHEDULED"
   | "CHANGE_ALREADY_PENDING"
   | "INVALID_CHANGE_STATE"
+  | "PAYMENT_REQUIRED"
   | "INVALID_EFFECTIVE_AT"
   | "IDEMPOTENCY_MISMATCH"
   | "IDEMPOTENCY_IN_PROGRESS";
@@ -596,6 +598,7 @@ export class PlatformSubscriptionLifecycleService {
     private readonly operatorAuthorization: PlatformSubscriptionOperatorAuthorizationPort,
     private readonly audit: AuditAppendPort,
     private readonly now: () => Date = () => new Date(),
+    private readonly paymentEvidence?: PlatformSubscriptionPaymentEvidencePort,
   ) {
     this.commands = new IdempotentCommandExecutor(prisma);
   }
@@ -837,9 +840,18 @@ export class PlatformSubscriptionLifecycleService {
       if (!input.effectiveAt) throw new PlatformSubscriptionError("INVALID_EFFECTIVE_AT");
       const effectiveAt = new Date(input.effectiveAt);
       if (!Number.isFinite(effectiveAt.getTime()) || effectiveAt < this.now()) throw new PlatformSubscriptionError("INVALID_EFFECTIVE_AT");
+      const paymentCollected = change.totalRecurringFee.eq(0) || await this.paymentEvidence?.hasSettledPayment(tx, {
+        companyId: change.companyId,
+        subscriptionChangeId: change.id,
+        amount: change.totalRecurringFee,
+        currencyCode: change.currencyCode,
+      }) === true;
+      if (!paymentCollected) throw new PlatformSubscriptionError("PAYMENT_REQUIRED");
       const optionalIds = change.modules.filter((module) => module.selectionMode === "OPTIONAL").map((module) => module.moduleId);
       const bundle = await loadBundle(tx, change.targetPlanVersionId, optionalIds, effectiveAt);
-      return this.applyApprovedLocked(tx, subscription, actor.userId, bundle, effectiveAt, "COMPANY_OWNER", change.id, input.reason);
+      return this.applyApprovedLocked(
+        tx, subscription, actor.userId, bundle, effectiveAt, "COMPANY_OWNER", change.id, input.reason, paymentCollected,
+      );
     });
   }
 
@@ -863,6 +875,7 @@ export class PlatformSubscriptionLifecycleService {
     source: "PLATFORM_OPERATOR" | "COMPANY_OWNER",
     existingChangeId: bigint | null,
     decisionReason: string | null = null,
+    paymentCollected = false,
   ) {
     const scheduled = await tx.platformSubscriptionChange.findFirst({
       where: { companyId: subscription.companyId, state: "APPROVED", effectiveAt: { gt: this.now() }, ...(existingChangeId ? { id: { not: existingChangeId } } : {}) },
@@ -918,10 +931,10 @@ export class PlatformSubscriptionLifecycleService {
       details: {
         targetPlanVersionId: bundle.version.id.toString(), effectiveAt: effectiveAt.toISOString(),
         subscriptionVersion: subscription.version + 1, totalRecurringFee: bundle.totalFee.toFixed(4),
-        paymentCollected: false,
+        paymentCollected,
       },
     });
-    return { change: changeJson(change), subscriptionVersion: subscription.version + 1, paymentCollected: false };
+    return { change: changeJson(change), subscriptionVersion: subscription.version + 1, paymentCollected };
   }
 
   private async assertTrialAvailable(tx: Prisma.TransactionClient, subscriptionId: bigint, trialDays: number) {

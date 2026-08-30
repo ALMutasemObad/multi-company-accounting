@@ -110,6 +110,11 @@ import type {
   PlatformSubscriptionLifecycleService,
 } from './platform-subscriptions/platform-subscription-service.js';
 import { createPlatformSubscriptionRouter } from './platform-subscriptions/platform-subscription-router.js';
+import type { PlatformPaymentService } from './platform-operations/payments/platform-payment-service.js';
+import {
+  createPlatformPaymentRouter,
+  createPlatformPaymentWebhookHandler,
+} from './platform-operations/payments/platform-payment-router.js';
 
 type ClientRequestProblem = {
   status: number;
@@ -163,6 +168,7 @@ export type AppServices = {
   platformBilling?: PlatformBillingService;
   platformSubscriptionCatalog?: PlatformSubscriptionCatalogService;
   platformSubscriptionLifecycle?: PlatformSubscriptionLifecycleService;
+  platformPayments?: PlatformPaymentService;
   companies?: CompanyService;
   printing?: PrintService;
   barcodeLabels?: BarcodeLabelService;
@@ -221,8 +227,26 @@ export function createApp(config: AppConfig, services: AppServices = {}) {
     registrationWriteDeadlineMs: config.API_REGISTRATION_WRITE_DEADLINE_MS ?? 65_000,
     metrics,
   }));
-  app.use(express.json({ limit: '1mb' }));
   if (config.NODE_ENV !== 'production') app.use(createOpenApiResponseValidator());
+  if (services.platformPayments) {
+    app.post(
+      '/api/v1/platform/payment-webhooks/:providerCode',
+      createRateLimiter({
+        scope: 'platform-payment-webhook-network',
+        windowMs: config.RATE_LIMIT_WINDOW_MS ?? 60_000,
+        max: (config.RATE_LIMIT_MAX ?? 300) * (config.RATE_LIMIT_NETWORK_MULTIPLIER ?? 10),
+        metrics,
+      }),
+      (_request, response, next) => {
+        response.setHeader('Cache-Control', 'no-store');
+        response.setHeader('Pragma', 'no-cache');
+        next();
+      },
+      express.raw({ type: 'application/json', limit: '256kb' }),
+      createPlatformPaymentWebhookHandler(services.platformPayments),
+    );
+  }
+  app.use(express.json({ limit: '1mb' }));
 
   if (config.METRICS_ENABLED) {
     app.get('/metrics', (request, response) => {
@@ -332,6 +356,9 @@ export function createApp(config: AppConfig, services: AppServices = {}) {
       services.platformSubscriptionCatalog,
       services.platformSubscriptionLifecycle,
     ));
+  }
+  if (services.auth && services.platformPayments) {
+    app.use('/api/v1', createPlatformPaymentRouter(services.auth, services.platformPayments));
   }
   if (services.auth && services.users && services.workforceAccess) app.use('/api/v1', createUserRouter(services.auth, services.users, services.workforceAccess));
   if (services.auth && services.companies) app.use('/api/v1', createCompanyRouter(services.auth, services.companies));
