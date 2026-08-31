@@ -1,7 +1,8 @@
 import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
-  testDir: "./tests/track-r3",
+  testDir: "./tests",
+  testMatch: ["track-r3/*.spec.ts", "e2e/system-home-platform.spec.ts"],
   fullyParallel: false, workers: 1, retries: 0,
   timeout: 45_000, expect: { timeout: 10_000 },
   reporter: [["list"]], outputDir: "tmp/agent/track-r3-results",

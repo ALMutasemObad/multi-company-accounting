@@ -42,17 +42,11 @@ describe("R3 real navigation and isolated evidence", () => {
   });
 
   it("keeps selling setup closed until its explicit permission AND both modules are available", () => {
-    const integrated = access();
-    // R0 owns the central sales_catalog entitlement mapping. Inject its effective
-    // permission to test the approved future composition without editing it here.
-    integrated.permissionSet = new Set([...integrated.permissionSet, "sales_catalog.view"]);
+    const integrated = access([...permissions, "sales_catalog.view"]);
     expect(retailActions(retailSteps[1]!, integrated).find((action) => action.id === "sellingProfile")?.target).toEqual({ view: "inventory", section: "items" });
     expect(retailActions(retailSteps[1]!, access()).some((action) => action.id === "sellingProfile")).toBe(false);
-    integrated.moduleSet = new Set(["INVENTORY"]);
-    expect(retailActions(retailSteps[1]!, integrated).some((action) => action.id === "sellingProfile")).toBe(false);
-    integrated.moduleSet = new Set(modules);
-    integrated.permissionSet = new Set(["sales_catalog.view", "warehouses.view"]);
-    expect(retailActions(retailSteps[1]!, integrated).some((action) => action.id === "sellingProfile")).toBe(false);
+    expect(retailActions(retailSteps[1]!, access([...permissions, "sales_catalog.view"], ["INVENTORY"])).some((action) => action.id === "sellingProfile")).toBe(false);
+    expect(retailActions(retailSteps[1]!, access(["sales_catalog.view", "warehouses.view"])).some((action) => action.id === "sellingProfile")).toBe(false);
   });
 
   it("does not reinterpret a service company or no company as retail", () => {

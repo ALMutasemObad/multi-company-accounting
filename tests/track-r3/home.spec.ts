@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 const modules = ["SALES", "INVENTORY", "TREASURY", "POS", "REPORTING", "CORE_ACCOUNTING", "PURCHASES"];
-const permissions = ["warehouses.view", "inventory_catalog.view", "inventory_movements.view", "inventory_barcodes.view", "cash_bank_accounts.view", "pos.view", "pos.checkout", "settings.manage", "companies.view", "currencies.view", "fiscal_periods.view", "sales_invoices.view", "receipts.view", "reports.cash_flow.view", "purchase_invoices.view", "suppliers.view"];
+const permissions = ["warehouses.view", "inventory_catalog.view", "inventory_movements.view", "inventory_barcodes.view", "cash_bank_accounts.view", "pos.view", "pos.checkout", "settings.manage", "companies.view", "currencies.view", "fiscal_periods.view", "sales_invoices.view", "receipts.view", "reports.cash_flow.view", "purchase_invoices.view", "suppliers.view", "sales_catalog.view"];
 const company = { id: "1", name: "R3 Test Grocery · بقالة اختبار", timezone: "Asia/Riyadh" };
 const evidencePaths = ["/warehouses", "/units-of-measure", "/inventory-items", "/inventory-balances", "/cash-bank-accounts"];
 const labels = {
@@ -51,6 +51,7 @@ for (const locale of ["ar", "en", "ur", "hi"] as const) {
       expect(evidence).toEqual([]);
       await guide.getByRole("button", { name: labels[locale].catalog, exact: true }).click();
       await expect(guide.locator("[data-fact=items]")).toHaveAttribute("data-state", "notChecked");
+      await expect(guide.locator("[data-setup-action=sellingProfile]")).toBeVisible();
       await guide.getByRole("button", { name: labels[locale].check }).click();
       await expect(guide.locator("[data-fact=items]")).toHaveAttribute("data-state", "found");
       await expect(guide.locator(".retail-review-label")).toHaveText(labels[locale].review);
@@ -89,6 +90,16 @@ test("cashier-only and POS viewer do not see or request protected setup resource
   await expect(home).toContainText("No action is available");
   expect(commands).toEqual([]); expect(evidence).toEqual([]);
 });
+
+for (const missing of ["sales_catalog.view", "inventory_catalog.view", "warehouses.view", "SALES"]) {
+  test(`selling setup remains hidden without ${missing}`, async ({ page }) => {
+    const { evidence } = await setup(page, { permissions: permissions.filter((value) => value !== missing), modules: modules.filter((value) => value !== missing) });
+    await page.goto("/#home");
+    await page.locator(".retail-step-list button").nth(1).click();
+    await expect(page.locator("[data-setup-action=sellingProfile]")).toHaveCount(0);
+    expect(evidence).toEqual([]);
+  });
+}
 
 test("hidden modules remove their shortcuts and reads even with stale RBAC grants", async ({ page }) => {
   const { evidence } = await setup(page, { modules: ["POS"] });

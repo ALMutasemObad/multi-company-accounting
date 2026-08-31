@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["track-r3/**/*.tsx", "vite.track-r3.config.ts", "vitest.track-r3.config.ts"]
+}

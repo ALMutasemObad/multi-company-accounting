@@ -36,5 +36,7 @@ test("optional target callback preserves section, while fallback opens only the 
   await page.getByRole("button", { name: "Connect section callback" }).click();
   await page.locator("[data-setup-action=items]").click();
   await expect(page.getByTestId("navigation-target")).toHaveText('{"view":"inventory","section":"items"}');
+  await page.locator("[data-setup-action=sellingProfile]").click();
+  await expect(page.getByTestId("navigation-target")).toHaveText('{"view":"inventory","section":"items"}');
   await expect(page.locator(".retail-destination-note")).toHaveCount(0);
 });
