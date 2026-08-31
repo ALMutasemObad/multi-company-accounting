@@ -127,8 +127,8 @@ test("empty evidence is explicitly scoped to the last check; revisiting never co
   await page.locator(".retail-step-list button").nth(1).click();
   await expect(page.locator("[data-fact=items]")).toHaveAttribute("data-state", "empty");
   await page.locator("[data-setup-action=items]").click();
-  await expect(page).toHaveURL(/#inventory$/u);
-  await expect(page.getByRole("tab", { name: "Warehouses", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(page).toHaveURL(/#inventory\?section=items$/u);
+  await expect(page.getByRole("tab", { name: "Item catalog", exact: true })).toHaveAttribute("aria-selected", "true");
   await page.goto("/#home");
   await page.locator(".retail-step-list button").nth(1).click();
   await expect(page.locator("[data-fact=items]")).toHaveAttribute("data-state", "notChecked");

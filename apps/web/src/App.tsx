@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, logout } from "./api";
 import { localizedBrand } from "./branding";
 import { LanguageSwitcher, useI18n } from "./i18n";
@@ -67,6 +67,7 @@ export default function App() {
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(null);
   const startup = useAuthAction();
   const runStartup = startup.run;
+  const routeScope = useRef<string | null>(null);
 
   useEffect(() => {
     document.title = brand.name;
@@ -81,6 +82,14 @@ export default function App() {
     snapshot: CurrentAuthorization,
     capabilities: PlatformCapabilities,
   ) => {
+    const nextScope = JSON.stringify([snapshot.user.id, snapshot.selectedCompany?.id,
+      [...snapshot.modules].sort(), [...snapshot.permissions].sort()]);
+    if (routeScope.current !== null && routeScope.current !== nextScope) {
+      const pageOnly = { view: parsePageRoute(location.hash).view } as PageRoute;
+      setRoute(pageOnly);
+      replaceHash(pageRouteHash(pageOnly));
+    }
+    routeScope.current = nextScope;
     setAuthorization(snapshot);
     setPlatformOperator(capabilities.platformOperations);
     if (!snapshot.selectedCompany && capabilities.platformOperations) {
@@ -318,7 +327,7 @@ export default function App() {
         </header>
         <main id="main-content" className="content" tabIndex={-1}>
           <Suspense key={`${user.id}:${company?.id ?? "platform"}`} fallback={<div className="loading"><Spinner /><span>{t("app.loadingModule")}</span></div>}>
-            {activeView === "home" && <SystemHomePage onNavigate={navigate} />}
+            {activeView === "home" && <SystemHomePage onNavigate={navigate} onOpenSetupTarget={navigateRoute} />}
             {activeView === "dashboard" && <DashboardPage onNavigate={navigate} />}
             {activeView === "platform" && platformOperator && <PlatformOperationsPage />}
             {activeView === "platformSubscriptions" && platformOperator && <PlatformSubscriptionsPage notify={notify} />}
