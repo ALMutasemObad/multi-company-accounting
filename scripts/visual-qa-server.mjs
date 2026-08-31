@@ -440,6 +440,17 @@ function responseFor(url, method) {
     meta: { ...meta, total: 1, totalPages: 1 }, generatedAt: "2026-08-29T09:00:00.000Z",
   };
   if (pathname === "/subscription/catalog") return { plans: [subscriptionPlanVersion], meta: { ...meta, total: 1, totalPages: 1 } };
+  // Presentation fixture only; no inferred billing period, charge, or quota enforcement.
+  if (pathname === "/subscription/usage") return {
+    companyId: currentAuthorization.selectedCompany.id, measuredAt: "2026-08-31T09:00:00.000Z", consistency: "BEST_EFFORT",
+    plan: { id: subscriptionPlanVersion.id, displayName: subscriptionPlanVersion.displayName, billingCycle: subscriptionPlanVersion.billingCycle },
+    period: { kind: "STATISTICAL_MONTH_TO_DATE", timezone: "UTC", startsAt: "2026-08-01T00:00:00.000Z", endsAtExclusive: "2026-08-31T09:00:00.000Z", billingPeriodStatus: "NOT_CONFIGURED" },
+    metrics: {
+      users: { used: 2, included: 5, remaining: 3, excess: 0, state: "WITHIN_LIMIT", comparisonBasis: "CURRENT_SNAPSHOT", definition: "ACTIVE_COMPANY_USERS" },
+      employees: { used: 10, included: 10, remaining: 0, excess: 0, state: "AT_LIMIT", comparisonBasis: "CURRENT_SNAPSHOT", definition: "ACTIVE_OR_ON_LEAVE_EMPLOYEES" },
+      postedDocuments: { used: 125, included: subscriptionPlanVersion.includedPostedDocuments, remaining: null, excess: null, state: "UNKNOWN", comparisonBasis: "UNCONFIRMED_PERIOD", definition: "DOCUMENTS_POSTED_IN_WINDOW" },
+    },
+  };
   if (pathname === "/subscription/billing/invoices") return {
     provider: visualPaymentProvider,
     items: [visualSubscriptionInvoice],

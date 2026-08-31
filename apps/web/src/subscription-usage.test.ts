@@ -26,13 +26,17 @@ describe("subscription usage reads", () => {
     expect(fetch.mock.calls[0]?.[1].signal.aborted).toBe(true);
   });
   it("propagates unmount/company-change cancellation to the request", async () => {
-    vi.stubGlobal("fetch", (_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+    const fetch = vi.fn((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
       init.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
     }));
+    vi.stubGlobal("fetch", fetch);
     const controller = new AbortController();
     const result = loadSubscriptionUsage("9", controller.signal);
     controller.abort();
-    await expect(result).rejects.toMatchObject({ name: "AbortError" });
+    // The integrated API client normalizes cancellation; the transport still aborts.
+    await expect(result).rejects.toMatchObject({ name: "RequestError", kind: "cancelled" });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch.mock.calls[0]?.[1].signal?.aborted).toBe(true);
   });
   it("maps safe localized errors including throttling without exposing server internals", () => {
     expect(subscriptionUsageError(new ApiError("secret", 403))).toBe("forbidden");

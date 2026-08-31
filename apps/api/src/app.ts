@@ -110,6 +110,8 @@ import type {
   PlatformSubscriptionLifecycleService,
 } from './platform-subscriptions/platform-subscription-service.js';
 import { createPlatformSubscriptionRouter } from './platform-subscriptions/platform-subscription-router.js';
+import type { SubscriptionUsageService } from './platform-subscriptions/subscription-usage-service.js';
+import { createSubscriptionUsageRouter } from './platform-subscriptions/subscription-usage-router.js';
 import type { PlatformPaymentService } from './platform-operations/payments/platform-payment-service.js';
 import {
   createPlatformPaymentRouter,
@@ -168,6 +170,7 @@ export type AppServices = {
   platformBilling?: PlatformBillingService;
   platformSubscriptionCatalog?: PlatformSubscriptionCatalogService;
   platformSubscriptionLifecycle?: PlatformSubscriptionLifecycleService;
+  subscriptionUsage?: SubscriptionUsageService;
   platformPayments?: PlatformPaymentService;
   companies?: CompanyService;
   printing?: PrintService;
@@ -359,6 +362,9 @@ export function createApp(config: AppConfig, services: AppServices = {}) {
   }
   if (services.auth && services.platformPayments) {
     app.use('/api/v1', createPlatformPaymentRouter(services.auth, services.platformPayments));
+  }
+  if (services.auth && services.subscriptionUsage) {
+    app.use('/api/v1', createSubscriptionUsageRouter(services.auth, services.subscriptionUsage));
   }
   if (services.auth && services.users && services.workforceAccess) app.use('/api/v1', createUserRouter(services.auth, services.users, services.workforceAccess));
   if (services.auth && services.companies) app.use('/api/v1', createCompanyRouter(services.auth, services.companies));

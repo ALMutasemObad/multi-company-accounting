@@ -29,7 +29,13 @@ for (const locale of ["ar", "en", "ur", "hi"]) {
     await page.goto("/?qa=owner-after-registration#subscription");
     await expect(page.locator(".subscription-page")).toBeVisible();
     // The public choice (102) is absent from this authenticated catalog: never add a phantom option.
-    await expect(page.locator(".subscription-page select").first()).toHaveValue("2101");
+    await expect(page.locator(".subscription-change-form select")).toHaveValue("");
+    await expect(page.locator(".subscription-catalog-notice")).toBeVisible();
+    await expect(page.locator(".subscription-change-form button[type=submit]")).toBeDisabled();
+    await expect(page.locator(".subscription-usage-grid")).toBeVisible();
+    await page.locator(".subscription-change-form select").selectOption("2101");
+    await expect(page.locator(".subscription-catalog-notice")).toHaveCount(0);
+    await expect(page.locator(".subscription-change-form button[type=submit]")).toBeEnabled();
     expect(apiRequests.some((path) => path.includes("change-requests") || path.includes("checkout"))).toBe(false);
   });
 }
