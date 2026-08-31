@@ -14,6 +14,7 @@ import { enApprovals } from "./approvals";
 import { enProfessionalProjects } from "./professional-projects";
 import { enHumanResources } from "./human-resources";
 import { enSystemHomePlatform } from "./system-home-platform";
+import { enPublicPlans } from "./public-plans";
 
 export const en = {
   ...enDomain,
@@ -29,6 +30,7 @@ export const en = {
   ...enProfessionalProjects,
   ...enHumanResources,
   ...enSystemHomePlatform,
+  ...enPublicPlans,
   "language.label": "Language",
   "branding.name": "Multi-company accounting system",
   "branding.shortName": "Accounting platform",

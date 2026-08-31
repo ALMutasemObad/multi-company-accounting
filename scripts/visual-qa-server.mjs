@@ -396,6 +396,24 @@ function list(data = []) {
 
 function responseFor(url, method) {
   const pathname = url.pathname.replace(/^\/api\/v1/, "");
+  // Visual test data only: this server is never part of an application release.
+  if (pathname === "/public/subscription-plans") return {
+    plans: [
+      { id: "101", displayName: "التجريبية", description: "تعرّف على أدوات المنصة واكتشف كيف تنظم أعمالك.", recurringFee: "0.0000", trialDays: 14, includedUsers: 1, includedEmployees: 2, includedPostedDocuments: 50 },
+      { id: "102", displayName: "الأساسية", description: "أدواتك اليومية لإدارة المبيعات والحسابات في مكان واحد.", recurringFee: "99.0000", trialDays: 0, includedUsers: 5, includedEmployees: 10, includedPostedDocuments: 500 },
+      { id: "103", displayName: "الأعمال", description: "خيارات أوسع للفريق الذي يستعد للمرحلة التالية.", recurringFee: "249.0000", trialDays: 0, includedUsers: 15, includedEmployees: 50, includedPostedDocuments: 2000 },
+    ].map((plan, index) => ({
+      ...plan, billingCycle: "MONTHLY", currencyCode: "SAR", taxRate: "15.0000", requiresApproval: true,
+      pricePerAdditionalUser: index ? "15.0000" : null, pricePerAdditionalEmployee: null, pricePerAdditionalPostedDocument: null,
+      modules: [
+        { code: "CORE_ACCOUNTING", displayName: "المحاسبة الأساسية", selectionMode: "INCLUDED", additionalRecurringFee: null },
+        ...(index ? [{ code: "SALES", displayName: "المبيعات والعملاء", selectionMode: "INCLUDED", additionalRecurringFee: null }] : []),
+        ...(index === 2 ? [{ code: "INVENTORY", displayName: "المخزون والمستودعات", selectionMode: "INCLUDED", additionalRecurringFee: null }] : []),
+        { code: "REPORTING", displayName: "التقارير", selectionMode: "OPTIONAL", additionalRecurringFee: "10.0000" },
+      ],
+    })),
+    meta: { page: 1, pageSize: 9, total: 3, totalPages: 1 },
+  };
   if (pathname === "/auth/csrf") return { csrfToken: "visual-qa-csrf" };
   if (pathname === "/auth/me") return currentAuthorization;
   if (pathname === "/auth/companies") return { data: [company] };

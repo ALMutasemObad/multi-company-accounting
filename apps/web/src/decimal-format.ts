@@ -56,7 +56,9 @@ export function formatCurrencyDecimal(
     style: "currency",
     currency,
     currencyDisplay: options.currencyDisplay ?? "code",
-    minimumFractionDigits,
+    // Format the integer with a fraction slot whenever the exact string has one.
+    // With min=0 Intl would otherwise omit that slot and drop a non-zero fraction.
+    minimumFractionDigits: decimal.fraction.length,
     maximumFractionDigits,
   });
   const integer = BigInt(decimal.integer);

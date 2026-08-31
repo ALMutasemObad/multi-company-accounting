@@ -12,6 +12,7 @@ import { arApprovals } from "./approvals";
 import { arProfessionalProjects } from "./professional-projects";
 import { arHumanResources } from "./human-resources";
 import { arSystemHomePlatform } from "./system-home-platform";
+import { arPublicPlans } from "./public-plans";
 
 export const ar = {
   ...arDomain,
@@ -27,6 +28,7 @@ export const ar = {
   ...arProfessionalProjects,
   ...arHumanResources,
   ...arSystemHomePlatform,
+  ...arPublicPlans,
   "language.label": "اللغة",
   "branding.name": "النظام المحاسبي متعدد الشركات",
   "branding.shortName": "منصة المحاسبة",

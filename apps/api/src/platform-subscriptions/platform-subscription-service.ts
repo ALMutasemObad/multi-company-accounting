@@ -8,6 +8,7 @@ import type { AuditAppendPort } from "../platform/audit-append-port.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
 import { TransactionExecutor } from "../platform/transaction-executor.js";
 import type { PlatformSubscriptionPaymentEvidencePort } from "./platform-subscription-payment-evidence-port.js";
+import { readPublicPlanCatalog } from "./public-plan-catalog.js";
 
 export const SUBSCRIPTION_DEFAULT_PAGE_SIZE = 20;
 export const SUBSCRIPTION_MAX_PAGE_SIZE = 100;
@@ -129,6 +130,7 @@ function versionJson(version: PlanVersionGraph) {
     effectiveFrom: version.effectiveFrom.toISOString(),
     selfServicePolicy: version.selfServicePolicy,
     publicationStatus: version.publishedAt ? "PUBLISHED" as const : "DRAFT" as const,
+    publiclyListed: version.publiclyListed,
     publishedAt: version.publishedAt?.toISOString() ?? null,
     retiredAt: version.retiredAt?.toISOString() ?? null,
     version: version.version,
@@ -260,6 +262,41 @@ export class PlatformSubscriptionCatalogService {
     private readonly now: () => Date = () => new Date(),
   ) {
     this.transactions = new TransactionExecutor(prisma);
+  }
+
+  publicCatalog(page: number) {
+    return readPublicPlanCatalog(this.prisma, page, this.now());
+  }
+
+  async setPublicListing(actor: OperatorActor, versionId: bigint, input: { publiclyListed: boolean; version: number }) {
+    await requireOperator(this.operatorAuthorization, actor.userId);
+    return this.transactions.execute({ operation: "SET_PLATFORM_PLAN_PUBLIC_LISTING" }, async (tx) => {
+      await lockPlanVersion(tx, versionId);
+      const version = await tx.platformPlanVersion.findUnique({
+        where: { id: versionId },
+        include: { plan: true, entitlements: { include: { module: { include: { dependencies: true } } } } },
+      });
+      if (!version) throw new PlatformSubscriptionError("NOT_FOUND");
+      if (version.version !== input.version) throw new PlatformSubscriptionError("VERSION_CONFLICT");
+      if (input.publiclyListed) {
+        if (!version.publishedAt || version.retiredAt) throw new PlatformSubscriptionError("PLAN_NOT_PUBLISHED");
+        if (!version.plan.isActive || version.plan.code.startsWith("LEGACY_COMPANY_") || version.selfServicePolicy === "DISABLED") {
+          throw new PlatformSubscriptionError("SELF_SERVICE_DISABLED");
+        }
+        if (version.effectiveFrom > this.now()) throw new PlatformSubscriptionError("PLAN_NOT_EFFECTIVE");
+        if (version.recurringFee === null || version.includedUsers === null || version.includedEmployees === null
+          || version.includedPostedDocuments === null) throw new PlatformSubscriptionError("DRAFT_INCOMPLETE");
+        await validatePlanModules(tx, version.entitlements.map((item) => ({
+          moduleId: item.moduleId, selectionMode: item.selectionMode, additionalRecurringFee: decimalJson(item.additionalRecurringFee),
+        })));
+      }
+      const updated = await tx.platformPlanVersion.updateMany({
+        where: { id: versionId, version: input.version },
+        data: { publiclyListed: input.publiclyListed, updatedById: actor.userId, version: { increment: 1 } },
+      });
+      if (updated.count !== 1) throw new PlatformSubscriptionError("VERSION_CONFLICT");
+      return { version: versionJson({ ...version, publiclyListed: input.publiclyListed, version: input.version + 1 }) };
+    });
   }
 
   async listModules(userId: bigint) {

@@ -16,6 +16,7 @@ import {
 import { useI18n } from "./i18n";
 import type { SubscriptionCatalog, SubscriptionPlanVersion, SubscriptionSnapshot } from "./types";
 import { Button, PageHeader, Spinner } from "./ui";
+import { clearSubscriptionPlanPreference, preferredSubscriptionPlan } from "./public-plans";
 
 type Notice = (message: string, tone?: "success" | "error") => void;
 
@@ -41,7 +42,10 @@ export function CompanySubscriptionPage({ notify }: { notify: Notice }) {
       ]);
       setSnapshot(nextSnapshot);
       setCatalog(nextCatalog);
-      setSelectedPlanId((current) => current || nextCatalog.plans[0]?.id || "");
+      setSelectedPlanId((current) => {
+        const candidate = current || preferredSubscriptionPlan();
+        return nextCatalog.plans.find((plan) => plan.id === candidate)?.id ?? nextCatalog.plans[0]?.id ?? "";
+      });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t("subscription.loadError"));
     } finally {
@@ -112,6 +116,7 @@ export function CompanySubscriptionPage({ notify }: { notify: Notice }) {
       });
       notify(result.change.state === "PENDING_APPROVAL"
         ? t("subscription.requestPending") : t("subscription.changeApplied"));
+      clearSubscriptionPlanPreference();
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t("subscription.changeError"));

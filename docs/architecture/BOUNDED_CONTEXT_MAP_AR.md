@@ -84,6 +84,11 @@ Printing  <────────── immutable document snapshot port
 
 ## 5. قواعد الاتصال بين السياقات
 
+كتالوج الخطط العام `/plans` و`/public/subscription-plans` قناة قراءة لدى
+Platform Subscriptions & Entitlements وفق [ADR-019](ADR-019-public-subscription-catalog.md).
+يملك السياق مؤشر `publiclyListed` وإسقاط العرض؛ لا يقرأ شركات أو فوترة أو Ledger
+للزوار ولا يمنح واجهة التسويق ملكية السعر أو الاستحقاق.
+
 ### الاتصال المتزامن
 
 يستخدم عندما تكون النتيجة مطلوبة لحماية invariant في نفس الطلب أو المعاملة، مثل:

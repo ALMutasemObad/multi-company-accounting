@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.43.0
+  version: 1.44.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -1143,6 +1143,44 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /platform/subscription-plan-versions/{planVersionId}/public-listing:
+    put:
+      tags: [Platform Subscriptions]
+      summary: إظهار إصدار منشور للعامة أو إخفاؤه بقرار مشغل صريح
+      operationId: setPlatformSubscriptionPublicListing
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: planVersionId, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PlatformSubscriptionPublicListingRequest' } } }
+      responses:
+        '200': { description: إصدار الخطة وحالة عرضه العام, content: { application/json: { schema: { $ref: '#/components/schemas/PlatformSubscriptionPlanVersionResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /public/subscription-plans:
+    get:
+      tags: [Platform Subscriptions]
+      summary: كتالوج تسويقي عام لا يعيد إلا الإصدارات المعتمدة للعرض العام
+      operationId: listPublicSubscriptionPlans
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: page, in: query, schema: { type: integer, minimum: 1, maximum: 1000, default: 1 } }
+      responses:
+        '200':
+          description: تسع خطط كحد أقصى ببيانات تسويقية فقط ودون جلسة أو بيانات شركات
+          content: { application/json: { schema: { $ref: '#/components/schemas/PublicSubscriptionPlanPage' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/InternalError' }
   /platform/subscriptions:
     get:
@@ -10938,6 +10976,52 @@ components:
           maxItems: 100
           uniqueItems: true
           items: { type: string, pattern: '^[1-9][0-9]*$' }
+    PlatformSubscriptionPublicListingRequest:
+      type: object
+      additionalProperties: false
+      required: [publiclyListed, version]
+      properties:
+        publiclyListed: { type: boolean }
+        version: { type: integer, minimum: 0 }
+    PublicSubscriptionPlanPage:
+      type: object
+      additionalProperties: false
+      required: [plans, meta]
+      properties:
+        plans: { type: array, maxItems: 9, items: { $ref: '#/components/schemas/PublicSubscriptionPlan' } }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    PublicSubscriptionPlan:
+      type: object
+      additionalProperties: false
+      required: [id, displayName, description, billingCycle, currencyCode, recurringFee, includedUsers, includedEmployees, includedPostedDocuments, pricePerAdditionalUser, pricePerAdditionalEmployee, pricePerAdditionalPostedDocument, trialDays, taxRate, requiresApproval, modules]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        displayName: { type: string, minLength: 1, maxLength: 160 }
+        description: { oneOf: [{ type: string, maxLength: 1000 }, { type: 'null' }] }
+        billingCycle: { type: string, enum: [MONTHLY, QUARTERLY, ANNUAL] }
+        currencyCode: { type: string, pattern: '^[A-Z]{3}$' }
+        recurringFee: { $ref: '#/components/schemas/Money' }
+        includedUsers: { type: integer, minimum: 0 }
+        includedEmployees: { type: integer, minimum: 0 }
+        includedPostedDocuments: { type: integer, minimum: 0 }
+        pricePerAdditionalUser: { oneOf: [{ $ref: '#/components/schemas/Money' }, { type: 'null' }] }
+        pricePerAdditionalEmployee: { oneOf: [{ $ref: '#/components/schemas/Money' }, { type: 'null' }] }
+        pricePerAdditionalPostedDocument: { oneOf: [{ $ref: '#/components/schemas/Money' }, { type: 'null' }] }
+        trialDays: { type: integer, minimum: 0, maximum: 365 }
+        taxRate: { type: string, pattern: '^(?:[0-9]{1,2}|100)\.[0-9]{4}$' }
+        requiresApproval: { type: boolean }
+        modules:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, displayName, selectionMode, additionalRecurringFee]
+            properties:
+              code: { type: string, minLength: 1, maxLength: 80 }
+              displayName: { type: string, minLength: 1, maxLength: 160 }
+              selectionMode: { type: string, enum: [INCLUDED, OPTIONAL] }
+              additionalRecurringFee: { oneOf: [{ $ref: '#/components/schemas/Money' }, { type: 'null' }] }
     PlatformSubscriptionPlanVersion:
       type: object
       additionalProperties: false
@@ -10972,6 +11056,7 @@ components:
         effectiveFrom: { type: string, format: date-time }
         selfServicePolicy: { type: string, enum: [DISABLED, REQUEST_ONLY, IMMEDIATE_FREE] }
         publicationStatus: { type: string, enum: [DRAFT, PUBLISHED] }
+        publiclyListed: { type: boolean, description: اعتماد العرض العام مستقل عن نشر السعر؛ false افتراضيًا }
         publishedAt:
           oneOf: [{ type: string, format: date-time }, { type: 'null' }]
         retiredAt:

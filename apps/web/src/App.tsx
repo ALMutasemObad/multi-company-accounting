@@ -6,6 +6,7 @@ import type { Company, CurrentAuthorization, User } from "./types";
 import { Button, Icon, Spinner, Toast } from "./ui";
 import { RegistrationPage } from "./RegistrationPage";
 import { PasswordResetPage } from "./PasswordResetPage";
+import { preferredSubscriptionPlan } from "./public-plans";
 import {
   resolveAuthorizedView,
   viewTitleKey,
@@ -86,6 +87,10 @@ export default function App() {
     if (!snapshot.selectedCompany && capabilities.platformOperations) {
       setView("platform");
       replaceHash("platform");
+    } else if (snapshot.selectedCompany && snapshot.permissions.includes("subscriptions.view")
+      && preferredSubscriptionPlan() && ["", "#home", "#login", "#register"].includes(location.hash)) {
+      setView("subscription");
+      replaceHash("subscription");
     }
     setState("ready");
   }, []);
@@ -389,6 +394,7 @@ function LoginScreen({ onLoggedIn, onRegister, onForgotPassword }: { onLoggedIn:
           <button className="auth-text-link" type="button" onClick={onForgotPassword}>{t("login.forgotPassword")}</button>
           <Button type="submit" disabled={loading}>{loading ? t("login.checking") : t("login.submit")}</Button>
           <button className="auth-text-link" type="button" onClick={onRegister}>{t("login.createAccount")}</button>
+          <a className="auth-text-link" href="/plans">{t("publicPlans.viewPage")}</a>
         </form>
       </section>
     </main>

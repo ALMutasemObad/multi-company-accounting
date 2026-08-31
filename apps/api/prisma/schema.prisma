@@ -3061,6 +3061,7 @@ model PlatformPlanVersion {
   effectiveFrom                    DateTime                  @map("effective_from")
   selfServicePolicy                PlatformPlanSelfServicePolicy @default(DISABLED) @map("self_service_policy")
   publishedAt                      DateTime?                 @map("published_at")
+  publiclyListed                   Boolean                   @default(false) @map("publicly_listed")
   retiredAt                        DateTime?                 @map("retired_at")
   createdById                      BigInt?                   @map("created_by_id") @db.UnsignedBigInt
   updatedById                      BigInt?                   @map("updated_by_id") @db.UnsignedBigInt
@@ -3079,6 +3080,7 @@ model PlatformPlanVersion {
   @@unique([planId, versionNumber])
   @@index([planId, effectiveFrom, id])
   @@index([publishedAt, effectiveFrom, id], map: "platform_plan_versions_catalog_idx")
+  @@index([publiclyListed, effectiveFrom, id], map: "platform_plan_versions_public_catalog_idx")
   @@index([createdById], map: "platform_plan_versions_created_by_idx")
   @@index([updatedById], map: "platform_plan_versions_updated_by_idx")
   @@index([publishedById], map: "platform_plan_versions_published_by_idx")

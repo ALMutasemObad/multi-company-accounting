@@ -91,6 +91,80 @@ describe.runIf(enabled)("SUB-3 subscription lifecycle on a supported database", 
     await prisma.$disconnect();
   });
 
+  it("publishes a safe opt-in public projection and rejects stale visibility writes without changing financial terms", async () => {
+    const paid = await createPublishedPlan({
+      recurringFee: "123.4567", policy: "REQUEST_ONLY", code: `PUBLIC_${randomUUID().replaceAll("-", "").slice(0, 10).toUpperCase()}`,
+    });
+    const id = BigInt(paid.id);
+    expect(paid.publiclyListed).toBe(false);
+    expect((await catalog().publicCatalog(1)).plans.some((plan) => plan.id === paid.id)).toBe(false);
+    await expect(catalog().setPublicListing({ userId: userId + 100_000n }, id, { publiclyListed: true, version: paid.version }))
+      .rejects.toMatchObject({ reason: "FORBIDDEN" });
+    const shown = await catalog().setPublicListing({ userId }, id, { publiclyListed: true, version: paid.version });
+    expect(shown.version).toMatchObject({ publiclyListed: true, version: paid.version + 1, recurringFee: "123.4567" });
+    const publicRow = (await catalog().publicCatalog(1)).plans.find((plan) => plan.id === paid.id);
+    expect(publicRow).toMatchObject({ recurringFee: "123.4567", requiresApproval: true, includedUsers: 5 });
+    expect(publicRow).not.toHaveProperty("planCode");
+    expect(publicRow).not.toHaveProperty("companyId");
+    await expect(catalog().setPublicListing({ userId }, id, { publiclyListed: false, version: paid.version }))
+      .rejects.toMatchObject({ reason: "VERSION_CONFLICT" });
+    const draft = await catalog().createDraft({ userId }, BigInt(paid.planId));
+    expect(draft.version.publiclyListed).toBe(false);
+    await expect(catalog().setPublicListing({ userId }, BigInt(draft.version.id), { publiclyListed: true, version: draft.version.version }))
+      .rejects.toMatchObject({ reason: "PLAN_NOT_PUBLISHED" });
+    const attempts = await Promise.allSettled([
+      catalog().setPublicListing({ userId }, id, { publiclyListed: false, version: shown.version.version }),
+      catalog().setPublicListing({ userId }, id, { publiclyListed: false, version: shown.version.version }),
+    ]);
+    expect(attempts.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(attempts.filter((result) => result.status === "rejected")).toHaveLength(1);
+    expect((await catalog().publicCatalog(1)).plans.some((plan) => plan.id === paid.id)).toBe(false);
+    const final = await prisma!.platformPlanVersion.findUniqueOrThrow({ where: { id } });
+    expect(final.recurringFee?.toFixed(4)).toBe("123.4567");
+    expect(final.publishedAt?.toISOString()).toBe(paid.publishedAt);
+    expect(final.updatedById).toBe(userId);
+  });
+
+  it("excludes future, retired, private, unpriced and unavailable plans in SQL and pages deterministically", async () => {
+    const plans: Awaited<ReturnType<typeof createPublishedPlan>>[] = [];
+    for (let i = 0; i < 10; i += 1) {
+      const plan = await createPublishedPlan({ recurringFee: "0", policy: "IMMEDIATE_FREE", code: `PUBPAGE_${randomUUID().replaceAll("-", "").slice(0, 10).toUpperCase()}` });
+      plans.push(plan);
+      await catalog().setPublicListing({ userId }, BigInt(plan.id), { publiclyListed: true, version: plan.version });
+    }
+    try {
+      const first = await catalog().publicCatalog(1);
+      const second = await catalog().publicCatalog(2);
+      expect(first.plans).toHaveLength(9);
+      expect(second.plans).toHaveLength(1);
+      expect(first.meta.total).toBe(10);
+      expect(new Set([...first.plans, ...second.plans].map((plan) => plan.id)).size).toBe(10);
+      const id = BigInt(plans[0]!.id);
+      const baseline = await prisma!.platformPlanVersion.findUniqueOrThrow({ where: { id } });
+      for (const change of [
+        { publiclyListed: false }, { publishedAt: null }, { retiredAt: now }, { effectiveFrom: new Date("2051-01-01") },
+        { selfServicePolicy: "DISABLED" as const }, { recurringFee: null }, { includedUsers: null },
+        { includedEmployees: null }, { includedPostedDocuments: null },
+      ]) {
+        await prisma!.platformPlanVersion.update({ where: { id }, data: change });
+        expect((await catalog().publicCatalog(1)).plans.some((plan) => plan.id === plans[0]!.id)).toBe(false);
+        await prisma!.platformPlanVersion.update({ where: { id }, data: {
+          publiclyListed: baseline.publiclyListed, publishedAt: baseline.publishedAt, retiredAt: baseline.retiredAt,
+          effectiveFrom: baseline.effectiveFrom, selfServicePolicy: baseline.selfServicePolicy,
+          recurringFee: baseline.recurringFee, includedUsers: baseline.includedUsers,
+          includedEmployees: baseline.includedEmployees, includedPostedDocuments: baseline.includedPostedDocuments,
+        } });
+      }
+      const planId = BigInt(plans[0]!.planId);
+      await prisma!.platformPlan.update({ where: { id: planId }, data: { isActive: false } });
+      expect((await catalog().publicCatalog(1)).meta.total).toBe(9);
+      await prisma!.platformPlan.update({ where: { id: planId }, data: { isActive: true, code: `LEGACY_COMPANY_PUBLIC_${planId}` } });
+      expect((await catalog().publicCatalog(1)).meta.total).toBe(9);
+    } finally {
+      await prisma!.platformPlanVersion.updateMany({ where: { id: { in: plans.map((plan) => BigInt(plan.id)) } }, data: { publiclyListed: false } });
+    }
+  });
+
   it("publishes immutable versions, keeps paid owner changes pending, and isolates company history", async () => {
     const [companyA, companyB] = await Promise.all([createCompany(), createCompany()]);
     const paid = await createPublishedPlan({
