@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": { "types": ["node"], "noEmit": true },
+  "include": ["apps/api/src/pos/recovery-*.ts", "apps/api/tests/pos-recovery-*.test.ts"]
+}
