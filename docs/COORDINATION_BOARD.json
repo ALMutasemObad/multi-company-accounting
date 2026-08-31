@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedDate": "2026-08-31T16:38:30.9792477+03:00",
+  "updatedDate": "2026-08-31T17:07:16.7180731+03:00",
   "coordinatorThreadId": "01a05783-e720-7ed0-a107-4a372bd53202",
   "projectId": "c3fd65c7-6c00-45d1-9859-46f96966dc38",
   "repository": "C:/Users/motas/Documents/نظام جوار المالي/project",
@@ -11,7 +11,7 @@
   "remoteFreshness": "local refs only; no fetch or live deployment verification in this task",
   "maxActiveImplementationThreads": 4,
   "publicationAuthorized": false,
-  "resourceConstraint": "LatestN1postC2730885120bytes/RAM4018618368bytes. QA single heavierownerwithstricter3GiBRAMstart. Otherworkerssource-only;NodecacheoffDoutputs;shareddependenciesimmutable.",
+  "resourceConstraint": "One heavy runtime owner at a time. Start C>=1GiB, RAM>=2.5GiB (browser>=3GiB); DB extraction D>=8GiB. All task temp/cache/profile outputs D; shared dependencies read-only.",
   "automation": {
     "id": "automation",
     "cadenceMinutes": 10,
@@ -19,8 +19,8 @@
   },
   "browserOwner": null,
   "databaseGateOwner": null,
-  "databaseGateScope": "Resource hold: no new database process or heavy validation authorized. W1-ONBOARD reports owned PID11064 stopped gracefully and3317 released; no database was created and no migrations or DB tests ran.",
-  "databaseCandidate": "W1-ONBOARD authorized to start owned MariaDB 10.4.32 with new datadir/config/logs on D, localhost:3317, schema jawar_w1_onboarding_20260831; no existing XAMPP data/config changes. Additional evidence only, not the required 10.11/8.4 gates.",
+  "databaseGateScope": "No DB process or connection authorized yet. Required MariaDB10.11.11/MySQL8.4.11 archives prepared; data extraction progressing separately from executable trust/startup gates.",
+  "databaseCandidate": "MariaDB10.11.11 and MySQL8.4.11 pinned archives on D. Old XAMPP10.4 trial is closed, no DB created; not an active candidate.",
   "posRecoveryDecision": "Candidate approved: POS-only opt-in two-phase terminal rejection, no SAVEPOINT or general TransactionExecutor change. A domain error is only a candidate, not proof of rollback: Prisma may swallow rollback failure. Definitive rejection requires committed insert-only tombstone on full company/user/operation/keyHash unique scope with same fingerprint, or authoritative committed winner. Concurrent success wins as original result; mismatch/ambiguous finalization/deadline stay blocked. One shared deadline, no financial replay, no retention expansion, explicit responseStatus decoding. New recovery contract may return validated unexpired REJECTED alongside CONFIRMED/UNKNOWN, with auth before/after and explicit new attempt only. Acceptance requires real dual-engine race and rollback tests.",
   "onboardingDecision": "Server-configured explicit start plan version; existing active published zero-fee IMMEDIATE_FREE plan with valid currency,dates,included modules and dependencies. No configured value is selected by coordinator, no invented terms, no Legacy fallback. Missing/invalid configuration fails atomically with generic registration error. Preserve existing companies; do not fabricate operator actor identity.",
   "tasks": [
@@ -32,7 +32,7 @@
       "worktree": "D:/CodexWorktrees/wave1-pdf-decimal",
       "status": "accuracy_scope_verified_readability_followup",
       "priority": "P0",
-      "acceptance": "R3 money accuracy and tablecontinuation scope verified:65tests/types/12PDF/26PNG/176moneycells,0missing/geometryfailures. Wholetemplate/mixedglyph/header/ToUnicode/longidentity andfullUnicode acceptance not claimed. W2header separate sourcecandidate, mixedglyph dependency research underway.",
+      "acceptance": "R3 financial scope verified65tests/types/12PDF/26PNG/176moneycells. W2 header+ASCII candidate frozen,103futuretests not executed; mixed free-text/ToUnicode/longidentity remain outside acceptance.",
       "afterCursor": "9d197f9a-1247-44fd-8bf3-a9344feb131d:6",
       "lastReportedEvidence": "R3 frozenF7C740E0 preserved; QA reportA1609B0F and99artifactmanifest8F45BF58 verified/read. Existing glyph/header defects independently tracked, not R3 financial regressions.",
       "pendingReviewFixes": "Independent R3delta review found no new actualdefect andclosedR2orphanidentity finding;rootverifiedpatchhashes. bodyStart/firstfragmentreservation/repeatedentryreference lookcorrectsource-only. Longidentitydescriptioncanreach755..799.89footerregion is inherited,notfixed orclaimedaccepted.",
@@ -61,9 +61,9 @@
         "coordinatorHashVerified": true,
         "independentDeltaReview": "closedpreviousfinding,noadditionaldefect,read-only",
         "application": "delta aftercombinedR2 oraccuracyR2+layoutR2;OR combinedR3 fromc7ffc99,neverapplyboth",
-        "tests": "65writtenunrun,allpriorrunsunrelatedtoR3"
+        "tests": "65/65 passed,4files,39.47s; narrowtypes exit0; see R3RuntimeEvidence"
       },
-      "latestRuntimeReport": "Worker reports65/65focusedtests in4files passed,39.47s;14PDFcases2032..3036ms,noretry/timeout,heap768MiB;narrown oEmitexit0.8sourcefileshashmatchedR3beforeexecution. LastgateC1.686GiB/RAM4.715GiB. PDFgeneration/extraction/PNGcontinues in tmp/coordination/r3-qa-20260831;windowstillowned,notyetaccepted.",
+      "latestRuntimeReport": "R3 window released and all evidence frozen. No runtime evidence belongs to subsequent W2 header/ASCII source.",
       "R3RuntimeEvidence": {
         "path": "D:/CodexWorktrees/wave1-pdf-decimal/tmp/coordination/r3-qa-20260831",
         "testsPassed": 65,
@@ -80,6 +80,13 @@
         "coordinatorVisualSpotcheck": "longinvoicepage2/manualjournalandbaseline",
         "proofLimit": "Decimal/tablecontinuation scope verified;overallprintreadability notaccepted duepreexistingLatinmissingglyphs/headercrowding/longidentityfooter andToUnicode limitations",
         "newSourceChangesAfterR3": "documentationonlyreported"
+      },
+      "w2Ascii": {
+        "patch": "D:/CodexWorktrees/wave1-pdf-decimal/tmp/coordination/delivery/w2-ascii-1/W2_ASCII_ITEM_BLOCKS_DELTA.patch",
+        "sha256": "F6EF93582FC9692280BDABD25106E0B595B44DA0B4C9FFDE79397B6E25837409",
+        "base": "R3 combined F7C740E0 then header delta6F001880",
+        "status": "source_frozen_independent_review_running",
+        "futureFocusedTests": 103
       }
     },
     {
@@ -92,8 +99,8 @@
       "priority": "P0",
       "acceptance": "Revision03:WebnoEmit0/247focusedpass/API src+tests noEmit0. Source44andPrismaclient21files unchanged. DBrealraces/POSfinancialeffects/browser/build/combinedgates remainopen.",
       "afterCursor": "6a04bcb5-51b1-496b-bb46-be45080061fc:7",
-      "lastReportedEvidence": "Coordinator read round02 JSON/logs/handoff and verified patch2F9D/source4EF6 hashes. 44sourcefiles stable; originals342D/B115 and round01 preserved. No product change inround02.",
-      "nextValidation": "OpenAPI generated and --check bothexit0 with512MiB heap;170request/2144response includingCONFIRMED/REJECTED/UNKNOWN. Coordinator verified logs and hash514043523D5E1AFDE989528DCF4743A4C351799D3BA81E62D5E8DB789475B718. Times3264/3417ms,windowreleased. Types/unit/HTTP/realdualengineDB remain unrun and require separate allocation.",
+      "lastReportedEvidence": "Runtime03 247/247 + Web/APIsrc+tests types pass; checkpoint1f13084 clean; DB/browser/build/dist not accepted.",
+      "nextValidation": "Real isolated MariaDB10.11.11/MySQL8.4.11 11+1 named cases; local config/fixture plan in preparation. Existing247units and Web/API src+tests types PASS.",
       "generatedContractEvidence": {
         "sha256": "514043523D5E1AFDE989528DCF4743A4C351799D3BA81E62D5E8DB789475B718",
         "generateExit": 0,
@@ -162,6 +169,14 @@
         "receipt": "D:/CodexWorktrees/wave1-pos-recovery/tmp/coordination/w1-pos-checkpoint.json",
         "sourceRound03Unchanged": true,
         "publication": false
+      },
+      "ciProposal": {
+        "status": "proposal_only_not_applied",
+        "patchSha256": "F1C78ACB5058462DC28A88566DE4EBAB580AE7C92010447AFB2373D617F7432D",
+        "manifestSha256": "07AA4D717E2ADA3B8CA48A437AA26EE36D6AD666B80143B5DEA3EAE69D0FADEB",
+        "databaseName": "w1posrecovery",
+        "testCounts": "11 exact finalization +1 financial,zero skips required",
+        "path": "D:/CodexWorktrees/wave1-pos-recovery/tmp/coordination/ci-pos-recovery-proposal"
       }
     },
     {
@@ -247,7 +262,7 @@
       "threadId": "01a0578e-85b1-7141-bc2e-b4f88bcac12d",
       "hostId": "local",
       "worktree": "D:/CodexWorktrees/wave1-subscription-acceptance",
-      "status": "43_of_44_passed_D3_scope_bug_under_review",
+      "status": "43_of_44_passed_D3_subscription_context_source_fix_in_progress",
       "priority": "P0",
       "acceptance": "D1/D2 and6geometryV1/V2 passedon0dd107ab;44run43pass/1D3fail,no skips/flaky. D3fixture-backedmisattributionproven,notproduction/DBleakproof. Functional scope/rootcauseunderreview. Build/interactivevisual/combinedgates open.",
       "afterCursor": "dfab117e-aa91-42e4-b0e3-d64bbedd29ae:11",
@@ -315,7 +330,7 @@
       "threadId": "01a057da-c19c-74c2-8f2c-be2ff9c8b3e5",
       "hostId": "local",
       "worktree": "D:/CodexWorktrees/wave1-dual-db-validation",
-      "status": "extraction_preflight_parser_repair",
+      "status": "mariadb_data_extraction_r2_authorized",
       "priority": "P0",
       "acceptance": "Preparation only,notDBacceptance. OfficialWindowsZIP versions mustmatchCI MariaDB10.11.11/MySQL8.4.11; hashes/requirements/manifests onD.",
       "constraints": "Oneofficialdownload atatime andhash/read-onlypreflight now. Noextraction/initialize/DB/service/install/Prismagenerate/Gitwrites untilseparateallocation. PDFownsruntime. NoVCinstaller/EULAacceptance orglobalenv/ACL/PATHchanges.",
@@ -348,6 +363,15 @@
           "sha256": "DBDDE6197A7AB4F11F6F431BAB6227CD18BDDDC35072C80D44198D2D70C1EF12",
           "remediation": "JsonDocument GetString preservingstrictISO;keep7.4compat,oldsource/failedreceiptpreserved"
         }
+      },
+      "parsingR2": {
+        "runnerSha256": "4770D7719583A78D55ADAB8F5631FA136B20DF607716A7D5B9654C171FF689AA",
+        "parserErrors": 0,
+        "pureParsingTestsPassed": 36,
+        "review": "Independent source comparison passed; no runner execution in parsing tests",
+        "priorAttempt": "R1 preflight failed ISO conversion before runner,0files,0bytes",
+        "allocationToken": "e6988756-7f3c-43e3-9137-ef935edefa52",
+        "expiresAtUtc": "2026-08-31T14:27:33Z"
       }
     }
   ],
@@ -516,13 +540,13 @@
     }
   ],
   "browserResourceStatus": "QA44runended43pass/1D3failure,0skip/retry. API26804/Vite27836 exited,3166/4216free,watchdognotused. No interactiveBrowserowned.",
-  "limitedRuntimeOwner": "W1-DB-PREP narrowparsercorrection+parser-onlyverification afterpreflightISO/DateTimeconversionfailure; actualrunnerinvocations0,files0,bytes0. Dataextractionawaitsrenewedpermit. Otherssource-only.",
+  "limitedRuntimeOwner": "W1-DB-PREP: one MariaDB10.11.11 archive-data-only extraction using reviewed R2 4770D771 and new permit. No PE/Authenticode/DB. PDF103 and D3 validation queued; others source-only.",
   "validationOrder": [
-    "Fresh resource check percommand; no cleanup or shareddependencywrites.",
-    "Finish focusedsource/APItypes andfreeze verifiedcandidates.",
-    "Complete isolatedQA44browsercases andPDFheader/mixedglyph followups.",
-    "Run realMariaDB10.11.11/MySQL8.4.11 transaction/recovery/provisioning gates independently withguardeddisposableDB.",
-    "Integrate acceptedchanges locally and runcombinedcontracts/types/build/browser/DBgates on exactHEAD. No publication."
+    "DB-PREP: Maria then MySQL archive extraction as data in separate permits; readback+offline trust inventory separately; no PE/DB until reviewed.",
+    "PDF: frozen R3+header+ASCII,103focused ->narrowtypes->PDF/extraction/PNG,worker1,no retry.",
+    "QA D3: source completion then OpenAPI generate/check, focusedunits/APIHTTP/Web/API/E2Etypes then new browserrun; preserve43/44evidence.",
+    "Real DB suites: ONBOARD separate fresh DB per suite/engine; N1 11finalization+1financial exact-name proof with owned fresh DB and isolatedclient.",
+    "Unified candidate: merge contracts/regenerate and run common guards/types/build/currentHEAD acceptance; no publishing."
   ],
   "parallelReadOnlyResearch": [
     "Official portable Windows MariaDB10.11/MySQL8.4 distribution options;no downloads/install/processesauthorized.",
@@ -531,24 +555,63 @@
   "activeCapacityNote": "AtnewDBtaskdispatch PDFvalidationandDBdownloadpreflight areactive; N1/ONBOARD/QA areidle candidatesawaitingnextgates. Activeimplementationcapacity remainsbelow4 despite>4trackedtasks.",
   "prismaIsolationPlan": "Executed successfully inONBOARDownedDfolder. Generate/Smoke/154policyunits/APItypesPASS withNODE_OPTIONS512 andnoDB;shared91files/protectedunchanged. N1mayuseclientreadonlypermanifest569F946A. Temporarysourcealiases stilldoNOTprove distserver/E2Eruntime.",
   "pendingRuntimeWindows": [
-    "ONBOARD Generate->Smoke->6policyfiles->APItypes,oneowner,stopifnewfailure/integritychange; noDB.",
-    "N1 test-onlytyperepair:Webtypes thenfocused247;APItypesafterisolatedclientproof.",
-    "QA44browsercases andinteractivevisualmatrix on0dd107ab,ownedservers only.",
-    "DBarchive extraction/AuthentiCode preflight thenoneengine initialize/start after reviewedsecrets/configidentity;no DBtests beforeclienthandoff."
+    "DB-PREP: Maria then MySQL archive extraction as data in separate permits; readback+offline trust inventory separately; no PE/DB until reviewed.",
+    "PDF: frozen R3+header+ASCII,103focused ->narrowtypes->PDF/extraction/PNG,worker1,no retry.",
+    "QA D3: source completion then OpenAPI generate/check, focusedunits/APIHTTP/Web/API/E2Etypes then new browserrun; preserve43/44evidence.",
+    "Real DB suites: ONBOARD separate fresh DB per suite/engine; N1 11finalization+1financial exact-name proof with owned fresh DB and isolatedclient.",
+    "Unified candidate: merge contracts/regenerate and run common guards/types/build/currentHEAD acceptance; no publishing."
   ],
   "coordinatorGitException": "Completed successfully: df39116 committedonly2coordinationdocs afterdiffcheck;index/worktreecleanthen. No hooks override/ACLchange. This demonstrates localGitwriteworkedafterspace recovery,doesnotprovepriorrootcause.",
-  "lastCoordinatorCommit": "df39116a53a94d481821e2e3cd0d40eed8ad39ab",
-  "gitWriteOwner": "None. N1checkpoint1f13084 andONBOARD6bb49994 completedand released;rootcoorddocs may becheckpointedlocally. No push/PR/mainmerge/deploy.",
+  "lastCoordinatorCommit": "a080934ff79fdb3a0d135938963d07e2c9fade26",
+  "gitWriteOwner": "ROOT only: scoped coordination docs checkpoint, then reviewed local candidate composition if clean. No push/mainmerge/workflow/deploy.",
   "evaluationTask": {
     "threadId": "01a05803-cf2b-77c1-9415-e0839dff48d6",
     "hostId": "local",
     "title": "تقييم سير المشروع ونسب التقدم",
     "role": "evaluation_only",
-    "status": "initial_assessment_in_progress",
+    "status": "separate_wave_and_documented_system_baselines_delivered",
     "outputRoot": "D:/CodexWorktrees/project-progress-evaluation",
     "scope": "Independent approximateoverall/domain/workstreamprogress withfixeddenominator,weights,uncertainty andseparatecode/validation/integration/releasereadiness.",
     "restrictions": "No productediting/delegation/resourceownership/tests/build/browser/DB/Git/publication. Owntextreports only; do not repurpose this task for implementation.",
     "updatePolicy": "Coordinator requests a delta assessment after material acceptance/integration change; preservemethod or explain denominatorchange. No separate newautomation or repeated empty assessments.",
-    "afterCursor": "791a1598-8684-461e-98b1-65d44c1abc3f:2"
+    "afterCursor": "791a1598-8684-461e-98b1-65d44c1abc3f:4",
+    "initialAssessment": {
+      "cutoff": "2026-08-31T16:40:13+03:00",
+      "scope": "Postrelease45grocery/subscriptionclosureprogramonly;NOTentireERP",
+      "approximatePercent": 40,
+      "rangePercent": [
+        30,
+        50
+      ],
+      "confidence": "medium",
+      "implementation": 70,
+      "validation": 35,
+      "integration": 10,
+      "releaseGates": 0,
+      "publicationExcluded": true,
+      "report": "D:/CodexWorktrees/project-progress-evaluation/CURRENT_PROGRESS_AR.md",
+      "data": "D:/CodexWorktrees/project-progress-evaluation/progress.json"
+    },
+    "systemBaseline": {
+      "cutoff": "2026-08-31T16:54:39+03:00",
+      "approximatePercent": 70,
+      "rangePercent": [
+        60,
+        80
+      ],
+      "confidence": "medium_to_low",
+      "scope": "Existing release45 capabilities plus documented local wave only;17weighted domains,excludes speculativeERP",
+      "sampleFiles": 32,
+      "matchingReleaseReferenceFiles": 31,
+      "directBehaviorReadingWeightedCoverage": 41,
+      "directBehaviorReadingIsTestCoverage": false,
+      "implementation": 90,
+      "historicalAndCurrentLimitedValidation": 65,
+      "localComposition": 90,
+      "newUnifiedReleaseGates": 0,
+      "report": "D:/CodexWorktrees/project-progress-evaluation/SYSTEM_SCOPE_BASELINE_AR.md",
+      "data": "D:/CodexWorktrees/project-progress-evaluation/system_scope.json",
+      "relationship": "Separate denominator from40percent currentwave;not+30progressoraverage;notfirstclientreadiness"
+    }
   }
 }
