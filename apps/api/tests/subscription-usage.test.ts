@@ -8,6 +8,9 @@ import type { SubscriptionUsagePlan } from "../src/platform-subscriptions/subscr
 import { createSubscriptionUsageRouter } from "../src/platform-subscriptions/subscription-usage-router.js";
 import { createSubscriptionUsageService } from "../src/composition/create-subscription-usage-service.js";
 import { PrismaPlatformAnalyticsQueryAdapter } from "../src/platform-operations/prisma-platform-analytics-query-adapter.js";
+import { parseOpenApiResponseBody } from "../src/generated/openapi-request-guards.js";
+import { SubscriptionUsagePlanAdapter } from "../src/platform-subscriptions/subscription-usage-plan-adapter.js";
+import { createOpenApiResponseValidator } from "../src/platform/openapi-response-validator.js";
 
 const referenceTime = new Date("2026-08-31T21:00:00.000Z");
 const plan: SubscriptionUsagePlan = {
@@ -78,6 +81,7 @@ describe("subscription usage authorized read-only router", () => {
     const authorize = vi.fn().mockResolvedValue({ sessionId: 1n, userId: 7n, companyId });
     const app = express();
     app.use(express.json());
+    app.use(createOpenApiResponseValidator());
     app.use("/api/v1", createSubscriptionUsageRouter({ authorize }, service));
     app.use(((error, _request, response, _next) => {
       const status = error instanceof AuthError ? error.reason === "UNAUTHENTICATED" ? 401 : 403 : 400;
@@ -94,6 +98,7 @@ describe("subscription usage authorized read-only router", () => {
     expect(plans.currentPlan).toHaveBeenCalledWith(123n, referenceTime);
     expect(result.body.companyId).toBe("123");
     expect(result.headers["cache-control"]).toBe("no-store");
+    expect(parseOpenApiResponseBody("getCompanySubscriptionUsage", 200, result.body)).toEqual(result.body);
     expect(Object.keys(result.body.metrics)).toEqual(["users", "employees", "postedDocuments"]);
     expect(JSON.stringify(result.body)).not.toMatch(/operations|email|userId|employeeId/);
   });
@@ -122,6 +127,18 @@ describe("subscription usage authorized read-only router", () => {
     await request(app).get("/api/v1/subscription/usage").expect(404);
     expect(measure).toHaveBeenCalledTimes(3);
   });
+  it("accepts a throttled response from the shared HTTP layer without entering the usage reader", async () => {
+    const { service, measure, plans } = fixture();
+    const authorize = vi.fn();
+    const app = express();
+    app.use("/api/v1", (_request, response) => response.set("Cache-Control", "no-store").status(429).json({ code: "TOO_MANY_REQUESTS", status: 429 }));
+    app.use("/api/v1", createSubscriptionUsageRouter({ authorize }, service));
+    const result = await request(app).get("/api/v1/subscription/usage").expect(429);
+    expect(parseOpenApiResponseBody("getCompanySubscriptionUsage", 429, result.body)).toEqual(result.body);
+    expect(measure).not.toHaveBeenCalled();
+    expect(plans.currentPlan).not.toHaveBeenCalled();
+    expect(authorize).not.toHaveBeenCalled();
+  });
 });
 
 describe("composition reuses billing aggregates without loading domain rows", () => {
@@ -147,5 +164,41 @@ describe("composition reuses billing aggregates without loading domain rows", ()
     expect(platformSubscription.findUnique.mock.calls[0]?.[0].where).toEqual({ companyId: 9n });
     expect(platformSubscriptionChange.findFirst.mock.calls[0]?.[0]).toMatchObject({ where: { companyId: 9n, subscriptionId: 8n, state: "APPROVED", effectiveAt: { lte: referenceTime } }, orderBy: [{ effectiveAt: "desc" }, { id: "desc" }] });
     expect(JSON.stringify(result).length).toBeLessThan(1800);
+    expect(parseOpenApiResponseBody("getCompanySubscriptionUsage", 200, result)).toEqual(result);
+  });
+
+  it("uses fallback for a Legacy/trial plan without scaling allowances or inventing a period", async () => {
+    const prisma = {
+      platformSubscription: { findUnique: vi.fn().mockResolvedValue({ id: 8n, currentPeriodStart: null, currentPeriodEnd: null, planVersion: { id: 12n, displayName: "Legacy", billingCycle: "MONTHLY", includedUsers: null, includedEmployees: null, includedPostedDocuments: null } }) },
+      platformSubscriptionChange: { findFirst: vi.fn().mockResolvedValue(null) },
+    };
+    const adapter = new SubscriptionUsagePlanAdapter(prisma as unknown as PrismaClient);
+    expect(await adapter.currentPlan(9n, referenceTime)).toMatchObject({ id: "12", includedUsers: null, billingPeriodStatus: "NOT_CONFIGURED" });
+    prisma.platformSubscription.findUnique.mockResolvedValueOnce({ id: 8n, currentPeriodStart: null, currentPeriodEnd: new Date("2026-12-31"), planVersion: { id: 13n, displayName: "Trial", billingCycle: "MONTHLY", includedUsers: 1, includedEmployees: 2, includedPostedDocuments: 10 } });
+    expect(await adapter.currentPlan(9n, referenceTime)).toMatchObject({ id: "13", includedUsers: 1, includedPostedDocuments: 10, billingPeriodStatus: "UNCONFIRMED" });
+    prisma.platformSubscription.findUnique.mockResolvedValueOnce(null);
+    expect(await adapter.currentPlan(10n, referenceTime)).toBeNull();
+    expect(prisma.platformSubscriptionChange.findFirst).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps counts and effective plans of different company requests separate", async () => {
+    const measure = vi.fn().mockImplementation(async ({ companyId }: { companyId: bigint }) => ({ users: companyId === 9n ? 2 : 800, employees: 0, postedDocuments: 0 }));
+    const currentPlan = vi.fn().mockImplementation(async (companyId: bigint) => ({ ...plan, id: companyId === 9n ? "12" : "13", includedUsers: companyId === 9n ? 5 : 1000 }));
+    const now = vi.fn(() => referenceTime);
+    const service = new SubscriptionUsageService({ measure }, { currentPlan }, now);
+    const [first, second] = await Promise.all([service.companyUsage(9n), service.companyUsage(10n)]);
+    expect(first.metrics.users).toMatchObject({ used: 2, included: 5, remaining: 3 });
+    expect(second.metrics.users).toMatchObject({ used: 800, included: 1000, remaining: 200 });
+    expect(first.companyId).toBe("9"); expect(second.companyId).toBe("10");
+    expect(now).toHaveBeenCalledTimes(2);
+    expect(first.measuredAt).toBe(first.period.endsAtExclusive);
+  });
+  it.each(["currentPeriodStart", "currentPeriodEnd"] as const)("a partial stored period (%s only) remains UNCONFIRMED", async (field) => {
+    const prisma = {
+      platformSubscription: { findUnique: vi.fn().mockResolvedValue({ id: 8n, currentPeriodStart: null, currentPeriodEnd: null, [field]: new Date("2026-08-01"), planVersion: { ...plan, id: 12n } }) },
+      platformSubscriptionChange: { findFirst: vi.fn().mockResolvedValue(null) },
+    };
+    const adapter = new SubscriptionUsagePlanAdapter(prisma as unknown as PrismaClient);
+    expect(await adapter.currentPlan(9n, referenceTime)).toMatchObject({ id: "12", billingPeriodStatus: "UNCONFIRMED" });
   });
 });

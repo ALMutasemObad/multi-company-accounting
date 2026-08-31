@@ -37,6 +37,7 @@ import { createHrRouter } from '../src/hr/hr-router.js';
 import { createPlatformOperationsRouter } from '../src/platform-operations/platform-operations-router.js';
 import { createPlatformPaymentRouter } from '../src/platform-operations/payments/platform-payment-router.js';
 import { createPlatformSubscriptionRouter } from '../src/platform-subscriptions/platform-subscription-router.js';
+import { createSubscriptionUsageRouter } from '../src/platform-subscriptions/subscription-usage-router.js';
 
 type RouteLayer = {
   route?: {
@@ -53,6 +54,7 @@ const routers = [
   { prefix: '', router: createPlatformOperationsRouter(stub, stub, stub) },
   { prefix: '', router: createPlatformPaymentRouter(stub, stub) },
   { prefix: '', router: createPlatformSubscriptionRouter(stub, stub, stub) },
+  { prefix: '', router: createSubscriptionUsageRouter(stub, stub) },
   { prefix: '', router: createUserRouter(stub, stub, stub) },
   { prefix: '', router: createCompanyRouter(stub, stub) },
   { prefix: '', router: createPrintRouter(stub, stub) },
