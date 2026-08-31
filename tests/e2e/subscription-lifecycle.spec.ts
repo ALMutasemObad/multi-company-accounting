@@ -114,7 +114,8 @@ test("keeps the subscription page reachable without business modules and hides m
   await expect(usage.getByRole("alert")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Invoices and electronic payments" })).toBeVisible();
   await expect(page.getByText("Electronic payments are disabled in this environment; invoices remain visible and no card data is collected.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Submit change request" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Review change", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Confirm and send request", exact: true })).toHaveCount(0);
 });
 
 test("submits a paid owner change as a pending request without claiming payment", async ({ page }) => {
@@ -123,8 +124,14 @@ test("submits a paid owner change as a pending request without claiming payment"
 
   await expect(page.getByText("A paid change remains pending until the payment provider proves its result; a browser return never activates it.")).toBeVisible();
   await page.getByLabel("Reporting").check();
-  await page.getByRole("button", { name: "Submit change request" }).click();
-  await expect(page.getByText("The request was stored safely and is awaiting approval.")).toBeVisible();
+  await page.getByRole("button", { name: "Review change", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Review subscription change request" })).toBeVisible();
+  expect(mocked.submitted()).toBeNull();
+  const confirm = page.getByRole("button", { name: "Confirm and send request", exact: true });
+  await expect(confirm).toBeDisabled();
+  await page.getByLabel("I reviewed the plan, version, add-ons and displayed values and confirm submitting this request.").check();
+  await confirm.click();
+  await expect(page.locator('.subscription-change-recovery')).toContainText("The server confirmed a request awaiting approval, not an applied plan or a collected payment.");
   expect(mocked.submitted()).toEqual({ targetPlanVersionId: "21", optionalModuleIds: ["32"], subscriptionVersion: 3 });
 });
 
