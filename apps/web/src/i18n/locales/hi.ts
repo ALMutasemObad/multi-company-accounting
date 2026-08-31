@@ -13,8 +13,12 @@ import { hiSystemHomePlatform } from "./system-home-platform";
 import { hiPublicPlans } from "./public-plans";
 import { hiAuthResilience } from "./auth-resilience";
 import { hiSubscriptionUsage } from "./subscription-usage";
+import { hiSubscriptionChanges } from "./subscription-changes";
+import { hiBillingRecovery } from "./billing-recovery";
 
 export const hi = {
+  ...hiSubscriptionChanges,
+  ...hiBillingRecovery,
   ...hiAuthResilience,
   ...hiSubscriptionUsage,
   ...hiReconciliation,

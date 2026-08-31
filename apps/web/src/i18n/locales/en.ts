@@ -17,8 +17,12 @@ import { enSystemHomePlatform } from "./system-home-platform";
 import { enPublicPlans } from "./public-plans";
 import { enAuthResilience } from "./auth-resilience";
 import { enSubscriptionUsage } from "./subscription-usage";
+import { enSubscriptionChanges } from "./subscription-changes";
+import { enBillingRecovery } from "./billing-recovery";
 
 export const en = {
+  ...enSubscriptionChanges,
+  ...enBillingRecovery,
   ...enAuthResilience,
   ...enSubscriptionUsage,
   ...enDomain,

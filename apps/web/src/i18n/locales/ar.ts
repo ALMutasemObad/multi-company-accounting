@@ -15,8 +15,12 @@ import { arSystemHomePlatform } from "./system-home-platform";
 import { arPublicPlans } from "./public-plans";
 import { arAuthResilience } from "./auth-resilience";
 import { arSubscriptionUsage } from "./subscription-usage";
+import { arSubscriptionChanges } from "./subscription-changes";
+import { arBillingRecovery } from "./billing-recovery";
 
 export const ar = {
+  ...arSubscriptionChanges,
+  ...arBillingRecovery,
   ...arAuthResilience,
   ...arSubscriptionUsage,
   ...arDomain,

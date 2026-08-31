@@ -13,8 +13,12 @@ import { urSystemHomePlatform } from "./system-home-platform";
 import { urPublicPlans } from "./public-plans";
 import { urAuthResilience } from "./auth-resilience";
 import { urSubscriptionUsage } from "./subscription-usage";
+import { urSubscriptionChanges } from "./subscription-changes";
+import { urBillingRecovery } from "./billing-recovery";
 
 export const ur = {
+  ...urSubscriptionChanges,
+  ...urBillingRecovery,
   ...urAuthResilience,
   ...urSubscriptionUsage,
   ...urReconciliation,
