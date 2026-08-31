@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedDate": "2026-08-31T17:07:16.7180731+03:00",
+  "updatedDate": "2026-08-31T17:08:47.2882506+03:00",
   "coordinatorThreadId": "01a05783-e720-7ed0-a107-4a372bd53202",
   "projectId": "c3fd65c7-6c00-45d1-9859-46f96966dc38",
   "repository": "C:/Users/motas/Documents/نظام جوار المالي/project",
@@ -330,7 +330,7 @@
       "threadId": "01a057da-c19c-74c2-8f2c-be2ff9c8b3e5",
       "hostId": "local",
       "worktree": "D:/CodexWorktrees/wave1-dual-db-validation",
-      "status": "mariadb_data_extraction_r2_authorized",
+      "status": "maria_extracted_mysql_data_extraction_authorized",
       "priority": "P0",
       "acceptance": "Preparation only,notDBacceptance. OfficialWindowsZIP versions mustmatchCI MariaDB10.11.11/MySQL8.4.11; hashes/requirements/manifests onD.",
       "constraints": "Oneofficialdownload atatime andhash/read-onlypreflight now. Noextraction/initialize/DB/service/install/Prismagenerate/Gitwrites untilseparateallocation. PDFownsruntime. NoVCinstaller/EULAacceptance orglobalenv/ACL/PATHchanges.",
@@ -372,6 +372,22 @@
         "priorAttempt": "R1 preflight failed ISO conversion before runner,0files,0bytes",
         "allocationToken": "e6988756-7f3c-43e3-9137-ef935edefa52",
         "expiresAtUtc": "2026-08-31T14:27:33Z"
+      },
+      "mariaExtraction": {
+        "runner": "R2 4770D771",
+        "exit": 0,
+        "filesCompleted": 599,
+        "writtenBytes": 289103212,
+        "seconds": 28.9714836,
+        "workerCommandSeconds": 30.0088106,
+        "lockReleased": true,
+        "summary": "D:/CodexWorktrees/wave1-dual-db-validation/stage2-r1/reports/mariadb-10.11.11/summary.json",
+        "proofLimit": "ZIP data extraction only; no PE/trust/DB run"
+      },
+      "mysqlExtractionAllocation": {
+        "token": "757877e1-4c39-45e4-b20d-728eff6fff20",
+        "expiresAtUtc": "2026-08-31T14:33:47Z",
+        "scope": "archive-data-only"
       }
     }
   ],
@@ -540,7 +556,7 @@
     }
   ],
   "browserResourceStatus": "QA44runended43pass/1D3failure,0skip/retry. API26804/Vite27836 exited,3166/4216free,watchdognotused. No interactiveBrowserowned.",
-  "limitedRuntimeOwner": "W1-DB-PREP: one MariaDB10.11.11 archive-data-only extraction using reviewed R2 4770D771 and new permit. No PE/Authenticode/DB. PDF103 and D3 validation queued; others source-only.",
+  "limitedRuntimeOwner": "W1-DB-PREP: one MySQL8.4.11 archive-data-only extraction using R2 4770D771 and new permit. Maria data extraction succeeded599files/289103212bytes and lock released. No PE/Authenticode/DB. PDF103 next.",
   "validationOrder": [
     "DB-PREP: Maria then MySQL archive extraction as data in separate permits; readback+offline trust inventory separately; no PE/DB until reviewed.",
     "PDF: frozen R3+header+ASCII,103focused ->narrowtypes->PDF/extraction/PNG,worker1,no retry.",
