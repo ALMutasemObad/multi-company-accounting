@@ -5,6 +5,7 @@ import { formatPrintDecimal as money } from "./print-decimal.js";
 import { printTableRowHeight, takePrintTableFragment, type PrintTableCell } from "./print-table-row.js";
 import { drawPrintDocumentHeading } from "./pdf-document-heading.js";
 import { createInvoiceDescriptionCell, prepareInvoiceDescription, type InvoiceDescription, type InvoiceDescriptionCell, type InvoiceDescriptionFont } from "./print-invoice-description.js";
+import { journalFirstFragmentHeight, planPrintJournalIdentity, type PrintJournalIdentityBlock } from "./print-journal-identity.js";
 
 const require = createRequire(import.meta.url);
 const arabicFont = require.resolve("@fontsource/noto-sans-arabic/files/noto-sans-arabic-arabic-400-normal.woff");
@@ -36,7 +37,7 @@ export function renderDocumentPdf(snapshot: PrintSnapshot): Promise<Buffer> {
       rows: string[][], widths: number[], numericColumns: number,
       isArabic: (column: number) => boolean, fontSize: number, paddingX: number,
       minHeight: number, drawHeader: () => void,
-      pageContext?: (draw: boolean, continuation: boolean) => number,
+      pageContext?: (draw: boolean, continuation: boolean, firstRow?: readonly PrintTableCell[]) => number,
       invoiceDescriptions?: readonly (InvoiceDescription | null)[],
     ) => {
       const options = (column: number): PDFKit.Mixins.TextOptions => ({
@@ -70,16 +71,9 @@ export function renderDocumentPdf(snapshot: PrintSnapshot): Promise<Buffer> {
         const canFitFirstFragment = (contextHeight = 0) => firstRow
           ? takePrintTableFragment(firstRow, 755 - pdf.y - contextHeight - 24, minHeight) !== null
           : pdf.y + contextHeight + 24 + minHeight <= 755;
-        const contextPage = pdf.page;
-        pageContext?.(true, continuation);
-        // A schema-valid entry description can itself span pages. Keep its full
-        // native text flow, then repeat the reference beside the actual table.
-        if (!continuation && pageContext && pdf.page !== contextPage) {
-          if (!canFitFirstFragment(pageContext(false, true))) { pdf.addPage(); pdf.y = 52; }
-          pageContext(true, true);
-        }
+        pageContext?.(true, continuation, firstRow);
         if (!canFitFirstFragment()) {
-          pdf.addPage(); pdf.y = 52; pageContext?.(true, true);
+          pdf.addPage(); pdf.y = 52; pageContext?.(true, true, firstRow);
         }
         drawHeader();
         bodyStart = pdf.y;
@@ -89,7 +83,7 @@ export function renderDocumentPdf(snapshot: PrintSnapshot): Promise<Buffer> {
       const firstBudget = 755 - pdf.y - contextHeight - 24;
       const canStart = prepared[0] ? takePrintTableFragment(prepared[0], firstBudget, minHeight) !== null : firstBudget >= minHeight;
       // Reserve an actual first fragment, not the full height of an oversized row.
-      // An oversized description retains native flow rather than a negative budget.
+      // The journal context plans oversized descriptions within the content area.
       if (!canStart && contextHeight + minHeight <= maxTableRowHeight) { pdf.addPage(); pdf.y = 52; }
       drawPageHeader(false, prepared[0]);
       for (const row of prepared) {
@@ -201,20 +195,40 @@ export function renderDocumentPdf(snapshot: PrintSnapshot): Promise<Buffer> {
       ensure(122); pdf.font("ArabicBold").fontSize(14).fillColor("#18352d"); right("تفاصيل القيود"); pdf.moveDown(.5);
     }
     for (const [entryIndex, entry] of snapshot.entries.entries()) {
-      const pageContext = (draw: boolean, continuation: boolean) => {
-        let height = 0;
-        const block = (text: string, size: number, color: string, gap: number) => {
-          const prepared = arabicSafe(text);
-          const options: PDFKit.Mixins.TextOptions = { width: 511, align: "right", features: ["rtla"] };
-          // right() used Arabic regular here; preserve its effective font and sizes.
-          pdf.font("Arabic").fontSize(size);
-          const spacing = pdf.currentLineHeight(true) * gap;
-          height += pdf.heightOfString(prepared, options) + spacing;
-          if (draw) { pdf.fillColor(color).text(prepared, 42, pdf.y, options); pdf.y += spacing; }
-        };
-        if (!continuation && entryIndex === 0) block("تفاصيل القيود", 14, "#18352d", .5);
-        const reference = `القيد ${entry.number}، ${entry.date}`;
-        block(continuation ? reference : `${reference}: ${entry.description}`, 10, "#315b4e", .4);
+      const identityOptions: PDFKit.Mixins.TextOptions = { width: 511, align: "right", features: ["rtla"] };
+      // Preserve the effective regular face, sizes and gaps used by right(). Text
+      // is prepared once; both measurement and drawing use these exact options.
+      const identityFont = (kind: PrintJournalIdentityBlock["kind"]) => pdf.font("Arabic").fontSize(kind === "section" ? 14 : 10);
+      const drawIdentity = (text: string, top: number, kind: PrintJournalIdentityBlock["kind"]) => identityFont(kind)
+        .fillColor(kind === "section" ? "#18352d" : "#315b4e").text(text, 42, top, identityOptions);
+      const measureIdentity = (text: string) => identityFont("identity").heightOfString(text, identityOptions);
+      const identityGap = identityFont("identity").currentLineHeight(true) * .4;
+      const reference = arabicSafe(`القيد ${entry.number}، ${entry.date}`);
+      // PDFKit removes LF inside a line but otherwise encodes CR as a spacing
+      // glyph. Treat each CRLF as one line break in this display copy only.
+      const description = arabicSafe(entry.description.replace(/\r\n/g, "\n"));
+      const section = entryIndex === 0 ? {
+        text: "تفاصيل القيود",
+        height: identityFont("section").heightOfString("تفاصيل القيود", identityOptions)
+          + identityFont("section").currentLineHeight(true) * .5,
+      } : null;
+      const pageContext = (draw: boolean, continuation: boolean, firstRow?: readonly PrintTableCell[]) => {
+        const height = (continuation ? 0 : section?.height ?? 0)
+          + measureIdentity(continuation ? reference : `${reference}، ${description}`) + identityGap;
+        if (!draw) return height;
+        if (continuation) {
+          const top = pdf.y;
+          drawIdentity(reference, top, "reference");
+          pdf.y = top + height;
+        } else {
+          const plan = planPrintJournalIdentity({ reference, description, section, measureHeight: measureIdentity, gap: identityGap },
+            pdf.y, journalFirstFragmentHeight(firstRow, 27));
+          for (const page of plan) {
+            if (page.newPage) { pdf.addPage(); pdf.y = 52; }
+            for (const block of page.blocks) drawIdentity(block.text, block.y, block.kind);
+            pdf.y = page.bottom;
+          }
+        }
         return height;
       };
       const x = 42, widths = [80, 80, 231, 120];
