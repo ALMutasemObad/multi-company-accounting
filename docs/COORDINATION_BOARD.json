@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedDate": "2026-08-31T17:16:33.1921842+03:00",
+  "updatedDate": "2026-08-31T17:37:11.7724693+03:00",
   "coordinatorThreadId": "01a05783-e720-7ed0-a107-4a372bd53202",
   "projectId": "c3fd65c7-6c00-45d1-9859-46f96966dc38",
   "repository": "C:/Users/motas/Documents/نظام جوار المالي/project",
@@ -88,7 +88,18 @@
         "status": "independent_source_review_passed_runtime_window_allocated",
         "futureFocusedTests": 103
       },
-      "currentValidation": "103focused+types+PDF/PNG authorized on frozenW2; results pending"
+      "currentValidation": "W2round01:102/103pass in46.25s,1assertion expected125baselines/actual250. No types/PDF/PNG started. Runtime released; diagnosis must distinguish wrapping from duplication.",
+      "w2Round01": {
+        "passed": 102,
+        "failed": 1,
+        "seconds": 46.25,
+        "failedTest": "pdf-invoice-item-codes.test.ts:266",
+        "evidence": "D:/CodexWorktrees/wave1-pdf-decimal/tmp/coordination/w2-qa-20260831-round01",
+        "rerun": false,
+        "typesRan": false,
+        "pdfGenerationRan": false,
+        "interpretation": "Not yet classified; no W2acceptance"
+      }
     },
     {
       "id": "W1-POS",
@@ -326,7 +337,16 @@
         "coordinatorVerified": true,
         "publication": false
       },
-      "integratedAt": "a4f8e0c16dc03ce5d6869bcd21c194335efe0bd1"
+      "integratedAt": "a4f8e0c16dc03ce5d6869bcd21c194335efe0bd1",
+      "d3Revision": {
+        "v1PatchSha256": "3BFAA5B0F82AB5969F5EA34BCAABD5A48FA84F1E2F43F2099514114D4636E58D",
+        "manifestSha256": "ED1FAA88EFF572915920E126F7BB4F53CE2D7A7D28026375B2E3BDB318DEE2D9",
+        "sourceFiles": 16,
+        "status": "v1sourcefrozen;v2inprogressforauthCSRFretryprotection",
+        "finding": "Uncertain A retry with sessionB missingpermission can403 beforeexpectedCompany and be wrongly rejected/released. Preserve previous unresolvedrecord; do not bypassRBAC.",
+        "runtime": "No D3generation/types/HTTP/browser run yet",
+        "e2eTypesScope": "Generaltsconfig.e2e excludes subscription-discovery; D3spec requires explicitoverlay"
+      }
     },
     {
       "id": "W1-DB-PREP",
@@ -386,7 +406,8 @@
         "workerCommandSeconds": 30.0088106,
         "lockReleased": true,
         "summary": "D:/CodexWorktrees/wave1-dual-db-validation/stage2-r1/reports/mariadb-10.11.11/summary.json",
-        "proofLimit": "ZIP data extraction only; no PE/trust/DB run"
+        "proofLimit": "ZIP data extraction only; no PE/trust/DB run",
+        "manifestSha256": "9EF2E56C7ADB1B9128D482B501C2645A9CCE6E40821A576CF6087CD0EC7FD256"
       },
       "mysqlExtractionAllocation": {
         "token": "757877e1-4c39-45e4-b20d-728eff6fff20",
@@ -402,7 +423,17 @@
         "workerCommandSeconds": 35.5998213,
         "lockReleased": true,
         "summary": "D:/CodexWorktrees/wave1-dual-db-validation/stage2-r1/reports/mysql-8.4.11/summary.json",
-        "proofLimit": "ZIP data extraction only; no PE/trust/DB run"
+        "proofLimit": "ZIP data extraction only; no PE/trust/DB run",
+        "manifestSha256": "BC3791AC6BB864435A4987491F259914D34E5D4E485E29D40C8D3B987EC9BDDB"
+      },
+      "stage3Candidate": {
+        "root": "D:/CodexWorktrees/wave1-dual-db-validation/stage3-r1",
+        "helperSha256": "F326DA70198D9D4C2DA3305535745B9ACF662B6FB18F2E9D8A16B6F8CEED6B85",
+        "runnerSha256": "1B02AA66689FAB6AE6E4C65AC051CF2110D739EF023B2F2019C2047CF16DCC54",
+        "manifestSha256": "FA038314DE160ADD1741450F3FD7FCA8ED659171B417727DC9178FCC43B6357E",
+        "status": "source_only_independent_review_active",
+        "runtimeAuthorized": false,
+        "scope": "Readback895files/1551728300bytes then186EXE/DLL cached-onlyinventory; no targetPE, no trustdecision, authenticatedtimestampnull"
       }
     }
   ],
@@ -472,8 +503,8 @@
         "W1-POS"
       ],
       "source": "D:/CodexWorktrees/cashier-context-experience",
-      "status": "queued",
-      "constraints": "D3sourceauditshowssharedsidcompanyswitchcanoutliveoldtabUI;review broaderPOS/context requestintentbindingafterN1. D3fixscopedsubscriptionsdoesnotproveallcontexts safe. Noimplementationassignedyet."
+      "status": "source_integration_plan_assigned_to_pos_owner",
+      "constraints": "Read-only bounded N2source versusN1 composition/contextbinding audit. No sourceimplementation/App/Auth/API/OpenAPI changes yet; preserveN1DBcandidate."
     },
     {
       "id": "W2-RECEIPT",
@@ -571,7 +602,7 @@
     }
   ],
   "browserResourceStatus": "QA44runended43pass/1D3failure,0skip/retry. API26804/Vite27836 exited,3166/4216free,watchdognotused. No interactiveBrowserowned.",
-  "limitedRuntimeOwner": "W1-PDF exclusive:103focused ->narrowtypes->PDF/extraction/PNG with resource checks and frozen hashes; no DB/browser/Gitwrites. Both DB archives extracted and locks released; DB-PREP now source-only offline inventory prep.",
+  "limitedRuntimeOwner": "W1-PDF exclusive: one frozen failing-fixture PDF plus BT/Tm/CID diagnostic only. No103rerun/types/fullgeneration/DB/browser/Gitwrites. Root seven source gates finished0.",
   "validationOrder": [
     "DB-PREP: Maria then MySQL archive extraction as data in separate permits; readback+offline trust inventory separately; no PE/DB until reviewed.",
     "PDF: frozen R3+header+ASCII,103focused ->narrowtypes->PDF/extraction/PNG,worker1,no retry.",
@@ -586,26 +617,27 @@
   "activeCapacityNote": "AtnewDBtaskdispatch PDFvalidationandDBdownloadpreflight areactive; N1/ONBOARD/QA areidle candidatesawaitingnextgates. Activeimplementationcapacity remainsbelow4 despite>4trackedtasks.",
   "prismaIsolationPlan": "Executed successfully inONBOARDownedDfolder. Generate/Smoke/154policyunits/APItypesPASS withNODE_OPTIONS512 andnoDB;shared91files/protectedunchanged. N1mayuseclientreadonlypermanifest569F946A. Temporarysourcealiases stilldoNOTprove distserver/E2Eruntime.",
   "pendingRuntimeWindows": [
-    "DB-PREP: Maria then MySQL archive extraction as data in separate permits; readback+offline trust inventory separately; no PE/DB until reviewed.",
-    "PDF: frozen R3+header+ASCII,103focused ->narrowtypes->PDF/extraction/PNG,worker1,no retry.",
-    "QA D3: source completion then OpenAPI generate/check, focusedunits/APIHTTP/Web/API/E2Etypes then new browserrun; preserve43/44evidence.",
-    "Real DB suites: ONBOARD separate fresh DB per suite/engine; N1 11finalization+1financial exact-name proof with owned fresh DB and isolatedclient.",
-    "Unified candidate: merge contracts/regenerate and run common guards/types/build/currentHEAD acceptance; no publishing."
+    "PDF single saved-fixture PDF and BT/Tm/CIDdiagnostic now; no103rerun until concrete evidence/correction.",
+    "Root common32focused config ready; run after source freeze and resource allocation, avoid duplicate old per-track suites. Seven light source gates already passed atf49057d.",
+    "D3v2 authCSRFretry protection: finish source/review then generator/check/HTTP/explicit subscription-discovery types/browser window; no overwrite N1generated.",
+    "DBstage3 cached-only readback/signature inventory: independent source review pending then separate compile/parser and inventory permit; no targetPE/DB until trust/startup review.",
+    "ONBOARD95input/67migration overlay and N1local11+1/seed plans ready source-only; DB receipt/account/fresh names not approved or created.",
+    "N2 context source integration plan assigned POSowner, preserve frozen N1 and noApp/Auth/APIchanges yet."
   ],
   "coordinatorGitException": "Completed successfully: df39116 committedonly2coordinationdocs afterdiffcheck;index/worktreecleanthen. No hooks override/ACLchange. This demonstrates localGitwriteworkedafterspace recovery,doesnotprovepriorrootcause.",
   "lastCoordinatorCommit": "a4f8e0c16dc03ce5d6869bcd21c194335efe0bd1",
-  "gitWriteOwner": "None. ROOT composed candidates successfully and released Git; only documentation receipts may be checkpointed later. No push/mainmerge/workflow/deploy.",
+  "gitWriteOwner": "None; root committed two guard inventory expectations and released Git.",
   "evaluationTask": {
     "threadId": "01a05803-cf2b-77c1-9415-e0839dff48d6",
     "hostId": "local",
     "title": "تقييم سير المشروع ونسب التقدم",
     "role": "evaluation_only",
-    "status": "separate_wave_and_documented_system_baselines_delivered",
+    "status": "initial_baselines_and_first_integration_delta_delivered",
     "outputRoot": "D:/CodexWorktrees/project-progress-evaluation",
     "scope": "Independent approximateoverall/domain/workstreamprogress withfixeddenominator,weights,uncertainty andseparatecode/validation/integration/releasereadiness.",
     "restrictions": "No productediting/delegation/resourceownership/tests/build/browser/DB/Git/publication. Owntextreports only; do not repurpose this task for implementation.",
     "updatePolicy": "Coordinator requests a delta assessment after material acceptance/integration change; preservemethod or explain denominatorchange. No separate newautomation or repeated empty assessments.",
-    "afterCursor": "791a1598-8684-461e-98b1-65d44c1abc3f:4",
+    "afterCursor": "791a1598-8684-461e-98b1-65d44c1abc3f:9",
     "initialAssessment": {
       "cutoff": "2026-08-31T16:40:13+03:00",
       "scope": "Postrelease45grocery/subscriptionclosureprogramonly;NOTentireERP",
@@ -616,7 +648,7 @@
       ],
       "confidence": "medium",
       "implementation": 70,
-      "validation": 35,
+      "validation": 40,
       "integration": 10,
       "releaseGates": 0,
       "publicationExcluded": true,
@@ -638,11 +670,34 @@
       "directBehaviorReadingIsTestCoverage": false,
       "implementation": 90,
       "historicalAndCurrentLimitedValidation": 65,
-      "localComposition": 90,
+      "localComposition": 95,
       "newUnifiedReleaseGates": 0,
       "report": "D:/CodexWorktrees/project-progress-evaluation/SYSTEM_SCOPE_BASELINE_AR.md",
       "data": "D:/CodexWorktrees/project-progress-evaluation/system_scope.json",
       "relationship": "Separate denominator from40percent currentwave;not+30progressoraverage;notfirstclientreadiness"
+    },
+    "latestAssessment": {
+      "cutoff": "2026-08-31T17:18:53+03:00",
+      "waveApproximatePercent": 45,
+      "waveRange": [
+        35,
+        55
+      ],
+      "systemApproximatePercent": 70,
+      "systemRange": [
+        60,
+        80
+      ],
+      "change": "Current wave40->45 from verified local composition only;systemrounded70unchanged; no newruntime/DBcredit in this delta",
+      "report": "D:/CodexWorktrees/project-progress-evaluation/CURRENT_PROGRESS_AR.md",
+      "data": "D:/CodexWorktrees/project-progress-evaluation/progress.json",
+      "laterSourceGates": "Root subsequently passed7sourcegates at f49057d, documented separately; not part of this evaluator cutoff",
+      "wavePartial": {
+        "posRecovery": 65,
+        "onboarding": 65,
+        "subscriptionUI": 70,
+        "integrationStage": 45
+      }
     }
   },
   "integrationCandidate": {
@@ -667,5 +722,79 @@
     "receipt": "D:/CodexWorktrees/continuous-coordination/tmp/coordination/integration-20260831/INTEGRATION_RECEIPT.json",
     "receiptSha256": "62FBB615B2409986175DE121C5AAA15AF99CAD1BFB625590FA8B4FB356C190E1",
     "proofLimit": "Local candidate composition only. No common runtime/types/build/DB/browser/release gate is accepted at this head."
+  },
+  "unifiedLightHead": "f49057d070152edcceb07adef47db29df7691a32",
+  "unifiedLightResult": {
+    "head": "f49057d070152edcceb07adef47db29df7691a32",
+    "run": "D:\\CodexWorktrees\\continuous-coordination\\tmp\\coordination\\unified-validation\\runs\\20260831-143003",
+    "stages": [
+      {
+        "stage": "contracts-check",
+        "head": "f49057d070152edcceb07adef47db29df7691a32",
+        "pid": 29220,
+        "exitCode": 0,
+        "elapsedMs": 1550,
+        "completedAt": "2026-08-31T17:30:05.4440218+03:00",
+        "inputHashesUnchanged": true
+      },
+      {
+        "stage": "contracts-tests",
+        "head": "f49057d070152edcceb07adef47db29df7691a32",
+        "pid": 23864,
+        "exitCode": 0,
+        "elapsedMs": 3600,
+        "completedAt": "2026-08-31T17:30:09.4897248+03:00",
+        "inputHashesUnchanged": true
+      },
+      {
+        "stage": "web-types",
+        "head": "f49057d070152edcceb07adef47db29df7691a32",
+        "pid": 30580,
+        "exitCode": 0,
+        "elapsedMs": 2251,
+        "completedAt": "2026-08-31T17:30:12.1493079+03:00",
+        "inputHashesUnchanged": true
+      },
+      {
+        "stage": "api-src-tests-types",
+        "head": "f49057d070152edcceb07adef47db29df7691a32",
+        "pid": 15156,
+        "exitCode": 0,
+        "elapsedMs": 16550,
+        "completedAt": "2026-08-31T17:30:29.0926617+03:00",
+        "inputHashesUnchanged": true
+      },
+      {
+        "stage": "e2e-types",
+        "head": "f49057d070152edcceb07adef47db29df7691a32",
+        "pid": 11248,
+        "exitCode": 0,
+        "elapsedMs": 538,
+        "completedAt": "2026-08-31T17:30:30.0508893+03:00",
+        "inputHashesUnchanged": true
+      },
+      {
+        "stage": "i18n",
+        "head": "f49057d070152edcceb07adef47db29df7691a32",
+        "pid": 20028,
+        "exitCode": 0,
+        "elapsedMs": 1991,
+        "completedAt": "2026-08-31T17:30:32.4453526+03:00",
+        "inputHashesUnchanged": true
+      },
+      {
+        "stage": "ui",
+        "head": "f49057d070152edcceb07adef47db29df7691a32",
+        "pid": 14584,
+        "exitCode": 0,
+        "elapsedMs": 849,
+        "completedAt": "2026-08-31T17:30:33.6809588+03:00",
+        "inputHashesUnchanged": true
+      }
+    ],
+    "allSevenPassed": true,
+    "guardsTests": "5/5 passed",
+    "proofLimit": "Contracts freshness/builtin guards,Web/API src+tests/generalE2Etypes,i18n/UI only. No focused32/runDB/build/browser/D3/PDFW2 acceptance.",
+    "priorAttempt": "bd5773f: contracts check0,guards4/5 due remaining stale inventory assertion; corrected only fixed323/170/2144 expectation; no later stages then."
   }
 }
