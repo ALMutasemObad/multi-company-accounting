@@ -1,0 +1,16 @@
+.selling-profile-editor { font-size: 1rem; line-height: 1.65; border: 1px solid #cbd5e1; border-radius: 16px; padding: 24px; background: #fff; color: #152d3c; max-width: 880px; }
+.selling-profile-editor h2 { font-size: 1.25rem; line-height: 1.5; margin: 0 0 12px; }
+.selling-profile-editor p { margin: 8px 0 16px; font-size: 1rem; }
+.selling-profile-editor__item { font-weight: 700; overflow-wrap: anywhere; }
+.selling-profile-editor fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.selling-profile-editor__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.selling-profile-editor__field { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.selling-profile-editor__field span { font-weight: 600; }
+.selling-profile-editor input, .selling-profile-editor select, .selling-profile-editor button { font: inherit; min-height: 44px; border-radius: 8px; border: 1px solid #94a3b8; padding: 8px 12px; max-width: 100%; }
+.selling-profile-editor input:focus-visible, .selling-profile-editor select:focus-visible, .selling-profile-editor button:focus-visible { outline: 3px solid #136c60; outline-offset: 3px; }
+.selling-profile-editor__active { display: flex; align-items: center; gap: 12px; }
+.selling-profile-editor__active input { width: 22px; min-height: 22px; }
+.selling-profile-editor__actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
+.selling-profile-editor button { background: #136c60; color: #fff; cursor: pointer; }
+.selling-profile-editor button:disabled { background: #e2e8f0; color: #475569; cursor: not-allowed; }
+@media (max-width: 600px) { .selling-profile-editor { padding: 16px; } .selling-profile-editor__grid { grid-template-columns: 1fr; } .selling-profile-editor__actions button { width: 100%; } }
