@@ -154,6 +154,11 @@ test('fresh MariaDB/MySQL and both populated upgrade jobs wire explicit R2 opt-i
     const job = workflow.jobs[id];
     assert.equal(job.env.RUN_R2_DB_TESTS, 'true');
     assert.equal(job.env.R2_DB_MIGRATION_MODE, mode);
+    // The runner context is unavailable in jobs.<job_id>.env. Resolve it only
+    // after the runner has started, before the DB preflight or evidence writer.
+    assert.equal(job.env.R2_DB_GATE_ARTIFACT_DIR, undefined);
+    assert.doesNotMatch(JSON.stringify(job.env), /\$\{\{\s*runner\./);
+    assert.equal(job.steps[0].run, 'echo "R2_DB_GATE_ARTIFACT_DIR=$RUNNER_TEMP/r2-db-gate" >> "$GITHUB_ENV"');
     assert.equal(job.env.DATABASE_URL, job.env.R2_DATABASE_URL);
     assert.equal(new URL(job.env.R2_DATABASE_URL).pathname, '/test_mcap_finance');
     assert.equal(Object.values(job.services)[0].env.MYSQL_DATABASE, 'test_mcap_finance');

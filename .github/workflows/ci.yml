@@ -36,7 +36,6 @@ jobs:
       R2_DATABASE_URL: mysql://mcap_test:test_database_password@127.0.0.1:3306/test_mcap_finance
       RUN_R2_DB_TESTS: 'true'
       R2_DB_MIGRATION_MODE: fresh
-      R2_DB_GATE_ARTIFACT_DIR: ${{ runner.temp }}/r2-db-gate
       SEED_ADMIN_PASSWORD: CI-Only-Admin-Password-2026!
       RUN_DB_TESTS: 'true'
       EXPECTED_DATABASE_VERSION_PREFIX: '10.11.11-MariaDB'
@@ -45,6 +44,8 @@ jobs:
       CI_RESTORE_DATABASE: mcap_finance_restore_test
       BACKUP_ENCRYPTION_PASSPHRASE: CI-only-database-backup-passphrase-2026
     steps:
+      - name: Configure isolated R2 database evidence directory
+        run: echo "R2_DB_GATE_ARTIFACT_DIR=$RUNNER_TEMP/r2-db-gate" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -148,13 +149,14 @@ jobs:
       R2_DATABASE_URL: mysql://mcap_test:test_database_password@127.0.0.1:3306/test_mcap_finance
       RUN_R2_DB_TESTS: 'true'
       R2_DB_MIGRATION_MODE: upgrade
-      R2_DB_GATE_ARTIFACT_DIR: ${{ runner.temp }}/r2-db-gate
       SEED_ADMIN_PASSWORD: CI-Only-Admin-Password-2026!
       RUN_DB_TESTS: 'true'
       EXPECTED_DATABASE_VERSION_PREFIX: ${{ matrix.expected_version }}
       PRODUCTION_BASELINE_COMMIT: c39b97949655f43c9fe35f98b3d47cce5c6c6054
       PRODUCTION_BASELINE_MIGRATION_COUNT: '38'
     steps:
+      - name: Configure isolated R2 database evidence directory
+        run: echo "R2_DB_GATE_ARTIFACT_DIR=$RUNNER_TEMP/r2-db-gate" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -209,7 +211,6 @@ jobs:
       R2_DATABASE_URL: mysql://mcap_test:test_database_password@127.0.0.1:3306/test_mcap_finance
       RUN_R2_DB_TESTS: 'true'
       R2_DB_MIGRATION_MODE: fresh
-      R2_DB_GATE_ARTIFACT_DIR: ${{ runner.temp }}/r2-db-gate
       SEED_ADMIN_PASSWORD: CI-Only-Admin-Password-2026!
       RUN_DB_TESTS: 'true'
       EXPECTED_DATABASE_VERSION_PREFIX: '8.4.'
@@ -218,6 +219,8 @@ jobs:
       CI_RESTORE_DATABASE: mcap_finance_restore_test
       BACKUP_ENCRYPTION_PASSPHRASE: CI-only-database-backup-passphrase-2026
     steps:
+      - name: Configure isolated R2 database evidence directory
+        run: echo "R2_DB_GATE_ARTIFACT_DIR=$RUNNER_TEMP/r2-db-gate" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
