@@ -6,6 +6,7 @@ import { useI18n } from "./i18n";
 import type { SubscriptionCatalog, SubscriptionPlanVersion, SubscriptionSnapshot } from "./types";
 import { Button, PageHeader, Spinner } from "./ui";
 import { clearSubscriptionPlanPreference, subscriptionPlanForRoute, subscriptionRouteBase } from "./public-plans";
+import { subscriptionRouteIntent, withoutSubscriptionPlanIntent, type SubscriptionRouteIntent } from './subscription-route-intent';
 import { CompanySubscriptionUsagePanel } from "./CompanySubscriptionUsagePanel";
 import { resolveSubscriptionPlanSelection } from "./subscription-usage";
 import { RequestError, withinRequest } from "./request-scope";
@@ -50,6 +51,12 @@ function CompanySubscriptionBody({ notify, companyId, scope }: { notify: Notice;
   const selectedDefinition = useRef("");
   const catalogPageRef = useRef(1);
   const catalogRequest = useRef(0);
+  const currentCatalog = useRef<SubscriptionCatalog | null>(null);
+  const catalogBusy = useRef(true);
+  const observedRouteIntent = useRef(subscriptionRouteIntent(location.hash)?.key ?? null);
+  const pendingRouteIntent = useRef<SubscriptionRouteIntent | null>(null);
+  const intentRevision = useRef(0);
+  const reviewIntentRevision = useRef(-1);
 
   function saveRecord(next: SubscriptionChangeRecord | null) {
     recordRef.current = next;
@@ -78,12 +85,17 @@ function CompanySubscriptionBody({ notify, companyId, scope }: { notify: Notice;
 
   const applyCatalog = useCallback((nextCatalog: SubscriptionCatalog) => {
     setReview(null); setAcknowledged(false);
-    const candidate = selectionInitialized.current ? selectionRef.current : subscriptionPlanForRoute(location.hash) ?? "";
-    const resolved = resolveSubscriptionPlanSelection(nextCatalog.plans.map((plan) => plan.id), candidate, !selectionInitialized.current);
+    currentCatalog.current = nextCatalog;
+    const routeChoice = pendingRouteIntent.current;
+    const candidate = routeChoice ? routeChoice.planId ?? "" : selectionInitialized.current ? selectionRef.current
+      : recordRef.current?.attempt.review.plan.id ?? subscriptionPlanForRoute(location.hash) ?? "";
+    // Never turn an invalid/removed/missing link into the first available plan.
+    const resolved = resolveSubscriptionPlanSelection(nextCatalog.plans.map((plan) => plan.id), candidate, false);
     const definition = JSON.stringify(nextCatalog.plans.find(plan => plan.id === resolved.selectedId) ?? null);
     if (resolved.selectedId !== selectionRef.current || resolved.missing || (selectedDefinition.current && selectedDefinition.current !== definition)) setOptionalIds([]);
     selectedDefinition.current = definition;
-    if (resolved.missing) setSelectionMissing(true);
+    if (routeChoice) { setSelectionMissing(resolved.missing); pendingRouteIntent.current = null; }
+    else if (resolved.missing) setSelectionMissing(true);
     // Once a choice is missing, another page never selects a replacement (or restores it) implicitly.
     selectionInitialized.current = true;
     selectionRef.current = resolved.selectedId;
@@ -92,11 +104,53 @@ function CompanySubscriptionBody({ notify, companyId, scope }: { notify: Notice;
     catalogPageRef.current = nextCatalog.meta.page;
   }, []);
 
+  useEffect(() => {
+    const onPlanRouteChange = () => {
+      const intent = subscriptionRouteIntent(location.hash);
+      if (!intent) return;
+      // A link cannot clear, replace, remount, or queue work behind any protected
+      // attempt. Recovery keeps its original immutable body/key/review.
+      if (command.current || recordRef.current) {
+        pendingRouteIntent.current = null;
+        // EntryPage may have saved this link as a preference. Ignoring it must
+        // not leave a stored choice that reappears after recovery/remount.
+        clearSubscriptionPlanPreference();
+        // Consume the URL too, including duplicate events and remounts. Otherwise
+        // a rejected attempt's later dismissal could expose this ignored intent.
+        const nextHash = withoutSubscriptionPlanIntent(location.hash);
+        if (nextHash !== location.hash) {
+          history.replaceState(history.state, '', `${location.pathname}${location.search}${nextHash}`);
+        }
+        observedRouteIntent.current = subscriptionRouteIntent(nextHash)!.key;
+        return;
+      }
+      // A duplicate no-plan event (including mount) must not resurrect storage.
+      if (!intent.planId) clearSubscriptionPlanPreference();
+      if (intent.key === observedRouteIntent.current) return;
+      observedRouteIntent.current = intent.key;
+      ++intentRevision.current; // Also invalidates confirmation before React renders.
+      setReview(null); setAcknowledged(false); setOptionalIds([]);
+      pendingRouteIntent.current = intent;
+      selectionRef.current = ''; selectedDefinition.current = '';
+      setSelectedPlanId(''); setSelectionMissing(false);
+      if (!catalogBusy.current && currentCatalog.current) applyCatalog(currentCatalog.current);
+    };
+    window.addEventListener('hashchange', onPlanRouteChange);
+    window.addEventListener('popstate', onPlanRouteChange);
+    // Covers navigation between render and effect registration.
+    onPlanRouteChange();
+    return () => {
+      window.removeEventListener('hashchange', onPlanRouteChange);
+      window.removeEventListener('popstate', onPlanRouteChange);
+    };
+  }, [applyCatalog]);
+
   const load = useCallback(async () => {
     const requestId = ++catalogRequest.current;
     read.current?.abort();
     const controller = new AbortController();
     read.current = controller;
+    catalogBusy.current = true;
     setCatalogLoading(true);
     setReadSucceeded(false);
     setError("");
@@ -115,7 +169,7 @@ function CompanySubscriptionBody({ notify, companyId, scope }: { notify: Notice;
       if (mounted.current && !controller.signal.aborted && requestId === catalogRequest.current) setError(t("subscriptionChanges.readFailed"));
       return false;
     } finally {
-      if (mounted.current && requestId === catalogRequest.current) { setLoading(false); setCatalogLoading(false); }
+      if (mounted.current && requestId === catalogRequest.current) { catalogBusy.current = false; setLoading(false); setCatalogLoading(false); }
     }
   }, [applyCatalog, companyId, t]);
 
@@ -124,6 +178,7 @@ function CompanySubscriptionBody({ notify, companyId, scope }: { notify: Notice;
     const requestId = ++catalogRequest.current;
     read.current?.abort();
     const controller = new AbortController(); read.current = controller;
+    catalogBusy.current = true;
     setReview(null); setAcknowledged(false);
     setCatalogLoading(true); setError("");
     try {
@@ -132,7 +187,7 @@ function CompanySubscriptionBody({ notify, companyId, scope }: { notify: Notice;
     } catch (cause) {
       if (mounted.current && !controller.signal.aborted && requestId === catalogRequest.current) setError(t("subscriptionChanges.readFailed"));
     } finally {
-      if (mounted.current && requestId === catalogRequest.current) setCatalogLoading(false);
+      if (mounted.current && requestId === catalogRequest.current) { catalogBusy.current = false; setCatalogLoading(false); }
     }
   }
 
@@ -146,6 +201,7 @@ function CompanySubscriptionBody({ notify, companyId, scope }: { notify: Notice;
 
   function selectPlan(id: string) {
     if (command.current || recordRef.current) return;
+    pendingRouteIntent.current = null;
     setReview(null); setAcknowledged(false);
     selectionRef.current = id;
     selectedDefinition.current = JSON.stringify(catalog.plans.find(plan => plan.id === id) ?? null);
@@ -191,7 +247,9 @@ function CompanySubscriptionBody({ notify, companyId, scope }: { notify: Notice;
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!snapshot || !selectedPlan || catalogLoading || command.current || recordRef.current || !permissionSet.has("subscriptions.manage")) return;
+    if (selectedPlan.id !== selectionRef.current) return;
     setAcknowledged(false);
+    reviewIntentRevision.current = intentRevision.current;
     setReview(createSubscriptionChangeReview(selectedPlan, optionalIds, snapshot.subscription.version));
   }
 
@@ -200,6 +258,8 @@ function CompanySubscriptionBody({ notify, companyId, scope }: { notify: Notice;
     const previous = recordRef.current;
     if (sameAttempt ? previous?.status !== "uncertain" : Boolean(previous)) return;
     if (!sameAttempt && (!review || !acknowledged || !snapshot || !selectedPlan
+      || subscriptionRouteIntent(location.hash)?.key !== observedRouteIntent.current
+      || reviewIntentRevision.current !== intentRevision.current
       || review.fingerprint !== subscriptionChangeFingerprint(selectedPlan, optionalIds, snapshot.subscription.version))) {
       setReview(null); setAcknowledged(false); return;
     }
@@ -217,7 +277,9 @@ function CompanySubscriptionBody({ notify, companyId, scope }: { notify: Notice;
       notify(t(result === "PENDING_APPROVAL" ? "subscriptionChanges.pending" : "subscriptionChanges.succeeded"));
       clearSubscriptionPlanPreference();
       if (subscriptionRouteBase(location.hash) === "#subscription") {
-        history.replaceState(null, "", `${location.pathname}${location.search}#subscription`);
+        const nextHash = withoutSubscriptionPlanIntent(location.hash);
+        if (nextHash !== location.hash) history.replaceState(history.state, "", `${location.pathname}${location.search}${nextHash}`);
+        observedRouteIntent.current = subscriptionRouteIntent(nextHash)!.key;
       }
       await load();
     } catch (cause) {

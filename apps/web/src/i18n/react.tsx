@@ -1,5 +1,6 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { storageKey } from "../branding";
+import { readLocalStorageItem, writeLocalStorageItem } from "../safe-local-storage";
 import { createTranslator, type Locale, loadLocale, localeDetails, resolveLocale, setActiveLocale, supportedLocales } from "./core";
 
 type I18nContextValue = {
@@ -14,13 +15,12 @@ type I18nContextValue = {
 
 const I18nContext = createContext<I18nContextValue | null>(null);
 
-function initialLocale() {
-  if (typeof window === "undefined") return "ar";
-  return resolveLocale(window.localStorage.getItem(storageKey("locale")));
+function storedLocale() {
+  return resolveLocale(readLocalStorageItem(storageKey("locale")));
 }
 
-export function I18nProvider({ children }: { children: ReactNode }) {
-  const [locale, updateLocale] = useState<Locale>(initialLocale);
+export function I18nProvider({ children, initialLocale }: { children: ReactNode; initialLocale?: Locale }) {
+  const [locale, updateLocale] = useState<Locale>(() => initialLocale ?? storedLocale());
   const localeRequest = useRef(0);
   const details = localeDetails[locale];
   setActiveLocale(locale);
@@ -29,7 +29,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     const request = ++localeRequest.current;
     void loadLocale(next).then(() => {
       if (request !== localeRequest.current) return;
-      window.localStorage.setItem(storageKey("locale"), next);
+      writeLocalStorageItem(storageKey("locale"), next);
       updateLocale(next);
     }).catch((error: unknown) => {
       console.error("locale_dictionary_load_failed", error instanceof Error ? error.name : "UNKNOWN_ERROR");
