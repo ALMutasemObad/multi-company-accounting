@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedDate": "2026-08-31T20:12:53.2856487+03:00",
+  "updatedDate": "2026-08-31T20:28:19.1627679+03:00",
   "coordinatorThreadId": "01a05783-e720-7ed0-a107-4a372bd53202",
   "projectId": "c3fd65c7-6c00-45d1-9859-46f96966dc38",
   "repository": "D:/CodexWorktrees/continuous-coordination",
@@ -490,6 +490,20 @@
       "priority": "P1",
       "worktree": "D:/CodexWorktrees/wave2-pdf-identity",
       "id": "W2-PDF-IDENTITY"
+    },
+    {
+      "id": "W2-SUBSCRIPTION-CI",
+      "title": "بوابة CI الدائمة لقبول الاشتراكات وسياق الشركة",
+      "threadId": "01a0578e-85b1-7141-bc2e-b4f88bcac12d",
+      "hostId": "local",
+      "worktree": "D:/CodexWorktrees/wave2-subscription-ci",
+      "branch": "test/wave2-subscription-ci",
+      "base": "e3d6ba03aec8ceabd42428d67855fad2683968a6",
+      "status": "assigned_source_phase",
+      "priority": "P1",
+      "scope": "Portable58case subscription-discovery/D3 test configuration,ownedfixture lifecycle,package/type scripts and narrow existingverifyjob CI step/artifacts only. No product/OpenAPI/PosPage changes; no new dependencies/jobs/services.",
+      "runtime": "N2 owns heavy runtime; QA source-only until explicit coordinator lease.",
+      "acceptance": "Pending: real collection/named58zero skip,types and full browser execution on new portable runner; original58proof alone insufficient."
     }
   ],
   "queue": [
@@ -747,8 +761,27 @@
   "historicalReceiptPolicy": "Earlier integration and source-only receipt objects below are historical at their recorded head; release46 is the current acceptance and deployment record. Do not interpret historical pending fields as current release state.",
   "evaluation": {
     "threadId": "01a05803-cf2b-77c1-9415-e0839dff48d6",
-    "status": "running_release46_delta",
+    "status": "completed_release46_delta",
     "path": "D:/CodexWorktrees/project-progress-evaluation",
-    "scope": "Read-only fixed11/17 denominators; no credit for W2 assignment."
+    "scope": "Read-only fixed11/17 denominators; no credit for W2 assignment.",
+    "result": {
+      "wavePercent": 70,
+      "waveRange": [
+        60,
+        80
+      ],
+      "systemPercent": 85,
+      "systemRange": [
+        75,
+        95
+      ],
+      "denominators": [
+        11,
+        17
+      ],
+      "evidenceCut": "2026-08-31T20:12:48+03:00",
+      "report": "D:/CodexWorktrees/project-progress-evaluation/RELEASE46_PROGRESS_DELTA_AR.md",
+      "limit": "Approximate fixed-scope weighted evaluation,not whole ERP completion or authenticated hosting acceptance; no credit for W2 assignment."
+    }
   }
 }
