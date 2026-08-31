@@ -54,6 +54,7 @@ export function verifyPosRecoveryReport(report) {
   return { finalizationPassed: 11, financialPassed: 1, skipped: 0 };
 }
 
+let phase = 'environment';
 async function main(environment) {
   assert.equal(environment.CI, 'true', 'N1 database creation is CI-only');
   assert.equal(environment.GITHUB_ACTIONS, 'true', 'N1 requires the disposable Actions service');
@@ -77,12 +78,17 @@ async function main(environment) {
   const artifacts = path.resolve(environment.POS_RECOVERY_DB_GATE_ARTIFACT_DIR);
   const relative = path.relative(path.resolve(environment.RUNNER_TEMP), artifacts);
   assert.ok(relative && !relative.startsWith('..') && !path.isAbsolute(relative), 'Evidence must remain inside RUNNER_TEMP');
+  phase = 'evidence-directory';
   await mkdir(artifacts, { recursive: true });
   const runDirectory = await mkdtemp(path.join(artifacts, 'run-'));
+  phase = 'driver';
   const apiRequire = createRequire(path.join(root, 'apps/api/package.json'));
   const adapterRequire = createRequire(apiRequire.resolve('@prisma/adapter-mariadb'));
   const { createConnection } = adapterRequire('mariadb');
-  const connectionOptions = { host: '127.0.0.1', port: 3306, connectTimeout: 10_000, socketTimeout: 30_000 };
+  // Only the acknowledged loopback Actions service is accepted above. MySQL8
+  // root may need an initial caching_sha2 RSA exchange before its auth cache exists.
+  const connectionOptions = { host: '127.0.0.1', port: 3306, connectTimeout: 10_000, socketTimeout: 30_000,
+    allowPublicKeyRetrieval: true };
   const identity = { user: 'mcap_test', password: decodeURIComponent(source.password) };
   async function inspect(options, expectedDatabase, expectedUser) {
     const connection = await createConnection({ ...connectionOptions, ...options });
@@ -94,7 +100,9 @@ async function main(environment) {
       return row.version;
     } finally { await connection.end(); }
   }
+  phase = 'test-identity';
   const engine = await inspect({ ...identity, database: 'test_mcap_finance' }, 'test_mcap_finance', 'mcap_test');
+  phase = 'isolated-database-creation';
   const admin = await createConnection({ ...connectionOptions, user: 'root', password: environment.CI_ROOT_DATABASE_PASSWORD });
   try {
     const [row] = await admin.query('SELECT VERSION() AS version');
@@ -113,13 +121,17 @@ async function main(environment) {
     assert.equal(result.status, 0, 'N1 child process did not pass');
   }
   // Reuse the current schema, generated client and existing deterministic company fixtures.
+  phase = 'migrations';
   run('npm', ['exec', '-w', '@mcap/api', '--', 'prisma', 'migrate', 'deploy']);
   run('npm', ['exec', '-w', '@mcap/api', '--', 'prisma', 'migrate', 'status']);
+  phase = 'seed';
   run('npm', ['run', 'prisma:seed', '-w', '@mcap/api']);
   const reportPath = path.join(runDirectory, 'vitest.json');
   await writeFile(path.join(runDirectory, 'database-identity.json'), `${JSON.stringify({ engine, databaseName, testIdentityVerified: true, createdFresh: true })}\n`);
+  phase = 'named-database-tests';
   run(process.execPath, ['--max-old-space-size=768', 'node_modules/vitest/vitest.mjs', 'run', '--config', 'pos-recovery-db-vitest.config.ts',
     '--configLoader', 'runner', '--maxWorkers=1', '--no-file-parallelism', '--retry=0', '--reporter=default', '--reporter=json', `--outputFile=${reportPath}`], 420_000);
+  phase = 'report-verification';
   const counts = verifyPosRecoveryReport(JSON.parse(await readFile(reportPath, 'utf8')));
   assert.equal(await inspect({ ...identity, database: databaseName }, databaseName, 'mcap_test'), engine);
   const sourceHashes = Object.fromEntries(await Promise.all(['apps/api/prisma/schema.prisma', ...[...expectedFiles.keys()].map(file => `apps/api/tests/${file}`)]
@@ -129,5 +141,9 @@ async function main(environment) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main(process.env).catch(() => { console.error('N1 database gate failed; no acceptance recorded'); process.exitCode = 1; });
+  main(process.env).catch(error => {
+    const code = typeof error?.code === 'string' && /^(?:ER|ERR)_[A-Z0-9_]+$/.test(error.code) ? error.code : 'UNCLASSIFIED';
+    console.error(`N1 database gate failed at ${phase} (${code}); no acceptance recorded`);
+    process.exitCode = 1;
+  });
 }

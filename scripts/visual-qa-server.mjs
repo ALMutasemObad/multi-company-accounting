@@ -436,6 +436,7 @@ export function responseFor(url, method) {
     meta: { ...meta, pageSize: 25, total: 1, totalPages: 1 },
   };
   if (pathname === "/subscription") return {
+    company: currentAuthorization.selectedCompany,
     subscription: { status: "ACTIVE", version: 1, startsAt: "2026-08-01T00:00:00.000Z", trialEndsAt: null, currentPeriodStart: null, currentPeriodEnd: null, cancelAtPeriodEnd: false },
     current: subscriptionCurrentChange,
     effectiveModules: [{ id: "3101", code: "CORE_ACCOUNTING", displayName: "المحاسبة الأساسية", source: "PLAN" }],

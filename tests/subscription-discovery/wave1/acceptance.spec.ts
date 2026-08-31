@@ -126,7 +126,8 @@ for (const transition of ['company', 'permission', 'modules'] as const) {
       // StrictMode may start then abort a mount read; retain every old-scope request.
       if (!scopeChanged) { held.push(route); return; }
       freshReads += 1;
-      return route.fulfill({ json: snapshot });
+      return route.fulfill({ json: { ...snapshot, company: { ...snapshot.company,
+        id: auth.selectedCompany.id, name: auth.selectedCompany.name } } });
     });
     await page.goto('/#home'); await expect(page.locator('.retail-home')).toBeVisible();
     await expect.poll(() => held.length).toBeGreaterThan(0);

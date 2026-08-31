@@ -75,7 +75,7 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
     await expect(page.locator('.subscription-change-recovery')).toContainText(t('subscriptionChanges.pending'));
     await expect(page.getByRole('button', { name: t('subscriptionChanges.newReview'), exact: true })).toBeEnabled();
     expect(requests).toHaveLength(1);
-    expect(JSON.parse(requests[0]!.body!)).toEqual({ targetPlanVersionId: '2101', optionalModuleIds: ['3102', '3103'], subscriptionVersion: 1 });
+    expect(JSON.parse(requests[0]!.body!)).toEqual({ expectedCompanyId: '1', targetPlanVersionId: '2101', optionalModuleIds: ['3102', '3103'], subscriptionVersion: 1 });
     expect(requests[0]!.csrf).toBe('track-d-authenticated');
     expect(state.csrfReads).toBe(0);
     expect(errors).toEqual([]);
@@ -214,6 +214,10 @@ test('switching business ignores a late response and returning retains the origi
     return route.fulfill({ json: { ...body, selectedCompany: { ...body.selectedCompany, id: companyId, name: companyId === '1' ? 'Company A' : 'Company B' } } });
   });
   await page.route('**/api/v1/auth/context', async route => { companyId = route.request().postDataJSON().companyId; await route.fulfill({ status: 204 }); });
+  await page.route('**/api/v1/subscription?*', async route => {
+    const body = await (await route.fetch()).json();
+    return route.fulfill({ json: { ...body, company: { ...body.company, id: companyId } } });
+  });
   let release!: () => void;
   await page.route('**/api/v1/subscription/change-requests', async route => {
     if (requests.length > 1) return route.fulfill({ json: accepted });
