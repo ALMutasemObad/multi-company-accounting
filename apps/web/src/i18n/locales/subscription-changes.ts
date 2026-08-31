@@ -1,4 +1,7 @@
 export const arSubscriptionChanges = {
+  'subscriptionChanges.contextUnverified': 'لم يعد بالإمكان التحقق من أن سياق الجلسة يطابق هذه الشركة. حُجب إرسال طلب الاشتراك وإعادة إرساله. اقرأ الحالة من جديد بعد التحقق من الشركة؛ لا ينتقل هذا العرض تلقائيًا إلى شركة أخرى.',
+  'subscriptionChanges.contextAttemptUncertain': 'هذا الحجب لا يثبت فشل المحاولة السابقة أو إلغاءها؛ نتيجتها ما زالت غير محسومة. احتُفظ بالمحاولة كما هي، والقراءة لا تعيد إرسالها ولا تمسحها.',
+  'subscriptionChanges.contextLegacyAttempt': 'المحاولة المحفوظة لا تحمل هوية شركة يمكن التحقق منها. لن نخمن هويتها أو نعيد كتابة الطلب؛ تبقى محمية دون إرسال. تحقق من سجلها مع المسؤول قبل طلب جديد.',
   'subscriptionChanges.review': 'مراجعة التغيير',
   'subscriptionChanges.reviewTitle': 'مراجعة طلب تغيير الاشتراك',
   'subscriptionChanges.cycle': 'دورة الخطة',
@@ -32,6 +35,9 @@ export const arSubscriptionChanges = {
   'subscriptionChanges.existingChange': 'هناك تغيير معلق أو مجدول بالفعل. لا يُلغيه هذا العرض ولا يفترض تطبيقه؛ يقرر الخادم إمكانية طلب آخر.',
 } as const;
 export const enSubscriptionChanges: Record<keyof typeof arSubscriptionChanges, string> = {
+  'subscriptionChanges.contextUnverified': 'The session can no longer be verified for this company. Sending or resending the subscription request is blocked. Read the status again after checking the company; this view will not switch companies automatically.',
+  'subscriptionChanges.contextAttemptUncertain': 'This block does not establish that the previous attempt failed or was cancelled; its outcome remains uncertain. The attempt is unchanged. Reading neither resends nor clears it.',
+  'subscriptionChanges.contextLegacyAttempt': 'The saved attempt has no verifiable company identity. We will not infer an identity or rewrite its request. It remains protected without sending. Check its history with an administrator before a new request.',
   'subscriptionChanges.review': 'Review change',
   'subscriptionChanges.reviewTitle': 'Review subscription change request',
   'subscriptionChanges.cycle': 'Plan cycle',
@@ -65,6 +71,9 @@ export const enSubscriptionChanges: Record<keyof typeof arSubscriptionChanges, s
   'subscriptionChanges.existingChange': 'A pending or scheduled change already exists. This display neither cancels it nor assumes it is applied; the server decides whether another request is allowed.',
 };
 export const urSubscriptionChanges: Record<keyof typeof arSubscriptionChanges, string> = {
+  'subscriptionChanges.contextUnverified': enSubscriptionChanges['subscriptionChanges.contextUnverified'],
+  'subscriptionChanges.contextAttemptUncertain': enSubscriptionChanges['subscriptionChanges.contextAttemptUncertain'],
+  'subscriptionChanges.contextLegacyAttempt': enSubscriptionChanges['subscriptionChanges.contextLegacyAttempt'],
   'subscriptionChanges.review': 'تبدیلی کا جائزہ',
   'subscriptionChanges.reviewTitle': 'اشتراک کی تبدیلی کی درخواست کا جائزہ',
   'subscriptionChanges.cycle': 'منصوبے کا دورانیہ',
@@ -98,6 +107,9 @@ export const urSubscriptionChanges: Record<keyof typeof arSubscriptionChanges, s
   'subscriptionChanges.existingChange': 'ایک تبدیلی پہلے ہی زیر التوا یا مقرر ہے۔ یہ منظر اسے منسوخ یا نافذ فرض نہیں کرتا؛ دوسری درخواست کی اجازت سرور طے کرتا ہے۔',
 };
 export const hiSubscriptionChanges: Record<keyof typeof arSubscriptionChanges, string> = {
+  'subscriptionChanges.contextUnverified': enSubscriptionChanges['subscriptionChanges.contextUnverified'],
+  'subscriptionChanges.contextAttemptUncertain': enSubscriptionChanges['subscriptionChanges.contextAttemptUncertain'],
+  'subscriptionChanges.contextLegacyAttempt': enSubscriptionChanges['subscriptionChanges.contextLegacyAttempt'],
   'subscriptionChanges.review': 'बदलाव की समीक्षा',
   'subscriptionChanges.reviewTitle': 'सदस्यता बदलाव अनुरोध की समीक्षा',
   'subscriptionChanges.cycle': 'प्लान का चक्र',

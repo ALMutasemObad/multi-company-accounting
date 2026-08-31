@@ -1,0 +1,5 @@
+{
+  "extends": "./apps/web/tsconfig.json",
+  "compilerOptions": { "types": ["node", "vite/client"], "noUncheckedIndexedAccess": true, "exactOptionalPropertyTypes": true },
+  "include": ["apps/web/src/pos-recovery-*.ts", "apps/web/src/pos-recovery-*.tsx", "apps/web/src/PosRecovery*.tsx", "apps/web/src/i18n/locales/pos-recovery.ts", "apps/api/src/pos/recovery-*.ts", "apps/api/tests/pos-recovery-*.test.ts", "pos-recovery-vitest.config.ts"]
+}

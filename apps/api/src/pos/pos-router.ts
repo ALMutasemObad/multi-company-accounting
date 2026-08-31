@@ -6,6 +6,9 @@ import { openApiRequestBodySchemas as bodies } from "../generated/openapi-reques
 import { ReceiptError } from "../receipts/receipt-service.js";
 import { SalesInvoiceError } from "../sales/sales-invoice-ports.js";
 import { PosError, PosService } from "./pos-service.js";
+import type { PosRecoveryService } from "./recovery-service.js";
+import { IdempotentCommandRejection } from "../platform/idempotent-command-executor.js";
+import { readPosCheckoutRejection } from "./checkout-rejection.js";
 
 const page = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -21,7 +24,7 @@ function sid(request: Request) {
   ).sid;
 }
 
-export function createPosRouter(auth: AuthService, service: PosService) {
+export function createPosRouter(auth: AuthService, service: PosService, recovery?: PosRecoveryService) {
   const router = Router();
   const authorize = (request: Request, permission: string, csrf: boolean) =>
     auth.authorize({
@@ -55,7 +58,22 @@ export function createPosRouter(auth: AuthService, service: PosService) {
     ));
   });
 
+  router.post("/pos/checkouts/recovery", async (request, response) => {
+    // Reauthorize the live session on both sides of lookup, including CSRF and POS entitlement.
+    if (!recovery) throw new Error("POS recovery service is not configured");
+    const { attemptKey } = bodies.recoverPosCheckout.parse(request.body);
+    response.json(await recovery.recover(() => authorize(request, "pos.checkout", true), attemptKey));
+  });
+
   const errors: ErrorRequestHandler = (error, _request, response, next) => {
+    if (error instanceof IdempotentCommandRejection && error.responseStatus === 422) {
+      const rejection = readPosCheckoutRejection(error.responseBody);
+      if (rejection) {
+        // A hint to read recovery, not a client-side permission to clear the marker.
+        response.status(422).json({ status: 422, ...rejection });
+        return;
+      }
+    }
     if (error instanceof ZodError) {
       response.status(400).json({ status: 400, code: "VALIDATION_ERROR", errors: error.issues });
       return;

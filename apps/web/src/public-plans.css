@@ -139,4 +139,26 @@
 .plans-comparison :is(th, td) { padding: 16px; text-align: start; vertical-align: top; border-top: 1px solid var(--plans-line); overflow-wrap: anywhere; }
 .plans-comparison th { background: #f1f6ed; }
 .plans-comparison th:first-child { position: sticky; inset-inline-start: 0; width: 32%; box-shadow: 0 0 0 1px var(--plans-line); }
+.plans-journey { width: min(1180px, calc(100% - 64px)); margin-inline: auto; padding-block: 24px; }
+.plans-journey > h2 { margin-block-end: 20px; }
+.plans-journey-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.plans-journey-grid article { padding: 24px; min-width: 0; border: 1px solid var(--plans-line); border-radius: 14px; background: white; }
+.plans-journey-grid h3 { font-size: var(--plans-body); font-weight: 700; }
+.plans-journey-grid p, .plans-listing-note { color: var(--plans-muted); line-height: 1.9; margin-block: 12px 20px; }
+.plans-journey-links { display: flex; flex-wrap: wrap; gap: 8px 24px; }
+.public-plans .plans-text-link { display: inline-flex; align-items: center; min-height: 44px; text-decoration: underline; text-underline-offset: 4px; font-weight: 600; }
+.plans-plan-actions { display: grid; gap: 8px; text-align: center; }
+.plans-plan-actions .plans-text-link { justify-content: center; }
+.plans-features { margin-block: 36px 24px; min-width: 0; }
+.plans-features > p { margin-block: 12px; color: var(--plans-muted); line-height: 1.9; }
+.plans-features-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--plans-line); border-radius: 12px; background: white; }
+.plans-features-scroll:focus-visible { outline: 3px solid #42673a; outline-offset: 4px; }
+.plans-features table { width: 100%; border-collapse: separate; border-spacing: 0; line-height: 1.8; }
+.plans-features :is(th, td) { min-width: 200px; max-width: 320px; padding: 16px; text-align: start; vertical-align: top; border-block-start: 1px solid var(--plans-line); overflow-wrap: anywhere; }
+.plans-features th { background: #eef4e9; }
+.plans-features th:first-child { position: sticky; inset-inline-start: 0; min-width: 160px; box-shadow: 0 0 0 1px var(--plans-line); }
+.plans-features :is(th, td) > span { display: block; font-weight: 400; }
+.plans-nav nav a { min-height: 44px; display: inline-flex; align-items: center; }
+.plans-pager { flex-wrap: wrap; }
+@media (max-width: 640px) { .plans-journey { width: calc(100% - 32px); } .plans-journey-grid { grid-template-columns: minmax(0, 1fr); } .plans-journey-grid article { padding: 20px; } }
 @media (max-width: 640px) { .plans-compare-selectors { grid-template-columns: minmax(0, 1fr); } .plans-comparison { padding: 16px; } .plans-nav .language-switcher select { max-width: 125px; } }

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { posRecoveryDictionaries } from '../../apps/web/src/i18n/locales/pos-recovery';
 
 type Locale = 'ar' | 'en' | 'ur' | 'hi';
 
@@ -77,8 +78,8 @@ async function navigateToWorkspaceScreen(page: Page, index: number) {
   await navigationButtons.nth(index).click();
 }
 
-async function interfaceFailures(page: Page) {
-  return page.evaluate(() => {
+async function interfaceFailures(page: Page, readOnlyPosAlert?: string) {
+  return page.evaluate((expectedPosAlert) => {
     const failures: string[] = [];
     const tolerance = 1;
     const visible = (element: Element) => {
@@ -161,17 +162,26 @@ async function interfaceFailures(page: Page) {
     }
 
     for (const error of document.querySelectorAll<HTMLElement>('.error-panel, [role="alert"], vite-error-overlay')) {
+      if (expectedPosAlert && error.matches('.pos-recovery [role="alert"]')
+        && error.textContent?.trim() === expectedPosAlert) continue;
       if (visible(error)) failures.push(`unexpected visible error: ${(error.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 120)}`);
     }
 
     return failures;
-  });
+  }, readOnlyPosAlert);
 }
 
 async function auditCurrentInterface(page: Page, locale: Locale, label: string) {
   await expect(page.locator('html')).toHaveAttribute('lang', locale);
   await expect(page.locator('html')).toHaveAttribute('dir', directions[locale]);
-  expect.soft(await interfaceFailures(page), `${locale}/${label} responsive interface contract`).toEqual([]);
+  // The default fixture has pos.view but no pos.checkout. Its explicit denial is
+  // intentional; still reject every other alert and prove no sale/recovery action.
+  const readOnlyPosAlert = label === 'pos' ? posRecoveryDictionaries[locale].permission : undefined;
+  if (readOnlyPosAlert) {
+    await expect(page.locator('.pos-recovery [role="alert"]')).toHaveText(readOnlyPosAlert);
+    await expect(page.locator('.pos-experience-checkout, .pos-recovery button, .pos-recovery dl')).toHaveCount(0);
+  }
+  expect.soft(await interfaceFailures(page, readOnlyPosAlert), `${locale}/${label} responsive interface contract`).toEqual([]);
 }
 
 for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {

@@ -92,6 +92,7 @@ import { createBankReconciliationRouter } from './treasury/reconciliation/reconc
 import { BankReconciliationRolloutPolicy } from './treasury/reconciliation/reconciliation-rollout.js';
 import type { PosService } from './pos/pos-service.js';
 import { createPosRouter } from './pos/pos-router.js';
+import type { PosRecoveryService } from './pos/recovery-service.js';
 import type { ApprovalService } from './approvals/approval-service.js';
 import { createApprovalRouter } from './approvals/approval-router.js';
 import type { ProfessionalProjectService } from './projects/professional-project-service.js';
@@ -208,10 +209,14 @@ export type AppServices = {
   purchaseInvoices?: PurchaseInvoiceService;
   dataImports?: DataImportService;
   pos?: PosService;
+  posRecovery?: PosRecoveryService;
   sellingProfiles?: SellingProfileService;
 };
 
 export function createApp(config: AppConfig, services: AppServices = {}) {
+  if (config.NODE_ENV === 'production' && services.pos && !services.posRecovery) {
+    throw new Error('POS requires its recovery service in production composition');
+  }
   if (config.NODE_ENV === 'production' && !services.sensitiveRateLimits) {
     throw new Error('A shared security-sensitive rate-limit store is required in production');
   }
@@ -407,7 +412,7 @@ export function createApp(config: AppConfig, services: AppServices = {}) {
   if (services.auth && services.purchaseInvoices) app.use('/api/v1', createPurchaseInvoiceRouter(services.auth, services.purchaseInvoices));
   if (services.auth && services.reports) app.use('/api/v1', createReportRouter(services.auth, services.reports, services.cashFlow, services.taxSummary, services.costCenterActivity));
   if (services.auth && services.dataImports) app.use('/api/v1', createDataImportRouter(services.auth, services.dataImports));
-  if (services.auth && services.pos) app.use('/api/v1', createPosRouter(services.auth, services.pos));
+  if (services.auth && services.pos) app.use('/api/v1', createPosRouter(services.auth, services.pos, services.posRecovery));
   if (services.auth && services.sellingProfiles) app.use('/api/v1', createSellingProfileRouter(services.auth, services.sellingProfiles));
 
   if (config.NODE_ENV === 'production' || config.SERVE_WEB_ASSETS) {

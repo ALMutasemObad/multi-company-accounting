@@ -1263,6 +1263,7 @@ paths:
     get:
       tags: [Company Subscription]
       summary: اشتراك الشركة الحالية وخطتها واستحقاقاتها الفعالة
+      description: تتضمن اللقطة دائمًا company بهوية الشركة التي قُرئت بياناتها، لرفض عرض بيانات شركة أخرى عند تبدل الجلسة المشتركة.
       operationId: getCompanySubscription
       x-permission: subscriptions.view
       security: [{ SessionCookie: [] }]
@@ -1321,6 +1322,12 @@ paths:
     post:
       tags: [Company Subscription]
       summary: طلب تغيير الخطة؛ المدفوع يبقى pending بلا مزود دفع
+      description: >-
+        expectedCompanyId شرط إلزامي يطابق الشركة المصرح بها في الجلسة، وليس اختيارًا لشركة بديلة.
+        يُرفض اختلاف السياق قبل idempotency أو أي عمل تجاري بالرمز والسبب SUBSCRIPTION_CONTEXT_MISMATCH وحالة HTTP409،
+        حتى لو تطابق إصدار الاشتراك والمفتاح. يظل نطاق idempotency الشركة والمستخدم والعملية والمفتاح،
+        ولا يدخل شرط السياق في بصمة البيانات المالية. غياب الشرط أو فساده خطأ تحقق؛ العملاء القدامى يفشلون بأمان،
+        والخادم القديم الصارم يرفض الحقل الجديد غير المعروف.
       operationId: requestCompanySubscriptionChange
       x-permission: subscriptions.manage
       security: [{ SessionCookie: [], CsrfToken: [] }]
@@ -7970,7 +7977,38 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '409': { $ref: '#/components/responses/Conflict' }
-        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '422':
+          description: Business rejection; only a validated REJECTED recovery result authorizes reviewing this attempt
+          content:
+            application/json:
+              schema:
+                anyOf:
+                - $ref: '#/components/schemas/Problem'
+                - $ref: '#/components/schemas/PosCheckoutRejectedProblem'
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+      x-permission: pos.checkout
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /pos/checkouts/recovery:
+    post:
+      tags: [Point of Sale]
+      summary: Read the original checkout acknowledgement without replaying a financial command
+      description: Owner-scoped read using the authenticated company and user. Missing, incomplete, expired or invalid evidence remains UNKNOWN and never authorizes a replacement sale. The key is never included in the URL or response.
+      operationId: recoverPosCheckout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PosCheckoutRecoveryRequest' }
+      responses:
+        '200':
+          description: Original retained acknowledgement or an unresolved outcome; not the documents' current status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PosCheckoutRecoveryResult' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
         '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
       x-permission: pos.checkout
@@ -11081,8 +11119,12 @@ components:
     CompanySubscriptionChangeRequest:
       type: object
       additionalProperties: false
-      required: [targetPlanVersionId, optionalModuleIds, subscriptionVersion]
+      required: [expectedCompanyId, targetPlanVersionId, optionalModuleIds, subscriptionVersion]
       properties:
+        expectedCompanyId:
+          type: string
+          pattern: '^[1-9][0-9]*$'
+          description: هوية الشركة التي راجع المستخدم اشتراكها؛ يجب أن تطابق شركة الجلسة قبل أي تنفيذ أو إعادة نتيجة سابقة.
         targetPlanVersionId: { type: string, pattern: '^[1-9][0-9]*$' }
         optionalModuleIds:
           type: array
@@ -11337,7 +11379,7 @@ components:
     PlatformSubscriptionSnapshot:
       type: object
       additionalProperties: false
-      required: [subscription, current, effectiveModules, scheduled, pending, history, meta, generatedAt]
+      required: [company, subscription, current, effectiveModules, scheduled, pending, history, meta, generatedAt]
       properties:
         company:
           type: object
@@ -15144,30 +15186,79 @@ components:
         invoice: { $ref: '#/components/schemas/PosSaleInvoiceSummary' }
         receipt: { $ref: '#/components/schemas/PosSaleDocumentSummary' }
     PosCheckoutDocumentResult:
-      allOf:
-      - $ref: '#/components/schemas/PosSaleDocumentSummary'
-      - type: object
-        required: [generatedJournalEntryIds]
-        properties:
-          generatedJournalEntryIds:
-            type: array
-            items: { type: string, pattern: '^[1-9][0-9]*$' }
+      type: object
+      required: [id, documentNumber, status, generatedJournalEntryIds]
+      properties:
+        id: { type: string, maxLength: 20, pattern: '^[1-9][0-9]*$' }
+        documentNumber: { type: string, minLength: 1, maxLength: 500 }
+        status: { type: string, enum: [POSTED] }
+        generatedJournalEntryIds:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { type: string, maxLength: 20, pattern: '^[1-9][0-9]*$' }
     PosCheckoutResult:
       type: object
       required: [id, completedAt, invoice, receipt]
       properties:
-        id: { type: string, pattern: '^[1-9][0-9]*$' }
-        completedAt: { type: string, format: date-time }
+        id: { type: string, maxLength: 20, pattern: '^[1-9][0-9]*$' }
+        completedAt: { type: string, format: date-time, pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$' }
         invoice:
           allOf:
           - $ref: '#/components/schemas/PosCheckoutDocumentResult'
           - type: object
             required: [customerName, total, baseTotal]
             properties:
-              customerName: { type: string, maxLength: 200 }
-              total: { type: string, pattern: '^-?(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
-              baseTotal: { type: string, pattern: '^-?(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+              customerName: { type: string, minLength: 1, maxLength: 200 }
+              total: { type: string, pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+              baseTotal: { type: string, pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
         receipt: { $ref: '#/components/schemas/PosCheckoutDocumentResult' }
+    PosCheckoutRecoveryRequest:
+      type: object
+      additionalProperties: false
+      required: [attemptKey]
+      properties:
+        attemptKey:
+          type: string
+          pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
+    PosCheckoutRecoveryResult:
+      oneOf:
+      - type: object
+        additionalProperties: false
+        required: [outcome]
+        properties:
+          outcome: { type: string, enum: [UNKNOWN] }
+      - type: object
+        additionalProperties: false
+        required: [outcome, result]
+        properties:
+          outcome: { type: string, enum: [CONFIRMED] }
+          result: { $ref: '#/components/schemas/PosCheckoutResult' }
+      - type: object
+        additionalProperties: false
+        required: [outcome, rejection]
+        properties:
+          outcome: { type: string, enum: [REJECTED] }
+          rejection: { $ref: '#/components/schemas/PosCheckoutRejection' }
+    PosCheckoutRejection:
+      type: object
+      additionalProperties: false
+      required: [code, reason]
+      properties:
+        code: { type: string, enum: [POS_CHECKOUT_REJECTED] }
+        reason: { $ref: '#/components/schemas/PosCheckoutRejectionReason' }
+    PosCheckoutRejectionReason:
+      type: string
+      enum: [INVALID_STATE, PERIOD_CLOSED, DATE_OUTSIDE_PERIOD, INVALID_CUSTOMER, INVALID_ACCOUNT, INVALID_COST_CENTER, INVALID_TAX_RATE, INVALID_CURRENCY, WAREHOUSE_REQUIRED, INVALID_WAREHOUSE, INVALID_INVENTORY_ITEM, INVALID_QUANTITY_PRECISION, INSUFFICIENT_STOCK, INVENTORY_VALUATION_REQUIRED, INVENTORY_VALUE_MISMATCH, INVENTORY_ACCOUNTING_NOT_CONFIGURED, INVALID_LINE, INVALID_DISCOUNT, INVALID_TOTAL, COUNTERPARTY_REQUIRED, INVALID_CASH_BANK_ACCOUNT, INVALID_PAYMENT_METHOD, REFERENCE_REQUIRED, INVALID_AMOUNT, ALLOCATION_REQUIRED, ALLOCATION_MISMATCH, INVALID_ALLOCATION, OVER_ALLOCATION, REALIZED_FX_ACCOUNT_NOT_CONFIGURED]
+    PosCheckoutRejectedProblem:
+      allOf:
+      - type: object
+        required: [status, code, reason]
+        additionalProperties: false
+        properties:
+          status: { type: integer, enum: [422] }
+          code: { type: string, enum: [POS_CHECKOUT_REJECTED] }
+          reason: { $ref: '#/components/schemas/PosCheckoutRejectionReason' }
     SalesInvoiceLineInput:
       type: object
       additionalProperties: false

@@ -1,0 +1,401 @@
+{
+  "recordedAt": "2026-08-31T13:37:55.3508583+03:00",
+  "worktree": "D:/CodexWorktrees/plans-discoverability",
+  "branch": "feat/plans-discoverability",
+  "base": "9f98ddfa566dd329a81b9838f61bdfe73832764a",
+  "baseStatus": "Unpublished PR45 candidate, not main",
+  "scope": "Local S2 validation only; no push, PR, merge, deploy, hosted writes or product fixture data",
+  "validation": {
+    "unit": {
+      "durationSeconds": 12.63,
+      "log": "D:\\CodexWorktrees\\plans-discoverability\\tmp\\plans-discovery\\unit.log",
+      "files": 5,
+      "passed": 70,
+      "startedAt": "2026-08-31T13:31:26+03:00"
+    },
+    "types": {
+      "log": "D:\\CodexWorktrees\\plans-discoverability\\tmp\\plans-discovery\\typecheck.log",
+      "exitCode": 0
+    },
+    "build": {
+      "durationSeconds": 1.56,
+      "exitCode": 0,
+      "fixtureMarkersInAssets": false,
+      "log": "D:\\CodexWorktrees\\plans-discoverability\\tmp\\plans-discovery\\build.log"
+    },
+    "i18n": {
+      "passed": true
+    },
+    "ui": {
+      "pageHeaders": 27,
+      "passed": true,
+      "tableRegions": 67
+    },
+    "independentReview": "Two P2 findings fixed (label-in-name and stale page); shared patch proposal reviewed without blockers"
+  },
+  "browser": {
+    "origin": "http://127.0.0.1:4211",
+    "api": "Existing unmodified scripts/visual-qa-server.mjs on 3161; QA fixtures only",
+    "realAuthentication": false,
+    "subscriptionCommandClicked": false,
+    "metrics": [
+      {
+        "dir": "rtl",
+        "docWidth": 375,
+        "featureScroll": 760,
+        "featureWidth": 342,
+        "headings": [
+          "24px",
+          "24px",
+          "16px",
+          "16px",
+          "24px",
+          "24px",
+          "24px",
+          "24px",
+          "24px",
+          "24px",
+          "24px",
+          "24px",
+          "24px",
+          "24px",
+          "24px"
+        ],
+        "lang": "ar",
+        "links": [
+          {
+            "href": "/#register?plan=101",
+            "label": "اختر هذه الخطة — التجريبية",
+            "text": "اختر هذه الخطة"
+          },
+          {
+            "href": "/#login",
+            "label": "لدي حساب: اخترها للمراجعة — التجريبية",
+            "text": "لدي حساب: اخترها للمراجعة"
+          },
+          {
+            "href": "/#register?plan=102",
+            "label": "اختر هذه الخطة — الأساسية",
+            "text": "اختر هذه الخطة"
+          },
+          {
+            "href": "/#login",
+            "label": "لدي حساب: اخترها للمراجعة — الأساسية",
+            "text": "لدي حساب: اخترها للمراجعة"
+          },
+          {
+            "href": "/#register?plan=103",
+            "label": "اختر هذه الخطة — الأعمال",
+            "text": "اختر هذه الخطة"
+          },
+          {
+            "href": "/#login",
+            "label": "لدي حساب: اخترها للمراجعة — الأعمال",
+            "text": "لدي حساب: اخترها للمراجعة"
+          }
+        ],
+        "mainWidth": 375,
+        "width": 390
+      },
+      {
+        "dir": "rtl",
+        "docWidth": 753,
+        "featureScroll": 760,
+        "featureWidth": 688,
+        "headings": [
+          "24px",
+          "24px",
+          "16px",
+          "16px",
+          "24px",
+          "24px",
+          "24px",
+          "24px",
+          "24px",
+          "24px",
+          "24px",
+          "24px",
+          "24px",
+          "24px",
+          "24px"
+        ],
+        "lang": "ar",
+        "links": [
+          {
+            "href": "/#register?plan=101",
+            "label": "اختر هذه الخطة — التجريبية",
+            "text": "اختر هذه الخطة"
+          },
+          {
+            "href": "/#login",
+            "label": "لدي حساب: اخترها للمراجعة — التجريبية",
+            "text": "لدي حساب: اخترها للمراجعة"
+          },
+          {
+            "href": "/#register?plan=102",
+            "label": "اختر هذه الخطة — الأساسية",
+            "text": "اختر هذه الخطة"
+          },
+          {
+            "href": "/#login",
+            "label": "لدي حساب: اخترها للمراجعة — الأساسية",
+            "text": "لدي حساب: اخترها للمراجعة"
+          },
+          {
+            "href": "/#register?plan=103",
+            "label": "اختر هذه الخطة — الأعمال",
+            "text": "اختر هذه الخطة"
+          },
+          {
+            "href": "/#login",
+            "label": "لدي حساب: اخترها للمراجعة — الأعمال",
+            "text": "لدي حساب: اخترها للمراجعة"
+          }
+        ],
+        "mainWidth": 753,
+        "width": 768
+      },
+      {
+        "dir": "rtl",
+        "docWidth": 1425,
+        "featureScroll": 1179,
+        "featureWidth": 1179,
+        "headings": [
+          "24px",
+          "24px",
+          "16px",
+          "16px",
+          "24px",
+          "24px",
+          "24px",
+          "24px",
+          "24px",
+          "24px",
+          "24px",
+          "24px",
+          "24px",
+          "24px",
+          "24px"
+        ],
+        "lang": "ar",
+        "links": [
+          {
+            "href": "/#register?plan=101",
+            "label": "اختر هذه الخطة — التجريبية",
+            "text": "اختر هذه الخطة"
+          },
+          {
+            "href": "/#login",
+            "label": "لدي حساب: اخترها للمراجعة — التجريبية",
+            "text": "لدي حساب: اخترها للمراجعة"
+          },
+          {
+            "href": "/#register?plan=102",
+            "label": "اختر هذه الخطة — الأساسية",
+            "text": "اختر هذه الخطة"
+          },
+          {
+            "href": "/#login",
+            "label": "لدي حساب: اخترها للمراجعة — الأساسية",
+            "text": "لدي حساب: اخترها للمراجعة"
+          },
+          {
+            "href": "/#register?plan=103",
+            "label": "اختر هذه الخطة — الأعمال",
+            "text": "اختر هذه الخطة"
+          },
+          {
+            "href": "/#login",
+            "label": "لدي حساب: اخترها للمراجعة — الأعمال",
+            "text": "لدي حساب: اخترها للمراجعة"
+          }
+        ],
+        "mainWidth": 1425,
+        "width": 1440
+      },
+      {
+        "dir": "ltr",
+        "docWidth": 375,
+        "featureScroll": 760,
+        "featureWidth": 342,
+        "fontSizes": [
+          "24px",
+          "16px"
+        ],
+        "labelMatches": true,
+        "lang": "en",
+        "mainWidth": 375,
+        "width": 390
+      },
+      {
+        "dir": "ltr",
+        "docWidth": 753,
+        "featureScroll": 760,
+        "featureWidth": 688,
+        "fontSizes": [
+          "24px",
+          "16px"
+        ],
+        "labelMatches": true,
+        "lang": "en",
+        "mainWidth": 753,
+        "width": 768
+      },
+      {
+        "dir": "ltr",
+        "docWidth": 1425,
+        "featureScroll": 1179,
+        "featureWidth": 1179,
+        "fontSizes": [
+          "24px",
+          "16px"
+        ],
+        "labelMatches": true,
+        "lang": "en",
+        "mainWidth": 1425,
+        "width": 1440
+      },
+      {
+        "dir": "rtl",
+        "docWidth": 375,
+        "featureScroll": 760,
+        "featureWidth": 342,
+        "fontSizes": [
+          "24px",
+          "16px"
+        ],
+        "labelMatches": true,
+        "lang": "ur",
+        "mainWidth": 375,
+        "width": 390
+      },
+      {
+        "dir": "rtl",
+        "docWidth": 753,
+        "featureScroll": 760,
+        "featureWidth": 688,
+        "fontSizes": [
+          "24px",
+          "16px"
+        ],
+        "labelMatches": true,
+        "lang": "ur",
+        "mainWidth": 753,
+        "width": 768
+      },
+      {
+        "dir": "rtl",
+        "docWidth": 1425,
+        "featureScroll": 1179,
+        "featureWidth": 1179,
+        "fontSizes": [
+          "24px",
+          "16px"
+        ],
+        "labelMatches": true,
+        "lang": "ur",
+        "mainWidth": 1425,
+        "width": 1440
+      },
+      {
+        "dir": "ltr",
+        "docWidth": 375,
+        "featureScroll": 760,
+        "featureWidth": 342,
+        "fontSizes": [
+          "24px",
+          "16px"
+        ],
+        "labelMatches": true,
+        "lang": "hi",
+        "mainWidth": 375,
+        "width": 390
+      },
+      {
+        "dir": "ltr",
+        "docWidth": 753,
+        "featureScroll": 760,
+        "featureWidth": 688,
+        "fontSizes": [
+          "24px",
+          "16px"
+        ],
+        "labelMatches": true,
+        "lang": "hi",
+        "mainWidth": 753,
+        "width": 768
+      },
+      {
+        "dir": "ltr",
+        "docWidth": 1425,
+        "featureScroll": 1179,
+        "featureWidth": 1179,
+        "fontSizes": [
+          "24px",
+          "16px"
+        ],
+        "labelMatches": true,
+        "lang": "hi",
+        "mainWidth": 1425,
+        "width": 1440
+      }
+    ],
+    "navigation": [
+      {
+        "locale": "hi",
+        "registrationUrl": "/#register?plan=102",
+        "reloadNotice": true,
+        "backToLogin": true,
+        "loginChoiceUrl": "http://127.0.0.1:4211/#subscription",
+        "missingPlan": true,
+        "reviewDisabled": true
+      },
+      {
+        "locale": "ar",
+        "registrationUrl": "http://127.0.0.1:4211/#register?plan=102",
+        "registrationScreen": true,
+        "loginChoiceUrl": "http://127.0.0.1:4211/#subscription"
+      },
+      {
+        "locale": "en",
+        "registrationUrl": "http://127.0.0.1:4211/#register?plan=102",
+        "registrationScreen": true,
+        "loginChoiceUrl": "http://127.0.0.1:4211/#subscription"
+      },
+      {
+        "locale": "ur",
+        "registrationUrl": "http://127.0.0.1:4211/#register?plan=102",
+        "registrationScreen": true,
+        "loginChoiceUrl": "http://127.0.0.1:4211/#subscription"
+      }
+    ],
+    "cleanReload": {
+      "cleanReloadAt": "2026-08-31T10:29:52.561Z",
+      "logs": []
+    },
+    "viewportScreenshot": "PlansDiscovery_S2_AR_DESKTOP.png",
+    "screenshotLimits": "Raw viewport capture shows content with capture canvas scaling/blank area; not pixel-perfect evidence. Full-page stitched captures excluded.",
+    "finalFocusedFixes": "Moved feature notes outside narrow table scroll; localized ur/hi feature and cycle labels; clean reload checked",
+    "earlierDevWarnings": "HMR createRoot/locale warnings during edits; no warnings/errors in final full reload; shared HMR not changed"
+  },
+  "cleanup": {
+    "ownedTabClosed": true,
+    "ports": [
+      3161,
+      4211
+    ],
+    "coordinatorNotified": true,
+    "listening": [],
+    "viewportReset": true,
+    "ownedServersStopped": true
+  },
+  "limits": [
+    "login uses /#login plus explicit click and same-tab sessionStorage; #login?plan= is not integrated",
+    "No full credentials/email/new-tab/storage-disabled authentication journey proved",
+    "Hosted /plans old login was observed by coordinator IAB; S2 did not browse hosting",
+    "Real public listing defaults false intentionally; empty is valid and no seed/Legacy listings were created",
+    "Database matrix and shared integration gates remain with coordinator"
+  ],
+  "coordinatorClosingUpdate": "PR45 merged at 89ba49b after green CI; main CI ongoing before deployment. Central next-wave route factory implemented with tests ongoing, per coordinator report. S2 historical base unchanged; shared changes not included in S2 commits.",
+  "implementationCommit": "1f0582c9033646f255603c8330fc64cae3d33695"
+}

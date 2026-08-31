@@ -30,7 +30,7 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
       failBillingRead = true;
       return route.fulfill({ json: { payment: { ...payment, state: 'CANCELLED', version: payment.version + 1 } } });
     });
-    await page.goto('/#subscription');
+    await page.goto('/#subscription?plan=2101');
     await expect(page.locator('.subscription-usage-grid')).toBeVisible();
     await expect(page.locator('.subscription-billing-grid')).toBeVisible();
     expect(writes).toHaveLength(0);

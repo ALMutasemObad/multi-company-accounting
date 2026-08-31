@@ -83,7 +83,7 @@ export class CompanyProvisioningService {
     );
     await this.treasury.provisionTreasury(tx);
     if (tenant.created) {
-      await this.subscriptions.provisionGrandfatheredAccess(tx, {
+      await this.subscriptions.provisionNewCompanyAccess(tx, {
         companyId: tenant.company.id,
         baseCurrencyCode: tenant.baseCurrency.code,
         effectiveFrom: tenant.company.createdAt,

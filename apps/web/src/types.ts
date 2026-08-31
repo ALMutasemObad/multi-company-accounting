@@ -173,7 +173,7 @@ export type SubscriptionChange = {
   modules: Array<{ id: string; code: string; displayName: string; selectionMode: "INCLUDED" | "OPTIONAL" }>;
 };
 export type SubscriptionSnapshot = {
-  company?: { id: string; code: string; name: string; active: boolean };
+  company: { id: string; code: string; name: string; active: boolean };
   subscription: {
     status: "TRIALING" | "ACTIVE" | "PAST_DUE" | "SUSPENDED" | "CANCELED";
     version: number; startsAt: string; trialEndsAt: string | null;

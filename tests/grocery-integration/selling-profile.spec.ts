@@ -3,12 +3,16 @@ import type { CurrentAuthorization } from '../../apps/web/src/types';
 import { sellingProfileDictionaries } from '../../apps/web/src/i18n/locales/selling-profile';
 import { sellingWorkspace } from '../../apps/web/src/i18n/locales/selling-profile-workspace';
 import { arPos, enPos } from '../../apps/web/src/i18n/locales/pos';
+import { posRecoveryDictionaries } from '../../apps/web/src/i18n/locales/pos-recovery';
 
 const unit = { id: '4', code: 'EA', nameAr: 'حبة', nameEn: 'Each', decimalPlaces: 0, isActive: true, version: 1 };
 const item = { id: '9', code: 'ITM-9', nameAr: 'حليب اختبار', nameEn: 'Test milk', description: null, isActive: true, version: 1, unitOfMeasure: unit };
 const currency = { id: '2', code: 'YER', nameAr: 'ريال يمني', decimals: 2 };
 const account = { id: '3', code: '4100', nameAr: 'مبيعات الاختبار', nameEn: 'Test revenue', isActive: true, allowsPosting: true };
 const list = (data: unknown[], page = 1, pageSize = 20, total = data.length) => ({ data, meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) } });
+const checkoutResult = { id: '8', completedAt: '2026-08-31T08:00:00.000Z',
+  invoice: { id: '11', documentNumber: 'SI-FIXTURE-11', status: 'POSTED', customerName: 'Fixture customer', total: '246.9000', baseTotal: '246.9000', generatedJournalEntryIds: ['21'] },
+  receipt: { id: '12', documentNumber: 'REC-FIXTURE-12', status: 'POSTED', generatedJournalEntryIds: ['22'] } };
 type Profile = { id: string; unitPrice: string; currencyId: string; currencyCode: string; revenueAccountId: string; taxRateId: string | null; isActive: boolean; version: number };
 
 async function setup(page: Page, locale: keyof typeof sellingWorkspace, canManage = true, referencesAllowed = true, checkoutAllowed = false) {
@@ -18,7 +22,7 @@ async function setup(page: Page, locale: keyof typeof sellingWorkspace, canManag
     ...(checkoutAllowed ? ['pos.view', 'pos.checkout', 'inventory_barcodes.resolve', 'customers.view', 'cash_bank_accounts.view', 'fiscal_periods.view', 'receipts.view'] : [])];
   const state = { profile: null as Profile | null, unknown: false, malformed: false, forbidden: false,
     writes: [] as { key: string; body: Record<string, unknown>; method: string }[], reads: [] as string[],
-    checkouts: [] as { key: string; body: string }[], scans: [] as string[], checkoutPending: false };
+    checkouts: [] as { key: string; body: string }[], recoveries: [] as { attemptKey: string }[], scans: [] as string[], checkoutPending: false };
   const row = () => ({ inventoryItemId: item.id, code: item.code, nameAr: item.nameAr, nameEn: item.nameEn,
     description: null, isActive: true, unitOfMeasure: unit, sellingProfile: state.profile,
     isReady: state.profile !== null, readinessReason: state.profile ? null : 'PROFILE_MISSING' });
@@ -43,13 +47,17 @@ async function setup(page: Page, locale: keyof typeof sellingWorkspace, canManag
         state.scans.push(request.postDataJSON().value);
         return route.fulfill({ json: { barcode: { id: '1', symbology: 'CODE_128', isPrimary: true }, inventoryItem: item } });
       }
+      if (path === '/pos/checkouts/recovery') {
+        expect(request.method()).toBe('POST');
+        expect(request.headers()['x-csrf-token']).toBe('grocery-fixture-csrf');
+        state.recoveries.push(request.postDataJSON());
+        return route.fulfill({ json: state.checkoutPending ? { outcome: 'UNKNOWN' } : { outcome: 'CONFIRMED', result: checkoutResult } });
+      }
       if (path === '/pos/checkouts') {
         expect(request.headers()['x-csrf-token']).toBe('grocery-fixture-csrf');
         state.checkouts.push({ key: request.headers()['idempotency-key']!, body: request.postData()! });
         if (state.checkoutPending) return route.fulfill({ status: 409, json: { status: 409, code: 'BUSINESS_RULE_VIOLATION', reason: 'IDEMPOTENCY_IN_PROGRESS' } });
-        return route.fulfill({ status: 201, json: { id: '8', completedAt: '2026-08-31T08:00:00.000Z',
-          invoice: { id: '11', documentNumber: 'SI-FIXTURE-11', status: 'POSTED', customerName: 'Fixture customer', total: '246.9000', baseTotal: '246.9000', generatedJournalEntryIds: ['21'] },
-          receipt: { id: '12', documentNumber: 'REC-FIXTURE-12', status: 'POSTED', generatedJournalEntryIds: ['22'] } } });
+        return route.fulfill({ status: 201, json: checkoutResult });
       }
     }
     if (path === '/sales/catalog/items/9/selling-profile') {
@@ -138,10 +146,11 @@ async function navigate(page: Page, view: string, label: string) {
 }
 
 for (const locale of ['ar', 'en'] as const) {
-  test(`${locale}: saved inventory defaults flow through scanner, basket and same-key checkout in the real app`, async ({ page }, info) => {
+  test(`${locale}: saved inventory defaults flow through scanner, basket and read-only checkout recovery in the real app`, async ({ page }, info) => {
     await page.setViewportSize({ width: locale === 'ar' ? 390 : 1440, height: 950 });
     const state = await setup(page, locale, true, true, true);
     const copy = sellingProfileDictionaries[locale]; const pos = locale === 'ar' ? arPos : enPos;
+    const recovery = posRecoveryDictionaries[locale];
     const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
     await open(page, locale); await fill(page, locale);
     await page.getByRole('button', { name: copy.save, exact: true }).click();
@@ -169,18 +178,25 @@ for (const locale of ['ar', 'en'] as const) {
     expect(state.checkouts).toEqual([]);
     state.checkoutPending = true;
     await page.getByRole('button', { name: pos['pos.checkout'], exact: true }).click();
-    await expect(page.locator('.pos-experience-outcome.unknown')).toBeVisible();
+    await expect(page.locator('.pos-recovery').getByRole('alert')).toHaveText(recovery.unknown);
     await expect(page.getByRole('button', { name: pos['pos.checkout'], exact: true })).toBeDisabled();
     expect(state.checkouts).toHaveLength(1);
     // Real shell navigation remounts POS; reading the item again never releases the pending write.
     await navigate(page, 'home', locale === 'ar' ? 'الرئيسية' : 'Home');
     await navigate(page, 'pos', pos['nav.pos']);
-    await expect(page.locator('.pos-experience-outcome.unknown')).toBeVisible();
+    await expect(page.locator('.pos-recovery').getByRole('alert')).toHaveText(recovery.unknown);
+    expect(state.checkouts).toHaveLength(1);
+    await page.getByRole('button', { name: recovery.check, exact: true }).click();
+    await expect(page.locator('.pos-recovery').getByRole('alert')).toHaveText(recovery.unknown);
+    await expect(page.getByRole('button', { name: pos['pos.checkout'], exact: true })).toBeDisabled();
     expect(state.checkouts).toHaveLength(1);
     state.checkoutPending = false;
-    await page.getByRole('button', { name: pos['pos.retrySameSale'], exact: true }).click();
-    await expect(page.locator('.pos-experience-outcome.completed')).toBeVisible();
-    expect(state.checkouts).toHaveLength(2); expect(state.checkouts[1]).toEqual(state.checkouts[0]);
+    await page.getByRole('button', { name: recovery.check, exact: true }).click();
+    await expect(page.locator('.pos-recovery').getByRole('status')).toHaveText(recovery.confirmed);
+    await expect(page.locator('.pos-recovery')).toContainText('SI-FIXTURE-11');
+    await expect(page.locator('.pos-recovery')).toContainText('REC-FIXTURE-12');
+    expect(state.checkouts).toHaveLength(1);
+    expect(state.recoveries).toEqual([{ attemptKey: state.checkouts[0]!.key }, { attemptKey: state.checkouts[0]!.key }]);
     const body = JSON.parse(state.checkouts[0]!.body);
     expect(body.lines).toEqual([{ inventoryItemId: '9', description: locale === 'ar' ? item.nameAr : item.nameEn,
       quantity: '2.000000', unitPrice: '123.4500', discountAmount: '0.0000', revenueAccountId: '3', costCenterId: null, taxRateId: null }]);
@@ -191,7 +207,7 @@ for (const locale of ['ar', 'en'] as const) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     await page.evaluate(() => document.fonts.ready);
     await page.screenshot({ path: info.outputPath(`grocery-checkout-${locale}.png`), fullPage: true });
-    await page.getByRole('button', { name: pos['pos.newSale'], exact: true }).click();
+    await page.getByRole('button', { name: recovery.newSale, exact: true }).click();
     await expect(page.getByTestId('pos-cart-line')).toHaveCount(0);
   });
 }

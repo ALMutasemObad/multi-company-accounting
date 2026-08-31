@@ -17,6 +17,7 @@ export type SubscriptionFailureReason =
   | "NOT_FOUND"
   | "FORBIDDEN"
   | "VERSION_CONFLICT"
+  | "SUBSCRIPTION_CONTEXT_MISMATCH"
   | "PUBLISHED_VERSION_IMMUTABLE"
   | "PLAN_CODE_EXISTS"
   | "DRAFT_ALREADY_EXISTS"
@@ -681,14 +682,14 @@ export class PlatformSubscriptionLifecycleService {
 
   async operatorCompany(userId: bigint, companyId: bigint, pagination: Pagination) {
     await requireOperator(this.operatorAuthorization, userId);
-    return this.companySnapshot(companyId, pagination, true);
+    return this.companySnapshot(companyId, pagination);
   }
 
   async ownerCompany(companyId: bigint, pagination: Pagination) {
-    return this.companySnapshot(companyId, pagination, false);
+    return this.companySnapshot(companyId, pagination);
   }
 
-  private async companySnapshot(companyId: bigint, pagination: Pagination, includeCompany: boolean) {
+  private async companySnapshot(companyId: bigint, pagination: Pagination) {
     const now = this.now();
     const subscription = await this.prisma.platformSubscription.findUnique({
       where: { companyId },
@@ -727,7 +728,7 @@ export class PlatformSubscriptionLifecycleService {
     const trialEndsAt = currentPlan.trialDays > 0 ? addDays(effectiveAt, currentPlan.trialDays) : null;
     const status = trialEndsAt && trialEndsAt > now ? "TRIALING" : subscription.status === "TRIALING" ? "ACTIVE" : subscription.status;
     return {
-      ...(includeCompany ? { company: { id: subscription.companyId.toString(), code: subscription.company.code, name: subscription.company.name, active: subscription.company.isActive } } : {}),
+      company: { id: subscription.companyId.toString(), code: subscription.company.code, name: subscription.company.name, active: subscription.company.isActive },
       subscription: {
         status, version: subscription.version, startsAt: subscription.startsAt.toISOString(),
         trialEndsAt: trialEndsAt?.toISOString() ?? null,
@@ -795,8 +796,13 @@ export class PlatformSubscriptionLifecycleService {
   }
 
   async requestOwnerChange(actor: { userId: bigint; companyId: bigint }, input: {
-    targetPlanVersionId: bigint; optionalModuleIds: bigint[]; subscriptionVersion: number; idempotencyKey: string;
+    expectedCompanyId: bigint; targetPlanVersionId: bigint; optionalModuleIds: bigint[]; subscriptionVersion: number; idempotencyKey: string;
   }) {
+    // Company intent is a precondition, not an authority source or part of the
+    // financial fingerprint. Reject stale/legacy callers before any replay/work.
+    if (typeof input.expectedCompanyId !== "bigint" || input.expectedCompanyId <= 0n || input.expectedCompanyId !== actor.companyId) {
+      throw new PlatformSubscriptionError("SUBSCRIPTION_CONTEXT_MISMATCH");
+    }
     return this.execute(actor.companyId, actor.userId, "REQUEST_COMPANY_SUBSCRIPTION_CHANGE", input.idempotencyKey, {
       targetPlanVersionId: input.targetPlanVersionId.toString(), optionalModuleIds: input.optionalModuleIds.map(String).sort(),
       subscriptionVersion: input.subscriptionVersion,

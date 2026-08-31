@@ -55,6 +55,8 @@ import { PrismaTaxSummaryQueryAdapter } from './reports/adapters/prisma-tax-summ
 import { CostCenterActivityService } from './reports/cost-center-activity-service.js';
 import { PrismaCostCenterActivityLedgerQueryAdapter } from './reports/adapters/prisma-cost-center-activity-ledger-query-adapter.js';
 import { PosService } from './pos/pos-service.js';
+import { PosRecoveryService } from './pos/recovery-service.js';
+import { PrismaPosRecoveryQueryAdapter } from './platform/prisma-pos-recovery-query-adapter.js';
 import { PrismaPosSaleQueryAdapter } from './pos/adapters/prisma-pos-sale-query-adapter.js';
 import { ApprovalService } from './approvals/approval-service.js';
 import { FinancialCloseApprovalAdapter } from './fiscal/financial-close-approval-adapter.js';
@@ -189,6 +191,7 @@ const {
   treasury,
 });
 const pos = new PosService(database, salesInvoices, receipts, new PrismaPosSaleQueryAdapter(database));
+const posRecovery = new PosRecoveryService(new PrismaPosRecoveryQueryAdapter(database));
 const dataImports = new DataImportService(database, customers, suppliers, salesInvoices, purchaseInvoices, outboxAppender);
 const fiscal = new FiscalService(database);
 const financialClose = new FinancialCloseService(database, {
@@ -309,6 +312,7 @@ async function startServer() {
     purchaseInvoices,
     dataImports,
     pos,
+    posRecovery,
     sellingProfiles: createSellingProfileService(database),
   });
 

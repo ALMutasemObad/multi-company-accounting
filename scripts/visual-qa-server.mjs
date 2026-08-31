@@ -1,4 +1,6 @@
 import { createServer } from "node:http";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const port = Number(process.env.VISUAL_QA_PORT ?? 3000);
 const meta = { page: 1, pageSize: 20, total: 0, totalPages: 0 };
@@ -395,7 +397,7 @@ function list(data = []) {
   return { data, meta: { ...meta, total: data.length, totalPages: data.length ? 1 : 0 } };
 }
 
-function responseFor(url, method) {
+export function responseFor(url, method) {
   const pathname = url.pathname.replace(/^\/api\/v1/, "");
   // Visual test data only: this server is never part of an application release.
   if (pathname === "/public/subscription-plans") return {
@@ -434,6 +436,7 @@ function responseFor(url, method) {
     meta: { ...meta, pageSize: 25, total: 1, totalPages: 1 },
   };
   if (pathname === "/subscription") return {
+    company: currentAuthorization.selectedCompany,
     subscription: { status: "ACTIVE", version: 1, startsAt: "2026-08-01T00:00:00.000Z", trialEndsAt: null, currentPeriodStart: null, currentPeriodEnd: null, cancelAtPeriodEnd: false },
     current: subscriptionCurrentChange,
     effectiveModules: [{ id: "3101", code: "CORE_ACCOUNTING", displayName: "المحاسبة الأساسية", source: "PLAN" }],
@@ -633,10 +636,11 @@ const server = createServer((request, response) => {
   response.end(body === null ? undefined : JSON.stringify(body));
 });
 
-server.listen(port, "127.0.0.1", () => {
-  console.log(`Visual QA API listening on http://127.0.0.1:${port}`);
-});
-
-for (const signal of ["SIGINT", "SIGTERM"]) {
-  process.on(signal, () => server.close(() => process.exit(0)));
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  server.listen(port, "127.0.0.1", () => {
+    console.log(`Visual QA API listening on http://127.0.0.1:${port}`);
+  });
+  for (const signal of ["SIGINT", "SIGTERM"]) {
+    process.on(signal, () => server.close(() => process.exit(0)));
+  }
 }

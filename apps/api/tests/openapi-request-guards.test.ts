@@ -22,8 +22,8 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 322, requestBodies: 169, responseBodies: 2138 });
-    expect(guardedOpenApiOperations).toHaveLength(169);
+    expect(openApiContractCoverage).toEqual({ operations: 323, requestBodies: 170, responseBodies: 2144 });
+    expect(guardedOpenApiOperations).toHaveLength(170);
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining(['createItemSellingProfile', 'updateItemSellingProfile']));
     expect(guardedOpenApiOperations).toContain("setPlatformSubscriptionPublicListing");
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
@@ -158,6 +158,19 @@ describe('generated OpenAPI request guards', () => {
       plans: [{ id: '11', code: 'BASIC_CONFIGURED', active: true, version: 2, latestVersion: null, updatedAt: '2026-09-01T00:00:00.000Z' }],
       meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
     })).toMatchObject({ plans: [{ code: 'BASIC_CONFIGURED', latestVersion: null }] });
+  });
+
+  it('requires an exact expected company for owner subscription changes and rejects legacy or ambiguous bodies', () => {
+    const financial = { targetPlanVersionId: '12', optionalModuleIds: ['3', '5'], subscriptionVersion: 4 };
+    const body = { ...financial, expectedCompanyId: '9007199254740993' };
+    expect(openApiRequestBodySchemas.requestCompanySubscriptionChange.parse(body)).toEqual({
+      expectedCompanyId: 9007199254740993n, targetPlanVersionId: 12n, optionalModuleIds: [3n, 5n], subscriptionVersion: 4,
+    });
+    expect(openApiRequestBodySchemas.requestCompanySubscriptionChange.safeParse(financial).success).toBe(false);
+    for (const expectedCompanyId of [null, 9, '0', '-9', '9.5', 'company-b']) {
+      expect(openApiRequestBodySchemas.requestCompanySubscriptionChange.safeParse({ ...financial, expectedCompanyId }).success).toBe(false);
+    }
+    expect(openApiRequestBodySchemas.requestCompanySubscriptionChange.safeParse({ ...body, companyId: '9' }).success).toBe(false);
   });
 
   it('validates professional project and personal time commands', () => {

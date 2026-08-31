@@ -126,9 +126,9 @@ test("no usage request when subscription permission is absent", async ({ page })
   expect(calls).toBe(0);
 });
 
-test("available preference is retained without an automatic subscription command", async ({ page }) => {
+test("available URL preference is retained without an automatic subscription command", async ({ page }) => {
   const commands = await setup(page, "en", "2101");
-  await page.goto("/#subscription");
+  await page.goto("/#subscription?plan=2101");
   await expect(page.locator(".subscription-change-form select").first()).toHaveValue("2101");
   await expect(page.locator(".subscription-catalog-notice")).toHaveCount(0);
   expect(commands).toEqual([]);
@@ -144,7 +144,7 @@ test("missing preference on a paginated catalog stays empty until explicit selec
     pages.push(number);
     return route.fulfill({ json: { plans: number === 1 ? catalog.plans : [{ ...catalog.plans[0], id: "999" }], meta: { page: number, pageSize: 100, total: 101, totalPages: 2 } } });
   });
-  await page.goto("/#subscription");
+  await page.goto("/#subscription?plan=999");
   const select = page.locator(".subscription-change-form select").first();
   await expect(select).toHaveValue("");
   await expect(page.locator(".subscription-catalog-notice")).toContainText("displayed plans");
@@ -160,7 +160,7 @@ test("missing preference on a paginated catalog stays empty until explicit selec
   expect(commands).toEqual([]);
 });
 
-test("a previous selection that disappears clears dependent optional modules; no-preference default remains", async ({ page }) => {
+test("a previous selection that disappears clears dependent optional modules; no preference stays empty", async ({ page }) => {
   const commands = await setup(page);
   const catalog = await (await page.request.get("/api/v1/subscription/catalog")).json();
   let changed = false;
@@ -169,6 +169,8 @@ test("a previous selection that disappears clears dependent optional modules; no
   } }));
   await page.goto("/#subscription");
   const select = page.locator(".subscription-change-form select").first();
+  await expect(select).toHaveValue("");
+  await select.selectOption("2101");
   await expect(select).toHaveValue("2101");
   await page.locator(".subscription-change-form input[type=checkbox]").check();
   changed = true;

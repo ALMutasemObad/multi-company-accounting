@@ -1458,11 +1458,13 @@ h1, h2, h3, .brand strong { font-family: "Cairo", "Noto Sans Devanagari", Tahoma
 .subscription-payment-filter label > span, .platform-payment-filter label > span { color: var(--muted); font-size: .65rem; font-weight: 800; }
 .subscription-payment-filter select, .platform-payment-filter input, .platform-payment-filter select { width: 100%; }
 .subscription-payment-list { display: grid; gap: 1px; background: var(--line); }
-.subscription-payment-list article { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(130px, auto) auto; align-items: center; gap: 14px; padding: 15px 18px; background: #fff; }
-.subscription-payment-list article > div { display: grid; min-width: 0; gap: 4px; }
+.subscription-payment-list article { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 15px 18px; background: #fff; }
+.subscription-payment-list article > div { display: grid; flex: 1 1 130px; min-width: 0; gap: 4px; }
+.subscription-payment-list article > div:first-child { flex-basis: 150px; }
 .subscription-payment-list article strong, .subscription-payment-list article span { overflow: hidden; text-overflow: ellipsis; }
-.subscription-payment-list article small { color: var(--muted); font-size: .62rem; }
-.subscription-payment-list article .row-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; }
+.subscription-payment-list article small { overflow-wrap: anywhere; color: var(--muted); font-size: .62rem; }
+.subscription-payment-list article .row-actions { display: flex; flex: 1 1 150px; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.subscription-payment-list article .row-actions .button { max-width: 100%; white-space: normal; overflow-wrap: break-word; }
 .payment-state { display: inline-flex; width: fit-content; align-items: center; padding: 4px 8px; border-radius: 999px; background: #edf2ef; color: #52665d; font-size: .62rem; font-weight: 900; }
 .payment-state.checkout { background: #e8f1f7; color: #235f84; }
 .payment-state.pending { background: #fff1d5; color: #865d17; }
@@ -1535,7 +1537,8 @@ h1, h2, h3, .brand strong { font-family: "Cairo", "Noto Sans Devanagari", Tahoma
   .subscription-section-heading, .subscription-payment-filter, .platform-payment-filter { align-items: stretch; flex-direction: column; }
   .subscription-section-heading .button, .subscription-payment-filter .button, .platform-payment-filter .button { width: 100%; }
   .platform-payment-filter label:first-child, .platform-payment-filter label:nth-child(2) { max-width: none; }
-  .subscription-payment-list article { grid-template-columns: 1fr; }
+  .subscription-payment-list article { flex-direction: column; align-items: stretch; }
+  .subscription-payment-list article > div, .subscription-payment-list article > div:first-child, .subscription-payment-list article .row-actions { flex-basis: auto; }
   .subscription-payment-list article .row-actions { justify-content: flex-start; }
   .subscription-admin-tabs { width: 100%; flex-wrap: wrap; overflow-x: visible; }
   .subscription-admin-tabs button { flex: 1 1 140px; min-width: 0; }
@@ -1628,7 +1631,7 @@ h1, h2, h3, .brand strong { font-family: "Cairo", "Noto Sans Devanagari", Tahoma
   .platform-billing-band { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .platform-invoice-card > button { grid-template-columns: 1fr auto; }
   .platform-invoice-card > button > div:last-child { grid-column: 1 / -1; text-align: start; }
-  .platform-range-presets { width: 100%; overflow-x: auto; }
+  .platform-range-presets { width: 100%; flex-wrap: wrap; }
   .platform-range-presets button { flex: 1 0 auto; }
   .platform-analytics-meta, .platform-analytics-meta-actions { align-items: stretch; flex-direction: column; }
   .platform-analytics-meta-actions > *, .platform-analytics-meta-actions select { width: 100%; }
