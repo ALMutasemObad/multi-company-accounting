@@ -11,8 +11,8 @@ import {
 } from "../generate-openapi-guards.mjs";
 
 test("generated OpenAPI guards are committed and current", () => {
-  assert.equal(guardedOperationIds.length, 169);
-  assert.equal(responseOperationIds.length, 322);
+  assert.equal(guardedOperationIds.length, 170);
+  assert.equal(responseOperationIds.length, 323);
   for (const operation of ['listSellingCatalog', 'getSellingCatalogItem', 'createItemSellingProfile', 'updateItemSellingProfile', 'listEnabledCurrencyOptions']) {
     assert.ok(responseOperationIds.includes(operation));
   }
