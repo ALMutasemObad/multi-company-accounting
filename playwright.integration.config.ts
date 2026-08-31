@@ -2,10 +2,11 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests',
-  testMatch: ['visual/**/*.spec.ts', 'track-b/**/*.spec.ts'],
+  testMatch: ['visual/**/*.spec.ts', 'track-b/**/*.spec.ts', 'track-d/**/*.spec.ts'],
   fullyParallel: false, workers: 1, retries: 0, timeout: 120_000,
-  expect: { timeout: 15_000 }, reporter: [['list']],
-  outputDir: 'test-results/coordinator-integration-final',
+  expect: { timeout: 15_000 },
+  reporter: process.env.CI ? [['list'], ['html', { open: 'never', outputFolder: 'playwright-report/subscription-readiness' }]] : [['list']],
+  outputDir: 'test-results/subscription-readiness-integration',
   use: {
     baseURL: 'http://127.0.0.1:4183', ...devices['Desktop Chrome'],
     locale: 'en-US', timezoneId: 'Asia/Riyadh', colorScheme: 'light',
@@ -14,9 +15,9 @@ export default defineConfig({
   },
   projects: [
     { name: 'mobile-390', use: { viewport: { width: 390, height: 844 } } },
-    { name: 'tablet-768', testIgnore: ['**/track-b/**', '**/track-c-*.spec.ts'], use: { viewport: { width: 768, height: 1024 } } },
+    { name: 'tablet-768', testIgnore: ['**/track-b/**', '**/track-c-*.spec.ts', '**/track-d/**'], use: { viewport: { width: 768, height: 1024 } } },
     { name: 'desktop-1440', use: { viewport: { width: 1440, height: 900 } } },
-    { name: 'wide-1920', testIgnore: ['**/track-b/**', '**/track-c-*.spec.ts'], use: { viewport: { width: 1920, height: 1080 } } },
+    { name: 'wide-1920', testIgnore: ['**/track-b/**', '**/track-c-*.spec.ts', '**/track-d/**'], use: { viewport: { width: 1920, height: 1080 } } },
   ],
   webServer: [
     { command: 'node scripts/visual-qa-server.mjs', url: 'http://127.0.0.1:3133/api/v1/auth/csrf', env: { VISUAL_QA_PORT: '3133' }, reuseExistingServer: false, timeout: 60_000 },
