@@ -141,8 +141,8 @@ describe("subscription usage authorized read-only router", () => {
   });
 });
 
-describe("composition reuses billing aggregates without loading domain rows", () => {
-  it("passes the same scoped range to count queries and handles huge populations with constant result size", async () => {
+describe("composition reuses billing quota aggregates without unused Audit reads", () => {
+  it("passes the same scoped range to three count queries and handles huge populations with constant result size", async () => {
     const count = 4_000_000_000;
     const userCompany = { count: vi.fn().mockResolvedValue(count) };
     const employee = { count: vi.fn().mockResolvedValue(count) };
@@ -160,7 +160,7 @@ describe("composition reuses billing aggregates without loading domain rows", ()
     expect(employee.count).toHaveBeenCalledExactlyOnceWith({ where: { companyId: 9n, status: { in: ["ACTIVE", "ON_LEAVE"] } } });
     const range = { gte: new Date("2026-08-01T00:00:00Z"), lt: referenceTime };
     expect(accountingDocument.count).toHaveBeenCalledExactlyOnceWith({ where: { companyId: 9n, postedAt: range } });
-    expect(auditLog.count).toHaveBeenCalledExactlyOnceWith({ where: { companyId: 9n, createdAt: range } });
+    expect(auditLog.count).not.toHaveBeenCalled();
     expect(platformSubscription.findUnique.mock.calls[0]?.[0].where).toEqual({ companyId: 9n });
     expect(platformSubscriptionChange.findFirst.mock.calls[0]?.[0]).toMatchObject({ where: { companyId: 9n, subscriptionId: 8n, state: "APPROVED", effectiveAt: { lte: referenceTime } }, orderBy: [{ effectiveAt: "desc" }, { id: "desc" }] });
     expect(JSON.stringify(result).length).toBeLessThan(1800);

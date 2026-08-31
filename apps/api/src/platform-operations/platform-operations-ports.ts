@@ -42,6 +42,19 @@ export type PlatformCompanyUsage = {
   operations: number;
 };
 
+export type PlatformCompanyUsageInput = {
+  companyId: bigint;
+  periodStart: Date;
+  periodEndExclusive: Date;
+};
+
+export type PlatformCompanyQuotaUsage = Pick<PlatformCompanyUsage, "users" | "employees" | "postedDocuments">;
+
+/** Read only the quota counters; billing retains its separate four-counter contract. */
+export interface PlatformCompanyQuotaUsageQueryPort {
+  companyQuotaUsage(input: PlatformCompanyUsageInput): Promise<PlatformCompanyQuotaUsage | null>;
+}
+
 export type PlatformAnalyticsComparison = "PREVIOUS_PERIOD" | "PREVIOUS_YEAR" | "NONE";
 
 export type PlatformAnalyticsDashboard = {
@@ -220,11 +233,7 @@ export interface PlatformAnalyticsQueryPort {
     now: Date;
     days: 7 | 30 | 90;
   }): Promise<PlatformCompanyDetails | null>;
-  companyUsage(input: {
-    companyId: bigint;
-    periodStart: Date;
-    periodEndExclusive: Date;
-  }): Promise<PlatformCompanyUsage | null>;
+  companyUsage(input: PlatformCompanyUsageInput): Promise<PlatformCompanyUsage | null>;
   companyCount(): Promise<number>;
   companyReferences(companyIds?: bigint[]): Promise<PlatformCompanyReference[]>;
 }
