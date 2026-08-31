@@ -1,5 +1,9 @@
-import { FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
-import { api, ApiError } from "./api";
+import { FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { api } from "./api";
+import { AUTH_VERIFICATION_TIMEOUT_MS, authPost, uncertainAuthResult } from "./auth-resilience";
+import { AuthFeedback } from "./AuthFeedback";
+import { useAuthAction } from "./use-auth-action";
+import { RequestError } from "./request-scope";
 import { localizedBrand } from "./branding";
 import { localizedReferenceName, LanguageSwitcher, localeDetails, resolveLocale, supportedLocales, useI18n, type Locale } from "./i18n";
 import { Button, Spinner } from "./ui";
@@ -15,79 +19,66 @@ type RegistrationOptions = {
 
 type RegistrationState = "form" | "pending" | "verifying" | "completed" | "verification-error";
 
-function registrationError(cause: unknown, t: ReturnType<typeof useI18n>["t"]) {
-  if (cause instanceof ApiError && cause.code === "REGISTRATION_TOKEN_INVALID") return t("registration.invalidToken");
-  if (cause instanceof ApiError && cause.code === "REGISTRATION_CONFLICT") return t("registration.conflict");
-  if (cause instanceof ApiError && cause.code === "RATE_LIMITED") return t("registration.rateLimited");
-  if (cause instanceof ApiError && cause.code === "PROVISIONING_FAILED") return t("registration.provisioningFailed");
-  return cause instanceof Error ? cause.message : t("registration.error");
-}
-
 export function RegistrationPage({ onBackToLogin }: { onBackToLogin: () => void }) {
   const { dir, locale, setLocale, t } = useI18n();
   const brand = localizedBrand(t);
   const [options, setOptions] = useState<RegistrationOptions | null>(null);
   const [state, setState] = useState<RegistrationState>("form");
   const [email, setEmail] = useState("");
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const verificationStarted = useRef(false);
+  const [validationError, setValidationError] = useState("");
+  const [inProgress, setInProgress] = useState(false);
+  const token = useMemo(() => new URLSearchParams(location.hash.split("?", 2)[1] ?? "").get("token"), []);
+  const optionsAction = useAuthAction();
+  const action = useAuthAction();
+  const busy = action.busy;
+  const runOptions = optionsAction.run;
+  const runVerification = action.run;
+  const loadOptions = useCallback(() => {
+    void runOptions((signal) => api<RegistrationOptions>("/auth/register/options", { signal }), { onSuccess: setOptions });
+  }, [runOptions]);
 
   useEffect(() => {
-    void api<RegistrationOptions>("/auth/register/options")
-      .then(setOptions)
-      .catch((cause) => setError(registrationError(cause, t)));
-  }, [t]);
+    if (!token) loadOptions();
+  }, [loadOptions, token]);
 
-  useEffect(() => {
-    const token = new URLSearchParams(location.hash.split("?", 2)[1] ?? "").get("token");
-    if (!token || verificationStarted.current) return;
-    verificationStarted.current = true;
+  const verify = useCallback(() => {
+    if (!token) return;
     setState("verifying");
-    setError("");
-    let cancelled = false;
-    const verify = async (attempt = 0): Promise<void> => {
-      try {
-        const result = await api<{ status: "COMPLETED"; companyId: string; userId: string } | { status: "IN_PROGRESS" }>("/auth/register/verify", {
-          method: "POST",
-          body: JSON.stringify({ token }),
-        });
-        if (cancelled) return;
-        if (result.status === "IN_PROGRESS" && attempt < 2) {
-          await new Promise((resolve) => window.setTimeout(resolve, 1_000));
-          return verify(attempt + 1);
-        }
-        if (result.status === "IN_PROGRESS") throw new Error(t("registration.provisioningFailed"));
+    setInProgress(false);
+    void runVerification(async (signal) => {
+      const result = await authPost<{ status: "COMPLETED" | "IN_PROGRESS" }>("/auth/register/verify", { token }, signal);
+      if (result?.status !== "COMPLETED" && result?.status !== "IN_PROGRESS") throw new RequestError("response");
+      return result;
+    }, {
+      timeoutMs: AUTH_VERIFICATION_TIMEOUT_MS,
+      onSuccess: (result) => {
+        if (result.status === "IN_PROGRESS") { setInProgress(true); setState("verification-error"); return; }
         const url = new URL(location.href);
         history.replaceState(null, "", `${url.pathname}${url.search}#register`);
         setState("completed");
-      } catch (cause) {
-        if (cancelled) return;
-        setError(registrationError(cause, t));
-        setState("verification-error");
-      }
-    };
-    void verify();
-    return () => { cancelled = true; };
-  }, [t]);
+      },
+      onError: () => setState("verification-error"),
+    });
+  }, [token, runVerification]);
+  useEffect(() => {
+    if (!token) return;
+    // Defer the initial POST past StrictMode's effect cleanup; never replay a sent POST.
+    const timer = window.setTimeout(verify, 0);
+    return () => window.clearTimeout(timer);
+  }, [token, verify]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!options) return;
-    setBusy(true);
-    setError("");
+    if (!options || busy) return;
+    setValidationError("");
     const form = new FormData(event.currentTarget);
     const password = String(form.get("password"));
     if (password !== String(form.get("passwordConfirmation"))) {
-      setError(t("registration.passwordMismatch"));
-      setBusy(false);
+      setValidationError(t("registration.passwordMismatch"));
       return;
     }
     const submittedEmail = String(form.get("email")).trim();
-    try {
-      await api("/auth/register", {
-        method: "POST",
-        body: JSON.stringify({
+    void action.run((signal) => authPost("/auth/register", {
           email: submittedEmail,
           password,
           displayName: String(form.get("displayName")),
@@ -97,27 +88,14 @@ export function RegistrationPage({ onBackToLogin }: { onBackToLogin: () => void 
           baseCurrencyCode: String(form.get("baseCurrencyCode")),
           locale,
           chartTemplateCode: String(form.get("chartTemplateCode")),
-        }),
-      });
+        }, signal), { onSuccess: () => {
       setEmail(submittedEmail);
       setState("pending");
-    } catch (cause) {
-      setError(registrationError(cause, t));
-    } finally {
-      setBusy(false);
-    }
+    } });
   }
 
   async function resend() {
-    setBusy(true);
-    setError("");
-    try {
-      await api("/auth/register/resend", { method: "POST", body: JSON.stringify({ email }) });
-    } catch (cause) {
-      setError(registrationError(cause, t));
-    } finally {
-      setBusy(false);
-    }
+    void action.run((signal) => authPost("/auth/register/resend", { email }, signal));
   }
 
   const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -126,12 +104,11 @@ export function RegistrationPage({ onBackToLogin }: { onBackToLogin: () => void 
   const defaultChart = options?.chartTemplates[0]?.code;
 
   return (
-    <main className="auth-layout registration-layout" dir={dir}>
+    <main className="auth-layout registration-layout auth-resilient" dir={dir}>
       <div className="auth-language"><LanguageSwitcher /></div>
       <section className="auth-story registration-story">
         <div className="auth-brand"><div className="brand-mark">{brand.mark}</div><span>{brand.name}</span></div>
         <div>
-          <span className="section-kicker light">{t("registration.storyKicker")}</span>
           <h1>{t("registration.storyTitle")}</h1>
           <p>{t("registration.storyDescription")}</p>
         </div>
@@ -142,13 +119,17 @@ export function RegistrationPage({ onBackToLogin }: { onBackToLogin: () => void 
           <div className="mobile-auth-brand"><div className="brand-mark">{brand.mark}</div><strong>{brand.shortName}</strong></div>
           {state === "form" && (
             <>
-              <span className="section-kicker">{t("registration.kicker")}</span>
               <h2>{t("registration.title")}</h2>
               <p>{t("registration.description")}</p>
               <a className="auth-text-link" href="/plans">{t("publicPlans.viewPage")}</a>
               {preferredSubscriptionPlan() && <div className="public-plan-selection">{t("publicPlans.selectionNote")}</div>}
-              {error && <div className="form-error" role="alert">{error}</div>}
-              {!options && !error && <Spinner label={t("registration.loadingOptions")} />}
+              {validationError && <div className="form-error" role="alert">{validationError}</div>}
+              <AuthFeedback {...optionsAction} />
+              <AuthFeedback {...action} hint={uncertainAuthResult(action.error) ? "authResilience.mailUncertain" : undefined} />
+              {!options && <div className="auth-recovery">
+                {optionsAction.busy ? <Spinner label={t("registration.loadingOptions")} /> : <Button type="button" onClick={loadOptions}>{t("authResilience.retryRead")}</Button>}
+                <Button type="button" variant="ghost" onClick={onBackToLogin}>{t("registration.backToLogin")}</Button>
+              </div>}
               {options && (
                 <form className="registration-form" onSubmit={submit}>
                   <label><span>{t("registration.displayName")}</span><input name="displayName" autoComplete="name" maxLength={160} required /></label>
@@ -169,16 +150,16 @@ export function RegistrationPage({ onBackToLogin }: { onBackToLogin: () => void 
               )}
             </>
           )}
-          {state === "pending" && <RegistrationResult title={t("registration.pendingTitle")} description={t("registration.pendingDescription")} error={error}><Button onClick={() => void resend()} disabled={busy} variant="secondary">{busy ? t("registration.resending") : t("registration.resend")}</Button><Button onClick={onBackToLogin} variant="ghost">{t("registration.backToLogin")}</Button></RegistrationResult>}
-          {state === "verifying" && <RegistrationResult title={t("registration.verifyingTitle")} description={t("registration.verifyingDescription")}><Spinner /></RegistrationResult>}
+          {state === "pending" && <RegistrationResult title={t("registration.pendingTitle")} description={t("registration.pendingDescription")}><AuthFeedback {...action} hint={uncertainAuthResult(action.error) ? "authResilience.mailUncertain" : undefined} /><Button onClick={() => void resend()} disabled={busy} variant="secondary">{busy ? t("registration.resending") : t("registration.resend")}</Button><Button onClick={onBackToLogin} variant="ghost">{t("registration.backToLogin")}</Button></RegistrationResult>}
+          {state === "verifying" && <RegistrationResult title={t("registration.verifyingTitle")} description={t("registration.verifyingDescription")}><AuthFeedback {...action} /><Button onClick={onBackToLogin} variant="ghost">{t("registration.backToLogin")}</Button></RegistrationResult>}
           {state === "completed" && <RegistrationResult title={t("registration.completedTitle")} description={t("registration.completedDescription")}><Button onClick={onBackToLogin}>{t("registration.signIn")}</Button></RegistrationResult>}
-          {state === "verification-error" && <RegistrationResult title={t("registration.verificationErrorTitle")} description={t("registration.verificationErrorDescription")} error={error}><Button onClick={onBackToLogin}>{t("registration.backToLogin")}</Button></RegistrationResult>}
+          {state === "verification-error" && <RegistrationResult title={t("authResilience.verificationUnconfirmed")} description={t(uncertainAuthResult(action.error) || inProgress ? "authResilience.verifyUncertain" : "registration.verificationErrorDescription")}><AuthFeedback {...action} />{inProgress && <p role="status">{t("authResilience.verifyInProgress")}</p>}<Button onClick={verify} disabled={busy} variant="secondary">{t("authResilience.verifyAgain")}</Button><Button onClick={onBackToLogin}>{t("registration.backToLogin")}</Button></RegistrationResult>}
         </div>
       </section>
     </main>
   );
 }
 
-function RegistrationResult({ title, description, error, children }: { title: string; description: string; error?: string; children: ReactNode }) {
-  return <div className="registration-result"><div className="registration-result-mark">✓</div><h2>{title}</h2><p>{description}</p>{error && <div className="form-error" role="alert">{error}</div>}<div className="registration-result-actions">{children}</div></div>;
+function RegistrationResult({ title, description, children }: { title: string; description: string; children: ReactNode }) {
+  return <div className="registration-result"><h2>{title}</h2><p>{description}</p><div className="registration-result-actions">{children}</div></div>;
 }

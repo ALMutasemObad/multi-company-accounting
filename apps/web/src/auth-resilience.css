@@ -1,0 +1,12 @@
+.auth-resilient { --auth-body-size: 16px; --auth-heading-size: 26px; }
+.auth-resilient :is(p, span, small, label, input, select, button, a, strong),
+.auth-resilient .form-error, .auth-resilient .public-plan-selection { font-size: var(--auth-body-size); }
+.auth-resilient :is(h1, h2) { font-size: var(--auth-heading-size); line-height: 1.6; }
+.auth-resilient .section-kicker { font-weight: 600; }
+.auth-resilient .auth-wait { display: grid; gap: 8px; margin-block: 12px; }
+.auth-resilient .auth-wait p, .auth-resilient .form-error p { margin-block: 8px; }
+.auth-resilient .auth-recovery { display: grid; gap: 12px; margin-block: 12px; }
+.auth-resilient .auth-recovery button { white-space: normal; }
+.auth-resilient .login-card, .auth-resilient .registration-card { overflow-wrap: anywhere; }
+.auth-resilient .login-card { max-width: 480px; }
+.auth-resilient .company-grid button:disabled { cursor: wait; opacity: .6; }

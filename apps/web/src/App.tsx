@@ -1,12 +1,16 @@
-import { FormEvent, lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { api, ApiError, beginLogin, login, logout } from "./api";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { api, ApiError, logout } from "./api";
 import { localizedBrand } from "./branding";
 import { LanguageSwitcher, useI18n } from "./i18n";
-import type { Company, CurrentAuthorization, User } from "./types";
+import type { Company, CurrentAuthorization } from "./types";
 import { Button, Icon, Spinner, Toast } from "./ui";
 import { RegistrationPage } from "./RegistrationPage";
 import { PasswordResetPage } from "./PasswordResetPage";
 import { preferredSubscriptionPlan } from "./public-plans";
+import { LoginScreen } from "./LoginScreen";
+import { AuthFeedback } from "./AuthFeedback";
+import { useAuthAction } from "./use-auth-action";
+import { assertRequestActive } from "./request-scope";
 import {
   resolveAuthorizedView,
   viewTitleKey,
@@ -51,7 +55,6 @@ const viewFromHash = (): View => {
 };
 
 type PlatformCapabilities = { platformOperations: boolean };
-const noPlatformCapabilities: PlatformCapabilities = { platformOperations: false };
 
 const replaceHash = (view: View) => {
   const url = new URL(location.href);
@@ -68,6 +71,8 @@ export default function App() {
   const [platformOperator, setPlatformOperator] = useState<boolean | null>(null);
   const [mobileNav, setMobileNav] = useState(false);
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(null);
+  const startup = useAuthAction();
+  const runStartup = startup.run;
 
   useEffect(() => {
     document.title = brand.name;
@@ -95,27 +100,30 @@ export default function App() {
     setState("ready");
   }, []);
 
-  const chooseCompany = useCallback(async (selected: Company) => {
+  const chooseCompany = useCallback(async (selected: Company, signal: AbortSignal) => {
     await api<void>("/auth/context", {
       method: "PUT",
       body: JSON.stringify({ companyId: selected.id }),
+      signal,
     });
     const [snapshot, capabilities] = await Promise.all([
-      api<CurrentAuthorization>("/auth/me"),
-      api<PlatformCapabilities>("/platform/capabilities").catch(() => noPlatformCapabilities),
+      api<CurrentAuthorization>("/auth/me", { signal }),
+      api<PlatformCapabilities>("/platform/capabilities", { signal }),
     ]);
+    assertRequestActive(signal);
     if (snapshot.selectedCompany?.id !== selected.id) {
-      throw new Error(t("app.chooseCompanyError"));
+      throw new ApiError("", 503, "AUTH_CONTEXT_MISMATCH");
     }
     activateAuthorization(snapshot, capabilities);
-  }, [activateAuthorization, t]);
+  }, [activateAuthorization]);
 
-  const loadAuthenticatedShell = useCallback(async (autoSelectSingleCompany: boolean) => {
+  const loadAuthenticatedShell = useCallback(async (autoSelectSingleCompany: boolean, signal: AbortSignal) => {
     const [companyResult, snapshot, capabilities] = await Promise.all([
-      api<{ data: Company[] }>("/auth/companies"),
-      api<CurrentAuthorization>("/auth/me"),
-      api<PlatformCapabilities>("/platform/capabilities").catch(() => noPlatformCapabilities),
+      api<{ data: Company[] }>("/auth/companies", { signal }),
+      api<CurrentAuthorization>("/auth/me", { signal }),
+      api<PlatformCapabilities>("/platform/capabilities", { signal }),
     ]);
+    assertRequestActive(signal);
     setCompanies(companyResult.data);
     if (snapshot.selectedCompany) {
       activateAuthorization(snapshot, capabilities);
@@ -128,7 +136,7 @@ export default function App() {
     setAuthorization(snapshot);
     setPlatformOperator(capabilities.platformOperations);
     if (autoSelectSingleCompany && companyResult.data.length === 1) {
-      await chooseCompany(companyResult.data[0]!);
+      await chooseCompany(companyResult.data[0]!, signal);
       return;
     }
     setState("company");
@@ -162,25 +170,18 @@ export default function App() {
   }, [activeView, state, view]);
 
   useEffect(() => {
-    void (async () => {
       if (location.hash.startsWith("#reset-password")) {
-        await beginLogin().catch(() => undefined);
         setState("password-reset");
         return;
       }
       if (location.hash.startsWith("#register")) {
-        await beginLogin().catch(() => undefined);
         setState("register");
         return;
       }
-      try {
-        await loadAuthenticatedShell(false);
-      } catch {
-        await beginLogin().catch(() => undefined);
-        setState("login");
-      }
-    })();
-  }, [loadAuthenticatedShell]);
+      void runStartup((signal) => loadAuthenticatedShell(false, signal), {
+        onError: (cause) => { if (cause instanceof ApiError && cause.status === 401) setState("login"); },
+      });
+  }, [loadAuthenticatedShell, runStartup]);
 
   function navigate(next: View) {
     const authorized = resolveAuthorizedView(next, navigationAccess);
@@ -191,9 +192,16 @@ export default function App() {
 
   if (state === "booting")
     return (
-      <main className="center-screen">
+      <main className="center-screen auth-resilient" dir={dir}>
         <div className="brand-mark large">{brand.mark}</div>
-        <Spinner label={t("app.booting", { productName: brand.name })} />
+        <section className="login-card">
+          <h1>{t("authResilience.bootTitle")}</h1>
+          <AuthFeedback {...startup} />
+          {!startup.busy && <Button type="button" onClick={() => void runStartup((signal) => loadAuthenticatedShell(false, signal), {
+            onError: (cause) => { if (cause instanceof ApiError && cause.status === 401) setState("login"); },
+          })}>{t("authResilience.retryRead")}</Button>}
+          <Button type="button" variant="ghost" onClick={() => { startup.cancel(); setState("login"); }}>{t("authResilience.back")}</Button>
+        </section>
       </main>
     );
 
@@ -202,13 +210,13 @@ export default function App() {
       <LoginScreen
         onForgotPassword={() => {
           location.hash = "reset-password";
-          void beginLogin().finally(() => setState("password-reset"));
+          setState("password-reset");
         }}
         onRegister={() => {
           location.hash = "register";
           setState("register");
         }}
-        onLoggedIn={async () => loadAuthenticatedShell(true)}
+        onLoggedIn={(signal) => loadAuthenticatedShell(true, signal)}
       />
     );
 
@@ -218,7 +226,7 @@ export default function App() {
         onBackToLogin={() => {
           const url = new URL(location.href);
           history.replaceState(null, "", `${url.pathname}${url.search}`);
-          void beginLogin().finally(() => setState("login"));
+          setState("login");
         }}
       />
     );
@@ -229,7 +237,7 @@ export default function App() {
         onBackToLogin={() => {
           const url = new URL(location.href);
           history.replaceState(null, "", `${url.pathname}${url.search}`);
-          void beginLogin().finally(() => setState("login"));
+          setState("login");
         }}
       />
     );
@@ -238,11 +246,8 @@ export default function App() {
     return (
       <CompanyScreen
         companies={companies}
-        onSelect={(selected) =>
-          void chooseCompany(selected).catch((cause) =>
-            notify(cause instanceof Error ? cause.message : t("app.chooseCompanyError"), "error"),
-          )
-        }
+        onSelect={chooseCompany}
+        onBackToLogin={() => setState("login")}
       />
     );
 
@@ -298,11 +303,11 @@ export default function App() {
               aria-label={t("app.logout")}
               title={t("app.logout")}
               onClick={() =>
-                void logout().finally(() => {
+                void logout().catch(() => undefined).finally(() => {
                   setAuthorization(null);
                   setCompanies([]);
                   setPlatformOperator(null);
-                  void beginLogin().finally(() => setState("login"));
+                  setState("login");
                 })
               }
             >
@@ -347,80 +352,31 @@ export default function App() {
   );
 }
 
-function LoginScreen({ onLoggedIn, onRegister, onForgotPassword }: { onLoggedIn: (user: User) => Promise<void>; onRegister: () => void; onForgotPassword: () => void }) {
-  const { dir, t } = useI18n();
-  const brand = localizedBrand(t);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setLoading(true);
-    setError("");
-    const data = new FormData(event.currentTarget);
-    try {
-      await onLoggedIn(
-        await login(String(data.get("email")), String(data.get("password"))),
-      );
-    } catch (cause) {
-      if (cause instanceof ApiError && cause.code === "INVALID_CREDENTIALS")
-        setError(t("login.invalidCredentials"));
-      else if (cause instanceof ApiError && cause.code === "ACCOUNT_LOCKED")
-        setError(t("login.accountLocked"));
-      else setError(cause instanceof Error ? cause.message : t("login.error"));
-    } finally {
-      setLoading(false);
-    }
-  }
-  return (
-    <main className="auth-layout" dir={dir}>
-      <div className="auth-language"><LanguageSwitcher /></div>
-      <section className="auth-story">
-        <div className="auth-brand"><div className="brand-mark">{brand.mark}</div><span>{brand.name}</span></div>
-        <div>
-          <span className="section-kicker light">{t("login.storyKicker")}</span>
-          <h1>{t("login.headlineFirst")}<br />{t("login.headlineSecond")}</h1>
-          <p>{t("login.storyDescription")}</p>
-        </div>
-      </section>
-      <section className="auth-panel">
-        <form className="login-card" onSubmit={submit}>
-          <div className="mobile-auth-brand"><div className="brand-mark">{brand.mark}</div><strong>{brand.shortName}</strong></div>
-          <span className="section-kicker">{t("login.welcome")}</span>
-          <h2>{t("login.title")}</h2>
-          <p>{t("login.description")}</p>
-          {error && <div className="form-error" role="alert">{error}</div>}
-          <label><span>{t("login.email")}</span><input name="email" type="email" dir="ltr" autoComplete="username" required /></label>
-          <label><span>{t("login.password")}</span><input name="password" type="password" dir="ltr" autoComplete="current-password" required /></label>
-          <button className="auth-text-link" type="button" onClick={onForgotPassword}>{t("login.forgotPassword")}</button>
-          <Button type="submit" disabled={loading}>{loading ? t("login.checking") : t("login.submit")}</Button>
-          <button className="auth-text-link" type="button" onClick={onRegister}>{t("login.createAccount")}</button>
-          <a className="auth-text-link" href="/plans">{t("publicPlans.viewPage")}</a>
-        </form>
-      </section>
-    </main>
-  );
-}
-
 function CompanyScreen({
   companies,
   onSelect,
+  onBackToLogin,
 }: {
   companies: Company[];
-  onSelect: (company: Company) => void;
+  onSelect: (company: Company, signal: AbortSignal) => Promise<void>;
+  onBackToLogin: () => void;
 }) {
   const { dir, t } = useI18n();
   const brand = localizedBrand(t);
+  const action = useAuthAction();
   return (
-    <main className="company-screen" dir={dir}>
+    <main className="company-screen auth-resilient" dir={dir}>
       <div className="company-screen-language"><LanguageSwitcher /></div>
       <div className="brand"><div className="brand-mark">{brand.mark}</div><div><strong>{brand.shortName}</strong><span>{t("companyPicker.workspace")}</span></div></div>
       <section>
         <span className="section-kicker">{t("companyPicker.available")}</span>
         <h1>{t("companyPicker.title")}</h1>
         <p>{t("companyPicker.description")}</p>
+        <AuthFeedback {...action} />
+        {action.error != null && <Button type="button" variant="ghost" onClick={onBackToLogin}>{t("authResilience.back")}</Button>}
         <div className="company-grid">
           {companies.map((item) => (
-            <button type="button" key={item.id} onClick={() => onSelect(item)}>
+            <button type="button" key={item.id} disabled={action.busy} onClick={() => void action.run((signal) => onSelect(item, signal))}>
               <Icon name="building" size={28} />
               <div><strong>{item.name}</strong><span>{t("companyPicker.open")}</span></div>
               <Icon name="back" />
