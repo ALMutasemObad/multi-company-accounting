@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.46.1
+  version: 1.46.2
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -15577,29 +15577,25 @@ components:
           description: قيمة مالية عشرية DECIMAL(19,4) كنص.
       description: يجب أن يكون أحد debitAmount وcreditAmount موجباً والآخر صفراً؛ ولا يجتمع customerId وsupplierId.
     JournalLine:
-      allOf:
-      - $ref: '#/components/schemas/JournalLineInput'
-      - type: object
-        required:
-        - id
-        - baseDebitAmount
-        - baseCreditAmount
-        properties:
-          id:
-            type: string
-            pattern: ^[1-9][0-9]*$
-            example: '1001'
-            description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
-          baseDebitAmount:
-            type: string
-            pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
-            example: '1250.0000'
-            description: قيمة مالية عشرية DECIMAL(19,4) كنص.
-          baseCreditAmount:
-            type: string
-            pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
-            example: '1250.0000'
-            description: قيمة مالية عشرية DECIMAL(19,4) كنص.
+      # Response fields extend the input vocabulary, not the closed input schema.
+      # allOf cannot add id/base amounts to additionalProperties:false.
+      type: object
+      additionalProperties: false
+      required: [id, lineNumber, accountId, currencyId, exchangeRate, debitAmount, creditAmount, baseDebitAmount, baseCreditAmount]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        lineNumber: { type: integer, minimum: 1 }
+        accountId: { type: string, pattern: '^[1-9][0-9]*$' }
+        costCenterId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+        customerId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+        supplierId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+        description: { type: [string, 'null'], maxLength: 500 }
+        currencyId: { type: string, pattern: '^[1-9][0-9]*$' }
+        exchangeRate: { type: string, pattern: '^[0-9]{1,11}\.[0-9]{8}$' }
+        debitAmount: { type: string, pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        creditAmount: { type: string, pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        baseDebitAmount: { type: string, pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        baseCreditAmount: { type: string, pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
     JournalEntryInput:
       type: object
       additionalProperties: false
@@ -15815,38 +15811,28 @@ components:
           example: '1250.0000'
           description: قيمة مالية عشرية DECIMAL(19,4) كنص.
     ReceiptAllocation:
-      allOf:
-      - $ref: '#/components/schemas/ReceiptAllocationInput'
-      - type: object
-        required:
-        - id
-        - invoiceNumber
-        - customerName
-        - dueDate
-        - carryingBaseAmount
-        - settlementBaseAmount
-        - realizedFxBaseAmount
-        properties:
-          id:
-            type: string
-            pattern: ^[1-9][0-9]*$
-            example: '1001'
-            description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
-          invoiceNumber: { type: string, maxLength: 60 }
-          customerName: { type: string, maxLength: 200 }
-          dueDate: { type: string, format: date }
-          carryingBaseAmount:
-            type: [string, 'null']
-            pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
-            description: القيمة الدفترية المسحوبة من الذمة بعملة الأساس؛ null للمسودة قبل الترحيل.
-          settlementBaseAmount:
-            type: [string, 'null']
-            pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
-            description: قيمة التحصيل بعملة الأساس وفق سعر صرف سند القبض؛ null للمسودة قبل الترحيل.
-          realizedFxBaseAmount:
-            type: [string, 'null']
-            pattern: ^-?(0|[1-9][0-9]{0,14})\.[0-9]{4}$
-            description: فرق العملة المحقق بعملة الأساس؛ موجب = ربح وسالب = خسارة.
+      type: object
+      additionalProperties: false
+      required: [id, receivableItemId, allocatedAmount, invoiceNumber, customerName, dueDate, carryingBaseAmount, settlementBaseAmount, realizedFxBaseAmount]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        receivableItemId: { type: string, pattern: '^[1-9][0-9]*$' }
+        allocatedAmount: { type: string, pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        invoiceNumber: { type: string, maxLength: 60 }
+        customerName: { type: string, maxLength: 200 }
+        dueDate: { type: string, format: date }
+        carryingBaseAmount:
+          type: [string, 'null']
+          pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
+          description: القيمة الدفترية المسحوبة من الذمة بعملة الأساس؛ null للمسودة قبل الترحيل.
+        settlementBaseAmount:
+          type: [string, 'null']
+          pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
+          description: قيمة التحصيل بعملة الأساس وفق سعر صرف سند القبض؛ null للمسودة قبل الترحيل.
+        realizedFxBaseAmount:
+          type: [string, 'null']
+          pattern: ^-?(0|[1-9][0-9]{0,14})\.[0-9]{4}$
+          description: فرق العملة المحقق بعملة الأساس؛ موجب = ربح وسالب = خسارة.
     PaymentAllocationInput:
       type: object
       additionalProperties: false
@@ -15865,32 +15851,25 @@ components:
           example: '1250.0000'
           description: قيمة مالية عشرية DECIMAL(19,4) كنص.
     PaymentAllocation:
-      allOf:
-      - $ref: '#/components/schemas/PaymentAllocationInput'
-      - type: object
-        required:
-        - id
-        - carryingBaseAmount
-        - settlementBaseAmount
-        - realizedFxBaseAmount
-        properties:
-          id:
-            type: string
-            pattern: ^[1-9][0-9]*$
-            example: '1001'
-            description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
-          carryingBaseAmount:
-            type: [string, 'null']
-            pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
-            description: القيمة الدفترية المسحوبة من الذمة بعملة الأساس؛ null للمسودة قبل الترحيل.
-          settlementBaseAmount:
-            type: [string, 'null']
-            pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
-            description: قيمة الدفع بعملة الأساس وفق سعر صرف سند الدفع؛ null للمسودة قبل الترحيل.
-          realizedFxBaseAmount:
-            type: [string, 'null']
-            pattern: ^-?(0|[1-9][0-9]{0,14})\.[0-9]{4}$
-            description: فرق العملة المحقق بعملة الأساس؛ موجب = ربح وسالب = خسارة.
+      type: object
+      additionalProperties: false
+      required: [id, payableItemId, allocatedAmount, carryingBaseAmount, settlementBaseAmount, realizedFxBaseAmount]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        payableItemId: { type: string, pattern: '^[1-9][0-9]*$' }
+        allocatedAmount: { type: string, pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        carryingBaseAmount:
+          type: [string, 'null']
+          pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
+          description: القيمة الدفترية المسحوبة من الذمة بعملة الأساس؛ null للمسودة قبل الترحيل.
+        settlementBaseAmount:
+          type: [string, 'null']
+          pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
+          description: قيمة الدفع بعملة الأساس وفق سعر صرف سند الدفع؛ null للمسودة قبل الترحيل.
+        realizedFxBaseAmount:
+          type: [string, 'null']
+          pattern: ^-?(0|[1-9][0-9]{0,14})\.[0-9]{4}$
+          description: فرق العملة المحقق بعملة الأساس؛ موجب = ربح وسالب = خسارة.
     ReceiptCreateRequest:
       type: object
       additionalProperties: false

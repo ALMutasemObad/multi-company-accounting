@@ -33,7 +33,10 @@ async function capturedVerificationFor(email: string) {
 }
 
 async function openWorkspacePage(page: Page, navigationName: string, heading: string) {
-  await page.getByRole('button', { name: navigationName, exact: true }).click();
+  // The home setup guide offers the same destinations. This helper explicitly
+  // verifies the main navigation, not whichever matching button appears first.
+  await page.getByRole('navigation', { name: 'Main navigation' })
+    .getByRole('button', { name: navigationName, exact: true }).click();
   await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
 }
 
