@@ -4,12 +4,16 @@ import { createDatabase } from '../src/database.js';
 import { createCompanyProvisioningService } from '../src/composition/create-company-provisioning-service.js';
 import { permissionDefinitions } from '../src/platform/reference-data.js';
 import { DEFAULT_CHART_TEMPLATE_CODE, DEFAULT_CHART_TEMPLATE_VERSION, defaultChartDefinitions } from '../src/accounts/default-chart-template.js';
+import { createStartPlanFixture } from './subscription-start-plan-fixture.js';
+import { PrismaCompanySubscriptionProvisioningAdapter } from '../src/platform-subscriptions/prisma-company-subscription-provisioning-adapter.js';
+import { SubscriptionStartPolicyError } from '../src/platform-subscriptions/new-company-start-policy.js';
 
 const runDatabaseTests = process.env.RUN_DB_TESTS === 'true' && Boolean(process.env.DATABASE_URL);
 const suite = runDatabaseTests ? describe : describe.skip;
 
 suite('multi-company provisioning integration', () => {
   let prisma: PrismaClient;
+  let startPlan: Awaited<ReturnType<typeof createStartPlanFixture>>;
   const organizationCode = 'IT-PROVISIONING';
   const adminEmail = 'it.provisioning@mcap.local';
 
@@ -19,7 +23,7 @@ suite('multi-company provisioning integration', () => {
       const companyIds = organization.companies.map(({ id }) => id);
       const roles = await prisma.role.findMany({ where: { companyId: { in: companyIds } }, select: { id: true } });
       const subscriptions = await prisma.platformSubscription.findMany({
-        where: { companyId: { in: companyIds } },
+        where: { companyId: { in: companyIds }, planVersion: { plan: { code: { startsWith: 'LEGACY_COMPANY_' } } } },
         select: { id: true, planVersion: { select: { id: true, planId: true } } },
       });
       const planVersionIds = subscriptions.map(({ planVersion }) => planVersion.id);
@@ -62,11 +66,12 @@ suite('multi-company provisioning integration', () => {
       update: { isActive: true, scope: 'GLOBAL', ownerCompanyId: null },
       create: { code: 'SAR', nameAr: 'ريال سعودي', decimals: 2, scope: 'GLOBAL', scopeKey: 'GLOBAL' },
     });
+    startPlan = await createStartPlanFixture(prisma, 'SAR');
   });
-  afterAll(async () => { await cleanup(); await prisma.$disconnect(); });
+  afterAll(async () => { await cleanup(); if (startPlan) await startPlan.cleanup(); await prisma.$disconnect(); });
 
   it('provisions two isolated companies for one global identity and safely replays', async () => {
-    const service = createCompanyProvisioningService(prisma);
+    const service = createCompanyProvisioningService(prisma, startPlan.version.id.toString());
     const base = {
       organizationCode,
       organizationName: 'مؤسسة اختبار التجهيز',
@@ -102,8 +107,42 @@ suite('multi-company provisioning integration', () => {
         include: { entitlements: true },
       });
       expect(subscription.status).toBe('ACTIVE');
-      expect(subscription.entitlements).toHaveLength(await prisma.platformModule.count({ where: { isActive: true } }));
-      expect(new Set(subscription.entitlements.map(({ source }) => source))).toEqual(new Set(['GRANDFATHERED']));
+      expect(subscription.planVersionId).toBe(startPlan.version.id);
+      expect(subscription.entitlements).toHaveLength(1);
+      expect(subscription.entitlements[0]).toMatchObject({ source: 'PLAN', moduleId: startPlan.core.id, companyId });
+      expect(await prisma.platformSubscriptionChange.count({ where: { companyId, source: 'PLATFORM_OPERATOR' } })).toBe(1);
     }
+  }, 20_000);
+
+  it('rolls back new tenant, identity, accounting and entitlements when policy is unavailable', async () => {
+    const service = createCompanyProvisioningService(prisma, '');
+    await expect(service.provision({
+      organizationCode: `${organizationCode}-FAIL`, organizationName: 'Rollback fixture',
+      companyCode: 'FAILED', companyName: 'Rollback fixture', timezone: 'Asia/Riyadh', baseCurrencyCode: 'SAR',
+      adminEmail: 'it.provisioning.failed@mcap.local', adminDisplayName: 'Rollback', adminPassword: 'Rollback-fixture-2026!',
+    })).rejects.toBeInstanceOf(SubscriptionStartPolicyError);
+    expect(await prisma.organization.count({ where: { code: `${organizationCode}-FAIL` } })).toBe(0);
+    expect(await prisma.user.count({ where: { emailNormalized: 'it.provisioning.failed@mcap.local' } })).toBe(0);
+  }, 20_000);
+
+  it('leaves a grandfathered subscription and its history unchanged when confirming an existing company', async () => {
+    const organization = await prisma.organization.findUniqueOrThrow({ where: { code: organizationCode } });
+    const currency = await prisma.currency.findUniqueOrThrow({ where: { scopeKey_code: { scopeKey: 'GLOBAL', code: 'SAR' } } });
+    const company = await prisma.company.create({ data: {
+      organizationId: organization.id, baseCurrencyId: currency.id, code: 'LEGACY', name: 'Legacy fixture', timezone: 'Asia/Riyadh',
+    } });
+    await prisma.$transaction((tx) => new PrismaCompanySubscriptionProvisioningAdapter().provisionGrandfatheredAccess(tx, {
+      companyId: company.id, baseCurrencyCode: 'SAR', effectiveFrom: company.createdAt,
+    }));
+    const snapshot = () => prisma.platformSubscription.findUniqueOrThrow({
+      where: { companyId: company.id }, include: { entitlements: true, changes: { include: { modules: true } }, planVersion: true },
+    });
+    const before = await snapshot();
+    await createCompanyProvisioningService(prisma, '').provision({
+      organizationCode, organizationName: organization.name, companyCode: 'LEGACY', companyName: company.name,
+      timezone: company.timezone, baseCurrencyCode: 'SAR', adminEmail, adminDisplayName: 'Legacy administrator',
+      adminPassword: 'Legacy-fixture-2026!',
+    });
+    expect(await snapshot()).toEqual(before);
   }, 20_000);
 });

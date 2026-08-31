@@ -36,7 +36,7 @@ export default defineConfig({
     command: 'node apps/api/dist/server.js',
     url: `${baseURL}/ready`,
     timeout: 120_000,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     stdout: 'pipe',
     stderr: 'pipe',
     env: {

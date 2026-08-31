@@ -46,6 +46,14 @@ export type PlatformSubscriptionCompanyProvisioningInput = {
 };
 
 export interface PlatformSubscriptionCompanyProvisioningPort {
+  provisionNewCompanyAccess(
+    tx: import("@prisma/client").Prisma.TransactionClient,
+    input: PlatformSubscriptionCompanyProvisioningInput,
+  ): Promise<void>;
+}
+
+/** Migration/seed compatibility only; never injected into new-company onboarding. */
+export interface PlatformSubscriptionGrandfatheringPort {
   provisionGrandfatheredAccess(
     tx: import("@prisma/client").Prisma.TransactionClient,
     input: PlatformSubscriptionCompanyProvisioningInput,

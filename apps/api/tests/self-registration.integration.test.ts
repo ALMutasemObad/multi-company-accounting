@@ -1,6 +1,6 @@
 import { hash, verify } from 'argon2';
 import { createHmac } from 'node:crypto';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { PrismaClient } from '@prisma/client';
 import { defaultChartDefinitions } from '../src/accounts/default-chart-template.js';
 import { createDatabase } from '../src/database.js';
@@ -12,6 +12,7 @@ import { permissionDefinitions } from '../src/platform/reference-data.js';
 import type { RegistrationMailer, RegistrationVerificationMessage } from '../src/registration/registration-mailer.js';
 import { RegistrationService } from '../src/registration/registration-service.js';
 import { RegistrationVerificationHandler } from '../src/registration/registration-verification-handler.js';
+import { createStartPlanFixture } from './subscription-start-plan-fixture.js';
 
 const enabled = process.env.RUN_DB_TESTS === 'true' && Boolean(process.env.DATABASE_URL);
 
@@ -32,6 +33,7 @@ describe.runIf(enabled)('self-registration with MariaDB', () => {
   let service: RegistrationService;
   let worker: OutboxWorker;
   let mailer: CapturingMailer;
+  let startPlan: Awaited<ReturnType<typeof createStartPlanFixture>>;
   const emails = [
     'it.registration@mcap.local',
     'it.registration.existing@mcap.local',
@@ -39,6 +41,8 @@ describe.runIf(enabled)('self-registration with MariaDB', () => {
     'it.registration.resend@mcap.local',
     'it.registration.claim@mcap.local',
     'it.registration.rollback@mcap.local',
+    'it.registration.policy@mcap.local',
+    'it.registration.policy-write@mcap.local',
   ];
   const auditPepper = 'integration-registration-audit-pepper-123456';
   const tokenSecret = 'integration-registration-token-secret-123456';
@@ -71,7 +75,7 @@ describe.runIf(enabled)('self-registration with MariaDB', () => {
     if (companyIds.length) {
       const roles = await prisma.role.findMany({ where: { companyId: { in: companyIds } }, select: { id: true } });
       const subscriptions = await prisma.platformSubscription.findMany({
-        where: { companyId: { in: companyIds } },
+        where: { companyId: { in: companyIds }, planVersion: { plan: { code: { startsWith: 'LEGACY_COMPANY_' } } } },
         select: { planVersion: { select: { id: true, planId: true } } },
       });
       const planVersionIds = subscriptions.map(({ planVersion }) => planVersion.id);
@@ -127,10 +131,11 @@ describe.runIf(enabled)('self-registration with MariaDB', () => {
       create: { code: 'YER', nameAr: 'ريال يمني', decimals: 2, scope: 'GLOBAL', scopeKey: 'GLOBAL' },
     });
     mailer = new CapturingMailer();
+    startPlan = await createStartPlanFixture(prisma, 'YER');
     const outbox = new PrismaOutboxAppender(3);
     service = new RegistrationService(
       prisma,
-      createCompanyProvisioningService(prisma),
+      createCompanyProvisioningService(prisma, startPlan.version.id.toString()),
       outbox,
       createRegistrationOwnerPorts(prisma),
       { auditPepper },
@@ -143,7 +148,7 @@ describe.runIf(enabled)('self-registration with MariaDB', () => {
     });
     worker = createWorker(handler);
   });
-  afterAll(async () => { await cleanup(); await prisma.$disconnect(); });
+  afterAll(async () => { await cleanup(); if (startPlan) await startPlan.cleanup(); await prisma.$disconnect(); });
 
   it('commits the outbox before mail, then provisions atomically once under concurrent verification', async () => {
     const email = emails[0]!;
@@ -182,12 +187,66 @@ describe.runIf(enabled)('self-registration with MariaDB', () => {
     const user = await prisma.user.findUniqueOrThrow({ where: { emailNormalized: email } });
     expect(await verify(user.passwordHash, password)).toBe(true);
     const companyId = BigInt(first.companyId);
+    const subscription = await prisma.platformSubscription.findUniqueOrThrow({
+      where: { companyId }, include: { planVersion: true, entitlements: true, changes: true },
+    });
+    expect(subscription.planVersionId).toBe(startPlan.version.id);
+    expect(subscription.planVersion).toMatchObject({ includedUsers: 2, includedEmployees: 3, includedPostedDocuments: 4 });
+    expect(subscription.entitlements).toHaveLength(1);
+    expect(subscription.entitlements[0]).toMatchObject({ source: 'PLAN', moduleId: startPlan.core.id, companyId });
+    expect(subscription.changes).toHaveLength(1);
+    expect(subscription.changes[0]).toMatchObject({ source: 'PLATFORM_OPERATOR', requestedById: null, decidedById: null });
     const role = await prisma.role.findUniqueOrThrow({ where: { companyId_code: { companyId, code: 'ADMINISTRATOR' } }, include: { _count: { select: { permissions: true } } } });
     expect(role._count.permissions).toBe(permissionDefinitions.length);
     expect(await prisma.account.count({ where: { companyId, sourceTemplateCode: 'SMALL_BUSINESS_GENERAL' } })).toBe(defaultChartDefinitions.length);
     expect(await prisma.securityEvent.count({ where: { companyId, eventType: 'SELF_REGISTRATION_COMPLETED' } })).toBe(1);
     await expect(service.verify(token)).resolves.toEqual(first);
     expect(await prisma.company.count({ where: { id: companyId } })).toBe(1);
+  }, 60_000);
+
+  it('fails closed without configuration or with an invalid plan, then retries the same token after repair', async () => {
+    const unconfigured = new RegistrationService(prisma, createCompanyProvisioningService(prisma, ''),
+      new PrismaOutboxAppender(3), createRegistrationOwnerPorts(prisma), { auditPepper });
+    const email = emails[6]!;
+    // Configuration must not change the public start/resend response by identity existence.
+    expect(await unconfigured.start(registrationInput(emails[0]!))).toEqual(await unconfigured.start(registrationInput(email)));
+    expect(await unconfigured.resend(emails[0]!)).toEqual(await unconfigured.resend(email));
+    await worker.runOnce();
+    const message = mailer.messages.find((candidate) => candidate.to === email)!;
+    const token = new URLSearchParams(new URL(message.verificationUrl).hash.split('?', 2)[1]).get('token')!;
+    const request = await prisma.registrationRequest.findUniqueOrThrow({ where: { emailNormalized: email } });
+    const organizationCode = `SELF_${request.publicId.replaceAll('-', '').toUpperCase()}`;
+    const counts = await Promise.all([prisma.company.count(), prisma.account.count(), prisma.platformSubscription.count(), prisma.platformSubscriptionEntitlement.count()]);
+    for (const failing of [unconfigured, new RegistrationService(prisma, createCompanyProvisioningService(prisma, '18446744073709551615'),
+      new PrismaOutboxAppender(3), createRegistrationOwnerPorts(prisma), { auditPepper })]) {
+      await expect(failing.verify(token)).rejects.toMatchObject({ reason: 'PROVISIONING_FAILED', message: 'PROVISIONING_FAILED' });
+      expect(await prisma.registrationRequest.findUniqueOrThrow({ where: { emailNormalized: email } })).toMatchObject({
+        status: 'EMAIL_VERIFIED', lastErrorCode: 'PROVISIONING_FAILED', provisionedCompanyId: null, provisionedUserId: null,
+      });
+      expect(await prisma.organization.count({ where: { code: organizationCode } })).toBe(0);
+      expect(await prisma.user.count({ where: { emailNormalized: email } })).toBe(0);
+      expect(await Promise.all([prisma.company.count(), prisma.account.count(), prisma.platformSubscription.count(), prisma.platformSubscriptionEntitlement.count()])).toEqual(counts);
+    }
+    const success = await service.verify(token);
+    expect(success.status).toBe('COMPLETED');
+    // A completed request replays even after configuration is removed; no new subscription is granted.
+    await expect(unconfigured.verify(token)).resolves.toEqual(success);
+  }, 60_000);
+
+  it('rolls back subscription and tenant writes when a later completion effect fails', async () => {
+    const email = emails[7]!;
+    await service.start(registrationInput(email));
+    await worker.runOnce();
+    const message = mailer.messages.find((candidate) => candidate.to === email)!;
+    const token = new URLSearchParams(new URL(message.verificationUrl).hash.split('?', 2)[1]).get('token')!;
+    const counts = await Promise.all([prisma.company.count(), prisma.platformSubscription.count(), prisma.platformSubscriptionChange.count()]);
+    const owners = createRegistrationOwnerPorts(prisma);
+    const failing = new RegistrationService(prisma, createCompanyProvisioningService(prisma, startPlan.version.id.toString()),
+      new PrismaOutboxAppender(3), { ...owners, security: { recordCompletion: vi.fn().mockRejectedValue(new Error('TEST_COMPLETION_FAILURE')) } }, { auditPepper });
+    await expect(failing.verify(token)).rejects.toMatchObject({ reason: 'PROVISIONING_FAILED' });
+    expect(await prisma.user.count({ where: { emailNormalized: email } })).toBe(0);
+    expect(await Promise.all([prisma.company.count(), prisma.platformSubscription.count(), prisma.platformSubscriptionChange.count()])).toEqual(counts);
+    await expect(service.verify(token)).resolves.toMatchObject({ status: 'COMPLETED' });
   }, 60_000);
 
   it('does not enumerate an existing identity or enqueue an email', async () => {

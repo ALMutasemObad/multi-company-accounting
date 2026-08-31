@@ -4,6 +4,7 @@ import type { OutboxAppender } from '../src/outbox/outbox.js';
 import type { CompanyProvisioningPort } from '../src/platform/company-provisioning-ports.js';
 import { RegistrationService } from '../src/registration/registration-service.js';
 import type { RegistrationOwnerPorts } from '../src/registration/registration-owner-ports.js';
+import { SubscriptionStartPolicyError } from '../src/platform-subscriptions/new-company-start-policy.js';
 
 const input = {
   email: ' owner@example.com ',
@@ -82,4 +83,36 @@ describe('RegistrationService anonymous boundary', () => {
     expect(outbox.append).not.toHaveBeenCalled();
     expect(events).toEqual([expect.objectContaining({ data: expect.objectContaining({ eventType: 'REGISTRATION_EXISTING_IDENTITY_ATTEMPT', severity: 'WARNING' }) })]);
   });
+});
+
+describe('registration start-policy failures', () => {
+  it.each(['NOT_CONFIGURED', 'INVALID_CONFIGURATION', 'PLAN_NOT_ELIGIBLE'] as const)
+    ('maps %s to the existing generic retryable provisioning failure', async (reason) => {
+      const request = {
+        id: 9n, publicId: '11111111-1111-4111-8111-111111111111', status: 'PENDING_EMAIL',
+        emailNormalized: 'owner@example.com', passwordHash: 'prepared-hash',
+        verificationExpiresAt: new Date('2030-01-01T00:00:00Z'), provisioningStartedAt: null,
+        verifiedAt: null, companyName: 'Test company', organizationName: 'Test organization',
+        timezone: 'Asia/Riyadh', baseCurrencyCode: 'SAR', displayName: 'Owner',
+      };
+      const update = vi.fn().mockResolvedValue(undefined);
+      const tx = {
+        registrationRequest: {
+          findUnique: vi.fn().mockResolvedValueOnce(request).mockResolvedValue({ ...request, status: 'PROVISIONING' }),
+          findUniqueOrThrow: vi.fn().mockResolvedValue({ ...request, status: 'PROVISIONING' }),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }), update,
+        },
+        registrationEvent: { create: vi.fn().mockResolvedValue(undefined) },
+      };
+      const prisma = { $transaction: vi.fn((callback: (client: typeof tx) => unknown) => callback(tx)) } as unknown as PrismaClient;
+      const provisioning = { provisionPreparedInTransaction: vi.fn().mockRejectedValue(new SubscriptionStartPolicyError(reason)) };
+      const service = new RegistrationService(prisma, provisioning, {} as OutboxAppender, {} as RegistrationOwnerPorts, {
+        now: () => new Date('2026-08-31T12:00:00Z'), auditPepper: 'test-registration-pepper',
+      });
+      await expect(service.verify('synthetic-token')).rejects.toMatchObject({ reason: 'PROVISIONING_FAILED', message: 'PROVISIONING_FAILED' });
+      expect(provisioning.provisionPreparedInTransaction).toHaveBeenCalledOnce();
+      expect(update).toHaveBeenCalledExactlyOnceWith({ where: { id: 9n }, data: {
+        status: 'EMAIL_VERIFIED', lastErrorCode: 'PROVISIONING_FAILED',
+      } });
+    });
 });

@@ -1,10 +1,10 @@
 import type { Prisma } from "@prisma/client";
 import type {
   PlatformSubscriptionCompanyProvisioningInput,
-  PlatformSubscriptionCompanyProvisioningPort,
+  PlatformSubscriptionGrandfatheringPort,
 } from "./platform-entitlement-ports.js";
 
-export class PrismaCompanySubscriptionProvisioningAdapter implements PlatformSubscriptionCompanyProvisioningPort {
+export class PrismaCompanySubscriptionProvisioningAdapter implements PlatformSubscriptionGrandfatheringPort {
   async provisionGrandfatheredAccess(
     tx: Prisma.TransactionClient,
     input: PlatformSubscriptionCompanyProvisioningInput,

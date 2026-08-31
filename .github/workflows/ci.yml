@@ -87,6 +87,8 @@ jobs:
       - name: Install Chromium for the end-to-end release gate
         run: node node_modules/@playwright/test/cli.js install --with-deps chromium
       - name: Test onboarding and the first accounting document on MariaDB
+        env:
+          E2E_DISPOSABLE_DATABASE: test_mcap_finance
         run: npm run e2e
       - name: Install the MariaDB backup client
         run: |
@@ -277,6 +279,8 @@ jobs:
       - name: Test responsive journeys, subscription changes and billing recovery in Chromium
         run: npm run subscription-qa:test
       - name: Test onboarding and the first accounting document on MySQL
+        env:
+          E2E_DISPOSABLE_DATABASE: test_mcap_finance
         run: npm run e2e
       - name: Prove encrypted backup and isolated restore on MySQL
         run: |

@@ -36,7 +36,7 @@
     "contracts:check": "node scripts/generate-openapi-guards.mjs --check",
     "i18n:check": "node scripts/check-web-i18n.mjs",
     "ui:check": "node scripts/check-web-ui.mjs",
-    "e2e": "playwright test",
+    "e2e": "node scripts/e2e/run-db-e2e.mjs",
     "e2e:list": "playwright test --list",
     "e2e:typecheck": "tsc -p tsconfig.e2e.json",
     "visual-qa:api": "node scripts/visual-qa-server.mjs",
