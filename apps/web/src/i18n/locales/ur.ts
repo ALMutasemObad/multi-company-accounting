@@ -11,8 +11,12 @@ import { urProfessionalProjects } from "./professional-projects";
 import { urHumanResources } from "./human-resources";
 import { urSystemHomePlatform } from "./system-home-platform";
 import { urPublicPlans } from "./public-plans";
+import { urAuthResilience } from "./auth-resilience";
+import { urSubscriptionUsage } from "./subscription-usage";
 
 export const ur = {
+  ...urAuthResilience,
+  ...urSubscriptionUsage,
   ...urReconciliation,
   ...urFinancialClose,
   ...urCashFlow,

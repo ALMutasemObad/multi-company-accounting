@@ -13,8 +13,12 @@ import { arProfessionalProjects } from "./professional-projects";
 import { arHumanResources } from "./human-resources";
 import { arSystemHomePlatform } from "./system-home-platform";
 import { arPublicPlans } from "./public-plans";
+import { arAuthResilience } from "./auth-resilience";
+import { arSubscriptionUsage } from "./subscription-usage";
 
 export const ar = {
+  ...arAuthResilience,
+  ...arSubscriptionUsage,
   ...arDomain,
   ...arEvents,
   ...arReconciliation,

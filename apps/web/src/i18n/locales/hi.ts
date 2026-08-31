@@ -11,8 +11,12 @@ import { hiProfessionalProjects } from "./professional-projects";
 import { hiHumanResources } from "./human-resources";
 import { hiSystemHomePlatform } from "./system-home-platform";
 import { hiPublicPlans } from "./public-plans";
+import { hiAuthResilience } from "./auth-resilience";
+import { hiSubscriptionUsage } from "./subscription-usage";
 
 export const hi = {
+  ...hiAuthResilience,
+  ...hiSubscriptionUsage,
   ...hiReconciliation,
   ...hiFinancialClose,
   ...hiCashFlow,
