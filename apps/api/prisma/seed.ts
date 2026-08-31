@@ -139,6 +139,8 @@ try {
     ['inventory_barcodes.print', 'inventory', 'تنزيل ملصقات باركود الأصناف'],
     ['pos.view', 'pos', 'عرض شاشة نقاط البيع والمبيعات النقدية'],
     ['pos.checkout', 'pos', 'تنفيذ بيع نقدي كامل عبر نقاط البيع'],
+    ['sales_catalog.view', 'sales_catalog', 'عرض كتالوج البيع وملفات بيع الأصناف'],
+    ['sales_catalog.manage', 'sales_catalog', 'إدارة السعر والعملة والحساب والضريبة الافتراضية للصنف'],
     ['inventory_movements.view', 'inventory', 'عرض أرصدة وحركات المخزون'],
     ['inventory_movements.create', 'inventory', 'إنشاء حركات المخزون'],
     ['inventory_movements.reverse', 'inventory', 'عكس حركات المخزون اليدوية'],

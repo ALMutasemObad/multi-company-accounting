@@ -14,6 +14,7 @@ import { createReceiptRouter } from '../src/receipts/receipt-router.js';
 import { createCustomerRouter } from '../src/sales/customer-router.js';
 import { createReportRouter } from '../src/reports/report-router.js';
 import { createSalesInvoiceRouter } from '../src/sales/sales-invoice-router.js';
+import { createSellingProfileRouter } from '../src/sales/selling-profile-router.js';
 import { createSecurityEventRouter } from '../src/security/security-event-router.js';
 import { createSupplierRouter } from '../src/suppliers/supplier-router.js';
 import { createUserRouter } from '../src/users/user-router.js';
@@ -82,6 +83,7 @@ const routers = [
   { prefix: '', router: createPaymentRouter(stub, stub) },
   { prefix: '', router: createTaxRouter(stub, stub) },
   { prefix: '', router: createSalesInvoiceRouter(stub, stub) },
+  { prefix: '', router: createSellingProfileRouter(stub, stub) },
   { prefix: '', router: createPurchaseInvoiceRouter(stub, stub) },
   { prefix: '', router: createReportRouter(stub, stub, stub, stub, stub) },
   { prefix: '', router: createDataImportRouter(stub, stub) },

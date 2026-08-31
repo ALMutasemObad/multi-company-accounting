@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.45.0
+  version: 1.46.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -68,6 +68,8 @@ servers:
 - url: /api/v1
   description: مسار نسبي يعمل على نفس أصل الواجهة في جميع البيئات
 tags:
+- name: Sales Catalog
+  description: ملفات بيع الأصناف المملوكة للمبيعات؛ افتراضات وليست عرض سعر نهائيًا.
 - name: Health
   description: فحوص حياة الخدمة وجاهزية قاعدة البيانات.
 - name: Operations
@@ -7944,6 +7946,92 @@ paths:
         '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
       x-permission: pos.checkout
       security: [{ SessionCookie: [], CsrfToken: [] }]
+  /sales/catalog:
+    get:
+      tags: [Sales Catalog]
+      summary: عرض صفحة محدودة من أصناف النشاط وافتراضات بيعها
+      operationId: listSellingCatalog
+      parameters:
+      - { name: page, in: query, schema: { type: integer, minimum: 1, maximum: 10000, default: 1 } }
+      - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 24 } }
+      - { name: search, in: query, schema: { type: string, maxLength: 100 } }
+      responses:
+        '200':
+          description: أصناف معزولة حسب الشركة بترتيب code ثم id؛ الجاهزية تخص المراجع فقط
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data, meta]
+                properties:
+                  data: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/SellingCatalogItem' } }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+      x-permission: sales_catalog.view
+      security: [{ SessionCookie: [] }]
+  /sales/catalog/items/{inventoryItemId}:
+    get:
+      tags: [Sales Catalog]
+      summary: قراءة افتراضات الصنف بعد الاختيار أو حل باركوده لدى Inventory
+      operationId: getSellingCatalogItem
+      parameters:
+      - { name: inventoryItemId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200': { description: الصنف وملف البيع إن وجد, content: { application/json: { schema: { $ref: '#/components/schemas/SellingCatalogItemResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+      x-permission: sales_catalog.view
+      security: [{ SessionCookie: [] }]
+  /sales/catalog/items/{inventoryItemId}/selling-profile:
+    post:
+      tags: [Sales Catalog]
+      summary: إنشاء ملف بيع واحد للصنف داخل النشاط
+      operationId: createItemSellingProfile
+      parameters:
+      - { name: inventoryItemId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ItemSellingProfileCreateRequest' } } } }
+      responses:
+        '201': { description: حفظ الملف مع التدقيق وIdempotency ذريًا, content: { application/json: { schema: { $ref: '#/components/schemas/SellingCatalogItemResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+      x-permission: sales_catalog.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+    patch:
+      tags: [Sales Catalog]
+      summary: تعديل أو تعطيل افتراضات البيع بنسخة متفائلة
+      operationId: updateItemSellingProfile
+      parameters:
+      - { name: inventoryItemId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ItemSellingProfileUpdateRequest' } } } }
+      responses:
+        '200': { description: النسخة الجديدة, content: { application/json: { schema: { $ref: '#/components/schemas/SellingCatalogItemResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+      x-permission: sales_catalog.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
   /sales-invoices:
     get:
       tags: [Sales Invoices]
@@ -14881,6 +14969,80 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PaymentMethod'
+    SellingCatalogItemResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/SellingCatalogItem' }
+    ItemSellingPriceInput:
+      type: string
+      pattern: '^(0|[1-9][0-9]{0,14})(\.[0-9]{1,4})?$'
+      description: سعر غير سالب، والصفر قيمة صريحة؛ لا تحويل تلقائي لعملة السلة.
+    ItemSellingProfileCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [unitPrice, currencyId, revenueAccountId]
+      properties:
+        unitPrice: { $ref: '#/components/schemas/ItemSellingPriceInput' }
+        currencyId: { $ref: '#/components/schemas/Id' }
+        revenueAccountId: { $ref: '#/components/schemas/Id' }
+        taxRateId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+    ItemSellingProfileUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      minProperties: 2
+      properties:
+        version: { type: integer, minimum: 1, maximum: 4294967294 }
+        unitPrice: { $ref: '#/components/schemas/ItemSellingPriceInput' }
+        currencyId: { $ref: '#/components/schemas/Id' }
+        revenueAccountId: { $ref: '#/components/schemas/Id' }
+        taxRateId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+        isActive: { type: boolean }
+    ItemSellingProfile:
+      type: object
+      additionalProperties: false
+      required: [id, unitPrice, currencyId, currencyCode, revenueAccountId, taxRateId, isActive, version]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        unitPrice: { $ref: '#/components/schemas/Amount' }
+        currencyId: { $ref: '#/components/schemas/Id' }
+        currencyCode: { type: [string, 'null'], minLength: 3, maxLength: 3 }
+        revenueAccountId: { $ref: '#/components/schemas/Id' }
+        taxRateId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+        isActive: { type: boolean }
+        version: { type: integer, minimum: 1 }
+    SellingCatalogItem:
+      type: object
+      additionalProperties: false
+      required: [inventoryItemId, code, nameAr, nameEn, description, isActive, unitOfMeasure, sellingProfile, isReady, readinessReason]
+      properties:
+        inventoryItemId: { $ref: '#/components/schemas/Id' }
+        code: { type: string, maxLength: 40 }
+        nameAr: { type: string, maxLength: 200 }
+        nameEn: { type: [string, 'null'], maxLength: 200 }
+        description: { type: [string, 'null'], maxLength: 500 }
+        isActive: { type: boolean }
+        unitOfMeasure:
+          type: object
+          additionalProperties: false
+          required: [id, code, nameAr, nameEn, decimalPlaces, isActive]
+          properties:
+            id: { $ref: '#/components/schemas/Id' }
+            code: { type: string, maxLength: 20 }
+            nameAr: { type: string, maxLength: 120 }
+            nameEn: { type: [string, 'null'], maxLength: 120 }
+            decimalPlaces: { type: integer, minimum: 0, maximum: 6 }
+            isActive: { type: boolean }
+        sellingProfile:
+          oneOf:
+          - $ref: '#/components/schemas/ItemSellingProfile'
+          - { type: 'null' }
+        isReady: { type: boolean, description: تهيئة المراجع فقط لا توافر مخزون أو فترة أو نجاح Checkout. }
+        readinessReason:
+          type: [string, 'null']
+          enum: [null, PROFILE_MISSING, PROFILE_INACTIVE, ITEM_INACTIVE, UNIT_INACTIVE, CURRENCY_UNAVAILABLE, REVENUE_ACCOUNT_INVALID, TAX_RATE_INVALID]
     PosCheckoutRequest:
       type: object
       additionalProperties: false

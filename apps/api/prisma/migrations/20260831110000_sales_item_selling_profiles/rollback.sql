@@ -1,0 +1,3 @@
+-- Non-destructive rollback: unmount the Sales catalog router/editor and revert application code.
+-- Keep this additive table and Audit history. Do not drop profiles that have been configured.
+-- Permissions may stay defined but unused; no runtime hard-delete path is provided.

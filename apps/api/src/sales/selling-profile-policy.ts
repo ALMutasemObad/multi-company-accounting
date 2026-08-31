@@ -36,7 +36,7 @@ export function sellingProfileReadiness(input: {
 
 export function canonicalSellingPrice(value: string): string {
   // Reject excess scale, exponent notation, signs and numeric coercion at the application boundary.
-  if (!/^(0|[1-9]\d{0,14})(\.\d{1,4})?$/.test(value)) {
+  if (typeof value !== "string" || !/^(0|[1-9]\d{0,14})(\.\d{1,4})?$/.test(value)) {
     throw new SellingProfileError("INVALID_UNIT_PRICE");
   }
   return new Prisma.Decimal(value).toFixed(4, Prisma.Decimal.ROUND_HALF_UP);

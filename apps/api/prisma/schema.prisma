@@ -493,6 +493,7 @@ model Company {
   organization                      Organization                       @relation(fields: [organizationId], references: [id])
   baseCurrency                      Currency                           @relation("BaseCurrency", fields: [baseCurrencyId], references: [id])
   ownedCurrencies                   Currency[]                         @relation("OwnedCurrencies")
+  itemSellingProfiles               SalesItemSellingProfile[]
   assignments                       UserCompany[]
   sessions                          Session[]
   idempotency                       IdempotencyRecord[]
@@ -981,6 +982,7 @@ model CompanyCurrency {
   currency                     Currency                      @relation(fields: [currencyId], references: [id])
   rates                        CompanyExchangeRate[]
   professionalServiceContracts ProfessionalServiceContract[]
+  itemSellingProfiles          SalesItemSellingProfile[]
 
   @@id([companyId, currencyId])
   @@index([currencyId])
@@ -1424,6 +1426,7 @@ model Account {
   outputTaxRates           TaxRate[]                @relation("OutputTaxAccount")
   inputTaxRates            TaxRate[]                @relation("InputTaxAccount")
   salesInvoiceLines        SalesInvoiceLine[]       @relation("SalesRevenueAccount")
+  itemSellingProfiles      SalesItemSellingProfile[]
   purchaseInvoiceLines     PurchaseInvoiceLine[]    @relation("PurchaseDebitAccount")
   inventoryOffsetMovements InventoryMovement[]      @relation("InventoryMovementOffsetAccount")
   cashFlowMappings         CashFlowAccountMapping[]
@@ -2131,6 +2134,7 @@ model InventoryItem {
   movementLines        InventoryMovementLine[]
   inventoryBalances    InventoryBalance[]
   barcodes             InventoryItemBarcode[]
+  sellingProfiles      SalesItemSellingProfile[]
 
   @@unique([companyId, code])
   @@unique([id, companyId])
@@ -2371,12 +2375,39 @@ model TaxRate {
   outputTaxAccount     Account?              @relation("OutputTaxAccount", fields: [outputTaxAccountId, companyId], references: [id, companyId])
   inputTaxAccount      Account?              @relation("InputTaxAccount", fields: [inputTaxAccountId, companyId], references: [id, companyId])
   invoiceLines         SalesInvoiceLine[]
+  itemSellingProfiles  SalesItemSellingProfile[]
   purchaseInvoiceLines PurchaseInvoiceLine[]
 
   @@unique([companyId, code])
   @@unique([id, companyId])
   @@index([companyId, isActive])
   @@map("tax_rates")
+}
+
+model SalesItemSellingProfile {
+  id               BigInt          @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId        BigInt          @map("company_id") @db.UnsignedBigInt
+  inventoryItemId  BigInt          @map("inventory_item_id") @db.UnsignedBigInt
+  unitPrice        Decimal         @map("unit_price") @db.Decimal(19, 4)
+  currencyId       BigInt          @map("currency_id") @db.UnsignedBigInt
+  revenueAccountId BigInt          @map("revenue_account_id") @db.UnsignedBigInt
+  taxRateId        BigInt?         @map("tax_rate_id") @db.UnsignedBigInt
+  isActive         Boolean         @default(true) @map("is_active")
+  version          Int             @default(1) @db.UnsignedInt
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+  company          Company         @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "selling_profiles_company_fk")
+  inventoryItem    InventoryItem   @relation(fields: [inventoryItemId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict, map: "selling_profiles_item_company_fk")
+  companyCurrency  CompanyCurrency @relation(fields: [companyId, currencyId], references: [companyId, currencyId], onDelete: Restrict, onUpdate: Restrict, map: "selling_profiles_currency_company_fk")
+  revenueAccount   Account         @relation(fields: [revenueAccountId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict, map: "selling_profiles_revenue_company_fk")
+  taxRate          TaxRate?        @relation(fields: [taxRateId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict, map: "selling_profiles_tax_company_fk")
+
+  @@unique([companyId, inventoryItemId], map: "selling_profiles_company_item_key")
+  @@index([inventoryItemId, companyId], map: "selling_profiles_item_company_idx")
+  @@index([companyId, currencyId], map: "selling_profiles_company_currency_idx")
+  @@index([revenueAccountId, companyId], map: "selling_profiles_revenue_company_idx")
+  @@index([taxRateId, companyId], map: "selling_profiles_tax_company_idx")
+  @@map("sales_item_selling_profiles")
 }
 
 model SalesInvoice {
