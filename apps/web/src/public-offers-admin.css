@@ -1,0 +1,22 @@
+.public-offers-review { font-size: 16px; line-height: 1.8; }
+.public-offers-review h3 { font-size: 24px; margin-block: 0 12px; }
+.public-offers-review h4, .public-offers-review p, .public-offers-review button, .public-offers-review summary { font-size: 16px; }
+.public-offers-review > a { display: inline-block; min-height: 44px; text-decoration: underline; text-underline-offset: 4px; }
+.public-offers-steps { padding-inline-start: 24px; }
+.public-offers-review .public-offers-version { display: flex; flex-direction: column; align-items: stretch; gap: 16px; border-top: 1px solid var(--line); padding-block: 24px; overflow-wrap: anywhere; }
+.public-offers-version h4 { margin: 0; }
+.public-offers-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.public-offers-facts div { min-width: 0; }
+.public-offers-facts dt { color: var(--muted); }
+.public-offers-facts dd { margin: 0; font-weight: 600; }
+.public-offers-checks { border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+.public-offers-checks summary { min-height: 44px; cursor: pointer; font-weight: 700; }
+.public-offers-checks ul { list-style: none; padding: 0; margin: 0; }
+.public-offers-checks li { display: grid; gap: 4px; padding-block: 10px; border-top: 1px solid var(--line); }
+.public-offers-checks li[data-passed="false"] strong { color: #923716; }
+.public-offers-checks li[data-passed="true"] strong { color: #245b43; }
+.public-offers-ack { display: flex; align-items: flex-start; gap: 12px; cursor: pointer; padding-block: 8px; }
+.public-offers-ack input { flex: 0 0 22px; width: 22px; height: 22px; margin-top: 4px; }
+.public-offers-review :is(a, button, summary, input):focus-visible { outline: 3px solid #42673a; outline-offset: 3px; }
+.public-offers-plan-open { border: 0; background: transparent; text-align: start; color: inherit; font: inherit; font-weight: 700; min-height: 44px; cursor: pointer; text-decoration: underline; text-underline-offset: 4px; }
+@media (max-width: 640px) { .public-offers-facts { grid-template-columns: minmax(0, 1fr); } }
