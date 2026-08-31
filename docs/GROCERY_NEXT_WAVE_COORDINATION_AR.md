@@ -3,6 +3,21 @@
 تاريخ البدء: 2026-08-31. الأساس المحلي: `39c1de8`؛ هذا مرشح إصدار، لا ادعاء بأنه منشور.
 المنسق: المهمة `01a04cc6-7aae-70b2-adb9-e037386d06a2`.
 
+المهام المنشأة فعليًا:
+
+- N1: `01a05724-c462-7d63-9035-b6697dd258b6`.
+- N2: `01a05724-cb35-71a3-bc2c-2acd4ec31ee1`.
+- N3: `01a05724-d139-7b30-8adc-9ef5dd85c8f1`.
+
+اعتمد اتجاه N1 الأول بلا schema: marker فقط في المتصفح، وقراءة نتيجة Idempotency
+خادمية مقيدة بالمستخدم والشركة والعملية، CONFIRMED أوUNKNOWN. لا استرجاع مضمون بعد
+retention ولا replay كتابة بعد reload. Infrastructure adapter وOpenAPI للمنسق.
+اعتمد N2 ملفات `core-accounting/cashier-context-period-*` الجديدة لحل اليوم advisory
+بـtake2؛ الغموض يمنع الاختيار. APIs المشتركة والتحقق exact-id للمراجع عند المنسق.
+اعتمد N3 معاينة أرشيف SALES_INVOICE فقط بعرض58/80mm، مع تسمية تنزيلPDF الحالي A4؛
+لا ادعاءPDF حراري أوباركودتاريخي غير محفوظ. hook renderer وsnapshot forward-only
+اقتراحان لاحقان لا تغييران مصرحان في ملفات المالك الحالية.
+
 ## العزل والملكية
 
 تبقى دفعة الإصدار في `D:/CodexWorktrees/grocery-launch-coordinator` محجوزة للمنسق.
