@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2023", "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext", "moduleResolution": "Bundler", "jsx": "react-jsx",
+    "strict": true, "noUncheckedIndexedAccess": true, "esModuleInterop": true,
+    "skipLibCheck": true, "noEmit": true, "types": ["node"]
+  },
+  "include": [
+    "apps/api/src/printing/retail-receipt-*.ts",
+    "apps/api/tests/retail-receipt-*.ts",
+    "apps/web/src/retail-receipt*.ts*",
+    "apps/web/src/RetailReceipt*.tsx",
+    "apps/web/src/i18n/locales/retail-receipt.ts",
+    "apps/web/src/vite-env.d.ts",
+    "tests/retail-receipt/*.ts*"
+  ]
+}

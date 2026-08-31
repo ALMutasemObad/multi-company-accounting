@@ -1,0 +1,6 @@
+.retail-receipt-harness { font: 14px/1.65 Cairo, 'Noto Sans Devanagari', sans-serif; max-width: 1100px; margin: 0 auto; padding: 16px; overflow-wrap: anywhere; }
+.retail-receipt-harness[lang="hi"] { font-family: 'Noto Sans Devanagari', Cairo, sans-serif; }
+.retail-receipt-harness h1 { font-size: 18px; margin: 0 0 8px; }
+.retail-receipt-harness aside { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+.retail-receipt-harness aside label { display: flex; gap: 4px; align-items: center; white-space: nowrap; min-width: max-content; }
+.retail-receipt-harness button, .retail-receipt-harness select { font: inherit; min-height: 44px; padding: 4px 8px; max-width: 100%; }

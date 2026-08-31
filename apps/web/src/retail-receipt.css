@@ -1,0 +1,44 @@
+.retail-receipt-output,
+.retail-receipt-preview {
+  --retail-receipt-heading: 18px;
+  --retail-receipt-body: 14px;
+  font-size: var(--retail-receipt-body);
+  line-height: 1.65;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.retail-receipt-output button,
+.retail-receipt-output select { font: inherit; min-height: 44px; }
+.retail-receipt-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-block: 12px; }
+.retail-receipt-controls label { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.retail-receipt-paper {
+  box-sizing: border-box;
+  width: 80mm;
+  max-width: 100%;
+  margin: 16px auto;
+  padding: 4mm;
+  background: #fff;
+  color: #172a24;
+  border: 1px solid #b8c5c0;
+}
+.retail-receipt-paper[data-paper-width="58"] { width: 58mm; }
+.retail-receipt-paper h3 { font-size: var(--retail-receipt-heading); margin: 0 0 8px; }
+.retail-receipt-paper h4 { font-size: var(--retail-receipt-body); margin: 12px 0; }
+.retail-receipt-paper header { text-align: center; }
+.retail-receipt-paper p { margin: 8px 0; }
+.retail-receipt-title,
+.retail-receipt-item-name,
+.retail-receipt-total { font-weight: 700; }
+.retail-receipt-paper dl { margin-block: 12px; }
+.retail-receipt-detail { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 12px; margin-block: 6px; min-width: 0; }
+.retail-receipt-detail dt { font-weight: 500; }
+.retail-receipt-detail dd { min-width: 0; max-width: 100%; margin: 0; text-align: end; }
+.retail-receipt-exact { font-variant-numeric: tabular-nums; unicode-bidi: isolate; overflow-wrap: anywhere; }
+.retail-receipt-items ol { list-style: none; padding: 0; margin: 0; }
+.retail-receipt-items li { padding-block: 8px; border-block-start: 1px solid #b8c5c0; }
+.retail-receipt-totals { border-block: 1px solid #b8c5c0; padding-block: 8px; }
+.retail-receipt-paper footer { border-block-start: 1px solid #b8c5c0; padding-block-start: 8px; }
+.retail-receipt-notice { margin-block: 12px; }
+.retail-receipt-source summary { cursor: pointer; min-height: 44px; }
+/* Deliberately no @page or print action: these are screen previews, not thermal output. */
