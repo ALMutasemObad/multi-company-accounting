@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createApp } from '../src/app.js';
 import { AuthError, type AuthService } from '../src/auth/auth-service.js';
 import type { SellingProfileService } from '../src/sales/selling-profile-service.js';
+import { PosError, type PosService } from '../src/pos/pos-service.js';
 
 const item = { inventoryItemId: '9', code: 'ITM-9', nameAr: 'حليب اختبار', nameEn: 'Test milk', description: null,
   isActive: true, unitOfMeasure: { id: '4', code: 'EA', nameAr: 'حبة', nameEn: 'Each', decimalPlaces: 0, isActive: true },
@@ -13,11 +14,12 @@ function fixture() {
   const authorize = vi.fn().mockResolvedValue({ userId: 1n, companyId: 2n, sessionId: 3n });
   const sellingProfiles = { list: vi.fn().mockResolvedValue({ data: [item], meta: { page: 1, pageSize: 24, total: 1, totalPages: 1 } }),
     get: vi.fn().mockResolvedValue({ data: item }), create: vi.fn().mockResolvedValue({ data: item }), update: vi.fn().mockResolvedValue({ data: item }) };
+  const pos = { checkout: vi.fn() };
   const app = createApp({ NODE_ENV: 'test', PORT: 3143, WEB_ORIGIN: 'http://127.0.0.1:4193',
     SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12 }, {
-    auth: { authorize } as unknown as AuthService, sellingProfiles: sellingProfiles as unknown as SellingProfileService,
+    auth: { authorize } as unknown as AuthService, sellingProfiles: sellingProfiles as unknown as SellingProfileService, pos: pos as unknown as PosService,
   });
-  return { app, authorize, sellingProfiles };
+  return { app, authorize, sellingProfiles, pos };
 }
 
 describe('grocery catalogue mounted in the real application', () => {
@@ -52,5 +54,17 @@ describe('grocery catalogue mounted in the real application', () => {
     authorize.mockRejectedValue(new AuthError('FORBIDDEN'));
     await request(app).get('/api/v1/sales/catalog').expect(403);
     expect(sellingProfiles.list).not.toHaveBeenCalled();
+  });
+
+  it.each(['IDEMPOTENCY_IN_PROGRESS', 'IDEMPOTENCY_MISMATCH'] as const)('preserves the POS reason envelope for %s', async reason => {
+    const { app, authorize, pos } = fixture();
+    pos.checkout.mockRejectedValue(new PosError(reason));
+    const response = await request(app).post('/api/v1/pos/checkouts')
+      .set('X-CSRF-Token', 'synthetic-csrf').set('Idempotency-Key', 'grocery-checkout-key')
+      .send({ fiscalPeriodId: '1', documentDate: '2026-08-31', description: 'Fixture grocery sale', customerId: '1', warehouseId: '1', currencyId: '2',
+        exchangeRate: '1.00000000', cashBankAccountId: '1', paymentMethodId: '1', referenceNumber: null, notes: null,
+        lines: [{ inventoryItemId: '9', description: 'Milk', quantity: '2.000000', unitPrice: '123.4500', discountAmount: '0.0000', revenueAccountId: '3', costCenterId: null, taxRateId: null }] }).expect(409);
+    expect(response.body).toEqual({ status: 409, code: 'BUSINESS_RULE_VIOLATION', reason });
+    expect(authorize).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ permission: 'pos.checkout', requireCsrf: true }));
   });
 });

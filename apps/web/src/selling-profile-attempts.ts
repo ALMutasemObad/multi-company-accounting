@@ -5,6 +5,7 @@ export type SellingProfileAttempt = {
   command: SellingProfileSaveCommand; key: string;
   status: "sending" | "unknown" | "saved" | "rejected";
   outcome: SellingProfileSaveOutcome | null;
+  everUnknown?: boolean;
 };
 // Session-memory command journal only, never a source of prices/defaults and never browser storage.
 // Unknown/sending entries are not evicted. A full unresolved journal fails closed.
@@ -49,11 +50,15 @@ export async function sendSellingProfileAttempt(scope: string, command: SellingP
     attempts.delete(settled[0]);
   }
   const frozenCommand = retry ? previous!.command : Object.freeze({ ...command!, body: Object.freeze({ ...command!.body }) }) as SellingProfileSaveCommand;
-  const attempt: SellingProfileAttempt = { command: frozenCommand, key: retry ? previous!.key : crypto.randomUUID(), status: "sending", outcome: null };
+  const attempt: SellingProfileAttempt = { command: frozenCommand, key: retry ? previous!.key : crypto.randomUUID(), status: "sending", outcome: null,
+    everUnknown: retry && previous?.everUnknown };
   publish(scope, attempt);
   let outcome: SellingProfileSaveOutcome;
   try { outcome = await sender(attempt.command, attempt.key); } catch { outcome = { status: "unknown" }; }
   // A late completion belongs to the original scope/attempt, never to the currently selected item.
   if (attempts.get(scope) !== attempt) return;
-  publish(scope, { ...attempt, status: outcome.status, outcome });
+  // A subsequent auth/business rejection cannot resolve an earlier lost response.
+  // Only an acknowledgement of the exact original command releases that lock.
+  if (attempt.everUnknown && outcome.status !== "saved") outcome = { status: "unknown" };
+  publish(scope, { ...attempt, status: outcome.status, outcome, everUnknown: attempt.everUnknown || outcome.status === "unknown" });
 }

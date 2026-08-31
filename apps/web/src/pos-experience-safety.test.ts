@@ -39,6 +39,8 @@ describe("R1 checkout recovery and isolation", () => {
     expect(isPosOutcomeUnknown(new TypeError("network"))).toBe(true);
     expect(isPosOutcomeUnknown(new ApiError("timeout", 504))).toBe(true);
     expect(isPosOutcomeUnknown(new ApiError("pending", 409, "IDEMPOTENCY_IN_PROGRESS"))).toBe(true);
+    expect(isPosOutcomeUnknown(new ApiError("pending", 409, "BUSINESS_RULE_VIOLATION", "IDEMPOTENCY_IN_PROGRESS"))).toBe(true);
+    expect(isPosOutcomeUnknown(new ApiError("mismatch", 409, "BUSINESS_RULE_VIOLATION", "IDEMPOTENCY_MISMATCH"))).toBe(true);
     expect(isPosOutcomeUnknown(new ApiError("stock", 422, "INSUFFICIENT_STOCK"))).toBe(false);
   });
   it("never accepts a malformed, partial or unposted success response", () => {

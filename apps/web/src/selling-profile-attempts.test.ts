@@ -41,6 +41,22 @@ describe("selling profile uncertain-write journal", () => {
     fail(); await pending;
     expect(getSellingProfileAttempt(scope)?.status).toBe("unknown");
   });
+  it("does not unlock an uncertain write when a later retry is rejected", async () => {
+    const scope = sellingProfileAttemptScope("retry-auth-user:company", "9");
+    const sender = vi.fn().mockResolvedValue({ status: "unknown" });
+    await sendSellingProfileAttempt(scope, command, sender);
+    const first = getSellingProfileAttempt(scope)!;
+    for (const reason of ["FORBIDDEN", "VERSION_CONFLICT", "REFERENCE_INVALID"]) {
+      sender.mockResolvedValue({ status: "rejected", reason });
+      await sendSellingProfileAttempt(scope, null, sender, true);
+      expect(getSellingProfileAttempt(scope)).toMatchObject({ status: "unknown", key: first.key, command: first.command });
+      await expect(sendSellingProfileAttempt(scope, command, sender)).rejects.toThrow("UNRESOLVED_SELLING_PROFILE_WRITE");
+    }
+    sender.mockResolvedValue({ status: "saved", profile: saved });
+    await sendSellingProfileAttempt(scope, null, sender, true);
+    expect(getSellingProfileAttempt(scope)?.status).toBe("saved");
+    expect(sender.mock.calls.every(call => call[1] === first.key && call[0] === first.command)).toBe(true);
+  });
   it("does not evict unresolved attempts when the bounded journal is full", async () => {
     const sender = async (): Promise<SellingProfileSaveOutcome> => ({ status: "unknown" });
     let capacityReached = false;

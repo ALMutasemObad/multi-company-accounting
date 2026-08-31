@@ -74,7 +74,9 @@ export function createPosAttemptStore<Snapshot>(now: () => number = Date.now) {
 export function isPosOutcomeUnknown(cause: unknown) {
   return !(cause instanceof ApiError)
     || cause.status >= 500 || cause.status === 408
-    || cause.code === "IDEMPOTENCY_IN_PROGRESS" || cause.code === "IDEMPOTENCY_MISMATCH";
+    || cause.code === "IDEMPOTENCY_IN_PROGRESS" || cause.code === "IDEMPOTENCY_MISMATCH"
+    // The POS router wraps domain errors in BUSINESS_RULE_VIOLATION + reason.
+    || cause.reason === "IDEMPOTENCY_IN_PROGRESS" || cause.reason === "IDEMPOTENCY_MISMATCH";
 }
 
 export function isConfirmedPosResult(result: PosCheckoutResult) {
