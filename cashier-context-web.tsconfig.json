@@ -1,0 +1,5 @@
+{
+  "extends": "./apps/web/tsconfig.json",
+  "compilerOptions": { "noEmit": true },
+  "include": ["apps/web/src/vite-env.d.ts", "apps/web/src/cashier-context-*.ts", "apps/web/src/cashier-context-*.tsx", "apps/web/src/CashierContext*.tsx", "apps/web/src/i18n/locales/cashier-context.ts"]
+}

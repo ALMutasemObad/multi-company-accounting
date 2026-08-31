@@ -1,0 +1,5 @@
+{
+  "extends": "./apps/api/tsconfig.test.json",
+  "compilerOptions": { "noEmit": true, "rootDir": "./apps/api" },
+  "include": ["apps/api/src/core-accounting/cashier-context-period-*.ts", "apps/api/tests/cashier-context-*.test.ts"]
+}

@@ -1,0 +1,19 @@
+.cashier-context-panel { font-size: 16px; line-height: 1.6; padding: 1rem; border: 1px solid #cbd5e1; border-radius: 12px; background: #fff; color: #1e293b; min-width: 0; }
+.cashier-context-panel h2 { font-size: 20px; line-height: 1.5; margin: 0 0 .5rem; font-weight: 700; }
+.cashier-context-panel p { font-size: 16px; margin: .35rem 0 .75rem; overflow-wrap: anywhere; }
+.cashier-context-panel label > span, .cashier-context-panel dt { display: block; font-weight: 700; }
+.cashier-context-date, .cashier-context-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin: 1rem 0; }
+.cashier-context-field { min-width: 0; border: 1px solid #e2e8f0; border-radius: 8px; padding: .75rem; }
+.cashier-context-panel dd { margin: .4rem 0 0; overflow-wrap: anywhere; }
+.cashier-context-source { color: #475569; }
+.cashier-context-panel button, .cashier-context-panel input { font: inherit; font-size: 16px; min-height: 44px; max-width: 100%; border: 1px solid #64748b; border-radius: 6px; background: #fff; color: inherit; padding: .5rem .75rem; box-sizing: border-box; }
+.cashier-context-panel button { cursor: pointer; white-space: normal; text-align: center; }
+.cashier-context-panel button:disabled, .cashier-context-panel input:disabled { opacity: .65; cursor: default; }
+.cashier-context-panel button:focus-visible, .cashier-context-panel input:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+.cashier-context-panel input[type="date"] { width: 100%; }
+.cashier-context-remember { display: flex; gap: .75rem; align-items: center; }
+.cashier-context-remember input { flex: 0 0 22px; width: 22px; padding: 0; }
+.cashier-context-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1rem; }
+.cashier-context-actions button:first-child { color: #fff; background: #174a45; border-color: #174a45; }
+.cashier-context-picker { margin-top: .75rem; }
+@media (max-width: 600px) { .cashier-context-date, .cashier-context-fields { grid-template-columns: minmax(0, 1fr); } .cashier-context-actions button { width: 100%; } }
