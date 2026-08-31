@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.46.0
+  version: 1.46.1
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -5711,6 +5711,35 @@ paths:
       x-permission: currencies.view
       security:
       - SessionCookie: []
+  /currencies/options:
+    get:
+      tags: [Companies]
+      summary: خيارات العملات المسموحة للشركة بصفحات محدودة
+      description: قراءة ضيقة للعملات المفعلة دون أسعار صرف أو بيانات شركة. يقص البحث ويرفض محارف التحكم ومعاملات الاستعلام غير المعلنة.
+      operationId: listEnabledCurrencyOptions
+      parameters:
+      - { name: page, in: query, schema: { type: integer, minimum: 1, maximum: 10000, default: 1 } }
+      - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      - { name: search, in: query, schema: { type: string, x-trim: true, maxLength: 100, pattern: '^[^\u0000-\u001F\u007F]*$' } }
+      responses:
+        '200':
+          description: صفحة مرتبة حسب رمز العملة ثم معرفها
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data, meta]
+                properties:
+                  data: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/EnabledCurrencyOption' } }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+      x-permission: currencies.view
+      security: [{ SessionCookie: [] }]
   /warehouses:
     get:
       tags:
@@ -14713,6 +14742,15 @@ components:
           - 'null'
           writeOnly: true
           maxLength: 100
+    EnabledCurrencyOption:
+      type: object
+      additionalProperties: false
+      required: [id, code, nameAr, decimals]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        code: { type: string, pattern: '^[A-Z]{3}$' }
+        nameAr: { type: string, maxLength: 100 }
+        decimals: { type: integer, minimum: 0, maximum: 8 }
     Currency:
       type: object
       required:

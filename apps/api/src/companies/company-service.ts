@@ -1,4 +1,5 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
+import { z } from 'zod';
 import { appendAudit } from '../audit/prisma-audit-append-adapter.js';
 import type { ActorContext } from '../platform/actor-context.js';
 import type { CompanyCurrencyUsageQueryPort } from './company-currency-usage-port.js';
@@ -11,6 +12,14 @@ export class CompanyCurrencyError extends Error {
 
 export type ExchangeRateInput = { currencyId: bigint; rateDate: string; rate: string; source?: string | null | undefined };
 export type CompanyCurrencyCreateInput = { code: string; nameAr: string; decimals: number };
+
+// A bounded, strict read contract, shared by HTTP and internal callers.
+export const enabledCurrencyOptionsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).max(10000).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  search: z.string().regex(/^[^\u0000-\u001f\u007f]*$/u).trim().max(100).optional(),
+}).strict();
+export type EnabledCurrencyOptionsQuery = z.output<typeof enabledCurrencyOptionsQuerySchema>;
 
 export class CompanyService {
   constructor(
@@ -95,6 +104,35 @@ export class CompanyService {
         rates: { orderBy: { rateDate: 'desc' }, take: 1 },
       },
     });
+  }
+
+  listEnabledCurrencyOptions(context: ActorContext, input: EnabledCurrencyOptionsQuery) {
+    const query = enabledCurrencyOptionsQuerySchema.parse(input);
+    const where: Prisma.CompanyCurrencyWhereInput = {
+      companyId: context.companyId,
+      isActive: true,
+      currency: {
+        isActive: true,
+        OR: [
+          { scope: 'GLOBAL', ownerCompanyId: null },
+          { scope: 'COMPANY', ownerCompanyId: context.companyId },
+        ],
+        ...(query.search ? { AND: [{ OR: [
+          { code: { contains: query.search } },
+          { nameAr: { contains: query.search } },
+        ] }] } : {}),
+      },
+    };
+    return this.prisma.$transaction(async (tx) => ({
+      data: (await tx.companyCurrency.findMany({
+        where,
+        select: { currency: { select: { id: true, code: true, nameAr: true, decimals: true } } },
+        orderBy: [{ currency: { code: 'asc' } }, { currencyId: 'asc' }],
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+      })).map(({ currency }) => currency),
+      total: await tx.companyCurrency.count({ where }),
+    }), { maxWait: 2000, timeout: 8000 });
   }
 
   async createCompanyCurrency(context: ActorContext, input: CompanyCurrencyCreateInput) {
