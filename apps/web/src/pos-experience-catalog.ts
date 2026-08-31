@@ -15,8 +15,8 @@ export const POS_CATALOG_SEARCH_LIMIT = 100;
 export const posCatalogPolicy = { permission: "sales_catalog.view" } as const;
 
 export function posCatalogPath(page: number, search: string) {
-  const params = new URLSearchParams({ page: String(Math.max(1, Math.floor(page))), pageSize: String(POS_CATALOG_PAGE_SIZE) });
-  const query = search.trim().slice(0, POS_CATALOG_SEARCH_LIMIT);
+  const params = new URLSearchParams({ page: String(Math.min(10_000, Math.max(1, Math.floor(page)))), pageSize: String(POS_CATALOG_PAGE_SIZE) });
+  const query = search.replace(/[\u0000-\u001f\u007f]/gu, "").trim().slice(0, POS_CATALOG_SEARCH_LIMIT);
   if (query) params.set("search", query);
   return `/sales/catalog?${params}`;
 }

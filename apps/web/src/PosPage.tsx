@@ -102,12 +102,6 @@ function PosExperience({ notify }: { notify: Notice }) {
     return () => { mounted.current = false; for (const request of profileRequests.current.values()) request.abort(); profileRequests.current.clear(); };
   }, []);
   useEffect(() => {
-    if (!attempt || attempt.status === "completed") return;
-    const preventReload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
-    window.addEventListener("beforeunload", preventReload);
-    return () => window.removeEventListener("beforeunload", preventReload);
-  }, [attempt]);
-  useEffect(() => {
     const controller = new AbortController();
     if (!canCheckout) return;
     setReferenceError(false);

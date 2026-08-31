@@ -25,5 +25,7 @@ describe("R1 unified catalog/scanner item transform", () => {
     const path = new URL(posCatalogPath(2, "0001 & +"), "http://test.local");
     expect(path.searchParams.get("search")).toBe("0001 & +"); expect(path.searchParams.get("pageSize")).toBe("24");
     expect(new URL(posCatalogPath(1, "x".repeat(500)), "http://test.local").searchParams.get("search")?.length).toBe(100);
+    expect(new URL(posCatalogPath(10001, "a\nb"), "http://test.local").searchParams.get("page")).toBe("10000");
+    expect(new URL(posCatalogPath(1, "a\nb"), "http://test.local").searchParams.get("search")).toBe("ab");
   });
 });

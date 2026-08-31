@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "./api";
-import { createPosAttemptStore, isPosOutcomeUnknown } from "./pos-experience-checkout";
+import { createPosAttemptStore, isConfirmedPosResult, isPosOutcomeUnknown } from "./pos-experience-checkout";
+import type { PosCheckoutResult } from "./types";
 import { decrementPosQuantity, posDecimal, posLineSubtotal, posMoneyText, posSubtotal } from "./pos-experience-money";
 import { posPreferenceKey } from "./pos-experience-preferences";
 
@@ -39,6 +40,23 @@ describe("R1 checkout recovery and isolation", () => {
     expect(isPosOutcomeUnknown(new ApiError("timeout", 504))).toBe(true);
     expect(isPosOutcomeUnknown(new ApiError("pending", 409, "IDEMPOTENCY_IN_PROGRESS"))).toBe(true);
     expect(isPosOutcomeUnknown(new ApiError("stock", 422, "INSUFFICIENT_STOCK"))).toBe(false);
+  });
+  it("never accepts a malformed, partial or unposted success response", () => {
+    expect(isConfirmedPosResult({} as PosCheckoutResult)).toBe(false);
+    const response = { id: "1", completedAt: "2026-08-31", invoice: { id: "1", documentNumber: "SI-1", status: "POSTED", total: "0.0000" }, receipt: { id: "2", documentNumber: "R-1", status: "POSTED" } } as PosCheckoutResult;
+    expect(isConfirmedPosResult(response)).toBe(true);
+    expect(isConfirmedPosResult({ ...response, receipt: undefined } as unknown as PosCheckoutResult)).toBe(false);
+    expect(isConfirmedPosResult({ ...response, invoice: { ...response.invoice, total: "2e1" } })).toBe(false);
+  });
+  it("keeps completion locked until an explicit new sale and notifies remounted consumers", () => {
+    const store = createPosAttemptStore<null>();
+    let changes = 0; const unsubscribe = store.subscribe(() => { changes += 1; });
+    store.begin("scope", "body", null, () => "key");
+    store.complete("scope", {} as PosCheckoutResult);
+    expect(store.get("scope")?.status).toBe("completed");
+    expect(store.retry("scope")).toBeNull();
+    expect(store.begin("scope", "other", null, () => "other")).toBeNull();
+    expect(changes).toBe(2); unsubscribe(); store.clear("scope"); expect(changes).toBe(2);
   });
   it("scopes display preferences to both user and company without ambiguous separators", () => {
     expect(posPreferenceKey("1", "2")).not.toBe(posPreferenceKey("2", "1"));

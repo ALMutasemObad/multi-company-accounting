@@ -14,7 +14,15 @@ export type PosAttempt<Snapshot> = {
 export function createPosAttemptStore<Snapshot>() {
   const attempts = new Map<string, PosAttempt<Snapshot>>();
   const listeners = new Set<() => void>();
-  const publish = () => listeners.forEach((listener) => listener());
+  const preventReload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+  const publish = () => {
+    // Keep the warning while navigating to another module in the same document.
+    if (typeof window !== "undefined") {
+      window.removeEventListener("beforeunload", preventReload);
+      if ([...attempts.values()].some((attempt) => attempt.status !== "completed")) window.addEventListener("beforeunload", preventReload);
+    }
+    listeners.forEach((listener) => listener());
+  };
   return {
     get: (scope: string) => attempts.get(scope),
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
