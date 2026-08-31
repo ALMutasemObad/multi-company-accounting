@@ -1,0 +1,20 @@
+.zebra-label-workflow { font-size: 1rem; line-height: 1.65; display: grid; gap: 1rem; max-width: 64rem; color: var(--text, #172d30); }
+.zebra-label-workflow h2, .zebra-label-workflow h3 { font-size: 1.25rem; line-height: 1.5; margin: 0; font-weight: 700; }
+.zebra-label-workflow p, .zebra-label-workflow figure { margin: 0; }
+.zebra-label-workflow form, .zebra-label-preview { display: grid; gap: 1rem; }
+.zebra-label-workflow fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.zebra-label-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.zebra-label-fields label { display: grid; gap: .35rem; font-weight: 600; }
+.zebra-label-workflow input, .zebra-label-workflow select, .zebra-label-workflow button { font: inherit; min-height: 2.75rem; border: 1px solid #839a9d; border-radius: .5rem; padding: .5rem .75rem; min-width: 0; }
+.zebra-label-workflow input, .zebra-label-workflow select { width: 100%; box-sizing: border-box; background: #fff; color: #172d30; }
+.zebra-label-workflow button { cursor: pointer; background: #164e52; color: #fff; font-weight: 600; }
+.zebra-label-workflow button:disabled { cursor: default; opacity: .6; }
+.zebra-label-workflow :focus-visible { outline: 3px solid #b77716; outline-offset: 3px; }
+.zebra-label-actions { display: flex; gap: .75rem; flex-wrap: wrap; }
+.zebra-label-repeat { display: flex; gap: .75rem; align-items: center; }
+.zebra-label-repeat input { width: 1.25rem; flex-shrink: 0; }
+.zebra-label-sheet { position: relative; width: 100%; max-width: 36rem; background: white; outline: 1px solid #647779; }
+.zebra-label-sheet img { position: absolute; display: block; image-rendering: pixelated; max-width: none; }
+.zebra-label-preview figcaption { font-weight: 600; }
+@media (max-width: 40rem) { .zebra-label-fields { grid-template-columns: 1fr; } .zebra-label-actions button { width: 100%; } }
+@media print { .zebra-label-workflow { display: none !important; } }
