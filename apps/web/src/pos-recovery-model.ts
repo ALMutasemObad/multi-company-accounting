@@ -2,12 +2,24 @@ import type { PosCheckoutResult } from "./types";
 
 export type PosRecoveryScope = Readonly<{ userId: string; companyId: string; canCheckout: boolean }>;
 export type PosRecoveryMarker = Readonly<{ version: 1; attemptKey: string; startedAt: number }>;
-export type PosRecoveryOutcome = { outcome: "UNKNOWN" } | { outcome: "CONFIRMED"; result: PosCheckoutResult };
+// Mirror the executable endpoint's rejection enum, never arbitrary error text.
+export const POS_RECOVERY_REJECTION_REASONS = [
+  "INVALID_STATE", "PERIOD_CLOSED", "DATE_OUTSIDE_PERIOD", "INVALID_CUSTOMER", "INVALID_ACCOUNT", "INVALID_COST_CENTER",
+  "INVALID_TAX_RATE", "INVALID_CURRENCY", "WAREHOUSE_REQUIRED", "INVALID_WAREHOUSE", "INVALID_INVENTORY_ITEM",
+  "INVALID_QUANTITY_PRECISION", "INSUFFICIENT_STOCK", "INVENTORY_VALUATION_REQUIRED", "INVENTORY_VALUE_MISMATCH",
+  "INVENTORY_ACCOUNTING_NOT_CONFIGURED", "INVALID_LINE", "INVALID_DISCOUNT", "INVALID_TOTAL", "COUNTERPARTY_REQUIRED",
+  "INVALID_CASH_BANK_ACCOUNT", "INVALID_PAYMENT_METHOD", "REFERENCE_REQUIRED", "INVALID_AMOUNT", "ALLOCATION_REQUIRED",
+  "ALLOCATION_MISMATCH", "INVALID_ALLOCATION", "OVER_ALLOCATION", "REALIZED_FX_ACCOUNT_NOT_CONFIGURED",
+] as const;
+export type PosRecoveryRejection = { code: "POS_CHECKOUT_REJECTED"; reason: typeof POS_RECOVERY_REJECTION_REASONS[number] };
+export type PosRecoveryOutcome = { outcome: "UNKNOWN" } | { outcome: "CONFIRMED"; result: PosCheckoutResult }
+  | { outcome: "REJECTED"; rejection: PosRecoveryRejection };
 export type PosRecoveryState =
   | { status: "blocked"; reason: "permission" | "storage" | "coordination" }
   | { status: "initializing" | "ready" | "pending" | "checking" }
   | { status: "unknown"; reason: "unconfirmed" | "expired" | "clock" }
-  | { status: "confirmed"; result: PosCheckoutResult };
+  | { status: "confirmed"; result: PosCheckoutResult }
+  | { status: "rejected"; rejection: PosRecoveryRejection };
 
 // Warning threshold only. Never a permission to clear, repeat or replace an attempt.
 export const POS_RECOVERY_WARNING_MS = 23 * 60 * 60 * 1000;
@@ -59,7 +71,16 @@ export function readPosRecoveryResult(value: unknown): PosCheckoutResult | null 
 }
 
 export function readPosRecoveryOutcome(value: unknown): PosRecoveryOutcome {
-  if (!record(value) || value.outcome !== "CONFIRMED") return { outcome: "UNKNOWN" };
+  if (!record(value)) return { outcome: "UNKNOWN" };
+  if (value.outcome === "REJECTED") {
+    const rejection = value.rejection;
+    if (Object.keys(value).sort().join(",") !== "outcome,rejection"
+      || !record(rejection) || Object.keys(rejection).sort().join(",") !== "code,reason"
+      || rejection.code !== "POS_CHECKOUT_REJECTED" || typeof rejection.reason !== "string"
+      || !(POS_RECOVERY_REJECTION_REASONS as readonly string[]).includes(rejection.reason)) return { outcome: "UNKNOWN" };
+    return { outcome: "REJECTED", rejection: { code: "POS_CHECKOUT_REJECTED", reason: rejection.reason as PosRecoveryRejection["reason"] } };
+  }
+  if (value.outcome !== "CONFIRMED") return { outcome: "UNKNOWN" };
   const result = readPosRecoveryResult(value.result);
   return result ? { outcome: "CONFIRMED", result } : { outcome: "UNKNOWN" };
 }

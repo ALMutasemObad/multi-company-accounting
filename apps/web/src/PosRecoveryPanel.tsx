@@ -10,6 +10,8 @@ export type PosRecoveryPanelProps = {
   barcodePending: boolean;
   onCheck: () => void;
   onNewSale: () => void;
+  onReviewRejected?: () => void;
+  rejectionMessage?: string | undefined;
 };
 
 /** Presentation only. Mount in the authorized user/company keyed POS experience. */
@@ -27,11 +29,15 @@ export function PosRecoveryPanel(props: PosRecoveryPanelProps) {
       {state.reason !== "unconfirmed" && <p>{copy[state.reason]}</p>}
       <button type="button" onClick={props.onCheck}>{copy.check}</button>
     </>}
+    {state.status === "rejected" && <>
+      <p role="alert">{copy.rejected}</p><p>{copy.reviewHelp}</p>{props.rejectionMessage && <p>{props.rejectionMessage}</p>}
+      <button type="button" disabled={props.barcodePending || !props.onReviewRejected} onClick={props.onReviewRejected}>{copy.review}</button>
+    </>}
     {state.status === "confirmed" && <>
       <p role="status">{copy.confirmed}</p><p>{copy.historical}</p>
       <dl>
-        <div><dt>{copy.invoice}</dt><dd><bdi>{state.result.invoice.documentNumber}</bdi></dd></div>
-        <div><dt>{copy.receipt}</dt><dd><bdi>{state.result.receipt.documentNumber}</bdi></dd></div>
+        <div><dt>{copy.invoice}</dt><dd><bdi>{state.result.invoice.documentNumber}</bdi> · <bdi>{state.result.invoice.id}</bdi></dd></div>
+        <div><dt>{copy.receipt}</dt><dd><bdi>{state.result.receipt.documentNumber}</bdi> · <bdi>{state.result.receipt.id}</bdi></dd></div>
         <div><dt>{copy.total}</dt><dd><bdi>{state.result.invoice.total}</bdi></dd></div>
       </dl>
       <button type="button" disabled={props.barcodePending} onClick={props.onNewSale}>{copy.newSale}</button>

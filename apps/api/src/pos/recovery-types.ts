@@ -1,4 +1,5 @@
 /** Internal application port; HTTP schemas remain owned by OpenAPI. */
+import type { PosCheckoutRejection } from "./checkout-rejection.js";
 export const POS_RECOVERY_OPERATION = "COMPLETE_POS_CHECKOUT" as const;
 
 export type PosRecoveryResult = {
@@ -14,7 +15,8 @@ export type PosRecoveryResult = {
 };
 
 export type PosRecoveryOutcome = { outcome: "UNKNOWN" }
-  | { outcome: "CONFIRMED"; result: PosRecoveryResult };
+  | { outcome: "CONFIRMED"; result: PosRecoveryResult }
+  | { outcome: "REJECTED"; rejection: PosCheckoutRejection };
 
 export type PosRecoveryLookup = {
   companyId: bigint; userId: bigint;
@@ -28,6 +30,6 @@ export type PosRecoveryLookup = {
 export interface PosRecoveryQueryPort {
   find(input: PosRecoveryLookup): Promise<null | {
     companyId: bigint; userId: bigint; operation: string; status: string;
-    expiresAt: Date; responseBody: unknown;
+    expiresAt: Date; responseStatus: number | null; responseBody: unknown;
   }>;
 }

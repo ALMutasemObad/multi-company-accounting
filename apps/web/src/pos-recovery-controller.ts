@@ -1,7 +1,8 @@
 import { canReadPosRecovery, canStartPosRecoverySale, posRecoveryKey, readPosRecoveryMarker,
   readPosRecoveryOutcome, readPosRecoveryResult, unresolvedPosRecovery, validPosRecoveryKey,
-  type PosRecoveryMarker, type PosRecoveryScope, type PosRecoveryState } from "./pos-recovery-model";
+  type PosRecoveryMarker, type PosRecoveryRejection, type PosRecoveryScope, type PosRecoveryState } from "./pos-recovery-model";
 import type { PosCheckoutResult } from "./types";
+import { ApiError } from "./api";
 
 export interface PosRecoveryStorage {
   getItem(key: string): string | null;
@@ -44,14 +45,42 @@ export function createPosRecoveryController(dependencies: PosRecoveryDependencie
     left?.attemptKey === right.attemptKey && left.startedAt === right.startedAt;
   const storageFailure = () => publish({ status: "blocked", reason: "storage" });
 
-  function apply(ticket: number, original: PosRecoveryMarker, result: PosCheckoutResult | null) {
+  function apply(ticket: number, original: PosRecoveryMarker, result: PosCheckoutResult | null, rejection: PosRecoveryRejection | null = null) {
     if (!current(ticket) || !scope || !matches(marker, original)) return;
     // Positive knowledge is monotonic; a late timeout/UNKNOWN cannot undo confirmation.
-    if (state.status === "confirmed") return;
+    if (state.status === "confirmed" || state.status === "rejected") return;
     try {
       if (!matches(stored(scope), original)) { storageFailure(); return; }
-      publish(result ? { status: "confirmed", result } : unresolvedPosRecovery(original, now()));
+      publish(result ? { status: "confirmed", result } : rejection ? { status: "rejected", rejection } : unresolvedPosRecovery(original, now()));
     } catch { storageFailure(); }
+  }
+
+  async function check(): Promise<void> {
+    if (!scope?.canCheckout || !marker || !canReadPosRecovery(state)) return;
+    const ticket = generation; const original = marker;
+    const controller = new AbortController(); inflight = controller;
+    publish({ status: "checking" });
+    try {
+      const outcome = readPosRecoveryOutcome(await dependencies.read(original.attemptKey, controller.signal));
+      apply(ticket, original, outcome.outcome === "CONFIRMED" ? outcome.result : null,
+        outcome.outcome === "REJECTED" ? outcome.rejection : null);
+    } catch { apply(ticket, original, null); }
+    finally { if (inflight === controller) inflight = null; }
+  }
+
+  async function release(expected: "confirmed" | "rejected"): Promise<boolean> {
+    if (!scope?.canCheckout || !marker || state.status !== expected || !dependencies.exclusive) return false;
+    const ticket = generation; const original = marker; const activeScope = scope;
+    try {
+      return await dependencies.exclusive.run(posRecoveryKey(activeScope), async () => {
+        if (!current(ticket) || state.status !== expected || !matches(marker, original)) return false;
+        if (!matches(stored(activeScope), original)) { storageFailure(); return false; }
+        dependencies.storage.removeItem(posRecoveryKey(activeScope));
+        if (dependencies.storage.getItem(posRecoveryKey(activeScope)) !== null) { storageFailure(); return false; }
+        generation += 1; inflight?.abort(); inflight = null; marker = null;
+        publish({ status: "ready" }); return true;
+      });
+    } catch { if (current(ticket)) storageFailure(); return false; }
   }
 
   return {
@@ -109,38 +138,21 @@ export function createPosRecoveryController(dependencies: PosRecoveryDependencie
         if (state.status !== "pending" || !matches(stored(activeScope), original)) { storageFailure(); return false; }
       } catch { storageFailure(); return false; }
       const controller = new AbortController(); inflight = controller;
-      // One call only. A throw, 401/403/404/409, malformed success or timeout stays locked.
+      // One financial call only. A rejection HTTP code is a hint to read its server proof,
+      // never sufficient evidence to unlock or call it rejected on its own.
       try { apply(ticket, original, readPosRecoveryResult(await sendOnce(original.attemptKey, controller.signal))); }
-      catch { apply(ticket, original, null); }
+      catch (cause) {
+        apply(ticket, original, null);
+        if (current(ticket) && cause instanceof ApiError && cause.status === 422 && cause.code === "POS_CHECKOUT_REJECTED") await check();
+      }
       finally { if (inflight === controller) inflight = null; }
       return true;
     },
-    async check(): Promise<void> {
-      if (!scope?.canCheckout || !marker || !canReadPosRecovery(state)) return;
-      const ticket = generation; const original = marker;
-      const controller = new AbortController(); inflight = controller;
-      publish({ status: "checking" });
-      try {
-        const outcome = readPosRecoveryOutcome(await dependencies.read(original.attemptKey, controller.signal));
-        apply(ticket, original, outcome.outcome === "CONFIRMED" ? outcome.result : null);
-      } catch { apply(ticket, original, null); }
-      finally { if (inflight === controller) inflight = null; }
-    },
+    check,
     /** Explicit user action after a validated server acknowledgement only. */
-    async newSale(): Promise<boolean> {
-      if (!scope?.canCheckout || !marker || state.status !== "confirmed" || !dependencies.exclusive) return false;
-      const ticket = generation; const original = marker; const activeScope = scope;
-      try {
-        return await dependencies.exclusive.run(posRecoveryKey(activeScope), async () => {
-          if (!current(ticket) || state.status !== "confirmed" || !matches(marker, original)) return false;
-          if (!matches(stored(activeScope), original)) { storageFailure(); return false; }
-          dependencies.storage.removeItem(posRecoveryKey(activeScope));
-          if (dependencies.storage.getItem(posRecoveryKey(activeScope)) !== null) { storageFailure(); return false; }
-          generation += 1; inflight?.abort(); inflight = null; marker = null;
-          publish({ status: "ready" }); return true;
-        });
-      } catch { if (current(ticket)) storageFailure(); return false; }
-    },
+    newSale: () => release("confirmed"),
+    /** Returning to review preserves the composer's cart; it never resends the command. */
+    reviewRejected: () => release("rejected"),
     dispose() { generation += 1; inflight?.abort(); inflight = null; scope = null; marker = null;
       publish({ status: "blocked", reason: "permission" }); listeners.clear(); },
   };

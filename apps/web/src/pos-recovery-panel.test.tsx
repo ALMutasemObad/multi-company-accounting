@@ -19,6 +19,7 @@ describe("POS recovery accessible presentation", () => {
     expect(hidden).not.toContain("SI-0008"); expect(hidden).not.toContain("9007199"); expect(hidden).not.toContain("<button");
     const visible = renderToStaticMarkup(<PosRecoveryPanel {...props} canCheckout />);
     expect(visible).toContain('disabled=""'); expect(visible).toContain("900719925474099.1234");
+    expect(visible).toContain("<bdi>8</bdi>"); expect(visible).not.toContain("SAR");
     expect(visible).toContain(posRecoveryDictionaries.en.historical);
   });
   it("keeps all four dictionaries complete", () => {
@@ -26,5 +27,13 @@ describe("POS recovery accessible presentation", () => {
       expect(Object.keys(copy).sort()).toEqual(Object.keys(posRecoveryDictionaries.ar).sort());
       expect(Object.values(copy).every(value => value.trim().length > 0)).toBe(true);
     }
+  });
+  it.each(["ar", "en", "hi", "ur"] as const)("offers an explicit cart review only after a proved rejection in %s", locale => {
+    const copy = posRecoveryDictionaries[locale];
+    const html = renderToStaticMarkup(<PosRecoveryPanel locale={locale}
+      state={{ status: "rejected", rejection: { code: "POS_CHECKOUT_REJECTED", reason: "INSUFFICIENT_STOCK" } }}
+      canCheckout barcodePending onCheck={vi.fn()} onNewSale={vi.fn()} onReviewRejected={vi.fn()} />);
+    expect(html).toContain(copy.rejected); expect(html).toContain(copy.review); expect(html).toContain(copy.reviewHelp);
+    expect(html).toContain('disabled=""'); expect(html).not.toContain(copy.newSale); expect(html).not.toContain(copy.check);
   });
 });

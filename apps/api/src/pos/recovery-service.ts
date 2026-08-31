@@ -1,5 +1,6 @@
 import type { ActorContext } from "../platform/actor-context.js";
 import { readPosRecoveryResult } from "./recovery-result.js";
+import { readPosCheckoutRejection } from "./checkout-rejection.js";
 import { POS_RECOVERY_OPERATION, type PosRecoveryOutcome, type PosRecoveryQueryPort } from "./recovery-types.js";
 
 export class PosRecoveryService {
@@ -21,6 +22,11 @@ export class PosRecoveryService {
       || evidence.operation !== POS_RECOVERY_OPERATION || evidence.status !== "COMPLETED"
       || !Number.isFinite(observedAt) || !Number.isFinite(evidence.expiresAt.getTime())
       || evidence.expiresAt.getTime() <= observedAt) return { outcome: "UNKNOWN" };
+    if (evidence.responseStatus === 422) {
+      const rejection = readPosCheckoutRejection(evidence.responseBody);
+      return rejection ? { outcome: "REJECTED", rejection } : { outcome: "UNKNOWN" };
+    }
+    if (evidence.responseStatus !== 201) return { outcome: "UNKNOWN" };
     const result = readPosRecoveryResult(evidence.responseBody);
     return result ? { outcome: "CONFIRMED", result } : { outcome: "UNKNOWN" };
   }

@@ -10,6 +10,7 @@ type IdempotencyRow = {
   id: bigint;
   requestFingerprint: Uint8Array;
   status: string;
+  responseStatus: number | null;
   responseBody: Prisma.JsonValue | null;
 };
 
@@ -63,6 +64,7 @@ function transactionalPrisma() {
                 requestFingerprint: data.requestFingerprint,
                 status: data.status,
                 responseBody: null,
+                responseStatus: null,
               };
               const key = `${data.companyId}:${data.userId}:${data.operation}:${Buffer.from(data.keyHash).toString("hex")}`;
               next.idempotency.set(key, row);
@@ -72,6 +74,7 @@ function transactionalPrisma() {
               const pair = [...next.idempotency].find(([, row]) => row.id === where.id)!;
               pair[1].status = data.status;
               pair[1].responseBody = data.responseBody;
+              pair[1].responseStatus = data.responseStatus;
               return pair[1];
             },
           },

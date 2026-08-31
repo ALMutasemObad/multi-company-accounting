@@ -5,6 +5,8 @@ import type { PosSalesCheckoutPort } from "../sales/sales-invoice-ports.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
 import type { ActorContext } from "../platform/actor-context.js";
 import type { PosCheckoutInput, PosSaleQueryPort, PosSaleView } from "./pos-types.js";
+import { classifyPosCheckoutRejection, readPosCheckoutRejection } from "./checkout-rejection.js";
+import { readPosRecoveryResult } from "./recovery-result.js";
 
 export type PosErrorReason =
   | "IDEMPOTENCY_MISMATCH"
@@ -65,6 +67,7 @@ export class PosService {
     input: PosCheckoutInput,
     idempotencyKey: string,
   ) {
+    const deadlineAt = Date.now() + 15_000;
     return this.commands.execute(
       {
         context,
@@ -76,7 +79,12 @@ export class PosService {
           inProgress: () => new PosError("IDEMPOTENCY_IN_PROGRESS"),
         },
         responseStatus: 201,
-        transaction: { maxWaitMs: 2_000, timeoutMs: 12_000 },
+        terminalRejection: {
+          classify: classifyPosCheckoutRejection,
+          decode: body => readPosCheckoutRejection(body) !== null,
+          validateSuccess: body => readPosRecoveryResult(body) !== null,
+        },
+        transaction: { deadlineAt, maxWaitMs: 2_000, timeoutMs: 12_000 },
       },
       async (tx) => {
         const invoice = await this.sales.checkoutInTransaction(tx, context, {

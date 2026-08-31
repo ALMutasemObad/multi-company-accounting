@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { PosRecoveryService } from "../src/pos/recovery-service.js";
 import { readPosRecoveryResult } from "../src/pos/recovery-result.js";
 import { POS_RECOVERY_OPERATION, type PosRecoveryQueryPort } from "../src/pos/recovery-types.js";
+import { classifyPosCheckoutRejection } from "../src/pos/checkout-rejection.js";
+import { ReceiptError } from "../src/receipts/receipt-service.js";
 
 const context = { companyId: 2n, userId: 1n };
 const attemptKey = "550e8400-e29b-41d4-a716-446655440000";
@@ -9,7 +11,7 @@ const result = { id: "7", completedAt: "2026-08-31T08:30:00.000Z",
   invoice: { id: "8", documentNumber: "SI-0008", status: "POSTED", customerName: "Customer",
     total: "900719925474099.1234", baseTotal: "900719925474099.1234", generatedJournalEntryIds: ["10"] },
   receipt: { id: "9", documentNumber: "R-0009", status: "POSTED", generatedJournalEntryIds: ["11"] } };
-const evidence = { ...context, operation: POS_RECOVERY_OPERATION, status: "COMPLETED", expiresAt: new Date(2000), responseBody: result };
+const evidence = { ...context, operation: POS_RECOVERY_OPERATION, status: "COMPLETED", responseStatus: 201, expiresAt: new Date(2000), responseBody: result };
 function fixture() {
   const find = vi.fn<PosRecoveryQueryPort["find"]>().mockResolvedValue(evidence);
   const authorize = vi.fn().mockResolvedValue(context);
@@ -29,6 +31,7 @@ describe("POS recovery read service", () => {
     { ...evidence, operation: "POST_RECEIPT" }, { ...evidence, status: "IN_PROGRESS" },
     { ...evidence, expiresAt: new Date(1000) }, { ...evidence, expiresAt: new Date(999) },
     { ...evidence, expiresAt: new Date(NaN) }, { ...evidence, responseBody: null }, { ...evidence, responseBody: {} },
+    { ...evidence, responseStatus: 422 }, { ...evidence, responseStatus: null },
   ])("missing, foreign, expired or incomplete evidence returns the same UNKNOWN", async value => {
     const { find, authorize, service } = fixture(); find.mockResolvedValue(value);
     expect(await service.recover(authorize, attemptKey)).toEqual({ outcome: "UNKNOWN" });
@@ -55,6 +58,32 @@ describe("POS recovery read service", () => {
   it("never uses an invalid server clock to certify retained evidence", async () => {
     const service = new PosRecoveryService({ find: async () => evidence }, () => NaN);
     expect(await service.recover(async () => context, attemptKey)).toEqual({ outcome: "UNKNOWN" });
+  });
+  it("recovers a lost sealed rejection, returning only the generated allowlisted projection", async () => {
+    const { find, authorize, service } = fixture();
+    const rejected = classifyPosCheckoutRejection(new ReceiptError("INVALID_CASH_BANK_ACCOUNT"))!;
+    find.mockResolvedValue({ ...evidence, ...rejected });
+    expect(await service.recover(authorize, attemptKey)).toEqual({ outcome: "REJECTED",
+      rejection: { code: "POS_CHECKOUT_REJECTED", reason: "INVALID_CASH_BANK_ACCOUNT" } });
+    expect(authorize).toHaveBeenCalledTimes(2);
+  });
+  it.each([{ expiresAt: new Date(999) }, { companyId: 8n }, { userId: 8n }, { status: "IN_PROGRESS" }, { responseStatus: 503 }])("never relaxes the evidence guards for terminal rejection", async changed => {
+    const { find, authorize, service } = fixture();
+    const rejected = classifyPosCheckoutRejection(new ReceiptError("INVALID_AMOUNT"))!;
+    find.mockResolvedValue({ ...evidence, ...rejected, ...changed });
+    expect(await service.recover(authorize, attemptKey)).toEqual({ outcome: "UNKNOWN" });
+  });
+  it.each([
+    { kind: "POS_CHECKOUT_REJECTION", version: 2, rejection: { code: "POS_CHECKOUT_REJECTED", reason: "INVALID_TOTAL" } },
+    { kind: "POS_CHECKOUT_REJECTION", version: 1, rejection: { code: "POS_CHECKOUT_REJECTED", reason: "DATABASE_PASSWORD" } },
+    { kind: "POS_CHECKOUT_REJECTION", version: 1, rejection: { code: "POS_CHECKOUT_REJECTED", reason: "IDEMPOTENCY_MISMATCH" } },
+    { code: "POS_CHECKOUT_REJECTED", reason: "INVALID_TOTAL" },
+  ])("never certifies arbitrary 422 JSON as a rejected sale", async responseBody => {
+    const { find, authorize, service } = fixture(); find.mockResolvedValue({ ...evidence, responseStatus: 422, responseBody });
+    expect(await service.recover(authorize, attemptKey)).toEqual({ outcome: "UNKNOWN" });
+  });
+  it.each(["NOT_FOUND", "VERSION_CONFLICT", "IDEMPOTENCY_MISMATCH", "IDEMPOTENCY_IN_PROGRESS"] as const)("does not terminalize non-checkout/conflict reason %s", reason => {
+    expect(classifyPosCheckoutRejection(new ReceiptError(reason))).toBeNull();
   });
 });
 

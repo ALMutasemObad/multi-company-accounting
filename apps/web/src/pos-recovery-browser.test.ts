@@ -6,6 +6,17 @@ import { posRecoveryKey } from "./pos-recovery-model";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("POS browser port wiring (no real browser)", () => {
+  it("does not subscribe during construction and reattaches after React effect cleanup", () => {
+    const { storage } = memoryStorage(); const add = vi.fn(); const remove = vi.fn();
+    vi.stubGlobal("window", { localStorage: storage, addEventListener: add, removeEventListener: remove });
+    vi.stubGlobal("navigator", {});
+    const discarded = createBrowserPosRecovery(vi.fn());
+    expect(add).not.toHaveBeenCalled(); discarded.dispose(); expect(remove).not.toHaveBeenCalled();
+    const active = createBrowserPosRecovery(vi.fn());
+    active.activate(recoveryScope); active.activate(recoveryScope); expect(add).toHaveBeenCalledTimes(1);
+    active.dispose(); active.activate(recoveryScope); expect(add).toHaveBeenCalledTimes(2);
+    active.dispose(); expect(remove).toHaveBeenCalledTimes(2);
+  });
   it("uses the scoped exclusive lock and ignores event payloads and unrelated storage areas", async () => {
     const { storage, values } = memoryStorage(); const add = vi.fn(); const remove = vi.fn();
     const request = vi.fn(async (_name: string, _options: unknown, work: () => Promise<unknown>) => work());

@@ -1,6 +1,7 @@
 import { createPosRecoveryController, type PosRecoveryExclusive, type PosRecoveryStorage } from "./pos-recovery-controller";
 
-/** No HTTP endpoint is shipped here. The coordinator injects the approved API read port. */
+/** The composer injects the approved API read port. Construction has no DOM effects,
+ * so a discarded React render cannot leak a storage listener. */
 export function createBrowserPosRecovery(read: (attemptKey: string, signal: AbortSignal) => Promise<unknown>) {
   const storage: PosRecoveryStorage = {
     getItem: key => window.localStorage.getItem(key),
@@ -14,6 +15,15 @@ export function createBrowserPosRecovery(read: (attemptKey: string, signal: Abor
     try { if (event.storageArea === window.localStorage) controller.storageChanged(event.key); }
     catch { controller.storageChanged(null); }
   };
-  window.addEventListener("storage", changed);
-  return { ...controller, dispose() { window.removeEventListener("storage", changed); controller.dispose(); } };
+  let listening = false;
+  return { ...controller,
+    activate(...args: Parameters<typeof controller.activate>) {
+      if (!listening) { window.addEventListener("storage", changed); listening = true; }
+      controller.activate(...args);
+    },
+    dispose() {
+      if (listening) { window.removeEventListener("storage", changed); listening = false; }
+      controller.dispose();
+    },
+  };
 }

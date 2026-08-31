@@ -1,26 +1,19 @@
 import type { PosRecoveryResult } from "./recovery-types.js";
-
-const record = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === "object" && !Array.isArray(value);
-const id = (value: unknown): value is string => typeof value === "string" && /^[1-9]\d{0,19}$/.test(value)
-  && BigInt(value) <= 18446744073709551615n;
-const text = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0 && value.length <= 500;
-const amount = (value: unknown): value is string => typeof value === "string" && /^(0|[1-9]\d{0,14})\.\d{4}$/.test(value);
-const ids = (value: unknown): value is string[] => Array.isArray(value) && value.length > 0 && value.length <= 100 && value.every(id);
+import { completePosCheckout201ResponseSchema } from "../generated/openapi-request-guards.js";
 
 /** This projects the original committed command acknowledgement, not current document status.
  * Explicit projection excludes accidental credentials/correlation or future extra fields.
  */
-export function readPosRecoveryResult(value: unknown): PosRecoveryResult | null {
-  if (!record(value) || !id(value.id) || typeof value.completedAt !== "string"
-    || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value.completedAt)
-    || !Number.isFinite(Date.parse(value.completedAt)) || new Date(value.completedAt).toISOString() !== value.completedAt) return null;
-  const invoice = value.invoice; const receipt = value.receipt;
-  if (!record(invoice) || !record(receipt) || !id(invoice.id) || !id(receipt.id)
-    || !text(invoice.documentNumber) || !text(receipt.documentNumber)
-    || invoice.status !== "POSTED" || receipt.status !== "POSTED" || !text(invoice.customerName)
-    || !amount(invoice.total) || !amount(invoice.baseTotal)
-    || !ids(invoice.generatedJournalEntryIds) || !ids(receipt.generatedJournalEntryIds)) return null;
+export function readPosRecoveryResult(input: unknown): PosRecoveryResult | null {
+  const parsed = completePosCheckout201ResponseSchema.safeParse(input);
+  if (!parsed.success) return null;
+  const value = parsed.data;
+  const { invoice, receipt } = value;
+  // Storage evidence must fit the database identity domain as well as the wire contract.
+  const identities = [value.id, invoice.id, receipt.id, ...invoice.generatedJournalEntryIds, ...receipt.generatedJournalEntryIds];
+  if (identities.some(identity => BigInt(identity) > 18446744073709551615n)
+    || new Date(value.completedAt).toISOString() !== value.completedAt
+    || !invoice.documentNumber.trim() || !receipt.documentNumber.trim() || !invoice.customerName.trim()) return null;
   return {
     id: value.id, completedAt: value.completedAt,
     invoice: { id: invoice.id, documentNumber: invoice.documentNumber, status: "POSTED",
