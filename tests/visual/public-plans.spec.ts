@@ -47,12 +47,20 @@ test("public catalog handles empty, failed and timed-out responses with explicit
   await page.unroute("**/api/v1/public/subscription-plans?*");
   await page.getByRole("alert").getByRole("button").click();
   await expect(page.locator(".plans-card")).toHaveCount(3);
-  await page.route("**/api/v1/public/subscription-plans?*", (route) => new Promise<void>((resolve) => {
-    page.once("close", () => { void route.abort().catch(() => undefined); resolve(); });
-  }));
+  let catalogRequestStarted = () => {};
+  const pendingCatalogRequest = new Promise<void>((resolve) => { catalogRequestStarted = resolve; });
+  await page.route("**/api/v1/public/subscription-plans?*", (route) => {
+    catalogRequestStarted();
+    return new Promise<void>((resolve) => {
+      page.once("close", () => { void route.abort().catch(() => undefined); resolve(); });
+    });
+  });
   await page.clock.install();
   await page.reload();
-  await expect(page.getByRole("status")).toBeVisible();
+  // EntryPage also has a loading status before the catalog effect mounts.
+  // Start the clock only after the actual hanging catalog route is reached.
+  await pendingCatalogRequest;
+  await expect(page.locator(".plans-catalog").getByRole("status")).toBeVisible();
   await page.clock.fastForward(12_100);
   await expect(page.getByRole("alert")).toBeVisible();
 });
@@ -101,6 +109,8 @@ test("operator explicitly shows and hides a published plan using versioned comma
   const controls = page.locator(".public-plan-listing-controls");
   await expect(controls).toBeVisible();
   await expect(controls.getByRole("link")).toHaveAttribute("href", "/plans");
+  await expect(controls.getByRole("button")).toBeDisabled();
+  await controls.getByRole("checkbox").check();
   await controls.getByRole("button").click();
   await expect(controls.getByRole("button")).toContainText("إخفاء");
   await controls.getByRole("button").click();
@@ -116,6 +126,7 @@ test("public hash alias keeps FAQ navigation public and supports keyboard links"
   await page.keyboard.press("Tab");
   await expect(page.locator(".plans-skip-link")).toBeFocused();
   await page.keyboard.press("Enter");
+  await expect(page.locator("#plans-catalog")).toBeFocused();
   await expect(page.locator(".plans-card")).toHaveCount(3);
   expect(paths.every((path) => path === "/api/v1/public/subscription-plans")).toBe(true);
 });
