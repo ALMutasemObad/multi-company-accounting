@@ -141,8 +141,10 @@ export function createPlatformSubscriptionRouter(
   });
   router.post("/subscription/change-requests", async (request, response) => {
     const actor = await companyActor(request, "subscriptions.manage", true);
+    const { expectedCompanyId } = z.object({ expectedCompanyId: identifier }).parse(request.body);
+    if (expectedCompanyId !== actor.companyId) throw new PlatformSubscriptionError("SUBSCRIPTION_CONTEXT_MISMATCH");
     const body = bodies.requestCompanySubscriptionChange.parse(request.body);
-    response.status(201).json(await lifecycle.requestOwnerChange(actor, { ...body, idempotencyKey: idempotencyKey(request) }));
+    response.status(201).json(await lifecycle.requestOwnerChange(actor, { ...body, expectedCompanyId, idempotencyKey: idempotencyKey(request) }));
   });
 
   const errors: ErrorRequestHandler = (error, _request, response, next) => {
@@ -151,7 +153,7 @@ export function createPlatformSubscriptionRouter(
       return;
     }
     const conflicts = new Set([
-      "VERSION_CONFLICT", "PUBLISHED_VERSION_IMMUTABLE", "DRAFT_ALREADY_EXISTS",
+      "VERSION_CONFLICT", "SUBSCRIPTION_CONTEXT_MISMATCH", "PUBLISHED_VERSION_IMMUTABLE", "DRAFT_ALREADY_EXISTS",
       "PLAN_CODE_EXISTS",
       "TRIAL_ALREADY_USED", "CHANGE_ALREADY_SCHEDULED", "CHANGE_ALREADY_PENDING",
       "INVALID_CHANGE_STATE", "IDEMPOTENCY_MISMATCH", "IDEMPOTENCY_IN_PROGRESS",
@@ -164,7 +166,8 @@ export function createPlatformSubscriptionRouter(
       title: status === 404 ? "Subscription resource not found"
         : status === 403 ? "Subscription access denied" : "Subscription business rule violation",
       status,
-      code: status === 409 ? "CONFLICT" : status === 422 ? "BUSINESS_RULE_VIOLATION" : error.reason,
+      code: error.reason === "SUBSCRIPTION_CONTEXT_MISMATCH" ? error.reason
+        : status === 409 ? "CONFLICT" : status === 422 ? "BUSINESS_RULE_VIOLATION" : error.reason,
       reason: error.reason,
     });
   };

@@ -195,10 +195,10 @@ describe.runIf(enabled)("SUB-3 subscription lifecycle on a supported database", 
     const before = await prisma!.platformSubscription.findUniqueOrThrow({ where: { companyId: companyA.id } });
     const key = `paid-owner-${randomUUID()}`;
     const requested = await lifecycle().requestOwnerChange({ userId, companyId: companyA.id }, {
-      targetPlanVersionId: BigInt(paid.id), optionalModuleIds: [], subscriptionVersion: before.version, idempotencyKey: key,
+      expectedCompanyId: companyA.id, targetPlanVersionId: BigInt(paid.id), optionalModuleIds: [], subscriptionVersion: before.version, idempotencyKey: key,
     });
     const repeated = await lifecycle().requestOwnerChange({ userId, companyId: companyA.id }, {
-      targetPlanVersionId: BigInt(paid.id), optionalModuleIds: [], subscriptionVersion: before.version, idempotencyKey: key,
+      expectedCompanyId: companyA.id, targetPlanVersionId: BigInt(paid.id), optionalModuleIds: [], subscriptionVersion: before.version, idempotencyKey: key,
     });
     expect(requested).toMatchObject({ change: { state: "PENDING_APPROVAL" }, paymentCollected: false });
     expect(repeated).toEqual(requested);
@@ -208,11 +208,12 @@ describe.runIf(enabled)("SUB-3 subscription lifecycle on a supported database", 
     expect(await prisma!.platformSubscriptionChange.count({ where: { companyId: companyA.id, state: "PENDING_APPROVAL" } })).toBe(1);
 
     await expect(lifecycle().requestOwnerChange({ userId, companyId: companyA.id }, {
-      targetPlanVersionId: BigInt(paid.id), optionalModuleIds: [], subscriptionVersion: before.version,
+      expectedCompanyId: companyA.id, targetPlanVersionId: BigInt(paid.id), optionalModuleIds: [], subscriptionVersion: before.version,
       idempotencyKey: `stale-${randomUUID()}`,
     })).rejects.toEqual(new PlatformSubscriptionError("VERSION_CONFLICT"));
 
     const companyBSnapshot = await lifecycle().ownerCompany(companyB.id, { page: 1, pageSize: 20 });
+    expect(companyBSnapshot.company).toMatchObject({ id: companyB.id.toString(), code: companyB.code, name: companyB.name, active: true });
     expect(companyBSnapshot.pending).toBeNull();
     expect(companyBSnapshot.current.plan.planCode).toBe(`LEGACY_COMPANY_${companyB.id}`);
     expect(companyBSnapshot.history.every((change) => change.plan.planCode !== paid.planCode)).toBe(true);
@@ -299,7 +300,7 @@ describe.runIf(enabled)("SUB-3 subscription lifecycle on a supported database", 
     const published = await catalog().publish({ userId }, BigInt(created.version.id), created.version.version);
     const subscription = await prisma!.platformSubscription.findUniqueOrThrow({ where: { companyId: company.id } });
     await expect(lifecycle().requestOwnerChange({ userId, companyId: company.id }, {
-      targetPlanVersionId: BigInt(published.version.id), optionalModuleIds: [source.id],
+      expectedCompanyId: company.id, targetPlanVersionId: BigInt(published.version.id), optionalModuleIds: [source.id],
       subscriptionVersion: subscription.version, idempotencyKey: `missing-closure-${randomUUID()}`,
     })).rejects.toEqual(new PlatformSubscriptionError("MODULE_DEPENDENCY_MISSING"));
   });
@@ -316,7 +317,7 @@ describe.runIf(enabled)("SUB-3 subscription lifecycle on a supported database", 
     });
     const subscription = await prisma!.platformSubscription.findUniqueOrThrow({ where: { companyId: company.id } });
     await expect(lifecycle().requestOwnerChange({ userId, companyId: company.id }, {
-      targetPlanVersionId: BigInt(trial.id), optionalModuleIds: [],
+      expectedCompanyId: company.id, targetPlanVersionId: BigInt(trial.id), optionalModuleIds: [],
       subscriptionVersion: subscription.version, idempotencyKey: `second-trial-${randomUUID()}`,
     })).rejects.toEqual(new PlatformSubscriptionError("TRIAL_ALREADY_USED"));
   });

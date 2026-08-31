@@ -57,7 +57,10 @@ const server = createServer(async (req, res) => {
     return send(res, 200, data);
   }
   const data = structuredClone(responseFor(url, 'GET'));
-  if (path === '/subscription') data.current.plan.displayName = `QA Company ${selectedCompanyId === '1' ? 'A' : 'B'} Plan`;
+  if (path === '/subscription') {
+    data.company = { id: selectedCompanyId, code: `QA-${selectedCompanyId}`, name: companies.find(item => item.id === selectedCompanyId).name, active: true };
+    data.current.plan.displayName = `QA Company ${selectedCompanyId === '1' ? 'A' : 'B'} Plan`;
+  }
   if (path === '/subscription/usage') data.companyId = selectedCompanyId;
   return send(res, data === null ? 204 : 200, data === null ? undefined : data);
 });

@@ -1263,6 +1263,7 @@ paths:
     get:
       tags: [Company Subscription]
       summary: اشتراك الشركة الحالية وخطتها واستحقاقاتها الفعالة
+      description: تتضمن اللقطة دائمًا company بهوية الشركة التي قُرئت بياناتها، لرفض عرض بيانات شركة أخرى عند تبدل الجلسة المشتركة.
       operationId: getCompanySubscription
       x-permission: subscriptions.view
       security: [{ SessionCookie: [] }]
@@ -1321,6 +1322,12 @@ paths:
     post:
       tags: [Company Subscription]
       summary: طلب تغيير الخطة؛ المدفوع يبقى pending بلا مزود دفع
+      description: >-
+        expectedCompanyId شرط إلزامي يطابق الشركة المصرح بها في الجلسة، وليس اختيارًا لشركة بديلة.
+        يُرفض اختلاف السياق قبل idempotency أو أي عمل تجاري بالرمز والسبب SUBSCRIPTION_CONTEXT_MISMATCH وحالة HTTP409،
+        حتى لو تطابق إصدار الاشتراك والمفتاح. يظل نطاق idempotency الشركة والمستخدم والعملية والمفتاح،
+        ولا يدخل شرط السياق في بصمة البيانات المالية. غياب الشرط أو فساده خطأ تحقق؛ العملاء القدامى يفشلون بأمان،
+        والخادم القديم الصارم يرفض الحقل الجديد غير المعروف.
       operationId: requestCompanySubscriptionChange
       x-permission: subscriptions.manage
       security: [{ SessionCookie: [], CsrfToken: [] }]
@@ -11112,8 +11119,12 @@ components:
     CompanySubscriptionChangeRequest:
       type: object
       additionalProperties: false
-      required: [targetPlanVersionId, optionalModuleIds, subscriptionVersion]
+      required: [expectedCompanyId, targetPlanVersionId, optionalModuleIds, subscriptionVersion]
       properties:
+        expectedCompanyId:
+          type: string
+          pattern: '^[1-9][0-9]*$'
+          description: هوية الشركة التي راجع المستخدم اشتراكها؛ يجب أن تطابق شركة الجلسة قبل أي تنفيذ أو إعادة نتيجة سابقة.
         targetPlanVersionId: { type: string, pattern: '^[1-9][0-9]*$' }
         optionalModuleIds:
           type: array
@@ -11368,7 +11379,7 @@ components:
     PlatformSubscriptionSnapshot:
       type: object
       additionalProperties: false
-      required: [subscription, current, effectiveModules, scheduled, pending, history, meta, generatedAt]
+      required: [company, subscription, current, effectiveModules, scheduled, pending, history, meta, generatedAt]
       properties:
         company:
           type: object

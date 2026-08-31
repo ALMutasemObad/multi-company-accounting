@@ -19,7 +19,7 @@ function fixture(allow = true, companyId: bigint | null = 9n) {
     updatePlan: vi.fn().mockResolvedValue({ plan: { id: "12", code: "BASIC", active: false, version: 2 } }),
   };
   const lifecycle = {
-    ownerCompany: vi.fn().mockResolvedValue({ subscription: {}, current: {}, effectiveModules: [], scheduled: null, pending: null, history: [], meta: {}, generatedAt: new Date().toISOString() }),
+    ownerCompany: vi.fn().mockResolvedValue({ company: { id: String(companyId), code: "QA", name: "QA Company", active: true }, subscription: {}, current: {}, effectiveModules: [], scheduled: null, pending: null, history: [], meta: {}, generatedAt: new Date().toISOString() }),
     ownerCatalog: vi.fn().mockResolvedValue({ plans: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } }),
     requestOwnerChange: vi.fn().mockResolvedValue({ change: { state: "PENDING_APPROVAL" }, subscriptionVersion: 2, paymentCollected: false }),
   };
@@ -66,7 +66,7 @@ describe("platform subscription router permissions and contracts", () => {
     await request(app).post("/subscription/change-requests")
       .set("Cookie", "sid=session").set("X-CSRF-Token", "csrf")
       .set("Idempotency-Key", "owner-subscription-change")
-      .send({ targetPlanVersionId: "12", optionalModuleIds: ["4"], subscriptionVersion: 1 })
+      .send({ expectedCompanyId: "9", targetPlanVersionId: "12", optionalModuleIds: ["4"], subscriptionVersion: 1 })
       .expect(201);
 
     expect(authorize.mock.calls.map(([input]) => [input.permission, input.requireCsrf])).toEqual([
@@ -75,7 +75,7 @@ describe("platform subscription router permissions and contracts", () => {
     expect(lifecycle.ownerCompany).toHaveBeenCalledWith(9n, { page: 2, pageSize: 10 });
     expect(lifecycle.requestOwnerChange).toHaveBeenCalledWith(
       expect.objectContaining({ companyId: 9n, userId: 7n }),
-      expect.objectContaining({ targetPlanVersionId: 12n, optionalModuleIds: [4n], idempotencyKey: "owner-subscription-change" }),
+      expect.objectContaining({ expectedCompanyId: 9n, targetPlanVersionId: 12n, optionalModuleIds: [4n], idempotencyKey: "owner-subscription-change" }),
     );
   });
 
@@ -85,7 +85,7 @@ describe("platform subscription router permissions and contracts", () => {
     await request(app).post("/subscription/change-requests")
       .set("Cookie", "sid=session").set("X-CSRF-Token", "csrf")
       .set("Idempotency-Key", "owner-subscription-change")
-      .send({ targetPlanVersionId: "12", optionalModuleIds: [], subscriptionVersion: 1 })
+      .send({ expectedCompanyId: "9", targetPlanVersionId: "12", optionalModuleIds: [], subscriptionVersion: 1 })
       .expect(403);
     expect(lifecycle.ownerCompany).not.toHaveBeenCalled();
     expect(lifecycle.requestOwnerChange).not.toHaveBeenCalled();

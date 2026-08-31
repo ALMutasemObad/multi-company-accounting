@@ -17,7 +17,8 @@ export function upgradePlan(overrides: Partial<SubscriptionPlanVersion> = {}): S
 }
 export function upgradeSnapshot(overrides: Partial<SubscriptionSnapshot> = {}): SubscriptionSnapshot {
   const plan = upgradePlan();
-  return { subscription: { status: 'ACTIVE', version: 3, startsAt: observedAt, trialEndsAt: null,
+  return { company: { id: upgradeScope.companyId, code: 'QA', name: 'Test company', active: true },
+    subscription: { status: 'ACTIVE', version: 3, startsAt: observedAt, trialEndsAt: null,
     currentPeriodStart: null, currentPeriodEnd: null, cancelAtPeriodEnd: false },
     current: { id: '8', state: 'APPROVED', source: 'COMPANY_OWNER', requestedAt: observedAt,
       effectiveAt: observedAt, decidedAt: observedAt, decisionReason: null,
