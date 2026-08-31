@@ -99,7 +99,7 @@ adapter تثبت الرفض قبل جميع الكتابات وعدم تحويل
   DATABASE (قيمة port تحتاج تطبيع نوع bigint)؛ لم تطبق migrations أو seed أو DB tests.
 - بعد قيد الموارد أغلقنا العملية graceful عبر SHUTDOWN بعد مطابقة @@datadir/port؛
   ثبت version10.4.32، وأصبح3317 بلا listener. لم نمس خدمة أو بيانات XAMPP القديمة.
-  datadir/logs محفوظة على D بلا حذف. لا قاعدة jawar منشأة بعد.
+  datadir/logs محفوظة على D بلا حذف. لا قاعدة اختبار منشأة بعد.
 - يلزم لاحقًا تشغيل بوابتي MariaDB10.11/MySQL8.4؛ نجاح10.4 إن نفذ لا يستبدلهما.
   كما يلزم إعادة types بعد توفير generated client مطابق بمعزل عن junction.
 

@@ -57,7 +57,7 @@ for (const locale of ['ar', 'en', 'ur', 'hi']) {
     await page.locator('.login-card input[name=email]').fill('owner@example.test');
     await page.locator('.login-card input[name=password]').fill('Synthetic-Password-123!');
     await page.locator('.login-card button[type=submit]').click();
-    await expect(page).toHaveURL(/#subscription$/);
+    await expect(page).toHaveURL(/#subscription\?plan=102$/);
     await expect(page.locator('.subscription-change-form select')).toHaveValue('102');
     await expect(page.locator('.subscription-catalog-notice')).toHaveCount(0);
     await expect(page.locator('.subscription-usage-grid')).toBeVisible();

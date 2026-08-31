@@ -28,6 +28,7 @@ const currentChange = {
 };
 
 const snapshot = {
+  company,
   subscription: { status: "ACTIVE", version: 3, startsAt: "2026-08-01T00:00:00.000Z", trialEndsAt: null, currentPeriodStart: null, currentPeriodEnd: null, cancelAtPeriodEnd: false },
   current: currentChange,
   effectiveModules: [{ id: "31", code: "CORE_ACCOUNTING", displayName: "Core accounting", source: "PLAN" }],
@@ -120,7 +121,7 @@ test("keeps the subscription page reachable without business modules and hides m
 
 test("submits a paid owner change as a pending request without claiming payment", async ({ page }) => {
   const mocked = await mockSubscriptionApp(page, ["subscriptions.view", "subscriptions.manage"]);
-  await page.goto("/#subscription");
+  await page.goto("/#subscription?plan=21");
 
   await expect(page.getByText("A paid change remains pending until the payment provider proves its result; a browser return never activates it.")).toBeVisible();
   await page.getByLabel("Reporting").check();
@@ -132,7 +133,7 @@ test("submits a paid owner change as a pending request without claiming payment"
   await page.getByLabel("I reviewed the plan, version, add-ons and displayed values and confirm submitting this request.").check();
   await confirm.click();
   await expect(page.locator('.subscription-change-recovery')).toContainText("The server confirmed a request awaiting approval, not an applied plan or a collected payment.");
-  expect(mocked.submitted()).toEqual({ targetPlanVersionId: "21", optionalModuleIds: ["32"], subscriptionVersion: 3 });
+  expect(mocked.submitted()).toEqual({ expectedCompanyId: company.id, targetPlanVersionId: "21", optionalModuleIds: ["32"], subscriptionVersion: 3 });
 });
 
 test("keeps the platform plan center separate and capability-gated", async ({ page }) => {

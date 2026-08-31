@@ -110,7 +110,7 @@ test('the E2E environment requires an explicitly acknowledged test database and 
   assert.equal(input.E2E_BASE_URL, undefined);
 });
 
-for (const name of ['test_mcap_finance', 'mcap_finance_test', 'jawar_w1_onboarding_20260831', `test_${'a'.repeat(59)}`]) {
+for (const name of ['test_mcap_finance', 'mcap_finance_test', 'test_w1_onboarding_20260831', `test_${'a'.repeat(59)}`]) {
   test(`acknowledged disposable name ${name} is accepted`, () => {
     const config = validateE2eEnvironment(environment({
       DATABASE_URL: `mysql://${syntheticUser}:${syntheticPassword}@127.0.0.1/${name}`,

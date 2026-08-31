@@ -28,7 +28,7 @@
 وquery/fragment أو مسار قاعدة ملتبس. يقبل loopback الصريح فقط؛ يحول localhost إلى
 127.0.0.1 حتى لا يغير hosts file وجهة الاتصال. يلزم اسم قاعدة اختبار مطابق تمامًا
 للإقرار `E2E_DISPOSABLE_DATABASE`؛ CI=true أو loopback وحدهما لا يكفيان.
-الأسماء المسموحة `test_*` أو `*_test` أو `jawar_w1_*` بأحرف صغيرة وأرقام وunderscore،
+الأسماء المسموحة `test_*` أو `*_test` بأحرف صغيرة وأرقام وunderscore،
 حتى64 حرفًا، دون token باسم prod/production. هذا الإقرار مسؤولية مشغّل بوابة
 الاختبار؛ لا يجعل قاعدة تطوير مستخدم disposable بمجرد إعادة تسميتها.
 
@@ -123,7 +123,7 @@ MariaDB10.4 السابقة ليست بديلًا؛ العملية الخاصة �
 للتشغيل الحقيقي لاحقًا: يجهز مالك البوابة قاعدة الاختبار المعزولة وbuild أولًا،
 ويضبط DATABASE_URL عبر بيئة محلية آمنة دون طباعتها. يضبط E2E_DISPOSABLE_DATABASE
 بالاسم الحقيقي نفسه، وE2E_BASE_URL المحلي، ثم `npm run e2e -- --workers=1`.
-لا ينشئ هذا التسليم قاعدة `jawar_w1_onboarding_20260831` ولا يجيز reset/drop/seed
+لا ينشئ هذا التسليم قاعدة الاختبار المحلية المقترحة ولا يجيز reset/drop/seed
 لقاعدة موجودة. تبقى TEMP/TMP/cache/logs ضمن tmp/coordination على D، GOMAXPROCS=2
 وGOMEMLIMIT=1536MiB، ولا install أو Prisma generate أو كتابة في الاعتماديات المشتركة.
 

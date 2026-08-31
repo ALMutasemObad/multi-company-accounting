@@ -31,7 +31,7 @@ export function validateE2eEnvironment(environment) {
   if (databaseUrl.protocol !== 'mysql:' || !loopbackHosts.has(databaseUrl.hostname)
     || databaseUrl.search || databaseUrl.hash || !databaseUrl.username
     || !/^[a-z][a-z0-9_]{0,63}$/u.test(databaseName)
-    || !/^(?:(?:test_|jawar_w1_)[a-z0-9_]+|[a-z0-9_]+_test)$/u.test(databaseName)
+    || !/^(?:test_[a-z0-9_]+|[a-z0-9_]+_test)$/u.test(databaseName)
     || /(?:^|_)(?:prod|production)(?:_|$)/u.test(databaseName)
     || environment.E2E_DISPOSABLE_DATABASE !== databaseName) invalid();
   if (baseURL.protocol !== 'http:' || !loopbackHosts.has(baseURL.hostname)

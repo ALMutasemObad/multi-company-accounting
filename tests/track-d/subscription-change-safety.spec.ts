@@ -49,7 +49,7 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
     const { requests, state, t, review } = await setup(page, locale, '2101');
     const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
     await page.route('**/api/v1/subscription/change-requests', route => route.fulfill({ json: accepted }));
-    await page.goto('/#subscription');
+    await page.goto('/#subscription?plan=2101');
     await page.locator('.subscription-option-grid input').nth(1).check();
     await expect(page.locator('.subscription-option-grid input:checked')).toHaveCount(2);
     await review();
@@ -85,7 +85,7 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
     const { requests, state, t, review, confirm } = await setup(page, locale);
     let posts = 0;
     await page.route('**/api/v1/subscription/change-requests', route => ++posts === 1 ? route.abort('connectionfailed') : route.fulfill({ json: accepted }));
-    await page.goto('/#subscription'); await review(); await confirm();
+    await page.goto('/#subscription?plan=2101'); await review(); await confirm();
     await expect(page.locator('.subscription-change-recovery')).toContainText(t('subscriptionChanges.uncertain'));
     await expect(page.locator('.subscription-change-form select')).toBeDisabled();
     state.version = 55;
@@ -107,7 +107,7 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
       state.failRead = true;
       return route.fulfill({ json: accepted });
     });
-    await page.goto('/#subscription'); await review(); await confirm();
+    await page.goto('/#subscription?plan=2101'); await review(); await confirm();
     await expect(page.locator('.subscription-change-recovery')).toContainText(t('subscriptionChanges.reloadFailed'));
     await expect(page.getByRole('button', { name: t('subscriptionChanges.retrySame'), exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: t('subscriptionChanges.newReview'), exact: true })).toBeDisabled();
@@ -120,7 +120,7 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
   test(`409 requires reading and a new explicit review in ${locale}`, async ({ page }) => {
     const { requests, t, review, confirm } = await setup(page, locale);
     await page.route('**/api/v1/subscription/change-requests', route => route.fulfill({ status: 409, json: { code: 'VERSION_CONFLICT', reason: 'not-for-display' } }));
-    await page.goto('/#subscription'); await review(); await confirm();
+    await page.goto('/#subscription?plan=2101'); await review(); await confirm();
     await expect(page.locator('.subscription-change-recovery')).toContainText(t('subscriptionChanges.conflict'));
     await expect(page.locator('.subscription-change-recovery')).not.toContainText('not-for-display');
     await expect(page.getByRole('button', { name: t('subscriptionChanges.newReview'), exact: true })).toBeDisabled();
@@ -138,7 +138,7 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
       await new Promise<void>(resolve => { release = resolve; });
       await route.fulfill({ json: accepted }).catch(() => undefined);
     });
-    await page.goto('/#subscription'); await review(); await confirm();
+    await page.goto('/#subscription?plan=2101'); await review(); await confirm();
     await expect.poll(() => requests.length).toBe(1);
     await page.getByRole('button', { name: t('subscriptionChanges.cancelWait'), exact: true }).click();
     await expect(page.locator('.subscription-change-recovery')).toContainText(t('subscriptionChanges.uncertain'));
@@ -159,7 +159,7 @@ test('timeout never replays and in-app remount retains uncertain identity', asyn
     await route.fulfill({ json: accepted }).catch(() => undefined);
   });
   await page.clock.install();
-  await page.goto('/#subscription'); await review(); await confirm();
+  await page.goto('/#subscription?plan=2101'); await review(); await confirm();
   await expect.poll(() => requests.length).toBe(1);
   await page.clock.fastForward(20_100);
   await expect(page.locator('.subscription-change-recovery')).toContainText(t('subscriptionChanges.uncertain'));
@@ -180,7 +180,7 @@ for (const failure of ['500', 'body', '429'] as const) test(`${failure} does not
   await page.route('**/api/v1/subscription/change-requests', route => failure === 'body'
     ? route.fulfill({ status: 200, contentType: 'application/json', body: '{' })
     : route.fulfill({ status: Number(failure), json: { code: 'TEST_FAILURE' } }));
-  await page.goto('/#subscription'); await review(); await confirm();
+  await page.goto('/#subscription?plan=2101'); await review(); await confirm();
   await expect(page.locator('.subscription-change-recovery')).toContainText(t(failure === '429' ? 'subscriptionChanges.rejected' : 'subscriptionChanges.uncertain'));
   await page.getByRole('button', { name: t('subscriptionChanges.refreshOnly'), exact: true }).click();
   await expect(page.getByRole('button', { name: t('subscriptionChanges.refreshOnly'), exact: true })).toBeEnabled();
@@ -196,7 +196,7 @@ test('pending and scheduled changes remain separately visible', async ({ page })
       scheduled: { ...body.current, effectiveAt: '2030-01-01T00:00:00.000Z', plan: { ...body.current.plan, displayName: 'Scheduled fixture' } },
     } });
   });
-  await page.goto('/#subscription');
+  await page.goto('/#subscription?plan=2101');
   await expect(page.locator('.subscription-attention')).toHaveCount(2);
   await expect(page.locator('.subscription-attention').first()).toContainText('Pending fixture');
   await expect(page.locator('.subscription-attention').last()).toContainText('Scheduled fixture');
@@ -236,7 +236,7 @@ test('switching business ignores a late response and returning retains the origi
       await expect(page.locator('.sidebar.open')).toHaveCount(0);
     }
   }
-  await page.goto('/#subscription'); await review(); await confirm();
+  await page.goto('/#subscription?plan=2101'); await review(); await confirm();
   await expect.poll(() => requests.length).toBe(1);
   await switchTo('Company B'); release();
   await expect(page.locator('.subscription-change-recovery')).toHaveCount(0);
@@ -251,7 +251,7 @@ test('switching business ignores a late response and returning retains the origi
 
 test('selection and catalogue refresh invalidate review; dependency removal stays intact', async ({ page }) => {
   const { requests, review } = await setup(page);
-  await page.goto('/#subscription');
+  await page.goto('/#subscription?plan=2101');
   const boxes = page.locator('.subscription-option-grid input');
   await boxes.nth(1).check(); await review();
   await boxes.first().uncheck();
@@ -265,7 +265,7 @@ test('selection and catalogue refresh invalidate review; dependency removal stay
 
 test('a changed plan definition clears stale optional IDs before another review', async ({ page }) => {
   const { requests, review } = await setup(page);
-  await page.goto('/#subscription');
+  await page.goto('/#subscription?plan=2101');
   await page.locator('.subscription-option-grid input').nth(1).check();
   await review();
   await page.route('**/api/v1/subscription/catalog?*', async route => {
@@ -291,7 +291,7 @@ test('missing preferred plan remains empty across bounded catalogue pages', asyn
     body.plans[0].id = number === '2' ? '999' : '2101';
     return route.fulfill({ json: { ...body, meta: { page: Number(number), pageSize: 100, total: 101, totalPages: 2 } } });
   });
-  await page.goto('/#subscription');
+  await page.goto('/#subscription?plan=999');
   await expect(page.locator('.subscription-change-form select')).toHaveValue('');
   await expect(page.locator('.subscription-change-form button[type=submit]')).toBeDisabled();
   await page.locator('.subscription-catalog-pagination button').last().click();
