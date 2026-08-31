@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedDate": "2026-08-31T18:16:31.922448+00:00",
+  "updatedDate": "2026-08-31T18:20:22.243468+00:00",
   "coordinatorThreadId": "01a05783-e720-7ed0-a107-4a372bd53202",
   "projectId": "c3fd65c7-6c00-45d1-9859-46f96966dc38",
   "repository": "D:/CodexWorktrees/continuous-coordination",
@@ -514,7 +514,7 @@
       "runtime": "Released after final483/483 across24files andWeb/API-src-tests types passed; generator/check passed. Client21/21 and source hashes unchanged across final gates. Earlier startup/minWorkers and6financial-body-schema failures preserved and corrected. NoW2DB/browser/build acceptance; grocery fixture adaptation source-only is next."
     },
     {
-      "status": "tests_types_passed_visual_review_pending",
+      "status": "validated_and_integrated_locally",
       "threadId": "01a0578e-3c3b-7af3-a347-10e1901b9055",
       "title": "منع تداخل وصف هوية القيد الطويل مع التذييل",
       "runtimeOwner": false,
@@ -524,7 +524,15 @@
       "priority": "P1",
       "worktree": "D:/CodexWorktrees/wave2-pdf-identity",
       "id": "W2-PDF-IDENTITY",
-      "acceptance": "Round02:118/118 passed in9files,Vitest37.86s; narrowtypes exit0/1.031s;4candidatePDF+baseline,32PNG150dpi generated. Worker reports22baseline glyph-runs entering footer to788.9204pt versus0 in long candidate,max738.088pt. Source/config fixed across stages; visual review and evidence receipt pending. Runtime explicitly released. Round01 and CRLF diagnostic preserved; Snapshot/money unchanged."
+      "acceptance": "Round02:118/118 passed in9files,Vitest37.86s; narrowtypes exit0/1.031s;4candidatePDF+baseline,32PNG150dpi reviewed. Coordinator independently inspected3PNGs and result receipts.22baseline glyph-runs entered footer to788.9204pt versus0 in long candidate,max738.088pt. Sixcode/test sources match tested bytes; Snapshot/money unchanged. Common-head runtime notyetaccepted; notdeployed.",
+      "integration": {
+        "sourceCommit": "defb380d2f2607047b697c57d5e454ff490c48c2",
+        "coordinatorHead": "7f992dedf6ae476e2f8819f249e763f2137837bc",
+        "files": 7,
+        "matchingBlobs": 7,
+        "receipt": "tmp/coordination/w2-pdf-integration/20260831T181728409760Z/receipt.json",
+        "workerArtifactManifestSha256": "2503398672A51F98566E3B392A0EAB9E354B46A84BF08E2BDEEB30EB12AFD9DF"
+      }
     },
     {
       "id": "W2-SUBSCRIPTION-CI",
