@@ -12,10 +12,11 @@ import "../../apps/web/src/styles.css";
 function Harness() {
   const [company, setCompany] = useState("1");
   const [visible, setVisible] = useState(true);
+  const [manage, setManage] = useState(true);
   const [notice, setNotice] = useState("");
-  return <I18nProvider><AuthorizationProvider authorization={{ user: { id: "7", displayName: "Test owner" }, selectedCompany: { id: company, name: "Test activity", timezone: "Asia/Riyadh" }, permissions: ["subscriptions.view", "subscriptions.manage"], modules: ["CORE_ACCOUNTING"] }}>
+  return <I18nProvider><AuthorizationProvider authorization={{ user: { id: "7", displayName: "Test owner" }, selectedCompany: { id: company, name: "Test activity", timezone: "Asia/Riyadh" }, permissions: manage ? ["subscriptions.view", "subscriptions.manage"] : ["subscriptions.view"], modules: ["CORE_ACCOUNTING"] }}>
     <main style={{ padding: 16 }}>
-      <nav><button onClick={() => setCompany(company === "1" ? "2" : "1")}>Switch activity</button><button onClick={() => setVisible(!visible)}>Toggle billing</button></nav>
+      <nav><button onClick={() => setCompany(company === "1" ? "2" : "1")}>Switch activity</button><button onClick={() => setVisible(!visible)}>Toggle billing</button><button onClick={() => setManage(!manage)}>Toggle manage permission</button></nav>
       <output>{notice}</output>
       {visible && <SubscriptionBillingCenter notify={setNotice} />}
     </main>
