@@ -1631,7 +1631,7 @@ h1, h2, h3, .brand strong { font-family: "Cairo", "Noto Sans Devanagari", Tahoma
   .platform-billing-band { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .platform-invoice-card > button { grid-template-columns: 1fr auto; }
   .platform-invoice-card > button > div:last-child { grid-column: 1 / -1; text-align: start; }
-  .platform-range-presets { width: 100%; overflow-x: auto; }
+  .platform-range-presets { width: 100%; flex-wrap: wrap; }
   .platform-range-presets button { flex: 1 0 auto; }
   .platform-analytics-meta, .platform-analytics-meta-actions { align-items: stretch; flex-direction: column; }
   .platform-analytics-meta-actions > *, .platform-analytics-meta-actions select { width: 100%; }
