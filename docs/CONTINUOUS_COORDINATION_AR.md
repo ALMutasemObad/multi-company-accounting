@@ -19,6 +19,8 @@
 
 ## العمل والموارد
 
+تعطلت أوامرPowerShellالقرائية حتىGet-Date في31أغسطس. القناةالمتحققة الحالية exec_command معshell=C:/Windows/System32/cmd.exe وlogin:false وtty:false،واستدعاء ملفاتPythonالمضمنةمع-B وNodeمباشرة ببيئةطفلD. لا تنفذenv.ps1 أوتعِدprobePowerShell. كلجلساتالعمالالمعلومةأُغلقت،وأُغلقprobeالمنسق وحده بعدمطابقةهويته؛ لا تنظيفعام أوتغييرإعداد. التفصيل فيtmp/coordination/shell-diagnostic-20260831/DIAGNOSIS_AR.md. مالكruntimeالآنW2-PDF-IDENTITY؛POSوQAللمصدروالقراءةالخفيفة حتىتحريره.
+
 أُنشئت أشجارW2 المنفصلة علىD منe3d6ba03،وبقيت أشجارW1 وpatches والأدلة دون مساس. node_modules المشتركة للقراءة فقط؛ لاnpm install/ci أو توليدPrismaداخلها،ولا نسخ.env. العميل المعزول المقبول داخلwave1-onboarding-policy/tmp/coordination/prisma-c7ffc99/client للقراءة فقط.
 
 مالك تشغيل محلي ثقيل واحد حسبlimitedRuntimeOwner. افحصC>=1GiB وRAM>=2.5GiB،وللمتصفح>=3GiB،قبل كل أمر. TEMP/cache/profile/logs علىD،عامل1 وretry0 وسقفNode768MiBأقل عند الإمكان. يسمح بإصلاح عيب ضمن الملكية ثم إعادة الاختبار بدليل جديد؛ لا توقف لطلب إذن المستخدم على كل إصلاح روتيني. لا إعادة أمر مالي أوreset/dropلقاعدة فاشلة.
