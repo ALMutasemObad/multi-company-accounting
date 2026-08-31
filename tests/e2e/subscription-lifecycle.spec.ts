@@ -59,6 +59,20 @@ async function mockSubscriptionApp(page: Page, permissions: string[], platformOp
     if (path === "/auth/context") return route.fulfill({ status: 204, body: "" });
     if (path === "/platform/capabilities") return json(route, { platformOperations });
     if (path === "/subscription" && request.method() === "GET") return json(route, snapshot);
+    if (path === "/subscription/usage") return json(route, {
+      companyId: company.id, measuredAt: "2026-08-30T00:00:00.000Z", consistency: "BEST_EFFORT",
+      plan: { id: plan.id, displayName: plan.displayName, billingCycle: plan.billingCycle },
+      period: { kind: "STATISTICAL_MONTH_TO_DATE", timezone: "UTC", startsAt: "2026-08-01T00:00:00.000Z",
+        endsAtExclusive: "2026-08-30T00:00:00.000Z", billingPeriodStatus: "NOT_CONFIGURED" },
+      metrics: {
+        users: { used: 1, included: 5, remaining: 4, excess: 0, state: "WITHIN_LIMIT",
+          comparisonBasis: "CURRENT_SNAPSHOT", definition: "ACTIVE_COMPANY_USERS" },
+        employees: { used: 1, included: 10, remaining: 9, excess: 0, state: "WITHIN_LIMIT",
+          comparisonBasis: "CURRENT_SNAPSHOT", definition: "ACTIVE_OR_ON_LEAVE_EMPLOYEES" },
+        postedDocuments: { used: 0, included: 100, remaining: null, excess: null, state: "UNKNOWN",
+          comparisonBasis: "UNCONFIRMED_PERIOD", definition: "DOCUMENTS_POSTED_IN_WINDOW" },
+      },
+    });
     if (path === "/subscription/catalog") return json(route, { plans: [plan], meta });
     if (path === "/subscription/billing/invoices") return json(route, {
       provider: disabledPaymentProvider,
@@ -91,7 +105,13 @@ test("keeps the subscription page reachable without business modules and hides m
 
   await expect(page.getByRole("heading", { name: "Subscription & plan" })).toBeVisible();
   await expect(page.getByText("Basic review").first()).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Included limits" })).toBeVisible();
+  const usage = page.getByRole("region", { name: "Subscription usage" });
+  await expect(usage).toBeVisible();
+  await expect(usage.getByRole("heading", { name: "Users", exact: true })).toBeVisible();
+  await expect(usage.getByRole("heading", { name: "Employees", exact: true })).toBeVisible();
+  await expect(usage.getByRole("heading", { name: "Posted documents", exact: true })).toBeVisible();
+  await expect(usage.getByText("Comparison unknown", { exact: true })).toBeVisible();
+  await expect(usage.getByRole("alert")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Invoices and electronic payments" })).toBeVisible();
   await expect(page.getByText("Electronic payments are disabled in this environment; invoices remain visible and no card data is collected.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Submit change request" })).toHaveCount(0);
