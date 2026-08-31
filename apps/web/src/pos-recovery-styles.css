@@ -1,0 +1,9 @@
+.pos-recovery { font-size: 1rem; line-height: 1.7; border: 1px solid var(--border, #bcc7d0); border-radius: 12px; padding: 1rem; overflow-wrap: anywhere; min-width: 0; }
+.pos-recovery h2 { font-size: 1.25rem; line-height: 1.5; margin: 0 0 .75rem; }
+.pos-recovery p { margin: .75rem 0; }
+.pos-recovery dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: 1rem; margin: 1rem 0; }
+.pos-recovery dt { font-weight: 700; }
+.pos-recovery dd { margin: .25rem 0 0; }
+.pos-recovery button { font: inherit; font-weight: 700; min-height: 44px; max-width: 100%; padding: .625rem 1rem; border: 1px solid currentColor; border-radius: 8px; background: transparent; color: inherit; cursor: pointer; }
+.pos-recovery button:disabled { cursor: default; opacity: .6; }
+.pos-recovery button:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
