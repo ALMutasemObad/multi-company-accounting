@@ -12,7 +12,10 @@ import {
 
 test("generated OpenAPI guards are committed and current", () => {
   assert.equal(guardedOperationIds.length, 170);
-  assert.equal(responseOperationIds.length, 323);
+  assert.equal(responseOperationIds.length, 327);
+  for (const operation of ['getPosContextIdentity', 'resolvePosContextPeriod', 'getPosContextReference', 'listPosContextOptions']) {
+    assert.ok(responseOperationIds.includes(operation));
+  }
   for (const operation of ['listSellingCatalog', 'getSellingCatalogItem', 'createItemSellingProfile', 'updateItemSellingProfile', 'listEnabledCurrencyOptions']) {
     assert.ok(responseOperationIds.includes(operation));
   }
@@ -79,7 +82,7 @@ test("guard generation reflects request constraints from the contract", () => {
 
 test("guard generation covers request transforms and response schemas", () => {
   const generated = buildGeneratedSource();
-  assert.match(generated, /openApiContractCoverage = \{ operations: 323, requestBodies: 170, responseBodies: 2144 \}/u);
+  assert.match(generated, /openApiContractCoverage = \{ operations: 327, requestBodies: 170, responseBodies: 2182 \}/u);
   assert.match(generated, /"receivableItemId": z\.string\(\).*\.transform\(\(value\) => BigInt\(value\)\)/u);
   assert.match(generated, /export const openApiResponseBodySchemas = \{/u);
 });
