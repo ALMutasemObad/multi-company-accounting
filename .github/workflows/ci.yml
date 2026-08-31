@@ -68,6 +68,7 @@ jobs:
         run: |
           npm run typecheck
           npm run e2e:typecheck
+          npm run subscription-qa:typecheck
       - name: Reject hard-coded web interface text
         run: npm run i18n:check
       - name: Verify responsive and accessible web UI contracts
@@ -212,6 +213,7 @@ jobs:
         run: |
           npm run typecheck
           npm run e2e:typecheck
+          npm run subscription-qa:typecheck
       - name: Reject hard-coded web interface text
         run: npm run i18n:check
       - name: Verify responsive and accessible web UI contracts
@@ -236,8 +238,8 @@ jobs:
         run: npm run build
       - name: Install Chromium for the end-to-end release gate
         run: node node_modules/@playwright/test/cli.js install --with-deps chromium
-      - name: Test the responsive interface matrix in Chromium
-        run: npm run visual-qa:test
+      - name: Test responsive journeys, subscription changes and billing recovery in Chromium
+        run: npm run subscription-qa:test
       - name: Test onboarding and the first accounting document on MySQL
         run: npm run e2e
       - name: Prove encrypted backup and isolated restore on MySQL
@@ -253,6 +255,8 @@ jobs:
             test-results/playwright/
             playwright-responsive-report/
             test-results/responsive-ui/
+            test-results/subscription-readiness-integration/
+            test-results/track-e/
           if-no-files-found: warn
           retention-days: 7
       - name: Remove build-only and optional dependencies

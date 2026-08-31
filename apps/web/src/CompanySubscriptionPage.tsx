@@ -1,7 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, idempotencyKey } from "./api";
-import { Can } from "./authorization-context";
-import { formatCurrencyDecimal } from "./decimal-format";
+import { api } from "./api";
+import { Can, useAuthorization } from "./authorization-context";
 import { SubscriptionBillingCenter } from "./SubscriptionBillingCenter";
 import { useI18n } from "./i18n";
 import type { SubscriptionCatalog, SubscriptionPlanVersion, SubscriptionSnapshot } from "./types";
@@ -9,6 +8,9 @@ import { Button, PageHeader, Spinner } from "./ui";
 import { clearSubscriptionPlanPreference, preferredSubscriptionPlan } from "./public-plans";
 import { CompanySubscriptionUsagePanel } from "./CompanySubscriptionUsagePanel";
 import { resolveSubscriptionPlanSelection } from "./subscription-usage";
+import { RequestError, withinRequest } from "./request-scope";
+import { SubscriptionChangeReviewDetails } from "./subscription-change-review";
+import { createSubscriptionChangeAttempt, createSubscriptionChangeReview, rememberedSubscriptionChange, rememberSubscriptionChange, sendSubscriptionChange, subscriptionChangeFingerprint, subscriptionChangeOutcome, SUBSCRIPTION_CHANGE_READ_MS, type SubscriptionChangeRecord, type SubscriptionChangeReview } from "./subscription-change-safety";
 
 type Notice = (message: string, tone?: "success" | "error") => void;
 
@@ -16,25 +18,71 @@ const moneyText = (value: string | null, currency: string, fallback: string) =>
   value === null ? fallback : `${value} ${currency}`;
 
 export function CompanySubscriptionPage({ notify }: { notify: Notice }) {
+  const { selectedCompany, user, permissionSet } = useAuthorization();
+  if (!selectedCompany || !permissionSet.has("subscriptions.view")) return null;
+  const scope = `${user.id}:${selectedCompany.id}:${permissionSet.has("subscriptions.manage")}`;
+  return <CompanySubscriptionBody key={scope} notify={notify} companyId={selectedCompany.id} scope={`${user.id}:${selectedCompany.id}`} />;
+}
+
+function CompanySubscriptionBody({ notify, companyId, scope }: { notify: Notice; companyId: string; scope: string }) {
   const { formatDateTime, t } = useI18n();
+  const { permissionSet } = useAuthorization();
   const [snapshot, setSnapshot] = useState<SubscriptionSnapshot | null>(null);
   const [catalog, setCatalog] = useState<SubscriptionCatalog>({ plans: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } });
   const [selectedPlanId, setSelectedPlanId] = useState("");
   const [optionalIds, setOptionalIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [review, setReview] = useState<SubscriptionChangeReview | null>(null);
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [record, setRecord] = useState<SubscriptionChangeRecord | null>(() => rememberedSubscriptionChange(scope));
+  const [readSucceeded, setReadSucceeded] = useState(false);
+  const recordRef = useRef(record);
+  const command = useRef<AbortController | null>(null);
+  const read = useRef<AbortController | null>(null);
+  const mounted = useRef(false);
+  const reviewHeading = useRef<HTMLDivElement>(null);
   const [error, setError] = useState("");
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [selectionMissing, setSelectionMissing] = useState(false);
   const selectionInitialized = useRef(false);
   const selectionRef = useRef("");
+  const selectedDefinition = useRef("");
   const catalogPageRef = useRef(1);
   const catalogRequest = useRef(0);
 
+  function saveRecord(next: SubscriptionChangeRecord | null) {
+    recordRef.current = next;
+    rememberSubscriptionChange(scope, next);
+    if (mounted.current) setRecord(next);
+  }
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      ++catalogRequest.current;
+      read.current?.abort();
+      if (command.current && recordRef.current?.status === "sending") {
+        rememberSubscriptionChange(scope, { ...recordRef.current, status: "uncertain" });
+      }
+      command.current?.abort();
+    };
+  }, [scope]);
+
+  useEffect(() => {
+    if (!review) return;
+    const section = reviewHeading.current?.querySelector<HTMLElement>("section");
+    section?.focus({ preventScroll: true });
+    section?.scrollIntoView({ block: "start" });
+  }, [review]);
+
   const applyCatalog = useCallback((nextCatalog: SubscriptionCatalog) => {
+    setReview(null); setAcknowledged(false);
     const candidate = selectionInitialized.current ? selectionRef.current : preferredSubscriptionPlan() ?? "";
     const resolved = resolveSubscriptionPlanSelection(nextCatalog.plans.map((plan) => plan.id), candidate, !selectionInitialized.current);
-    if (resolved.selectedId !== selectionRef.current || resolved.missing) setOptionalIds([]);
+    const definition = JSON.stringify(nextCatalog.plans.find(plan => plan.id === resolved.selectedId) ?? null);
+    if (resolved.selectedId !== selectionRef.current || resolved.missing || (selectedDefinition.current && selectedDefinition.current !== definition)) setOptionalIds([]);
+    selectedDefinition.current = definition;
     if (resolved.missing) setSelectionMissing(true);
     // Once a choice is missing, another page never selects a replacement (or restores it) implicitly.
     selectionInitialized.current = true;
@@ -46,33 +94,45 @@ export function CompanySubscriptionPage({ notify }: { notify: Notice }) {
 
   const load = useCallback(async () => {
     const requestId = ++catalogRequest.current;
+    read.current?.abort();
+    const controller = new AbortController();
+    read.current = controller;
     setCatalogLoading(true);
+    setReadSucceeded(false);
     setError("");
     try {
-      const [nextSnapshot, nextCatalog] = await Promise.all([
-        api<SubscriptionSnapshot>("/subscription?page=1&pageSize=20"),
-        api<SubscriptionCatalog>(`/subscription/catalog?page=${catalogPageRef.current}&pageSize=100`),
-      ]);
-      if (requestId !== catalogRequest.current) return;
+      const [nextSnapshot, nextCatalog] = await withinRequest(signal => Promise.all([
+        api<SubscriptionSnapshot>("/subscription?page=1&pageSize=20", { signal }),
+        api<SubscriptionCatalog>(`/subscription/catalog?page=${catalogPageRef.current}&pageSize=100`, { signal }),
+      ]), { signal: controller.signal, timeoutMs: SUBSCRIPTION_CHANGE_READ_MS });
+      if (!mounted.current || controller.signal.aborted || requestId !== catalogRequest.current) return false;
+      if (nextSnapshot.company && nextSnapshot.company.id !== companyId) throw new RequestError("response");
       setSnapshot(nextSnapshot);
       applyCatalog(nextCatalog);
+      setReadSucceeded(true);
+      return true;
     } catch (cause) {
-      if (requestId === catalogRequest.current) setError(cause instanceof Error ? cause.message : t("subscription.loadError"));
+      if (mounted.current && !controller.signal.aborted && requestId === catalogRequest.current) setError(t("subscriptionChanges.readFailed"));
+      return false;
     } finally {
-      if (requestId === catalogRequest.current) { setLoading(false); setCatalogLoading(false); }
+      if (mounted.current && requestId === catalogRequest.current) { setLoading(false); setCatalogLoading(false); }
     }
-  }, [applyCatalog, t]);
+  }, [applyCatalog, companyId, t]);
 
   async function pageCatalog(page: number) {
+    if (command.current || recordRef.current) return;
     const requestId = ++catalogRequest.current;
+    read.current?.abort();
+    const controller = new AbortController(); read.current = controller;
+    setReview(null); setAcknowledged(false);
     setCatalogLoading(true); setError("");
     try {
-      const result = await api<SubscriptionCatalog>(`/subscription/catalog?page=${page}&pageSize=100`);
-      if (requestId === catalogRequest.current) applyCatalog(result);
+      const result = await api<SubscriptionCatalog>(`/subscription/catalog?page=${page}&pageSize=100`, { signal: controller.signal, timeoutMs: SUBSCRIPTION_CHANGE_READ_MS });
+      if (mounted.current && !controller.signal.aborted && requestId === catalogRequest.current) applyCatalog(result);
     } catch (cause) {
-      if (requestId === catalogRequest.current) setError(cause instanceof Error ? cause.message : t("subscription.loadError"));
+      if (mounted.current && !controller.signal.aborted && requestId === catalogRequest.current) setError(t("subscriptionChanges.readFailed"));
     } finally {
-      if (requestId === catalogRequest.current) setCatalogLoading(false);
+      if (mounted.current && requestId === catalogRequest.current) setCatalogLoading(false);
     }
   }
 
@@ -85,14 +145,18 @@ export function CompanySubscriptionPage({ notify }: { notify: Notice }) {
   const optionalModules = selectedPlan?.modules.filter((module) => module.selectionMode === "OPTIONAL" && module.active) ?? [];
 
   function selectPlan(id: string) {
+    if (command.current || recordRef.current) return;
+    setReview(null); setAcknowledged(false);
     selectionRef.current = id;
+    selectedDefinition.current = JSON.stringify(catalog.plans.find(plan => plan.id === id) ?? null);
     setSelectionMissing(false);
     setSelectedPlanId(id);
     setOptionalIds([]);
   }
 
   function toggleOptional(id: string) {
-    if (!selectedPlan) return;
+    if (!selectedPlan || command.current || recordRef.current) return;
+    setReview(null); setAcknowledged(false);
     setOptionalIds((current) => {
       const selected = new Set(current);
       if (!selected.has(id)) {
@@ -124,29 +188,39 @@ export function CompanySubscriptionPage({ notify }: { notify: Notice }) {
     });
   }
 
-  async function submit(event: FormEvent) {
+  function submit(event: FormEvent) {
     event.preventDefault();
-    if (!snapshot || !selectedPlan || catalogLoading || saving) return;
+    if (!snapshot || !selectedPlan || catalogLoading || command.current || recordRef.current || !permissionSet.has("subscriptions.manage")) return;
+    setAcknowledged(false);
+    setReview(createSubscriptionChangeReview(selectedPlan, optionalIds, snapshot.subscription.version));
+  }
+
+  async function confirm(sameAttempt = false) {
+    if (command.current || catalogLoading || !permissionSet.has("subscriptions.manage")) return;
+    const previous = recordRef.current;
+    if (sameAttempt ? previous?.status !== "uncertain" : Boolean(previous)) return;
+    if (!sameAttempt && (!review || !acknowledged || !snapshot || !selectedPlan
+      || review.fingerprint !== subscriptionChangeFingerprint(selectedPlan, optionalIds, snapshot.subscription.version))) {
+      setReview(null); setAcknowledged(false); return;
+    }
+    const attempt = sameAttempt ? previous!.attempt : createSubscriptionChangeAttempt(review!);
+    const controller = new AbortController();
+    command.current = controller; // synchronous lock, before React's next render
+    saveRecord({ attempt, status: "sending" });
     setSaving(true);
+    setReadSucceeded(false);
     setError("");
     try {
-      const result = await api<{ change: { state: string }; paymentCollected: false }>("/subscription/change-requests", {
-        method: "POST",
-        idempotencyKey: idempotencyKey("subscription-change", selectedPlan.id),
-        body: JSON.stringify({
-          targetPlanVersionId: selectedPlan.id,
-          optionalModuleIds: optionalIds,
-          subscriptionVersion: snapshot.subscription.version,
-        }),
-      });
-      notify(result.change.state === "PENDING_APPROVAL"
-        ? t("subscription.requestPending") : t("subscription.changeApplied"));
+      const result = await sendSubscriptionChange(attempt, controller.signal);
+      if (!mounted.current || controller.signal.aborted) return;
+      saveRecord({ attempt, status: "succeeded", result });
+      notify(t(result === "PENDING_APPROVAL" ? "subscriptionChanges.pending" : "subscriptionChanges.succeeded"));
       clearSubscriptionPlanPreference();
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t("subscription.changeError"));
+      if (mounted.current) saveRecord({ attempt, status: subscriptionChangeOutcome(cause) });
     } finally {
-      setSaving(false);
+      if (mounted.current && command.current === controller) { command.current = null; setSaving(false); }
     }
   }
 
@@ -166,7 +240,7 @@ export function CompanySubscriptionPage({ notify }: { notify: Notice }) {
         kicker={t("subscription.kicker")}
         title={t("subscription.title")}
         description={t("subscription.description")}
-        actions={<Button variant="secondary" onClick={() => void load()}>{t("common.refresh")}</Button>}
+        actions={<Button variant="secondary" disabled={saving || catalogLoading} onClick={() => void load()}>{t("common.refresh")}</Button>}
       />
       {error && <div className="form-error" role="alert">{error}</div>}
 
@@ -183,29 +257,48 @@ export function CompanySubscriptionPage({ notify }: { notify: Notice }) {
             : <div className="empty-state"><h3>{t("subscription.noModules")}</h3><p>{t("subscription.noModulesDescription")}</p></div>}
         </section>
 
-      {(snapshot.scheduled || snapshot.pending) && <section className="panel subscription-panel subscription-attention">
-        <header><div><h2>{snapshot.pending ? t("subscription.pendingChange") : t("subscription.scheduledChange")}</h2><p>{snapshot.pending ? t("subscription.pendingPaymentSafe") : t("subscription.effectiveOn", { value1: formatDateTime(snapshot.scheduled!.effectiveAt!) })}</p></div></header>
+      {([{ change: snapshot.pending, pending: true }, { change: snapshot.scheduled, pending: false }]).map(({ change, pending }) => change && <section key={pending ? "pending" : "scheduled"} className="panel subscription-panel subscription-attention">
+        <header><div><h2>{pending ? t("subscription.pendingChange") : t("subscription.scheduledChange")}</h2><p>{pending ? t("subscription.pendingPaymentSafe") : t("subscription.effectiveOn", { value1: change.effectiveAt ? formatDateTime(change.effectiveAt) : "—" })}</p></div></header>
         <div className="subscription-change-card">
-          <strong>{(snapshot.pending ?? snapshot.scheduled)!.plan.displayName}</strong>
-          <span>{moneyText((snapshot.pending ?? snapshot.scheduled)!.quote.totalRecurringFee, (snapshot.pending ?? snapshot.scheduled)!.quote.currencyCode, t("subscription.unpriced"))}</span>
+          <strong>{change.plan.displayName}</strong>
+          <span>{moneyText(change.quote.totalRecurringFee, change.quote.currencyCode, t("subscription.unpriced"))}</span>
         </div>
-      </section>}
+      </section>)}
 
       <Can policy={{ permission: "subscriptions.manage" }}>
         <form className="panel subscription-panel subscription-change-form" onSubmit={submit}>
           <header><div><h2>{t("subscription.choosePlan")}</h2><p>{t("subscription.choosePlanDescription")}</p></div></header>
           {selectionMissing && <p className="subscription-catalog-notice" role="status">{t("subscriptionUsage.selectionMissing")}</p>}
           {catalog.plans.length ? <div className="subscription-form-body">
-            <label><span>{t("subscription.plan")}</span><select disabled={catalogLoading || saving} value={selectedPlanId} onChange={(event) => selectPlan(event.target.value)}><option value="">{t("subscriptionUsage.selectPlan")}</option>{catalog.plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.displayName} — {moneyText(plan.recurringFee, plan.currencyCode, t("subscription.unpriced"))}</option>)}</select></label>
+            <label><span>{t("subscription.plan")}</span><select disabled={catalogLoading || saving || Boolean(record)} value={selectedPlanId} onChange={(event) => selectPlan(event.target.value)}><option value="">{t("subscriptionUsage.selectPlan")}</option>{catalog.plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.displayName} — {moneyText(plan.recurringFee, plan.currencyCode, t("subscription.unpriced"))}</option>)}</select></label>
             {selectedPlan && <PlanPreview plan={selectedPlan} t={t} />}
-            {optionalModules.length > 0 && <fieldset><legend>{t("subscription.optionalModules")}</legend><div className="subscription-option-grid">{optionalModules.map((module) => <label key={module.id}><input type="checkbox" checked={optionalIds.includes(module.id)} onChange={() => toggleOptional(module.id)} /><span><strong>{module.displayName}</strong><small>{moneyText(module.additionalRecurringFee, selectedPlan!.currencyCode, t("subscription.free"))}</small></span></label>)}</div></fieldset>}
+            {optionalModules.length > 0 && <fieldset disabled={catalogLoading || saving || Boolean(record)}><legend>{t("subscription.optionalModules")}</legend><div className="subscription-option-grid">{optionalModules.map((module) => <label key={module.id}><input type="checkbox" checked={optionalIds.includes(module.id)} onChange={() => toggleOptional(module.id)} /><span><strong>{module.displayName}</strong><small>{moneyText(module.additionalRecurringFee, selectedPlan!.currencyCode, t("subscriptionChanges.notConfigured"))}</small></span></label>)}</div></fieldset>}
             <div className="subscription-safe-note">{t("subscription.paymentSafety")}</div>
-            <Button type="submit" disabled={!selectedPlan || saving || catalogLoading}>{saving ? t("common.saving") : t("subscription.submitChange")}</Button>
+            {!record && <Button type="submit" disabled={!selectedPlan || saving || catalogLoading}>{t("subscriptionChanges.review")}</Button>}
           </div> : <div className="empty-state"><h3>{t("subscription.noPlans")}</h3><p>{t("subscription.noPlansDescription")}</p></div>}
           {catalog.meta.totalPages > 1 && <div className="pagination subscription-catalog-pagination">
-            <Button type="button" variant="ghost" disabled={catalogLoading || saving || catalog.meta.page <= 1} onClick={() => void pageCatalog(catalog.meta.page - 1)}>{t("common.previous")}</Button>
+            <Button type="button" variant="ghost" disabled={catalogLoading || saving || Boolean(record) || catalog.meta.page <= 1} onClick={() => void pageCatalog(catalog.meta.page - 1)}>{t("common.previous")}</Button>
             <span>{t("subscriptionUsage.catalogPage", { value1: catalog.meta.page, value2: catalog.meta.totalPages })}</span>
-            <Button type="button" variant="ghost" disabled={catalogLoading || saving || catalog.meta.page >= catalog.meta.totalPages} onClick={() => void pageCatalog(catalog.meta.page + 1)}>{t("common.next")}</Button>
+            <Button type="button" variant="ghost" disabled={catalogLoading || saving || Boolean(record) || catalog.meta.page >= catalog.meta.totalPages} onClick={() => void pageCatalog(catalog.meta.page + 1)}>{t("common.next")}</Button>
+          </div>}
+          {(review || record) && <div ref={reviewHeading}>
+            <SubscriptionChangeReviewDetails review={record?.attempt.review ?? review!} />
+            {(snapshot.pending || snapshot.scheduled) && <p>{t("subscriptionChanges.existingChange")}</p>}
+            {!record && <>
+              <label className="subscription-change-confirmation"><input type="checkbox" checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)} /><span>{t("subscriptionChanges.acknowledge")}</span></label>
+              <div className="subscription-change-actions"><Button type="button" disabled={!acknowledged || catalogLoading} onClick={() => void confirm()}>{t("subscriptionChanges.confirm")}</Button><Button type="button" variant="secondary" onClick={() => { setReview(null); setAcknowledged(false); }}>{t("subscriptionChanges.edit")}</Button></div>
+            </>}
+          </div>}
+          {record && <div className="subscription-change-recovery" role="status" aria-live="polite">
+            <p>{t(record.status === "sending" ? "subscriptionChanges.waiting" : record.status === "succeeded" ? record.result === "PENDING_APPROVAL" ? "subscriptionChanges.pending" : "subscriptionChanges.succeeded" : `subscriptionChanges.${record.status}`)}</p>
+            {record.status === "uncertain" && <p>{t("subscriptionChanges.memoryLimit")}</p>}
+            {record.status === "succeeded" && error && <p>{t("subscriptionChanges.reloadFailed")}</p>}
+            <div className="subscription-change-actions">
+              {record.status === "sending" && <Button type="button" variant="secondary" onClick={() => command.current?.abort()}>{t("subscriptionChanges.cancelWait")}</Button>}
+              {record.status !== "sending" && <Button type="button" variant="secondary" disabled={saving || catalogLoading} onClick={() => void load()}>{t("subscriptionChanges.refreshOnly")}</Button>}
+              {record.status === "uncertain" && <Button type="button" disabled={saving || catalogLoading} onClick={() => void confirm(true)}>{t("subscriptionChanges.retrySame")}</Button>}
+              {record.status !== "sending" && record.status !== "uncertain" && <Button type="button" disabled={saving || catalogLoading || !readSucceeded} onClick={() => { saveRecord(null); setReview(null); setAcknowledged(false); }}>{t("subscriptionChanges.newReview")}</Button>}
+            </div>
           </div>}
         </form>
       </Can>

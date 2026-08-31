@@ -1,0 +1,6 @@
+.billing-recovery-notice { border: 1px solid var(--line); border-radius: 12px; padding: 16px; background: var(--surface); font-size: 16px; line-height: 1.8; overflow-wrap: anywhere; }
+.billing-recovery-notice p { margin: 0 0 10px; }
+.billing-recovery-notice p:last-child { margin-bottom: 0; }
+.subscription-billing-center > .subscription-section-heading { flex-wrap: wrap; gap: 12px; }
+.subscription-billing-center > .subscription-section-heading > div { min-width: 0; }
+.subscription-billing-center .billing-recovery-notice button { min-height: 44px; white-space: normal; }

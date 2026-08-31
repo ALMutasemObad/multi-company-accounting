@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.e2e.json",
+  "compilerOptions": { "module": "ESNext", "moduleResolution": "Bundler", "jsx": "react-jsx", "allowImportingTsExtensions": true },
+  "include": ["playwright.track-e.config.ts", "vite.track-e.config.ts", "tests/track-e/**/*.ts", "tests/track-e/**/*.tsx"]
+}

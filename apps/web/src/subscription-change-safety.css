@@ -1,0 +1,18 @@
+.subscription-change-review, .subscription-change-recovery { min-width: 0; padding: 1rem; border: 1px solid var(--border, #d5dedb); border-radius: 12px; overflow-wrap: anywhere; }
+.subscription-change-review { scroll-margin-block-start: 6rem; }
+.subscription-change-review h3, .subscription-change-review h4 { margin: 0 0 1rem; }
+.subscription-change-review dl { margin: 0 0 1rem; }
+.subscription-change-review dl > div { display: flex; justify-content: space-between; gap: 1rem; padding-block: .5rem; border-bottom: 1px solid var(--border, #d5dedb); }
+.subscription-change-review dd { margin: 0; text-align: end; }
+.subscription-change-review ul { padding: 0; list-style: none; }
+.subscription-change-review li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem; padding-block: .5rem; }
+.subscription-change-review p, .subscription-change-recovery p { line-height: 1.7; }
+.subscription-change-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-block-start: 1rem; }
+.subscription-change-actions button { min-height: 44px; white-space: normal; }
+.subscription-change-confirmation { display: flex !important; align-items: start; gap: .75rem; margin-block: 1rem; }
+.subscription-change-confirmation input { min-width: 22px; min-height: 22px; width: 22px; margin-block-start: .2rem; }
+@media (max-width: 600px) {
+  .subscription-change-review dl > div { flex-direction: column; gap: .25rem; }
+  .subscription-change-review dd { text-align: start; }
+  .subscription-change-actions button { flex: 1 1 100%; }
+}
