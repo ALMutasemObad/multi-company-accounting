@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedDate": "2026-08-31T18:26:24.856623+00:00",
+  "updatedDate": "2026-08-31T18:45:39.614061+00:00",
   "coordinatorThreadId": "01a05783-e720-7ed0-a107-4a372bd53202",
   "projectId": "c3fd65c7-6c00-45d1-9859-46f96966dc38",
   "repository": "D:/CodexWorktrees/continuous-coordination",
@@ -17,7 +17,7 @@
     "cadenceMinutes": 10,
     "status": "ACTIVE"
   },
-  "browserOwner": null,
+  "browserOwner": "W2-POS-CONTEXT",
   "runtimeIncident": {
     "status": "powershell_unavailable_cmd_python_validated",
     "scope": "PowerShell Get-Date stalled as well as worker read-only commands. CMD ver and Python native read/resource queries succeeded. No system configuration or dependency changes.",
@@ -157,7 +157,8 @@
         "testSeconds": 64.6,
         "failed": 0,
         "evidence": "D:/CodexWorktrees/wave1-pdf-decimal/tmp/coordination/w2-qa-20260831-round02"
-      }
+      },
+      "runtimeOwner": false
     },
     {
       "id": "W1-POS",
@@ -249,7 +250,8 @@
         "path": "D:/CodexWorktrees/wave1-pos-recovery/tmp/coordination/ci-pos-recovery-proposal"
       },
       "integratedAt": "a4f8e0c16dc03ce5d6869bcd21c194335efe0bd1",
-      "currentValidation": "Integrated in release46/e3d6ba03; current dual-engine CI, browser and production runtime gates passed. Historical artifacts/limits below are preserved, not current blockers."
+      "currentValidation": "Integrated in release46/e3d6ba03; current dual-engine CI, browser and production runtime gates passed. Historical artifacts/limits below are preserved, not current blockers.",
+      "runtimeOwner": false
     },
     {
       "id": "W1-ONBOARD",
@@ -328,7 +330,8 @@
         "head": "6bb49994b8cda50afcc8331e28ee900925d9dc4a"
       },
       "integratedAt": "a4f8e0c16dc03ce5d6869bcd21c194335efe0bd1",
-      "currentValidation": "Integrated in release46/e3d6ba03; current dual-engine CI, browser and production runtime gates passed. Historical artifacts/limits below are preserved, not current blockers."
+      "currentValidation": "Integrated in release46/e3d6ba03; current dual-engine CI, browser and production runtime gates passed. Historical artifacts/limits below are preserved, not current blockers.",
+      "runtimeOwner": false
     },
     {
       "id": "W1-QA",
@@ -407,7 +410,8 @@
         "runtime": "No D3generation/types/HTTP/browser run yet",
         "e2eTypesScope": "Generaltsconfig.e2e excludes subscription-discovery; D3spec requires explicitoverlay"
       },
-      "currentValidation": "Integrated in release46/e3d6ba03; current dual-engine CI, browser and production runtime gates passed. Historical artifacts/limits below are preserved, not current blockers."
+      "currentValidation": "Integrated in release46/e3d6ba03; current dual-engine CI, browser and production runtime gates passed. Historical artifacts/limits below are preserved, not current blockers.",
+      "runtimeOwner": false
     },
     {
       "id": "W1-DB-PREP",
@@ -496,13 +500,14 @@
         "runtimeAuthorized": false,
         "scope": "Readback895files/1551728300bytes then186EXE/DLL cached-onlyinventory; no targetPE, no trustdecision, authenticatedtimestampnull"
       },
-      "currentValidation": "Archives extracted as data only; target binaries not executed. Release46 real DB acceptance was completed in CI."
+      "currentValidation": "Archives extracted as data only; target binaries not executed. Release46 real DB acceptance was completed in CI.",
+      "runtimeOwner": false
     },
     {
-      "status": "validation_window_granted",
+      "status": "grocery_browser_window_granted",
       "threadId": "01a0578e-6281-7ab2-9d37-2e5b8935eaf2",
       "title": "عزل سياق الكاشير وربط N2",
-      "runtimeOwner": false,
+      "runtimeOwner": true,
       "branch": "fix/wave2-pos-context",
       "hostId": "local",
       "base": "e3d6ba03aec8ceabd42428d67855fad2683968a6",
@@ -511,7 +516,7 @@
       "id": "W2-POS-CONTEXT",
       "contract": "X-POS-Expected-User-Id + X-POS-Expected-Company-Id; mandatory POS routes, both-or-neither owner reads. Session Actor only; named409 POS_CONTEXT_CHANGED; captured identity verified before/after reads; posContext response identity. Preserve N1 body/fingerprint/cached result and quarantine after marker.",
       "approvedScopeAddition": "PosCart reader injection plus optional expected-scope read hunks in account-router.ts and tax-router.ts; OpenAPI posContext and scoped read tests. No account/tax service policy or schema changes. Both-or-neither headers; old callers unchanged; captured Actor checked before/after and late UI results rejected.",
-      "runtime": "Released after final483/483 across24files andWeb/API-src-tests types passed; generator/check passed. Client21/21 and source hashes unchanged across final gates. Earlier startup/minWorkers and6financial-body-schema failures preserved and corrected. NoW2DB/browser/build acceptance; grocery fixture adaptation source-only is next.",
+      "runtime": "W2-POS-GROCERY-20260831-A: exclusive3165/4215 after finalsourcefreeze, owned readiness andcleanupchecks. types/list19/browser19; worker1/retry0,Dprofile, noDB. Root released allruntime.",
       "integration": {
         "sourceCommit": "af0b31adc0782b4245e4d70cc4c87d8d4f9b4316",
         "coordinatorHead": "dc9fef38ca5393f1574f36e543d4b8e68d73e42c",
@@ -550,12 +555,18 @@
       "worktree": "D:/CodexWorktrees/wave2-subscription-ci",
       "branch": "test/wave2-subscription-ci",
       "base": "e3d6ba03aec8ceabd42428d67855fad2683968a6",
-      "status": "validated_checkpoint_pending",
+      "status": "validated_and_integrated_locally",
       "runtimeOwner": false,
       "priority": "P1",
       "scope": "Portable58case subscription-discovery/D3 test configuration,ownedfixture lifecycle,package/type scripts and narrow existingverifyjob CI step/artifacts only. No product/OpenAPI/PosPage changes; no new dependencies/jobs/services.",
       "runtime": "Explicitly released; ownedfixture/Vite ended and3166/4216 free. Old unrelatedAnyDesk excluded bycreationtime,not touched.",
-      "acceptance": "Worker:35/35guards,list58(collectiononly),noEmit,58/58browser accepted withzero retry/skip/issues;run-O1389C,186.203s.30sourcehashes unchanged; nofix/rerun. Handoff/checkpoint pending; notyetcombined acceptance."
+      "acceptance": "35guards/list58/types/58browser passed onworker. Shared321infra andsubscriptiontypes passed oncombined branch; LinuxCI notrunyet.",
+      "integration": {
+        "sourceCommit": "59c9a76258d20c0855055b24b6adf15050eeda2c",
+        "coordinatorHead": "f8da743154a89888b3a5d936dcece35c449e65b6",
+        "matchingBlobs": 14,
+        "receipt": "tmp/coordination/w2-subscription-ci-integration/20260831T183230458741Z/receipt.json"
+      }
     },
     {
       "id": "W2-COMBINED-GATES",
@@ -563,9 +574,11 @@
       "title": "تحقق فرع W2 المجمع",
       "worktree": "D:/CodexWorktrees/continuous-coordination",
       "branch": "coord/wave2-20260831",
-      "status": "preparing_validation",
-      "runtimeOwner": true,
-      "scope": "Coordinator contracts/types/focused/architecture/build checks after reviewed commits; one heavyowner, noDBdaemon/install/hosting publication."
+      "status": "passed",
+      "runtimeOwner": false,
+      "scope": "Coordinator contracts/types/focused/architecture/build checks after reviewed commits; one heavyowner, noDBdaemon/install/hosting publication.",
+      "acceptance": "1046/1046 in54files; Web/API-src-tests/subscription/E2E types andi18n passed. Sharedguard inventories corrected; UI+321infra+Webbuild passed. Product bytes identical across finalheads; noDB/POSbrowser acceptance.",
+      "receipt": "tmp/coordination/w2-combined/COMPLETION_RECEIPT.json"
     },
     {
       "id": "W3-RETAIL-RECEIPT",
@@ -579,6 +592,17 @@
       "priority": "P1",
       "runtimeOwner": false,
       "scope": "Integrate N3 existingarchive-only preview forconfirmedresult.invoice.id withN2scope safeguards,58/80mm screenpreview andexplicitexistingA4download. Printing-ownedadapter/service/HTTPcontract andnarrowPosPageUI; nofinancialreplay,schema,barcodeinvention,thermal/device claim,dependencies orpublication."
+    },
+    {
+      "id": "W2-POS-VISUAL-COMPAT",
+      "threadId": "01a0578e-85b1-7141-bc2e-b4f88bcac12d",
+      "title": "مواءمة اختبار POS للقراءة فقط مع سياق الشركة",
+      "worktree": "D:/CodexWorktrees/wave2-pos-visual-compat",
+      "branch": "fix/wave2-pos-visual-compat",
+      "base": "371917a334e87aea3131dc2a9acc4cb4a63f8fe6",
+      "status": "source_preparation",
+      "runtimeOwner": false,
+      "scope": "Visualfixture identity/history metadata andread-onlyhistory/absenceoffinancialcontrols assertions. Threefilesonly.16existingall29screens cases; nofull336/productchanges."
     }
   ],
   "queue": [
@@ -606,7 +630,7 @@
     }
   ],
   "browserResourceStatus": "Released after anonymous post-deployment login/plans DOM checks; viewport reset.",
-  "limitedRuntimeOwner": "W2-COMBINED-GATES",
+  "limitedRuntimeOwner": "W2-POS-CONTEXT",
   "validationOrder": [
     "Task-specific units/types in isolated worktrees",
     "Review exact-source evidence and integrate locally",
@@ -617,14 +641,14 @@
     "Official portable Windows MariaDB10.11/MySQL8.4 distribution options;no downloads/install/processesauthorized.",
     "Isolated Prisma client generation/output/import options using existing tooling;no generation orjunction/shareddependencywritesauthorized."
   ],
-  "activeCapacityNote": "Coordinator owns combinedvalidation. POS preparesgrocery/browser regressions; QA58passed and checkpoints; PDFclosed andsameworker startedindependentW3N3sourceworktree. Evaluator staysclosed. Atmostfouractivepaths,oneheavyowner.",
+  "activeCapacityNote": "POS owns grocerybrowser19. QA preparesvisual16 compatibility; N3 implementsreceipt sourceonly; coordinator recordscombinedgates. Fourpaths,oneheavyowner.",
   "prismaIsolationPlan": "Executed successfully inONBOARDownedDfolder. Generate/Smoke/154policyunits/APItypesPASS withNODE_OPTIONS512 andnoDB;shared91files/protectedunchanged. N1mayuseclientreadonlypermanifest569F946A. Temporarysourcealiases stilldoNOTprove distserver/E2Eruntime.",
   "pendingRuntimeWindows": [
-    "POS existinggrocery andcross-tab browser acceptance after coordinator releases runtime and fixture freeze",
-    "W3 retailreceipt runtime onlyafter scopedsourcefreeze andexplicit allocation"
+    "W2-POS-VISUAL-COMPAT affected16cases after POS releases its browser window",
+    "W3-RETAIL-RECEIPT onlyafter sourcefreeze andcoordinatorreview"
   ],
   "coordinatorGitException": "Completed successfully: df39116 committedonly2coordinationdocs afterdiffcheck;index/worktreecleanthen. No hooks override/ACLchange. This demonstrates localGitwriteworkedafterspace recovery,doesnotprovepriorrootcause.",
-  "lastCoordinatorCommit": "b95e00b6e26e92d632b02b20c4a28d56e62fae08",
+  "lastCoordinatorCommit": "108d59764650568854e386de5a4d8e1510f0f071",
   "gitWriteOwner": null,
   "evaluationTask": {
     "threadId": "01a05803-cf2b-77c1-9415-e0839dff48d6",

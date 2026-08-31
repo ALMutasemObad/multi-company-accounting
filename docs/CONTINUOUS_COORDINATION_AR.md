@@ -10,6 +10,8 @@
 
 نسخة التنسيق D:/CodexWorktrees/continuous-coordination على coord/wave2-20260831. [لوحة المهام](COORDINATION_BOARD.json) هي مرجع الملكية الحالي. مخرجاتW1 القديمة محفوظة ولا تعاد كتابتها أو استيرادها من جديد؛ سجل التنسيق قبل الاستئناف موجود في تاريخ Git عندe3d6ba03.
 
+اكتمل تجميع W2 محليًا:1046/1046 اختبارًا في54ملفًا، والأنواع والترجمة، ثم321/321 اختبارًا للبنية وحارسUI وبناءWeb. تفاصيل الرؤوس وثبات753ملف منتج بين مراحل التحقق في [قبول التجميع](W2_COMBINED_VALIDATION_AR.md). نجح قبول الاشتراكات58/58 على شجرة عامله؛ يستكمل POS الآن19حالة متصفح، وتُجهّز مواءمة16حالة واجهة قديمة للقراءة فقط. بدأ N3 في شجرةwave3-retail-receipt منالرأسdc9، لعرض إيصال الفاتورة المؤكدة؛ عمله مستقل ولا يؤخر إغلاق W2. لا نشر جديد ولا قبول DB للدفعة الحالية.
+
 ## الدفعة التالية
 
 - W2-POS-CONTEXT: دمجN2 وعزل سياق الكاشير؛ مالكPosPage وPOS ingress/reads والعقد المشترك المحدد. الأساس المنشور فقط،لا عودة إلىN1 القديم.
@@ -19,7 +21,7 @@
 
 ## العمل والموارد
 
-تعطلت أوامرPowerShellالقرائية حتىGet-Date في31أغسطس. القناةالمتحققة الحالية exec_command معshell=C:/Windows/System32/cmd.exe وlogin:false وtty:false،واستدعاء ملفاتPythonالمضمنةمع-X utf8 -B وNodeمباشرة ببيئةطفلD. لا تنفذenv.ps1 أوتعِدprobePowerShell. كلجلساتالعمالالمعلومةأُغلقت،وأُغلقprobeالمنسق وحده بعدمطابقةهويته؛ لا تنظيفعام أوتغييرإعداد. التفصيل فيtmp/coordination/shell-diagnostic-20260831/DIAGNOSIS_AR.md. مالكruntime الفعلي وترتيب الانتظار فيlimitedRuntimeOwner وpendingRuntimeWindows باللوحة؛ لا تستنتجه من رسالة تاريخية. أنهىPDF118اختبارًا والأنواع و32PNGمراجعة،وسلّمdefb380. أنهىPOS483اختبارًا وWeb/APItypes،وبقي قبولgrocery/السياق بالمتصفح؛ بدأ دوربوابةCIللـ58.
+تعطلت أوامرPowerShellالقرائية حتىGet-Date في31أغسطس. القناةالمتحققة الحالية exec_command معshell=C:/Windows/System32/cmd.exe وlogin:false وtty:false،واستدعاء ملفاتPythonالمضمنةمع-X utf8 -B وNodeمباشرة ببيئةطفلD. لا تنفذenv.ps1 أوتعِدprobePowerShell. كلجلساتالعمالالمعلومةأُغلقت،وأُغلقprobeالمنسق وحده بعدمطابقةهويته؛ لا تنظيفعام أوتغييرإعداد. التفصيل فيtmp/coordination/shell-diagnostic-20260831/DIAGNOSIS_AR.md. مالكruntime الفعلي وترتيب الانتظار فيlimitedRuntimeOwner وpendingRuntimeWindows باللوحة؛ لا تستنتجه من رسالة تاريخية. أنهىPDF118اختبارًا والأنواع و32PNGمراجعة،وسلّمdefb380. أنهىPOS483اختبارًا وWeb/APItypes،وبقي قبولgrocery/السياق بالمتصفح. اكتملت بوابةCIللـ58 وسلمت59c9، واستُوردت مع PDF وPOS إلى فرع التنسيق.
 
 أُنشئت أشجارW2 المنفصلة علىD منe3d6ba03،وبقيت أشجارW1 وpatches والأدلة دون مساس. node_modules المشتركة للقراءة فقط؛ لاnpm install/ci أو توليدPrismaداخلها،ولا نسخ.env. العميل المعزول المقبول داخلwave1-onboarding-policy/tmp/coordination/prisma-c7ffc99/client للقراءة فقط.
 
