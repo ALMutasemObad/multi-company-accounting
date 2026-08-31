@@ -7,7 +7,7 @@ import { RequestError } from "./request-scope";
 import { localizedBrand } from "./branding";
 import { localizedReferenceName, LanguageSwitcher, localeDetails, resolveLocale, supportedLocales, useI18n, type Locale } from "./i18n";
 import { Button, Spinner } from "./ui";
-import { preferredSubscriptionPlan } from "./public-plans";
+import { subscriptionPlanForRoute } from "./public-plans";
 
 type RegistrationOptions = {
   currencies: Array<{ code: string; nameAr: string; decimals: number }>;
@@ -122,7 +122,7 @@ export function RegistrationPage({ onBackToLogin }: { onBackToLogin: () => void 
               <h2>{t("registration.title")}</h2>
               <p>{t("registration.description")}</p>
               <a className="auth-text-link" href="/plans">{t("publicPlans.viewPage")}</a>
-              {preferredSubscriptionPlan() && <div className="public-plan-selection">{t("publicPlans.selectionNote")}</div>}
+              {subscriptionPlanForRoute(location.hash) && <div className="public-plan-selection">{t("publicPlans.selectionNote")}</div>}
               {validationError && <div className="form-error" role="alert">{validationError}</div>}
               <AuthFeedback {...optionsAction} />
               <AuthFeedback {...action} hint={uncertainAuthResult(action.error) ? "authResilience.mailUncertain" : undefined} />

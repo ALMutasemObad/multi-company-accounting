@@ -16,6 +16,26 @@ export type PublicSubscriptionCatalog = {
 
 const intentKey = storageKey("subscription-plan-intent");
 const validPlanId = (id: string) => /^[1-9][0-9]{0,19}$/u.test(id);
+type SubscriptionPlanDestination = "login" | "register" | "subscription";
+export const subscriptionRouteBase = (hash: string) => hash.split("?", 1)[0] ?? "";
+
+function routePlan(hash: string): { present: boolean; id: string | null } {
+  if (!["#login", "#register", "#subscription"].includes(subscriptionRouteBase(hash))) return { present: false, id: null };
+  const queryStart = hash.indexOf("?");
+  const ids = new URLSearchParams(queryStart < 0 ? "" : hash.slice(queryStart + 1)).getAll("plan");
+  return { present: ids.length > 0, id: ids.length === 1 && validPlanId(ids[0]!) ? ids[0]! : null };
+}
+
+// URL intent is explicit and survives disabled storage. It is never a purchase command.
+// An invalid/ambiguous explicit parameter must not resurrect an older stored choice.
+export function subscriptionPlanForRoute(hash: string): string | null {
+  const candidate = routePlan(hash);
+  return candidate.present ? candidate.id : preferredSubscriptionPlan();
+}
+export const subscriptionPlanHash = (destination: SubscriptionPlanDestination, id: string | null) =>
+  `${destination}${id && validPlanId(id) ? `?plan=${encodeURIComponent(id)}` : ""}`;
+export const subscriptionPlanHref = (destination: SubscriptionPlanDestination, id: string | null) =>
+  `/#${subscriptionPlanHash(destination, id)}`;
 
 // A short-lived UI preference only. The authenticated catalog and command revalidate it.
 export function rememberSubscriptionPlan(id: string) {
@@ -35,9 +55,10 @@ export function clearSubscriptionPlanPreference() {
   try { sessionStorage.removeItem(intentKey); } catch { /* Storage may be disabled. */ }
 }
 export function captureSubscriptionPlanPreference(hash: string) {
-  const id = new URLSearchParams(hash.split("?", 2)[1] ?? "").get("plan");
+  const { id, present } = routePlan(hash);
   if (id) rememberSubscriptionPlan(id);
+  else if (present) clearSubscriptionPlanPreference();
 }
-export const registrationPlanHref = (id: string) => validPlanId(id) ? `/#register?plan=${encodeURIComponent(id)}` : "/#register";
+export const registrationPlanHref = (id: string) => subscriptionPlanHref("register", id);
 export const isPublicPlansLocation = (pathname: string, hash: string) =>
   /^\/plans\/?$/u.test(pathname) || ["#plans", "#plans-catalog", "#plans-faq"].includes(hash.split("?", 1)[0] ?? "");

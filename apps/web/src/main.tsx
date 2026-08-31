@@ -23,7 +23,7 @@ function EntryPage() {
   const [publicPage, setPublicPage] = useState(() => isPublicPlansLocation(location.pathname, location.hash));
   useEffect(() => {
     const route = () => {
-      if (location.hash.startsWith("#register")) captureSubscriptionPlanPreference(location.hash);
+      captureSubscriptionPlanPreference(location.hash);
       setPublicPage(isPublicPlansLocation(location.pathname, location.hash));
     };
     route();

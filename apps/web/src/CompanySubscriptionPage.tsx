@@ -5,7 +5,7 @@ import { SubscriptionBillingCenter } from "./SubscriptionBillingCenter";
 import { useI18n } from "./i18n";
 import type { SubscriptionCatalog, SubscriptionPlanVersion, SubscriptionSnapshot } from "./types";
 import { Button, PageHeader, Spinner } from "./ui";
-import { clearSubscriptionPlanPreference, preferredSubscriptionPlan } from "./public-plans";
+import { clearSubscriptionPlanPreference, subscriptionPlanForRoute, subscriptionRouteBase } from "./public-plans";
 import { CompanySubscriptionUsagePanel } from "./CompanySubscriptionUsagePanel";
 import { resolveSubscriptionPlanSelection } from "./subscription-usage";
 import { RequestError, withinRequest } from "./request-scope";
@@ -78,7 +78,7 @@ function CompanySubscriptionBody({ notify, companyId, scope }: { notify: Notice;
 
   const applyCatalog = useCallback((nextCatalog: SubscriptionCatalog) => {
     setReview(null); setAcknowledged(false);
-    const candidate = selectionInitialized.current ? selectionRef.current : preferredSubscriptionPlan() ?? "";
+    const candidate = selectionInitialized.current ? selectionRef.current : subscriptionPlanForRoute(location.hash) ?? "";
     const resolved = resolveSubscriptionPlanSelection(nextCatalog.plans.map((plan) => plan.id), candidate, !selectionInitialized.current);
     const definition = JSON.stringify(nextCatalog.plans.find(plan => plan.id === resolved.selectedId) ?? null);
     if (resolved.selectedId !== selectionRef.current || resolved.missing || (selectedDefinition.current && selectedDefinition.current !== definition)) setOptionalIds([]);
@@ -216,6 +216,9 @@ function CompanySubscriptionBody({ notify, companyId, scope }: { notify: Notice;
       saveRecord({ attempt, status: "succeeded", result });
       notify(t(result === "PENDING_APPROVAL" ? "subscriptionChanges.pending" : "subscriptionChanges.succeeded"));
       clearSubscriptionPlanPreference();
+      if (subscriptionRouteBase(location.hash) === "#subscription") {
+        history.replaceState(null, "", `${location.pathname}${location.search}#subscription`);
+      }
       await load();
     } catch (cause) {
       if (mounted.current) saveRecord({ attempt, status: subscriptionChangeOutcome(cause) });

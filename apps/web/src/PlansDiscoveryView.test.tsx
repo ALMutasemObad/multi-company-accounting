@@ -49,7 +49,7 @@ describe("public discovery semantics and localized links", () => {
     expect(html).toContain(`aria-label="${t("publicPlans.choose")} — ${discoveryTestPlan.displayName}"`);
     expect(html).toContain(`aria-label="${t("publicPlans.loginPlan")} — ${discoveryTestPlan.displayName}"`);
     expect(html).toContain('href="/#register?plan=9007199254740993"');
-    expect(html).toContain('href="/#login"'); expect(html).not.toContain('/#login?plan=');
+    expect(html).toContain('href="/#login?plan=9007199254740993"');
     expect(html).toContain('id="plans-selection-storage"');
     const features = render(<PlansDiscoveryFeatures catalog={discoveryTestCatalog()} />);
     expect(features).toContain('<caption class="sr-only">'); expect(features).toContain('scope="col"'); expect(features).toContain('scope="row"');
@@ -110,7 +110,7 @@ describe("public discovery semantics and localized links", () => {
   });
 });
 
-describe("early intent contract, before shared URL integration", () => {
+describe("integrated explicit plan-link contract", () => {
   const actionLinks = () => {
     const element = PlansDiscoveryPlanActions({ plan: discoveryTestPlan });
     return React.Children.toArray(element.props.children).filter(React.isValidElement) as ReactElement<{ href: string; onClick: () => void }>[];
@@ -118,7 +118,7 @@ describe("early intent contract, before shared URL integration", () => {
   it("writes only on an explicit registration or login click, preserving BIGINT text", () => {
     const links = actionLinks();
     expect(preferredSubscriptionPlan()).toBeNull();
-    expect(links.map((link) => link.props.href)).toEqual([registrationPlanHref(discoveryTestPlan.id), "/#login"]);
+    expect(links.map((link) => link.props.href)).toEqual([registrationPlanHref(discoveryTestPlan.id), "/#login?plan=9007199254740993"]);
     links[1]!.props.onClick(); expect(preferredSubscriptionPlan()).toBe(discoveryTestPlan.id);
     rememberSubscriptionPlan("44"); links[0]!.props.onClick(); expect(preferredSubscriptionPlan()).toBe(discoveryTestPlan.id);
   });
@@ -135,13 +135,13 @@ describe("early intent contract, before shared URL integration", () => {
     }
     // This verifies helper/storage compatibility, not main/App's full auth lifecycle.
   });
-  it("does not promise a login URL intent when storage is disabled or a link opens without a click", () => {
+  it("keeps the explicit login URL intent when storage is disabled or a link opens without a click", () => {
     vi.stubGlobal("sessionStorage", { getItem() { throw new Error("blocked"); }, setItem() { throw new Error("blocked"); }, removeItem() {} });
     const links = actionLinks();
     expect(() => links[1]!.props.onClick()).not.toThrow();
     expect(preferredSubscriptionPlan()).toBeNull();
-    expect(links[1]!.props.href).toBe("/#login");
+    expect(links[1]!.props.href).toBe("/#login?plan=9007199254740993");
     expect(links[0]!.props.href).toBe("/#register?plan=9007199254740993");
-    expect(renderCatalog()).toContain('If storage is blocked or you open another tab');
+    expect(renderCatalog()).toContain('Plan-selection links carry your preference for review');
   });
 });

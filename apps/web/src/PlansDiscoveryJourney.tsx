@@ -1,5 +1,5 @@
 import { useI18n } from "./i18n";
-import { registrationPlanHref, rememberSubscriptionPlan, type PublicSubscriptionPlan } from "./public-plans";
+import { registrationPlanHref, rememberSubscriptionPlan, subscriptionPlanHref, type PublicSubscriptionPlan } from "./public-plans";
 
 export function PlansDiscoveryJourney() {
   const { t } = useI18n();
@@ -17,9 +17,6 @@ export function PlansDiscoveryPlanActions({ plan }: { plan: Pick<PublicSubscript
   const remember = () => rememberSubscriptionPlan(plan.id);
   return <div className="plans-plan-actions">
     <a className="plans-cta" href={registrationPlanHref(plan.id)} onClick={remember} aria-describedby="plans-selection-storage" aria-label={`${t("publicPlans.choose")} — ${plan.displayName}`}>{t("publicPlans.choose")}</a>
-    {/* The baseline captures URL intents only on #register. Do not emit an
-        unintegrated #login?plan= URL: the plain route consumes the clicked
-        preference in this tab. Shared URL preservation belongs to integration. */}
-    <a className="plans-text-link" href="/#login" onClick={remember} aria-describedby="plans-selection-storage" aria-label={`${t("publicPlans.loginPlan")} — ${plan.displayName}`}>{t("publicPlans.loginPlan")}</a>
+    <a className="plans-text-link" href={subscriptionPlanHref("login", plan.id)} onClick={remember} aria-describedby="plans-selection-storage" aria-label={`${t("publicPlans.loginPlan")} — ${plan.displayName}`}>{t("publicPlans.loginPlan")}</a>
   </div>;
 }

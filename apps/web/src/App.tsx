@@ -6,7 +6,7 @@ import type { Company, CurrentAuthorization } from "./types";
 import { Button, Icon, Spinner, Toast } from "./ui";
 import { RegistrationPage } from "./RegistrationPage";
 import { PasswordResetPage } from "./PasswordResetPage";
-import { preferredSubscriptionPlan } from "./public-plans";
+import { subscriptionPlanForRoute, subscriptionPlanHash, subscriptionRouteBase } from "./public-plans";
 import { LoginScreen } from "./LoginScreen";
 import { AuthFeedback } from "./AuthFeedback";
 import { useAuthAction } from "./use-auth-action";
@@ -20,8 +20,10 @@ import {
 import { AuthorizationProvider } from "./authorization-context";
 import { effectivePermissionSet } from './module-entitlements';
 import { authorizedPageRoute, pageRouteHash, parsePageRoute, type PageRoute } from './page-section-navigation';
+import { createSubscriptionUpgradeDismissals } from './subscription-upgrade-dismissal';
 
 const SystemHomePage = lazy(() => import("./SystemHomePage").then((module) => ({ default: module.SystemHomePage })));
+const SubscriptionUpgradeHome = lazy(() => import('./SubscriptionUpgradeHome').then(module => ({ default: module.SubscriptionUpgradeHome })));
 const DashboardPage = lazy(() => import("./DashboardPage").then((module) => ({ default: module.DashboardPage })));
 const PlatformOperationsPage = lazy(() => import("./PlatformOperationsPage").then((module) => ({ default: module.PlatformOperationsPage })));
 const PlatformSubscriptionsPage = lazy(() => import("./PlatformSubscriptionsPage").then((module) => ({ default: module.PlatformSubscriptionsPage })));
@@ -68,6 +70,7 @@ export default function App() {
   const startup = useAuthAction();
   const runStartup = startup.run;
   const routeScope = useRef<string | null>(null);
+  const subscriptionDismissals = useMemo(() => createSubscriptionUpgradeDismissals(), [authorization?.user.id]);
 
   useEffect(() => {
     document.title = brand.name;
@@ -82,6 +85,8 @@ export default function App() {
     snapshot: CurrentAuthorization,
     capabilities: PlatformCapabilities,
   ) => {
+    const planIntent = subscriptionPlanForRoute(location.hash);
+    const entryRoute = subscriptionRouteBase(location.hash);
     const nextScope = JSON.stringify([snapshot.user.id, snapshot.selectedCompany?.id,
       [...snapshot.modules].sort(), [...snapshot.permissions].sort()]);
     if (routeScope.current !== null && routeScope.current !== nextScope) {
@@ -96,9 +101,9 @@ export default function App() {
       setRoute({ view: "platform" });
       replaceHash("platform");
     } else if (snapshot.selectedCompany && snapshot.permissions.includes("subscriptions.view")
-      && preferredSubscriptionPlan() && ["", "#home", "#login", "#register"].includes(location.hash)) {
+      && planIntent && ["", "#home", "#login", "#register"].includes(entryRoute)) {
       setRoute({ view: "subscription" });
-      replaceHash("subscription");
+      replaceHash(subscriptionPlanHash("subscription", planIntent));
     }
     setState("ready");
   }, []);
@@ -164,7 +169,15 @@ export default function App() {
   const requestedHash = pageRouteHash(route);
 
   useEffect(() => {
-    const onHashChange = () => { if (location.hash !== "#main-content") setRoute(parsePageRoute(location.hash)); };
+    const onHashChange = () => {
+      if (location.hash === "#main-content") return;
+      setRoute(parsePageRoute(location.hash));
+      const entry = subscriptionRouteBase(location.hash);
+      setState(current => {
+        if (current !== "login" && current !== "register") return current;
+        return entry === "#register" ? "register" : entry === "#login" ? "login" : current;
+      });
+    };
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
@@ -223,7 +236,7 @@ export default function App() {
           setState("password-reset");
         }}
         onRegister={() => {
-          location.hash = "register";
+          location.hash = subscriptionPlanHash("register", subscriptionPlanForRoute(location.hash));
           setState("register");
         }}
         onLoggedIn={(signal) => loadAuthenticatedShell(true, signal)}
@@ -234,8 +247,7 @@ export default function App() {
     return (
       <RegistrationPage
         onBackToLogin={() => {
-          const url = new URL(location.href);
-          history.replaceState(null, "", `${url.pathname}${url.search}`);
+          replaceHash(subscriptionPlanHash("login", subscriptionPlanForRoute(location.hash)));
           setState("login");
         }}
       />
@@ -327,7 +339,10 @@ export default function App() {
         </header>
         <main id="main-content" className="content" tabIndex={-1}>
           <Suspense key={`${user.id}:${company?.id ?? "platform"}`} fallback={<div className="loading"><Spinner /><span>{t("app.loadingModule")}</span></div>}>
-            {activeView === "home" && <SystemHomePage onNavigate={navigate} onOpenSetupTarget={navigateRoute} />}
+            {activeView === "home" && <>
+              <SubscriptionUpgradeHome dismissals={subscriptionDismissals} onOpenSubscription={() => navigate('subscription')} />
+              <SystemHomePage onNavigate={navigate} onOpenSetupTarget={navigateRoute} />
+            </>}
             {activeView === "dashboard" && <DashboardPage onNavigate={navigate} />}
             {activeView === "platform" && platformOperator && <PlatformOperationsPage />}
             {activeView === "platformSubscriptions" && platformOperator && <PlatformSubscriptionsPage notify={notify} />}
