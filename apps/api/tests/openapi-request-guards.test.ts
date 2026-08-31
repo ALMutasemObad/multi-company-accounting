@@ -22,8 +22,8 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 322, requestBodies: 169, responseBodies: 2138 });
-    expect(guardedOpenApiOperations).toHaveLength(169);
+    expect(openApiContractCoverage).toEqual({ operations: 323, requestBodies: 170, responseBodies: 2144 });
+    expect(guardedOpenApiOperations).toHaveLength(170);
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining(['createItemSellingProfile', 'updateItemSellingProfile']));
     expect(guardedOpenApiOperations).toContain("setPlatformSubscriptionPublicListing");
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
