@@ -1,0 +1,10 @@
+.selling-workspace { min-width: 0; display: grid; gap: 16px; }
+.selling-workspace details { padding: 12px; border: 1px solid #d6e1df; border-radius: 10px; }
+.selling-workspace summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-size: 16px; }
+.selling-workspace-references { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit,minmax(min(100%,240px),1fr)); }
+.selling-workspace-reference { min-width: 0; }
+.selling-workspace-reference h3 { font-size: 18px; }
+.selling-workspace-reference p { font-size: 16px; }
+.selling-workspace-reference form { display: flex; gap: 8px; flex-wrap: wrap; }
+.selling-workspace-reference input { min-width: 0; width: 100%; font-size: 16px; min-height: 44px; }
+.selling-workspace-pagination { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

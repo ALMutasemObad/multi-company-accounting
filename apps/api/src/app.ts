@@ -40,6 +40,8 @@ import type { AuditService } from './audit/audit-service.js';
 import { createAuditRouter } from './audit/audit-router.js';
 import type { SalesInvoiceService } from './sales/sales-invoice-service.js';
 import { createSalesInvoiceRouter } from './sales/sales-invoice-router.js';
+import type { SellingProfileService } from './sales/selling-profile-service.js';
+import { createSellingProfileRouter } from './sales/selling-profile-router.js';
 import type { PurchaseInvoiceService } from './purchases/purchase-invoice-service.js';
 import { createPurchaseInvoiceRouter } from './purchases/purchase-invoice-router.js';
 import type { SecurityEventService } from './security/security-event-service.js';
@@ -206,6 +208,7 @@ export type AppServices = {
   purchaseInvoices?: PurchaseInvoiceService;
   dataImports?: DataImportService;
   pos?: PosService;
+  sellingProfiles?: SellingProfileService;
 };
 
 export function createApp(config: AppConfig, services: AppServices = {}) {
@@ -405,6 +408,7 @@ export function createApp(config: AppConfig, services: AppServices = {}) {
   if (services.auth && services.reports) app.use('/api/v1', createReportRouter(services.auth, services.reports, services.cashFlow, services.taxSummary, services.costCenterActivity));
   if (services.auth && services.dataImports) app.use('/api/v1', createDataImportRouter(services.auth, services.dataImports));
   if (services.auth && services.pos) app.use('/api/v1', createPosRouter(services.auth, services.pos));
+  if (services.auth && services.sellingProfiles) app.use('/api/v1', createSellingProfileRouter(services.auth, services.sellingProfiles));
 
   if (config.NODE_ENV === 'production' || config.SERVE_WEB_ASSETS) {
     const webRoot = fileURLToPath(new URL('../../web/dist/', import.meta.url));
