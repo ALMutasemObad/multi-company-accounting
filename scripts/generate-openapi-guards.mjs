@@ -51,7 +51,12 @@ function union(expressions) {
 
 function intersection(expressions) {
   if (expressions.length === 0) return "z.unknown()";
-  return expressions.slice(1).reduce((left, right) => `z.intersection(${left}, ${right})`, expressions[0]);
+  if (expressions.length === 1) return expressions[0];
+  const combined = expressions.slice(1).reduce((left, right) => `z.intersection(${left}, ${right})`, expressions[0]);
+  // Preserve JSON Schema allOf semantics on the original transport value. Object
+  // intersection can merge unknown-key policies, weakening a strict constituent.
+  // Preflight before the pipe also avoids validating transformed BIGINTs as strings.
+  return `z.unknown().refine((value) => [${expressions.join(", ")}].every((candidate) => candidate.safeParse(value).success), { message: "Expected every intersected schema to match" }).pipe(${combined})`;
 }
 
 function componentVariable(name, mode) {

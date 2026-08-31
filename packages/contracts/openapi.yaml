@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.44.0
+  version: 1.45.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -1274,6 +1274,31 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '500': { $ref: '#/components/responses/InternalError' }
+  /subscription/usage:
+    get:
+      tags: [Company Subscription]
+      summary: قياس استهلاك اشتراك النشاط الحالي للعرض فقط
+      description: >-
+        قراءة محدودة ومصرح بها للشركة المثبتة في الجلسة؛ لا تقبل معاملات استعلام
+        أو companyId من العميل. المستخدمون والموظفون لقطة لحظية، والمستندات إحصاء
+        من أول الشهر التقويمي UTC حتى measuredAt حصريًا، وليست دورة فوترة أو فاتورة
+        أو أساس منع العمليات. الحصة غير المهيأة ليست غير محدودة؛ لا تقارن حصة
+        المستندات بفترة غير مؤكدة ولا تستنتجها من MONTHLY أو ANNUAL.
+      operationId: getCompanySubscriptionUsage
+      x-permission: subscriptions.view
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200': { description: لقطة إحصائية مع دلالة القياس وحدود المقارنة, content: { application/json: { schema: { $ref: '#/components/schemas/CompanySubscriptionUsageResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { description: الخدمة غير متاحة مؤقتًا دون كشف تفاصيل البنية, content: { application/json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
   /subscription/catalog:
     get:
       tags: [Company Subscription]
@@ -11240,6 +11265,122 @@ components:
         history: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/PlatformSubscriptionChange' } }
         meta: { $ref: '#/components/schemas/PaginationMeta' }
         generatedAt: { type: string, format: date-time }
+    SubscriptionUsageCount:
+      type: integer
+      minimum: 0
+      maximum: 9007199254740991
+      description: عدد صحيح غير سالب آمن للنقل في JSON؛ لا يستخدم للأموال.
+    SubscriptionUsageNullableCount:
+      oneOf: [{ $ref: '#/components/schemas/SubscriptionUsageCount' }, { type: 'null' }]
+    SubscriptionUsageMetric:
+      type: object
+      additionalProperties: false
+      required: [used, included, remaining, excess, state, comparisonBasis, definition]
+      properties:
+        used: { $ref: '#/components/schemas/SubscriptionUsageNullableCount' }
+        included:
+          description: حصة إصدار الخطة الفعال؛ null تعني غير مهيأ لا غير محدود.
+          $ref: '#/components/schemas/SubscriptionUsageNullableCount'
+        remaining:
+          description: max(0, included - used) للمقارنة المؤكدة فقط، وإلا null.
+          $ref: '#/components/schemas/SubscriptionUsageNullableCount'
+        excess:
+          description: max(0, used - included) للمقارنة المؤكدة فقط؛ ليس رسومًا مستحقة.
+          $ref: '#/components/schemas/SubscriptionUsageNullableCount'
+        state: { type: string, enum: [WITHIN_LIMIT, AT_LIMIT, EXCEEDED, NOT_CONFIGURED, UNKNOWN] }
+        comparisonBasis: { type: string, enum: [CURRENT_SNAPSHOT, UNCONFIRMED_PERIOD] }
+        definition: { type: string, enum: [ACTIVE_COMPANY_USERS, ACTIVE_OR_ON_LEAVE_EMPLOYEES, DOCUMENTS_POSTED_IN_WINDOW] }
+      oneOf:
+      - properties:
+          state: { enum: [WITHIN_LIMIT, AT_LIMIT, EXCEEDED] }
+          comparisonBasis: { const: CURRENT_SNAPSHOT }
+          used: { $ref: '#/components/schemas/SubscriptionUsageCount' }
+          included: { $ref: '#/components/schemas/SubscriptionUsageCount' }
+          remaining: { $ref: '#/components/schemas/SubscriptionUsageCount' }
+          excess: { $ref: '#/components/schemas/SubscriptionUsageCount' }
+      - properties:
+          state: { const: NOT_CONFIGURED }
+          included: { type: 'null' }
+          remaining: { type: 'null' }
+          excess: { type: 'null' }
+      - properties:
+          state: { const: UNKNOWN }
+          included: { $ref: '#/components/schemas/SubscriptionUsageCount' }
+          remaining: { type: 'null' }
+          excess: { type: 'null' }
+    CompanySubscriptionUsageResponse:
+      type: object
+      additionalProperties: false
+      required: [companyId, measuredAt, consistency, plan, period, metrics]
+      properties:
+        companyId: { type: string, pattern: '^[1-9][0-9]*$', maxLength: 20 }
+        measuredAt: { type: string, format: date-time, pattern: 'Z$' }
+        consistency:
+          type: string
+          const: BEST_EFFORT
+          description: القراءات ليست لقطة ACID واحدة؛ تستخدم للعرض لا للفوترة أو إنفاذ حد.
+        plan:
+          oneOf:
+          - type: 'null'
+          - type: object
+            additionalProperties: false
+            required: [id, displayName, billingCycle]
+            properties:
+              id:
+                type: string
+                pattern: '^[1-9][0-9]*$'
+                maxLength: 20
+                description: معرف إصدار الخطة الفعال لا معرف رأس الخطة، وفق أحدث تغيير معتمد وسارٍ.
+              displayName: { type: string, minLength: 1, maxLength: 160 }
+              billingCycle: { type: string, enum: [MONTHLY, QUARTERLY, ANNUAL] }
+        period:
+          type: object
+          additionalProperties: false
+          required: [kind, timezone, startsAt, endsAtExclusive, billingPeriodStatus]
+          properties:
+            kind: { type: string, const: STATISTICAL_MONTH_TO_DATE }
+            timezone: { type: string, const: UTC }
+            startsAt:
+              type: string
+              format: date-time
+              pattern: 'Z$'
+              description: بداية الشهر التقويمي UTC الذي يحتوي measuredAt.
+            endsAtExclusive:
+              type: string
+              format: date-time
+              pattern: 'Z$'
+              description: يساوي measuredAt؛ الحد الأعلى مستبعد من عد المستندات.
+            billingPeriodStatus:
+              type: string
+              enum: [NOT_CONFIGURED, UNCONFIRMED]
+              description: NOT_CONFIGURED عند غياب حقلي الفترة، وإلا UNCONFIRMED؛ لا تأكيد لدورة الحصة.
+        metrics:
+          type: object
+          additionalProperties: false
+          required: [users, employees, postedDocuments]
+          properties:
+            users:
+              allOf:
+              - $ref: '#/components/schemas/SubscriptionUsageMetric'
+              - properties:
+                  definition: { const: ACTIVE_COMPANY_USERS }
+                  comparisonBasis: { const: CURRENT_SNAPSHOT }
+            employees:
+              allOf:
+              - $ref: '#/components/schemas/SubscriptionUsageMetric'
+              - properties:
+                  definition: { const: ACTIVE_OR_ON_LEAVE_EMPLOYEES }
+                  comparisonBasis: { const: CURRENT_SNAPSHOT }
+            postedDocuments:
+              description: عد postedAt في النافذة، بما فيه المعكوس إن احتفظ بـpostedAt؛ لا يستبعد حسب الحالة الحالية.
+              allOf:
+              - $ref: '#/components/schemas/SubscriptionUsageMetric'
+              - properties:
+                  definition: { const: DOCUMENTS_POSTED_IN_WINDOW }
+                  comparisonBasis: { const: UNCONFIRMED_PERIOD }
+                  state: { enum: [NOT_CONFIGURED, UNKNOWN] }
+                  remaining: { type: 'null' }
+                  excess: { type: 'null' }
     CompanySubscriptionCatalogResponse:
       type: object
       additionalProperties: false
