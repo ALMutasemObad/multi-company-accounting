@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedDate": "2026-08-31T20:06:10.2136150+03:00",
+  "updatedDate": "2026-08-31T20:10:31.7931470+03:00",
   "coordinatorThreadId": "01a05783-e720-7ed0-a107-4a372bd53202",
   "projectId": "c3fd65c7-6c00-45d1-9859-46f96966dc38",
   "repository": "D:/CodexWorktrees/continuous-coordination",
@@ -466,7 +466,7 @@
       "currentValidation": "Archives extracted as data only; target binaries not executed. Release46 real DB acceptance was completed in CI."
     },
     {
-      "status": "assigned",
+      "status": "implementing",
       "threadId": "01a0578e-6281-7ab2-9d37-2e5b8935eaf2",
       "title": "عزل سياق الكاشير وربط N2",
       "runtimeOwner": true,
@@ -475,10 +475,11 @@
       "base": "e3d6ba03aec8ceabd42428d67855fad2683968a6",
       "priority": "P0",
       "worktree": "D:/CodexWorktrees/wave2-pos-context",
-      "id": "W2-POS-CONTEXT"
+      "id": "W2-POS-CONTEXT",
+      "contract": "X-POS-Expected-User-Id + X-POS-Expected-Company-Id; mandatory POS routes, both-or-neither owner reads. Session Actor only; named409 POS_CONTEXT_CHANGED; captured identity verified before/after reads; posContext response identity. Preserve N1 body/fingerprint/cached result and quarantine after marker."
     },
     {
-      "status": "assigned_source_phase",
+      "status": "implementing_source_phase",
       "threadId": "01a0578e-3c3b-7af3-a347-10e1901b9055",
       "title": "منع تداخل وصف هوية القيد الطويل مع التذييل",
       "runtimeOwner": false,
