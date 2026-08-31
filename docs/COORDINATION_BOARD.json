@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedDate": "2026-08-31T18:06:40.994665+00:00",
+  "updatedDate": "2026-08-31T18:16:31.922448+00:00",
   "coordinatorThreadId": "01a05783-e720-7ed0-a107-4a372bd53202",
   "projectId": "c3fd65c7-6c00-45d1-9859-46f96966dc38",
   "repository": "D:/CodexWorktrees/continuous-coordination",
@@ -502,7 +502,7 @@
       "status": "validation_window_granted",
       "threadId": "01a0578e-6281-7ab2-9d37-2e5b8935eaf2",
       "title": "عزل سياق الكاشير وربط N2",
-      "runtimeOwner": true,
+      "runtimeOwner": false,
       "branch": "fix/wave2-pos-context",
       "hostId": "local",
       "base": "e3d6ba03aec8ceabd42428d67855fad2683968a6",
@@ -511,7 +511,7 @@
       "id": "W2-POS-CONTEXT",
       "contract": "X-POS-Expected-User-Id + X-POS-Expected-Company-Id; mandatory POS routes, both-or-neither owner reads. Session Actor only; named409 POS_CONTEXT_CHANGED; captured identity verified before/after reads; posContext response identity. Preserve N1 body/fingerprint/cached result and quarantine after marker.",
       "approvedScopeAddition": "PosCart reader injection plus optional expected-scope read hunks in account-router.ts and tax-router.ts; OpenAPI posContext and scoped read tests. No account/tax service policy or schema changes. Both-or-neither headers; old callers unchanged; captured Actor checked before/after and late UI results rejected.",
-      "runtime": "Exclusive runtime transferred from PDF after explicit release. Finish bounded canonicalID/version0/recovery-metadata fixes and freeze, then generate/check/focused/Web/API-src-tests types via reviewed CMD/Python launcher. No DB/browser/build. Preserve failure before any scoped correction and rerun; grocery fixture preparation is source-only until later browser lease."
+      "runtime": "Released after final483/483 across24files andWeb/API-src-tests types passed; generator/check passed. Client21/21 and source hashes unchanged across final gates. Earlier startup/minWorkers and6financial-body-schema failures preserved and corrected. NoW2DB/browser/build acceptance; grocery fixture adaptation source-only is next."
     },
     {
       "status": "tests_types_passed_visual_review_pending",
@@ -534,10 +534,11 @@
       "worktree": "D:/CodexWorktrees/wave2-subscription-ci",
       "branch": "test/wave2-subscription-ci",
       "base": "e3d6ba03aec8ceabd42428d67855fad2683968a6",
-      "status": "assigned_source_phase",
+      "status": "validation_window_granted",
+      "runtimeOwner": true,
       "priority": "P1",
       "scope": "Portable58case subscription-discovery/D3 test configuration,ownedfixture lifecycle,package/type scripts and narrow existingverifyjob CI step/artifacts only. No product/OpenAPI/PosPage changes; no new dependencies/jobs/services.",
-      "runtime": "POS owns heavy runtime; lightweight CMD/Python reads and source only until explicit coordinator lease.",
+      "runtime": "Exclusive runtime after POS release: guard tests,list,types and58browser on frozen portable runner; directNode/CMD/Denv,heap768,worker1,retry0. Preserve failures before bounded fixes; noDB/install/product or fixture weakening. Verify3166/4216 cleanup before release.",
       "acceptance": "Pending: real collection/named58zero skip,types and full browser execution on new portable runner; original58proof alone insufficient."
     }
   ],
@@ -567,7 +568,7 @@
     }
   ],
   "browserResourceStatus": "Released after anonymous post-deployment login/plans DOM checks; viewport reset.",
-  "limitedRuntimeOwner": "W2-POS-CONTEXT",
+  "limitedRuntimeOwner": "W2-SUBSCRIPTION-CI",
   "validationOrder": [
     "Task-specific units/types in isolated worktrees",
     "Review exact-source evidence and integrate locally",
@@ -578,10 +579,11 @@
     "Official portable Windows MariaDB10.11/MySQL8.4 distribution options;no downloads/install/processesauthorized.",
     "Isolated Prisma client generation/output/import options using existing tooling;no generation orjunction/shareddependencywritesauthorized."
   ],
-  "activeCapacityNote": "Three implementation tasks: POS owns five-command validation; PDF completed runtime and reviews saved images; subscription CI waits next. Evaluator completed release46 delta. No new assignment needed.",
+  "activeCapacityNote": "Subscription CI owns runtime. POS483+types validated and prepares existinggrocery acceptance adaptation without runtime; PDF118+types+32PNG delivereddefb380 for integration. Evaluator completed release46 delta. No new assignment needed.",
   "prismaIsolationPlan": "Executed successfully inONBOARDownedDfolder. Generate/Smoke/154policyunits/APItypesPASS withNODE_OPTIONS512 andnoDB;shared91files/protectedunchanged. N1mayuseclientreadonlypermanifest569F946A. Temporarysourcealiases stilldoNOTprove distserver/E2Eruntime.",
   "pendingRuntimeWindows": [
-    "W2-SUBSCRIPTION-CI guard tests,list,types and58browser after POS releases runtime"
+    "POS existinggrocery andcross-tab browser acceptance after QA releases runtime and fixture freeze",
+    "Combined W2 source/build/gates after reviewed integration"
   ],
   "coordinatorGitException": "Completed successfully: df39116 committedonly2coordinationdocs afterdiffcheck;index/worktreecleanthen. No hooks override/ACLchange. This demonstrates localGitwriteworkedafterspace recovery,doesnotprovepriorrootcause.",
   "lastCoordinatorCommit": "b95e00b6e26e92d632b02b20c4a28d56e62fae08",

@@ -19,7 +19,7 @@
 
 ## العمل والموارد
 
-تعطلت أوامرPowerShellالقرائية حتىGet-Date في31أغسطس. القناةالمتحققة الحالية exec_command معshell=C:/Windows/System32/cmd.exe وlogin:false وtty:false،واستدعاء ملفاتPythonالمضمنةمع-X utf8 -B وNodeمباشرة ببيئةطفلD. لا تنفذenv.ps1 أوتعِدprobePowerShell. كلجلساتالعمالالمعلومةأُغلقت،وأُغلقprobeالمنسق وحده بعدمطابقةهويته؛ لا تنظيفعام أوتغييرإعداد. التفصيل فيtmp/coordination/shell-diagnostic-20260831/DIAGNOSIS_AR.md. مالكruntimeالآنW2-POS-CONTEXT للأوامر الخمسة المحدودة؛ يأتيQAبعدتحريره. أنهىPDF118اختبارًا والأنواع و32PNG،ويكمل المراجعة البصرية والتسليم دونruntime.
+تعطلت أوامرPowerShellالقرائية حتىGet-Date في31أغسطس. القناةالمتحققة الحالية exec_command معshell=C:/Windows/System32/cmd.exe وlogin:false وtty:false،واستدعاء ملفاتPythonالمضمنةمع-X utf8 -B وNodeمباشرة ببيئةطفلD. لا تنفذenv.ps1 أوتعِدprobePowerShell. كلجلساتالعمالالمعلومةأُغلقت،وأُغلقprobeالمنسق وحده بعدمطابقةهويته؛ لا تنظيفعام أوتغييرإعداد. التفصيل فيtmp/coordination/shell-diagnostic-20260831/DIAGNOSIS_AR.md. مالكruntime الفعلي وترتيب الانتظار فيlimitedRuntimeOwner وpendingRuntimeWindows باللوحة؛ لا تستنتجه من رسالة تاريخية. أنهىPDF118اختبارًا والأنواع و32PNGمراجعة،وسلّمdefb380. أنهىPOS483اختبارًا وWeb/APItypes،وبقي قبولgrocery/السياق بالمتصفح؛ بدأ دوربوابةCIللـ58.
 
 أُنشئت أشجارW2 المنفصلة علىD منe3d6ba03،وبقيت أشجارW1 وpatches والأدلة دون مساس. node_modules المشتركة للقراءة فقط؛ لاnpm install/ci أو توليدPrismaداخلها،ولا نسخ.env. العميل المعزول المقبول داخلwave1-onboarding-policy/tmp/coordination/prisma-c7ffc99/client للقراءة فقط.
 
