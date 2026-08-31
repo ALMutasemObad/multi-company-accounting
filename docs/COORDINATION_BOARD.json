@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "updatedDate": "2026-08-31",
+  "coordinatorThreadId": "01a05783-e720-7ed0-a107-4a372bd53202",
+  "projectId": "c3fd65c7-6c00-45d1-9859-46f96966dc38",
+  "repository": "C:/Users/motas/Documents/نظام جوار المالي/project",
+  "integrationWorktree": "D:/CodexWorktrees/continuous-coordination",
+  "integrationBranch": "coord/continuous-delivery-20260831",
+  "baseline": "c7ffc99306a180387bb1a618d0d2750f762bf48b",
+  "observedLocalOriginMain": "89ba49b8b232043fd83a6d098c257fe3b124f954",
+  "remoteFreshness": "local refs only; no fetch or live deployment verification in this task",
+  "maxActiveImplementationThreads": 4,
+  "publicationAuthorized": false,
+  "automation": { "id": "automation", "cadenceMinutes": 10, "status": "ACTIVE" },
+  "browserOwner": "01a0578e-85b1-7141-bc2e-b4f88bcac12d",
+  "databaseGateOwner": null,
+  "tasks": [
+    {
+      "id": "W1-PDF",
+      "title": "إصلاح دقة المبالغ في ملفات PDF المالية",
+      "threadId": "01a0578e-3c3b-7af3-a347-10e1901b9055",
+      "hostId": "local",
+      "worktree": "D:/CodexWorktrees/wave1-pdf-decimal",
+      "status": "in_progress",
+      "priority": "P0",
+      "acceptance": "awaiting implementation and evidence; see initial thread prompt",
+      "afterCursor": "9d197f9a-1247-44fd-8bf3-a9344feb131d:1"
+    },
+    {
+      "id": "W1-POS",
+      "title": "ربط استرجاع البيع ومنع تكراره بعد الانقطاع",
+      "threadId": "01a0578e-6281-7ab2-9d37-2e5b8935eaf2",
+      "hostId": "local",
+      "worktree": "D:/CodexWorktrees/wave1-pos-recovery",
+      "status": "in_progress",
+      "priority": "P0",
+      "acceptance": "awaiting implementation and evidence; see initial thread prompt",
+      "afterCursor": "6a04bcb5-51b1-496b-bb46-be45080061fc:1"
+    },
+    {
+      "id": "W1-ONBOARD",
+      "title": "فصل اشتراك النشاط الجديد عن صلاحيات الأنشطة القديمة",
+      "threadId": "01a0578e-75e6-7cf0-914e-12991af314be",
+      "hostId": "local",
+      "worktree": "D:/CodexWorktrees/wave1-onboarding-policy",
+      "status": "in_progress",
+      "priority": "P0",
+      "acceptance": "awaiting implementation and evidence; see initial thread prompt",
+      "afterCursor": "e3953114-968c-4310-9ce9-49d66bc9885f:1"
+    },
+    {
+      "id": "W1-QA",
+      "title": "إغلاق قبول ربط الاشتراكات وتحديث سجل الحالة",
+      "threadId": "01a0578e-85b1-7141-bc2e-b4f88bcac12d",
+      "hostId": "local",
+      "worktree": "D:/CodexWorktrees/wave1-subscription-acceptance",
+      "status": "in_progress",
+      "priority": "P0",
+      "acceptance": "awaiting implementation and evidence; see initial thread prompt",
+      "afterCursor": "dfab117e-aa91-42e4-b0e3-d64bbedd29ae:1"
+    }
+  ],
+  "queue": [
+    {
+      "id": "W2-CONTEXT",
+      "priority": "P1",
+      "title": "ربط سياق الكاشير والفترة وقراءات المعرف الدقيق",
+      "dependsOn": [
+        "W1-POS"
+      ],
+      "source": "D:/CodexWorktrees/cashier-context-experience",
+      "status": "queued"
+    },
+    {
+      "id": "W2-RECEIPT",
+      "priority": "P1",
+      "title": "ربط أرشيف الإيصال ومعاينة58/80mm وPDFالدقيق",
+      "dependsOn": [
+        "W1-PDF",
+        "W1-POS"
+      ],
+      "source": "D:/CodexWorktrees/retail-receipt-output",
+      "status": "queued"
+    },
+    {
+      "id": "W2-RELEASE-GATES",
+      "priority": "P0",
+      "title": "بوابات الدمج المحلي والعقود والمحركين على الرأس الموحد",
+      "dependsOn": [
+        "W1-PDF",
+        "W1-POS",
+        "W1-ONBOARD",
+        "W1-QA"
+      ],
+      "status": "queued"
+    },
+    {
+      "id": "W2-LATENCY",
+      "priority": "P1",
+      "title": "قياس محلي ممثل لزمن الدخول والقراءات وتحديد الاختناق",
+      "dependsOn": [],
+      "status": "queued",
+      "constraints": "bounded local synthetic data; no production load or claimed SLO without representative evidence"
+    },
+    {
+      "id": "W2-ZEBRA",
+      "priority": "P1",
+      "title": "ربط تحضير الملصقات ثم قبول الجهاز",
+      "dependsOn": [],
+      "status": "waiting_external_input",
+      "constraints": "model/connection/label dimensions/approved SDK needed; no install,EULA,device discovery or print authorized"
+    },
+    {
+      "id": "W2-COMMERCIAL-CONFIG",
+      "priority": "P0",
+      "title": "ضبط خطة البدء والعروض الفعلية",
+      "dependsOn": [
+        "W1-ONBOARD"
+      ],
+      "status": "waiting_business_decision",
+      "constraints": "no invented pricing,trial duration,quotas,publication or LIVE payment provider"
+    }
+  ],
+  "history": [
+    {
+      "date": "2026-08-31",
+      "event": "Reviewed actual code, handoff documents, local Git refs and previous task handoffs. R1/R2/R3 are already patch-equivalent in main, S1/S2 integrated locally; N1/N2/N3/Z1 unmounted. Created five isolated D worktrees and four user-requested tasks."
+    }
+  ]
+}
