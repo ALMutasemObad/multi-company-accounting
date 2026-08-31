@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedDate": "2026-08-31T17:42:00.825796+00:00",
+  "updatedDate": "2026-08-31T18:06:40.994665+00:00",
   "coordinatorThreadId": "01a05783-e720-7ed0-a107-4a372bd53202",
   "projectId": "c3fd65c7-6c00-45d1-9859-46f96966dc38",
   "repository": "D:/CodexWorktrees/continuous-coordination",
@@ -499,10 +499,10 @@
       "currentValidation": "Archives extracted as data only; target binaries not executed. Release46 real DB acceptance was completed in CI."
     },
     {
-      "status": "implementing",
+      "status": "validation_window_granted",
       "threadId": "01a0578e-6281-7ab2-9d37-2e5b8935eaf2",
       "title": "عزل سياق الكاشير وربط N2",
-      "runtimeOwner": false,
+      "runtimeOwner": true,
       "branch": "fix/wave2-pos-context",
       "hostId": "local",
       "base": "e3d6ba03aec8ceabd42428d67855fad2683968a6",
@@ -511,20 +511,20 @@
       "id": "W2-POS-CONTEXT",
       "contract": "X-POS-Expected-User-Id + X-POS-Expected-Company-Id; mandatory POS routes, both-or-neither owner reads. Session Actor only; named409 POS_CONTEXT_CHANGED; captured identity verified before/after reads; posContext response identity. Preserve N1 body/fingerprint/cached result and quarantine after marker.",
       "approvedScopeAddition": "PosCart reader injection plus optional expected-scope read hunks in account-router.ts and tax-router.ts; OpenAPI posContext and scoped read tests. No account/tax service policy or schema changes. Both-or-neither headers; old callers unchanged; captured Actor checked before/after and late UI results rejected.",
-      "runtime": "Released after shell interruption; source and lightweight reads only while PDF validates. Inspect possibly written fixture before any mutation repeat."
+      "runtime": "Exclusive runtime transferred from PDF after explicit release. Finish bounded canonicalID/version0/recovery-metadata fixes and freeze, then generate/check/focused/Web/API-src-tests types via reviewed CMD/Python launcher. No DB/browser/build. Preserve failure before any scoped correction and rerun; grocery fixture preparation is source-only until later browser lease."
     },
     {
-      "status": "validation_window_granted",
+      "status": "tests_types_passed_visual_review_pending",
       "threadId": "01a0578e-3c3b-7af3-a347-10e1901b9055",
       "title": "منع تداخل وصف هوية القيد الطويل مع التذييل",
-      "runtimeOwner": true,
+      "runtimeOwner": false,
       "branch": "fix/wave2-pdf-identity",
       "hostId": "local",
       "base": "e3d6ba03aec8ceabd42428d67855fad2683968a6",
       "priority": "P1",
       "worktree": "D:/CodexWorktrees/wave2-pdf-identity",
       "id": "W2-PDF-IDENTITY",
-      "acceptance": "Round02:118/118 passed in9files,Vitest37.86s,exit0; source/config hashes unchanged during run,renderer022E9D35DC38B42D. Narrow types and4PDF+baseline/extraction/PNG still pending. Round01 116/117 and invisibleCR/CID51 diagnostic preserved; display-onlyCRLF normalization does not change Snapshot/money."
+      "acceptance": "Round02:118/118 passed in9files,Vitest37.86s; narrowtypes exit0/1.031s;4candidatePDF+baseline,32PNG150dpi generated. Worker reports22baseline glyph-runs entering footer to788.9204pt versus0 in long candidate,max738.088pt. Source/config fixed across stages; visual review and evidence receipt pending. Runtime explicitly released. Round01 and CRLF diagnostic preserved; Snapshot/money unchanged."
     },
     {
       "id": "W2-SUBSCRIPTION-CI",
@@ -537,7 +537,7 @@
       "status": "assigned_source_phase",
       "priority": "P1",
       "scope": "Portable58case subscription-discovery/D3 test configuration,ownedfixture lifecycle,package/type scripts and narrow existingverifyjob CI step/artifacts only. No product/OpenAPI/PosPage changes; no new dependencies/jobs/services.",
-      "runtime": "PDF owns heavy runtime; lightweight CMD/Python reads and source only until explicit coordinator lease.",
+      "runtime": "POS owns heavy runtime; lightweight CMD/Python reads and source only until explicit coordinator lease.",
       "acceptance": "Pending: real collection/named58zero skip,types and full browser execution on new portable runner; original58proof alone insufficient."
     }
   ],
@@ -567,7 +567,7 @@
     }
   ],
   "browserResourceStatus": "Released after anonymous post-deployment login/plans DOM checks; viewport reset.",
-  "limitedRuntimeOwner": "W2-PDF-IDENTITY",
+  "limitedRuntimeOwner": "W2-POS-CONTEXT",
   "validationOrder": [
     "Task-specific units/types in isolated worktrees",
     "Review exact-source evidence and integrate locally",
@@ -578,10 +578,9 @@
     "Official portable Windows MariaDB10.11/MySQL8.4 distribution options;no downloads/install/processesauthorized.",
     "Isolated Prisma client generation/output/import options using existing tooling;no generation orjunction/shareddependencywritesauthorized."
   ],
-  "activeCapacityNote": "Three active implementation tasks: POS context, PDF identity and subscription CI. Evaluator completed release46 delta. PDF owns heavy runtime; POS validation then subscription CI are queued. No new assignment needed.",
+  "activeCapacityNote": "Three implementation tasks: POS owns five-command validation; PDF completed runtime and reviews saved images; subscription CI waits next. Evaluator completed release46 delta. No new assignment needed.",
   "prismaIsolationPlan": "Executed successfully inONBOARDownedDfolder. Generate/Smoke/154policyunits/APItypesPASS withNODE_OPTIONS512 andnoDB;shared91files/protectedunchanged. N1mayuseclientreadonlypermanifest569F946A. Temporarysourcealiases stilldoNOTprove distserver/E2Eruntime.",
   "pendingRuntimeWindows": [
-    "W2-POS-CONTEXT five-command validation after PDF explicitly releases runtime",
     "W2-SUBSCRIPTION-CI guard tests,list,types and58browser after POS releases runtime"
   ],
   "coordinatorGitException": "Completed successfully: df39116 committedonly2coordinationdocs afterdiffcheck;index/worktreecleanthen. No hooks override/ACLchange. This demonstrates localGitwriteworkedafterspace recovery,doesnotprovepriorrootcause.",
