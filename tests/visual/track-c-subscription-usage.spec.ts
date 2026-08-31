@@ -41,6 +41,8 @@ for (const locale of ["ar", "en", "ur", "hi"]) {
     await expect(panel.locator(".state-unknown dl > div")).toHaveCount(2);
     await expect(panel).toContainText("UTC");
     await expect(panel).not.toContainText("subscriptionUsage.");
+    const fontSizes = await panel.locator("h2, h3, p, dt, dd, button").evaluateAll((elements) => [...new Set(elements.map((element) => getComputedStyle(element).fontSize))].sort());
+    expect(fontSizes).toEqual(["16px", "18px"]);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     await page.evaluate(() => document.fonts.ready);
     await page.screenshot({ path: testInfo.outputPath(`usage-${locale}.png`), fullPage: true });
@@ -95,10 +97,13 @@ test("a slow read times out without retrying and a different company response is
   const panel = page.locator(".subscription-usage-panel");
   await expect(panel.getByRole("status")).toBeVisible();
   // React StrictMode mounts effects twice in this development harness; neither request is a retry.
-  const initialCalls = calls;
   await page.clock.fastForward(12_100);
   await expect(panel.getByRole("alert")).toContainText("longer than expected");
-  expect(calls).toBe(initialCalls);
+  expect(calls).toBeGreaterThan(0);
+  expect(calls).toBeLessThanOrEqual(2);
+  const timedOutCalls = calls;
+  await page.clock.fastForward(60_000);
+  expect(calls).toBe(timedOutCalls);
   await page.unrouteAll({ behavior: "ignoreErrors" });
   await page.route("**/api/v1/subscription/usage", (route) => route.fulfill({ json: { ...usage, companyId: "999" } }));
   await panel.getByRole("alert").getByRole("button").click();

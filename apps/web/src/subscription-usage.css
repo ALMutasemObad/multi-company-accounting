@@ -5,8 +5,8 @@
   font-size: var(--usage-body);
   min-width: 0;
 }
-.subscription-usage-panel h2, .subscription-usage-panel h3 { font-size: var(--usage-heading); margin: 0; line-height: 1.6; }
-.subscription-usage-panel p { font-size: var(--usage-body); line-height: 1.8; margin: .5rem 0; }
+.subscription-usage-panel h2, .subscription-usage-panel .subscription-usage-heading h2, .subscription-usage-panel h3 { font-size: var(--usage-heading); margin: 0; line-height: 1.6; }
+.subscription-usage-panel p, .subscription-usage-panel .subscription-usage-heading p { font-size: var(--usage-body); line-height: 1.8; margin: .5rem 0; }
 .subscription-usage-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 .subscription-usage-context { margin: 1rem 0; overflow-wrap: anywhere; }
 .subscription-usage-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
