@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedDate": "2026-08-31T20:10:31.7931470+03:00",
+  "updatedDate": "2026-08-31T20:12:53.2856487+03:00",
   "coordinatorThreadId": "01a05783-e720-7ed0-a107-4a372bd53202",
   "projectId": "c3fd65c7-6c00-45d1-9859-46f96966dc38",
   "repository": "D:/CodexWorktrees/continuous-coordination",
@@ -476,7 +476,8 @@
       "priority": "P0",
       "worktree": "D:/CodexWorktrees/wave2-pos-context",
       "id": "W2-POS-CONTEXT",
-      "contract": "X-POS-Expected-User-Id + X-POS-Expected-Company-Id; mandatory POS routes, both-or-neither owner reads. Session Actor only; named409 POS_CONTEXT_CHANGED; captured identity verified before/after reads; posContext response identity. Preserve N1 body/fingerprint/cached result and quarantine after marker."
+      "contract": "X-POS-Expected-User-Id + X-POS-Expected-Company-Id; mandatory POS routes, both-or-neither owner reads. Session Actor only; named409 POS_CONTEXT_CHANGED; captured identity verified before/after reads; posContext response identity. Preserve N1 body/fingerprint/cached result and quarantine after marker.",
+      "approvedScopeAddition": "PosCart reader injection plus optional expected-scope read hunks in account-router.ts and tax-router.ts; OpenAPI posContext and scoped read tests. No account/tax service policy or schema changes. Both-or-neither headers; old callers unchanged; captured Actor checked before/after and late UI results rejected."
     },
     {
       "status": "implementing_source_phase",
