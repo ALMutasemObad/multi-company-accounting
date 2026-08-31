@@ -1,0 +1,61 @@
+.subscription-upgrade-card,
+.subscription-upgrade-banner {
+  font-size: 1rem;
+  line-height: 1.8;
+  color: var(--ink, #17352d);
+  border: 1px solid var(--line, #dce3df);
+  border-radius: 16px;
+  background: var(--surface, #fff);
+  padding: 24px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.subscription-upgrade-card h2,
+.subscription-upgrade-card h3,
+.subscription-upgrade-banner h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.6;
+  margin: 0 0 12px;
+}
+.subscription-upgrade-card p,
+.subscription-upgrade-banner p { margin: 0 0 12px; font-size: inherit; }
+.subscription-upgrade-current { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 16px; margin-block: 20px; }
+.subscription-upgrade-current dt { font-weight: 700; }
+.subscription-upgrade-current dd { margin: 0; }
+.subscription-upgrade-notices { padding-inline-start: 24px; margin-block: 16px; }
+.subscription-upgrade-comparison { border-block-start: 1px solid var(--line, #dce3df); padding-block: 20px; margin-block-start: 20px; }
+.subscription-upgrade-comparison ul { padding-inline-start: 24px; }
+.subscription-upgrade-table-wrap { max-width: 100%; overflow-x: auto; margin-block: 16px; }
+.subscription-upgrade-comparison table { width: 100%; border-collapse: collapse; font-size: inherit; table-layout: fixed; }
+.subscription-upgrade-comparison caption { text-align: start; font-weight: 700; margin-block-end: 8px; }
+.subscription-upgrade-comparison th,
+.subscription-upgrade-comparison td { padding: 10px; border-block-end: 1px solid var(--line, #dce3df); text-align: start; font-size: inherit; }
+.subscription-upgrade-comparison th { font-weight: 700; }
+.subscription-upgrade-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; margin-block-start: 20px; }
+.subscription-upgrade-actions p { flex: 1 1 240px; margin: 0; }
+.subscription-upgrade-button,
+.subscription-upgrade-dismiss {
+  font: inherit;
+  font-weight: 700;
+  min-height: 44px;
+  max-width: 100%;
+  border-radius: 10px;
+  padding: 8px 18px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--green-700, #216b56);
+}
+.subscription-upgrade-button { background: var(--green-700, #216b56); color: #fff; }
+.subscription-upgrade-dismiss { background: transparent; color: var(--ink, #17352d); border-color: var(--line, #dce3df); }
+.subscription-upgrade-button:focus-visible,
+.subscription-upgrade-dismiss:focus-visible { outline: 3px solid var(--focus, #2f8068); outline-offset: 3px; }
+.subscription-upgrade-banner { display: flex; align-items: center; flex-wrap: wrap; gap: 20px; background: var(--surface-soft, #f8faf7); }
+.subscription-upgrade-banner-content { flex: 1 1 280px; min-width: 0; }
+.subscription-upgrade-banner-content p { margin: 0; }
+.subscription-upgrade-banner-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+@media (max-width: 480px) {
+  .subscription-upgrade-card, .subscription-upgrade-banner { padding: 16px; }
+  .subscription-upgrade-comparison th, .subscription-upgrade-comparison td { padding: 8px 4px; }
+  .subscription-upgrade-banner-actions { width: 100%; }
+}
