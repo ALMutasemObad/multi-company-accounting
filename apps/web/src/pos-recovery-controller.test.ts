@@ -188,6 +188,19 @@ describe("POS scope, authorization and stale results", () => {
     const starting = controller.begin(send); controller.activate(null); gate.resolve();
     expect(await starting).toBe(false); expect(send).not.toHaveBeenCalled(); expect(values.size).toBe(0);
   });
+
+  it("cannot attach an old read result to the next sale after explicit confirmation and reset", async () => {
+    let key = key1; const oldResponse = deferred<unknown>(); const nextResponse = deferred<unknown>(); const entered = deferred<void>();
+    const { controller, read, values } = fixture({ createKey: () => key }); await controller.begin(lost);
+    read.mockReturnValueOnce(oldResponse.promise); const oldRead = controller.check();
+    controller.activate(recoveryScope); read.mockResolvedValue({ outcome: "CONFIRMED", result: recoveryResult });
+    await controller.check(); expect(await controller.newSale()).toBe(true);
+    key = key2; const nextSale = controller.begin(async () => { entered.resolve(); return nextResponse.promise; }); await entered.promise;
+    oldResponse.resolve({ outcome: "CONFIRMED", result: recoveryResult }); await oldRead;
+    expect(controller.getSnapshot().status).toBe("pending");
+    expect([...values.values()][0]).toContain(key2);
+    nextResponse.reject(new Error("lost")); await nextSale; expect(controller.getSnapshot().status).toBe("unknown");
+  });
 });
 
 describe("POS acknowledgement decoding", () => {
