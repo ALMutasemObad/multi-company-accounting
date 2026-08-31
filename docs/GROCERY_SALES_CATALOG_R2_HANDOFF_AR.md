@@ -117,3 +117,43 @@ Migration: توسعية ومفحوصة بنيويًا فقط؛ الاختبار 
 Ledger/التسوية/الرمز البشري/الأحداث/إعادة كلمة المرور: لا تغيير. لا dependency جديدة
 أو اعتماد مكتبة يحتاج تقييمًا. مصدر الخريطة وBarcode Impact والعقد محدثة. أذونات
 النشر أو تشغيل CI عبر رفع PR ليست ضمن هذا التسليم.
+
+## متابعة الربط: خيارات العملات المسموحة بصفحات
+
+commit التنفيذ المستقل: `97d8931f305855733917264307ac4971de5dab3e`.
+أضيف `GET /currencies/options` داخل Companies فقط، بالـoperationId
+`listEnabledCurrencyOptions` و`CompanyService.listEnabledCurrencyOptions`.
+يفرض Router صلاحية `currencies.view` قبل التحقق من query أو فتح استعلام بيانات.
+مسار `/currencies` القديم وعقده لم يتغيرا.
+
+- query صارم بلا مفاتيح إضافية: page افتراضي1 وحد1..10000، pageSize افتراضي20
+  وحد1..100، search نص اختياري يقص الفراغات وحد100 بعد القص ويرفض محارف التحكم.
+- DTO: `{data:[{id:string,code:string,nameAr:string,decimals:integer}],meta}`؛
+  meta يحمل page/pageSize/total/totalPages. المعرف نص دون تحويله إلى Number.
+- العضوية محصورة بشركة الجلسة وcompanyCurrency.isActive؛ العملة نفسها فعالة،
+  وإما GLOBAL بمالكnull أو COMPANY بمالك شركة الجلسة. لا أسعار صرف أو بيانات شركة.
+- count وfindMany يستخدمان where نفسه داخل معاملة قراءة محدودة، والصفحة تنفذ
+  في DB بـskip/take وترتيب currency.code ثم currencyId؛ لا تحميل شامل ثم قص بالذاكرة.
+- OpenAPI1.46.1 ومدقق الاستجابات المولد محدثان، بما فيهما رفض حقول تسريب إضافية
+  وحد100 للنتائج، والأخطاء400/401/403/500/504. تحررت ملكية العقد للمنسق بعد التسليم.
+
+نجح34 اختبارًا في4ملفات: currency-options/company-service/company-router-guards/
+openapi-route-parity. تشمل ترتيب auth، فلاتر العزل والتفعيل، count/page/select،
+الحدود والأخطاء، ومدقق الاستجابة الفعلي داخل التطبيق لا التحقق اليدوي وحده.
+نجح TypeScript لمصدر API واختباراته، و`contracts:check` بـ169 request bodies
+و2138 response bodies، و`git diff --check`.
+
+أوامر إعادة الفحص المحدود، مع TEMP/TMP داخل نسخةD وGOMAXPROCS=2 وGOMEMLIMIT=1536MiB:
+
+```text
+# من apps/api، worker1 وتسلسلي
+node ../../node_modules/vitest/vitest.mjs run --config vitest.track-r2-currency-options.config.ts
+node ../../node_modules/typescript/bin/tsc -p tsconfig.test.json --pretty false
+# من جذر النسخة
+node scripts/generate-openapi-guards.mjs --check
+```
+
+اختبارات الاستعلامات هنا fixture/mocks وليست إثبات تنفيذ على المحركين الفعليين.
+لم يتغير schema أو seed أو صلاحيات أو app/server أو الواجهة، ولم يجر Prisma generate
+أو اتصالDB أو تنزيل أو جولةاختبار شاملة. تبقى بوابات DB fresh/upgrade/E2E والإصدار
+المذكورة أعلاه كما هي، ولا يعتبر هذا التسليم إذنًا أو دليلًا للنشر.
