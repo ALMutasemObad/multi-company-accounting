@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { localizedBrand } from "./branding";
 import { formatCurrencyDecimal, isZeroDecimal } from "./decimal-format";
 import { LanguageSwitcher, useI18n } from "./i18n";
+import { PublicPlansComparison } from "./PublicPlansComparison";
+import { publicOfferDecimal } from "./public-offers";
 import { registrationPlanHref, rememberSubscriptionPlan, type PublicSubscriptionCatalog, type PublicSubscriptionPlan } from "./public-plans";
 import { Button, Icon } from "./ui";
 import "./public-plans.css";
@@ -14,6 +16,8 @@ export function PublicPlansPage() {
   const [retry, setRetry] = useState(0);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
+  const focusAfterLoad = useRef(false);
+  const navigatePage = (next: number) => { focusAfterLoad.current = true; setPage(next); };
 
   useEffect(() => { document.title = `${t("publicPlans.pageTitle")} | ${brand.shortName}`; }, [t, brand.shortName]);
   useEffect(() => {
@@ -31,6 +35,12 @@ export function PublicPlansPage() {
       .finally(() => { window.clearTimeout(timeout); if (active) setLoading(false); });
     return () => { active = false; window.clearTimeout(timeout); controller.abort(); };
   }, [page, retry]);
+  useEffect(() => {
+    if (!loading && focusAfterLoad.current) {
+      focusAfterLoad.current = false;
+      document.getElementById("plans-catalog")?.focus();
+    }
+  }, [loading]);
 
   return <div className="public-plans" dir={dir}>
     <a className="plans-skip-link" href="#plans-catalog">{t("publicPlans.skip")}</a>
@@ -41,31 +51,34 @@ export function PublicPlansPage() {
     </header>
     <main>
       <section className="plans-hero" aria-labelledby="plans-title">
-        <span className="plans-eyebrow"><span aria-hidden="true" />{t("publicPlans.eyebrow")}</span>
         <h1 id="plans-title">{t("publicPlans.headline")}<br /><em>{t("publicPlans.headlineAccent")}</em></h1>
+        <span className="plans-eyebrow"><span aria-hidden="true" />{t("publicPlans.eyebrow")}</span>
         <p>{t("publicPlans.intro")}</p>
         <div className="plans-promises">{(["clear", "modular", "grow"] as const).map((key) => <span key={key}><Icon name="check" size={16} />{t(`publicPlans.promise.${key}`)}</span>)}</div>
         <a className="plans-explore" href="#plans-catalog">{t("publicPlans.explore")}<Icon name="arrowDown" size={17} /></a>
       </section>
 
-      <section className="plans-catalog" id="plans-catalog" aria-labelledby="plans-catalog-title" aria-busy={loading}>
-        <div className="plans-section-heading"><div><span className="section-kicker">{t("publicPlans.catalogEyebrow")}</span><h2 id="plans-catalog-title">{t("publicPlans.catalogTitle")}</h2></div><p>{t("publicPlans.catalogNote")}</p></div>
+      <section className="plans-catalog" id="plans-catalog" tabIndex={-1} aria-labelledby="plans-catalog-title" aria-busy={loading}>
+        <div className="plans-section-heading"><div><h2 id="plans-catalog-title">{t("publicPlans.catalogTitle")}</h2><p>{t("publicPlans.catalogEyebrow")}</p></div><p>{t("publicPlans.catalogNote")}</p></div>
         {loading && <><p role="status" className="plans-status">{t("publicPlans.loading")}</p><div className="plans-grid plans-skeleton" aria-hidden="true">{[0, 1, 2].map((id) => <div key={id}><span /><span /><span /><span /></div>)}</div></>}
-        {failed && <div className="plans-empty" role="alert"><Icon name="reverse" size={32} /><h3>{t("publicPlans.loadErrorTitle")}</h3><p>{t("publicPlans.loadError")}</p><Button onClick={() => setRetry((value) => value + 1)}>{t("common.retry")}</Button></div>}
+        {failed && <div className="plans-empty" role="alert"><Icon name="reverse" size={32} /><h3>{t("publicPlans.loadErrorTitle")}</h3><p>{t("publicPlans.loadError")}</p><Button onClick={() => { focusAfterLoad.current = true; setRetry((value) => value + 1); }}>{t("common.retry")}</Button></div>}
         {!loading && !failed && catalog && (catalog.plans.length ? <>
-          <div className="plans-grid">{catalog.plans.map((plan, index) => <PlanCard key={plan.id} plan={plan} accent={index === 1} />)}</div>
-          {catalog.meta.totalPages > 1 && <nav className="plans-pager" aria-label={t("publicPlans.pagination")}><Button variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>{t("common.previous")}</Button><span>{t("publicPlans.page", { current: page, total: catalog.meta.totalPages })}</span><Button variant="secondary" disabled={page >= catalog.meta.totalPages} onClick={() => setPage(page + 1)}>{t("common.next")}</Button></nav>}
+          <p className="plans-scope" role="status">{t("publicPlans.pageScope", { page: catalog.meta.page, count: catalog.plans.length, total: catalog.meta.total })}</p>
+          <div className="plans-grid">{catalog.plans.map((plan) => <PlanCard key={plan.id} plan={plan} />)}</div>
+          {catalog.plans.length > 1 && <PublicPlansComparison key={`${page}-${retry}`} catalog={catalog} />}
+          {catalog.meta.totalPages > 1 && <nav className="plans-pager" aria-label={t("publicPlans.pagination")}><Button variant="secondary" disabled={page <= 1} onClick={() => navigatePage(page - 1)}>{t("common.previous")}</Button><span>{t("publicPlans.page", { current: page, total: catalog.meta.totalPages })}</span><Button variant="secondary" disabled={page >= catalog.meta.totalPages} onClick={() => navigatePage(page + 1)}>{t("common.next")}</Button></nav>}
           <p className="plans-price-note">{t("publicPlans.priceNote")}</p>
-        </> : <div className="plans-empty"><Icon name="dashboard" size={36} /><h3>{t("publicPlans.emptyTitle")}</h3><p>{t("publicPlans.emptyDescription")}</p><a className="plans-cta" href="/#register">{t("publicPlans.createAccount")}</a><small>{t("publicPlans.noCharge")}</small></div>)}
+        </> : <div className="plans-empty"><Icon name="dashboard" size={36} /><h3>{t(page > 1 ? "publicPlans.emptyPageTitle" : "publicPlans.emptyTitle")}</h3><p>{t(page > 1 ? "publicPlans.emptyPageDescription" : "publicPlans.emptyDescription")}</p>{page > 1 ? <Button onClick={() => navigatePage(1)}>{t("publicPlans.firstPage")}</Button> : <><a className="plans-cta" href="/#register">{t("publicPlans.createAccount")}</a><small>{t("publicPlans.noCharge")}</small></>}</div>)}
+        {!loading && !failed && <p className="plans-price-note">{t("publicPlans.currentTerms")}</p>}
       </section>
 
-      <section className="plans-benefits" aria-labelledby="plans-benefits-title"><div className="plans-benefits-intro"><span className="section-kicker">{t("publicPlans.benefitsEyebrow")}</span><h2 id="plans-benefits-title">{t("publicPlans.benefitsTitle")}</h2><p>{t("publicPlans.benefitsDescription")}</p></div><div className="plans-benefit-grid">
+      <section className="plans-benefits" aria-labelledby="plans-benefits-title"><div className="plans-benefits-intro"><h2 id="plans-benefits-title">{t("publicPlans.benefitsTitle")}</h2><p>{t("publicPlans.benefitsEyebrow")}</p><p>{t("publicPlans.benefitsDescription")}</p></div><div className="plans-benefit-grid">
         <article><Icon name="accounts" size={28} /><h3>{t("publicPlans.benefit.oneTitle")}</h3><p>{t("publicPlans.benefit.oneBody")}</p></article>
         <article><Icon name="dashboard" size={28} /><h3>{t("publicPlans.benefit.twoTitle")}</h3><p>{t("publicPlans.benefit.twoBody")}</p></article>
         <article><Icon name="users" size={28} /><h3>{t("publicPlans.benefit.threeTitle")}</h3><p>{t("publicPlans.benefit.threeBody")}</p></article>
       </div></section>
 
-      <section className="plans-faq" id="plans-faq" aria-labelledby="plans-faq-title"><div><span className="section-kicker">{t("publicPlans.faqEyebrow")}</span><h2 id="plans-faq-title">{t("publicPlans.faqTitle")}</h2><p>{t("publicPlans.faqIntro")}</p></div><div className="plans-faq-list">
+      <section className="plans-faq" id="plans-faq" aria-labelledby="plans-faq-title"><div><h2 id="plans-faq-title">{t("publicPlans.faqTitle")}</h2><p>{t("publicPlans.faqEyebrow")}</p><p>{t("publicPlans.faqIntro")}</p></div><div className="plans-faq-list">
         {(["payment", "modules", "tax", "change"] as const).map((key) => <details key={key}><summary>{t(`publicPlans.faq.${key}Question`)}</summary><p>{t(`publicPlans.faq.${key}Answer`)}</p></details>)}
       </div></section>
 
@@ -75,7 +88,7 @@ export function PublicPlansPage() {
   </div>;
 }
 
-function PlanCard({ plan, accent }: { plan: PublicSubscriptionPlan; accent: boolean }) {
+function PlanCard({ plan }: { plan: PublicSubscriptionPlan }) {
   const { intlLocale, formatNumber, t } = useI18n();
   const money = (value: string) => formatCurrencyDecimal(value, plan.currencyCode, intlLocale, { minimumFractionDigits: 0, maximumFractionDigits: 4 });
   const included = plan.modules.filter((module) => module.selectionMode === "INCLUDED");
@@ -85,9 +98,9 @@ function PlanCard({ plan, accent }: { plan: PublicSubscriptionPlan; accent: bool
     { label: t("publicPlans.additionalEmployee"), value: plan.pricePerAdditionalEmployee },
     { label: t("publicPlans.additionalDocument"), value: plan.pricePerAdditionalPostedDocument },
   ];
-  return <article className={`plans-card${accent ? " plans-card-accent" : ""}`}>
-    <header><span className="plans-card-kicker">{plan.trialDays > 0 ? t("publicPlans.trial", { days: plan.trialDays }) : isZeroDecimal(plan.recurringFee) ? t("publicPlans.freeBadge") : t("publicPlans.paidBadge")}</span><h3>{plan.displayName}</h3><p>{plan.description || t("publicPlans.defaultDescription")}</p></header>
-    <div className="plans-price"><strong><bdi>{money(plan.recurringFee)}</bdi></strong><span>{t(`subscription.cycle.${plan.billingCycle}`)}</span><small>{isZeroDecimal(plan.taxRate) ? t("publicPlans.taxZero") : t("publicPlans.taxExtra", { rate: plan.taxRate.replace(/\.?0+$/u, "") })}</small></div>
+  return <article className="plans-card">
+    <header><h3>{plan.displayName}</h3><span className="plans-card-kicker">{plan.trialDays > 0 ? t("publicPlans.trial", { days: plan.trialDays }) : isZeroDecimal(plan.recurringFee) ? t("publicPlans.freeBadge") : t("publicPlans.paidBadge")}</span><p>{plan.description || t("publicPlans.defaultDescription")}</p></header>
+    <div className="plans-price"><strong><bdi>{money(plan.recurringFee)}</bdi></strong><span>{t(`subscription.cycle.${plan.billingCycle}`)}</span><small>{isZeroDecimal(plan.taxRate) ? t("publicPlans.taxZero") : t("publicPlans.taxExtra", { rate: publicOfferDecimal(plan.taxRate) })}</small></div>
     <a className="plans-cta" href={registrationPlanHref(plan.id)} onClick={() => rememberSubscriptionPlan(plan.id)}>{t("publicPlans.choose")}<Icon name="back" size={18} /></a>
     <p className="plans-card-policy">{plan.requiresApproval ? t("publicPlans.approval") : t("publicPlans.reviewFirst")}</p>
     <div className="plans-card-features"><h4>{t("publicPlans.includes")}</h4><ul className="plans-limits">
