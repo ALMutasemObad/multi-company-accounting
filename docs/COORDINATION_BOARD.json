@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedDate": "2026-08-31T17:08:47.2882506+03:00",
+  "updatedDate": "2026-08-31T17:16:33.1921842+03:00",
   "coordinatorThreadId": "01a05783-e720-7ed0-a107-4a372bd53202",
   "projectId": "c3fd65c7-6c00-45d1-9859-46f96966dc38",
   "repository": "C:/Users/motas/Documents/نظام جوار المالي/project",
@@ -85,9 +85,10 @@
         "patch": "D:/CodexWorktrees/wave1-pdf-decimal/tmp/coordination/delivery/w2-ascii-1/W2_ASCII_ITEM_BLOCKS_DELTA.patch",
         "sha256": "F6EF93582FC9692280BDABD25106E0B595B44DA0B4C9FFDE79397B6E25837409",
         "base": "R3 combined F7C740E0 then header delta6F001880",
-        "status": "source_frozen_independent_review_running",
+        "status": "independent_source_review_passed_runtime_window_allocated",
         "futureFocusedTests": 103
-      }
+      },
+      "currentValidation": "103focused+types+PDF/PNG authorized on frozenW2; results pending"
     },
     {
       "id": "W1-POS",
@@ -177,7 +178,8 @@
         "databaseName": "w1posrecovery",
         "testCounts": "11 exact finalization +1 financial,zero skips required",
         "path": "D:/CodexWorktrees/wave1-pos-recovery/tmp/coordination/ci-pos-recovery-proposal"
-      }
+      },
+      "integratedAt": "a4f8e0c16dc03ce5d6869bcd21c194335efe0bd1"
     },
     {
       "id": "W1-ONBOARD",
@@ -254,7 +256,8 @@
         "fullHeadReceipt": "D:/CodexWorktrees/wave1-onboarding-policy/tmp/coordination/W1_CHECKPOINT_RECEIPT.json",
         "publication": false,
         "head": "6bb49994b8cda50afcc8331e28ee900925d9dc4a"
-      }
+      },
+      "integratedAt": "a4f8e0c16dc03ce5d6869bcd21c194335efe0bd1"
     },
     {
       "id": "W1-QA",
@@ -322,7 +325,8 @@
         "afterSha256": "72AD53D4085EC4EEAC44FE37100AE194F4FAADEAB545A8921F2C08829C586E08",
         "coordinatorVerified": true,
         "publication": false
-      }
+      },
+      "integratedAt": "a4f8e0c16dc03ce5d6869bcd21c194335efe0bd1"
     },
     {
       "id": "W1-DB-PREP",
@@ -330,7 +334,7 @@
       "threadId": "01a057da-c19c-74c2-8f2c-be2ff9c8b3e5",
       "hostId": "local",
       "worktree": "D:/CodexWorktrees/wave1-dual-db-validation",
-      "status": "maria_extracted_mysql_data_extraction_authorized",
+      "status": "both_archives_extracted_trust_inventory_source_preparation",
       "priority": "P0",
       "acceptance": "Preparation only,notDBacceptance. OfficialWindowsZIP versions mustmatchCI MariaDB10.11.11/MySQL8.4.11; hashes/requirements/manifests onD.",
       "constraints": "Oneofficialdownload atatime andhash/read-onlypreflight now. Noextraction/initialize/DB/service/install/Prismagenerate/Gitwrites untilseparateallocation. PDFownsruntime. NoVCinstaller/EULAacceptance orglobalenv/ACL/PATHchanges.",
@@ -388,6 +392,17 @@
         "token": "757877e1-4c39-45e4-b20d-728eff6fff20",
         "expiresAtUtc": "2026-08-31T14:33:47Z",
         "scope": "archive-data-only"
+      },
+      "mysqlExtraction": {
+        "runner": "R2 4770D771",
+        "exit": 0,
+        "filesCompleted": 296,
+        "writtenBytes": 1262625088,
+        "seconds": 34.4536928,
+        "workerCommandSeconds": 35.5998213,
+        "lockReleased": true,
+        "summary": "D:/CodexWorktrees/wave1-dual-db-validation/stage2-r1/reports/mysql-8.4.11/summary.json",
+        "proofLimit": "ZIP data extraction only; no PE/trust/DB run"
       }
     }
   ],
@@ -556,7 +571,7 @@
     }
   ],
   "browserResourceStatus": "QA44runended43pass/1D3failure,0skip/retry. API26804/Vite27836 exited,3166/4216free,watchdognotused. No interactiveBrowserowned.",
-  "limitedRuntimeOwner": "W1-DB-PREP: one MySQL8.4.11 archive-data-only extraction using R2 4770D771 and new permit. Maria data extraction succeeded599files/289103212bytes and lock released. No PE/Authenticode/DB. PDF103 next.",
+  "limitedRuntimeOwner": "W1-PDF exclusive:103focused ->narrowtypes->PDF/extraction/PNG with resource checks and frozen hashes; no DB/browser/Gitwrites. Both DB archives extracted and locks released; DB-PREP now source-only offline inventory prep.",
   "validationOrder": [
     "DB-PREP: Maria then MySQL archive extraction as data in separate permits; readback+offline trust inventory separately; no PE/DB until reviewed.",
     "PDF: frozen R3+header+ASCII,103focused ->narrowtypes->PDF/extraction/PNG,worker1,no retry.",
@@ -578,8 +593,8 @@
     "Unified candidate: merge contracts/regenerate and run common guards/types/build/currentHEAD acceptance; no publishing."
   ],
   "coordinatorGitException": "Completed successfully: df39116 committedonly2coordinationdocs afterdiffcheck;index/worktreecleanthen. No hooks override/ACLchange. This demonstrates localGitwriteworkedafterspace recovery,doesnotprovepriorrootcause.",
-  "lastCoordinatorCommit": "a080934ff79fdb3a0d135938963d07e2c9fade26",
-  "gitWriteOwner": "ROOT only: scoped coordination docs checkpoint, then reviewed local candidate composition if clean. No push/mainmerge/workflow/deploy.",
+  "lastCoordinatorCommit": "a4f8e0c16dc03ce5d6869bcd21c194335efe0bd1",
+  "gitWriteOwner": "None. ROOT composed candidates successfully and released Git; only documentation receipts may be checkpointed later. No push/mainmerge/workflow/deploy.",
   "evaluationTask": {
     "threadId": "01a05803-cf2b-77c1-9415-e0839dff48d6",
     "hostId": "local",
@@ -629,5 +644,28 @@
       "data": "D:/CodexWorktrees/project-progress-evaluation/system_scope.json",
       "relationship": "Separate denominator from40percent currentwave;not+30progressoraverage;notfirstclientreadiness"
     }
+  },
+  "integrationCandidate": {
+    "head": "a4f8e0c16dc03ce5d6869bcd21c194335efe0bd1",
+    "beforeHead": "da9e53baaded5675c7a40a84747393db20f1f664",
+    "branch": "coord/continuous-delivery-20260831",
+    "included": [
+      "ONBOARD6bb49994",
+      "QA0dd107ab",
+      "POS fiveimports+1f13084"
+    ],
+    "excluded": [
+      "PDFR3/W2",
+      "QA D3 pending source candidate",
+      "N1 CI proposal",
+      "N2/N3/Z1"
+    ],
+    "uniqueFiles": 87,
+    "committedBlobsMatch": 87,
+    "workingTreeCleanAtReceipt": true,
+    "diffCheckExit": 0,
+    "receipt": "D:/CodexWorktrees/continuous-coordination/tmp/coordination/integration-20260831/INTEGRATION_RECEIPT.json",
+    "receiptSha256": "62FBB615B2409986175DE121C5AAA15AF99CAD1BFB625590FA8B4FB356C190E1",
+    "proofLimit": "Local candidate composition only. No common runtime/types/build/DB/browser/release gate is accepted at this head."
   }
 }
