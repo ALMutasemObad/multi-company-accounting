@@ -5,6 +5,7 @@ import type { AuthService } from "../auth/auth-service.js";
 import { openApiRequestBodySchemas as bodies } from "../generated/openapi-request-guards.js";
 import { SellingProfileError } from "./selling-profile-policy.js";
 import type { SellingProfileService } from "./selling-profile-service.js";
+import { readWithPosContext } from "../platform/pos-request-context.js";
 
 const query = z.object({ page: z.coerce.number().int().min(1).max(10000).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(24),
@@ -21,12 +22,12 @@ export function createSellingProfileRouter(auth: Pick<AuthService, "authorize">,
     csrfToken: request.header("X-CSRF-Token") ?? undefined, permission, requireCsrf,
   });
   router.get("/sales/catalog", async (request, response) => {
-    const context = await authorize(request, "sales_catalog.view", false);
-    response.json(await service.list(context, query.parse(request.query)));
+    response.json(await readWithPosContext(request, () => authorize(request, "sales_catalog.view", false),
+      context => service.list(context, query.parse(request.query))));
   });
   router.get("/sales/catalog/items/:inventoryItemId", async (request, response) => {
-    const context = await authorize(request, "sales_catalog.view", false);
-    response.json(await service.get(context, itemId.parse(request.params.inventoryItemId)));
+    response.json(await readWithPosContext(request, () => authorize(request, "sales_catalog.view", false),
+      context => service.get(context, itemId.parse(request.params.inventoryItemId))));
   });
   router.post("/sales/catalog/items/:inventoryItemId/selling-profile", async (request, response) => {
     const context = await authorize(request, "sales_catalog.manage", true);

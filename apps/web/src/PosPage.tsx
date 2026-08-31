@@ -1,23 +1,30 @@
 import { type FormEvent, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
-import { api } from "./api";
-import { allows, firstRequestFailure, requestIfAllowed, requestValue } from "./authorization";
+import { allows } from "./authorization";
 import { useAuthorization } from "./authorization-context";
 import { canUsePosBarcodeScanner, type PosBarcodeItem } from "./barcode";
 import { InventoryBarcodeScanner, type InventoryBarcodeScannerHandle } from "./InventoryBarcodeScanner";
-import { endpointPermissionPolicies } from "./endpoint-permissions";
 import { messageForError, statusLabel } from "./domain";
 import { activeIntlLocale, localizedReferenceName, useI18n } from "./i18n";
-import type { Currency, FiscalPeriod, ListResponse, PosCheckoutResult, PosSale } from "./types";
+import type { ListResponse, PosCheckoutResult, PosSale } from "./types";
 import { Button, PageHeader, Pagination, Spinner } from "./ui";
 import { PosCatalog } from "./PosCatalog";
 import { PosCart } from "./PosCart";
 import { PosOperatingContext, type PosSaleContext } from "./PosOperatingContext";
 import { addPosItem, applyPosSellingProfile, type PosDraftLine } from "./pos-experience-cart";
-import { posCatalogPolicy, posCatalogReader, type PosCatalogItem } from "./pos-experience-catalog";
+import { posCatalogPolicy, createPosCatalogReader, type PosCatalogItem } from "./pos-experience-catalog";
 import { createBrowserPosRecovery } from "./pos-recovery-browser";
 import { PosRecoveryPanel } from "./PosRecoveryPanel";
 import { posDecimal, posMoneyText, posSubtotal } from "./pos-experience-money";
 import { readPosDisplayMode, savePosDisplayMode } from "./pos-experience-preferences";
+import { createPosScopeController } from "./pos-scope-controller";
+import { PosScopePanel } from "./PosScopePanel";
+import { createCashierContextController, type CashierContextReviewed } from "./cashier-context-controller";
+import { cashierContextScopeKey, type CashierContextScope } from "./cashier-context-model";
+import { CashierContextPanel } from "./CashierContextPanel";
+import { createPosContextReader, posContextOptionsPath, type PosContextOption } from "./pos-context-reader";
+import { ReferenceCombobox } from "./ReferenceCombobox";
+import { cashierContextDictionaries } from "./i18n/locales/cashier-context";
+import { posScopeDictionaries } from "./i18n/locales/pos-scope";
 import "./pos-experience-styles.css";
 
 type Notice = (message: string, tone?: "success" | "error") => void;
@@ -38,34 +45,48 @@ export function PosPage({ notify }: { notify: Notice }) {
 
 function PosExperience({ notify }: { notify: Notice }) {
   const { t, locale } = useI18n();
-  const { permissionSet, user, selectedCompany } = useAuthorization();
-  const [recovery] = useState(() => createBrowserPosRecovery((attemptKey, signal) => api("/pos/checkouts/recovery", {
-    method: "POST", body: JSON.stringify({ attemptKey }), signal, timeoutMs: 10_000,
-  })));
+  const { permissionSet, user, selectedCompany, modules, permissions } = useAuthorization();
+  const [scopeGate] = useState(() => createPosScopeController({ userId: user.id, companyId: selectedCompany?.id ?? "" }, undefined,
+    permissionSet.has("pos.checkout") ? "checkout" : "history"));
+  const scopeState = useSyncExternalStore(scopeGate.subscribe, scopeGate.getSnapshot, scopeGate.getSnapshot);
+  const [catalogReader] = useState(() => createPosCatalogReader(scopeGate.request));
+  const [cashier] = useState(() => createCashierContextController(createPosContextReader(scopeGate.request)));
+  const cashierState = useSyncExternalStore(cashier.subscribe, cashier.getSnapshot, cashier.getSnapshot);
+  const cashierScope: CashierContextScope | null = selectedCompany ? { userId: user.id, companyId: selectedCompany.id,
+    authorizationRevision: JSON.stringify([permissions, modules]), permissions: [...permissionSet], modules } : null;
+  const currentCashierKey = cashierContextScopeKey(cashierScope);
+  const [recovery] = useState(() => createBrowserPosRecovery(async (attemptKey, signal) => {
+    const envelope = await scopeGate.request<Record<string, unknown>>("/pos/checkouts/recovery", {
+      method: "POST", body: JSON.stringify({ attemptKey }), signal, timeoutMs: 10_000,
+    });
+    // The scoped transport has verified this metadata. Remove only its one reserved
+    // field; N1 still receives every other field and applies its strict decoder.
+    const recoveryBody = { ...envelope }; delete recoveryBody.posContext;
+    return recoveryBody;
+  }));
   const recoveryState = useSyncExternalStore(recovery.subscribe, recovery.getSnapshot, recovery.getSnapshot);
   const canCheckout = permissionSet.has("pos.checkout") && Boolean(selectedCompany);
+  const canAccess = canCheckout || (permissionSet.has("pos.view") && Boolean(selectedCompany));
   const canCatalog = canCheckout && allows(permissionSet, posCatalogPolicy);
   const canScan = canUsePosBarcodeScanner(permissionSet) && Boolean(selectedCompany);
   const [context, setContext] = useState<PosSaleContext>(() => ({
-    periodId: "", currencyId: "", exchangeRate: "1.00000000", documentDate: today(selectedCompany?.timezone ?? "Asia/Riyadh"), description: "",
+    periodId: "", currencyId: "", exchangeRate: "", documentDate: today(selectedCompany?.timezone ?? "Asia/Riyadh"), description: "",
     customerId: "", customerLabel: "", warehouseId: "", warehouseLabel: "", cashAccountId: "", cashAccountLabel: "", paymentMethod: null, referenceNumber: "", notes: "",
   }));
   const contextRef = useRef(context);
   const [lines, setLines] = useState<PosDraftLine[]>([]);
   const linesRef = useRef(lines);
   const [mode, setMode] = useState(() => readPosDisplayMode(user.id, selectedCompany?.id ?? ""));
-  const [periods, setPeriods] = useState<FiscalPeriod[]>([]);
-  const [currencies, setCurrencies] = useState<Currency[]>([]);
-  const [referenceError, setReferenceError] = useState(false);
-  const [referenceRevision, setReferenceRevision] = useState(0);
   const scanner = useRef<InventoryBarcodeScannerHandle>(null);
   const [barcodePending, setBarcodePending] = useState(0);
+  const barcodePendingRef = useRef(0);
   const [profilePending, setProfilePending] = useState(0);
   const profileRequests = useRef(new Map<string, AbortController>());
   const mounted = useRef(true);
   const draftEpoch = useRef(0);
   const draftTicket = draftEpoch.current;
   const transitioning = useRef(false);
+  const [preparing, setPreparing] = useState(false);
   const [page, setPage] = useState(1);
   const [historyRevision, setHistoryRevision] = useState(0);
   const [sales, setSales] = useState<PosSale[]>([]);
@@ -73,11 +94,12 @@ function PosExperience({ notify }: { notify: Notice }) {
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState(false);
   const [checkoutError, setCheckoutError] = useState("");
-  const blocked = !canCheckout || recoveryState.status !== "ready";
-  const result = recoveryState.status === "confirmed" ? recoveryState.result : undefined;
-  const currencyCode = currencies.find((currency) => currency.id === context.currencyId)?.code ?? "";
+  const blocked = !canCheckout || scopeState.status !== "ready" || preparing || recoveryState.status !== "ready";
+  const result = scopeState.status === "ready" && recoveryState.status === "confirmed" ? recoveryState.result : undefined;
+  const currencyReference = cashierState.fields.currencyId.reference;
+  const currencyCode = currencyReference?.id === context.currencyId ? currencyReference.code ?? "" : "";
   const pending = barcodePending + profilePending;
-  const canEdit = () => mounted.current && canCheckout && !transitioning.current && draftEpoch.current === draftTicket
+  const canEdit = () => mounted.current && canCheckout && scopeGate.isReady() && !transitioning.current && draftEpoch.current === draftTicket
     && recovery.getSnapshot().status === "ready";
 
   const updateLines = useCallback((update: (current: PosDraftLine[]) => PosDraftLine[]) => {
@@ -87,8 +109,15 @@ function PosExperience({ notify }: { notify: Notice }) {
     if (!canEdit()) return;
     const next = { ...contextRef.current, ...patch }; contextRef.current = next; setContext(next);
   };
+  function syncCashierLock() {
+    const state = recovery.getSnapshot().status;
+    cashier.setLock(!scopeGate.isReady() || state === "unknown" || state === "blocked" || state === "initializing" ? "checkout-unknown"
+      : state === "confirmed" || state === "rejected" ? "checkout-completed"
+      : state === "pending" || state === "checking" || transitioning.current ? "checkout-pending"
+      : barcodePendingRef.current > 0 || scanner.current?.hasPending() || profileRequests.current.size > 0 ? "scan-pending" : null);
+  }
   function invalidateProfile(key: string) {
-    profileRequests.current.get(key)?.abort(); profileRequests.current.delete(key); setProfilePending(profileRequests.current.size);
+    profileRequests.current.get(key)?.abort(); profileRequests.current.delete(key); setProfilePending(profileRequests.current.size); syncCashierLock();
   }
   function editLine(key: string, patch: Partial<PosDraftLine>) {
     if (!canEdit()) return;
@@ -99,46 +128,69 @@ function PosExperience({ notify }: { notify: Notice }) {
     if (!canEdit()) return;
     invalidateProfile(key); updateLines((current) => current.filter((line) => line.key !== key));
   }
-  function changeCurrency(currencyId: string) {
-    if (!canEdit()) return;
+  function changeCurrency(currencyId: string, isBase: boolean) {
+    if (!canEdit() || currencyId === contextRef.current.currencyId) return;
     for (const request of profileRequests.current.values()) request.abort();
     profileRequests.current.clear(); setProfilePending(0);
-    const currency = currencies.find((value) => value.id === currencyId);
-    patchContext({ currencyId, exchangeRate: currency?.isBase ? "1.00000000" : "" });
+    patchContext({ currencyId, exchangeRate: isBase ? "1.00000000" : "" });
     updateLines((current) => current.map((line) => ({ ...line, unitPrice: "", priceSource: "currency-mismatch", profileCurrencyId: null, profileVersion: null })));
+  }
+
+  function applyReviewed(value: CashierContextReviewed) {
+    if (!canEdit() || scanner.current?.hasPending() || profileRequests.current.size > 0) return;
+    const reviewed = cashier.getReviewed();
+    if (!reviewed || JSON.stringify(reviewed) !== JSON.stringify(value)) return;
+    const fields = cashier.getSnapshot().fields;
+    const payment = fields.paymentMethodId.reference; const currency = fields.currencyId.reference;
+    if (!payment || payment.id !== value.paymentMethodId || typeof payment.requiresReference !== "boolean"
+      || !currency || currency.id !== value.currencyId || typeof currency.isBase !== "boolean") return;
+    changeCurrency(value.currencyId, currency.isBase);
+    patchContext({ periodId: value.fiscalPeriodId, documentDate: value.documentDate, warehouseId: value.warehouseId ?? "",
+      warehouseLabel: fields.warehouseId.reference?.label ?? "", cashAccountId: value.cashBankAccountId,
+      cashAccountLabel: fields.cashBankAccountId.reference?.label ?? "", paymentMethod: { id: payment.id, label: payment.label, requiresReference: payment.requiresReference } });
+  }
+
+  async function startCashierSale() {
+    if (!mounted.current || !scopeGate.isReady() || recovery.getSnapshot().status !== "ready") return;
+    cashier.setScope(cashierScope); cashier.setLock(null);
+    const draft = contextRef.current;
+    await cashier.startSale({ documentDate: draft.documentDate, requiresWarehouse: true,
+      ...(draft.currencyId ? { draft: { documentDate: draft.documentDate, values: { warehouseId: draft.warehouseId || null,
+        cashBankAccountId: draft.cashAccountId || null, paymentMethodId: draft.paymentMethod?.id ?? null, currencyId: draft.currencyId } } } : {}) });
+  }
+
+  async function afterIdentity() {
+    if (!mounted.current || !scopeGate.isReady() || !canCheckout) return;
+    // Rehydrate only this original scope's marker; no result/body is taken from another tab.
+    recovery.activate(selectedCompany ? { userId: user.id, companyId: selectedCompany.id, canCheckout } : null);
+    if (recovery.getSnapshot().status === "unknown") await recovery.check();
+    else await startCashierSale();
   }
 
   useLayoutEffect(() => {
     mounted.current = true;
     recovery.activate(selectedCompany ? { userId: user.id, companyId: selectedCompany.id, canCheckout } : null);
-    return () => { mounted.current = false; recovery.dispose(); for (const request of profileRequests.current.values()) request.abort(); profileRequests.current.clear(); };
-  }, [recovery, user.id, selectedCompany?.id, canCheckout]);
-  useEffect(() => {
-    const controller = new AbortController();
-    if (!canCheckout) return;
-    setReferenceError(false);
-    void (async () => {
-      const results = await Promise.all([
-        requestIfAllowed(permissionSet, endpointPermissionPolicies.fiscalPeriods, () => api<ListResponse<FiscalPeriod>>("/fiscal-periods?page=1&pageSize=100", { signal: controller.signal, timeoutMs: 10_000 })),
-        requestIfAllowed(permissionSet, endpointPermissionPolicies.currencies, () => api<{ data: Currency[] }>("/currencies", { signal: controller.signal, timeoutMs: 10_000 })),
-      ]);
-      if (controller.signal.aborted) return;
-      const periodData = requestValue(results[0]); const currencyData = requestValue(results[1]);
-      setPeriods(periodData?.data.filter((period) => period.status !== "CLOSED") ?? []); setCurrencies(currencyData?.data ?? []);
-      const base = currencyData?.data.find((currency) => currency.isBase);
-      if (base && canEdit() && !contextRef.current.currencyId) patchContext({ currencyId: base.id });
-      setReferenceError(Boolean(firstRequestFailure(results)));
-    })();
-    return () => controller.abort();
-  }, [canCheckout, permissionSet, referenceRevision, recovery]);
+    const unsubscribeRecovery = recovery.subscribe(syncCashierLock);
+    const unsubscribeScope = scopeGate.subscribe(() => {
+      if (!["quarantined", "checking"].includes(scopeGate.getSnapshot().status)) return;
+      draftEpoch.current += 1; cashier.setScope(null);
+      barcodePendingRef.current = 0; setBarcodePending(0);
+      for (const request of profileRequests.current.values()) request.abort(); profileRequests.current.clear(); setProfilePending(0);
+      recovery.activate(selectedCompany ? { userId: user.id, companyId: selectedCompany.id, canCheckout } : null);
+      setSales([]); setCheckoutError("");
+    });
+    if (canAccess) void scopeGate.activate().then((ready) => { if (ready) void afterIdentity(); });
+    return () => { mounted.current = false; unsubscribeRecovery(); unsubscribeScope(); scopeGate.dispose(); recovery.dispose(); cashier.dispose();
+      for (const request of profileRequests.current.values()) request.abort(); profileRequests.current.clear(); };
+  }, [scopeGate, recovery, cashier, user.id, selectedCompany?.id, canCheckout, canAccess]);
   useEffect(() => {
     const controller = new AbortController(); setHistoryLoading(true); setHistoryError(false);
-    if (!permissionSet.has("pos.view")) { setHistoryLoading(false); return; }
-    void api<ListResponse<PosSale>>(`/pos/sales?page=${page}&pageSize=10`, { signal: controller.signal, timeoutMs: 10_000 }).then((response) => {
+    if (!permissionSet.has("pos.view") || scopeState.status !== "ready") { setHistoryLoading(false); return; }
+    void scopeGate.request<ListResponse<PosSale>>(`/pos/sales?page=${page}&pageSize=10`, { signal: controller.signal, timeoutMs: 10_000 }).then((response) => {
       if (!controller.signal.aborted) { setSales(response.data); setMeta(response.meta); }
     }).catch(() => { if (!controller.signal.aborted) setHistoryError(true); }).finally(() => { if (!controller.signal.aborted) setHistoryLoading(false); });
     return () => controller.abort();
-  }, [page, historyRevision, permissionSet, result]);
+  }, [page, historyRevision, permissionSet, result, scopeState.status, scopeGate]);
 
   function addItem(item: PosBarcodeItem, catalogItem?: PosCatalogItem) {
     if (!canEdit()) return "line-limit" as const;
@@ -152,8 +204,9 @@ function PosExperience({ notify }: { notify: Notice }) {
       updateLines((current) => current.map((value) => value.key === line.key ? applyPosSellingProfile(value, catalogItem, profileCurrencyId) : value));
     } else if (canCatalog) {
       const controller = new AbortController(); profileRequests.current.set(line.key, controller); setProfilePending(profileRequests.current.size);
+      syncCashierLock();
       updateLines((current) => current.map((value) => value.key === line.key ? { ...value, priceSource: "loading" } : value));
-      void posCatalogReader.item(item.id, controller.signal).then((row) => {
+      void catalogReader.item(item.id, controller.signal).then((row) => {
         if (!canEdit() || controller.signal.aborted || profileRequests.current.get(line.key) !== controller) return;
         updateLines((current) => current.map((value) => value.key === line.key ? applyPosSellingProfile(value, row, profileCurrencyId) : value));
       }).catch(() => {
@@ -161,21 +214,28 @@ function PosExperience({ notify }: { notify: Notice }) {
         updateLines((current) => current.map((value) => value.key === line.key ? { ...value, priceSource: "unavailable" } : value));
       }).finally(() => {
         if (profileRequests.current.get(line.key) === controller) profileRequests.current.delete(line.key);
-        if (mounted.current) setProfilePending(profileRequests.current.size);
+        if (mounted.current) { setProfilePending(profileRequests.current.size); syncCashierLock(); }
       });
     }
     return added.status;
   }
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canEdit()) return;
     if (scanner.current?.hasPending() || profileRequests.current.size > 0) { notify(t("pos.pendingBlocked"), "error"); scanner.current?.focus(); return; }
+    const reviewed = cashier.getReviewed();
+    if (!reviewed) { setCheckoutError(posScopeDictionaries[locale].review); return; }
     const draft = contextRef.current;
     const exchangeRate = posDecimal(draft.exchangeRate, 8, 11);
     if (!hasPosContext(draft) || exchangeRate === null || /^0\.0+$/.test(exchangeRate)) { setCheckoutError(t("pos.invalidCart")); return; }
     if (!linesRef.current.length || posSubtotal(linesRef.current) === null || linesRef.current.some((line) => !line.revenueAccountId)) { setCheckoutError(t("pos.invalidCart")); return; }
     if (draft.paymentMethod?.requiresReference && !draft.referenceNumber.trim()) { setCheckoutError(t("pos.referenceRequired")); return; }
+    if (reviewed.documentDate !== draft.documentDate || reviewed.fiscalPeriodId !== draft.periodId || reviewed.currencyId !== draft.currencyId
+      || reviewed.warehouseId !== draft.warehouseId || reviewed.cashBankAccountId !== draft.cashAccountId
+      || reviewed.paymentMethodId !== draft.paymentMethod?.id || reviewed.paymentRequiresReference !== draft.paymentMethod.requiresReference) {
+      setCheckoutError(posScopeDictionaries[locale].review); return;
+    }
     const body = JSON.stringify({
       fiscalPeriodId: draft.periodId, documentDate: draft.documentDate, description: draft.description.trim(), customerId: draft.customerId,
       warehouseId: draft.warehouseId, currencyId: draft.currencyId, exchangeRate,
@@ -183,71 +243,97 @@ function PosExperience({ notify }: { notify: Notice }) {
       lines: linesRef.current.map((line) => ({ inventoryItemId: line.inventoryItemId, description: line.description.trim(), quantity: posDecimal(line.quantity, 6, 13), unitPrice: posDecimal(line.unitPrice, 4), discountAmount: posDecimal(line.discountAmount, 4), revenueAccountId: line.revenueAccountId, costCenterId: null, taxRateId: line.taxRateId || null })),
     });
     setCheckoutError("");
-    // The body lives only in this one-shot closure. Recovery never retains or replays it.
-    void recovery.begin((attemptKey, signal) => api<PosCheckoutResult>("/pos/checkouts", {
-      method: "POST", idempotencyKey: attemptKey, body, signal, timeoutMs: 20_000,
-    }));
+    const epoch = draftEpoch.current; const reviewFingerprint = JSON.stringify(reviewed);
+    transitioning.current = true; setPreparing(true); syncCashierLock();
+    try {
+      const scopeTicket = await scopeGate.preflight();
+      scopeGate.assertReady(scopeTicket);
+      if (!mounted.current || epoch !== draftEpoch.current || scanner.current?.hasPending() || profileRequests.current.size > 0
+        || JSON.stringify(cashier.getReviewed({ forPendingCheckout: true })) !== reviewFingerprint) return;
+      // Body stays unchanged. The expected user/company are headers, not fingerprint inputs.
+      await recovery.begin((attemptKey, signal) => {
+        scopeGate.assertReady(scopeTicket);
+        if (!mounted.current || epoch !== draftEpoch.current || scanner.current?.hasPending() || profileRequests.current.size > 0
+          || JSON.stringify(cashier.getReviewed({ forPendingCheckout: true })) !== reviewFingerprint) throw new Error("POS_LOCAL_CONTEXT_CHANGED");
+        return scopeGate.request<PosCheckoutResult>("/pos/checkouts", { method: "POST", idempotencyKey: attemptKey, body, signal, timeoutMs: 20_000 });
+      });
+    } catch (cause) { if (mounted.current && scopeGate.isReady()) setCheckoutError(cause instanceof Error ? cause.message : t("pos.checkoutError")); }
+    finally { transitioning.current = false; if (mounted.current) { setPreparing(false); syncCashierLock(); } }
   }
 
   function focusScannerAfterUnlock() {
     const epoch = draftEpoch.current;
     window.requestAnimationFrame(() => {
-      if (mounted.current && draftEpoch.current === epoch && recovery.getSnapshot().status === "ready"
+      if (mounted.current && scopeGate.isReady() && draftEpoch.current === epoch && recovery.getSnapshot().status === "ready"
         && !scanner.current?.hasPending() && profileRequests.current.size === 0) scanner.current?.focus();
     });
   }
 
   async function newSale() {
-    if (!mounted.current || draftEpoch.current !== draftTicket || transitioning.current || scanner.current?.hasPending() || profileRequests.current.size > 0) return;
-    transitioning.current = true;
+    if (!mounted.current || !scopeGate.isReady() || draftEpoch.current !== draftTicket || transitioning.current || scanner.current?.hasPending() || profileRequests.current.size > 0) return;
+    transitioning.current = true; setPreparing(true);
     try {
-      if (!await recovery.newSale() || !mounted.current || recovery.getSnapshot().status !== "ready") return;
+      if (!await recovery.newSale() || !mounted.current || !scopeGate.isReady() || recovery.getSnapshot().status !== "ready") return;
       draftEpoch.current += 1;
       updateLines(() => []); setCheckoutError(""); scanner.current?.reset(); focusScannerAfterUnlock();
-    } finally { transitioning.current = false; }
+      await startCashierSale();
+    } finally { transitioning.current = false; if (mounted.current) { setPreparing(false); syncCashierLock(); } }
   }
 
   async function reviewRejected() {
-    if (!mounted.current || draftEpoch.current !== draftTicket || transitioning.current || scanner.current?.hasPending() || profileRequests.current.size > 0) return;
-    transitioning.current = true;
+    if (!mounted.current || !scopeGate.isReady() || draftEpoch.current !== draftTicket || transitioning.current || scanner.current?.hasPending() || profileRequests.current.size > 0) return;
+    transitioning.current = true; setPreparing(true);
     try {
-      if (!await recovery.reviewRejected() || !mounted.current || recovery.getSnapshot().status !== "ready") return;
+      if (!await recovery.reviewRejected() || !mounted.current || !scopeGate.isReady() || recovery.getSnapshot().status !== "ready") return;
       draftEpoch.current += 1;
       // A profile completion discarded while another tab held the scope is not a price.
       // Preserve all cart values and make those lines explicitly editable on review.
       updateLines((current) => current.map((line) => line.priceSource === "loading" ? { ...line, priceSource: "unavailable" } : line));
       setCheckoutError(""); focusScannerAfterUnlock();
-    } finally { transitioning.current = false; }
+      await startCashierSale();
+    } finally { transitioning.current = false; if (mounted.current) { setPreparing(false); syncCashierLock(); } }
   }
 
   const contextComplete = hasPosContext(context);
+  if (scopeState.status !== "ready") return <section className="workspace-page pos-experience">
+    <PageHeader kicker={t("pos.kicker")} title={t("pos.title")} description={t("pos.cashierDescription")} />
+    <PosScopePanel state={scopeState} locale={locale} canVerify={canAccess} onVerify={() => {
+      if (canAccess && mounted.current) void scopeGate.verifyIdentity().then((ready) => { if (ready) void afterIdentity(); });
+    }} />
+  </section>;
   return <section className="workspace-page pos-experience">
     <PageHeader kicker={t("pos.kicker")} title={t("pos.title")} description={t("pos.cashierDescription")} />
-    <form onSubmit={submit} className="pos-experience-form">
-      <PosOperatingContext value={context} blocked={blocked} periods={periods} currencies={currencies} onChange={patchContext} onCurrency={changeCurrency} />
-      {referenceError && <div role="alert"><p>{t("pos.loadError")}</p><Button type="button" variant="secondary" onClick={() => setReferenceRevision((value) => value + 1)}>{t("common.retry")}</Button></div>}
+    {canCheckout && <form onSubmit={submit} className="pos-experience-form">
+      <CashierContextPanel controller={cashier} currentScopeKey={currentCashierKey} locale={locale} onReviewed={applyReviewed} blocked={blocked} canInteract={canEdit}
+        onDateChange={(documentDate) => patchContext({ documentDate, periodId: "" })}
+        renderPicker={(picker) => <ReferenceCombobox<PosContextOption> endpoint={posContextOptionsPath(picker.field)} reader={scopeGate.request}
+          value={picker.id ?? ""} selectedLabel={picker.label} disabled={picker.disabled || blocked}
+          optionLabel={(row) => row.label} optionDisabled={(row) => row.isAvailable !== true}
+          onChange={(row) => { if (canEdit() && (!row || row.isAvailable === true)) picker.onSelect(row?.id ?? null); }}
+          placeholder={cashierContextDictionaries[locale][picker.field]} searchLabel={cashierContextDictionaries[locale][picker.field]} />} />
+      <PosOperatingContext value={context} blocked={blocked} onChange={patchContext} reader={scopeGate.request} />
       <PosRecoveryPanel locale={locale} state={recoveryState} canCheckout={canCheckout}
         barcodePending={pending > 0 || profileRequests.current.size > 0 || Boolean(scanner.current?.hasPending())}
         rejectionMessage={recoveryState.status === "rejected" ? messageForError(recoveryState.rejection.code, recoveryState.rejection.reason) : undefined}
-        onCheck={() => { if (mounted.current && draftEpoch.current === draftTicket) void recovery.check(); }} onNewSale={() => { void newSale(); }}
+        onCheck={() => { if (mounted.current && scopeGate.isReady() && draftEpoch.current === draftTicket) void recovery.check(); }} onNewSale={() => { void newSale(); }}
         onReviewRejected={() => { void reviewRejected(); }} />
       {result && <div className="pos-experience-document-links">{permissionSet.has("sales_invoices.view") && <a href="#sales">{t("pos.openSalesList")}</a>}{permissionSet.has("receipts.view") && <a href="#receipts">{t("pos.openReceiptsList")}</a>}</div>}
       <div className="pos-experience-workspace"><div className="panel pos-experience-selection">
         <fieldset disabled={blocked} className="pos-experience-scanner-guard">
-          <InventoryBarcodeScanner ref={scanner} enabled={canScan} blocked={blocked} autoFocus maxLines={50} onPendingChange={(count) => { if (mounted.current) setBarcodePending(count); }} onResolved={(resolved) => addItem({ id: resolved.inventoryItem.id, label: `${resolved.inventoryItem.code} — ${localizedReferenceName(resolved.inventoryItem)} (${resolved.inventoryItem.unitOfMeasure.code})`, description: localizedReferenceName(resolved.inventoryItem) })} />
+          <InventoryBarcodeScanner ref={scanner} reader={scopeGate.request} enabled={canScan} blocked={blocked} autoFocus maxLines={50} onPendingChange={(count) => { if (mounted.current) { barcodePendingRef.current = count; setBarcodePending(count); syncCashierLock(); } }} onResolved={(resolved) => addItem({ id: resolved.inventoryItem.id, label: `${resolved.inventoryItem.code} — ${localizedReferenceName(resolved.inventoryItem)} (${resolved.inventoryItem.unitOfMeasure.code})`, description: localizedReferenceName(resolved.inventoryItem) })} />
         </fieldset>
-        <PosCatalog enabled={canCatalog} blocked={blocked} mode={mode} onMode={(next) => { if (!canEdit()) return; setMode(next); savePosDisplayMode(user.id, selectedCompany?.id ?? "", next); }} onAdd={(item) => {
+        <PosCatalog reader={catalogReader} enabled={canCatalog} blocked={blocked} mode={mode} onMode={(next) => { if (!canEdit()) return; setMode(next); savePosDisplayMode(user.id, selectedCompany?.id ?? "", next); }} onAdd={(item) => {
           if (!canEdit()) return;
           const status = addItem({ id: item.inventoryItemId, label: `${item.code} — ${localizedReferenceName(item)} (${item.unitOfMeasure.code})`, description: localizedReferenceName(item) }, item);
           if (status === "line-limit" || status === "invalid-quantity") notify(t(status === "line-limit" ? "pos.barcode.lineLimit" : "pos.barcode.quantityInvalid", { count: 50 }), "error");
         }} />
       </div><div className="panel pos-experience-basket-panel">
-        <PosCart lines={lines} blocked={blocked} currencyCode={currencyCode} onChange={editLine} onRemove={removeLine} />
+        <PosCart reader={scopeGate.request} lines={lines} blocked={blocked} currencyCode={currencyCode} onChange={editLine} onRemove={removeLine} />
         <label><span>{t("pos.notes")}</span><textarea maxLength={1000} rows={2} value={context.notes} disabled={blocked} onChange={(event) => patchContext({ notes: event.target.value })} /></label>
         {pending > 0 && <p role="status">{t("pos.pendingBlocked")}</p>}{checkoutError && <p role="alert">{checkoutError}</p>}
-        {canCheckout && <Button type="submit" className="pos-experience-checkout" icon="check" disabled={blocked || pending > 0 || !contextComplete || lines.length === 0 || posSubtotal(lines) === null || lines.some((line) => !line.revenueAccountId)}>{recoveryState.status === "pending" ? t("pos.checkingOut") : t("pos.checkout")}</Button>}
+        {canCheckout && <Button type="submit" className="pos-experience-checkout" icon="check" disabled={blocked || pending > 0 || !cashierState.reviewed || !contextComplete || lines.length === 0 || posSubtotal(lines) === null || lines.some((line) => !line.revenueAccountId)}>{recoveryState.status === "pending" || preparing ? t("pos.checkingOut") : t("pos.checkout")}</Button>}
       </div></div>
-    </form>
+    </form>}
     {permissionSet.has("pos.view") && <details className="panel pos-experience-history"><summary>{t("pos.recentSales")}</summary><p>{t("pos.recentDescription")}</p>
       {historyError ? <div role="alert"><p>{t("pos.loadError")}</p><Button variant="secondary" onClick={() => setHistoryRevision((value) => value + 1)}>{t("common.retry")}</Button></div> : historyLoading ? <Spinner label={t("common.loading")} /> : sales.length === 0 ? <p>{t("pos.emptyDescription")}</p> : <><div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("pos.invoice")}</th><th>{t("pos.receipt")}</th><th>{t("pos.customer")}</th><th>{t("pos.total")}</th><th>{t("pos.completedAt")}</th><th>{t("pos.status")}</th></tr></thead><tbody>{sales.map((sale) => <tr key={sale.id}><td><bdi>{sale.invoice.documentNumber}</bdi></td><td><bdi>{sale.receipt.documentNumber}</bdi></td><td>{sale.invoice.customerName}</td><td><bdi>{posMoneyText(sale.invoice.total)}</bdi></td><td>{new Date(sale.completedAt).toLocaleString(activeIntlLocale())}</td><td>{t("pos.invoice")}: {statusLabel(sale.invoice.status)} · {t("pos.receipt")}: {statusLabel(sale.receipt.status)}</td></tr>)}</tbody></table></div><Pagination {...meta} page={page} onChange={setPage} /></>}
     </details>}

@@ -60,6 +60,7 @@ describe('grocery catalogue mounted in the real application', () => {
     const { app, authorize, pos } = fixture();
     pos.checkout.mockRejectedValue(new PosError(reason));
     const response = await request(app).post('/api/v1/pos/checkouts')
+      .set('X-POS-Expected-User-Id', '1').set('X-POS-Expected-Company-Id', '2')
       .set('X-CSRF-Token', 'synthetic-csrf').set('Idempotency-Key', 'grocery-checkout-key')
       .send({ fiscalPeriodId: '1', documentDate: '2026-08-31', description: 'Fixture grocery sale', customerId: '1', warehouseId: '1', currencyId: '2',
         exchangeRate: '1.00000000', cashBankAccountId: '1', paymentMethodId: '1', referenceNumber: null, notes: null,

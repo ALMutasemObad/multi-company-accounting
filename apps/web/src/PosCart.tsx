@@ -6,10 +6,12 @@ import type { Account, TaxRate } from "./types";
 import { Button } from "./ui";
 import type { PosDraftLine } from "./pos-experience-cart";
 import { decrementPosQuantity, posLineSubtotal, posMoneyText, posSubtotal } from "./pos-experience-money";
+import type { api } from "./api";
 
-export function PosCart({ lines, blocked, currencyCode, onChange, onRemove }: {
+export function PosCart({ lines, blocked, currencyCode, onChange, onRemove, reader }: {
   lines: PosDraftLine[]; blocked: boolean; currencyCode: string;
   onChange: (key: string, patch: Partial<PosDraftLine>) => void; onRemove: (key: string) => void;
+  reader?: typeof api | undefined;
 }) {
   const { t } = useI18n();
   return <section className="pos-experience-cart" aria-labelledby="pos-cart-title">
@@ -32,10 +34,10 @@ export function PosCart({ lines, blocked, currencyCode, onChange, onRemove }: {
           <summary>{t("pos.accountingDetails")}{line.priceSource === "profile" ? ` · ${line.revenueAccountLabel} · ${line.taxRateLabel || t("pos.noTax")}` : ""}</summary>
           <div className="pos-experience-line-fields">
             <label><span>{t("pos.discount")}</span><input dir="ltr" inputMode="decimal" value={line.discountAmount} disabled={blocked || loading} required onChange={(event) => onChange(line.key, { discountAmount: event.target.value })} /></label>
-            <label><span>{t("pos.revenueAccount")}</span><ReferenceCombobox<Account> endpoint="/accounts?active=true&allowsPosting=true&accountClasses=REVENUE" value={line.revenueAccountId} selectedLabel={line.revenueAccountLabel}
+            <label><span>{t("pos.revenueAccount")}</span><ReferenceCombobox<Account> reader={reader} endpoint="/accounts?active=true&allowsPosting=true&accountClasses=REVENUE" value={line.revenueAccountId} selectedLabel={line.revenueAccountLabel}
               onChange={(account) => onChange(line.key, { revenueAccountId: account?.id ?? "", revenueAccountLabel: account ? `${account.code} — ${localizedReferenceName(account)}` : "", priceSource: "manual" })}
               optionLabel={(account) => `${account.code} — ${localizedReferenceName(account)}`} placeholder={t("pos.revenueAccount")} searchLabel={t("pos.revenueAccount")} required disabled={blocked || loading} /></label>
-            <label><span>{t("pos.tax")}</span><ReferenceCombobox<TaxRate> endpoint="/tax-rates?activeOnly=true" value={line.taxRateId} selectedLabel={line.taxRateLabel}
+            <label><span>{t("pos.tax")}</span><ReferenceCombobox<TaxRate> reader={reader} endpoint="/tax-rates?activeOnly=true" value={line.taxRateId} selectedLabel={line.taxRateLabel}
               onChange={(tax) => onChange(line.key, { taxRateId: tax?.id ?? "", taxRateLabel: tax ? `${localizedReferenceName(tax)} (${tax.rate}%)` : "", priceSource: "manual" })}
               optionLabel={(tax) => `${localizedReferenceName(tax)} (${tax.rate}%)${tax.isReady ? "" : ` — ${taxReadinessLabel(tax)}`}`} optionDisabled={(tax) => !tax.isReady}
               placeholder={t("pos.tax")} searchLabel={t("pos.tax")} optionalLabel={t("pos.noTax")} disabled={blocked || loading} /></label>

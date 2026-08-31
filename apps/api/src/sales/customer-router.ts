@@ -4,6 +4,7 @@ import type { AuthService } from "../auth/auth-service.js";
 import { openApiRequestBodySchemas as bodies } from "../generated/openapi-request-guards.js";
 import { CustomerError } from "./customer-ports.js";
 import { CustomerService } from "./customer-service.js";
+import { readWithPosContext } from "../platform/pos-request-context.js";
 
 const id = z.string().regex(/^[1-9][0-9]*$/).transform(BigInt);
 const page = z.object({
@@ -31,12 +32,12 @@ export function createCustomerRouter(auth: AuthService, customers: CustomerServi
   });
 
   router.get("/customers", async (request, response) => {
-    const context = await authorize(request, "customers.view", false);
+    response.json(await readWithPosContext(request, () => authorize(request, "customers.view", false), async context => {
     const query = page.extend({
       active: z.enum(["true", "false"]).transform((value) => value === "true").optional(),
     }).parse(request.query);
     const result = await customers.listCustomers(context, query);
-    response.json({
+    return {
       data: result.data.map(CustomerService.customerJson),
       meta: {
         page: query.page,
@@ -44,7 +45,8 @@ export function createCustomerRouter(auth: AuthService, customers: CustomerServi
         total: result.total,
         totalPages: Math.ceil(result.total / query.pageSize),
       },
-    });
+    };
+    }));
   });
 
   router.post("/customers", async (request, response) => {

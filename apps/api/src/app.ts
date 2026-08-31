@@ -93,6 +93,9 @@ import { BankReconciliationRolloutPolicy } from './treasury/reconciliation/recon
 import type { PosService } from './pos/pos-service.js';
 import { createPosRouter } from './pos/pos-router.js';
 import type { PosRecoveryService } from './pos/recovery-service.js';
+import { posRequestContextErrors } from './platform/pos-request-context.js';
+import { createCashierContextRouter } from './pos/cashier-context-router.js';
+import type { CashierContextService } from './pos/cashier-context-service.js';
 import type { ApprovalService } from './approvals/approval-service.js';
 import { createApprovalRouter } from './approvals/approval-router.js';
 import type { ProfessionalProjectService } from './projects/professional-project-service.js';
@@ -210,12 +213,16 @@ export type AppServices = {
   dataImports?: DataImportService;
   pos?: PosService;
   posRecovery?: PosRecoveryService;
+  posContext?: CashierContextService;
   sellingProfiles?: SellingProfileService;
 };
 
 export function createApp(config: AppConfig, services: AppServices = {}) {
   if (config.NODE_ENV === 'production' && services.pos && !services.posRecovery) {
     throw new Error('POS requires its recovery service in production composition');
+  }
+  if (config.NODE_ENV === 'production' && services.pos && !services.posContext) {
+    throw new Error('POS requires its cashier context service in production composition');
   }
   if (config.NODE_ENV === 'production' && !services.sensitiveRateLimits) {
     throw new Error('A shared security-sensitive rate-limit store is required in production');
@@ -413,6 +420,7 @@ export function createApp(config: AppConfig, services: AppServices = {}) {
   if (services.auth && services.reports) app.use('/api/v1', createReportRouter(services.auth, services.reports, services.cashFlow, services.taxSummary, services.costCenterActivity));
   if (services.auth && services.dataImports) app.use('/api/v1', createDataImportRouter(services.auth, services.dataImports));
   if (services.auth && services.pos) app.use('/api/v1', createPosRouter(services.auth, services.pos, services.posRecovery));
+  if (services.auth && services.posContext) app.use('/api/v1', createCashierContextRouter(services.auth, services.posContext));
   if (services.auth && services.sellingProfiles) app.use('/api/v1', createSellingProfileRouter(services.auth, services.sellingProfiles));
 
   if (config.NODE_ENV === 'production' || config.SERVE_WEB_ASSETS) {
@@ -522,6 +530,7 @@ export function createApp(config: AppConfig, services: AppServices = {}) {
       requestId: response.locals.requestId,
     });
   };
+  app.use(posRequestContextErrors);
   app.use(errorHandler);
 
   return app;

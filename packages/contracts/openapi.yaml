@@ -4218,6 +4218,7 @@ paths:
                 - data
                 - meta
                 properties:
+                  posContext: { $ref: '#/components/schemas/PosResponseContext' }
                   data:
                     type: array
                     items:
@@ -4241,6 +4242,8 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
       parameters:
+      - $ref: '#/components/parameters/OptionalPosExpectedUserId'
+      - $ref: '#/components/parameters/OptionalPosExpectedCompanyId'
       - $ref: '#/components/parameters/RequestId'
       - $ref: '#/components/parameters/Page'
       - $ref: '#/components/parameters/PageSize'
@@ -4924,6 +4927,7 @@ paths:
                 - data
                 - meta
                 properties:
+                  posContext: { $ref: '#/components/schemas/PosResponseContext' }
                   data:
                     type: array
                     items:
@@ -4947,6 +4951,8 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
       parameters:
+      - $ref: '#/components/parameters/OptionalPosExpectedUserId'
+      - $ref: '#/components/parameters/OptionalPosExpectedCompanyId'
       - $ref: '#/components/parameters/RequestId'
       - $ref: '#/components/parameters/Page'
       - $ref: '#/components/parameters/PageSize'
@@ -6586,6 +6592,8 @@ paths:
       description: لا ينفذ أي بحث عالمي، ولا يكشف وجود قيمة في شركة أخرى، ولا يعيد القيمة الخام أو المفتاح الداخلي المطبّع.
       operationId: resolveInventoryBarcode
       parameters:
+      - $ref: '#/components/parameters/OptionalPosExpectedUserId'
+      - $ref: '#/components/parameters/OptionalPosExpectedCompanyId'
       - $ref: '#/components/parameters/RequestId'
       requestBody:
         required: true
@@ -6604,6 +6612,7 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/BusinessRuleViolation' }
         '500': { $ref: '#/components/responses/InternalError' }
+        '409': { $ref: '#/components/responses/Conflict' }
       x-permission: inventory_barcodes.resolve
       security:
       - SessionCookie: []
@@ -7932,12 +7941,95 @@ paths:
       x-permission: manual_journals.print
       security:
       - SessionCookie: []
+  /pos/context/identity:
+    get:
+      tags: [Point of Sale]
+      summary: Verify the current cashier identity before reserving an attempt
+      operationId: getPosContextIdentity
+      parameters:
+      - $ref: '#/components/parameters/PosExpectedUserId'
+      - $ref: '#/components/parameters/PosExpectedCompanyId'
+      - { name: purpose, in: query, schema: { type: string, enum: [checkout, history], default: checkout }, description: 'history requires pos.view only; the default requires pos.checkout. Neither grants a financial command.' }
+      responses:
+        '200': { description: Authorized matching identity, content: { application/json: { schema: { $ref: '#/components/schemas/PosContextIdentityResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+      x-permission: pos.checkout
+      security: [{ SessionCookie: [] }]
+  /pos/context/period:
+    get:
+      tags: [Point of Sale]
+      summary: Resolve the cashier date through the Accounting owner
+      description: Advisory read only. A maximum of two matching periods detects overlap before status filtering; checkout still validates and locks its period.
+      operationId: resolvePosContextPeriod
+      parameters:
+      - $ref: '#/components/parameters/PosExpectedUserId'
+      - $ref: '#/components/parameters/PosExpectedCompanyId'
+      - { name: documentDate, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        '200': { description: Matched identity and advisory period, content: { application/json: { schema: { $ref: '#/components/schemas/PosContextPeriodResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+      x-permission: pos.checkout
+      security: [{ SessionCookie: [] }]
+  /pos/context/references/{field}/{referenceId}:
+    get:
+      tags: [Point of Sale]
+      summary: Read one eligible cashier reference by its exact ID
+      description: Requires pos.checkout and the owner's view permission. Missing, inactive, foreign or ineligible references return unavailable; absence from a list is never evidence.
+      operationId: getPosContextReference
+      parameters:
+      - $ref: '#/components/parameters/PosExpectedUserId'
+      - $ref: '#/components/parameters/PosExpectedCompanyId'
+      - { name: field, in: path, required: true, schema: { $ref: '#/components/schemas/PosContextField' } }
+      - { name: referenceId, in: path, required: true, schema: { $ref: '#/components/schemas/PosContextId' } }
+      responses:
+        '200': { description: Exact owner reference or unavailable, content: { application/json: { schema: { $ref: '#/components/schemas/PosContextReferenceResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+      x-permission: pos.checkout
+      security: [{ SessionCookie: [] }]
+  /pos/context/options/{field}:
+    get:
+      tags: [Point of Sale]
+      summary: Read a bounded page of cashier reference options
+      description: Requires pos.checkout and the owner's view permission. Active visible rows are paged by the owner; isAvailable marks eligibility without filtering after pagination or inventing a total.
+      operationId: listPosContextOptions
+      parameters:
+      - $ref: '#/components/parameters/PosExpectedUserId'
+      - $ref: '#/components/parameters/PosExpectedCompanyId'
+      - { name: field, in: path, required: true, schema: { $ref: '#/components/schemas/PosContextField' } }
+      - { name: page, in: query, schema: { type: integer, minimum: 1, maximum: 10000, default: 1 } }
+      - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      - { name: search, in: query, schema: { type: string, maxLength: 100 } }
+      responses:
+        '200': { description: Bounded owner options and exact pagination total, content: { application/json: { schema: { $ref: '#/components/schemas/PosContextOptionsResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+      x-permission: pos.checkout
+      security: [{ SessionCookie: [] }]
   /pos/sales:
     get:
       tags: [Point of Sale]
       summary: عرض المبيعات النقدية الناتجة عن نقاط البيع
       operationId: listPosSales
       parameters:
+      - $ref: '#/components/parameters/PosExpectedUserId'
+      - $ref: '#/components/parameters/PosExpectedCompanyId'
       - $ref: '#/components/parameters/Page'
       - $ref: '#/components/parameters/PageSize'
       responses:
@@ -7947,12 +8039,15 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [data, meta]
+                required: [data, meta, posContext]
                 properties:
+                  posContext: { $ref: '#/components/schemas/PosResponseContext' }
                   data: { type: array, items: { $ref: '#/components/schemas/PosSale' } }
                   meta: { $ref: '#/components/schemas/PaginationMeta' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '409': { $ref: '#/components/responses/Conflict' }
       x-permission: pos.view
       security: [{ SessionCookie: [] }]
   /pos/checkouts:
@@ -7961,6 +8056,8 @@ paths:
       summary: إكمال بيع نقدي ذري عبر المبيعات والمخزون والخزينة والمحاسبة
       operationId: completePosCheckout
       parameters:
+      - $ref: '#/components/parameters/PosExpectedUserId'
+      - $ref: '#/components/parameters/PosExpectedCompanyId'
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
@@ -7972,7 +8069,7 @@ paths:
           description: اكتمل البيع النقدي وترحيل مستنديه
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/PosCheckoutResult' }
+              schema: { $ref: '#/components/schemas/PosCheckoutHttpResult' }
         '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -7995,6 +8092,9 @@ paths:
       summary: Read the original checkout acknowledgement without replaying a financial command
       description: Owner-scoped read using the authenticated company and user. Missing, incomplete, expired or invalid evidence remains UNKNOWN and never authorizes a replacement sale. The key is never included in the URL or response.
       operationId: recoverPosCheckout
+      parameters:
+      - $ref: '#/components/parameters/PosExpectedUserId'
+      - $ref: '#/components/parameters/PosExpectedCompanyId'
       requestBody:
         required: true
         content:
@@ -8005,12 +8105,13 @@ paths:
           description: Original retained acknowledgement or an unresolved outcome; not the documents' current status
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/PosCheckoutRecoveryResult' }
+              schema: { $ref: '#/components/schemas/PosCheckoutRecoveryHttpResult' }
         '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
         '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+        '409': { $ref: '#/components/responses/Conflict' }
       x-permission: pos.checkout
       security: [{ SessionCookie: [], CsrfToken: [] }]
   /sales/catalog:
@@ -8019,6 +8120,8 @@ paths:
       summary: عرض صفحة محدودة من أصناف النشاط وافتراضات بيعها
       operationId: listSellingCatalog
       parameters:
+      - $ref: '#/components/parameters/OptionalPosExpectedUserId'
+      - $ref: '#/components/parameters/OptionalPosExpectedCompanyId'
       - { name: page, in: query, schema: { type: integer, minimum: 1, maximum: 10000, default: 1 } }
       - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 24 } }
       - { name: search, in: query, schema: { type: string, maxLength: 100 } }
@@ -8032,6 +8135,7 @@ paths:
                 additionalProperties: false
                 required: [data, meta]
                 properties:
+                  posContext: { $ref: '#/components/schemas/PosResponseContext' }
                   data: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/SellingCatalogItem' } }
                   meta: { $ref: '#/components/schemas/PaginationMeta' }
         '400': { $ref: '#/components/responses/ValidationError' }
@@ -8039,6 +8143,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
         '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+        '409': { $ref: '#/components/responses/Conflict' }
       x-permission: sales_catalog.view
       security: [{ SessionCookie: [] }]
   /sales/catalog/items/{inventoryItemId}:
@@ -8047,6 +8152,8 @@ paths:
       summary: قراءة افتراضات الصنف بعد الاختيار أو حل باركوده لدى Inventory
       operationId: getSellingCatalogItem
       parameters:
+      - $ref: '#/components/parameters/OptionalPosExpectedUserId'
+      - $ref: '#/components/parameters/OptionalPosExpectedCompanyId'
       - { name: inventoryItemId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
       responses:
         '200': { description: الصنف وملف البيع إن وجد, content: { application/json: { schema: { $ref: '#/components/schemas/SellingCatalogItemResponse' } } } }
@@ -8056,6 +8163,7 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
         '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+        '409': { $ref: '#/components/responses/Conflict' }
       x-permission: sales_catalog.view
       security: [{ SessionCookie: [] }]
   /sales/catalog/items/{inventoryItemId}/selling-profile:
@@ -8332,13 +8440,18 @@ paths:
       summary: عرض نسب ضريبة المبيعات
       operationId: listTaxRates
       parameters:
+      - $ref: '#/components/parameters/OptionalPosExpectedUserId'
+      - $ref: '#/components/parameters/OptionalPosExpectedCompanyId'
       - $ref: '#/components/parameters/Page'
       - $ref: '#/components/parameters/PageSize'
       - $ref: '#/components/parameters/Search'
       - { name: activeOnly, in: query, schema: { type: boolean } }
       responses:
-        '200': { description: نجاح, content: { application/json: { schema: { type: object, required: [data, meta], properties: { data: { type: array, items: { $ref: '#/components/schemas/TaxRate' } }, meta: { $ref: '#/components/schemas/PaginationMeta' } } } } } }
+        '200': { description: نجاح, content: { application/json: { schema: { type: object, required: [data, meta], properties: { posContext: { $ref: '#/components/schemas/PosResponseContext' }, data: { type: array, items: { $ref: '#/components/schemas/TaxRate' } }, meta: { $ref: '#/components/schemas/PaginationMeta' } } } } } }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
       x-permission: sales_invoices.view
       security: [{ SessionCookie: [] }]
     post:
@@ -8386,13 +8499,18 @@ paths:
       summary: عرض نسب ضريبة المشتريات وحسابات المدخلات
       operationId: listPurchaseTaxRates
       parameters:
+      - $ref: '#/components/parameters/OptionalPosExpectedUserId'
+      - $ref: '#/components/parameters/OptionalPosExpectedCompanyId'
       - $ref: '#/components/parameters/Page'
       - $ref: '#/components/parameters/PageSize'
       - $ref: '#/components/parameters/Search'
       - { name: activeOnly, in: query, schema: { type: boolean } }
       responses:
-        '200': { description: نجاح, content: { application/json: { schema: { type: object, required: [data, meta], properties: { data: { type: array, items: { $ref: '#/components/schemas/PurchaseTaxRate' } }, meta: { $ref: '#/components/schemas/PaginationMeta' } } } } } }
+        '200': { description: نجاح, content: { application/json: { schema: { type: object, required: [data, meta], properties: { posContext: { $ref: '#/components/schemas/PosResponseContext' }, data: { type: array, items: { $ref: '#/components/schemas/PurchaseTaxRate' } }, meta: { $ref: '#/components/schemas/PaginationMeta' } } } } } }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
       x-permission: purchase_invoices.view
       security: [{ SessionCookie: [] }]
     post:
@@ -10082,6 +10200,30 @@ components:
       bearerFormat: opaque
       description: رمز مستقل وطويل من مدير الأسرار، مخصص حصراً لكاشط القياسات التشغيلية.
   parameters:
+    PosExpectedUserId:
+      name: X-POS-Expected-User-Id
+      in: header
+      required: true
+      description: Canonical expected user ID paired with X-POS-Expected-Company-Id. Comparison only; Actor comes from the authenticated session. Missing, duplicate or malformed pairs fail with POS_CONTEXT_REQUIRED; a different identity fails with POS_CONTEXT_CHANGED without revealing it.
+      schema: { $ref: '#/components/schemas/PosContextId' }
+    PosExpectedCompanyId:
+      name: X-POS-Expected-Company-Id
+      in: header
+      required: true
+      description: Canonical company precondition paired with the expected user. Not a tenant selector and never an authorization source.
+      schema: { $ref: '#/components/schemas/PosContextId' }
+    OptionalPosExpectedUserId:
+      name: X-POS-Expected-User-Id
+      in: header
+      required: false
+      description: POS callers send both expected identity headers. Both absent preserves the existing read; a partial, duplicate or noncanonical pair is rejected. A matched read includes posContext and is authorized before and after reading.
+      schema: { $ref: '#/components/schemas/PosContextId' }
+    OptionalPosExpectedCompanyId:
+      name: X-POS-Expected-Company-Id
+      in: header
+      required: false
+      description: Optional only when the expected-user header is also absent. Compared to the session, never used as Actor.
+      schema: { $ref: '#/components/schemas/PosContextId' }
     Page:
       name: page
       in: query
@@ -14020,6 +14162,7 @@ components:
       additionalProperties: false
       required: [barcode, inventoryItem]
       properties:
+        posContext: { $ref: '#/components/schemas/PosResponseContext' }
         barcode:
           type: object
           additionalProperties: false
@@ -15054,6 +15197,7 @@ components:
       additionalProperties: false
       required: [data]
       properties:
+        posContext: { $ref: '#/components/schemas/PosResponseContext' }
         data: { $ref: '#/components/schemas/SellingCatalogItem' }
     ItemSellingPriceInput:
       type: string
@@ -15123,6 +15267,129 @@ components:
         readinessReason:
           type: [string, 'null']
           enum: [null, PROFILE_MISSING, PROFILE_INACTIVE, ITEM_INACTIVE, UNIT_INACTIVE, CURRENCY_UNAVAILABLE, REVENUE_ACCOUNT_INVALID, TAX_RATE_INVALID]
+    PosContextId:
+      type: string
+      maxLength: 20
+      pattern: '^[1-9][0-9]{0,19}$'
+      description: Canonical unsigned BIGINT ID, at most 18446744073709551615.
+    PosResponseContext:
+      type: object
+      additionalProperties: false
+      required: [userId, companyId]
+      properties:
+        userId: { $ref: '#/components/schemas/PosContextId' }
+        companyId: { $ref: '#/components/schemas/PosContextId' }
+    PosContextIdentityResponse:
+      type: object
+      additionalProperties: false
+      required: [posContext]
+      properties:
+        posContext: { $ref: '#/components/schemas/PosResponseContext' }
+    PosContextField:
+      type: string
+      enum: [warehouseId, cashBankAccountId, paymentMethodId, currencyId]
+    PosContextReference:
+      type: object
+      required: [id, label, revision, code, nameAr, nameEn]
+      properties:
+        id: { $ref: '#/components/schemas/PosContextId' }
+        label: { type: string, minLength: 1, maxLength: 500 }
+        revision: { type: string, minLength: 1, maxLength: 200, description: 'Opaque fingerprint of real owner metadata and eligibility, not a financial version or price.' }
+        code: { type: string, minLength: 1, maxLength: 100 }
+        nameAr: { type: string, minLength: 1, maxLength: 200 }
+        nameEn: { type: [string, 'null'], maxLength: 200 }
+        requiresReference: { type: boolean, description: Present for payment methods and read from the owner. }
+        isBase: { type: boolean, description: Present for currencies and read from company currency configuration. }
+        decimals: { type: integer, minimum: 0, maximum: 8 }
+    PosContextReferenceResponse:
+      oneOf:
+      - type: object
+        additionalProperties: false
+        required: [status, reference, posContext]
+        properties:
+          status: { type: string, enum: [available] }
+          reference: { $ref: '#/components/schemas/PosContextReference' }
+          posContext: { $ref: '#/components/schemas/PosResponseContext' }
+      - type: object
+        additionalProperties: false
+        required: [status, posContext]
+        properties:
+          status: { type: string, enum: [unavailable] }
+          posContext: { $ref: '#/components/schemas/PosResponseContext' }
+    PosContextOptionsResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta, posContext]
+      properties:
+        data:
+          type: array
+          maxItems: 100
+          items:
+            allOf:
+            - $ref: '#/components/schemas/PosContextReference'
+            - type: object
+              required: [isAvailable]
+              properties:
+                isAvailable: { type: boolean }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+        posContext: { $ref: '#/components/schemas/PosResponseContext' }
+    PosContextPeriodResponse:
+      oneOf:
+      - type: object
+        additionalProperties: false
+        required: [documentDate, status, posContext]
+        properties:
+          documentDate: { type: string, format: date }
+          status: { type: string, enum: [MISSING, CLOSED, AMBIGUOUS] }
+          posContext: { $ref: '#/components/schemas/PosResponseContext' }
+      - type: object
+        additionalProperties: false
+        required: [documentDate, status, period, posContext]
+        properties:
+          documentDate: { type: string, format: date }
+          status: { type: string, enum: [RESOLVED] }
+          posContext: { $ref: '#/components/schemas/PosResponseContext' }
+          period:
+            type: object
+            additionalProperties: false
+            required: [id, name, startDate, endDate, status, version]
+            properties:
+              id: { $ref: '#/components/schemas/PosContextId' }
+              name: { type: string, minLength: 1, maxLength: 200 }
+              startDate: { type: string, format: date }
+              endDate: { type: string, format: date }
+              status: { type: string, enum: [OPEN, REOPENED] }
+              version: { type: integer, minimum: 0 }
+    PosCheckoutHttpResult:
+      allOf:
+      - $ref: '#/components/schemas/PosCheckoutResult'
+      - type: object
+        required: [posContext]
+        properties:
+          posContext: { $ref: '#/components/schemas/PosResponseContext' }
+    PosCheckoutRecoveryHttpResult:
+      description: Identity metadata belongs only to the HTTP envelope. The retained original result and rejection contracts are unchanged. A scope conflict never establishes rejection or allows clearing UNKNOWN.
+      oneOf:
+      - type: object
+        additionalProperties: false
+        required: [outcome, posContext]
+        properties:
+          outcome: { type: string, enum: [UNKNOWN] }
+          posContext: { $ref: '#/components/schemas/PosResponseContext' }
+      - type: object
+        additionalProperties: false
+        required: [outcome, result, posContext]
+        properties:
+          outcome: { type: string, enum: [CONFIRMED] }
+          result: { $ref: '#/components/schemas/PosCheckoutResult' }
+          posContext: { $ref: '#/components/schemas/PosResponseContext' }
+      - type: object
+        additionalProperties: false
+        required: [outcome, rejection, posContext]
+        properties:
+          outcome: { type: string, enum: [REJECTED] }
+          rejection: { $ref: '#/components/schemas/PosCheckoutRejection' }
+          posContext: { $ref: '#/components/schemas/PosResponseContext' }
     PosCheckoutRequest:
       type: object
       additionalProperties: false

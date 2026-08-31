@@ -91,6 +91,7 @@ import { PlatformSubscriptionPaymentEvidenceAdapter } from './platform-operation
 import { createPlatformPaymentService } from './composition/create-platform-payment-service.js';
 import { createSubscriptionUsageService } from './composition/create-subscription-usage-service.js';
 import { createSellingProfileService } from './composition/create-selling-profile-service.js';
+import { createCashierContextService } from './composition/create-cashier-context-service.js';
 
 const config = loadConfig();
 if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required to start the API');
@@ -313,6 +314,7 @@ async function startServer() {
     dataImports,
     pos,
     posRecovery,
+    posContext: createCashierContextService(database),
     sellingProfiles: createSellingProfileService(database),
   });
 

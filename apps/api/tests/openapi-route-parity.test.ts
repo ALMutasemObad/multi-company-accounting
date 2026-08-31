@@ -29,6 +29,7 @@ import { createInventoryBarcodeRouter } from '../src/inventory/inventory-barcode
 import { createInventoryMovementRouter } from '../src/inventory/inventory-movement-router.js';
 import { createBankReconciliationRouter } from '../src/treasury/reconciliation/reconciliation-router.js';
 import { createPosRouter } from '../src/pos/pos-router.js';
+import { createCashierContextRouter } from '../src/pos/cashier-context-router.js';
 import { createApprovalRouter } from '../src/approvals/approval-router.js';
 import { createProfessionalProjectRouter } from '../src/projects/professional-project-router.js';
 import { createProfessionalProjectPlanningRouter } from '../src/projects/professional-project-planning-router.js';
@@ -88,6 +89,7 @@ const routers = [
   { prefix: '', router: createReportRouter(stub, stub, stub, stub, stub) },
   { prefix: '', router: createDataImportRouter(stub, stub) },
   { prefix: '', router: createPosRouter(stub, stub) },
+  { prefix: '', router: createCashierContextRouter(stub, stub) },
 ] as const;
 
 function normalizePath(path: string) {
