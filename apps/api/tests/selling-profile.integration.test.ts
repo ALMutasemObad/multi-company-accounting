@@ -41,7 +41,9 @@ describe.runIf(enabled)("R2 actual database gate — requires MariaDB10.11/MySQL
     }
     // Test-only fixtures; source owners are not bypassed by production code. No real customer data.
     const org = await db!.organization.create({ data: { name: `R2 fixture ${fixtureId}` } });
-    const currency = await db!.currency.create({ data: { code: "XTS", nameAr: "Test currency", scopeKey: fixtureId } });
+    // GLOBAL currencies must keep scopeKey=GLOBAL; repeated CI runs may reuse this test currency.
+    const currency = await db!.currency.upsert({ where: { scopeKey_code: { scopeKey: "GLOBAL", code: "XTS" } },
+      create: { code: "XTS", nameAr: "Test currency", scope: "GLOBAL", scopeKey: "GLOBAL" }, update: {} });
     currencyId = currency.id;
     const company = await db!.company.create({ data: { organizationId: org.id, baseCurrencyId: currencyId, name: "R2 fixture A", timezone: "UTC" } });
     const other = await db!.company.create({ data: { organizationId: org.id, baseCurrencyId: currencyId, name: "R2 fixture B", timezone: "UTC" } });
