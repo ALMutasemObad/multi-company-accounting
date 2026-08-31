@@ -308,6 +308,23 @@ jobs:
         run: node node_modules/@playwright/test/cli.js test --config playwright.grocery-integration.config.ts
       - name: Test responsive journeys, subscription changes and billing recovery in Chromium
         run: npm run subscription-qa:test
+      - name: Accept the fixed 58 subscription discovery and context cases
+        run: |
+          npm run subscription-acceptance:typecheck
+          npm run subscription-acceptance:test
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: subscription-acceptance-58
+          path: |
+            test-results/subscription-acceptance/run-*/invocation.json
+            test-results/subscription-acceptance/run-*/readiness.json
+            test-results/subscription-acceptance/run-*/gate-report.json
+            test-results/subscription-acceptance/run-*/results.json
+            test-results/subscription-acceptance/run-*/html/
+            test-results/subscription-acceptance/run-*/artifacts/
+          if-no-files-found: error
+          retention-days: 7
       - name: Test onboarding and the first accounting document on MySQL
         env:
           E2E_DISPOSABLE_DATABASE: test_mcap_finance

@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.subscription-discovery.json",
+  "compilerOptions": { "allowJs": true, "checkJs": false, "noEmit": true },
+  "include": [
+    "tests/subscription-discovery/**/*.ts",
+    "playwright.subscription-acceptance.config.ts",
+    "scripts/subscription-acceptance/reporter.ts"
+  ]
+}
