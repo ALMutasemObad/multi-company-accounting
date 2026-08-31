@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.e2e.json",
+  "compilerOptions": { "module": "ESNext", "moduleResolution": "Bundler" },
+  "include": ["playwright.track-d.config.ts", "vite.track-d.config.ts", "vitest.track-d.config.ts", "tests/track-d/**/*.ts"]
+}

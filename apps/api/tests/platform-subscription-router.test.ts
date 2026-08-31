@@ -12,6 +12,8 @@ function fixture(allow = true, companyId: bigint | null = 9n) {
     : Promise.reject(new AuthError("FORBIDDEN")));
   const authenticate = vi.fn().mockResolvedValue(context);
   const catalog = {
+    publicCatalog: vi.fn().mockResolvedValue({ plans: [], meta: { page: 1, pageSize: 9, total: 0, totalPages: 0 } }),
+    setPublicListing: vi.fn().mockResolvedValue({ version: { id: "12", publiclyListed: true, version: 2 } }),
     listModules: vi.fn().mockResolvedValue({ modules: [] }),
     listPlans: vi.fn().mockResolvedValue({ plans: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } }),
     updatePlan: vi.fn().mockResolvedValue({ plan: { id: "12", code: "BASIC", active: false, version: 2 } }),
@@ -27,10 +29,36 @@ function fixture(allow = true, companyId: bigint | null = 9n) {
   app.use(((error, _request, response, _next) => {
     response.status(error instanceof AuthError && error.reason === "FORBIDDEN" ? 403 : 400).json({ code: error instanceof AuthError ? error.reason : "VALIDATION_ERROR" });
   }) satisfies ErrorRequestHandler);
-  return { app, authorize, lifecycle, catalog };
+  return { app, authenticate, authorize, lifecycle, catalog };
 }
 
 describe("platform subscription router permissions and contracts", () => {
+  it("serves the public catalog without authentication or company context and bounds its query", async () => {
+    const { app, authenticate, authorize, catalog, lifecycle } = fixture(false, null);
+    await request(app).get("/public/subscription-plans?page=2").expect(200);
+    for (const query of ["page=0", "page=1001", "page=1.5", "page=1&page=2", "pageSize=100", "companyId=4"]) {
+      await request(app).get(`/public/subscription-plans?${query}`).expect(400);
+    }
+    expect(catalog.publicCatalog).toHaveBeenCalledExactlyOnceWith(2);
+    expect(authenticate).not.toHaveBeenCalled();
+    expect(authorize).not.toHaveBeenCalled();
+    expect(lifecycle.requestOwnerChange).not.toHaveBeenCalled();
+  });
+
+  it("uses a strict generated visibility command and requires CSRF authentication without tenant scope", async () => {
+    const { app, authenticate, catalog } = fixture(true, null);
+    await request(app).put("/platform/subscription-plan-versions/12/public-listing")
+      .set("Cookie", "sid=session").set("X-CSRF-Token", "csrf").send({ publiclyListed: true, version: 1 }).expect(200);
+    expect(authenticate).toHaveBeenCalledWith({ sid: "session", csrfToken: "csrf", requireCsrf: true });
+    expect(catalog.setPublicListing).toHaveBeenCalledExactlyOnceWith({ userId: 7n }, 12n, { publiclyListed: true, version: 1 });
+    for (const body of [{ publiclyListed: true }, { publiclyListed: "true", version: 1 }, { publiclyListed: true, version: 1, companyId: "9" }]) {
+      await request(app).put("/platform/subscription-plan-versions/12/public-listing").send(body).expect(400);
+    }
+    expect(catalog.setPublicListing).toHaveBeenCalledTimes(1);
+    authenticate.mockRejectedValueOnce(new AuthError("FORBIDDEN"));
+    await request(app).put("/platform/subscription-plan-versions/12/public-listing").send({ publiclyListed: false, version: 2 }).expect(403);
+    expect(catalog.setPublicListing).toHaveBeenCalledTimes(1);
+  });
   it("keeps owner reads and writes on separate explicit permissions", async () => {
     const { app, authorize, lifecycle } = fixture();
     await request(app).get("/subscription?page=2&pageSize=10").set("Cookie", "sid=session").expect(200);

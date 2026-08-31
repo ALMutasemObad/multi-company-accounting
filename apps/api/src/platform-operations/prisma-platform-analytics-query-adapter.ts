@@ -3,13 +3,17 @@ import type {
   PlatformAnalyticsDashboard,
   PlatformAnalyticsQueryPort,
   PlatformCompanyDetails,
+  PlatformCompanyQuotaUsage,
+  PlatformCompanyQuotaUsageQueryPort,
   PlatformCompanyReference,
   PlatformCompanySummary,
   PlatformCompanyUsage,
+  PlatformCompanyUsageInput,
   PlatformModuleActivity,
   PlatformOverview,
 } from "./platform-operations-ports.js";
 import { calculatePlatformRecurringMonthly } from "./platform-billing-service.js";
+import { assertRequestActive } from "../operations/request-context.js";
 
 type CountPair = { total: number; recent: number };
 
@@ -106,7 +110,7 @@ const monthBuckets = (now: Date, count: number) =>
     return { month: start.toISOString().slice(0, 7), start, end };
   });
 
-export class PrismaPlatformAnalyticsQueryAdapter implements PlatformAnalyticsQueryPort {
+export class PrismaPlatformAnalyticsQueryAdapter implements PlatformAnalyticsQueryPort, PlatformCompanyQuotaUsageQueryPort {
   constructor(private readonly prisma: PrismaClient) {}
 
   async analytics(input: Parameters<PlatformAnalyticsQueryPort["analytics"]>[0]): Promise<PlatformAnalyticsDashboard | null> {
@@ -839,20 +843,42 @@ export class PrismaPlatformAnalyticsQueryAdapter implements PlatformAnalyticsQue
     };
   }
 
-  async companyUsage(input: {
-    companyId: bigint;
-    periodStart: Date;
-    periodEndExclusive: Date;
-  }): Promise<PlatformCompanyUsage | null> {
-    if (!await this.prisma.company.findUnique({ where: { id: input.companyId }, select: { id: true } })) return null;
+  async companyQuotaUsage(input: PlatformCompanyUsageInput): Promise<PlatformCompanyQuotaUsage | null> {
+    if (!await this.usageCompany(input.companyId)) return null;
+    return this.companyQuotaCounts(input);
+  }
+
+  async companyUsage(input: PlatformCompanyUsageInput): Promise<PlatformCompanyUsage | null> {
+    if (!await this.usageCompany(input.companyId)) return null;
     const range = { gte: input.periodStart, lt: input.periodEndExclusive };
-    const [users, employees, postedDocuments, operations] = await Promise.all([
-      this.prisma.userCompany.count({ where: { companyId: input.companyId, isActive: true, user: { isActive: true } } }),
-      this.prisma.employee.count({ where: { companyId: input.companyId, status: { in: ["ACTIVE", "ON_LEAVE"] } } }),
-      this.prisma.accountingDocument.count({ where: { companyId: input.companyId, postedAt: range } }),
-      this.prisma.auditLog.count({ where: { companyId: input.companyId, createdAt: range } }),
+    const [quota, operations] = await Promise.all([
+      this.companyQuotaCounts(input),
+      this.readUsageQuery(() => this.prisma.auditLog.count({ where: { companyId: input.companyId, createdAt: range } })),
     ]);
-    return { users, employees, postedDocuments, operations };
+    return { ...quota, operations };
+  }
+
+  private usageCompany(companyId: bigint) {
+    return this.readUsageQuery(() => this.prisma.company.findUnique({ where: { id: companyId }, select: { id: true } }));
+  }
+
+  /** The same definitions serve the quota view and billing; no parallel counter policy. */
+  private async companyQuotaCounts(input: PlatformCompanyUsageInput): Promise<PlatformCompanyQuotaUsage> {
+    const range = { gte: input.periodStart, lt: input.periodEndExclusive };
+    const [users, employees, postedDocuments] = await Promise.all([
+      this.readUsageQuery(() => this.prisma.userCompany.count({ where: { companyId: input.companyId, isActive: true, user: { isActive: true } } })),
+      this.readUsageQuery(() => this.prisma.employee.count({ where: { companyId: input.companyId, status: { in: ["ACTIVE", "ON_LEAVE"] } } })),
+      this.readUsageQuery(() => this.prisma.accountingDocument.count({ where: { companyId: input.companyId, postedAt: range } })),
+    ]);
+    return { users, employees, postedDocuments };
+  }
+
+  private async readUsageQuery<T>(query: () => PromiseLike<T>): Promise<T> {
+    assertRequestActive("PLATFORM_COMPANY_USAGE_READ");
+    // This gates new reads and late results; it does not cancel an in-flight DB query.
+    const result = await query();
+    assertRequestActive("PLATFORM_COMPANY_USAGE_READ");
+    return result;
   }
 
   companyCount(): Promise<number> {

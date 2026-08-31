@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.43.0
+  version: 1.46.2
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -68,6 +68,8 @@ servers:
 - url: /api/v1
   description: مسار نسبي يعمل على نفس أصل الواجهة في جميع البيئات
 tags:
+- name: Sales Catalog
+  description: ملفات بيع الأصناف المملوكة للمبيعات؛ افتراضات وليست عرض سعر نهائيًا.
 - name: Health
   description: فحوص حياة الخدمة وجاهزية قاعدة البيانات.
 - name: Operations
@@ -1144,6 +1146,44 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/BusinessRuleViolation' }
         '500': { $ref: '#/components/responses/InternalError' }
+  /platform/subscription-plan-versions/{planVersionId}/public-listing:
+    put:
+      tags: [Platform Subscriptions]
+      summary: إظهار إصدار منشور للعامة أو إخفاؤه بقرار مشغل صريح
+      operationId: setPlatformSubscriptionPublicListing
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: planVersionId, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PlatformSubscriptionPublicListingRequest' } } }
+      responses:
+        '200': { description: إصدار الخطة وحالة عرضه العام, content: { application/json: { schema: { $ref: '#/components/schemas/PlatformSubscriptionPlanVersionResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /public/subscription-plans:
+    get:
+      tags: [Platform Subscriptions]
+      summary: كتالوج تسويقي عام لا يعيد إلا الإصدارات المعتمدة للعرض العام
+      operationId: listPublicSubscriptionPlans
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: page, in: query, schema: { type: integer, minimum: 1, maximum: 1000, default: 1 } }
+      responses:
+        '200':
+          description: تسع خطط كحد أقصى ببيانات تسويقية فقط ودون جلسة أو بيانات شركات
+          content: { application/json: { schema: { $ref: '#/components/schemas/PublicSubscriptionPlanPage' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
   /platform/subscriptions:
     get:
       tags: [Platform Subscriptions]
@@ -1236,6 +1276,31 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '500': { $ref: '#/components/responses/InternalError' }
+  /subscription/usage:
+    get:
+      tags: [Company Subscription]
+      summary: قياس استهلاك اشتراك النشاط الحالي للعرض فقط
+      description: >-
+        قراءة محدودة ومصرح بها للشركة المثبتة في الجلسة؛ لا تقبل معاملات استعلام
+        أو companyId من العميل. المستخدمون والموظفون لقطة لحظية، والمستندات إحصاء
+        من أول الشهر التقويمي UTC حتى measuredAt حصريًا، وليست دورة فوترة أو فاتورة
+        أو أساس منع العمليات. الحصة غير المهيأة ليست غير محدودة؛ لا تقارن حصة
+        المستندات بفترة غير مؤكدة ولا تستنتجها من MONTHLY أو ANNUAL.
+      operationId: getCompanySubscriptionUsage
+      x-permission: subscriptions.view
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200': { description: لقطة إحصائية مع دلالة القياس وحدود المقارنة, content: { application/json: { schema: { $ref: '#/components/schemas/CompanySubscriptionUsageResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { description: الخدمة غير متاحة مؤقتًا دون كشف تفاصيل البنية, content: { application/json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
   /subscription/catalog:
     get:
       tags: [Company Subscription]
@@ -5646,6 +5711,35 @@ paths:
       x-permission: currencies.view
       security:
       - SessionCookie: []
+  /currencies/options:
+    get:
+      tags: [Companies]
+      summary: خيارات العملات المسموحة للشركة بصفحات محدودة
+      description: قراءة ضيقة للعملات المفعلة دون أسعار صرف أو بيانات شركة. يقص البحث ويرفض محارف التحكم ومعاملات الاستعلام غير المعلنة.
+      operationId: listEnabledCurrencyOptions
+      parameters:
+      - { name: page, in: query, schema: { type: integer, minimum: 1, maximum: 10000, default: 1 } }
+      - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      - { name: search, in: query, schema: { type: string, x-trim: true, maxLength: 100, pattern: '^[^\u0000-\u001F\u007F]*$' } }
+      responses:
+        '200':
+          description: صفحة مرتبة حسب رمز العملة ثم معرفها
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data, meta]
+                properties:
+                  data: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/EnabledCurrencyOption' } }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+      x-permission: currencies.view
+      security: [{ SessionCookie: [] }]
   /warehouses:
     get:
       tags:
@@ -7880,6 +7974,92 @@ paths:
         '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
         '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
       x-permission: pos.checkout
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /sales/catalog:
+    get:
+      tags: [Sales Catalog]
+      summary: عرض صفحة محدودة من أصناف النشاط وافتراضات بيعها
+      operationId: listSellingCatalog
+      parameters:
+      - { name: page, in: query, schema: { type: integer, minimum: 1, maximum: 10000, default: 1 } }
+      - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 24 } }
+      - { name: search, in: query, schema: { type: string, maxLength: 100 } }
+      responses:
+        '200':
+          description: أصناف معزولة حسب الشركة بترتيب code ثم id؛ الجاهزية تخص المراجع فقط
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data, meta]
+                properties:
+                  data: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/SellingCatalogItem' } }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+      x-permission: sales_catalog.view
+      security: [{ SessionCookie: [] }]
+  /sales/catalog/items/{inventoryItemId}:
+    get:
+      tags: [Sales Catalog]
+      summary: قراءة افتراضات الصنف بعد الاختيار أو حل باركوده لدى Inventory
+      operationId: getSellingCatalogItem
+      parameters:
+      - { name: inventoryItemId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200': { description: الصنف وملف البيع إن وجد, content: { application/json: { schema: { $ref: '#/components/schemas/SellingCatalogItemResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+      x-permission: sales_catalog.view
+      security: [{ SessionCookie: [] }]
+  /sales/catalog/items/{inventoryItemId}/selling-profile:
+    post:
+      tags: [Sales Catalog]
+      summary: إنشاء ملف بيع واحد للصنف داخل النشاط
+      operationId: createItemSellingProfile
+      parameters:
+      - { name: inventoryItemId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ItemSellingProfileCreateRequest' } } } }
+      responses:
+        '201': { description: حفظ الملف مع التدقيق وIdempotency ذريًا, content: { application/json: { schema: { $ref: '#/components/schemas/SellingCatalogItemResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+      x-permission: sales_catalog.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+    patch:
+      tags: [Sales Catalog]
+      summary: تعديل أو تعطيل افتراضات البيع بنسخة متفائلة
+      operationId: updateItemSellingProfile
+      parameters:
+      - { name: inventoryItemId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ItemSellingProfileUpdateRequest' } } } }
+      responses:
+        '200': { description: النسخة الجديدة, content: { application/json: { schema: { $ref: '#/components/schemas/SellingCatalogItemResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+      x-permission: sales_catalog.manage
       security: [{ SessionCookie: [], CsrfToken: [] }]
   /sales-invoices:
     get:
@@ -10938,6 +11118,52 @@ components:
           maxItems: 100
           uniqueItems: true
           items: { type: string, pattern: '^[1-9][0-9]*$' }
+    PlatformSubscriptionPublicListingRequest:
+      type: object
+      additionalProperties: false
+      required: [publiclyListed, version]
+      properties:
+        publiclyListed: { type: boolean }
+        version: { type: integer, minimum: 0 }
+    PublicSubscriptionPlanPage:
+      type: object
+      additionalProperties: false
+      required: [plans, meta]
+      properties:
+        plans: { type: array, maxItems: 9, items: { $ref: '#/components/schemas/PublicSubscriptionPlan' } }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    PublicSubscriptionPlan:
+      type: object
+      additionalProperties: false
+      required: [id, displayName, description, billingCycle, currencyCode, recurringFee, includedUsers, includedEmployees, includedPostedDocuments, pricePerAdditionalUser, pricePerAdditionalEmployee, pricePerAdditionalPostedDocument, trialDays, taxRate, requiresApproval, modules]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        displayName: { type: string, minLength: 1, maxLength: 160 }
+        description: { oneOf: [{ type: string, maxLength: 1000 }, { type: 'null' }] }
+        billingCycle: { type: string, enum: [MONTHLY, QUARTERLY, ANNUAL] }
+        currencyCode: { type: string, pattern: '^[A-Z]{3}$' }
+        recurringFee: { $ref: '#/components/schemas/Money' }
+        includedUsers: { type: integer, minimum: 0 }
+        includedEmployees: { type: integer, minimum: 0 }
+        includedPostedDocuments: { type: integer, minimum: 0 }
+        pricePerAdditionalUser: { oneOf: [{ $ref: '#/components/schemas/Money' }, { type: 'null' }] }
+        pricePerAdditionalEmployee: { oneOf: [{ $ref: '#/components/schemas/Money' }, { type: 'null' }] }
+        pricePerAdditionalPostedDocument: { oneOf: [{ $ref: '#/components/schemas/Money' }, { type: 'null' }] }
+        trialDays: { type: integer, minimum: 0, maximum: 365 }
+        taxRate: { type: string, pattern: '^(?:[0-9]{1,2}|100)\.[0-9]{4}$' }
+        requiresApproval: { type: boolean }
+        modules:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, displayName, selectionMode, additionalRecurringFee]
+            properties:
+              code: { type: string, minLength: 1, maxLength: 80 }
+              displayName: { type: string, minLength: 1, maxLength: 160 }
+              selectionMode: { type: string, enum: [INCLUDED, OPTIONAL] }
+              additionalRecurringFee: { oneOf: [{ $ref: '#/components/schemas/Money' }, { type: 'null' }] }
     PlatformSubscriptionPlanVersion:
       type: object
       additionalProperties: false
@@ -10972,6 +11198,7 @@ components:
         effectiveFrom: { type: string, format: date-time }
         selfServicePolicy: { type: string, enum: [DISABLED, REQUEST_ONLY, IMMEDIATE_FREE] }
         publicationStatus: { type: string, enum: [DRAFT, PUBLISHED] }
+        publiclyListed: { type: boolean, description: اعتماد العرض العام مستقل عن نشر السعر؛ false افتراضيًا }
         publishedAt:
           oneOf: [{ type: string, format: date-time }, { type: 'null' }]
         retiredAt:
@@ -11155,6 +11382,122 @@ components:
         history: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/PlatformSubscriptionChange' } }
         meta: { $ref: '#/components/schemas/PaginationMeta' }
         generatedAt: { type: string, format: date-time }
+    SubscriptionUsageCount:
+      type: integer
+      minimum: 0
+      maximum: 9007199254740991
+      description: عدد صحيح غير سالب آمن للنقل في JSON؛ لا يستخدم للأموال.
+    SubscriptionUsageNullableCount:
+      oneOf: [{ $ref: '#/components/schemas/SubscriptionUsageCount' }, { type: 'null' }]
+    SubscriptionUsageMetric:
+      type: object
+      additionalProperties: false
+      required: [used, included, remaining, excess, state, comparisonBasis, definition]
+      properties:
+        used: { $ref: '#/components/schemas/SubscriptionUsageNullableCount' }
+        included:
+          description: حصة إصدار الخطة الفعال؛ null تعني غير مهيأ لا غير محدود.
+          $ref: '#/components/schemas/SubscriptionUsageNullableCount'
+        remaining:
+          description: max(0, included - used) للمقارنة المؤكدة فقط، وإلا null.
+          $ref: '#/components/schemas/SubscriptionUsageNullableCount'
+        excess:
+          description: max(0, used - included) للمقارنة المؤكدة فقط؛ ليس رسومًا مستحقة.
+          $ref: '#/components/schemas/SubscriptionUsageNullableCount'
+        state: { type: string, enum: [WITHIN_LIMIT, AT_LIMIT, EXCEEDED, NOT_CONFIGURED, UNKNOWN] }
+        comparisonBasis: { type: string, enum: [CURRENT_SNAPSHOT, UNCONFIRMED_PERIOD] }
+        definition: { type: string, enum: [ACTIVE_COMPANY_USERS, ACTIVE_OR_ON_LEAVE_EMPLOYEES, DOCUMENTS_POSTED_IN_WINDOW] }
+      oneOf:
+      - properties:
+          state: { enum: [WITHIN_LIMIT, AT_LIMIT, EXCEEDED] }
+          comparisonBasis: { const: CURRENT_SNAPSHOT }
+          used: { $ref: '#/components/schemas/SubscriptionUsageCount' }
+          included: { $ref: '#/components/schemas/SubscriptionUsageCount' }
+          remaining: { $ref: '#/components/schemas/SubscriptionUsageCount' }
+          excess: { $ref: '#/components/schemas/SubscriptionUsageCount' }
+      - properties:
+          state: { const: NOT_CONFIGURED }
+          included: { type: 'null' }
+          remaining: { type: 'null' }
+          excess: { type: 'null' }
+      - properties:
+          state: { const: UNKNOWN }
+          included: { $ref: '#/components/schemas/SubscriptionUsageCount' }
+          remaining: { type: 'null' }
+          excess: { type: 'null' }
+    CompanySubscriptionUsageResponse:
+      type: object
+      additionalProperties: false
+      required: [companyId, measuredAt, consistency, plan, period, metrics]
+      properties:
+        companyId: { type: string, pattern: '^[1-9][0-9]*$', maxLength: 20 }
+        measuredAt: { type: string, format: date-time, pattern: 'Z$' }
+        consistency:
+          type: string
+          const: BEST_EFFORT
+          description: القراءات ليست لقطة ACID واحدة؛ تستخدم للعرض لا للفوترة أو إنفاذ حد.
+        plan:
+          oneOf:
+          - type: 'null'
+          - type: object
+            additionalProperties: false
+            required: [id, displayName, billingCycle]
+            properties:
+              id:
+                type: string
+                pattern: '^[1-9][0-9]*$'
+                maxLength: 20
+                description: معرف إصدار الخطة الفعال لا معرف رأس الخطة، وفق أحدث تغيير معتمد وسارٍ.
+              displayName: { type: string, minLength: 1, maxLength: 160 }
+              billingCycle: { type: string, enum: [MONTHLY, QUARTERLY, ANNUAL] }
+        period:
+          type: object
+          additionalProperties: false
+          required: [kind, timezone, startsAt, endsAtExclusive, billingPeriodStatus]
+          properties:
+            kind: { type: string, const: STATISTICAL_MONTH_TO_DATE }
+            timezone: { type: string, const: UTC }
+            startsAt:
+              type: string
+              format: date-time
+              pattern: 'Z$'
+              description: بداية الشهر التقويمي UTC الذي يحتوي measuredAt.
+            endsAtExclusive:
+              type: string
+              format: date-time
+              pattern: 'Z$'
+              description: يساوي measuredAt؛ الحد الأعلى مستبعد من عد المستندات.
+            billingPeriodStatus:
+              type: string
+              enum: [NOT_CONFIGURED, UNCONFIRMED]
+              description: NOT_CONFIGURED عند غياب حقلي الفترة، وإلا UNCONFIRMED؛ لا تأكيد لدورة الحصة.
+        metrics:
+          type: object
+          additionalProperties: false
+          required: [users, employees, postedDocuments]
+          properties:
+            users:
+              allOf:
+              - $ref: '#/components/schemas/SubscriptionUsageMetric'
+              - properties:
+                  definition: { const: ACTIVE_COMPANY_USERS }
+                  comparisonBasis: { const: CURRENT_SNAPSHOT }
+            employees:
+              allOf:
+              - $ref: '#/components/schemas/SubscriptionUsageMetric'
+              - properties:
+                  definition: { const: ACTIVE_OR_ON_LEAVE_EMPLOYEES }
+                  comparisonBasis: { const: CURRENT_SNAPSHOT }
+            postedDocuments:
+              description: عد postedAt في النافذة، بما فيه المعكوس إن احتفظ بـpostedAt؛ لا يستبعد حسب الحالة الحالية.
+              allOf:
+              - $ref: '#/components/schemas/SubscriptionUsageMetric'
+              - properties:
+                  definition: { const: DOCUMENTS_POSTED_IN_WINDOW }
+                  comparisonBasis: { const: UNCONFIRMED_PERIOD }
+                  state: { enum: [NOT_CONFIGURED, UNKNOWN] }
+                  remaining: { type: 'null' }
+                  excess: { type: 'null' }
     CompanySubscriptionCatalogResponse:
       type: object
       additionalProperties: false
@@ -14399,6 +14742,15 @@ components:
           - 'null'
           writeOnly: true
           maxLength: 100
+    EnabledCurrencyOption:
+      type: object
+      additionalProperties: false
+      required: [id, code, nameAr, decimals]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        code: { type: string, pattern: '^[A-Z]{3}$' }
+        nameAr: { type: string, maxLength: 100 }
+        decimals: { type: integer, minimum: 0, maximum: 8 }
     Currency:
       type: object
       required:
@@ -14655,6 +15007,80 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PaymentMethod'
+    SellingCatalogItemResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/SellingCatalogItem' }
+    ItemSellingPriceInput:
+      type: string
+      pattern: '^(0|[1-9][0-9]{0,14})(\.[0-9]{1,4})?$'
+      description: سعر غير سالب، والصفر قيمة صريحة؛ لا تحويل تلقائي لعملة السلة.
+    ItemSellingProfileCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [unitPrice, currencyId, revenueAccountId]
+      properties:
+        unitPrice: { $ref: '#/components/schemas/ItemSellingPriceInput' }
+        currencyId: { $ref: '#/components/schemas/Id' }
+        revenueAccountId: { $ref: '#/components/schemas/Id' }
+        taxRateId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+    ItemSellingProfileUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      minProperties: 2
+      properties:
+        version: { type: integer, minimum: 1, maximum: 4294967294 }
+        unitPrice: { $ref: '#/components/schemas/ItemSellingPriceInput' }
+        currencyId: { $ref: '#/components/schemas/Id' }
+        revenueAccountId: { $ref: '#/components/schemas/Id' }
+        taxRateId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+        isActive: { type: boolean }
+    ItemSellingProfile:
+      type: object
+      additionalProperties: false
+      required: [id, unitPrice, currencyId, currencyCode, revenueAccountId, taxRateId, isActive, version]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        unitPrice: { $ref: '#/components/schemas/Amount' }
+        currencyId: { $ref: '#/components/schemas/Id' }
+        currencyCode: { type: [string, 'null'], minLength: 3, maxLength: 3 }
+        revenueAccountId: { $ref: '#/components/schemas/Id' }
+        taxRateId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+        isActive: { type: boolean }
+        version: { type: integer, minimum: 1 }
+    SellingCatalogItem:
+      type: object
+      additionalProperties: false
+      required: [inventoryItemId, code, nameAr, nameEn, description, isActive, unitOfMeasure, sellingProfile, isReady, readinessReason]
+      properties:
+        inventoryItemId: { $ref: '#/components/schemas/Id' }
+        code: { type: string, maxLength: 40 }
+        nameAr: { type: string, maxLength: 200 }
+        nameEn: { type: [string, 'null'], maxLength: 200 }
+        description: { type: [string, 'null'], maxLength: 500 }
+        isActive: { type: boolean }
+        unitOfMeasure:
+          type: object
+          additionalProperties: false
+          required: [id, code, nameAr, nameEn, decimalPlaces, isActive]
+          properties:
+            id: { $ref: '#/components/schemas/Id' }
+            code: { type: string, maxLength: 20 }
+            nameAr: { type: string, maxLength: 120 }
+            nameEn: { type: [string, 'null'], maxLength: 120 }
+            decimalPlaces: { type: integer, minimum: 0, maximum: 6 }
+            isActive: { type: boolean }
+        sellingProfile:
+          oneOf:
+          - $ref: '#/components/schemas/ItemSellingProfile'
+          - { type: 'null' }
+        isReady: { type: boolean, description: تهيئة المراجع فقط لا توافر مخزون أو فترة أو نجاح Checkout. }
+        readinessReason:
+          type: [string, 'null']
+          enum: [null, PROFILE_MISSING, PROFILE_INACTIVE, ITEM_INACTIVE, UNIT_INACTIVE, CURRENCY_UNAVAILABLE, REVENUE_ACCOUNT_INVALID, TAX_RATE_INVALID]
     PosCheckoutRequest:
       type: object
       additionalProperties: false
@@ -15151,29 +15577,25 @@ components:
           description: قيمة مالية عشرية DECIMAL(19,4) كنص.
       description: يجب أن يكون أحد debitAmount وcreditAmount موجباً والآخر صفراً؛ ولا يجتمع customerId وsupplierId.
     JournalLine:
-      allOf:
-      - $ref: '#/components/schemas/JournalLineInput'
-      - type: object
-        required:
-        - id
-        - baseDebitAmount
-        - baseCreditAmount
-        properties:
-          id:
-            type: string
-            pattern: ^[1-9][0-9]*$
-            example: '1001'
-            description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
-          baseDebitAmount:
-            type: string
-            pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
-            example: '1250.0000'
-            description: قيمة مالية عشرية DECIMAL(19,4) كنص.
-          baseCreditAmount:
-            type: string
-            pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
-            example: '1250.0000'
-            description: قيمة مالية عشرية DECIMAL(19,4) كنص.
+      # Response fields extend the input vocabulary, not the closed input schema.
+      # allOf cannot add id/base amounts to additionalProperties:false.
+      type: object
+      additionalProperties: false
+      required: [id, lineNumber, accountId, currencyId, exchangeRate, debitAmount, creditAmount, baseDebitAmount, baseCreditAmount]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        lineNumber: { type: integer, minimum: 1 }
+        accountId: { type: string, pattern: '^[1-9][0-9]*$' }
+        costCenterId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+        customerId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+        supplierId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+        description: { type: [string, 'null'], maxLength: 500 }
+        currencyId: { type: string, pattern: '^[1-9][0-9]*$' }
+        exchangeRate: { type: string, pattern: '^[0-9]{1,11}\.[0-9]{8}$' }
+        debitAmount: { type: string, pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        creditAmount: { type: string, pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        baseDebitAmount: { type: string, pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        baseCreditAmount: { type: string, pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
     JournalEntryInput:
       type: object
       additionalProperties: false
@@ -15389,38 +15811,28 @@ components:
           example: '1250.0000'
           description: قيمة مالية عشرية DECIMAL(19,4) كنص.
     ReceiptAllocation:
-      allOf:
-      - $ref: '#/components/schemas/ReceiptAllocationInput'
-      - type: object
-        required:
-        - id
-        - invoiceNumber
-        - customerName
-        - dueDate
-        - carryingBaseAmount
-        - settlementBaseAmount
-        - realizedFxBaseAmount
-        properties:
-          id:
-            type: string
-            pattern: ^[1-9][0-9]*$
-            example: '1001'
-            description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
-          invoiceNumber: { type: string, maxLength: 60 }
-          customerName: { type: string, maxLength: 200 }
-          dueDate: { type: string, format: date }
-          carryingBaseAmount:
-            type: [string, 'null']
-            pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
-            description: القيمة الدفترية المسحوبة من الذمة بعملة الأساس؛ null للمسودة قبل الترحيل.
-          settlementBaseAmount:
-            type: [string, 'null']
-            pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
-            description: قيمة التحصيل بعملة الأساس وفق سعر صرف سند القبض؛ null للمسودة قبل الترحيل.
-          realizedFxBaseAmount:
-            type: [string, 'null']
-            pattern: ^-?(0|[1-9][0-9]{0,14})\.[0-9]{4}$
-            description: فرق العملة المحقق بعملة الأساس؛ موجب = ربح وسالب = خسارة.
+      type: object
+      additionalProperties: false
+      required: [id, receivableItemId, allocatedAmount, invoiceNumber, customerName, dueDate, carryingBaseAmount, settlementBaseAmount, realizedFxBaseAmount]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        receivableItemId: { type: string, pattern: '^[1-9][0-9]*$' }
+        allocatedAmount: { type: string, pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        invoiceNumber: { type: string, maxLength: 60 }
+        customerName: { type: string, maxLength: 200 }
+        dueDate: { type: string, format: date }
+        carryingBaseAmount:
+          type: [string, 'null']
+          pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
+          description: القيمة الدفترية المسحوبة من الذمة بعملة الأساس؛ null للمسودة قبل الترحيل.
+        settlementBaseAmount:
+          type: [string, 'null']
+          pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
+          description: قيمة التحصيل بعملة الأساس وفق سعر صرف سند القبض؛ null للمسودة قبل الترحيل.
+        realizedFxBaseAmount:
+          type: [string, 'null']
+          pattern: ^-?(0|[1-9][0-9]{0,14})\.[0-9]{4}$
+          description: فرق العملة المحقق بعملة الأساس؛ موجب = ربح وسالب = خسارة.
     PaymentAllocationInput:
       type: object
       additionalProperties: false
@@ -15439,32 +15851,25 @@ components:
           example: '1250.0000'
           description: قيمة مالية عشرية DECIMAL(19,4) كنص.
     PaymentAllocation:
-      allOf:
-      - $ref: '#/components/schemas/PaymentAllocationInput'
-      - type: object
-        required:
-        - id
-        - carryingBaseAmount
-        - settlementBaseAmount
-        - realizedFxBaseAmount
-        properties:
-          id:
-            type: string
-            pattern: ^[1-9][0-9]*$
-            example: '1001'
-            description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
-          carryingBaseAmount:
-            type: [string, 'null']
-            pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
-            description: القيمة الدفترية المسحوبة من الذمة بعملة الأساس؛ null للمسودة قبل الترحيل.
-          settlementBaseAmount:
-            type: [string, 'null']
-            pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
-            description: قيمة الدفع بعملة الأساس وفق سعر صرف سند الدفع؛ null للمسودة قبل الترحيل.
-          realizedFxBaseAmount:
-            type: [string, 'null']
-            pattern: ^-?(0|[1-9][0-9]{0,14})\.[0-9]{4}$
-            description: فرق العملة المحقق بعملة الأساس؛ موجب = ربح وسالب = خسارة.
+      type: object
+      additionalProperties: false
+      required: [id, payableItemId, allocatedAmount, carryingBaseAmount, settlementBaseAmount, realizedFxBaseAmount]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        payableItemId: { type: string, pattern: '^[1-9][0-9]*$' }
+        allocatedAmount: { type: string, pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$' }
+        carryingBaseAmount:
+          type: [string, 'null']
+          pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
+          description: القيمة الدفترية المسحوبة من الذمة بعملة الأساس؛ null للمسودة قبل الترحيل.
+        settlementBaseAmount:
+          type: [string, 'null']
+          pattern: ^(0|[1-9][0-9]{0,14})\.[0-9]{4}$
+          description: قيمة الدفع بعملة الأساس وفق سعر صرف سند الدفع؛ null للمسودة قبل الترحيل.
+        realizedFxBaseAmount:
+          type: [string, 'null']
+          pattern: ^-?(0|[1-9][0-9]{0,14})\.[0-9]{4}$
+          description: فرق العملة المحقق بعملة الأساس؛ موجب = ربح وسالب = خسارة.
     ReceiptCreateRequest:
       type: object
       additionalProperties: false

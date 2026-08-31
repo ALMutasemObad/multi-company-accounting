@@ -1,4 +1,4 @@
-import React from "react";
+import React, { lazy, Suspense, useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import "@fontsource/cairo/400.css";
 import "@fontsource/cairo/500.css";
@@ -8,10 +8,31 @@ import "@fontsource/noto-sans-devanagari/devanagari-400.css";
 import "@fontsource/noto-sans-devanagari/devanagari-500.css";
 import "@fontsource/noto-sans-devanagari/devanagari-600.css";
 import "@fontsource/noto-sans-devanagari/devanagari-700.css";
-import App from "./App";
 import { storageKey } from "./branding";
 import { I18nProvider, loadLocale, resolveLocale } from "./i18n";
+import { captureSubscriptionPlanPreference, isPublicPlansLocation } from "./public-plans";
+import { Spinner } from "./ui";
+import { useI18n } from "./i18n";
 import "./styles.css";
+
+const App = lazy(() => import("./App"));
+const PublicPlansPage = lazy(() => import("./PublicPlansPage").then((module) => ({ default: module.PublicPlansPage })));
+
+function EntryPage() {
+  const { t } = useI18n();
+  const [publicPage, setPublicPage] = useState(() => isPublicPlansLocation(location.pathname, location.hash));
+  useEffect(() => {
+    const route = () => {
+      if (location.hash.startsWith("#register")) captureSubscriptionPlanPreference(location.hash);
+      setPublicPage(isPublicPlansLocation(location.pathname, location.hash));
+    };
+    route();
+    window.addEventListener("hashchange", route);
+    window.addEventListener("popstate", route);
+    return () => { window.removeEventListener("hashchange", route); window.removeEventListener("popstate", route); };
+  }, []);
+  return <Suspense fallback={<Spinner label={t("common.loading")} />}>{publicPage ? <PublicPlansPage /> : <App />}</Suspense>;
+}
 
 async function bootstrap() {
   const requestedLocale = resolveLocale(window.localStorage.getItem(storageKey("locale")));
@@ -28,7 +49,7 @@ async function bootstrap() {
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
       <I18nProvider>
-        <App />
+        <EntryPage />
       </I18nProvider>
     </React.StrictMode>,
   );

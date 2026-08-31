@@ -1,3 +1,8 @@
+.public-plan-selection { background: #edf4e5; border: 1px solid #d1dfc5; color: #244c33; border-radius: 10px; padding: 13px 16px; margin-bottom: 18px; font-size: 13px; line-height: 1.9; }
+.public-plan-listing-controls { border-top: 1px solid var(--line); margin-top: 24px; padding-top: 20px; }
+.public-plan-listing-controls article { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 15px; padding-block: 14px; }
+.public-plan-listing-controls p { color: var(--muted); font-size: 13px; line-height: 1.9; }
+
 :root {
   font-family: "Cairo", "Noto Sans Devanagari", Tahoma, Arial, sans-serif;
   color: #17352d;

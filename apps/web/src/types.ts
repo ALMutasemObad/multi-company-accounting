@@ -161,6 +161,7 @@ export type SubscriptionPlanVersion = {
   taxRate: string; paymentTermsDays: number; trialDays: number; effectiveFrom: string;
   selfServicePolicy: "DISABLED" | "REQUEST_ONLY" | "IMMEDIATE_FREE";
   publicationStatus: "DRAFT" | "PUBLISHED"; publishedAt: string | null; retiredAt: string | null;
+  publiclyListed?: boolean;
   version: number; modules: SubscriptionPlanModule[];
 };
 export type SubscriptionChange = {

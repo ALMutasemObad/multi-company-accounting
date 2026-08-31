@@ -23,7 +23,7 @@ jobs:
       mariadb:
         image: mariadb:10.11.11@sha256:96be0d3dfbeb07bc420e5fb8a6dc05c492676f1f89980a497a55e6fbbba3f1c4
         env:
-          MYSQL_DATABASE: mcap_finance_test
+          MYSQL_DATABASE: test_mcap_finance
           MYSQL_USER: mcap_test
           MYSQL_PASSWORD: test_database_password
           MYSQL_ROOT_PASSWORD: test_root_password
@@ -32,7 +32,10 @@ jobs:
           --health-cmd="mariadb-admin ping -h 127.0.0.1 -umcap_test -ptest_database_password"
           --health-interval=5s --health-timeout=5s --health-retries=30
     env:
-      DATABASE_URL: mysql://mcap_test:test_database_password@127.0.0.1:3306/mcap_finance_test
+      DATABASE_URL: mysql://mcap_test:test_database_password@127.0.0.1:3306/test_mcap_finance
+      R2_DATABASE_URL: mysql://mcap_test:test_database_password@127.0.0.1:3306/test_mcap_finance
+      RUN_R2_DB_TESTS: 'true'
+      R2_DB_MIGRATION_MODE: fresh
       SEED_ADMIN_PASSWORD: CI-Only-Admin-Password-2026!
       RUN_DB_TESTS: 'true'
       EXPECTED_DATABASE_VERSION_PREFIX: '10.11.11-MariaDB'
@@ -41,6 +44,8 @@ jobs:
       CI_RESTORE_DATABASE: mcap_finance_restore_test
       BACKUP_ENCRYPTION_PASSPHRASE: CI-only-database-backup-passphrase-2026
     steps:
+      - name: Configure isolated R2 database evidence directory
+        run: echo "R2_DB_GATE_ARTIFACT_DIR=$RUNNER_TEMP/r2-db-gate" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -68,12 +73,15 @@ jobs:
         run: |
           npm run typecheck
           npm run e2e:typecheck
+          npm run subscription-qa:typecheck
       - name: Reject hard-coded web interface text
         run: npm run i18n:check
       - name: Verify responsive and accessible web UI contracts
         run: npm run ui:check
       - name: Test API against MariaDB 10.11
         run: npm run test:db -w @mcap/api
+      - name: Prove all R2 database tests executed on fresh MariaDB
+        run: node scripts/ci/selling-profile-db-gate.mjs run
       - name: Build on the production Node major
         run: npm run build
       - name: Install Chromium for the end-to-end release gate
@@ -100,6 +108,13 @@ jobs:
             test-results/playwright/
           if-no-files-found: warn
           retention-days: 7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: r2-database-mariadb-fresh
+          path: ${{ runner.temp }}/r2-db-gate/
+          if-no-files-found: warn
+          retention-days: 7
 
   migration-upgrade-compatibility:
     name: Production upgrade compatibility (${{ matrix.engine_name }})
@@ -121,7 +136,7 @@ jobs:
       database:
         image: ${{ matrix.image }}
         env:
-          MYSQL_DATABASE: mcap_finance_test
+          MYSQL_DATABASE: test_mcap_finance
           MYSQL_USER: mcap_test
           MYSQL_PASSWORD: test_database_password
           MYSQL_ROOT_PASSWORD: test_root_password
@@ -130,13 +145,18 @@ jobs:
           --health-cmd="${{ matrix.health_command }}"
           --health-interval=5s --health-timeout=5s --health-retries=30
     env:
-      DATABASE_URL: mysql://mcap_test:test_database_password@127.0.0.1:3306/mcap_finance_test
+      DATABASE_URL: mysql://mcap_test:test_database_password@127.0.0.1:3306/test_mcap_finance
+      R2_DATABASE_URL: mysql://mcap_test:test_database_password@127.0.0.1:3306/test_mcap_finance
+      RUN_R2_DB_TESTS: 'true'
+      R2_DB_MIGRATION_MODE: upgrade
       SEED_ADMIN_PASSWORD: CI-Only-Admin-Password-2026!
       RUN_DB_TESTS: 'true'
       EXPECTED_DATABASE_VERSION_PREFIX: ${{ matrix.expected_version }}
       PRODUCTION_BASELINE_COMMIT: c39b97949655f43c9fe35f98b3d47cce5c6c6054
       PRODUCTION_BASELINE_MIGRATION_COUNT: '38'
     steps:
+      - name: Configure isolated R2 database evidence directory
+        run: echo "R2_DB_GATE_ARTIFACT_DIR=$RUNNER_TEMP/r2-db-gate" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -160,6 +180,13 @@ jobs:
           npm run prisma:seed:demo -w @mcap/api
       - name: Test the candidate API on the upgraded production baseline
         run: npm run test:db -w @mcap/api
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: r2-database-${{ matrix.engine_name }}-upgrade
+          path: ${{ runner.temp }}/r2-db-gate/
+          if-no-files-found: warn
+          retention-days: 7
 
   verify:
     runs-on: ubuntu-latest
@@ -171,7 +198,7 @@ jobs:
       mysql:
         image: mysql:8.4.11@sha256:b3b90af2a6552ae30c266fdb7d5dd55f3afb72404bb78d37fe8a23eb857fd3fb
         env:
-          MYSQL_DATABASE: mcap_finance_test
+          MYSQL_DATABASE: test_mcap_finance
           MYSQL_USER: mcap_test
           MYSQL_PASSWORD: test_database_password
           MYSQL_ROOT_PASSWORD: test_root_password
@@ -180,7 +207,10 @@ jobs:
           --health-cmd="mysqladmin ping -h 127.0.0.1 -umcap_test -ptest_database_password"
           --health-interval=5s --health-timeout=5s --health-retries=30
     env:
-      DATABASE_URL: mysql://mcap_test:test_database_password@127.0.0.1:3306/mcap_finance_test
+      DATABASE_URL: mysql://mcap_test:test_database_password@127.0.0.1:3306/test_mcap_finance
+      R2_DATABASE_URL: mysql://mcap_test:test_database_password@127.0.0.1:3306/test_mcap_finance
+      RUN_R2_DB_TESTS: 'true'
+      R2_DB_MIGRATION_MODE: fresh
       SEED_ADMIN_PASSWORD: CI-Only-Admin-Password-2026!
       RUN_DB_TESTS: 'true'
       EXPECTED_DATABASE_VERSION_PREFIX: '8.4.'
@@ -189,6 +219,8 @@ jobs:
       CI_RESTORE_DATABASE: mcap_finance_restore_test
       BACKUP_ENCRYPTION_PASSPHRASE: CI-only-database-backup-passphrase-2026
     steps:
+      - name: Configure isolated R2 database evidence directory
+        run: echo "R2_DB_GATE_ARTIFACT_DIR=$RUNNER_TEMP/r2-db-gate" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -212,6 +244,8 @@ jobs:
         run: |
           npm run typecheck
           npm run e2e:typecheck
+          npm run subscription-qa:typecheck
+          node node_modules/typescript/bin/tsc -p tsconfig.grocery-integration.json --noEmit
       - name: Reject hard-coded web interface text
         run: npm run i18n:check
       - name: Verify responsive and accessible web UI contracts
@@ -228,6 +262,8 @@ jobs:
         run: npm run infra:test
       - name: Test API against MySQL 8.4
         run: npm run test:db -w @mcap/api
+      - name: Prove all R2 database tests executed on fresh MySQL
+        run: node scripts/ci/selling-profile-db-gate.mjs run
       - name: Test web application
         run: npm run test -w @mcap/web
       - name: Validate OpenAPI
@@ -236,8 +272,10 @@ jobs:
         run: npm run build
       - name: Install Chromium for the end-to-end release gate
         run: node node_modules/@playwright/test/cli.js install --with-deps chromium
-      - name: Test the responsive interface matrix in Chromium
-        run: npm run visual-qa:test
+      - name: Test grocery frontend integration with the HTTP harness in Chromium
+        run: node node_modules/@playwright/test/cli.js test --config playwright.grocery-integration.config.ts
+      - name: Test responsive journeys, subscription changes and billing recovery in Chromium
+        run: npm run subscription-qa:test
       - name: Test onboarding and the first accounting document on MySQL
         run: npm run e2e
       - name: Prove encrypted backup and isolated restore on MySQL
@@ -253,6 +291,16 @@ jobs:
             test-results/playwright/
             playwright-responsive-report/
             test-results/responsive-ui/
+            test-results/subscription-readiness-integration/
+            test-results/track-e/
+            tmp/agent/grocery-integration-results/
+          if-no-files-found: warn
+          retention-days: 7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: r2-database-mysql-fresh
+          path: ${{ runner.temp }}/r2-db-gate/
           if-no-files-found: warn
           retention-days: 7
       - name: Remove build-only and optional dependencies

@@ -14,6 +14,7 @@ import { useAuthorization } from "./authorization-context";
 import { BankReconciliationPage } from "./BankReconciliationPage";
 import { endpointPermissionPolicies } from "./endpoint-permissions";
 import { validateTreasuryAccount } from "./domain";
+import type { TreasurySection } from "./page-section-navigation";
 import type { Account,
   BankReconciliationCapabilities,
   CashBankAccount,
@@ -29,12 +30,13 @@ import { Button,
 } from "./ui";
 
 type Notice = (message: string, tone?: "success" | "error") => void;
-type Tab = "accounts" | "methods" | "reconciliation";
+type Tab = TreasurySection | "reconciliation";
 
-export function TreasuryPage({ notify }: { notify: Notice }) {
+export function TreasuryPage({ notify, section }: { notify: Notice; section?: TreasurySection }) {
   const { permissionSet } = useAuthorization();
   const canViewReconciliation = allows(permissionSet, endpointPermissionPolicies.bankReconciliation);
-  const [tab, setTab] = useState<Tab>("accounts"); const [items, setItems] = useState<CashBankAccount[]>([]); const [methods, setMethods] = useState<PaymentMethod[]>([]); const [ledgerAccounts, setLedgerAccounts] = useState<Account[]>([]);
+  const [tab, setTab] = useState<Tab>(section ?? "accounts"); const [items, setItems] = useState<CashBankAccount[]>([]); const [methods, setMethods] = useState<PaymentMethod[]>([]); const [ledgerAccounts, setLedgerAccounts] = useState<Account[]>([]);
+  useEffect(() => { setTab(section ?? "accounts"); }, [section]);
   const [meta, setMeta] = useState({ page: 1, pageSize: 10, total: 0, totalPages: 0 }); const [page, setPage] = useState(1); const [search, setSearch] = useState(""); const [submittedSearch, setSubmittedSearch] = useState(""); const [type, setType] = useState(""); const [status, setStatus] = useState(""); const [loading, setLoading] = useState(true); const [error, setError] = useState("");
   const [cashForm, setCashForm] = useState<CashBankAccount | "new" | null>(null); const [methodForm, setMethodForm] = useState<PaymentMethod | "new" | null>(null);
   const [reconciliationCapabilities, setReconciliationCapabilities] = useState<BankReconciliationCapabilities | null>(null);

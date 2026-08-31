@@ -1,0 +1,5 @@
+{
+  "extends": "./apps/web/tsconfig.json",
+  "compilerOptions": { "types": ["node", "@playwright/test"] },
+  "include": ["tests/track-r1/**/*.ts", "tests/track-r1/**/*.tsx", "playwright.track-r1.config.ts", "vite.track-r1*.config.ts", "vitest.track-r1.config.ts"]
+}

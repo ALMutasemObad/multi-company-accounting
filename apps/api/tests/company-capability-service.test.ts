@@ -27,6 +27,21 @@ function entitlementQuery(
 }
 
 describe('CompanyCapabilityService', () => {
+  it('requires SALES and explicit catalogue RBAC without inferring manage from view', async () => {
+    const permitted = new CompanyCapabilityService(entitlementQuery(['SALES']));
+    await expect(permitted.resolve(20n, ['sales_catalog.view'])).resolves.toEqual({
+      moduleCodes: ['SALES'], permissions: ['sales_catalog.view'],
+    });
+    await expect(permitted.resolve(20n, [])).resolves.toEqual({ moduleCodes: ['SALES'], permissions: [] });
+    const unentitled = new CompanyCapabilityService(entitlementQuery(['POS', 'INVENTORY']));
+    await expect(unentitled.resolve(20n, ['sales_catalog.view', 'sales_catalog.manage'])).resolves.toEqual({
+      moduleCodes: ['INVENTORY', 'POS'], permissions: [],
+    });
+    await expect(unentitled.allows(20n, 'sales_catalog.view')).resolves.toBe(false);
+    expect(permissionEntitlement('sales_catalog.view')).toBe('SALES');
+    expect(permissionEntitlement('sales_catalog.manage')).toBe('SALES');
+  });
+
   it('maps every seeded RBAC permission to an explicit module or platform foundation', () => {
     for (const [permission] of permissionDefinitions) {
       expect(permissionEntitlement(permission), permission).not.toBeNull();

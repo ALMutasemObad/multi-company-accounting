@@ -10,8 +10,17 @@ import { urApprovals } from "./approvals";
 import { urProfessionalProjects } from "./professional-projects";
 import { urHumanResources } from "./human-resources";
 import { urSystemHomePlatform } from "./system-home-platform";
+import { urPublicPlans } from "./public-plans";
+import { urAuthResilience } from "./auth-resilience";
+import { urSubscriptionUsage } from "./subscription-usage";
+import { urSubscriptionChanges } from "./subscription-changes";
+import { urBillingRecovery } from "./billing-recovery";
 
 export const ur = {
+  ...urSubscriptionChanges,
+  ...urBillingRecovery,
+  ...urAuthResilience,
+  ...urSubscriptionUsage,
   ...urReconciliation,
   ...urFinancialClose,
   ...urCashFlow,
@@ -23,6 +32,7 @@ export const ur = {
   ...urProfessionalProjects,
   ...urHumanResources,
   ...urSystemHomePlatform,
+  ...urPublicPlans,
   "referencePicker.loading": "تلاش جاری ہے…",
   "referencePicker.empty": "کوئی مماثل نتیجہ نہیں ملا۔",
   "referencePicker.more": "مزید نتائج لوڈ کریں",

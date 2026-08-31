@@ -2,6 +2,7 @@ import { Router, type ErrorRequestHandler, type Request } from "express";
 import { z } from "zod";
 import type { AuthService } from "../auth/auth-service.js";
 import { openApiRequestBodySchemas as bodies } from "../generated/openapi-request-guards.js";
+import { PUBLIC_PLAN_MAX_PAGE } from "./public-plan-catalog.js";
 import {
   PlatformSubscriptionError,
   SUBSCRIPTION_DEFAULT_PAGE_SIZE,
@@ -43,6 +44,10 @@ export function createPlatformSubscriptionRouter(
   lifecycle: PlatformSubscriptionLifecycleService,
 ) {
   const router = Router();
+  router.get("/public/subscription-plans", async (request, response) => {
+    const query = z.object({ page: z.coerce.number().int().min(1).max(PUBLIC_PLAN_MAX_PAGE).default(1) }).strict().parse(request.query);
+    response.json(await catalog.publicCatalog(query.page));
+  });
   const authenticate = (request: Request, requireCsrf = false) => auth.authenticate({
     sid: sid(request), csrfToken: request.header("X-CSRF-Token") ?? undefined, requireCsrf,
   });
@@ -94,6 +99,12 @@ export function createPlatformSubscriptionRouter(
     const actor = await platformActor(request, true);
     const body = bodies.publishPlatformSubscriptionPlanVersion.parse(request.body);
     response.json(await catalog.publish(actor, identifier.parse(request.params.planVersionId), body.version));
+  });
+  router.put("/platform/subscription-plan-versions/:planVersionId/public-listing", async (request, response) => {
+    const actor = await platformActor(request, true);
+    response.json(await catalog.setPublicListing(
+      actor, identifier.parse(request.params.planVersionId), bodies.setPlatformSubscriptionPublicListing.parse(request.body),
+    ));
   });
   router.get("/platform/subscriptions", async (request, response) => {
     const actor = await authenticate(request);

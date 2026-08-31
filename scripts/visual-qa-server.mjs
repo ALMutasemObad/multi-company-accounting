@@ -33,6 +33,7 @@ const visualQaPermissions = [
   "hr.employees.view",
   "hr.structure.view",
   "inventory_catalog.view",
+  "inventory_movements.view",
   "inventory_barcodes.resolve",
   "manual_journals.view",
   "payments.view",
@@ -396,6 +397,24 @@ function list(data = []) {
 
 function responseFor(url, method) {
   const pathname = url.pathname.replace(/^\/api\/v1/, "");
+  // Visual test data only: this server is never part of an application release.
+  if (pathname === "/public/subscription-plans") return {
+    plans: [
+      { id: "101", displayName: "التجريبية", description: "تعرّف على أدوات المنصة واكتشف كيف تنظم أعمالك.", recurringFee: "0.0000", trialDays: 14, includedUsers: 1, includedEmployees: 2, includedPostedDocuments: 50 },
+      { id: "102", displayName: "الأساسية", description: "أدواتك اليومية لإدارة المبيعات والحسابات في مكان واحد.", recurringFee: "99.0000", trialDays: 0, includedUsers: 5, includedEmployees: 10, includedPostedDocuments: 500 },
+      { id: "103", displayName: "الأعمال", description: "خيارات أوسع للفريق الذي يستعد للمرحلة التالية.", recurringFee: "249.0000", trialDays: 0, includedUsers: 15, includedEmployees: 50, includedPostedDocuments: 2000 },
+    ].map((plan, index) => ({
+      ...plan, billingCycle: "MONTHLY", currencyCode: "SAR", taxRate: "15.0000", requiresApproval: true,
+      pricePerAdditionalUser: index ? "15.0000" : null, pricePerAdditionalEmployee: null, pricePerAdditionalPostedDocument: null,
+      modules: [
+        { code: "CORE_ACCOUNTING", displayName: "المحاسبة الأساسية", selectionMode: "INCLUDED", additionalRecurringFee: null },
+        ...(index ? [{ code: "SALES", displayName: "المبيعات والعملاء", selectionMode: "INCLUDED", additionalRecurringFee: null }] : []),
+        ...(index === 2 ? [{ code: "INVENTORY", displayName: "المخزون والمستودعات", selectionMode: "INCLUDED", additionalRecurringFee: null }] : []),
+        { code: "REPORTING", displayName: "التقارير", selectionMode: "OPTIONAL", additionalRecurringFee: "10.0000" },
+      ],
+    })),
+    meta: { page: 1, pageSize: 9, total: 3, totalPages: 1 },
+  };
   if (pathname === "/auth/csrf") return { csrfToken: "visual-qa-csrf" };
   if (pathname === "/auth/me") return currentAuthorization;
   if (pathname === "/auth/companies") return { data: [company] };
@@ -422,6 +441,17 @@ function responseFor(url, method) {
     meta: { ...meta, total: 1, totalPages: 1 }, generatedAt: "2026-08-29T09:00:00.000Z",
   };
   if (pathname === "/subscription/catalog") return { plans: [subscriptionPlanVersion], meta: { ...meta, total: 1, totalPages: 1 } };
+  // Presentation fixture only; no inferred billing period, charge, or quota enforcement.
+  if (pathname === "/subscription/usage") return {
+    companyId: currentAuthorization.selectedCompany.id, measuredAt: "2026-08-31T09:00:00.000Z", consistency: "BEST_EFFORT",
+    plan: { id: subscriptionPlanVersion.id, displayName: subscriptionPlanVersion.displayName, billingCycle: subscriptionPlanVersion.billingCycle },
+    period: { kind: "STATISTICAL_MONTH_TO_DATE", timezone: "UTC", startsAt: "2026-08-01T00:00:00.000Z", endsAtExclusive: "2026-08-31T09:00:00.000Z", billingPeriodStatus: "NOT_CONFIGURED" },
+    metrics: {
+      users: { used: 2, included: 5, remaining: 3, excess: 0, state: "WITHIN_LIMIT", comparisonBasis: "CURRENT_SNAPSHOT", definition: "ACTIVE_COMPANY_USERS" },
+      employees: { used: 10, included: 10, remaining: 0, excess: 0, state: "AT_LIMIT", comparisonBasis: "CURRENT_SNAPSHOT", definition: "ACTIVE_OR_ON_LEAVE_EMPLOYEES" },
+      postedDocuments: { used: 125, included: subscriptionPlanVersion.includedPostedDocuments, remaining: null, excess: null, state: "UNKNOWN", comparisonBasis: "UNCONFIRMED_PERIOD", definition: "DOCUMENTS_POSTED_IN_WINDOW" },
+    },
+  };
   if (pathname === "/subscription/billing/invoices") return {
     provider: visualPaymentProvider,
     items: [visualSubscriptionInvoice],

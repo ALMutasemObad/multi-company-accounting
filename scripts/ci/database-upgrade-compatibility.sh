@@ -15,6 +15,8 @@ expected_baseline_migrations=${PRODUCTION_BASELINE_MIGRATION_COUNT:-}
 [[ -d "$workspace/.git" && -f "$workspace/package.json" ]] \
   || fail "GITHUB_WORKSPACE must identify the repository root"
 
+node "$workspace/scripts/ci/selling-profile-db-gate.mjs" preflight-upgrade
+
 git -C "$workspace" cat-file -e "${baseline_commit}^{commit}" \
   || fail "the production baseline commit is unavailable; checkout must use fetch-depth: 0"
 git -C "$workspace" merge-base --is-ancestor "$baseline_commit" HEAD \
@@ -72,12 +74,24 @@ log "applying the production baseline migrations and representative fixtures"
   "$baseline_tsx" prisma/demo-seed.ts
 )
 
+log "recording an Inventory sentinel before the R2 migration exists"
+R2_UPGRADE_SENTINEL_ITEM_ID=$(node "$workspace/scripts/ci/selling-profile-db-gate.mjs" prepare-upgrade)
+[[ "$R2_UPGRADE_SENTINEL_ITEM_ID" =~ ^[1-9][0-9]*$ ]] \
+  || fail "the pre-migration R2 sentinel was not created"
+export R2_UPGRADE_SENTINEL_ITEM_ID
+if [[ -n "${GITHUB_ENV:-}" ]]; then
+  printf 'R2_UPGRADE_SENTINEL_ITEM_ID=%s\n' "$R2_UPGRADE_SENTINEL_ITEM_ID" >> "$GITHUB_ENV"
+fi
+
 log "upgrading the populated baseline with the candidate migration history"
 (
   cd "$workspace/apps/api" || fail "cannot enter the candidate API"
   "$prisma" migrate deploy --config prisma.config.ts
   "$prisma" migrate status --config prisma.config.ts
 )
+
+log "proving the sentinel survived and every R2 database test executed"
+node "$workspace/scripts/ci/selling-profile-db-gate.mjs" run
 
 log "building and testing the previous application against the upgraded schema"
 (

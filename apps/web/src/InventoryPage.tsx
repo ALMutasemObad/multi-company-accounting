@@ -9,22 +9,31 @@ import {
   inventoryBarcodeLabelFilename,
   inventoryBarcodeSymbologies,
 } from "./barcode";
-import { activeIntlLocale, localizedReferenceName, translate as t } from "./i18n";
+import { activeIntlLocale, localizedReferenceName, translate as t, useI18n } from "./i18n";
+import { ItemSellingProfileWorkspace } from "./ItemSellingProfileWorkspace";
+import { sellingWorkspace } from "./i18n/locales/selling-profile-workspace";
 import type { InventoryBalance, InventoryBarcodeSymbology, InventoryItem, InventoryItemBarcode, InventoryMovement, InventoryMovementType, ListResponse, UnitOfMeasure, Warehouse } from "./types";
 import { Button, EmptyState, Icon, Modal, PageHeader, Pagination, Spinner } from "./ui";
+import { visibleInventorySections, type InventorySection } from "./page-section-navigation";
 
 type Notice = (message: string, tone?: "success" | "error") => void;
-type Tab = "balances" | "movements" | "warehouses" | "units" | "items";
+type Tab = InventorySection;
 type PageMeta = { page: number; pageSize: number; total: number; totalPages: number };
 
 const emptyMeta: PageMeta = { page: 1, pageSize: 10, total: 0, totalPages: 0 };
 
-export function InventoryPage({ notify }: { notify: Notice }) {
-  const [tab, setTab] = useState<Tab>("warehouses");
+export function InventoryPage({ notify, section, onSectionChange }: {
+  notify: Notice; section?: InventorySection; onSectionChange?: (section: InventorySection) => void;
+}) {
+  const { permissionSet } = useAuthorization();
+  const tabs = visibleInventorySections(permissionSet);
+  const [selectedTab, setTab] = useState<Tab>(section ?? "warehouses");
+  const tab = tabs.includes(selectedTab) ? selectedTab : tabs[0];
+  useEffect(() => { setTab(section ?? "warehouses"); }, [section]);
   return <section className="workspace-page">
     <PageHeader kicker={t("inventory.kicker")} title={t("inventory.title")} description={t("inventory.description")} />
     <div className="section-tabs" role="tablist" aria-label={t("inventory.tabs.label")}>
-      {(["warehouses", "balances", "movements", "units", "items"] as const).map((value) => <button key={value} type="button" role="tab" aria-selected={tab === value} className={tab === value ? "active" : ""} onClick={() => setTab(value)}>{t(`inventory.tabs.${value}`)}</button>)}
+      {tabs.map((value) => <button key={value} type="button" role="tab" aria-selected={tab === value} className={tab === value ? "active" : ""} onClick={() => { setTab(value); onSectionChange?.(value); }}>{t(`inventory.tabs.${value}`)}</button>)}
     </div>
     {tab === "balances" && <BalancesPanel notify={notify} />}
     {tab === "movements" && <MovementsPanel notify={notify} />}
@@ -340,6 +349,9 @@ function UnitsPanel({ notify }: { notify: Notice }) {
 
 function ItemsPanel({ notify }: { notify: Notice }) {
   const { permissionSet } = useAuthorization();
+  const { locale } = useI18n();
+  const canViewSelling = permissionSet.has("sales_catalog.view");
+  const [sellingItem, setSellingItem] = useState<InventoryItem | null>(null);
   const canViewBarcodes = canViewInventoryBarcodes(permissionSet);
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [units, setUnits] = useState<UnitOfMeasure[]>([]);
@@ -399,10 +411,11 @@ function ItemsPanel({ notify }: { notify: Notice }) {
       <Button icon="plus" disabled={!units.length} onClick={() => setForm("new")}>{t("inventory.items.create")}</Button>
     </div>
     {!loading && !units.length && <div className="inline-notice neutral">{t("inventory.items.unitRequired")}</div>}
-    {error ? <ErrorPanel error={error} retry={load} /> : loading ? <Spinner label={t("inventory.items.loading")} /> : !items.length ? <EmptyState title={t("inventory.items.emptyTitle")} description={t("inventory.items.emptyDescription")} action={units.length ? <Button icon="plus" onClick={() => setForm("new")}>{t("inventory.items.create")}</Button> : undefined} /> : <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("inventory.code")}</th><th>{t("inventory.items.name")}</th><th>{t("inventory.items.unit")}</th><th>{t("inventory.items.description")}</th><th>{t("inventory.status")}</th><th>{t("inventory.actions")}</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong dir="ltr">{item.code}</strong></td><td><strong>{localizedReferenceName(item)}</strong>{item.nameEn && <small dir="ltr">{item.nameEn}</small>}</td><td><span className="code-pill" dir="ltr">{item.unitOfMeasure.code}</span><small>{localizedReferenceName(item.unitOfMeasure)}</small></td><td>{item.description || "—"}</td><td><Status active={item.isActive} /></td><td><div className="inline-actions"><Button variant="ghost" icon="edit" onClick={() => setForm(item)}>{t("inventory.edit")}</Button><Can policy={barcodePermissionPolicies.view}><Button variant="ghost" icon="inventory" onClick={() => setBarcodeItem(item)}>{t("inventory.barcodes.manage")}</Button></Can>{item.isActive && <Button variant="ghost" icon="ban" onClick={() => void deactivate(item)}>{t("inventory.deactivate")}</Button>}</div></td></tr>)}</tbody></table></div>}
+    {error ? <ErrorPanel error={error} retry={load} /> : loading ? <Spinner label={t("inventory.items.loading")} /> : !items.length ? <EmptyState title={t("inventory.items.emptyTitle")} description={t("inventory.items.emptyDescription")} action={units.length ? <Button icon="plus" onClick={() => setForm("new")}>{t("inventory.items.create")}</Button> : undefined} /> : <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("inventory.code")}</th><th>{t("inventory.items.name")}</th><th>{t("inventory.items.unit")}</th><th>{t("inventory.items.description")}</th><th>{t("inventory.status")}</th><th>{t("inventory.actions")}</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong dir="ltr">{item.code}</strong></td><td><strong>{localizedReferenceName(item)}</strong>{item.nameEn && <small dir="ltr">{item.nameEn}</small>}</td><td><span className="code-pill" dir="ltr">{item.unitOfMeasure.code}</span><small>{localizedReferenceName(item.unitOfMeasure)}</small></td><td>{item.description || "—"}</td><td><Status active={item.isActive} /></td><td><div className="inline-actions"><Button variant="ghost" icon="edit" onClick={() => setForm(item)}>{t("inventory.edit")}</Button>{canViewSelling && <Button variant="ghost" onClick={() => setSellingItem(item)}>{sellingWorkspace[locale].open}</Button>}<Can policy={barcodePermissionPolicies.view}><Button variant="ghost" icon="inventory" onClick={() => setBarcodeItem(item)}>{t("inventory.barcodes.manage")}</Button></Can>{item.isActive && <Button variant="ghost" icon="ban" onClick={() => void deactivate(item)}>{t("inventory.deactivate")}</Button>}</div></td></tr>)}</tbody></table></div>}
     <Pagination {...meta} page={page} onChange={setPage} />
     {form && <ItemForm item={form === "new" ? null : form} units={units} onClose={() => setForm(null)} onSaved={async () => { const created = form === "new"; setForm(null); notify(t(created ? "inventory.items.created" : "inventory.items.updated")); await load(); }} />}
     {barcodeItem && canViewBarcodes && <BarcodeManager item={barcodeItem} notify={notify} onClose={() => setBarcodeItem(null)} />}
+    {sellingItem && canViewSelling && <ItemSellingProfileWorkspace item={sellingItem} onClose={() => setSellingItem(null)} />}
   </>;
 }
 

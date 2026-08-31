@@ -10,8 +10,17 @@ import { hiApprovals } from "./approvals";
 import { hiProfessionalProjects } from "./professional-projects";
 import { hiHumanResources } from "./human-resources";
 import { hiSystemHomePlatform } from "./system-home-platform";
+import { hiPublicPlans } from "./public-plans";
+import { hiAuthResilience } from "./auth-resilience";
+import { hiSubscriptionUsage } from "./subscription-usage";
+import { hiSubscriptionChanges } from "./subscription-changes";
+import { hiBillingRecovery } from "./billing-recovery";
 
 export const hi = {
+  ...hiSubscriptionChanges,
+  ...hiBillingRecovery,
+  ...hiAuthResilience,
+  ...hiSubscriptionUsage,
   ...hiReconciliation,
   ...hiFinancialClose,
   ...hiCashFlow,
@@ -23,6 +32,7 @@ export const hi = {
   ...hiProfessionalProjects,
   ...hiHumanResources,
   ...hiSystemHomePlatform,
+  ...hiPublicPlans,
   "referencePicker.loading": "खोज जारी है…",
   "referencePicker.empty": "कोई मिलता-जुलता परिणाम नहीं मिला।",
   "referencePicker.more": "और परिणाम लोड करें",

@@ -12,8 +12,17 @@ import { arApprovals } from "./approvals";
 import { arProfessionalProjects } from "./professional-projects";
 import { arHumanResources } from "./human-resources";
 import { arSystemHomePlatform } from "./system-home-platform";
+import { arPublicPlans } from "./public-plans";
+import { arAuthResilience } from "./auth-resilience";
+import { arSubscriptionUsage } from "./subscription-usage";
+import { arSubscriptionChanges } from "./subscription-changes";
+import { arBillingRecovery } from "./billing-recovery";
 
 export const ar = {
+  ...arSubscriptionChanges,
+  ...arBillingRecovery,
+  ...arAuthResilience,
+  ...arSubscriptionUsage,
   ...arDomain,
   ...arEvents,
   ...arReconciliation,
@@ -27,6 +36,7 @@ export const ar = {
   ...arProfessionalProjects,
   ...arHumanResources,
   ...arSystemHomePlatform,
+  ...arPublicPlans,
   "language.label": "اللغة",
   "branding.name": "النظام المحاسبي متعدد الشركات",
   "branding.shortName": "منصة المحاسبة",

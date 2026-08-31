@@ -84,6 +84,8 @@ export const permissionDefinitions = [
   ['inventory_movements.reverse', 'inventory', 'عكس حركات المخزون اليدوية'],
   ['pos.view', 'pos', 'عرض شاشة نقاط البيع والمبيعات النقدية'],
   ['pos.checkout', 'pos', 'تنفيذ بيع نقدي كامل عبر نقاط البيع'],
+  ['sales_catalog.view', 'sales_catalog', 'عرض كتالوج البيع وملفات بيع الأصناف'],
+  ['sales_catalog.manage', 'sales_catalog', 'إدارة السعر والعملة والحساب والضريبة الافتراضية للصنف'],
   ['receipts.view', 'receipts', 'عرض سندات القبض'],
   ['receipts.create', 'receipts', 'إنشاء سندات القبض'],
   ['receipts.update', 'receipts', 'تعديل سندات القبض'],

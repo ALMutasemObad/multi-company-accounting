@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.e2e.json",
+  "include": ["playwright.track-a.config.ts", "tests/visual/public-plans.spec.ts", "tests/visual/track-a-public-offers.spec.ts"]
+}

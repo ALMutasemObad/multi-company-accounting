@@ -14,6 +14,7 @@ import { createReceiptRouter } from '../src/receipts/receipt-router.js';
 import { createCustomerRouter } from '../src/sales/customer-router.js';
 import { createReportRouter } from '../src/reports/report-router.js';
 import { createSalesInvoiceRouter } from '../src/sales/sales-invoice-router.js';
+import { createSellingProfileRouter } from '../src/sales/selling-profile-router.js';
 import { createSecurityEventRouter } from '../src/security/security-event-router.js';
 import { createSupplierRouter } from '../src/suppliers/supplier-router.js';
 import { createUserRouter } from '../src/users/user-router.js';
@@ -37,6 +38,7 @@ import { createHrRouter } from '../src/hr/hr-router.js';
 import { createPlatformOperationsRouter } from '../src/platform-operations/platform-operations-router.js';
 import { createPlatformPaymentRouter } from '../src/platform-operations/payments/platform-payment-router.js';
 import { createPlatformSubscriptionRouter } from '../src/platform-subscriptions/platform-subscription-router.js';
+import { createSubscriptionUsageRouter } from '../src/platform-subscriptions/subscription-usage-router.js';
 
 type RouteLayer = {
   route?: {
@@ -53,6 +55,7 @@ const routers = [
   { prefix: '', router: createPlatformOperationsRouter(stub, stub, stub) },
   { prefix: '', router: createPlatformPaymentRouter(stub, stub) },
   { prefix: '', router: createPlatformSubscriptionRouter(stub, stub, stub) },
+  { prefix: '', router: createSubscriptionUsageRouter(stub, stub) },
   { prefix: '', router: createUserRouter(stub, stub, stub) },
   { prefix: '', router: createCompanyRouter(stub, stub) },
   { prefix: '', router: createPrintRouter(stub, stub) },
@@ -80,6 +83,7 @@ const routers = [
   { prefix: '', router: createPaymentRouter(stub, stub) },
   { prefix: '', router: createTaxRouter(stub, stub) },
   { prefix: '', router: createSalesInvoiceRouter(stub, stub) },
+  { prefix: '', router: createSellingProfileRouter(stub, stub) },
   { prefix: '', router: createPurchaseInvoiceRouter(stub, stub) },
   { prefix: '', router: createReportRouter(stub, stub, stub, stub, stub) },
   { prefix: '', router: createDataImportRouter(stub, stub) },

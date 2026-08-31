@@ -8,7 +8,7 @@ import {
   updateCurrentCompanyRequestSchema,
   replaceCompanySettingsRequestSchema,
 } from '../generated/openapi-request-guards.js';
-import { CompanyCurrencyError, type CompanyService } from './company-service.js';
+import { CompanyCurrencyError, enabledCurrencyOptionsQuerySchema, type CompanyService } from './company-service.js';
 
 const id = z.string().regex(/^[1-9][0-9]*$/).transform(BigInt);
 const date = z.string().date();
@@ -47,6 +47,15 @@ export function createCompanyRouter(auth: AuthService, companies: CompanyService
       .map(enabledCurrency)
       .sort((left, right) => Number(right.isBase) - Number(left.isBase) || left.code.localeCompare(right.code));
     response.json({ data });
+  });
+  router.get('/currencies/options', async (request, response) => {
+    const context = await authorize(request, 'currencies.view', false);
+    const query = enabledCurrencyOptionsQuerySchema.parse(request.query);
+    const result = await companies.listEnabledCurrencyOptions(context, query);
+    response.json({
+      data: result.data.map((currency) => ({ id: currency.id.toString(), code: currency.code, nameAr: currency.nameAr, decimals: currency.decimals })),
+      meta: { page: query.page, pageSize: query.pageSize, total: result.total, totalPages: Math.ceil(result.total / query.pageSize) },
+    });
   });
   router.post('/company-currencies', async (request, response) => { const context = await authorize(request, 'currencies.create', true); const body = createCompanyCurrencyRequestSchema.parse(request.body); response.status(201).json(currencySetting(await companies.createCompanyCurrency(context, body))); });
   router.put('/company-currencies', async (request, response) => { const context = await authorize(request, 'currencies.manage', true); const body = replaceCompanyCurrenciesRequestSchema.parse(request.body); response.json({ data: (await companies.updateCompanyCurrencies(context, body.currencyIds)).map(currencySetting) }); });

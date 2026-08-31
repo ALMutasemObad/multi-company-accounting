@@ -11,6 +11,7 @@ import {
 import { useI18n } from "./i18n";
 import type { PageMeta, SubscriptionPlanVersion, SubscriptionSnapshot } from "./types";
 import { Button, PageHeader, Spinner } from "./ui";
+import { PublicPlanListingReview } from "./PublicPlanListingReview";
 
 type Notice = (message: string, tone?: "success" | "error") => void;
 type CatalogModule = { id: string; code: string; displayName: string; active: boolean; dependencies: Array<{ id: string; code: string; active: boolean }> };
@@ -211,6 +212,16 @@ export function PlatformSubscriptionsPage({ notify }: { notify: Notice }) {
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("platformSubscriptions.publishError")); }
     finally { setBusy(false); }
   }
+  async function setPublicListing(version: SubscriptionPlanVersion) {
+    setBusy(true); setError("");
+    try {
+      await api(`/platform/subscription-plan-versions/${version.id}/public-listing`, {
+        method: "PUT", body: JSON.stringify({ publiclyListed: !version.publiclyListed, version: version.version }),
+      });
+      notify(t("publicPlans.listingSaved")); await refreshSelectedPlan();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : t("platformSubscriptions.saveError")); }
+    finally { setBusy(false); }
+  }
   async function searchNow(event: FormEvent) {
     event.preventDefault(); setLoading(true); setError("");
     setAppliedSearch(search);
@@ -272,10 +283,10 @@ export function PlatformSubscriptionsPage({ notify }: { notify: Notice }) {
     {tab !== "payments" && <form className="toolbar" onSubmit={searchNow}><label className="search-field"><span>{t("common.search")}</span><input value={search} onChange={(event) => setSearch(event.target.value)} /></label><Button type="submit" variant="secondary">{t("common.search")}</Button></form>}
     {tab === "plans" ? <div className="subscription-admin-layout">
       <section className="panel platform-list-panel"><header><div><h2>{t("platformSubscriptions.catalog")}</h2><p>{t("platformSubscriptions.catalogDescription")}</p></div><span>{planMeta.total}</span></header>
-        {plans.length ? <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("platformSubscriptions.plan")}</th><th>{t("platformSubscriptions.publication")}</th><th>{t("platformSubscriptions.updated")}</th></tr></thead><tbody>{plans.map((plan) => <tr key={plan.id} onClick={() => void openPlan(plan.id)} className={selectedPlan?.id === plan.id ? "selected-row" : ""}><td><strong>{plan.latestVersion?.displayName ?? plan.code}</strong><small>{plan.code} · {plan.active ? t("common.active") : t("common.inactive")}</small></td><td>{plan.latestVersion ? t(`platformSubscriptions.publication.${plan.latestVersion.publicationStatus}` as never) : "—"}</td><td>{formatDateTime(plan.updatedAt)}</td></tr>)}</tbody></table></div> : <div className="empty-state"><h3>{t("platformSubscriptions.noPlans")}</h3><p>{t("platformSubscriptions.noPlansDescription")}</p></div>}
+        {plans.length ? <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("platformSubscriptions.plan")}</th><th>{t("platformSubscriptions.publication")}</th><th>{t("platformSubscriptions.updated")}</th></tr></thead><tbody>{plans.map((plan) => <tr key={plan.id} onClick={() => void openPlan(plan.id)} className={selectedPlan?.id === plan.id ? "selected-row" : ""}><td><button type="button" className="public-offers-plan-open" disabled={busy} onClick={(event) => { event.stopPropagation(); void openPlan(plan.id); }}>{plan.latestVersion?.displayName ?? plan.code}</button><small>{plan.code} · {plan.active ? t("common.active") : t("common.inactive")}</small></td><td>{plan.latestVersion ? t(`platformSubscriptions.publication.${plan.latestVersion.publicationStatus}` as never) : "—"}</td><td>{formatDateTime(plan.updatedAt)}</td></tr>)}</tbody></table></div> : <div className="empty-state"><h3>{t("platformSubscriptions.noPlans")}</h3><p>{t("platformSubscriptions.noPlansDescription")}</p></div>}
         <Pager meta={planMeta} onPage={(page) => void loadPlans(page, appliedSearch)} t={t} />
       </section>
-      <section className="panel subscription-admin-detail">{busy ? <Spinner /> : selectedPlan ? <PlanEditor plan={selectedPlan} modules={modules} busy={busy} t={t} onSaved={refreshSelectedPlan} onPublish={publish} onToggle={updatePlanStatus} onNewDraft={createNextDraft} /> : <div className="empty-state"><h3>{t("platformSubscriptions.selectPlan")}</h3><p>{t("platformSubscriptions.selectPlanDescription")}</p></div>}</section>
+      <section className="panel subscription-admin-detail">{busy ? <Spinner /> : selectedPlan ? <PlanEditor plan={selectedPlan} modules={modules} busy={busy} t={t} onSaved={refreshSelectedPlan} onPublish={publish} onToggle={updatePlanStatus} onNewDraft={createNextDraft} onPublicListing={setPublicListing} /> : <div className="empty-state"><h3>{t("platformSubscriptions.selectPlan")}</h3><p>{t("platformSubscriptions.selectPlanDescription")}</p></div>}</section>
     </div> : tab === "subscriptions" ? <div className="subscription-admin-layout">
       <section className="panel platform-list-panel"><header><div><h2>{t("platformSubscriptions.companySubscriptions")}</h2><p>{t("platformSubscriptions.companySubscriptionsDescription")}</p></div><span>{subscriptionMeta.total}</span></header>
         {subscriptions.length ? <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("platformSubscriptions.company")}</th><th>{t("subscription.status")}</th><th>{t("subscription.currentPlan")}</th></tr></thead><tbody>{subscriptions.map((item) => <tr key={item.company.id} onClick={() => void openCompany(item.company.id)} className={selectedCompany?.company?.id === item.company.id ? "selected-row" : ""}><td>{item.company.name}<small>{item.company.code}</small></td><td>{item.status}</td><td>{item.recordedPlan.displayName}</td></tr>)}</tbody></table></div> : <div className="empty-state"><h3>{t("platformSubscriptions.noSubscriptions")}</h3><p>{t("platformSubscriptions.noSubscriptionsDescription")}</p></div>}
@@ -299,10 +310,11 @@ export function PlatformSubscriptionsPage({ notify }: { notify: Notice }) {
   </section>;
 }
 
-function PlanEditor({ plan, modules, busy, t, onSaved, onPublish, onToggle, onNewDraft }: { plan: PlanDetail; modules: CatalogModule[]; busy: boolean; t: ReturnType<typeof useI18n>["t"]; onSaved: () => Promise<void>; onPublish: (version: SubscriptionPlanVersion) => Promise<void>; onToggle: () => Promise<void>; onNewDraft: () => Promise<void> }) {
+function PlanEditor({ plan, modules, busy, t, onSaved, onPublish, onToggle, onNewDraft, onPublicListing }: { plan: PlanDetail; modules: CatalogModule[]; busy: boolean; t: ReturnType<typeof useI18n>["t"]; onSaved: () => Promise<void>; onPublish: (version: SubscriptionPlanVersion) => Promise<void>; onToggle: () => Promise<void>; onNewDraft: () => Promise<void>; onPublicListing: (version: SubscriptionPlanVersion) => Promise<void> }) {
   const draft = plan.versions.find((version) => version.publicationStatus === "DRAFT");
   return <><header><div><h2>{plan.code}</h2><p>{plan.active ? t("common.active") : t("common.inactive")}</p></div><div className="row-actions"><Button variant="secondary" disabled={busy} onClick={() => void onToggle()}>{plan.active ? t("common.deactivate") : t("common.activate")}</Button>{!draft && <Button disabled={busy} onClick={() => void onNewDraft()}>{t("platformSubscriptions.newVersion")}</Button>}</div></header>
     {draft ? <DraftForm key={draft.id} draft={draft} modules={modules} t={t} onSaved={onSaved} onPublish={onPublish} /> : <div className="subscription-version-list">{plan.versions.map((version) => <article key={version.id}><strong>{version.displayName} · {t("subscription.versionLabel", { value1: version.versionNumber })}</strong><span>{t("platformSubscriptions.publishedImmutable")}</span></article>)}</div>}
+    <PublicPlanListingReview plan={plan} busy={busy} onPublicListing={onPublicListing} />
   </>;
 }
 

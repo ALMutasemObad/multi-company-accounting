@@ -9,6 +9,7 @@ import {
   createSalesInvoiceService,
 } from "../src/composition/create-financial-document-services.js";
 import { createDatabase } from "../src/database.js";
+import { createSellingProfileService } from "../src/composition/create-selling-profile-service.js";
 import { InventoryCatalogService } from "../src/inventory/inventory-catalog-service.js";
 import { InventoryMovementService } from "../src/inventory/inventory-movement-service.js";
 import { PrismaPosSaleQueryAdapter } from "../src/pos/adapters/prisma-pos-sale-query-adapter.js";
@@ -91,6 +92,7 @@ describe.runIf(enabled)("POS cash-sale vertical slice with MariaDB", () => {
 
     const staleItems = await prisma!.inventoryItem.findMany({ where: { companyId, code: "IT-POS-ITEM" }, select: { id: true } });
     if (staleItems.length) {
+      await prisma!.salesItemSellingProfile.deleteMany({ where: { companyId, inventoryItemId: { in: staleItems.map(({ id }) => id) } } });
       await prisma!.inventoryBalance.deleteMany({ where: { companyId, inventoryItemId: { in: staleItems.map(({ id }) => id) } } });
       await prisma!.inventoryItem.deleteMany({ where: { companyId, id: { in: staleItems.map(({ id }) => id) } } });
     }
@@ -150,7 +152,7 @@ describe.runIf(enabled)("POS cash-sale vertical slice with MariaDB", () => {
       PRE_AUTH_TTL_MINUTES: 10,
       SESSION_TTL_HOURS: 12,
       DATABASE_URL: databaseUrl,
-    }, { auth, pos });
+    }, { auth, pos, sellingProfiles: createSellingProfileService(prisma!) });
   });
 
   afterAll(async () => {
@@ -159,7 +161,10 @@ describe.runIf(enabled)("POS cash-sale vertical slice with MariaDB", () => {
     await prisma.auditLog.deleteMany({ where: { companyId, entityType: { in: ["POS_SALE", "SALES_INVOICE", "RECEIPT", "INVENTORY_MOVEMENT"] } } });
     if (yearId) await removeYear(yearId);
     if (balanceId) await prisma.inventoryBalance.deleteMany({ where: { id: balanceId, companyId } });
-    if (itemId) await prisma.inventoryItem.deleteMany({ where: { id: itemId, companyId } });
+    if (itemId) {
+      await prisma.salesItemSellingProfile.deleteMany({ where: { inventoryItemId: itemId, companyId } });
+      await prisma.inventoryItem.deleteMany({ where: { id: itemId, companyId } });
+    }
     if (unitId) await prisma.unitOfMeasure.deleteMany({ where: { id: unitId, companyId } });
     if (warehouseId) await prisma.warehouse.deleteMany({ where: { id: warehouseId, companyId } });
     if (customerId) await prisma.customer.deleteMany({ where: { id: customerId, companyId } });
@@ -168,7 +173,7 @@ describe.runIf(enabled)("POS cash-sale vertical slice with MariaDB", () => {
     await prisma.$disconnect();
   });
 
-  it("posts invoice, stock issue, receipt and journals once under concurrent retry", async () => {
+  it("uses persisted selling defaults to post invoice, stock issue, receipt and journals once under concurrent retry", async () => {
     const agent = request.agent(app);
     const csrf = await agent.get("/api/v1/auth/csrf").expect(200);
     const login = await agent.post("/api/v1/auth/login")
@@ -180,13 +185,24 @@ describe.runIf(enabled)("POS cash-sale vertical slice with MariaDB", () => {
       .set("X-CSRF-Token", login.body.csrfToken)
       .send({ companyId: companies.body.data.find((company: any) => company.id === companyId.toString()).id })
       .expect(204);
+    // Owner API setup followed by the same catalogue DTO consumed by the cashier.
+    // This complements the HTTP-harness browser tests with a real database path in CI.
+    await agent.post(`/api/v1/sales/catalog/items/${itemId}/selling-profile`)
+      .set("X-CSRF-Token", login.body.csrfToken)
+      .set("Idempotency-Key", `it-pos-selling-profile-${itemId}`)
+      .send({ unitPrice: "25.0000", currencyId: currencyId.toString(), revenueAccountId: accountIds[2]!.toString(), taxRateId: null })
+      .expect(201);
+    const catalog = await agent.get(`/api/v1/sales/catalog/items/${itemId}`).expect(200);
+    expect(catalog.body.data).toMatchObject({ inventoryItemId: itemId.toString(), isReady: true,
+      sellingProfile: { unitPrice: "25.0000", currencyId: currencyId.toString(), revenueAccountId: accountIds[2]!.toString(), taxRateId: null } });
+    const profile = catalog.body.data.sellingProfile;
     const payload = {
       fiscalPeriodId: periodId.toString(),
       documentDate: "2048-08-27",
       description: "بيع POS ذري",
       customerId: customerId.toString(),
       warehouseId: warehouseId.toString(),
-      currencyId: currencyId.toString(),
+      currencyId: profile.currencyId,
       exchangeRate: "1.00000000",
       cashBankAccountId: cashBankAccountId.toString(),
       paymentMethodId: paymentMethodId.toString(),
@@ -195,11 +211,11 @@ describe.runIf(enabled)("POS cash-sale vertical slice with MariaDB", () => {
         inventoryItemId: itemId.toString(),
         description: "صنف POS",
         quantity: "2.000000",
-        unitPrice: "25.0000",
+        unitPrice: profile.unitPrice,
         discountAmount: "0.0000",
-        revenueAccountId: accountIds[2]!.toString(),
+        revenueAccountId: profile.revenueAccountId,
         costCenterId: null,
-        taxRateId: null,
+        taxRateId: profile.taxRateId,
       }],
     };
     const submit = () => agent.post("/api/v1/pos/checkouts")

@@ -23,7 +23,7 @@ last_updated: "2026-08-30"
 | Tenant & Company Configuration | المؤسسة والشركة والعملات والإعدادات | `Organization`, `Company`, `Currency`, `CompanyCurrency`, `CompanyExchangeRate` | Organization تجمع الشركات فقط حاليًا؛ لا أدوار مجموعة أو تجميع مالي. فحص الاستخدام عبر Ports، لا عبر معرفة كل جداول المستندات |
 | Registration & Onboarding | دورة التسجيل والتحقق والتنسيق | `RegistrationRequest`, `RegistrationEvent` | Process Manager؛ لا يملك User/Company/Account |
 | Core Accounting | السنة والفترة والدليل والمستند والدفتر والترحيل وحسابات فروقات العملة | `FiscalYear`, `FiscalPeriod`, `DocumentSequence`, `AccountingDocument`, `JournalEntry`, `JournalLine`, `AccountType`, `Account`, `CostCenter` | المالك الوحيد للـPosting Engine ويحل حسابي ربح/خسارة فرق العملة عبر منفذ صغير |
-| Sales & Accounts Receivable | العميل والفاتورة والذمة وسياسة تسوية التحصيل | `Customer`, `CustomerAddress`, `SalesInvoice`, `SalesInvoiceLine`, `ReceivableItem` | يكشف `ReceivableSettlementPort` ولا ينشئ Journal Lines مباشرة |
+| Sales & Accounts Receivable | العميل والفاتورة والذمة وسياسة تسوية التحصيل وافتراضات بيع الصنف | `Customer`, `CustomerAddress`, `SalesInvoice`, `SalesInvoiceLine`, `ReceivableItem`, `SalesItemSellingProfile` | يكشف `ReceivableSettlementPort` وكتالوج بيع محدود؛ يقرأ هوية الصنف والعملة والحساب والضريبة عبر Ports ولا ينشئ Journal Lines مباشرة |
 | Purchases & Accounts Payable | المورد والفاتورة والذمة وسياسة تسوية السداد | `Supplier`, `SupplierAddress`, `PurchaseInvoice`, `PurchaseInvoiceLine`, `PayableItem` | يكشف `PayableSettlementPort` ولا ينشئ Journal Lines مباشرة |
 | Treasury | النقد والبنوك وطرق الدفع وحركات القبض والصرف وتخصيصاتها ولقطات التسوية واستيراد كشوف البنك والمطابقة 1:1 | `CashBankAccount`, `PaymentMethod`, `Receipt`, `ReceiptAllocation`, `Payment`, `PaymentAllocation`, `BankStatementImport`, `BankStatementLine`, `BankReconciliationSession`, `BankReconciliationMatch` | تستخدم التخصيصات منافذ AR/AP و`PostingEngine`؛ وتقرأ المطابقة الحركات المرحلة عبر Query Port فقط ولا تكتب Ledger |
 | Inventory | المستودعات والكتالوج ودفتر الحركة الكمي والقيمي والأرصدة وتقييم المتوسط | `Warehouse`, `UnitOfMeasure`, `InventoryItem`, `InventoryMovementSequence`, `InventoryMovement`, `InventoryMovementLine`, `InventoryBalance`, `InventoryValuationInitialization` | يكشف منفذي اختيار الفاتورة وتطبيق أثرها؛ يعيد حقائق تقييم للفواتير، وينشئ رأس `INVENTORY_ADJUSTMENT` للحركة اليدوية ثم يفوض إنشاء/عكس أسطر Ledger إلى `PostingEngine` |
@@ -62,6 +62,7 @@ Registration/Onboarding ──> Treasury setup port
 Sales/Purchases ──────> Tax Configuration query port
 Data Import ──────────> Sales/AR, Purchases/AP application ports
 Sales/Purchases ─────> Inventory catalog and invoice-stock application ports
+Sales selling catalog ──> Inventory identity, Tenant currency, Accounting account and Tax OUTPUT readiness query ports
 POS ─────────────────> Sales cash-checkout and Treasury receipt application ports
 Approvals ───────────> owning context approval-subject application ports
 CRM ─────────────────> Sales customer query/provisioning ports
@@ -83,6 +84,11 @@ Printing  <────────── immutable document snapshot port
 ```
 
 ## 5. قواعد الاتصال بين السياقات
+
+كتالوج الخطط العام `/plans` و`/public/subscription-plans` قناة قراءة لدى
+Platform Subscriptions & Entitlements وفق [ADR-019](ADR-019-public-subscription-catalog.md).
+يملك السياق مؤشر `publiclyListed` وإسقاط العرض؛ لا يقرأ شركات أو فوترة أو Ledger
+للزوار ولا يمنح واجهة التسويق ملكية السعر أو الاستحقاق.
 
 ### الاتصال المتزامن
 

@@ -87,6 +87,8 @@ import { PrismaCompanyEntitlementQueryAdapter } from './platform-subscriptions/p
 import { PrismaPlatformBillingSubscriptionSnapshotAdapter } from './platform-subscriptions/prisma-platform-billing-subscription-snapshot-adapter.js';
 import { PlatformSubscriptionPaymentEvidenceAdapter } from './platform-operations/payments/platform-subscription-payment-evidence-adapter.js';
 import { createPlatformPaymentService } from './composition/create-platform-payment-service.js';
+import { createSubscriptionUsageService } from './composition/create-subscription-usage-service.js';
+import { createSellingProfileService } from './composition/create-selling-profile-service.js';
 
 const config = loadConfig();
 if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required to start the API');
@@ -271,6 +273,7 @@ async function startServer() {
     platformBilling,
     platformSubscriptionCatalog,
     platformSubscriptionLifecycle,
+    subscriptionUsage: createSubscriptionUsageService(database, platformAnalytics),
     platformPayments,
     companies: createCompanyService(database),
     printing: new PrintService(database),
@@ -306,6 +309,7 @@ async function startServer() {
     purchaseInvoices,
     dataImports,
     pos,
+    sellingProfiles: createSellingProfileService(database),
   });
 
   const server = app.listen(config.PORT, () => {
