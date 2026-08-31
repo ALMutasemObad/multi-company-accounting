@@ -26,7 +26,7 @@ for (const locale of ["ar", "en", "ur", "hi"]) {
     await expect(page).toHaveURL(/\/#register\?plan=102$/);
     await expect(page.locator(".registration-form")).toBeVisible();
     await expect(page.locator(".public-plan-selection")).toBeVisible();
-    await page.goto("/?qa=owner-after-registration#subscription");
+    await page.goto("/?qa=owner-after-registration#subscription?plan=102");
     await expect(page.locator(".subscription-page")).toBeVisible();
     // The public choice (102) is absent from this authenticated catalog: never add a phantom option.
     await expect(page.locator(".subscription-change-form select")).toHaveValue("");
