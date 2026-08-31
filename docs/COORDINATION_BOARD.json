@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedDate": "2026-08-31T18:45:39.614061+00:00",
+  "updatedDate": "2026-08-31T19:03:09.939638+00:00",
   "coordinatorThreadId": "01a05783-e720-7ed0-a107-4a372bd53202",
   "projectId": "c3fd65c7-6c00-45d1-9859-46f96966dc38",
   "repository": "D:/CodexWorktrees/continuous-coordination",
@@ -17,7 +17,7 @@
     "cadenceMinutes": 10,
     "status": "ACTIVE"
   },
-  "browserOwner": "W2-POS-CONTEXT",
+  "browserOwner": "W2-POS-VISUAL-COMPAT",
   "runtimeIncident": {
     "status": "powershell_unavailable_cmd_python_validated",
     "scope": "PowerShell Get-Date stalled as well as worker read-only commands. CMD ver and Python native read/resource queries succeeded. No system configuration or dependency changes.",
@@ -504,10 +504,10 @@
       "runtimeOwner": false
     },
     {
-      "status": "grocery_browser_window_granted",
+      "status": "validated_browser_checkpoint_ready",
       "threadId": "01a0578e-6281-7ab2-9d37-2e5b8935eaf2",
       "title": "عزل سياق الكاشير وربط N2",
-      "runtimeOwner": true,
+      "runtimeOwner": false,
       "branch": "fix/wave2-pos-context",
       "hostId": "local",
       "base": "e3d6ba03aec8ceabd42428d67855fad2683968a6",
@@ -516,14 +516,28 @@
       "id": "W2-POS-CONTEXT",
       "contract": "X-POS-Expected-User-Id + X-POS-Expected-Company-Id; mandatory POS routes, both-or-neither owner reads. Session Actor only; named409 POS_CONTEXT_CHANGED; captured identity verified before/after reads; posContext response identity. Preserve N1 body/fingerprint/cached result and quarantine after marker.",
       "approvedScopeAddition": "PosCart reader injection plus optional expected-scope read hunks in account-router.ts and tax-router.ts; OpenAPI posContext and scoped read tests. No account/tax service policy or schema changes. Both-or-neither headers; old callers unchanged; captured Actor checked before/after and late UI results rejected.",
-      "runtime": "W2-POS-GROCERY-20260831-A: exclusive3165/4215 after finalsourcefreeze, owned readiness andcleanupchecks. types/list19/browser19; worker1/retry0,Dprofile, noDB. Root released allruntime.",
+      "runtime": "Released after browser19 and independent IPv4/IPv6 listener/bind verification; no runtime or Git ownership.",
       "integration": {
         "sourceCommit": "af0b31adc0782b4245e4d70cc4c87d8d4f9b4316",
         "coordinatorHead": "dc9fef38ca5393f1574f36e543d4b8e68d73e42c",
         "files": 58,
         "matchingBlobs": 58,
         "receipt": "tmp/coordination/w2-pos-integration/20260831T182336334854Z/receipt.json",
-        "commonHeadRuntime": "pending"
+        "commonHeadRuntime": "1046focused + types +321infra +Webbuild PASS; see combined receipt; browser source proof separate."
+      },
+      "groceryAcceptance": {
+        "sourceCommit": "06134db1b718f7e7f0e543d8318b6d3d412828ee",
+        "passed": 19,
+        "skipped": 0,
+        "retries": 0,
+        "types": "PASS",
+        "list": "19 exact cases",
+        "initialLauncherExit": 2,
+        "browserCliExit": 0,
+        "cleanupObserverResolution": "Independent 3-second connection refusal + exclusive bind + IPv4/IPv6 listener tables empty. No browser rerun.",
+        "summary": "D:\\CodexWorktrees\\wave2-pos-context\\tmp\\coordination\\grocery-validation\\ACCEPTANCE_SUMMARY.json",
+        "summarySha256": "5cd9742e90b01930a44c69647ff929c1c26b5324b169c51088485d34a3a0619e",
+        "proofLimit": "Real browser with local HTTP auth fixtures, not backend/DB proof; P2 false cashier warning deferred to W3 render-only fix."
       }
     },
     {
@@ -588,10 +602,11 @@
       "worktree": "D:/CodexWorktrees/wave3-retail-receipt",
       "branch": "feat/wave3-retail-receipt",
       "base": "dc9fef38ca5393f1574f36e543d4b8e68d73e42c",
-      "status": "assigned_source_only",
+      "status": "source_frozen_awaiting_runtime",
       "priority": "P1",
       "runtimeOwner": false,
-      "scope": "Integrate N3 existingarchive-only preview forconfirmedresult.invoice.id withN2scope safeguards,58/80mm screenpreview andexplicitexistingA4download. Printing-ownedadapter/service/HTTPcontract andnarrowPosPageUI; nofinancialreplay,schema,barcodeinvention,thermal/device claim,dependencies orpublication."
+      "scope": "Integrate N3 existingarchive-only preview forconfirmedresult.invoice.id withN2scope safeguards,58/80mm screenpreview andexplicitexistingA4download. Printing-ownedadapter/service/HTTPcontract andnarrowPosPageUI; nofinancialreplay,schema,barcodeinvention,thermal/device claim,dependencies orpublication.",
+      "sourceReceipt": "D:/CodexWorktrees/wave3-retail-receipt/tmp/coordination/w3-source-round01/source-receipt.json"
     },
     {
       "id": "W2-POS-VISUAL-COMPAT",
@@ -600,8 +615,8 @@
       "worktree": "D:/CodexWorktrees/wave2-pos-visual-compat",
       "branch": "fix/wave2-pos-visual-compat",
       "base": "371917a334e87aea3131dc2a9acc4cb4a63f8fe6",
-      "status": "source_preparation",
-      "runtimeOwner": false,
+      "status": "validation_window_granted",
+      "runtimeOwner": true,
       "scope": "Visualfixture identity/history metadata andread-onlyhistory/absenceoffinancialcontrols assertions. Threefilesonly.16existingall29screens cases; nofull336/productchanges."
     }
   ],
@@ -630,7 +645,7 @@
     }
   ],
   "browserResourceStatus": "Released after anonymous post-deployment login/plans DOM checks; viewport reset.",
-  "limitedRuntimeOwner": "W2-POS-CONTEXT",
+  "limitedRuntimeOwner": "W2-POS-VISUAL-COMPAT",
   "validationOrder": [
     "Task-specific units/types in isolated worktrees",
     "Review exact-source evidence and integrate locally",
@@ -641,11 +656,10 @@
     "Official portable Windows MariaDB10.11/MySQL8.4 distribution options;no downloads/install/processesauthorized.",
     "Isolated Prisma client generation/output/import options using existing tooling;no generation orjunction/shareddependencywritesauthorized."
   ],
-  "activeCapacityNote": "POS owns grocerybrowser19. QA preparesvisual16 compatibility; N3 implementsreceipt sourceonly; coordinator recordscombinedgates. Fourpaths,oneheavyowner.",
+  "activeCapacityNote": "One heavy owner: W2-POS-VISUAL-COMPAT. POS19 passed and checksummed cleanup resolved; N3 source-only; coordinator integrates evidence and commits.",
   "prismaIsolationPlan": "Executed successfully inONBOARDownedDfolder. Generate/Smoke/154policyunits/APItypesPASS withNODE_OPTIONS512 andnoDB;shared91files/protectedunchanged. N1mayuseclientreadonlypermanifest569F946A. Temporarysourcealiases stilldoNOTprove distserver/E2Eruntime.",
   "pendingRuntimeWindows": [
-    "W2-POS-VISUAL-COMPAT affected16cases after POS releases its browser window",
-    "W3-RETAIL-RECEIPT onlyafter sourcefreeze andcoordinatorreview"
+    "W3-RETAIL-RECEIPT after sourcefreeze andcoordinatorreview"
   ],
   "coordinatorGitException": "Completed successfully: df39116 committedonly2coordinationdocs afterdiffcheck;index/worktreecleanthen. No hooks override/ACLchange. This demonstrates localGitwriteworkedafterspace recovery,doesnotprovepriorrootcause.",
   "lastCoordinatorCommit": "108d59764650568854e386de5a4d8e1510f0f071",
