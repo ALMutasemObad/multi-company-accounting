@@ -50,7 +50,7 @@ test('engine firewall accepts only supported releases and the exact CI matrix fa
   }
 });
 
-const sentinel = { id: '91', company_id: '7', unit_of_measure_id: '90', code: 'R2-UPGRADE-SENTINEL',
+const sentinel = { id: '91', company_id: '7', unit_of_measure_id: '90', code: 'ITM-900000000001',
   name_ar: 'R2 upgrade sentinel', version: '0', is_active: '1' };
 function fakeDatabase(options = {}) {
   const calls = [];
@@ -88,7 +88,8 @@ test('upgrade fixture proves baseline history and absent R2 table before writing
   assert.ok(tableCheck >= 0 && insert > tableCheck);
   assert.equal(queries.at(-1), 'COMMIT');
   const itemWrite = connection.calls[insert];
-  assert.deepEqual(itemWrite.values, [7n, 90n, 'R2-UPGRADE-SENTINEL', 'R2 upgrade sentinel']);
+  assert.deepEqual(itemWrite.values, [7n, 90n, 'ITM-900000000001', 'R2 upgrade sentinel']);
+  assert.match(itemWrite.values[2], /^ITM-[0-9]+$/u, 'the pre-upgrade fixture must satisfy the old response contract');
   assert.ok(itemWrite.sql.includes('VALUES (?, ?, ?, ?,'), 'fixture values must remain parameterized');
 });
 

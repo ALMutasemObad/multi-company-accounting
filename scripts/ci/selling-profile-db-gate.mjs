@@ -64,7 +64,9 @@ export async function prepareUpgrade(connection, expectedBaselineCount) {
     );
     const item = await connection.query(
       'INSERT INTO inventory_items (company_id, unit_of_measure_id, code, name_ar, updated_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP(3))',
-      [company.id, unit.insertId, 'R2-UPGRADE-SENTINEL', sentinelName],
+      // Fixed CI-only fixture outside the baseline sequence's range; it must
+      // still obey the public item-code contract consumed by the old app.
+      [company.id, unit.insertId, 'ITM-900000000001', sentinelName],
     );
     const sentinel = await readSentinel(connection, item.insertId);
     await connection.commit();
