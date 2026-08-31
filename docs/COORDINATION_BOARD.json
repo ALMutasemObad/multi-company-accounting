@@ -502,7 +502,7 @@
       "status": "implementing",
       "threadId": "01a0578e-6281-7ab2-9d37-2e5b8935eaf2",
       "title": "عزل سياق الكاشير وربط N2",
-      "runtimeOwner": true,
+      "runtimeOwner": false,
       "branch": "fix/wave2-pos-context",
       "hostId": "local",
       "base": "e3d6ba03aec8ceabd42428d67855fad2683968a6",
@@ -517,14 +517,14 @@
       "status": "validation_window_granted",
       "threadId": "01a0578e-3c3b-7af3-a347-10e1901b9055",
       "title": "منع تداخل وصف هوية القيد الطويل مع التذييل",
-      "runtimeOwner": false,
+      "runtimeOwner": true,
       "branch": "fix/wave2-pdf-identity",
       "hostId": "local",
       "base": "e3d6ba03aec8ceabd42428d67855fad2683968a6",
       "priority": "P1",
       "worktree": "D:/CodexWorktrees/wave2-pdf-identity",
       "id": "W2-PDF-IDENTITY",
-      "acceptance": "Candidate117written=103baseline+10unit+4actualPDF; runtime pending via validated CMD/direct Python launcher with D env, then117/types and PDF/PNG sequentially."
+      "acceptance": "Round02:118/118 passed in9files,Vitest37.86s,exit0; source/config hashes unchanged during run,renderer022E9D35DC38B42D. Narrow types and4PDF+baseline/extraction/PNG still pending. Round01 116/117 and invisibleCR/CID51 diagnostic preserved; display-onlyCRLF normalization does not change Snapshot/money."
     },
     {
       "id": "W2-SUBSCRIPTION-CI",
@@ -542,7 +542,6 @@
     }
   ],
   "queue": [
-    "W2-CI-SUBSCRIPTION: portable permanent CI coverage for the58 acceptance cases; QA worktree prepared, dispatch after evaluator finishes",
     "N3 receipt integration after ownership review; no PosPage overlap with N2",
     "Approved commercial start-plan configuration remains a business decision; do not invent terms",
     "Zebra/device acceptance after prerequisites; not a reason to restart local Windows DB preparation"
@@ -579,10 +578,11 @@
     "Official portable Windows MariaDB10.11/MySQL8.4 distribution options;no downloads/install/processesauthorized.",
     "Isolated Prisma client generation/output/import options using existing tooling;no generation orjunction/shareddependencywritesauthorized."
   ],
-  "activeCapacityNote": "Two implementation tasks plus one read-only evaluator; one heavy local runtime owner. QA CI portability work is prepared but not dispatched yet.",
+  "activeCapacityNote": "Three active implementation tasks: POS context, PDF identity and subscription CI. Evaluator completed release46 delta. PDF owns heavy runtime; POS validation then subscription CI are queued. No new assignment needed.",
   "prismaIsolationPlan": "Executed successfully inONBOARDownedDfolder. Generate/Smoke/154policyunits/APItypesPASS withNODE_OPTIONS512 andnoDB;shared91files/protectedunchanged. N1mayuseclientreadonlypermanifest569F946A. Temporarysourcealiases stilldoNOTprove distserver/E2Eruntime.",
   "pendingRuntimeWindows": [
-    "W2-PDF-IDENTITY after source review and release of the POS runtime window"
+    "W2-POS-CONTEXT five-command validation after PDF explicitly releases runtime",
+    "W2-SUBSCRIPTION-CI guard tests,list,types and58browser after POS releases runtime"
   ],
   "coordinatorGitException": "Completed successfully: df39116 committedonly2coordinationdocs afterdiffcheck;index/worktreecleanthen. No hooks override/ACLchange. This demonstrates localGitwriteworkedafterspace recovery,doesnotprovepriorrootcause.",
   "lastCoordinatorCommit": "b95e00b6e26e92d632b02b20c4a28d56e62fae08",
