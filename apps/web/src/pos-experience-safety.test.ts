@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "./api";
-import { createPosAttemptStore, isConfirmedPosResult, isPosOutcomeUnknown } from "./pos-experience-checkout";
+import { createPosAttemptStore, isConfirmedPosResult, isPosOutcomeUnknown, POS_SAFE_RETRY_WINDOW_MS } from "./pos-experience-checkout";
 import type { PosCheckoutResult } from "./types";
 import { decrementPosQuantity, posDecimal, posLineSubtotal, posMoneyText, posSubtotal } from "./pos-experience-money";
 import { posPreferenceKey } from "./pos-experience-preferences";
@@ -57,6 +57,32 @@ describe("R1 checkout recovery and isolation", () => {
     expect(store.retry("scope")).toBeNull();
     expect(store.begin("scope", "other", null, () => "other")).toBeNull();
     expect(changes).toBe(2); unsubscribe(); store.clear("scope"); expect(changes).toBe(2);
+  });
+  it("refuses late retries before server idempotency retention can expire", () => {
+    let clock = 1000;
+    const store = createPosAttemptStore<null>(() => clock);
+    store.begin("scope", "body", null, () => "key"); store.unknown("scope");
+    clock += POS_SAFE_RETRY_WINDOW_MS;
+    expect(store.retry("scope")).toBeNull();
+    expect(store.get("scope")).toMatchObject({ key: "key", body: "body", status: "unknown" });
+    expect(store.begin("scope", "new body", null, () => "new key")).toBeNull();
+    clock = 2000; expect(store.retry("scope")).toBeNull();
+  });
+  it("does not extend creation or deadline on retry and fails closed on clock rollback/invalid time", () => {
+    let clock = 1000;
+    const store = createPosAttemptStore<null>(() => clock);
+    const original = store.begin("scope", "body", null, () => "key")!;
+    clock = 2000; store.unknown("scope");
+    clock = 3000;
+    const retry = store.retry("scope")!;
+    expect(retry.createdAt).toBe(original.createdAt); expect(retry.retryExpiresAt).toBe(original.retryExpiresAt);
+    store.unknown("scope"); clock = 2500;
+    expect(store.retry("scope")).toBeNull();
+    clock = 4000; expect(store.retry("scope")).toBeNull();
+    expect(store.get("scope")?.retryClockInvalid).toBe(true);
+    store.begin("other", "body", null, () => "other"); store.unknown("other");
+    clock = Number.NaN; expect(store.retry("other")).toBeNull();
+    expect(store.begin("new", "body", null, () => "new")).toBeNull();
   });
   it("scopes display preferences to both user and company without ambiguous separators", () => {
     expect(posPreferenceKey("1", "2")).not.toBe(posPreferenceKey("2", "1"));

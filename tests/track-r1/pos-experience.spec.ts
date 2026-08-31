@@ -19,6 +19,18 @@ async function operatingContext(page: Page) {
 const milk = (page: Page) => page.locator(".pos-experience-product").filter({ hasText: "ITM-TEST-1" });
 const checkout = (page: Page) => page.getByRole("button", { name: enPos["pos.checkout"], exact: true });
 
+test("typography stays at two sizes with a compact heading and readable scanner on mobile", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 }); await open(page, "ar");
+  await page.locator(".pos-experience-context > summary").click();
+  await milk(page).click();
+  const sizes = await page.locator(".pos-experience").evaluate((root) => [...new Set([...root.querySelectorAll("h1,h2,h3,p,span,strong,label,input,button,summary")].filter((element) => element.getClientRects().length).map((element) => getComputedStyle(element).fontSize))]);
+  expect(sizes.sort()).toEqual(["16px", "20px"]);
+  expect(await page.locator(".pos-experience h1").evaluate((element) => getComputedStyle(element).fontSize)).toBe("20px");
+  expect(await page.locator(".pos-barcode-copy span").evaluate((element) => getComputedStyle(element).fontSize)).toBe("16px");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("pos-mobile-ar.png"), fullPage: true });
+});
+
 for (const locale of ["ar", "en", "hi", "ur"] as const) {
   for (const width of [390, 768, 1440]) {
     test(`four-language retail/tiles basket, keyboard and fit: ${locale} ${width}`, async ({ page }) => {

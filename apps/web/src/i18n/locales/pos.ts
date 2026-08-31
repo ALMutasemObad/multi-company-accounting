@@ -1,4 +1,5 @@
 export const arPos = {
+  "pos.retryExpired": "تعذرت إعادة المحاولة بأمان بسبب انتهاء المهلة أو تغيّر الساعة. أبقِ السلة مقفلة وراجع الفاتورة والقبض مع المسؤول؛ لا تنشئ بيعًا بديلًا قبل حسم النتيجة.",
   "pos.cashierDescription": "ابحث أو امسح الصنف، راجع السلة ثم أكمل البيع النقدي.",
   "pos.catalog": "كتالوج البيع",
   "pos.displayMode": "طريقة عرض الأصناف",
@@ -79,6 +80,7 @@ export const arPos = {
 } as const;
 
 export const enPos: Record<keyof typeof arPos, string> = {
+  "pos.retryExpired": "Safe retry is unavailable because the window expired or the clock changed. Keep this basket locked and review the invoice and receipt with an administrator; do not create a replacement sale until the outcome is resolved.",
   "pos.cashierDescription": "Search or scan an item, review the basket, then complete the cash sale.",
   "pos.catalog": "Sales catalog",
   "pos.displayMode": "Product display",
@@ -159,6 +161,7 @@ export const enPos: Record<keyof typeof arPos, string> = {
 };
 
 export const hiPos: Record<keyof typeof arPos, string> = {
+  "pos.retryExpired": "समय सीमा समाप्त होने या घड़ी बदलने से सुरक्षित पुनः प्रयास उपलब्ध नहीं है। टोकरी बंद रखें और प्रशासक के साथ चालान व रसीद जाँचें; परिणाम स्पष्ट होने तक नई बिक्री न बनाएँ।",
   "pos.cashierDescription": "वस्तु खोजें या स्कैन करें, टोकरी जाँचें और नकद बिक्री पूरी करें।",
   "pos.catalog": "बिक्री सूची",
   "pos.displayMode": "वस्तु प्रदर्शन",
@@ -239,6 +242,7 @@ export const hiPos: Record<keyof typeof arPos, string> = {
 };
 
 export const urPos: Record<keyof typeof arPos, string> = {
+  "pos.retryExpired": "مدت ختم ہونے یا گھڑی بدلنے سے محفوظ دوبارہ کوشش دستیاب نہیں۔ ٹوکری مقفل رکھیں اور منتظم کے ساتھ انوائس اور رسید دیکھیں؛ نتیجہ واضح ہونے تک متبادل فروخت نہ بنائیں۔",
   "pos.cashierDescription": "آئٹم تلاش یا اسکین کریں، ٹوکری دیکھیں اور نقد فروخت مکمل کریں۔",
   "pos.catalog": "فروخت کی فہرست",
   "pos.displayMode": "آئٹمز کی نمائش",
