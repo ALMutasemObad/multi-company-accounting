@@ -12,19 +12,26 @@ import {
 import { activeIntlLocale, localizedReferenceName, translate as t } from "./i18n";
 import type { InventoryBalance, InventoryBarcodeSymbology, InventoryItem, InventoryItemBarcode, InventoryMovement, InventoryMovementType, ListResponse, UnitOfMeasure, Warehouse } from "./types";
 import { Button, EmptyState, Icon, Modal, PageHeader, Pagination, Spinner } from "./ui";
+import { visibleInventorySections, type InventorySection } from "./page-section-navigation";
 
 type Notice = (message: string, tone?: "success" | "error") => void;
-type Tab = "balances" | "movements" | "warehouses" | "units" | "items";
+type Tab = InventorySection;
 type PageMeta = { page: number; pageSize: number; total: number; totalPages: number };
 
 const emptyMeta: PageMeta = { page: 1, pageSize: 10, total: 0, totalPages: 0 };
 
-export function InventoryPage({ notify }: { notify: Notice }) {
-  const [tab, setTab] = useState<Tab>("warehouses");
+export function InventoryPage({ notify, section, onSectionChange }: {
+  notify: Notice; section?: InventorySection; onSectionChange?: (section: InventorySection) => void;
+}) {
+  const { permissionSet } = useAuthorization();
+  const tabs = visibleInventorySections(permissionSet);
+  const [selectedTab, setTab] = useState<Tab>(section ?? "warehouses");
+  const tab = tabs.includes(selectedTab) ? selectedTab : tabs[0];
+  useEffect(() => { setTab(section ?? "warehouses"); }, [section]);
   return <section className="workspace-page">
     <PageHeader kicker={t("inventory.kicker")} title={t("inventory.title")} description={t("inventory.description")} />
     <div className="section-tabs" role="tablist" aria-label={t("inventory.tabs.label")}>
-      {(["warehouses", "balances", "movements", "units", "items"] as const).map((value) => <button key={value} type="button" role="tab" aria-selected={tab === value} className={tab === value ? "active" : ""} onClick={() => setTab(value)}>{t(`inventory.tabs.${value}`)}</button>)}
+      {tabs.map((value) => <button key={value} type="button" role="tab" aria-selected={tab === value} className={tab === value ? "active" : ""} onClick={() => { setTab(value); onSectionChange?.(value); }}>{t(`inventory.tabs.${value}`)}</button>)}
     </div>
     {tab === "balances" && <BalancesPanel notify={notify} />}
     {tab === "movements" && <MovementsPanel notify={notify} />}

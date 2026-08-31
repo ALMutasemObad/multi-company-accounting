@@ -12,15 +12,14 @@ import { AuthFeedback } from "./AuthFeedback";
 import { useAuthAction } from "./use-auth-action";
 import { assertRequestActive } from "./request-scope";
 import {
-  resolveAuthorizedView,
   viewTitleKey,
-  views,
   visibleNavigationItems,
   type NavigationAccess,
   type View,
 } from "./app-navigation";
 import { AuthorizationProvider } from "./authorization-context";
 import { effectivePermissionSet } from './module-entitlements';
+import { authorizedPageRoute, pageRouteHash, parsePageRoute, type PageRoute } from './page-section-navigation';
 
 const SystemHomePage = lazy(() => import("./SystemHomePage").then((module) => ({ default: module.SystemHomePage })));
 const DashboardPage = lazy(() => import("./DashboardPage").then((module) => ({ default: module.DashboardPage })));
@@ -49,14 +48,9 @@ const ApprovalsPage = lazy(() => import("./ApprovalsPage").then((module) => ({ d
 const ProfessionalProjectsPage = lazy(() => import("./ProfessionalProjectsPage").then((module) => ({ default: module.ProfessionalProjectsPage })));
 const HumanResourcesPage = lazy(() => import("./HumanResourcesPage").then((module) => ({ default: module.HumanResourcesPage })));
 
-const viewFromHash = (): View => {
-  const value = location.hash.slice(1);
-  return views.has(value as View) ? value as View : "home";
-};
-
 type PlatformCapabilities = { platformOperations: boolean };
 
-const replaceHash = (view: View) => {
+const replaceHash = (view: string) => {
   const url = new URL(location.href);
   history.replaceState(null, "", `${url.pathname}${url.search}#${view}`);
 };
@@ -67,7 +61,7 @@ export default function App() {
   const [state, setState] = useState<"booting" | "login" | "register" | "password-reset" | "company" | "ready">("booting");
   const [authorization, setAuthorization] = useState<CurrentAuthorization | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [view, setView] = useState<View>(viewFromHash);
+  const [route, setRoute] = useState<PageRoute>(() => parsePageRoute(location.hash));
   const [platformOperator, setPlatformOperator] = useState<boolean | null>(null);
   const [mobileNav, setMobileNav] = useState(false);
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(null);
@@ -90,11 +84,11 @@ export default function App() {
     setAuthorization(snapshot);
     setPlatformOperator(capabilities.platformOperations);
     if (!snapshot.selectedCompany && capabilities.platformOperations) {
-      setView("platform");
+      setRoute({ view: "platform" });
       replaceHash("platform");
     } else if (snapshot.selectedCompany && snapshot.permissions.includes("subscriptions.view")
       && preferredSubscriptionPlan() && ["", "#home", "#login", "#register"].includes(location.hash)) {
-      setView("subscription");
+      setRoute({ view: "subscription" });
       replaceHash("subscription");
     }
     setState("ready");
@@ -155,19 +149,22 @@ export default function App() {
     () => visibleNavigationItems(navigationAccess),
     [navigationAccess],
   );
-  const activeView = resolveAuthorizedView(view, navigationAccess);
+  const activeRoute = authorizedPageRoute(route, navigationAccess);
+  const activeView = activeRoute.view;
+  const activeHash = pageRouteHash(activeRoute);
+  const requestedHash = pageRouteHash(route);
 
   useEffect(() => {
-    const onHashChange = () => setView(viewFromHash());
+    const onHashChange = () => { if (location.hash !== "#main-content") setRoute(parsePageRoute(location.hash)); };
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
 
   useEffect(() => {
-    if (state !== "ready" || activeView === view) return;
-    setView(activeView);
-    replaceHash(activeView);
-  }, [activeView, state, view]);
+    if (state !== "ready" || activeHash === requestedHash) return;
+    setRoute(parsePageRoute(activeHash));
+    replaceHash(activeHash);
+  }, [activeHash, requestedHash, state]);
 
   useEffect(() => {
       if (location.hash.startsWith("#reset-password")) {
@@ -184,9 +181,13 @@ export default function App() {
   }, [loadAuthenticatedShell, runStartup]);
 
   function navigate(next: View) {
-    const authorized = resolveAuthorizedView(next, navigationAccess);
-    setView(authorized);
-    location.hash = authorized;
+    navigateRoute({ view: next } as PageRoute);
+  }
+
+  function navigateRoute(next: PageRoute) {
+    const authorized = authorizedPageRoute(next, navigationAccess);
+    setRoute(authorized);
+    location.hash = pageRouteHash(authorized);
     setMobileNav(false);
   }
 
@@ -316,7 +317,7 @@ export default function App() {
           </div>
         </header>
         <main id="main-content" className="content" tabIndex={-1}>
-          <Suspense fallback={<div className="loading"><Spinner /><span>{t("app.loadingModule")}</span></div>}>
+          <Suspense key={`${user.id}:${company?.id ?? "platform"}`} fallback={<div className="loading"><Spinner /><span>{t("app.loadingModule")}</span></div>}>
             {activeView === "home" && <SystemHomePage onNavigate={navigate} />}
             {activeView === "dashboard" && <DashboardPage onNavigate={navigate} />}
             {activeView === "platform" && platformOperator && <PlatformOperationsPage />}
@@ -335,8 +336,8 @@ export default function App() {
             {activeView === "fiscal" && <FiscalPage notify={notify} />}
             {activeView === "approvals" && <ApprovalsPage notify={notify} />}
             {activeView === "accounts" && <AccountsPage notify={notify} />}
-            {activeView === "treasury" && <TreasuryPage notify={notify} />}
-            {activeView === "inventory" && <InventoryPage notify={notify} />}
+            {activeRoute.view === "treasury" && <TreasuryPage notify={notify} section={activeRoute.section} />}
+            {activeRoute.view === "inventory" && <InventoryPage notify={notify} section={activeRoute.section} onSectionChange={(section) => navigateRoute({ view: "inventory", section })} />}
             {activeView === "reports" && <ReportsPage />}
             {activeView === "imports" && <DataImportsPage notify={notify} />}
             {activeView === "admin" && <AdminPage notify={notify} />}
