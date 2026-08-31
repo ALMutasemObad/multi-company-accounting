@@ -58,15 +58,17 @@ describe("R1 checkout recovery and isolation", () => {
     expect(store.begin("scope", "other", null, () => "other")).toBeNull();
     expect(changes).toBe(2); unsubscribe(); store.clear("scope"); expect(changes).toBe(2);
   });
-  it("refuses late retries before server idempotency retention can expire", () => {
-    let clock = 1000;
-    const store = createPosAttemptStore<null>(() => clock);
-    store.begin("scope", "body", null, () => "key"); store.unknown("scope");
-    clock += POS_SAFE_RETRY_WINDOW_MS;
-    expect(store.retry("scope")).toBeNull();
-    expect(store.get("scope")).toMatchObject({ key: "key", body: "body", status: "unknown" });
-    expect(store.begin("scope", "new body", null, () => "new key")).toBeNull();
-    clock = 2000; expect(store.retry("scope")).toBeNull();
+  it("refuses retries at or after the conservative client window and keeps the attempt locked", () => {
+    for (const afterBoundary of [0, 1]) {
+      let clock = 1000;
+      const store = createPosAttemptStore<null>(() => clock);
+      store.begin("scope", "body", null, () => "key"); store.unknown("scope");
+      clock += POS_SAFE_RETRY_WINDOW_MS + afterBoundary;
+      expect(store.retry("scope")).toBeNull();
+      expect(store.get("scope")).toMatchObject({ key: "key", body: "body", status: "unknown" });
+      expect(store.begin("scope", "new body", null, () => "new key")).toBeNull();
+      clock = 2000; expect(store.retry("scope")).toBeNull();
+    }
   });
   it("does not extend creation or deadline on retry and fails closed on clock rollback/invalid time", () => {
     let clock = 1000;

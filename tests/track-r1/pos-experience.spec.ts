@@ -28,6 +28,14 @@ test("typography stays at two sizes with a compact heading and readable scanner 
   expect(await page.locator(".pos-experience h1").evaluate((element) => getComputedStyle(element).fontSize)).toBe("20px");
   expect(await page.locator(".pos-barcode-copy span").evaluate((element) => getComputedStyle(element).fontSize)).toBe("16px");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  expect(await page.locator(".pos-experience-products").evaluate((root) => root.scrollHeight > root.clientHeight)).toBe(true);
+  expect(await page.locator(".pos-experience-product").evaluateAll((cards) => cards.every((card) => {
+    const bounds = card.getBoundingClientRect();
+    return [...card.children].every((child) => {
+      const content = child.getBoundingClientRect();
+      return content.top >= bounds.top && content.bottom <= bounds.bottom && content.left >= bounds.left && content.right <= bounds.right;
+    });
+  }))).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("pos-mobile-ar.png"), fullPage: true });
 });
 
