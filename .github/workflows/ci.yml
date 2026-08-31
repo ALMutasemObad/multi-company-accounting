@@ -69,6 +69,21 @@ jobs:
         run: |
           npm run prisma:seed -w @mcap/api
           npm run prisma:seed:demo -w @mcap/api
+      - name: Prove named N1 recovery cases on a fresh isolated MariaDB database
+        env:
+          RUN_POS_RECOVERY_FINALIZATION_DB_TESTS: 'true'
+          POS_RECOVERY_TEST_DATABASE: w1posrecovery
+          POS_RECOVERY_CI_DATABASE_ACK: 'CREATE:w1posrecovery'
+          POS_RECOVERY_EXPECTED_ENGINE_VERSION: '10.11.11-MariaDB'
+          POS_RECOVERY_DB_GATE_ARTIFACT_DIR: ${{ runner.temp }}/pos-recovery-db-gate
+        run: node scripts/ci/pos-recovery-db-gate.mjs
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: n1-pos-recovery-mariadb-fresh
+          path: ${{ runner.temp }}/pos-recovery-db-gate/
+          if-no-files-found: error
+          retention-days: 7
       - name: Typecheck on the production Node major
         run: |
           npm run typecheck
@@ -260,6 +275,21 @@ jobs:
         run: |
           npm run prisma:seed -w @mcap/api
           npm run prisma:seed:demo -w @mcap/api
+      - name: Prove named N1 recovery cases on a fresh isolated MySQL database
+        env:
+          RUN_POS_RECOVERY_FINALIZATION_DB_TESTS: 'true'
+          POS_RECOVERY_TEST_DATABASE: w1posrecovery
+          POS_RECOVERY_CI_DATABASE_ACK: 'CREATE:w1posrecovery'
+          POS_RECOVERY_EXPECTED_ENGINE_VERSION: '8.4.11'
+          POS_RECOVERY_DB_GATE_ARTIFACT_DIR: ${{ runner.temp }}/pos-recovery-db-gate
+        run: node scripts/ci/pos-recovery-db-gate.mjs
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: n1-pos-recovery-mysql-fresh
+          path: ${{ runner.temp }}/pos-recovery-db-gate/
+          if-no-files-found: error
+          retention-days: 7
       - name: Test infrastructure utilities
         run: npm run infra:test
       - name: Test API against MySQL 8.4
