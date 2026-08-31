@@ -13,7 +13,9 @@
   "publicationAuthorized": false,
   "automation": { "id": "automation", "cadenceMinutes": 10, "status": "ACTIVE" },
   "browserOwner": "01a0578e-85b1-7141-bc2e-b4f88bcac12d",
-  "databaseGateOwner": null,
+  "databaseGateOwner": "01a0578e-75e6-7cf0-914e-12991af314be",
+  "databaseGateScope": "W1-ONBOARD limited local isolated database only; discovery first, no existing schema reset/drop or production; engine identity must be reported",
+  "onboardingDecision": "Server-configured explicit start plan version; existing active published zero-fee IMMEDIATE_FREE plan with valid currency,dates,included modules and dependencies. No configured value is selected by coordinator, no invented terms, no Legacy fallback. Missing/invalid configuration fails atomically with generic registration error. Preserve existing companies; do not fabricate operator actor identity.",
   "tasks": [
     {
       "id": "W1-PDF",
