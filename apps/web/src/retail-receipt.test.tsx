@@ -93,7 +93,9 @@ describe('W3 retail receipt UI policy', () => {
 describe('W3 receipt multilingual markup (not browser/device evidence)', () => {
   for (const locale of ['ar', 'en', 'hi', 'ur'] as const) {
     it.each([58, 80] as const)(`preserves ${locale} text and exact numbers at %s mm`, width => {
-      const markup = renderToStaticMarkup(<RetailReceiptPreview receipt={fixture()} width={width} locale={locale} />);
+      const receipt = fixture();
+      receipt.invoice.lines[0]!.itemName = 'حليب كامل الدسم Fresh Milk 123';
+      const markup = renderToStaticMarkup(<RetailReceiptPreview receipt={receipt} width={width} locale={locale} />);
       const copy = retailReceiptCopy[locale];
       expect(markup).toContain(`lang="${locale}"`); expect(markup).toContain(`dir="${locale === 'ar' || locale === 'ur' ? 'rtl' : 'ltr'}"`);
       expect(markup).toContain(`data-paper-width="${width}"`);

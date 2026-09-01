@@ -15,7 +15,8 @@ export function RetailReceiptPreview({ receipt, width, locale }: {
   const copy = retailReceiptCopy[locale];
   return <section className="retail-receipt-preview" lang={locale} dir={locale === 'ar' || locale === 'ur' ? 'rtl' : 'ltr'}>
     <p className="retail-receipt-notice">{copy.thermalNotice}</p>
-    <article className="retail-receipt-paper" data-paper-width={width} aria-label={`${copy.title} - ${width} mm`}>
+    <article className="retail-receipt-paper" data-paper-width={width}
+      aria-label={`${copy.title} - ${copy.width}: ${width === 58 ? copy.paper58 : copy.paper80}`}>
       <header>
         <h3><bdi dir="auto">{receipt.company.name}</bdi></h3>
         <p className="retail-receipt-title">{copy.title} · {copy.preview}</p>
