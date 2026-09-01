@@ -5,9 +5,10 @@ import { posMoneyText } from "./pos-experience-money";
 import type { PosDisplayMode } from "./pos-experience-preferences";
 import { Button, Pagination, Spinner } from "./ui";
 
-export function PosCatalog({ enabled, blocked, mode, onMode, onAdd }: {
+export function PosCatalog({ enabled, blocked, mode, onMode, onAdd, reader = posCatalogReader }: {
   enabled: boolean; blocked: boolean; mode: PosDisplayMode;
   onMode: (mode: PosDisplayMode) => void; onAdd: (item: PosCatalogItem) => void;
+  reader?: typeof posCatalogReader | undefined;
 }) {
   const { t } = useI18n();
   const [search, setSearch] = useState("");
@@ -25,7 +26,7 @@ export function PosCatalog({ enabled, blocked, mode, onMode, onAdd }: {
     setItems([]); setError(false); setLoading(enabled);
     if (!enabled) return;
     const timer = window.setTimeout(() => {
-      void posCatalogReader.list(page, search, controller.signal).then((result) => {
+      void reader.list(page, search, controller.signal).then((result) => {
         if (controller.signal.aborted || current !== epoch.current) return;
         setItems(result.data); setMeta(result.meta);
       }).catch(() => {
@@ -35,17 +36,17 @@ export function PosCatalog({ enabled, blocked, mode, onMode, onAdd }: {
       });
     }, search ? 250 : 0);
     return () => { controller.abort(); window.clearTimeout(timer); };
-  }, [enabled, page, search, revision]);
+  }, [enabled, page, search, revision, reader]);
 
   return <section className="pos-experience-catalog" aria-labelledby="pos-catalog-title">
     <header className="pos-experience-section-header">
       <h2 id="pos-catalog-title">{t("pos.catalog")}</h2>
       <div className="pos-experience-view-switch" role="group" aria-label={t("pos.displayMode")}>
-        <Button type="button" variant="secondary" aria-pressed={mode === "retail"} onClick={() => onMode("retail")}>{t("pos.retail")}</Button>
-        <Button type="button" variant="secondary" aria-pressed={mode === "tiles"} onClick={() => onMode("tiles")}>{t("pos.tiles")}</Button>
+        <Button type="button" variant="secondary" disabled={blocked} aria-pressed={mode === "retail"} onClick={() => onMode("retail")}>{t("pos.retail")}</Button>
+        <Button type="button" variant="secondary" disabled={blocked} aria-pressed={mode === "tiles"} onClick={() => onMode("tiles")}>{t("pos.tiles")}</Button>
       </div>
     </header>
-    <label><span>{t("pos.search")}</span><input type="search" value={search} maxLength={POS_CATALOG_SEARCH_LIMIT} disabled={!enabled}
+    <label><span>{t("pos.search")}</span><input type="search" value={search} maxLength={POS_CATALOG_SEARCH_LIMIT} disabled={!enabled || blocked}
       onChange={(event) => { setSearch(event.target.value); setPage(1); }}
       onKeyDown={(event) => { if (event.key === "Enter") event.preventDefault(); }} placeholder={t("pos.searchHint")} /></label>
     {!enabled ? <p role="status">{t("pos.catalogPermission")}</p>

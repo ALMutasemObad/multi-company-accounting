@@ -31,6 +31,7 @@ type InventoryBarcodeScannerProps = {
   maxLines: number;
   onPendingChange?: (count: number) => void;
   onResolved: (resolved: ResolvedInventoryBarcode) => BarcodeLineApplyStatus;
+  reader?: typeof api | undefined;
 };
 
 type Feedback = {
@@ -49,6 +50,7 @@ export const InventoryBarcodeScanner = forwardRef<
   maxLines,
   onPendingChange,
   onResolved,
+  reader = api,
 }, forwardedRef) {
   const { t } = useI18n();
   const [value, setValue] = useState("");
@@ -63,11 +65,13 @@ export const InventoryBarcodeScanner = forwardRef<
   const enabledRef = useRef(enabled);
   const onResolvedRef = useRef(onResolved);
   const onPendingChangeRef = useRef(onPendingChange);
+  const readerRef = useRef(reader);
 
   blockedRef.current = blocked;
   enabledRef.current = enabled;
   onResolvedRef.current = onResolved;
   onPendingChangeRef.current = onPendingChange;
+  readerRef.current = reader;
 
   const updateQueue = (queue: QueuedBarcodeScan[]) => {
     queueRef.current = queue;
@@ -110,7 +114,7 @@ export const InventoryBarcodeScanner = forwardRef<
         const entry = queueRef.current[0]!;
         if (entry.epoch === epochRef.current) {
           try {
-            const resolved = await api<ResolvedInventoryBarcode>(
+            const resolved = await readerRef.current<ResolvedInventoryBarcode>(
               "/inventory-barcodes/resolve",
               {
                 method: "POST",

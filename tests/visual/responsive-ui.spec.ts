@@ -1,5 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
-import { posRecoveryDictionaries } from '../../apps/web/src/i18n/locales/pos-recovery';
+import { expect, test, type Page, type Request, type Response } from '@playwright/test';
+import { arPos, enPos, hiPos, urPos } from '../../apps/web/src/i18n/locales/pos';
 
 type Locale = 'ar' | 'en' | 'ur' | 'hi';
 
@@ -11,6 +11,7 @@ type Screen = {
 };
 
 const directions: Record<Locale, 'rtl' | 'ltr'> = { ar: 'rtl', en: 'ltr', ur: 'rtl', hi: 'ltr' };
+const posCopy = { ar: arPos, en: enPos, hi: hiPos, ur: urPos };
 
 const authScreens: Screen[] = [
   { name: 'login', path: '/?qa=login', ready: '.login-card', kind: 'auth' },
@@ -78,8 +79,8 @@ async function navigateToWorkspaceScreen(page: Page, index: number) {
   await navigationButtons.nth(index).click();
 }
 
-async function interfaceFailures(page: Page, readOnlyPosAlert?: string) {
-  return page.evaluate((expectedPosAlert) => {
+async function interfaceFailures(page: Page) {
+  return page.evaluate(() => {
     const failures: string[] = [];
     const tolerance = 1;
     const visible = (element: Element) => {
@@ -162,31 +163,44 @@ async function interfaceFailures(page: Page, readOnlyPosAlert?: string) {
     }
 
     for (const error of document.querySelectorAll<HTMLElement>('.error-panel, [role="alert"], vite-error-overlay')) {
-      if (expectedPosAlert && error.matches('.pos-recovery [role="alert"]')
-        && error.textContent?.trim() === expectedPosAlert) continue;
       if (visible(error)) failures.push(`unexpected visible error: ${(error.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 120)}`);
     }
 
     return failures;
-  }, readOnlyPosAlert);
+  });
 }
 
 async function auditCurrentInterface(page: Page, locale: Locale, label: string) {
   await expect(page.locator('html')).toHaveAttribute('lang', locale);
   await expect(page.locator('html')).toHaveAttribute('dir', directions[locale]);
-  // The default fixture has pos.view but no pos.checkout. Its explicit denial is
-  // intentional; still reject every other alert and prove no sale/recovery action.
-  const readOnlyPosAlert = label === 'pos' ? posRecoveryDictionaries[locale].permission : undefined;
-  if (readOnlyPosAlert) {
-    await expect(page.locator('.pos-recovery [role="alert"]')).toHaveText(readOnlyPosAlert);
-    await expect(page.locator('.pos-experience-checkout, .pos-recovery button, .pos-recovery dl')).toHaveCount(0);
+  if (label === 'pos') {
+    // pos.view exposes authorized history; checkout/recovery/cashier stay absent.
+    // A heading or quarantined scope panel is not a successful history load.
+    const history = page.locator('.pos-experience-history');
+    await expect(history).toBeVisible();
+    await history.locator('summary').click();
+    await expect(history.getByText(posCopy[locale]['pos.emptyDescription'], { exact: true })).toBeVisible();
+    await expect(history.locator('.loading, [role="alert"]')).toHaveCount(0);
+    await expect(page.locator('.pos-experience .cashier-context-panel, .pos-experience [role="alert"]')).toHaveCount(0);
+    await expect(page.locator('.pos-experience form, .pos-experience-checkout, .pos-experience .pos-recovery, .pos-experience .pos-barcode-scanner')).toHaveCount(0);
   }
-  expect.soft(await interfaceFailures(page, readOnlyPosAlert), `${locale}/${label} responsive interface contract`).toEqual([]);
+  expect.soft(await interfaceFailures(page), `${locale}/${label} responsive interface contract`).toEqual([]);
 }
 
 for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
   test(`${locale}: all 29 screens satisfy the responsive interface contract`, async ({ page }) => {
     const runtimeErrors: string[] = [];
+    const posRequests: Request[] = [];
+    const posResponses: Response[] = [];
+    const posWrites: string[] = [];
+    let visitingPos = false;
+    page.on('request', request => {
+      const path = new URL(request.url()).pathname;
+      if (path.startsWith('/api/v1/pos/')) posRequests.push(request);
+      if (path.startsWith('/api/v1/') && !['GET', 'HEAD'].includes(request.method())
+        && (visitingPos || path.startsWith('/api/v1/pos/'))) posWrites.push(`${request.method()} ${path}`);
+    });
+    page.on('response', response => { if (new URL(response.url()).pathname.startsWith('/api/v1/pos/')) posResponses.push(response); });
     page.on('pageerror', (error) => runtimeErrors.push(error.message));
     await configureLocale(page, locale);
 
@@ -211,13 +225,48 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
     await expect(page.locator('.sidebar nav button')).toHaveCount(workspaceScreens.length);
     for (const [index, screen] of workspaceScreens.entries()) {
       await test.step(screen.name, async () => {
+        visitingPos = screen.name === 'pos';
         if (index > 0) await navigateToWorkspaceScreen(page, index);
         await expect(page).toHaveURL(new RegExp(`#${screen.name}$`));
         await waitForStableInterface(page, screen);
         await auditCurrentInterface(page, locale, screen.name);
+        if (visitingPos) {
+          const identityPath = '/api/v1/pos/context/identity';
+          const salesPath = '/api/v1/pos/sales';
+          for (const path of [identityPath, salesPath]) {
+            await expect.poll(() => posResponses.filter(response => new URL(response.url()).pathname === path).length).toBeGreaterThan(0);
+          }
+          for (const request of posRequests) {
+            const url = new URL(request.url());
+            expect([identityPath, salesPath]).toContain(url.pathname);
+            expect(request.method()).toBe('GET');
+            expect(request.headers()['x-pos-expected-user-id']).toBe('1');
+            expect(request.headers()['x-pos-expected-company-id']).toBe('1');
+            if (url.pathname === identityPath) expect(url.searchParams.get('purpose')).toBe('history');
+          }
+          for (const response of posResponses) {
+            expect(response.status()).toBe(200);
+            const body = await response.json();
+            expect(body.posContext).toEqual({ userId: '1', companyId: '1' });
+            if (new URL(response.url()).pathname === salesPath) expect(body.data).toEqual([]);
+          }
+          // Read-only probes prove the fixture neither accepts missing identity
+          // nor borrows another company from the requested precondition.
+          const missing = await page.request.get('/api/v1/pos/context/identity?purpose=history');
+          expect(missing.status()).toBe(400);
+          expect(await missing.json()).toEqual({ status: 400, code: 'POS_CONTEXT_REQUIRED' });
+          const changed = await page.request.get('/api/v1/pos/sales', {
+            headers: { 'X-POS-Expected-User-Id': '1', 'X-POS-Expected-Company-Id': '2' },
+          });
+          expect(changed.status()).toBe(409);
+          expect(await changed.json()).toEqual({ status: 409, code: 'POS_CONTEXT_CHANGED' });
+          expect(posWrites).toEqual([]);
+        }
+        visitingPos = false;
       });
     }
 
+    expect(posWrites).toEqual([]);
     expect.soft(runtimeErrors, `${locale} runtime errors`).toEqual([]);
   });
 

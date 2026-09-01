@@ -220,16 +220,22 @@ describe.runIf(enabled)("POS cash-sale vertical slice with MariaDB", () => {
         taxRateId: profile.taxRateId,
       }],
     };
+    const posContext = { userId: userId.toString(), companyId: companyId.toString() };
+    const posHeaders = { "X-POS-Expected-User-Id": posContext.userId, "X-POS-Expected-Company-Id": posContext.companyId };
     const submit = () => agent.post("/api/v1/pos/checkouts")
+      .set(posHeaders)
       .set("X-CSRF-Token", login.body.csrfToken)
       .set("Idempotency-Key", "550e8400-e29b-41d4-a716-446655440000")
       .send(payload);
     const [first, retry] = await Promise.all([submit(), submit()]);
     expect([first.status, retry.status]).toEqual([201, 201]);
     expect(retry.body).toEqual(first.body);
-    const recovered = await agent.post("/api/v1/pos/checkouts/recovery").set("X-CSRF-Token", login.body.csrfToken)
+    const recovered = await agent.post("/api/v1/pos/checkouts/recovery").set(posHeaders).set("X-CSRF-Token", login.body.csrfToken)
       .send({ attemptKey: "550e8400-e29b-41d4-a716-446655440000" }).expect(200);
-    expect(recovered.body).toEqual({ outcome: "CONFIRMED", result: first.body });
+    const { posContext: confirmedContext, ...originalResult } = first.body;
+    expect(confirmedContext).toEqual(posContext);
+    expect(recovered.body).toEqual({ outcome: "CONFIRMED", result: originalResult, posContext });
+    expect(recovered.body.result).not.toHaveProperty("posContext");
     expect(first.body).toMatchObject({
       invoice: { status: "POSTED", total: "50.0000", baseTotal: "50.0000" },
       receipt: { status: "POSTED" },
@@ -270,20 +276,21 @@ describe.runIf(enabled)("POS cash-sale vertical slice with MariaDB", () => {
       audits: await prisma!.auditLog.count({ where: { companyId } }),
     };
     const failure = await agent.post("/api/v1/pos/checkouts")
+      .set(posHeaders)
       .set("X-CSRF-Token", login.body.csrfToken)
       .set("Idempotency-Key", "650e8400-e29b-41d4-a716-446655440000")
       .send({ ...payload, cashBankAccountId: "999999999999", description: "يجب عكسه" })
       .expect(422);
     expect(failure.body).toMatchObject({ status: 422, code: "POS_CHECKOUT_REJECTED", reason: "INVALID_CASH_BANK_ACCOUNT" });
     // Simulate a caller that lost that HTTP response: proof comes from the retained row.
-    const rejected = await agent.post("/api/v1/pos/checkouts/recovery").set("X-CSRF-Token", login.body.csrfToken)
+    const rejected = await agent.post("/api/v1/pos/checkouts/recovery").set(posHeaders).set("X-CSRF-Token", login.body.csrfToken)
       .send({ attemptKey: "650e8400-e29b-41d4-a716-446655440000" }).expect(200);
-    expect(rejected.body).toEqual({ outcome: "REJECTED", rejection: { code: "POS_CHECKOUT_REJECTED", reason: "INVALID_CASH_BANK_ACCOUNT" } });
-    await agent.post("/api/v1/pos/checkouts").set("X-CSRF-Token", login.body.csrfToken)
+    expect(rejected.body).toEqual({ outcome: "REJECTED", rejection: { code: "POS_CHECKOUT_REJECTED", reason: "INVALID_CASH_BANK_ACCOUNT" }, posContext });
+    await agent.post("/api/v1/pos/checkouts").set(posHeaders).set("X-CSRF-Token", login.body.csrfToken)
       .set("Idempotency-Key", "650e8400-e29b-41d4-a716-446655440000")
       .send({ ...payload, cashBankAccountId: "999999999999", description: "يجب عكسه" }).expect(422);
     // Changing the body cannot make the sealed key into a successful new sale.
-    await agent.post("/api/v1/pos/checkouts").set("X-CSRF-Token", login.body.csrfToken)
+    await agent.post("/api/v1/pos/checkouts").set(posHeaders).set("X-CSRF-Token", login.body.csrfToken)
       .set("Idempotency-Key", "650e8400-e29b-41d4-a716-446655440000").send(payload).expect(409);
     expect({
       documents: await prisma!.accountingDocument.count({ where: { companyId, fiscalPeriodId: periodId } }),
@@ -299,11 +306,13 @@ describe.runIf(enabled)("POS cash-sale vertical slice with MariaDB", () => {
     expect((await prisma!.inventoryBalance.findUniqueOrThrow({ where: { id: balanceId } })).onHand.toFixed(6)).toBe("8.000000");
 
     await agent.post("/api/v1/pos/checkouts")
+      .set(posHeaders)
       .set("X-CSRF-Token", login.body.csrfToken)
       .set("Idempotency-Key", "550e8400-e29b-41d4-a716-446655440000")
       .send({ ...payload, description: "طلب مالي مختلف" })
       .expect(409);
-    const listed = await agent.get("/api/v1/pos/sales?page=1&pageSize=10").expect(200);
+    const listed = await agent.get("/api/v1/pos/sales?page=1&pageSize=10").set(posHeaders).expect(200);
+    expect(listed.body.posContext).toEqual(posContext);
     expect(listed.body.data).toHaveLength(1);
     expect(listed.body.data[0].id).toBe(first.body.id);
     const foreign = await new PrismaPosSaleQueryAdapter(prisma!).list(

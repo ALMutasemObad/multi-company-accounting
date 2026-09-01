@@ -44,6 +44,7 @@ export function ReferenceCombobox<T extends ReferenceRecord>({
   required = false,
   disabled = false,
   optionDisabled,
+  reader,
 }: {
   endpoint: string;
   value: string;
@@ -56,7 +57,9 @@ export function ReferenceCombobox<T extends ReferenceRecord>({
   required?: boolean;
   disabled?: boolean;
   optionDisabled?: (value: T) => boolean;
+  reader?: ((path: string, options?: Parameters<typeof api>[1]) => Promise<ListResponse<T>>) | undefined;
 }) {
+  const read = reader ?? api<ListResponse<T>>;
   const { permissionSet } = useAuthorization();
   const endpointPolicy = referenceEndpointPermission(endpoint);
   const isDisabled = disabled || (endpointPolicy ? !allows(permissionSet, endpointPolicy) : false);
@@ -108,7 +111,7 @@ export function ReferenceCombobox<T extends ReferenceRecord>({
     setLoading(true);
     setError("");
     setActiveIndex(-1);
-    void api<ListResponse<T>>(
+    void read(
       referenceOptionsPath(endpoint, { page: 1, pageSize: 20, search: debouncedQuery }),
       { signal: controller.signal },
     ).then((result) => {
@@ -124,7 +127,7 @@ export function ReferenceCombobox<T extends ReferenceRecord>({
       if (request === requestRef.current) setLoading(false);
     });
     return () => controller.abort();
-  }, [debouncedQuery, endpoint, open]);
+  }, [debouncedQuery, endpoint, open, read]);
 
   useEffect(() => {
     if (!open) return;
@@ -157,7 +160,7 @@ export function ReferenceCombobox<T extends ReferenceRecord>({
     setLoading(true);
     setError("");
     try {
-      const result = await api<ListResponse<T>>(
+      const result = await read(
         referenceOptionsPath(endpoint, {
           page: nextPage,
           pageSize: 20,

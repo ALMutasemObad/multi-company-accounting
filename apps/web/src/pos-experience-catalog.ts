@@ -21,12 +21,13 @@ export function posCatalogPath(page: number, search: string) {
   return `/sales/catalog?${params}`;
 }
 
-export const posCatalogReader = {
+export const createPosCatalogReader = (reader: typeof api = api) => ({
   list: (page: number, search: string, signal: AbortSignal) =>
-    api<ListResponse<PosCatalogItem>>(posCatalogPath(page, search), { signal, timeoutMs: 10_000 }),
+    reader<ListResponse<PosCatalogItem>>(posCatalogPath(page, search), { signal, timeoutMs: 10_000 }),
   item: async (itemId: string, signal: AbortSignal) => {
-    const result = await api<{ data: PosCatalogItem }>(`/sales/catalog/items/${encodeURIComponent(itemId)}`, { signal, timeoutMs: 10_000 });
+    const result = await reader<{ data: PosCatalogItem }>(`/sales/catalog/items/${encodeURIComponent(itemId)}`, { signal, timeoutMs: 10_000 });
     if (result.data.inventoryItemId !== itemId) throw new Error("Catalog identity mismatch");
     return result.data;
   },
-};
+});
+export const posCatalogReader = createPosCatalogReader();

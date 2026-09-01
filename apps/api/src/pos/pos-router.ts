@@ -9,6 +9,7 @@ import { PosError, PosService } from "./pos-service.js";
 import type { PosRecoveryService } from "./recovery-service.js";
 import { IdempotentCommandRejection } from "../platform/idempotent-command-executor.js";
 import { readPosCheckoutRejection } from "./checkout-rejection.js";
+import { bindPosRequestContext, readWithPosContext } from "../platform/pos-request-context.js";
 
 const page = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -35,34 +36,34 @@ export function createPosRouter(auth: AuthService, service: PosService, recovery
     });
 
   router.get("/pos/sales", async (request, response) => {
-    const context = await authorize(request, "pos.view", false);
-    const parsed = page.parse(request.query);
-    const result = await service.list(context, parsed);
-    response.json({
-      data: result.data.map(PosService.saleJson),
-      meta: {
-        ...parsed,
-        total: result.total,
-        totalPages: Math.ceil(result.total / parsed.pageSize),
-      },
-    });
+    response.json(await readWithPosContext(request, () => authorize(request, "pos.view", false), async context => {
+      const parsed = page.parse(request.query);
+      const result = await service.list(context, parsed);
+      return { data: result.data.map(PosService.saleJson), meta: {
+        ...parsed, total: result.total, totalPages: Math.ceil(result.total / parsed.pageSize),
+      } };
+    }, true));
   });
 
   router.post("/pos/checkouts", async (request, response) => {
-    const context = await authorize(request, "pos.checkout", true);
+    const binding = bindPosRequestContext(request, () => authorize(request, "pos.checkout", true), true);
+    const context = await binding.authorize();
     const key = z.string().min(8).max(200).parse(request.header("Idempotency-Key"));
-    response.status(201).json(await service.checkout(
+    const result = await service.checkout(
       context,
       bodies.completePosCheckout.parse(request.body),
       key,
-    ));
+    );
+    await binding.authorize();
+    response.status(201).json(binding.response(result));
   });
 
   router.post("/pos/checkouts/recovery", async (request, response) => {
     // Reauthorize the live session on both sides of lookup, including CSRF and POS entitlement.
     if (!recovery) throw new Error("POS recovery service is not configured");
+    const binding = bindPosRequestContext(request, () => authorize(request, "pos.checkout", true), true);
     const { attemptKey } = bodies.recoverPosCheckout.parse(request.body);
-    response.json(await recovery.recover(() => authorize(request, "pos.checkout", true), attemptKey));
+    response.json(binding.response(await recovery.recover(binding.authorize, attemptKey)));
   });
 
   const errors: ErrorRequestHandler = (error, _request, response, next) => {

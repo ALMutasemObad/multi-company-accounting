@@ -497,6 +497,13 @@ describe("core accounting architecture guardrails", () => {
 });
 
 describe("operational resilience guardrails", () => {
+  it("routes concurrent receipt draft creation through the central transaction executor", async () => {
+    const receipts = await source("receipts/receipt-service.ts");
+    expect(receipts).toContain("private readonly transactions: TransactionExecutor");
+    expect(receipts).toContain('{ operation: "CREATE_RECEIPT", companyId: context.companyId }');
+    expect(receipts).not.toContain('"P2034"');
+  });
+
   it("keeps one HTTP deadline across application and transaction layers", async () => {
     const [requestContext, transactionExecutor, server] = await Promise.all([
       source("operations/request-context.ts"),

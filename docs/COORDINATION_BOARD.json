@@ -1,23 +1,56 @@
 {
   "schemaVersion": 1,
-  "updatedDate": "2026-08-31T18:06:08.2716112+03:00",
+  "updatedDate": "2026-08-31T19:14:15.606357+00:00",
   "coordinatorThreadId": "01a05783-e720-7ed0-a107-4a372bd53202",
   "projectId": "c3fd65c7-6c00-45d1-9859-46f96966dc38",
   "repository": "D:/CodexWorktrees/continuous-coordination",
   "integrationWorktree": "D:/CodexWorktrees/continuous-coordination",
-  "integrationBranch": "coord/continuous-delivery-20260831",
-  "baseline": "c7ffc99306a180387bb1a618d0d2750f762bf48b",
-  "observedLocalOriginMain": "89ba49b8b232043fd83a6d098c257fe3b124f954",
-  "remoteFreshness": "local refs only; no fetch or live deployment verification in this task",
+  "integrationBranch": "coord/wave2-20260831",
+  "baseline": "e3d6ba03aec8ceabd42428d67855fad2683968a6",
+  "observedLocalOriginMain": "e3d6ba03aec8ceabd42428d67855fad2683968a6",
+  "remoteFreshness": "Fetched main; PR46 merged and iFastNet deployment33414229344/job99567727709 succeeded; HTTP assets and public DOM verified.",
   "maxActiveImplementationThreads": 4,
-  "publicationAuthorized": true,
+  "publicationAuthorized": false,
   "resourceConstraint": "One heavy runtime owner at a time. Start C>=1GiB, RAM>=2.5GiB (browser>=3GiB); DB extraction D>=8GiB. All task temp/cache/profile outputs D; shared dependencies read-only.",
   "automation": {
     "id": "automation",
     "cadenceMinutes": 10,
-    "status": "PAUSED"
+    "status": "ACTIVE"
   },
   "browserOwner": null,
+  "runtimeIncident": {
+    "status": "powershell_unavailable_cmd_python_validated",
+    "scope": "PowerShell Get-Date stalled as well as worker read-only commands. CMD ver and Python native read/resource queries succeeded. No system configuration or dependency changes.",
+    "ownerSessions": {
+      "pos": [
+        85497,
+        94871,
+        92235,
+        31157,
+        85694,
+        29946
+      ],
+      "qa": [
+        55028,
+        51486,
+        44712,
+        14458
+      ],
+      "pdf": [
+        11024
+      ]
+    },
+    "sessionOutcome": "All worker sessions reported interrupted and exited1; no Node/test/generator in those stalled commands. Fixture mutation may have occurred before stall: inspect before retry.",
+    "rootProbe": {
+      "session": 64474,
+      "pid": 19444,
+      "creationTicks": "134326713348088888",
+      "exitCode": 1223,
+      "receipt": "tmp/coordination/shell-diagnostic-20260831/owned-probe-close.json"
+    },
+    "rootCleanup": "Two Ctrl+C attempts did not close own probe. Exact executable/command/creation identity and no children verified before terminating only PID19444; wait and session exit confirmed. No other process terminated by root.",
+    "executionChannel": "Explicit cmd.exe/login:false; direct bundled Python and Node; no PowerShell wrappers. Preserve all resource/env/output restrictions. No new installs or privilege changes."
+  },
   "databaseGateOwner": null,
   "databaseGateScope": "Local Windows DB preparation suspended at preserved data/source artifacts by user closing instruction. No PE/DB initialization; actual DB acceptance uses existing CI engines with explicit N1gate.",
   "databaseCandidate": "MariaDB10.11.11 and MySQL8.4.11 pinned archives on D. Old XAMPP10.4 trial is closed, no DB created; not an active candidate.",
@@ -30,9 +63,9 @@
       "threadId": "01a0578e-3c3b-7af3-a347-10e1901b9055",
       "hostId": "local",
       "worktree": "D:/CodexWorktrees/wave1-pdf-decimal",
-      "status": "accuracy_scope_verified_readability_followup",
+      "status": "closed_release_scope_deployed",
       "priority": "P0",
-      "acceptance": "R3 financial scope verified65tests/types/12PDF/26PNG/176moneycells. W2 header+ASCII candidate frozen,103futuretests not executed; mixed free-text/ToUnicode/longidentity remain outside acceptance.",
+      "acceptance": "Deployed PR46: R3+heading+structured ASCII+test parser,103 focused tests/types,12PDF/31PNG/116moneycells reviewed; combined795/API build and full CI passed. Broader Bidi/ArabicToUnicode and long journal identity/footer remain outside this release scope.",
       "afterCursor": "9d197f9a-1247-44fd-8bf3-a9344feb131d:6",
       "lastReportedEvidence": "R3 frozenF7C740E0 preserved; QA reportA1609B0F and99artifactmanifest8F45BF58 verified/read. Existing glyph/header defects independently tracked, not R3 financial regressions.",
       "pendingReviewFixes": "Independent R3delta review found no new actualdefect andclosedR2orphanidentity finding;rootverifiedpatchhashes. bodyStart/firstfragmentreservation/repeatedentryreference lookcorrectsource-only. Longidentitydescriptioncanreach755..799.89footerregion is inherited,notfixed orclaimedaccepted.",
@@ -88,7 +121,7 @@
         "status": "tests_types_passed_visual_report_pending",
         "futureFocusedTests": 103
       },
-      "currentValidation": "W2round02 103/103 PASS64.60s; narrowtypes0/2.19s;12PDF,31pages,116moneycells,31PNG150dpi complete.18hashes unchanged; final visual report pending.",
+      "currentValidation": "Integrated in release46/e3d6ba03; current dual-engine CI, browser and production runtime gates passed. Historical artifacts/limits below are preserved, not current blockers.",
       "w2Round01": {
         "passed": 102,
         "failed": 1,
@@ -124,7 +157,8 @@
         "testSeconds": 64.6,
         "failed": 0,
         "evidence": "D:/CodexWorktrees/wave1-pdf-decimal/tmp/coordination/w2-qa-20260831-round02"
-      }
+      },
+      "runtimeOwner": false
     },
     {
       "id": "W1-POS",
@@ -132,9 +166,9 @@
       "threadId": "01a0578e-6281-7ab2-9d37-2e5b8935eaf2",
       "hostId": "local",
       "worktree": "D:/CodexWorktrees/wave1-pos-recovery",
-      "status": "units_web_api_types_passed_real_db_browser_pending",
+      "status": "closed_release_scope_deployed",
       "priority": "P0",
-      "acceptance": "Revision03:WebnoEmit0/247focusedpass/API src+tests noEmit0. Source44andPrismaclient21files unchanged. DBrealraces/POSfinancialeffects/browser/build/combinedgates remainopen.",
+      "acceptance": "Deployed PR46: N1 named11 finalization +1 financial case passed with zero skips on both MariaDB10.11.11/MySQL8.4.11 in final-head and main CI; Web/API types,combined focused795,runtime/build passed. N2 full POS cross-tab identity is separate W2 work.",
       "afterCursor": "6a04bcb5-51b1-496b-bb46-be45080061fc:7",
       "lastReportedEvidence": "Runtime03 247/247 + Web/APIsrc+tests types pass; checkpoint1f13084 clean; DB/browser/build/dist not accepted.",
       "nextValidation": "Real isolated MariaDB10.11.11/MySQL8.4.11 11+1 named cases; local config/fixture plan in preparation. Existing247units and Web/API src+tests types PASS.",
@@ -215,7 +249,9 @@
         "testCounts": "11 exact finalization +1 financial,zero skips required",
         "path": "D:/CodexWorktrees/wave1-pos-recovery/tmp/coordination/ci-pos-recovery-proposal"
       },
-      "integratedAt": "a4f8e0c16dc03ce5d6869bcd21c194335efe0bd1"
+      "integratedAt": "a4f8e0c16dc03ce5d6869bcd21c194335efe0bd1",
+      "currentValidation": "Integrated in release46/e3d6ba03; current dual-engine CI, browser and production runtime gates passed. Historical artifacts/limits below are preserved, not current blockers.",
+      "runtimeOwner": false
     },
     {
       "id": "W1-ONBOARD",
@@ -223,9 +259,9 @@
       "threadId": "01a0578e-75e6-7cf0-914e-12991af314be",
       "hostId": "local",
       "worktree": "D:/CodexWorktrees/wave1-onboarding-policy",
-      "status": "source_units_types_passed_real_db_pending",
+      "status": "closed_release_scope_deployed",
       "priority": "P0",
-      "acceptance": "Generate/smoke1/154policyunits/API src+tests noEmit passed;195wrapperguardunits passed separately. DomainDB/registrationE2E/dualengine remainrequired;notdistserverproof.",
+      "acceptance": "Deployed PR46:154policy/195wrapper units and APItypes passed;10onboarding cases passed on each engine with fresh and upgrade/backup/runtime gates. No actual commercial start-version selected; hosting authenticated registration not exercised.",
       "afterCursor": "e3953114-968c-4310-9ce9-49d66bc9885f:11",
       "lastReportedEvidence": "Source-only isolatedclient preparation ready at tmp/coordination/prisma-c7ffc99; schemaoutput-onlycopy and91sharedclientfiles baseline. Generation notyetstarted; review before sequentialfourphasewindow.",
       "shutdownConfirmedByWorker": true,
@@ -293,7 +329,9 @@
         "publication": false,
         "head": "6bb49994b8cda50afcc8331e28ee900925d9dc4a"
       },
-      "integratedAt": "a4f8e0c16dc03ce5d6869bcd21c194335efe0bd1"
+      "integratedAt": "a4f8e0c16dc03ce5d6869bcd21c194335efe0bd1",
+      "currentValidation": "Integrated in release46/e3d6ba03; current dual-engine CI, browser and production runtime gates passed. Historical artifacts/limits below are preserved, not current blockers.",
+      "runtimeOwner": false
     },
     {
       "id": "W1-QA",
@@ -301,9 +339,9 @@
       "threadId": "01a0578e-85b1-7141-bc2e-b4f88bcac12d",
       "hostId": "local",
       "worktree": "D:/CodexWorktrees/wave1-subscription-acceptance",
-      "status": "43_of_44_passed_D3_subscription_context_source_fix_in_progress",
+      "status": "closed_release_scope_deployed",
       "priority": "P0",
-      "acceptance": "D1/D2 and6geometryV1/V2 passedon0dd107ab;44run43pass/1D3fail,no skips/flaky. D3fixture-backedmisattributionproven,notproduction/DBleakproof. Functional scope/rootcauseunderreview. Build/interactivevisual/combinedgates open.",
+      "acceptance": "Deployed PR46:D1/D2/V1/V2 and D3 company precondition/latch with uncertain retry preservation included;58local subscription cases passed. Main CI336responsive+40billing recovery+15grocery passed. Postdeploy anonymousDOM only,not authenticated live acceptance.",
       "afterCursor": "dfab117e-aa91-42e4-b0e3-d64bbedd29ae:11",
       "lastReportedEvidence": "Root readrun/e2e/errorcontext andverifiedJSON96CDE407/54filemanifest1D162490. SameHEAD/cleanworktree,ownedports/processesreleased;no rerun.",
       "currentRun": {
@@ -371,7 +409,9 @@
         "finding": "Uncertain A retry with sessionB missingpermission can403 beforeexpectedCompany and be wrongly rejected/released. Preserve previous unresolvedrecord; do not bypassRBAC.",
         "runtime": "No D3generation/types/HTTP/browser run yet",
         "e2eTypesScope": "Generaltsconfig.e2e excludes subscription-discovery; D3spec requires explicitoverlay"
-      }
+      },
+      "currentValidation": "Integrated in release46/e3d6ba03; current dual-engine CI, browser and production runtime gates passed. Historical artifacts/limits below are preserved, not current blockers.",
+      "runtimeOwner": false
     },
     {
       "id": "W1-DB-PREP",
@@ -379,8 +419,8 @@
       "threadId": "01a057da-c19c-74c2-8f2c-be2ff9c8b3e5",
       "hostId": "local",
       "worktree": "D:/CodexWorktrees/wave1-dual-db-validation",
-      "status": "both_archives_extracted_trust_inventory_source_preparation",
-      "priority": "P0",
+      "status": "preserved_deferred",
+      "priority": "P2",
       "acceptance": "Preparation only,notDBacceptance. OfficialWindowsZIP versions mustmatchCI MariaDB10.11.11/MySQL8.4.11; hashes/requirements/manifests onD.",
       "constraints": "Oneofficialdownload atatime andhash/read-onlypreflight now. Noextraction/initialize/DB/service/install/Prismagenerate/Gitwrites untilseparateallocation. PDFownsruntime. NoVCinstaller/EULAacceptance orglobalenv/ACL/PATHchanges.",
       "afterCursor": "85db8213-ec21-494e-b000-9b87d61f03ec:4",
@@ -459,158 +499,140 @@
         "status": "source_only_independent_review_active",
         "runtimeAuthorized": false,
         "scope": "Readback895files/1551728300bytes then186EXE/DLL cached-onlyinventory; no targetPE, no trustdecision, authenticatedtimestampnull"
+      },
+      "currentValidation": "Archives extracted as data only; target binaries not executed. Release46 real DB acceptance was completed in CI.",
+      "runtimeOwner": false
+    },
+    {
+      "status": "validated_and_integrated_locally",
+      "threadId": "01a0578e-6281-7ab2-9d37-2e5b8935eaf2",
+      "title": "عزل سياق الكاشير وربط N2",
+      "runtimeOwner": false,
+      "branch": "fix/wave2-pos-context",
+      "hostId": "local",
+      "base": "e3d6ba03aec8ceabd42428d67855fad2683968a6",
+      "priority": "P0",
+      "worktree": "D:/CodexWorktrees/wave2-pos-context",
+      "id": "W2-POS-CONTEXT",
+      "contract": "X-POS-Expected-User-Id + X-POS-Expected-Company-Id; mandatory POS routes, both-or-neither owner reads. Session Actor only; named409 POS_CONTEXT_CHANGED; captured identity verified before/after reads; posContext response identity. Preserve N1 body/fingerprint/cached result and quarantine after marker.",
+      "approvedScopeAddition": "PosCart reader injection plus optional expected-scope read hunks in account-router.ts and tax-router.ts; OpenAPI posContext and scoped read tests. No account/tax service policy or schema changes. Both-or-neither headers; old callers unchanged; captured Actor checked before/after and late UI results rejected.",
+      "runtime": "Released after browser19 and independent IPv4/IPv6 listener/bind verification; no runtime or Git ownership.",
+      "integration": {
+        "sourceCommit": "af0b31adc0782b4245e4d70cc4c87d8d4f9b4316",
+        "coordinatorHead": "dc9fef38ca5393f1574f36e543d4b8e68d73e42c",
+        "files": 58,
+        "matchingBlobs": 58,
+        "receipt": "tmp/coordination/w2-pos-integration/20260831T182336334854Z/receipt.json",
+        "commonHeadRuntime": "1046focused + types +321infra +Webbuild PASS; see combined receipt; browser source proof separate."
+      },
+      "groceryAcceptance": {
+        "sourceCommit": "06134db1b718f7e7f0e543d8318b6d3d412828ee",
+        "passed": 19,
+        "skipped": 0,
+        "retries": 0,
+        "types": "PASS",
+        "list": "19 exact cases",
+        "initialLauncherExit": 2,
+        "browserCliExit": 0,
+        "cleanupObserverResolution": "Independent 3-second connection refusal + exclusive bind + IPv4/IPv6 listener tables empty. No browser rerun.",
+        "summary": "D:\\CodexWorktrees\\wave2-pos-context\\tmp\\coordination\\grocery-validation\\ACCEPTANCE_SUMMARY.json",
+        "summarySha256": "5cd9742e90b01930a44c69647ff929c1c26b5324b169c51088485d34a3a0619e",
+        "proofLimit": "Real browser with local HTTP auth fixtures, not backend/DB proof; P2 false cashier warning deferred to W3 render-only fix.",
+        "integratedAt": "93eeba01bbb435bda9d1de33771556b762339981",
+        "matchingWebSources": 207
+      }
+    },
+    {
+      "status": "validated_and_integrated_locally",
+      "threadId": "01a0578e-3c3b-7af3-a347-10e1901b9055",
+      "title": "منع تداخل وصف هوية القيد الطويل مع التذييل",
+      "runtimeOwner": false,
+      "branch": "fix/wave2-pdf-identity",
+      "hostId": "local",
+      "base": "e3d6ba03aec8ceabd42428d67855fad2683968a6",
+      "priority": "P1",
+      "worktree": "D:/CodexWorktrees/wave2-pdf-identity",
+      "id": "W2-PDF-IDENTITY",
+      "acceptance": "Round02:118/118 passed in9files,Vitest37.86s; narrowtypes exit0/1.031s;4candidatePDF+baseline,32PNG150dpi reviewed. Coordinator independently inspected3PNGs and result receipts.22baseline glyph-runs entered footer to788.9204pt versus0 in long candidate,max738.088pt. Sixcode/test sources match tested bytes; Snapshot/money unchanged. Common-head runtime notyetaccepted; notdeployed.",
+      "integration": {
+        "sourceCommit": "defb380d2f2607047b697c57d5e454ff490c48c2",
+        "coordinatorHead": "7f992dedf6ae476e2f8819f249e763f2137837bc",
+        "files": 7,
+        "matchingBlobs": 7,
+        "receipt": "tmp/coordination/w2-pdf-integration/20260831T181728409760Z/receipt.json",
+        "workerArtifactManifestSha256": "2503398672A51F98566E3B392A0EAB9E354B46A84BF08E2BDEEB30EB12AFD9DF"
+      }
+    },
+    {
+      "id": "W2-SUBSCRIPTION-CI",
+      "title": "بوابة CI الدائمة لقبول الاشتراكات وسياق الشركة",
+      "threadId": "01a0578e-85b1-7141-bc2e-b4f88bcac12d",
+      "hostId": "local",
+      "worktree": "D:/CodexWorktrees/wave2-subscription-ci",
+      "branch": "test/wave2-subscription-ci",
+      "base": "e3d6ba03aec8ceabd42428d67855fad2683968a6",
+      "status": "validated_and_integrated_locally",
+      "runtimeOwner": false,
+      "priority": "P1",
+      "scope": "Portable58case subscription-discovery/D3 test configuration,ownedfixture lifecycle,package/type scripts and narrow existingverifyjob CI step/artifacts only. No product/OpenAPI/PosPage changes; no new dependencies/jobs/services.",
+      "runtime": "Explicitly released; ownedfixture/Vite ended and3166/4216 free. Old unrelatedAnyDesk excluded bycreationtime,not touched.",
+      "acceptance": "35guards/list58/types/58browser passed onworker. Shared321infra andsubscriptiontypes passed oncombined branch; LinuxCI notrunyet.",
+      "integration": {
+        "sourceCommit": "59c9a76258d20c0855055b24b6adf15050eeda2c",
+        "coordinatorHead": "f8da743154a89888b3a5d936dcece35c449e65b6",
+        "matchingBlobs": 14,
+        "receipt": "tmp/coordination/w2-subscription-ci-integration/20260831T183230458741Z/receipt.json"
+      }
+    },
+    {
+      "id": "W2-COMBINED-GATES",
+      "threadId": "01a05783-e720-7ed0-a107-4a372bd53202",
+      "title": "تحقق فرع W2 المجمع",
+      "worktree": "D:/CodexWorktrees/continuous-coordination",
+      "branch": "coord/wave2-20260831",
+      "status": "passed",
+      "runtimeOwner": false,
+      "scope": "Coordinator contracts/types/focused/architecture/build checks after reviewed commits; one heavyowner, noDBdaemon/install/hosting publication.",
+      "acceptance": "1046/1046 in54files; Web/API-src-tests/subscription/E2E types andi18n passed. Sharedguard inventories corrected; UI+321infra+Webbuild passed. Product bytes identical across finalheads; noDB/POSbrowser acceptance.",
+      "receipt": "tmp/coordination/w2-combined/COMPLETION_RECEIPT.json"
+    },
+    {
+      "id": "W3-RETAIL-RECEIPT",
+      "threadId": "01a0578e-3c3b-7af3-a347-10e1901b9055",
+      "hostId": "local",
+      "title": "ربط معاينة إيصال البيع المؤكد بالأرشيف",
+      "worktree": "D:/CodexWorktrees/wave3-retail-receipt",
+      "branch": "feat/wave3-retail-receipt",
+      "base": "dc9fef38ca5393f1574f36e543d4b8e68d73e42c",
+      "status": "validation_window_granted",
+      "priority": "P1",
+      "runtimeOwner": true,
+      "scope": "Integrate N3 existingarchive-only preview forconfirmedresult.invoice.id withN2scope safeguards,58/80mm screenpreview andexplicitexistingA4download. Printing-ownedadapter/service/HTTPcontract andnarrowPosPageUI; nofinancialreplay,schema,barcodeinvention,thermal/device claim,dependencies orpublication.",
+      "sourceReceipt": "D:/CodexWorktrees/wave3-retail-receipt/tmp/coordination/w3-source-round01/source-receipt.json",
+      "runtime": "W3-RETAIL-20260831-A: generation/check then focused andWeb/APItypes, isolatedclientreadonly, noDB/browser/build; run only after final pinned launcher/config readiness."
+    },
+    {
+      "id": "W2-POS-VISUAL-COMPAT",
+      "threadId": "01a0578e-85b1-7141-bc2e-b4f88bcac12d",
+      "title": "مواءمة اختبار POS للقراءة فقط مع سياق الشركة",
+      "worktree": "D:/CodexWorktrees/wave2-pos-visual-compat",
+      "branch": "fix/wave2-pos-visual-compat",
+      "base": "371917a334e87aea3131dc2a9acc4cb4a63f8fe6",
+      "status": "validated_and_integrated_locally",
+      "runtimeOwner": false,
+      "scope": "Visualfixture identity/history metadata andread-onlyhistory/absenceoffinancialcontrols assertions. Threefilesonly.16existingall29screens cases; nofull336/productchanges.",
+      "acceptance": "types/list16/browser16 passed,464 screen steps,zero skips/retries/flaky;37evidencefiles verified and208Websources matched tocoordination. Processes/ports released. No DB/backend auth claim.",
+      "integration": {
+        "sourceCommit": "e7431c6c3d5400e5114a4a74f08c01789daa616c",
+        "coordinatorHead": "0327845a274e7a3264407fb90d593e4bc7dfe148",
+        "matchingBlobs": 3,
+        "receipt": "tmp/coordination/w2-visual-integration/20260831T191319968621Z/receipt.json"
       }
     }
   ],
   "queue": [
-    {
-      "id": "W1-VISUAL-FIXES",
-      "priority": "P1",
-      "title": "منع تجزئة أرقام الحصص وقص أزرار الدفع عند1024",
-      "dependsOn": [
-        "W1-QA-FIXES"
-      ],
-      "status": "automated_browser_scope_passed_interactive_build_pending",
-      "constraints": "Frozenv2/CSS source committed0dd107ab after165units+Web/E2Etypes; originalpatches/run1 preserved. Browser38+6cases stillpending; no newproductscope without coordination.",
-      "threadId": "01a0578e-85b1-7141-bc2e-b4f88bcac12d",
-      "ownership": "Source-only subscription-usage.css and subscription billing scope in styles.css. Starts after immutable D1D2patch+hash; separate third delivery. No TSX/payment behavior/font shrink/clipping/overflow-visible-only workaround; propose before expanding scope. Runtime/Gitwrites remain frozen.",
-      "delivery": {
-        "patch": "D:/CodexWorktrees/wave1-subscription-acceptance/tmp/coordination/w1-visual-fixes/wave1-visual-fixes.patch",
-        "sha256": "9002106912CA1CDDC5BB7CEE946DF10DF7F7B18126F65EEE6E5A9248732F63C4",
-        "manifestSha256": "280652F4CE5BDA3FFF8E4146A98632D180FDD3A90E80CE9F918CECF44091AE56",
-        "handoffSha256": "73FAB453AB65A882F8B0D9945FD57938C3CDF14626F3ED9555B7AC598BCDDA93",
-        "files": 6,
-        "coordinatorHashVerified": true,
-        "tests": "6AR/EN768/1024/1440 geometry/focus/noPOST cases written,unrun;44combinedbrowsercases expected,notcollected",
-        "application": "Apply frozenacceptance harness thenD1D2v2insteadv1 then thisCSSpackage",
-        "status": "unvalidated_no_afterPNG"
-      }
-    },
-    {
-      "id": "W1-QA-FIXES",
-      "priority": "P0",
-      "title": "إصلاح مزامنة اختيار الخطة وتشغيل الصفحة عند حجب التخزين",
-      "dependsOn": [],
-      "status": "automated_browser_scope_passed_interactive_build_pending",
-      "constraints": "Frozenv2/CSS source committed0dd107ab after165units+Web/E2Etypes; originalpatches/run1 preserved. Browser38+6cases stillpending; no newproductscope without coordination.",
-      "threadId": "01a0578e-85b1-7141-bc2e-b4f88bcac12d",
-      "ownership": "Same QA worktree, after freezing run1 evidence: CompanySubscriptionPage.tsx and main.tsx/i18n/react.tsx plus focused helpers/tests. Explicit scope expansion; no App or other shared files. No runtime/Git writes under resource hold. Separate patch/handoff for fixes.",
-      "designDecision": "Approved source-only D1 route-intent helper/hashchange/popstate without remount; immediate review/ack invalidation and synchronous confirmation guard; protected command records ignore new intent with no deferred auto-application. D2 storage getter/read/write exceptions caught narrowly; preserve dictionary/render errors and in-memory locale choice. V1/V2 remain separately queued.",
-      "latestCandidate": "Root source review confirmsV2recordguard precedeskey,consumes onlysubscriptionplan,preservesotherURLparts/history.state,syncs observed,no financial record/body/key mutation. D2testclearspriorerrors andexactevent match. Priorfindings closed source-only;allruntimepending.",
-      "deliveryV1": {
-        "patch": "D:/CodexWorktrees/wave1-subscription-acceptance/tmp/coordination/w1-qa-fixes/wave1-qa-fixes.patch",
-        "sha256": "0DF074F0EAFE4292D2FF3BFB053CD0C240B26C6F7D42806467C32EC2E3100014",
-        "handoffSha256": "019E213607C1D202E1AB600680EA7B5FE212BB24DD048BCDC08453E4E1233287",
-        "sourceFiles": 12,
-        "coordinatorHashVerified": true,
-        "status": "unvalidated_has_source_findings"
-      },
-      "sourceReviewFindings": "Worker and independent reviewer confirm same-key early return before protected-record guard and persistent URL plan allow ignored preference to return after newReview/remount. v2 must put protected guard first,consume only subscription plan parameters via replaceState preserving history.state/otherURLparts,synchronize observed intent without touching protected command. No runtime yet.",
-      "testReviewFinding": "D2 source appears sound; test uses includes(locale_dictionary_load_failed) also matching priorinitial_locale_dictionary_load_failed,soProvider-errorassertion can false-pass. Assigned exactevent+newmessage assertion inV2. No runtime.",
-      "deliveryV2": {
-        "patch": "D:/CodexWorktrees/wave1-subscription-acceptance/tmp/coordination/w1-qa-fixes/wave1-qa-fixes-v2.patch",
-        "sha256": "4180C41AB2D24427B82004160BB1BF54EB963CF1B5856FF3F7BDD3258F9D3DDE",
-        "manifestSha256": "1AA4D4EEF2CE56F2527E567A8D40F7D11B3FA830D7E28ADCE01BD6538691A0DB",
-        "revisionDocSha256": "15FEE312D051D45ADA72BB9DF126EBC5B7990FA3511D640E269DB4197461AA92",
-        "sourceFiles": 13,
-        "tests": "27newunit+12newbrowser written;165unit/38browser expected beforeCSS,notcollected/executed",
-        "application": "Cumulative replacement forv1,depends on frozen acceptance harness;do not applyv1andv2 together",
-        "status": "source_findings_addressed_runtime_unvalidated",
-        "coordinatorHashVerified": true,
-        "pageSha256": "A1AC43D9283BA468038C1027E30335B98349EE94780F3466A6743240429FB5C9"
-      }
-    },
-    {
-      "id": "W2-CONTEXT",
-      "priority": "P0",
-      "title": "ربط سياق الكاشير والفترة وقراءات المعرف الدقيق",
-      "dependsOn": [
-        "W1-POS"
-      ],
-      "source": "D:/CodexWorktrees/cashier-context-experience",
-      "status": "source_integration_plan_assigned_to_pos_owner",
-      "constraints": "Read-only bounded N2source versusN1 composition/contextbinding audit. No sourceimplementation/App/Auth/API/OpenAPI changes yet; preserveN1DBcandidate."
-    },
-    {
-      "id": "W2-RECEIPT",
-      "priority": "P1",
-      "title": "ربط أرشيف الإيصال ومعاينة58/80mm وPDFالدقيق",
-      "dependsOn": [
-        "W1-PDF",
-        "W1-POS"
-      ],
-      "source": "D:/CodexWorktrees/retail-receipt-output",
-      "status": "queued"
-    },
-    {
-      "id": "W2-RELEASE-GATES",
-      "priority": "P0",
-      "title": "بوابات الدمج المحلي والعقود والمحركين على الرأس الموحد",
-      "dependsOn": [
-        "W1-PDF",
-        "W1-POS",
-        "W1-ONBOARD",
-        "W1-QA"
-      ],
-      "status": "queued",
-      "integrationMap": "Read-onlyverified95uniquepaths/nointercandidateoverlap. OrderPDFR3frozenF7C740,QAcommit0dd107ab,ONBOARDE90D+C5E5,POSB115+R022F9D+R03426437. POSrevisionsonlyoverlap. PDFworktreecurrentlyW2,doNOTcopyrenderer. CIextrasPOSfinalizationguardnotenabledcurrently;sourceproposalassigned."
-    },
-    {
-      "id": "W2-LATENCY",
-      "priority": "P1",
-      "title": "قياس محلي ممثل لزمن الدخول والقراءات وتحديد الاختناق",
-      "dependsOn": [],
-      "status": "queued",
-      "constraints": "bounded local synthetic data; no production load or claimed SLO without representative evidence"
-    },
-    {
-      "id": "W2-ZEBRA",
-      "priority": "P1",
-      "title": "ربط تحضير الملصقات ثم قبول الجهاز",
-      "dependsOn": [],
-      "status": "waiting_external_input",
-      "constraints": "model/connection/label dimensions/approved SDK needed; no install,EULA,device discovery or print authorized"
-    },
-    {
-      "id": "W2-COMMERCIAL-CONFIG",
-      "priority": "P0",
-      "title": "ضبط خطة البدء والعروض الفعلية",
-      "dependsOn": [
-        "W1-ONBOARD"
-      ],
-      "status": "waiting_business_decision",
-      "constraints": "no invented pricing,trial duration,quotas,publication or LIVE payment provider"
-    },
-    {
-      "id": "W2-PDF-LONG-CONTEXT",
-      "priority": "P2",
-      "title": "منع دخول وصف هوية القيد الطويل إلى تذييل PDF",
-      "dependsOn": [
-        "W1-PDF"
-      ],
-      "status": "queued_known_preexisting",
-      "constraints": "Existing renderer identity text canflow to799.89pt whilefooter755. Preserve fulltext,noellipsis/fontshrink; verify with actualPDF/PNG afterW1criticalgates. Not fixed byR3 and noacceptanceclaim for thispath."
-    },
-    {
-      "id": "W2-PDF-READABILITY",
-      "priority": "P1",
-      "title": "إظهار رموز الأصناف اللاتينية داخل PDF العربي وإصلاح تزاحم الترويسة",
-      "dependsOn": [
-        "W1-PDF"
-      ],
-      "status": "header_frozen_ASCII_item_blocks_source_in_progress",
-      "threadId": "01a0578e-3c3b-7af3-a347-10e1901b9055",
-      "constraints": "Headerdelta6F001880frozen;ASCIItypeditemCode/unitblocksapprovedwithsamefontfamily/layoutplan/cursorfragmentparity,legacyfallbackforineligiblecodes,noBidiJSdependency. Free-textmixed/companies/accountmixed notsolved. NoDecimal/splithelper/API/schemachanges;runtimepending."
-    },
-    {
-      "id": "W1-D3",
-      "priority": "P0",
-      "title": "منع عرض اشتراك شركة أخرى تحت سياق تبويب قديم",
-      "threadId": "01a0578e-85b1-7141-bc2e-b4f88bcac12d",
-      "status": "v2_integrated_generated_and_runtime_pending",
-      "constraints": "Fixture-backedUIinconsistencyconfirmed;ownsubscriptionomitscompanymetadataandconditionalUIguardcannotcheckit. Verifyreal-sessionwritebindingbeforefix;noauth/billing/recordreleaseorfinancialreplaychangeswithoutscopereview.",
-      "decision": "QAsoleowner:ownsnapshotcompanyidentityrequired,immutableexpectedCompanyIdonreview/attempt/request,servercompareactorbeforeidempotency/work,contextlatchblocksconfirmation/retrywithoutclearingrecord. SUBSCRIPTION_CONTEXT_MISMATCH mapsuncertain,notterminalrelease. NoApp/API/Authglobalchange. Contract/generatedD3ownbranchwillmergewithN1andregenerateoncombinedHEAD."
-    }
+    "Approved commercial start-plan configuration remains a business decision; do not invent terms",
+    "Zebra/device acceptance after prerequisites; not a reason to restart local Windows DB preparation"
   ],
   "history": [
     {
@@ -624,30 +646,32 @@
     {
       "date": "2026-08-31T16:31:29.2886795+03:00",
       "event": "User explicitly requested a separate evaluation-only task. Created01a05803-cf2b-77c1-9415-e0839dff48d6 to estimate overall/partial progress independently; implementation coordination continues."
+    },
+    {
+      "sha": "e3d6ba03aec8ceabd42428d67855fad2683968a6",
+      "ci": 33414229344,
+      "at": "2026-08-31T20:00:16.1329297+03:00",
+      "event": "Release46 deployed, public health/assets/DOM verified; resumed development per latest user instruction"
     }
   ],
-  "browserResourceStatus": "QA44runended43pass/1D3failure,0skip/retry. API26804/Vite27836 exited,3166/4216free,watchdognotused. No interactiveBrowserowned.",
-  "limitedRuntimeOwner": "ROOT closing combined gates; no new worker runtime or assignments",
+  "browserResourceStatus": "Released after anonymous post-deployment login/plans DOM checks; viewport reset.",
+  "limitedRuntimeOwner": "W3-RETAIL-RECEIPT",
   "validationOrder": [
-    "DB-PREP: Maria then MySQL archive extraction as data in separate permits; readback+offline trust inventory separately; no PE/DB until reviewed.",
-    "PDF: frozen R3+header+ASCII,103focused ->narrowtypes->PDF/extraction/PNG,worker1,no retry.",
-    "QA D3: source completion then OpenAPI generate/check, focusedunits/APIHTTP/Web/API/E2Etypes then new browserrun; preserve43/44evidence.",
-    "Real DB suites: ONBOARD separate fresh DB per suite/engine; N1 11finalization+1financial exact-name proof with owned fresh DB and isolatedclient.",
-    "Unified candidate: merge contracts/regenerate and run common guards/types/build/currentHEAD acceptance; no publishing."
+    "Task-specific units/types in isolated worktrees",
+    "Review exact-source evidence and integrate locally",
+    "CI gates on a unified candidate; no skips accepted for named DB cases",
+    "Future hosting deployment requires a fresh explicit publication instruction"
   ],
   "parallelReadOnlyResearch": [
     "Official portable Windows MariaDB10.11/MySQL8.4 distribution options;no downloads/install/processesauthorized.",
     "Isolated Prisma client generation/output/import options using existing tooling;no generation orjunction/shareddependencywritesauthorized."
   ],
-  "activeCapacityNote": "AtnewDBtaskdispatch PDFvalidationandDBdownloadpreflight areactive; N1/ONBOARD/QA areidle candidatesawaitingnextgates. Activeimplementationcapacity remainsbelow4 despite>4trackedtasks.",
+  "activeCapacityNote": "W2 local acceptance complete anddraft PR preparation forfreshCI. W3 sole localruntimeowner; nohostingpublication.",
   "prismaIsolationPlan": "Executed successfully inONBOARDownedDfolder. Generate/Smoke/154policyunits/APItypesPASS withNODE_OPTIONS512 andnoDB;shared91files/protectedunchanged. N1mayuseclientreadonlypermanifest569F946A. Temporarysourcealiases stilldoNOTprove distserver/E2Eruntime.",
-  "pendingRuntimeWindows": [
-    "Root closing common units/types/contracts; existingQA58browser preparation only; no new assignments.",
-    "Existing GitHub CI dualDB/build/upgrade/E2E gates beforemerge; authorized stagingdeployment only afterpassedgates."
-  ],
+  "pendingRuntimeWindows": [],
   "coordinatorGitException": "Completed successfully: df39116 committedonly2coordinationdocs afterdiffcheck;index/worktreecleanthen. No hooks override/ACLchange. This demonstrates localGitwriteworkedafterspace recovery,doesnotprovepriorrootcause.",
-  "lastCoordinatorCommit": "b95e00b6e26e92d632b02b20c4a28d56e62fae08",
-  "gitWriteOwner": "ROOT scoped generated/coordination checkpoint only; no other writer allocated.",
+  "lastCoordinatorCommit": "108d59764650568854e386de5a4d8e1510f0f071",
+  "gitWriteOwner": null,
   "evaluationTask": {
     "threadId": "01a05803-cf2b-77c1-9415-e0839dff48d6",
     "hostId": "local",
@@ -829,8 +853,8 @@
     "patchSha256": "E00D2040389F9EF80C7D2FC74712F76AC4E9EE65A18207E0A6C2FFF0747A2139",
     "generatedEvidence": "tmp/coordination/unified-validation/runs/20260831-150530:generate0/check0 fromcombinedN1+D3"
   },
-  "coordinationMode": "CLOSING_CURRENT_WORK_NO_NEW_ASSIGNMENTS",
-  "userClosingInstruction": "User2026-08-31: stop assigning new tasks; finish/save/document existing work, pushGitHub,merge and deploy existing hosting.",
+  "coordinationMode": "ACTIVE_POST_RELEASE",
+  "userClosingInstruction": "Current release46 was merged and deployed as requested. Latest user instruction authorizes resuming development/delegation after completion and periodic resumption when usage is available. No usage-reset credit redemption or future hosting publication is authorized by this continuation.",
   "pdfIntegration": {
     "files": 18,
     "head": "ad1041513f47a5b78ba42eb4547ffe9e9749c41c",
@@ -841,5 +865,43 @@
       "F6EF9358",
       "A12C6654"
     ]
+  },
+  "newAssignmentsAllowed": true,
+  "release46": {
+    "ci": 33414229344,
+    "pr": 46,
+    "status": "DEPLOYED_VERIFIED",
+    "report": "docs/RELEASE46_RESULT_AR.md",
+    "evidence": "tmp/coordination/release46-evidence",
+    "publicCatalog": "empty; no invented commercial terms",
+    "sha": "e3d6ba03aec8ceabd42428d67855fad2683968a6",
+    "release": "0.1.0-e3d6ba03aec8",
+    "site": "https://accounting.doralashab.com"
+  },
+  "historicalReceiptPolicy": "Earlier integration and source-only receipt objects below are historical at their recorded head; release46 is the current acceptance and deployment record. Do not interpret historical pending fields as current release state.",
+  "evaluation": {
+    "threadId": "01a05803-cf2b-77c1-9415-e0839dff48d6",
+    "status": "completed_release46_delta",
+    "path": "D:/CodexWorktrees/project-progress-evaluation",
+    "scope": "Read-only fixed11/17 denominators; no credit for W2 assignment.",
+    "result": {
+      "wavePercent": 70,
+      "waveRange": [
+        60,
+        80
+      ],
+      "systemPercent": 85,
+      "systemRange": [
+        75,
+        95
+      ],
+      "denominators": [
+        11,
+        17
+      ],
+      "evidenceCut": "2026-08-31T20:12:48+03:00",
+      "report": "D:/CodexWorktrees/project-progress-evaluation/RELEASE46_PROGRESS_DELTA_AR.md",
+      "limit": "Approximate fixed-scope weighted evaluation,not whole ERP completion or authenticated hosting acceptance; no credit for W2 assignment."
+    }
   }
 }

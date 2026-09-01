@@ -2,6 +2,7 @@ import { Router, type ErrorRequestHandler, type Request } from "express";
 import { z, ZodError } from "zod";
 import type { AuthService } from "../auth/auth-service.js";
 import { openApiRequestBodySchemas as bodies } from "../generated/openapi-request-guards.js";
+import { readWithPosContext } from "../platform/pos-request-context.js";
 import {
   InventoryBarcodeError,
   InventoryBarcodeService,
@@ -107,11 +108,8 @@ export function createInventoryBarcodeRouter(
   });
 
   router.post("/inventory-barcodes/resolve", async (request, response) => {
-    const context = await authorize(request, "inventory_barcodes.resolve", true);
-    response.json(await service.resolveBarcode(
-      context,
-      bodies.resolveInventoryBarcode.parse(request.body),
-    ));
+    response.json(await readWithPosContext(request, () => authorize(request, "inventory_barcodes.resolve", true),
+      context => service.resolveBarcode(context, bodies.resolveInventoryBarcode.parse(request.body))));
   });
 
   router.post("/inventory-barcodes/resolve-batch", async (request, response) => {

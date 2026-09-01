@@ -20,6 +20,8 @@ const result = { id: "701", completedAt: "2026-08-31T08:30:00.000Z",
   receipt: { id: "901", documentNumber: "RC-901", status: "POSTED", generatedJournalEntryIds: ["1002"] } };
 const rejection = { code: "POS_CHECKOUT_REJECTED", reason: "INVALID_CASH_BANK_ACCOUNT" };
 const tombstone = { kind: "POS_CHECKOUT_REJECTION", version: 1, rejection };
+const posContext = { userId: "1", companyId: "2" };
+const expectedHeaders = { "X-POS-Expected-User-Id": "1", "X-POS-Expected-Company-Id": "2" };
 
 function fixture() {
   const session: StoredSession = { id: 3n, state: "AUTHENTICATED", userId: 1n, selectedCompanyId: 2n,
@@ -51,18 +53,19 @@ function fixture() {
     auth, pos: { checkout } as unknown as PosService,
     posRecovery: new PosRecoveryService(new PrismaPosRecoveryQueryAdapter({ idempotencyRecord: { findUnique } } as unknown as PrismaClient)),
   });
-  const post = () => request(app).post("/api/v1/pos/checkouts/recovery").set("Cookie", "sid=synthetic-session").set("X-CSRF-Token", "synthetic-csrf");
+  const post = () => request(app).post("/api/v1/pos/checkouts/recovery").set(expectedHeaders).set("Cookie", "sid=synthetic-session").set("X-CSRF-Token", "synthetic-csrf");
   return { app, post, state, session, findUnique, hasPermission, checkout };
 }
 
 describe("mounted POS recovery with real authorization and generated HTTP contracts (fixture storage, not DB)", () => {
   it("returns the original invoice id, precise Decimal and no correlation under private cache headers", async () => {
     const f = fixture(); const response = await f.post().send({ attemptKey }).expect(200);
-    expect(response.body).toEqual({ outcome: "CONFIRMED", result });
+    expect(response.body).toEqual({ outcome: "CONFIRMED", result, posContext });
     expect(response.body.result.invoice.id).toBe("801");
     expect(response.body.result.invoice.id).not.toBe(result.invoice.generatedJournalEntryIds[0]);
     expect(response.headers["cache-control"]).toContain("no-store");
-    expect(JSON.stringify(response.body)).not.toMatch(/attemptKey|keyHash|Fingerprint|companyId|userId/);
+    expect(JSON.stringify(response.body)).not.toMatch(/attemptKey|keyHash|Fingerprint|sessionId/);
+    expect(response.body.result).not.toHaveProperty("posContext");
     expect(f.hasPermission).toHaveBeenCalledTimes(2);
     expect(f.checkout).not.toHaveBeenCalled();
     expect(f.findUnique).toHaveBeenCalledExactlyOnceWith({ where: { companyId_userId_operation_keyHash: {
@@ -76,8 +79,8 @@ describe("mounted POS recovery with real authorization and generated HTTP contra
   });
   it("requires the real authenticated CSRF pair", async () => {
     const f = fixture();
-    await request(f.app).post("/api/v1/pos/checkouts/recovery").set("Cookie", "sid=synthetic-session").send({ attemptKey }).expect(403);
-    await request(f.app).post("/api/v1/pos/checkouts/recovery").set("X-CSRF-Token", "synthetic-csrf").send({ attemptKey }).expect(401);
+    await request(f.app).post("/api/v1/pos/checkouts/recovery").set(expectedHeaders).set("Cookie", "sid=synthetic-session").send({ attemptKey }).expect(403);
+    await request(f.app).post("/api/v1/pos/checkouts/recovery").set(expectedHeaders).set("X-CSRF-Token", "synthetic-csrf").send({ attemptKey }).expect(401);
     expect(f.findUnique).not.toHaveBeenCalled();
   });
   it.each([{ attemptKey, companyId: "2" }, { attemptKey, userId: "1" }, { attemptKey: "invalid" },
@@ -86,7 +89,8 @@ describe("mounted POS recovery with real authorization and generated HTTP contra
   });
   it.each(["user", "company"] as const)("does not disclose another %s's evidence", async scope => {
     const f = fixture(); if (scope === "user") f.session.userId = 8n; else f.session.selectedCompanyId = 9n;
-    expect((await f.post().send({ attemptKey }).expect(200)).body).toEqual({ outcome: "UNKNOWN" });
+    expect((await f.post().send({ attemptKey }).expect(409)).body).toEqual({ status: 409, code: "POS_CONTEXT_CHANGED" });
+    expect(f.findUnique).not.toHaveBeenCalled();
   });
   it.each(["user", "company", "permission", "entitled"] as const)("checks %s again after result lookup", async changed => {
     const f = fixture(); f.state.afterLookup = () => {
@@ -94,21 +98,22 @@ describe("mounted POS recovery with real authorization and generated HTTP contra
       else if (changed === "company") f.session.selectedCompanyId = 9n;
       else f.state[changed] = false;
     };
-    const response = await f.post().send({ attemptKey }).expect(changed === "user" || changed === "company" ? 200 : 403);
+    const response = await f.post().send({ attemptKey }).expect(changed === "user" || changed === "company" ? 409 : 403);
     expect(JSON.stringify(response.body)).not.toContain("SI-801");
   });
   it("reads a retained versioned rejection after a lost response without any financial POST", async () => {
     const f = fixture(); f.state.responseStatus = 422; f.state.responseBody = tombstone;
-    expect((await f.post().send({ attemptKey }).expect(200)).body).toEqual({ outcome: "REJECTED", rejection });
+    expect((await f.post().send({ attemptKey }).expect(200)).body).toEqual({ outcome: "REJECTED", rejection, posContext });
     expect(f.checkout).not.toHaveBeenCalled();
   });
   it.each([tombstone, { code: "POS_CHECKOUT_REJECTED", reason: "INVALID_TOTAL" }])("never returns a rejection body as CONFIRMED", async body => {
     const f = fixture(); f.state.responseBody = body;
-    expect((await f.post().send({ attemptKey }).expect(200)).body).toEqual({ outcome: "UNKNOWN" });
+    expect((await f.post().send({ attemptKey }).expect(200)).body).toEqual({ outcome: "UNKNOWN", posContext });
   });
   it("hides version/kind and stored payload when mapping a terminal checkout error", async () => {
     const f = fixture(); f.checkout.mockRejectedValue(new IdempotentCommandRejection(422, tombstone));
     const response = await request(f.app).post("/api/v1/pos/checkouts").set("Cookie", "sid=synthetic-session")
+      .set(expectedHeaders)
       .set("X-CSRF-Token", "synthetic-csrf").set("Idempotency-Key", attemptKey).send({
         fiscalPeriodId: "1", documentDate: "2026-08-31", description: "Test sale", customerId: "1", warehouseId: "1", currencyId: "1",
         exchangeRate: "1.00000000", cashBankAccountId: "1", paymentMethodId: "1",

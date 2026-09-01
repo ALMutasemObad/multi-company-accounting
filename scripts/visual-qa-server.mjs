@@ -397,9 +397,24 @@ function list(data = []) {
   return { data, meta: { ...meta, total: data.length, totalPages: data.length ? 1 : 0 } };
 }
 
-export function responseFor(url, method) {
+export function responseFor(url, method, headers = {}) {
   const pathname = url.pathname.replace(/^\/api\/v1/, "");
   // Visual test data only: this server is never part of an application release.
+  if (pathname.startsWith("/pos/")) {
+    // This actor can view history only. Never reflect request headers as identity,
+    // or enable checkout/recovery/cashier reads to make a visual test pass.
+    const historyIdentity = pathname === "/pos/context/identity"
+      && url.searchParams.getAll("purpose").length === 1 && url.searchParams.get("purpose") === "history";
+    if (method !== "GET" || (!historyIdentity && pathname !== "/pos/sales")) return { status: 403, code: "FORBIDDEN" };
+    const userId = headers["x-pos-expected-user-id"];
+    const companyId = headers["x-pos-expected-company-id"];
+    const canonical = value => typeof value === "string" && value.length >= 1 && value.length <= 20
+      && value.charCodeAt(0) >= 49 && value.charCodeAt(0) <= 57 && !/[^0-9]/u.test(value) && BigInt(value) <= 18446744073709551615n;
+    if (!canonical(userId) || !canonical(companyId)) return { status: 400, code: "POS_CONTEXT_REQUIRED" };
+    const posContext = { userId: currentAuthorization.user.id, companyId: currentAuthorization.selectedCompany.id };
+    if (userId !== posContext.userId || companyId !== posContext.companyId) return { status: 409, code: "POS_CONTEXT_CHANGED" };
+    return { ...(historyIdentity ? {} : list()), posContext };
+  }
   if (pathname === "/public/subscription-plans") return {
     plans: [
       { id: "101", displayName: "التجريبية", description: "تعرّف على أدوات المنصة واكتشف كيف تنظم أعمالك.", recurringFee: "0.0000", trialDays: 14, includedUsers: 1, includedEmployees: 2, includedPostedDocuments: 50 },
@@ -628,8 +643,9 @@ const server = createServer((request, response) => {
     response.end(JSON.stringify({ code: "AUTHENTICATION_REQUIRED" }));
     return;
   }
-  const body = responseFor(url, request.method ?? "GET");
-  response.writeHead(body === null ? 204 : 200, {
+  const body = responseFor(url, request.method ?? "GET", request.headers);
+  const status = url.pathname.startsWith("/api/v1/pos/") && typeof body?.status === "number" ? body.status : body === null ? 204 : 200;
+  response.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
   });

@@ -4,6 +4,7 @@ import { z, ZodError } from 'zod';
 import type { AuthService } from '../auth/auth-service.js';
 import { openApiRequestBodySchemas as bodies } from '../generated/openapi-request-guards.js';
 import { AccountError, AccountService } from './account-service.js';
+import { readWithPosContext } from '../platform/pos-request-context.js';
 
 const id = z.string().regex(/^[1-9][0-9]*$/).transform(BigInt);
 const pagination = z.object({ page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(25), search: z.string().trim().min(1).max(200).optional() });
@@ -26,7 +27,10 @@ const centerJson = (v: CostCenter) => ({ id: v.id.toString(), parentId: v.parent
 export function createAccountRouter(auth: AuthService, service: AccountService) {
   const router = Router(); const authorize = (req: Request, permission: string, csrf: boolean) => auth.authorize({ sid: sid(req), csrfToken: req.header('X-CSRF-Token') ?? undefined, permission, requireCsrf: csrf });
   router.get('/account-types', async (req, res) => { await authorize(req, 'accounts.view', false); res.json({ data: (await service.listTypes()).map(typeJson) }); });
-  router.get('/accounts', async (req, res) => { const context = await authorize(req, 'accounts.view', false); const q = accountQuery.parse(req.query); const result = await service.listAccounts(context, q); res.json({ data: result.data.map(accountJson), meta: { page: q.page, pageSize: q.pageSize, total: result.total, totalPages: Math.ceil(result.total / q.pageSize) } }); });
+  router.get('/accounts', async (req, res) => { res.json(await readWithPosContext(req, () => authorize(req, 'accounts.view', false), async context => {
+    const q = accountQuery.parse(req.query); const result = await service.listAccounts(context, q);
+    return { data: result.data.map(accountJson), meta: { page: q.page, pageSize: q.pageSize, total: result.total, totalPages: Math.ceil(result.total / q.pageSize) } };
+  })); });
   router.post('/accounts', async (req, res) => { const context = await authorize(req, 'accounts.create', true); res.status(201).json(accountJson(await service.createAccount(context, bodies.createAccount.parse(req.body)))); });
   router.get('/accounts/default-template', async (req, res) => { const context = await authorize(req, 'accounts.view', false); res.json(await service.getDefaultTemplateStatus(context)); });
   router.post('/accounts/default-template/apply', async (req, res) => { const context = await authorize(req, 'accounts.template.apply', true); res.json(await service.applyDefaultTemplate(context)); });

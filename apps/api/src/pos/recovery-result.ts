@@ -1,11 +1,11 @@
 import type { PosRecoveryResult } from "./recovery-types.js";
-import { completePosCheckout201ResponseSchema } from "../generated/openapi-request-guards.js";
+import { posCheckoutResultResponseComponentSchema } from "../generated/openapi-request-guards.js";
 
 /** This projects the original committed command acknowledgement, not current document status.
  * Explicit projection excludes accidental credentials/correlation or future extra fields.
  */
 export function readPosRecoveryResult(input: unknown): PosRecoveryResult | null {
-  const parsed = completePosCheckout201ResponseSchema.safeParse(input);
+  const parsed = posCheckoutResultResponseComponentSchema.safeParse(input);
   if (!parsed.success) return null;
   const value = parsed.data;
   const { invoice, receipt } = value;

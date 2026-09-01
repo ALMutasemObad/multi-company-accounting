@@ -4,6 +4,7 @@ import { z, ZodError } from "zod";
 import type { AuthService } from "../auth/auth-service.js";
 import { openApiRequestBodySchemas as bodies } from "../generated/openapi-request-guards.js";
 import { TaxError, TaxService, type TaxUsage } from "./tax-service.js";
+import { readWithPosContext } from "../platform/pos-request-context.js";
 
 const id = z.string().regex(/^[1-9][0-9]*$/).transform(BigInt);
 const activeOnly = z.enum(["true", "false"])
@@ -48,10 +49,10 @@ export function createTaxRouter(auth: AuthService, service: TaxService) {
       : "inputTaxAccountId";
 
     router.get(options.basePath, async (request, response) => {
-      const context = await authorize(request, options.viewPermission, false);
+      response.json(await readWithPosContext(request, () => authorize(request, options.viewPermission, false), async context => {
       const query = listQuery.parse(request.query);
       const result = await service.list(context, options.usage, query);
-      response.json({
+      return {
         data: result.data
           .map((value) => TaxService.json(value, options.usage)),
         meta: {
@@ -60,7 +61,8 @@ export function createTaxRouter(auth: AuthService, service: TaxService) {
           total: result.total,
           totalPages: Math.ceil(result.total / query.pageSize),
         },
-      });
+      };
+      }));
     });
 
     router.post(options.basePath, async (request, response) => {
