@@ -8,6 +8,7 @@ import { createFiscalRouter } from '../src/fiscal/fiscal-router.js';
 import { createManualJournalRouter } from '../src/journals/manual-journal-router.js';
 import { createPaymentRouter } from '../src/payments/payment-router.js';
 import { createPrintRouter } from '../src/printing/print-router.js';
+import { createRetailReceiptRouter } from '../src/printing/retail-receipt-router.js';
 import { createBarcodeLabelRouter } from '../src/printing/barcode-label-router.js';
 import { createPurchaseInvoiceRouter } from '../src/purchases/purchase-invoice-router.js';
 import { createReceiptRouter } from '../src/receipts/receipt-router.js';
@@ -60,6 +61,7 @@ const routers = [
   { prefix: '', router: createUserRouter(stub, stub, stub) },
   { prefix: '', router: createCompanyRouter(stub, stub) },
   { prefix: '', router: createPrintRouter(stub, stub) },
+  { prefix: '', router: createRetailReceiptRouter(stub, stub) },
   { prefix: '', router: createBarcodeLabelRouter(stub, stub) },
   { prefix: '', router: createAuditRouter(stub, stub) },
   { prefix: '', router: createSecurityEventRouter(stub, stub) },
