@@ -15,8 +15,10 @@ export class PrintService {
     this.locator = locator ?? new PrismaPrintDocumentLocatorAdapter(prisma);
   }
 
-  async print(context: ActorContext, kind: PrintableDocumentKind, entityId: bigint) {
+  async print(context: ActorContext, kind: PrintableDocumentKind, entityId: bigint, assertAuthorized?: () => Promise<void>) {
     const documentId = await this.resolveDocument(context, kind, entityId);
+    // Authorization stays outside transactions. A later rejection cannot undo an earlier commit.
+    await assertAuthorized?.();
     let archive;
     try {
       archive = await this.prisma.$transaction(async (tx) => {
@@ -28,6 +30,7 @@ export class PrintService {
     } catch (error) { if (error instanceof Error && error.message === "DOCUMENT_NOT_PRINTABLE") throw new PrintError("DOCUMENT_NOT_PRINTABLE"); throw error; }
     const snapshot = archive.snapshot as unknown as PrintSnapshot;
     const buffer = await renderDocumentPdf(snapshot);
+    await assertAuthorized?.();
     const updated = await this.prisma.$transaction(async (tx) => {
       const now = new Date();
       await tx.documentPrintArchive.updateMany({ where: { id: archive.id, firstPrintedAt: null }, data: { firstPrintedAt: now } });

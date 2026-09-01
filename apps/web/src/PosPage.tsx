@@ -25,6 +25,8 @@ import { createPosContextReader, posContextOptionsPath, type PosContextOption } 
 import { ReferenceCombobox } from "./ReferenceCombobox";
 import { cashierContextDictionaries } from "./i18n/locales/cashier-context";
 import { posScopeDictionaries } from "./i18n/locales/pos-scope";
+import { RetailReceiptOutput } from "./RetailReceiptOutput";
+import { createRetailReceiptTransport } from "./retail-receipt-transport";
 import "./pos-experience-styles.css";
 
 type Notice = (message: string, tone?: "success" | "error") => void;
@@ -49,6 +51,7 @@ function PosExperience({ notify }: { notify: Notice }) {
   const [scopeGate] = useState(() => createPosScopeController({ userId: user.id, companyId: selectedCompany?.id ?? "" }, undefined,
     permissionSet.has("pos.checkout") ? "checkout" : "history"));
   const scopeState = useSyncExternalStore(scopeGate.subscribe, scopeGate.getSnapshot, scopeGate.getSnapshot);
+  const [receiptOutput] = useState(() => createRetailReceiptTransport({ userId: user.id, companyId: selectedCompany?.id ?? "" }, scopeGate));
   const [catalogReader] = useState(() => createPosCatalogReader(scopeGate.request));
   const [cashier] = useState(() => createCashierContextController(createPosContextReader(scopeGate.request)));
   const cashierState = useSyncExternalStore(cashier.subscribe, cashier.getSnapshot, cashier.getSnapshot);
@@ -304,20 +307,22 @@ function PosExperience({ notify }: { notify: Notice }) {
   return <section className="workspace-page pos-experience">
     <PageHeader kicker={t("pos.kicker")} title={t("pos.title")} description={t("pos.cashierDescription")} />
     {canCheckout && <form onSubmit={submit} className="pos-experience-form">
-      <CashierContextPanel controller={cashier} currentScopeKey={currentCashierKey} locale={locale} onReviewed={applyReviewed} blocked={blocked} canInteract={canEdit}
+      {!result && <><CashierContextPanel controller={cashier} currentScopeKey={currentCashierKey} locale={locale} onReviewed={applyReviewed} blocked={blocked} canInteract={canEdit}
         onDateChange={(documentDate) => patchContext({ documentDate, periodId: "" })}
         renderPicker={(picker) => <ReferenceCombobox<PosContextOption> endpoint={posContextOptionsPath(picker.field)} reader={scopeGate.request}
           value={picker.id ?? ""} selectedLabel={picker.label} disabled={picker.disabled || blocked}
           optionLabel={(row) => row.label} optionDisabled={(row) => row.isAvailable !== true}
           onChange={(row) => { if (canEdit() && (!row || row.isAvailable === true)) picker.onSelect(row?.id ?? null); }}
           placeholder={cashierContextDictionaries[locale][picker.field]} searchLabel={cashierContextDictionaries[locale][picker.field]} />} />
-      <PosOperatingContext value={context} blocked={blocked} onChange={patchContext} reader={scopeGate.request} />
+      <PosOperatingContext value={context} blocked={blocked} onChange={patchContext} reader={scopeGate.request} /></>}
       <PosRecoveryPanel locale={locale} state={recoveryState} canCheckout={canCheckout}
         barcodePending={pending > 0 || profileRequests.current.size > 0 || Boolean(scanner.current?.hasPending())}
         rejectionMessage={recoveryState.status === "rejected" ? messageForError(recoveryState.rejection.code, recoveryState.rejection.reason) : undefined}
         onCheck={() => { if (mounted.current && scopeGate.isReady() && draftEpoch.current === draftTicket) void recovery.check(); }} onNewSale={() => { void newSale(); }}
         onReviewRejected={() => { void reviewRejected(); }} />
       {result && <div className="pos-experience-document-links">{permissionSet.has("sales_invoices.view") && <a href="#sales">{t("pos.openSalesList")}</a>}{permissionSet.has("receipts.view") && <a href="#receipts">{t("pos.openReceiptsList")}</a>}</div>}
+      {result && <RetailReceiptOutput access={{ userId: user.id, companyId: selectedCompany?.id ?? null, permissionSet, moduleSet: new Set(modules) }}
+        confirmedSalesInvoiceId={result.invoice.id} locale={locale} readPreview={receiptOutput.readPreview} downloadA4={receiptOutput.downloadA4} />}
       <div className="pos-experience-workspace"><div className="panel pos-experience-selection">
         <fieldset disabled={blocked} className="pos-experience-scanner-guard">
           <InventoryBarcodeScanner ref={scanner} reader={scopeGate.request} enabled={canScan} blocked={blocked} autoFocus maxLines={50} onPendingChange={(count) => { if (mounted.current) { barcodePendingRef.current = count; setBarcodePending(count); syncCashierLock(); } }} onResolved={(resolved) => addItem({ id: resolved.inventoryItem.id, label: `${resolved.inventoryItem.code} — ${localizedReferenceName(resolved.inventoryItem)} (${resolved.inventoryItem.unitOfMeasure.code})`, description: localizedReferenceName(resolved.inventoryItem) })} />

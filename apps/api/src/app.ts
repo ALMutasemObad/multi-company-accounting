@@ -34,6 +34,8 @@ import type { CompanyService } from './companies/company-service.js';
 import { createCompanyRouter } from './companies/company-router.js';
 import type { PrintService } from './printing/print-service.js';
 import { createPrintRouter } from './printing/print-router.js';
+import type { RetailReceiptService } from './printing/retail-receipt-service.js';
+import { createRetailReceiptRouter } from './printing/retail-receipt-router.js';
 import type { BarcodeLabelService } from './printing/barcode-label-service.js';
 import { createBarcodeLabelRouter } from './printing/barcode-label-router.js';
 import type { AuditService } from './audit/audit-service.js';
@@ -180,6 +182,7 @@ export type AppServices = {
   platformPayments?: PlatformPaymentService;
   companies?: CompanyService;
   printing?: PrintService;
+  retailReceipts?: RetailReceiptService;
   barcodeLabels?: BarcodeLabelService;
   audit?: AuditService;
   security?: SecurityEventService;
@@ -384,6 +387,7 @@ export function createApp(config: AppConfig, services: AppServices = {}) {
   if (services.auth && services.users && services.workforceAccess) app.use('/api/v1', createUserRouter(services.auth, services.users, services.workforceAccess));
   if (services.auth && services.companies) app.use('/api/v1', createCompanyRouter(services.auth, services.companies));
   if (services.auth && services.printing) app.use('/api/v1', createPrintRouter(services.auth, services.printing));
+  if (services.auth && services.retailReceipts) app.use('/api/v1', createRetailReceiptRouter(services.auth, services.retailReceipts));
   if (services.auth && services.barcodeLabels) app.use('/api/v1', createBarcodeLabelRouter(services.auth, services.barcodeLabels));
   if (services.auth && services.audit) app.use('/api/v1', createAuditRouter(services.auth, services.audit));
   if (services.auth && services.security) app.use('/api/v1', createSecurityEventRouter(services.auth, services.security));

@@ -8302,23 +8302,81 @@ paths:
         '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
       x-permission: sales_invoices.reverse
       security: [{ SessionCookie: [], CsrfToken: [] }]
-  /sales-invoices/{invoiceId}/pdf:
+  /sales-invoices/{id}/receipt-preview:
+    get:
+      tags: [Sales Invoices]
+      summary: معاينة إيصال البيع من الأرشيف الموجود بعرض شاشة 58 أو 80 مم
+      description: >-
+        قراءة فقط بإذن sales_invoices.print ووحدة SALES مع إذن pos.view ووحدة POS.
+        معرّف المسار SalesInvoiceId وليس AccountingDocumentId أو ArchiveId؛ تأتي هوية Actor
+        من جلسة Auth وتُقارن بالرأسين قبل القراءة وبعدها. الرد إسقاط محدود من لقطة SALES_INVOICE
+        المرحلة تاريخيًا، وليس اللقطة الكاملة أو حالة السداد الحالية. الأرقام نصوص الأرشيف دون
+        تحويل أو حساب. لا ينشئ المسار أرشيفًا مفقودًا، ولا يعيد تخزين بصمته، ولا يزيد printCount
+        أو يكتب أثر طباعة. حد المعاينة 50 بندًا دون قص. 58/80 مم معاينة شاشة فقط؛ PDF المنفصل A4.
+      operationId: getRetailReceiptPreview
+      parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/PosContextId' }, description: Canonical SalesInvoiceId within unsigned BIGINT. }
+      - $ref: '#/components/parameters/PosExpectedUserId'
+      - $ref: '#/components/parameters/PosExpectedCompanyId'
+      - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200': { description: إسقاط تاريخي محدود مع هوية السياق المطابقة, content: { application/json: { schema: { $ref: '#/components/schemas/RetailReceiptPreviewResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422':
+          description: الأرشيف مفقود أو غير سليم أو غير مدعوم أو يتجاوز حد المعاينة؛ لا backfill ولا قص
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status, code, reason]
+                properties:
+                  status: { type: integer, enum: [422] }
+                  code: { type: string, enum: [BUSINESS_RULE_VIOLATION] }
+                  reason: { type: string, enum: [ARCHIVE_NOT_AVAILABLE, ARCHIVE_INTEGRITY_FAILED, RECEIPT_PREVIEW_UNSUPPORTED, RECEIPT_PREVIEW_LIMIT_EXCEEDED] }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+      x-permission: sales_invoices.print
+      security: [{ SessionCookie: [] }]
+  /sales-invoices/{id}/pdf:
     get:
       tags: [Sales Invoices]
       summary: طباعة فاتورة المبيعات أو الإشعار الدائن من لقطة الترحيل التاريخية
       operationId: printSalesInvoice
       parameters:
-      - { name: invoiceId, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
+      - { name: id, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
+      - $ref: '#/components/parameters/OptionalPosExpectedUserId'
+      - $ref: '#/components/parameters/OptionalPosExpectedCompanyId'
+      description: >-
+        تنزيل A4 بفعل مستخدم صريح. عند إرسال رأسي POS معًا يُعاد التفويض قبل معاملة الأرشفة
+        وبعد الرسم وقبل معاملة عداد الطباعة والتدقيق، ثم قبل تسليم الرد؛ تظهر رؤوس الهوية
+        للمطابقة قبل حفظ الملف. غياب الرأسين يحفظ سلوك المتصلين الحاليين. هذه فحوص منفصلة
+        عن المعاملات، ولا تمنع السباق ذريًا ولا تتراجع عن أثر تم اعتماده إذا أُلغي التنزيل.
       responses:
         '200':
           description: ملف PDF عربي مبني على لقطة تاريخية ثابتة
           headers:
             X-Print-Archive-Id: { schema: { type: string } }
             X-Print-Archive-Hash: { schema: { type: string } }
+            X-POS-User-Id: { description: Present only for a matched POS header pair, schema: { $ref: '#/components/schemas/PosContextId' } }
+            X-POS-Company-Id: { description: Present only for a matched POS header pair, schema: { $ref: '#/components/schemas/PosContextId' } }
+            X-Sales-Invoice-Id: { description: Requested SalesInvoiceId for a matched POS header pair, schema: { $ref: '#/components/schemas/PosContextId' } }
           content:
             application/pdf: { schema: { type: string, format: binary } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
       x-permission: sales_invoices.print
       security: [{ SessionCookie: [] }]
   /purchase-invoices:
@@ -15267,6 +15325,73 @@ components:
         readinessReason:
           type: [string, 'null']
           enum: [null, PROFILE_MISSING, PROFILE_INACTIVE, ITEM_INACTIVE, UNIT_INACTIVE, CURRENCY_UNAVAILABLE, REVENUE_ACCOUNT_INVALID, TAX_RATE_INVALID]
+    RetailReceiptDecimalText:
+      type: string
+      minLength: 1
+      maxLength: 80
+      pattern: '^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$(?![\s\S])'
+      description: Exact archived decimal text including scale and signed zero; no arithmetic or Number conversion.
+    RetailReceiptLine:
+      type: object
+      additionalProperties: false
+      required: [number, itemCode, itemName, unitOfMeasureCode, description, quantity, unitPrice, discount, taxRate, tax, total]
+      properties:
+        number: { type: integer, minimum: 1, maximum: 65535 }
+        itemCode: { type: [string, 'null'], maxLength: 2048 }
+        itemName: { type: [string, 'null'], maxLength: 2048 }
+        unitOfMeasureCode: { type: [string, 'null'], maxLength: 2048 }
+        description: { type: string, maxLength: 2048 }
+        quantity: { $ref: '#/components/schemas/RetailReceiptDecimalText' }
+        unitPrice: { $ref: '#/components/schemas/RetailReceiptDecimalText' }
+        discount: { $ref: '#/components/schemas/RetailReceiptDecimalText' }
+        taxRate: { $ref: '#/components/schemas/RetailReceiptDecimalText' }
+        tax: { $ref: '#/components/schemas/RetailReceiptDecimalText' }
+        total: { $ref: '#/components/schemas/RetailReceiptDecimalText' }
+    RetailReceiptPreviewResponse:
+      type: object
+      additionalProperties: false
+      required: [source, company, document, invoice, barcodeStatus, pdfFormat, posContext]
+      properties:
+        source:
+          type: object
+          additionalProperties: false
+          required: [salesInvoiceId, archiveId, archiveHash, archivedAt]
+          properties:
+            salesInvoiceId: { $ref: '#/components/schemas/PosContextId' }
+            archiveId: { $ref: '#/components/schemas/PosContextId' }
+            archiveHash: { type: string, minLength: 64, maxLength: 64, pattern: '^[0-9a-f]{64}$(?![\s\S])' }
+            archivedAt: { type: string, format: date-time, pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$(?![\s\S])' }
+        company:
+          type: object
+          additionalProperties: false
+          required: [id, name]
+          properties:
+            id: { $ref: '#/components/schemas/PosContextId' }
+            name: { type: string, maxLength: 2048 }
+        document:
+          type: object
+          additionalProperties: false
+          required: [id, type, number, date, statusAtArchive]
+          properties:
+            id: { $ref: '#/components/schemas/PosContextId' }
+            type: { type: string, enum: [SALES_INVOICE] }
+            number: { type: string, maxLength: 2048 }
+            date: { type: string, maxLength: 2048 }
+            statusAtArchive: { type: string, enum: [POSTED] }
+        invoice:
+          type: object
+          additionalProperties: false
+          required: [currencyCode, subtotal, discountTotal, taxTotal, total, lines]
+          properties:
+            currencyCode: { type: string, maxLength: 2048 }
+            subtotal: { $ref: '#/components/schemas/RetailReceiptDecimalText' }
+            discountTotal: { $ref: '#/components/schemas/RetailReceiptDecimalText' }
+            taxTotal: { $ref: '#/components/schemas/RetailReceiptDecimalText' }
+            total: { $ref: '#/components/schemas/RetailReceiptDecimalText' }
+            lines: { type: array, minItems: 1, maxItems: 50, items: { $ref: '#/components/schemas/RetailReceiptLine' } }
+        barcodeStatus: { type: string, enum: [NOT_CAPTURED_IN_V1] }
+        pdfFormat: { type: string, enum: [A4] }
+        posContext: { $ref: '#/components/schemas/PosResponseContext' }
     PosContextId:
       type: string
       maxLength: 20

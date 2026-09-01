@@ -107,19 +107,47 @@ export async function logout() {
 export const idempotencyKey = (operation: string, id: string) =>
   `${operation}-${id}-${crypto.randomUUID()}`;
 
-export async function downloadFile(path: string, fallbackFilename: string) {
-  const response = await fetch(`/api/v1${path}`, { credentials: "include" });
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    throw new ApiError(messageForError(body.code, body.reason), response.status, body.code, body.reason);
-  }
-  const blob = await response.blob();
-  const disposition = response.headers.get("Content-Disposition") ?? "";
-  const filename = disposition.match(/filename="([^"]+)"/)?.[1] ?? fallbackFilename;
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url; anchor.download = filename; document.body.appendChild(anchor); anchor.click(); anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+export type DownloadOptions = RequestPolicy & {
+  headers?: HeadersInit;
+  beforeSave?: (response: Response, signal: AbortSignal) => void | Promise<void>;
+};
+
+export async function downloadFile(path: string, fallbackFilename: string, options: DownloadOptions = {}) {
+  return withinRequest(async (signal) => {
+    const response = await fetch(`/api/v1${path}`, { credentials: "include", ...(options.headers === undefined ? {} : { headers: options.headers }), signal });
+    assertRequestActive(signal);
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      assertRequestActive(signal);
+      throw new ApiError(messageForError(body.code, body.reason), response.status, body.code, body.reason);
+    }
+    const blob = await response.blob();
+    assertRequestActive(signal);
+    // A scoped caller checks response identity and its current view before any browser save.
+    await options.beforeSave?.(response, signal);
+    assertRequestActive(signal);
+    const disposition = response.headers.get("Content-Disposition") ?? "";
+    const filename = disposition.match(/filename="([^"]+)"/)?.[1] ?? fallbackFilename;
+    let url: string | undefined;
+    let anchor: HTMLAnchorElement | undefined;
+    let saved = false;
+    try {
+      url = URL.createObjectURL(blob);
+      anchor = document.createElement("a");
+      anchor.href = url; anchor.download = filename; document.body.appendChild(anchor);
+      assertRequestActive(signal);
+      anchor.click();
+      saved = true;
+    } finally {
+      try { anchor?.remove(); } finally {
+        if (url !== undefined) {
+          const allocatedUrl = url;
+          if (saved) window.setTimeout(() => URL.revokeObjectURL(allocatedUrl), 1000);
+          else URL.revokeObjectURL(allocatedUrl);
+        }
+      }
+    }
+  }, options);
 }
 
-export const downloadPdf = (path: string) => downloadFile(path, "accounting-document.pdf");
+export const downloadPdf = (path: string, options: DownloadOptions = {}) => downloadFile(path, "accounting-document.pdf", options);

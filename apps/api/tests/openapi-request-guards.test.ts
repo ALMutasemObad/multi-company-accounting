@@ -23,12 +23,13 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 327, requestBodies: 170, responseBodies: 2182 });
+    expect(openApiContractCoverage).toEqual({ operations: 328, requestBodies: 170, responseBodies: 2199 });
     expect(openApiOperationRoutes).toMatchObject({
       'GET /pos/context/identity': 'getPosContextIdentity',
       'GET /pos/context/period': 'resolvePosContextPeriod',
       'GET /pos/context/references/{field}/{referenceId}': 'getPosContextReference',
       'GET /pos/context/options/{field}': 'listPosContextOptions',
+      'GET /sales-invoices/{id}/receipt-preview': 'getRetailReceiptPreview',
     });
     expect(guardedOpenApiOperations).toHaveLength(170);
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining(['createItemSellingProfile', 'updateItemSellingProfile']));

@@ -145,6 +145,61 @@ beforeEach(async () => {
 afterEach(() => { unmount(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("PosPage recovery wiring via hook and child-port harness", () => {
+  it("hides uninitialized cashier inputs after confirmed marker recovery and prepares them only for explicit new sale", async () => {
+    unmount(); transport.mockClear();
+    const markerKey = posRecoveryKey(recoveryScope);
+    const marker = JSON.stringify({ version: 1, attemptKey: key1, startedAt: Date.now() });
+    window.localStorage.setItem(markerKey, marker);
+    const removeMarker = vi.spyOn(window.localStorage, "removeItem");
+    recoveryReply = async () => echo({ outcome: "CONFIRMED", result: recoveryResult });
+    render(); await settle();
+
+    expect(recovery().state).toEqual({ status: "confirmed", result: recoveryResult });
+    expect(() => cashier()).toThrow("Missing child port"); expect(() => context()).toThrow("Missing child port");
+    expect(transport.mock.calls.map(([path]) => path)).toEqual(["/pos/context/identity", "/pos/checkouts/recovery"]);
+    expect(recoveryReads()[0]![1]).toMatchObject({ method: "POST", body: JSON.stringify({ attemptKey: key1 }) });
+    expect(recoveryReads()[0]![1]).not.toHaveProperty("idempotencyKey");
+    expect(window.localStorage.getItem(markerKey)).toBe(marker); expect(removeMarker).not.toHaveBeenCalled();
+    expect(cart().blocked).toBe(true); expect(cart().lines).toEqual([]); expect(commands()).toHaveLength(0);
+
+    // Re-rendering or submitting the still-present form must not replace the reserved attempt.
+    render(); submit(); await settle();
+    expect(recovery().state.status).toBe("confirmed"); expect(window.localStorage.getItem(markerKey)).toBe(marker);
+    expect(() => cashier()).toThrow("Missing child port"); expect(() => context()).toThrow("Missing child port");
+    expect(removeMarker).not.toHaveBeenCalled(); expect(commands()).toHaveLength(0); expect(recoveryReads()).toHaveLength(1);
+
+    recovery().onNewSale(); await settle();
+    expect(recovery().state.status).toBe("ready"); expect(window.localStorage.getItem(markerKey)).toBeNull();
+    expect(removeMarker).toHaveBeenCalledExactlyOnceWith(markerKey);
+    const readyCashier = cashier(); const readyContext = context();
+    expect(readyCashier.controller.getSnapshot()).toMatchObject({ scopeKey: readyCashier.currentScopeKey,
+      documentDate: readyContext.value.documentDate, lock: null, canEdit: true,
+      period: { documentDate: readyContext.value.documentDate, status: "RESOLVED", period: { id: "4" } } });
+    expect(readyCashier.currentScopeKey).not.toBe(""); expect(readyContext.blocked).toBe(false);
+    expect(transport.mock.calls.filter(([path]) => path.startsWith("/pos/context/period?")))
+      .toHaveLength(1);
+    expect(scannerHandle.reset).toHaveBeenCalledOnce(); expect(cart().lines).toEqual([]);
+    expect(commands()).toHaveLength(0); expect(recoveryReads()).toHaveLength(1); expect(crypto.randomUUID).not.toHaveBeenCalled();
+  });
+
+  it.each(["UNKNOWN", "REJECTED"] as const)("keeps context inputs protected for a recovered %s marker", async outcome => {
+    unmount(); transport.mockClear();
+    const markerKey = posRecoveryKey(recoveryScope);
+    const marker = JSON.stringify({ version: 1, attemptKey: key1, startedAt: Date.now() });
+    window.localStorage.setItem(markerKey, marker);
+    recoveryReply = async () => echo(outcome === "UNKNOWN" ? { outcome } : {
+      outcome, rejection: { code: "POS_CHECKOUT_REJECTED", reason: "INSUFFICIENT_STOCK" },
+    });
+    render(); await settle();
+    expect(recovery().state.status).toBe(outcome.toLowerCase());
+    expect(cashier().blocked).toBe(true); expect(context().blocked).toBe(true);
+    expect(cashier().controller.getSnapshot().lock).toBe(outcome === "UNKNOWN" ? "checkout-unknown" : "checkout-completed");
+    context().onChange({ notes: "must stay blocked" }); catalog().onAdd(item); submit(); recovery().onNewSale(); await settle();
+    expect(recovery().state.status).toBe(outcome.toLowerCase()); expect(context().value.notes).toBe("");
+    expect(cart().lines).toEqual([]); expect(window.localStorage.getItem(markerKey)).toBe(marker);
+    expect(commands()).toHaveLength(0); expect(recoveryReads()).toHaveLength(1);
+  });
+
   it("sends one UUIDv4 command, freezes edits synchronously, reloads marker and only reads the original outcome", async () => {
     await prepareCart(); const editContext = context().onChange; const editCart = cart().onChange; const add = catalog().onAdd;
     const originalKey = cart().lines[0]!.key;

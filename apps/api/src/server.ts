@@ -14,6 +14,7 @@ import { SupplierService } from './suppliers/supplier-service.js';
 import { ReportService } from './reports/report-service.js';
 import { createCompanyService } from './composition/create-company-service.js';
 import { PrintService } from './printing/print-service.js';
+import { createRetailReceiptService } from './composition/create-retail-receipt-service.js';
 import { createAuditService } from './composition/create-audit-service.js';
 import { createFinancialDocumentServices } from './composition/create-financial-document-services.js';
 import { createSecurityEventService } from './composition/create-security-event-service.js';
@@ -281,6 +282,7 @@ async function startServer() {
     platformPayments,
     companies: createCompanyService(database),
     printing: new PrintService(database),
+    retailReceipts: createRetailReceiptService(database),
     barcodeLabels: createBarcodeLabelService(database),
     audit: createAuditService(database),
     security: createSecurityEventService(database),
