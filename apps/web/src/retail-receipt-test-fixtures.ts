@@ -10,7 +10,7 @@ export const retailReceiptAccessFixture = (): RetailReceiptAccess => ({
 export const retailReceiptPreviewFixture = (): RetailReceiptPreview => ({
   source: { salesInvoiceId: '42', archiveId: '9007199254740993001',
     archiveHash: 'a'.repeat(64), archivedAt: '2026-08-31T09:00:00.000Z' },
-  company: { id: '1', name: 'Jawar Grocery 2026' },
+  company: { id: '1', name: 'Neighborhood Grocery 2026' },
   document: { id: '118', type: 'SALES_INVOICE', number: 'INV-2026-000000000000000118',
     date: '2026-08-31', statusAtArchive: 'POSTED' },
   invoice: {

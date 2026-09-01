@@ -8,7 +8,7 @@ export type RetailReceiptArchiveFixture = RetailReceiptStoredArchive & { snapsho
 
 export function retailReceiptArchiveFixture(): RetailReceiptArchiveFixture {
   const snapshot = structuredClone(printSnapshotFixture);
-  snapshot.company.name = 'بقالة جوار - Jawar 2026';
+  snapshot.company.name = 'Neighborhood Grocery 2026';
   snapshot.document.type = 'SALES_INVOICE';
   snapshot.document.number = 'INV-2026-000000000000000118';
   snapshot.settlement = null;
