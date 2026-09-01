@@ -1,8 +1,8 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { assertLocalBrowserFile, prepareAcceptanceEnvironment } from './environment.mjs';
+import { assertLocalBrowserFile, createAcceptanceRuntimeRoot, prepareAcceptanceEnvironment } from './environment.mjs';
 
 const [mode = 'run', ...extra] = process.argv.slice(2);
 if (!['run', 'list'].includes(mode) || extra.length) {
@@ -13,18 +13,21 @@ process.chdir(root);
 const output = join(root, 'test-results/subscription-acceptance');
 mkdirSync(output, { recursive: true });
 const run = mkdtempSync(join(output, `${mode}-`));
-for (const name of ['temp', 'cache', 'profile', 'profile/roaming', 'profile/local']) mkdirSync(join(run, name), { recursive: true });
+const runtime = createAcceptanceRuntimeRoot(run, process.env);
+for (const name of ['temp', 'cache', 'profile', 'profile/roaming', 'profile/local']) mkdirSync(join(runtime, name), { recursive: true });
+if (runtime !== run) process.once('exit', () => rmSync(runtime, { recursive: true, force: true }));
 
 // Only this process and its children receive the isolated environment.
 const { browser, removed } = await prepareAcceptanceEnvironment(process.env, run, process.execPath, async () => {
   const { chromium } = await import('@playwright/test');
   return chromium.executablePath();
-});
+}, runtime);
 process.env.SUBSCRIPTION_ACCEPTANCE_MODE = mode;
 const manifest = readFileSync(new URL('./expected-cases.json', import.meta.url));
 writeFileSync(join(run, 'invocation.json'), `${JSON.stringify({
   mode, createdAt: new Date().toISOString(), node: process.version, platform: process.platform,
   commit: process.env.GITHUB_SHA ?? null, expectedCases: 58, workers: 1, retries: 0,
+  runtimeIsolation: runtime === run ? 'evidence-run' : 'short-system-temp',
   manifestSha256: createHash('sha256').update(manifest).digest('hex'), removedEnvironmentVariables: removed,
 }, null, 2)}\n`);
 console.log(`Subscription acceptance evidence: ${run}`);

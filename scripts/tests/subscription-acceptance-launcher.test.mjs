@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { assertLocalBrowserFile, prepareAcceptanceEnvironment } from '../subscription-acceptance/environment.mjs';
+import { assertLocalBrowserFile, createAcceptanceRuntimeRoot, prepareAcceptanceEnvironment } from '../subscription-acceptance/environment.mjs';
 
 const output = resolve('test-results/subscription-acceptance');
 mkdirSync(output, { recursive: true });
@@ -34,6 +35,47 @@ for (const [name, original, selected] of installations) {
     assert.equal(env.LOCALAPPDATA, join(run, 'profile/local'));
   });
 }
+
+test('Linux uses a short isolated runtime while evidence stays in the workspace run', async () => {
+  const base = mkdtempSync(join(tmpdir(), 'sa-base-'));
+  let runtime;
+  try {
+    runtime = createAcceptanceRuntimeRoot(run, { RUNNER_TEMP: base }, 'linux', base);
+    assert.equal(runtime.startsWith(`${realpathSync(base)}${process.platform === 'win32' ? '\\' : '/'}`), true);
+    assert.ok(Buffer.byteLength(join(runtime, 'temp', 'org.chromium.Chromium.XXXXXX', 'SingletonSocket')) <= 100);
+    for (const path of ['temp', 'cache', 'profile', 'profile/roaming', 'profile/local']) mkdirSync(join(runtime, path), { recursive: true });
+    const env = { SUBSCRIPTION_BROWSER_EXECUTABLE_PATH: process.execPath };
+    await prepareAcceptanceEnvironment(env, run, process.execPath, async () => assert.fail('explicit executable'), runtime, 'linux');
+    assert.equal(env.SUBSCRIPTION_ACCEPTANCE_RUN_DIR, run);
+    assert.equal(env.TMPDIR, join(runtime, 'temp'));
+    assert.equal(env.XDG_CONFIG_HOME, join(runtime, 'profile'));
+    assert.equal(env.HOME, join(runtime, 'profile'));
+  } finally {
+    if (runtime) rmSync(runtime, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('Linux rejects relative, network and overlong runtime bases before creating a profile', () => {
+  assert.throws(() => createAcceptanceRuntimeRoot(run, { RUNNER_TEMP: 'relative/temp' }, 'linux'), /absolute local path/);
+  assert.throws(() => createAcceptanceRuntimeRoot(run, { RUNNER_TEMP: '//server/share' }, 'linux'), /absolute local path/);
+  assert.throws(() => createAcceptanceRuntimeRoot(run, { RUNNER_TEMP: '\\\\server\\share' }, 'linux'), /absolute local path/);
+  const base = mkdtempSync(join(tmpdir(), 'sa-base-'));
+  let nested = base;
+  try {
+    while (Buffer.byteLength(join(realpathSync(nested), 'sa-XXXXXX', 'temp', 'org.chromium.Chromium.XXXXXX', 'SingletonSocket')) <= 100) {
+      nested = join(nested, 'long-segment');
+      mkdirSync(nested);
+    }
+    assert.throws(() => createAcceptanceRuntimeRoot(run, { RUNNER_TEMP: nested }, 'linux'), /too long/);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('Windows keeps runtime temp and profiles under the evidence run', () => {
+  assert.equal(createAcceptanceRuntimeRoot(run, { RUNNER_TEMP: 'ignored' }, 'win32'), run);
+});
 
 test('explicit executable is authoritative even if invalid; never falls back', async () => {
   for (const selected of [process.execPath, '', join(run, 'missing-browser')]) {

@@ -20,6 +20,7 @@ import {
 } from "../treasury/treasury-service.js";
 import type { ActorContext } from "../platform/actor-context.js";
 import { archiveDocument } from "../printing/print-archive.js";
+import { TransactionExecutor } from "../platform/transaction-executor.js";
 
 export type ReceiptErrorReason =
   | "NOT_FOUND"
@@ -138,6 +139,7 @@ export class ReceiptService {
   private readonly fiscal: FiscalService;
   private readonly posting = new PostingEngine();
   private readonly receivables: ReceivableSettlementPort;
+  private readonly transactions: TransactionExecutor;
   private readonly treasury: TreasuryInstrumentPort;
   private readonly fxAccounts: RealizedFxAccountPort;
   private readonly commands: IdempotentCommandExecutor;
@@ -146,10 +148,11 @@ export class ReceiptService {
     dependencies: ReceiptDependencies,
   ) {
     this.fiscal = new FiscalService(prisma);
+    this.transactions = new TransactionExecutor(prisma);
     this.treasury = dependencies.treasury;
     this.fxAccounts = dependencies.fxAccounts;
     this.receivables = dependencies.receivables;
-    this.commands = new IdempotentCommandExecutor(prisma);
+    this.commands = new IdempotentCommandExecutor(prisma, this.transactions);
   }
   private include() {
     return receiptInclude;
@@ -220,7 +223,8 @@ export class ReceiptService {
       period.fiscalYearId,
       "RECEIPT",
     );
-    return this.prisma.$transaction(
+    return this.transactions.execute(
+      { operation: "CREATE_RECEIPT", companyId: context.companyId },
       async (tx) => {
         const prepared = await this.prepare(tx, context.companyId, input);
         const currentPeriod = await tx.fiscalPeriod.findFirst({
@@ -252,7 +256,6 @@ export class ReceiptService {
         await this.audit(tx, context, "RECEIPT_CREATED", receipt.id);
         return receipt;
       },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
   }
   async update(context: ActorContext, id: bigint, input: ReceiptUpdate) {
