@@ -153,7 +153,7 @@ export default function App() {
       await chooseCompany(companyResult.data[0]!, signal);
       return;
     }
-    if (capabilities.platformOperations || workspaceResult.data.length > 0) {
+    if (companyResult.data.length === 0 && (capabilities.platformOperations || workspaceResult.data.length > 0)) {
       activateAuthorization(snapshot, { ...capabilities, organizationWorkspace: workspaceResult.data.length > 0 });
       return;
     }
