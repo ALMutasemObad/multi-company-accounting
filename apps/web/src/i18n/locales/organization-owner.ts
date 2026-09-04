@@ -1,5 +1,6 @@
 export const arOrganizationOwner = {
   "nav.organizationOwner": "مساحة المجموعة",
+  "home.module.organizationOwner": "قارن شركات المجموعة المصرح بها وانتقل بينها من دون دمج أرصدتها أو صلاحياتها.",
   "app.organizationWorkspace": "مساحة مالك المجموعة",
   "app.organizationScope": "نطاق المجموعة المصرّح",
   "organization.kicker": "عضوية المجموعة",
@@ -58,6 +59,7 @@ export const arOrganizationOwner = {
 
 export const enOrganizationOwner: Record<keyof typeof arOrganizationOwner, string> = {
   "nav.organizationOwner": "Group workspace",
+  "home.module.organizationOwner": "Compare authorized group companies and switch between them without combining balances or permissions.",
   "app.organizationWorkspace": "Group owner workspace",
   "app.organizationScope": "Authorized group scope",
   "organization.kicker": "Organization membership",
@@ -116,6 +118,7 @@ export const enOrganizationOwner: Record<keyof typeof arOrganizationOwner, strin
 
 export const urOrganizationOwner: Record<keyof typeof arOrganizationOwner, string> = {
   "nav.organizationOwner": "گروپ ورک اسپیس",
+  "home.module.organizationOwner": "مجاز گروپ کمپنیوں کا موازنہ کریں اور بیلنس یا اجازتیں یکجا کیے بغیر ان کے درمیان جائیں۔",
   "app.organizationWorkspace": "گروپ مالک ورک اسپیس",
   "app.organizationScope": "مجاز گروپ دائرہ",
   "organization.kicker": "تنظیمی رکنیت",
@@ -174,6 +177,7 @@ export const urOrganizationOwner: Record<keyof typeof arOrganizationOwner, strin
 
 export const hiOrganizationOwner: Record<keyof typeof arOrganizationOwner, string> = {
   "nav.organizationOwner": "समूह कार्यस्थान",
+  "home.module.organizationOwner": "अधिकृत समूह कंपनियों की तुलना करें और शेष या अनुमतियाँ मिलाए बिना उनके बीच जाएँ।",
   "app.organizationWorkspace": "समूह स्वामी कार्यस्थान",
   "app.organizationScope": "अधिकृत समूह दायरा",
   "organization.kicker": "संगठन सदस्यता",

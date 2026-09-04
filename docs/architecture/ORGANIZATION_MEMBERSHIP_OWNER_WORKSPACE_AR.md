@@ -61,7 +61,7 @@ last_updated: "2026-09-05"
 - `GET|POST /organizations/{organizationId}/members`
 - `PATCH /organizations/{organizationId}/members/{userId}`
 
-عقد OpenAPI `1.47.0` هو مصدر أشكال الطلب والاستجابة. تستخدم الكتابات CSRF، وتستخدم
+عقد OpenAPI الموحد `1.48.0` هو مصدر أشكال الطلب والاستجابة. تستخدم الكتابات CSRF، وتستخدم
 `version` متفائلة داخل معاملة `Serializable` ذات retry. يمنع invariant آخر مالك داخل
 المعاملة، وتسجل الإضافة والتعديل في `OrganizationAuditLog` قبل نجاحها.
 

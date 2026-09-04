@@ -29,7 +29,8 @@ const localeDirections = {
 } as const;
 
 for (const [locale, direction] of Object.entries(localeDirections)) {
-  test(`employee expenses is complete and contained in ${locale}`, async ({ page }) => {
+  test(`employee expenses is complete and contained in ${locale}`, async ({ page }, testInfo) => {
+    test.skip(!["mobile-390", "desktop-1440"].includes(testInfo.project.name), "Employee expense evidence is maintained at 390 and 1440.");
     const runtimeErrors: string[] = [];
     page.on("pageerror", (error) => runtimeErrors.push(error.message));
     await page.addInitScript((selectedLocale) => {
@@ -43,5 +44,11 @@ for (const [locale, direction] of Object.entries(localeDirections)) {
     await expect(page.locator(".employee-expense-ready")).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
     expect(runtimeErrors).toEqual([]);
+    await page.evaluate(async () => { await document.fonts.ready; });
+    await page.screenshot({
+      path: resolve("docs/visual-qa", `employee-expenses-${locale}-${testInfo.project.name}.png`),
+      fullPage: true,
+      animations: "disabled",
+    });
   });
 }

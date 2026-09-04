@@ -217,7 +217,7 @@ export const systemGroups: SystemGroup[] = [
     key: "administration",
     title: "home.group.administration",
     description: "home.group.administrationDescription",
-    modules: navigationItems.filter((item) => ["subscription", "imports", "admin", "audit", "security", "settings"].includes(item.view))
+    modules: navigationItems.filter((item) => ["organizationOwner", "subscription", "imports", "admin", "audit", "security", "settings"].includes(item.view))
       .map((item) => ({ ...item, description: `home.module.${item.view}` as TranslationKey })),
   },
 ];

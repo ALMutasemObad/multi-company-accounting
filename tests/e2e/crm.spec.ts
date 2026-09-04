@@ -16,6 +16,7 @@ test("lead to opportunity to next action to safe customer conversion", async ({ 
     if (path === "/auth/companies") return route.fulfill({ json: { data: [e2eCompany] } });
     if (path === "/auth/me") return route.fulfill({ json: authMeResponse(["crm.view", "crm.manage", "crm.activities.manage", "crm.convert"], ["SALES", "HUMAN_RESOURCES"]) });
     if (path === "/platform/capabilities") return route.fulfill({ json: { platformOperations: false } });
+    if (path === "/organizations/workspaces") return route.fulfill({ json: { data: [] } });
     if (path === "/auth/context") return route.fulfill({ status: 204, body: "" });
     if (request.method() !== "GET") commandHeaders.push(request.headers()["idempotency-key"] ?? "");
     if (path === "/crm/options") return route.fulfill({ json: { owners: [owner], currencies: [{ id: "1", code: "SAR", nameAr: "ريال سعودي", decimals: 2 }], customers: [{ id: "9", code: "CUS-000009", nameAr: "شركة قائمة", nameEn: "Existing Co" }] } });

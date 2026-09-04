@@ -390,7 +390,12 @@ export default function App() {
           <Suspense key={`${user.id}:${company?.id ?? "platform"}`} fallback={<div className="loading"><Spinner /><span>{t("app.loadingModule")}</span></div>}>
             {activeView === "home" && <>
               <SubscriptionUpgradeHome dismissals={subscriptionDismissals} onOpenSubscription={() => navigate('subscription')} />
-              <SystemHomePage onNavigate={navigate} onOpenSetupTarget={navigateRoute} platformOperator={platformOperator === true} />
+              <SystemHomePage
+                onNavigate={navigate}
+                onOpenSetupTarget={navigateRoute}
+                platformOperator={platformOperator === true}
+                organizationWorkspace={organizationWorkspace === true}
+              />
             </>}
             {activeView === "dashboard" && <DashboardPage onNavigate={navigate} />}
             {activeView === "organizationOwner" && organizationWorkspace && <OrganizationOwnerPage onSwitchCompany={switchFromOrganization} notify={notify} />}
