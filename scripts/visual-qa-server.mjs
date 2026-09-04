@@ -7,7 +7,7 @@ const meta = { page: 1, pageSize: 20, total: 0, totalPages: 0 };
 const currency = { id: "currency-sar", code: "SAR", nameAr: "ريال سعودي", nameEn: "Saudi Riyal", decimals: 2 };
 const company = {
   id: "company-qa",
-  code: "JWR-QA",
+  code: "CMP-QA",
   name: "المنشأة التجريبية",
   nameAr: "المنشأة التجريبية",
   nameEn: "Demo Business",
@@ -138,9 +138,9 @@ const platformCompanyOptions = [
   { id: "103", name: "مجموعة المدار الرقمية", isActive: true, baseCurrencyCode: "USD" },
 ];
 const platformCompanies = [
-  { id: "101", code: "JWR-001", name: "شركة جوار التجريبية", organizationName: "مجموعة جوار", baseCurrencyCode: "SAR", timezone: "Asia/Riyadh", isActive: true, createdAt: "2026-01-08T09:00:00.000Z", activeUsers: 42, activeEmployees: 58, operations: 3640, postedDocuments: 810, lastActivityAt: "2026-08-29T08:57:00.000Z" },
-  { id: "102", code: "JWR-002", name: "شركة الاستشارات القانونية", organizationName: "بيت الخبرة", baseCurrencyCode: "SAR", timezone: "Asia/Riyadh", isActive: true, createdAt: "2026-02-12T09:00:00.000Z", activeUsers: 31, activeEmployees: 44, operations: 2810, postedDocuments: 624, lastActivityAt: "2026-08-29T08:44:00.000Z" },
-  { id: "103", code: "JWR-003", name: "مجموعة المدار الرقمية", organizationName: "المدار", baseCurrencyCode: "USD", timezone: "Asia/Dubai", isActive: true, createdAt: "2026-04-03T09:00:00.000Z", activeUsers: 26, activeEmployees: 39, operations: 2140, postedDocuments: 510, lastActivityAt: "2026-08-29T07:31:00.000Z" },
+  { id: "101", code: "CMP-001", name: "المنشأة التجريبية", organizationName: "مجموعة الأعمال", baseCurrencyCode: "SAR", timezone: "Asia/Riyadh", isActive: true, createdAt: "2026-01-08T09:00:00.000Z", activeUsers: 42, activeEmployees: 58, operations: 3640, postedDocuments: 810, lastActivityAt: "2026-08-29T08:57:00.000Z" },
+  { id: "102", code: "CMP-002", name: "شركة الاستشارات القانونية", organizationName: "بيت الخبرة", baseCurrencyCode: "SAR", timezone: "Asia/Riyadh", isActive: true, createdAt: "2026-02-12T09:00:00.000Z", activeUsers: 31, activeEmployees: 44, operations: 2810, postedDocuments: 624, lastActivityAt: "2026-08-29T08:44:00.000Z" },
+  { id: "103", code: "CMP-003", name: "مجموعة المدار الرقمية", organizationName: "المدار", baseCurrencyCode: "USD", timezone: "Asia/Dubai", isActive: true, createdAt: "2026-04-03T09:00:00.000Z", activeUsers: 26, activeEmployees: 39, operations: 2140, postedDocuments: 510, lastActivityAt: "2026-08-29T07:31:00.000Z" },
 ];
 const platformBillingAccounts = [
   { id: "billing-101", companyId: "101", status: "ACTIVE", planName: "Growth", billingCycle: "MONTHLY", currencyCode: "SAR", recurringFee: "4800.0000", includedUsers: 25, pricePerAdditionalUser: "80.0000", includedEmployees: 50, pricePerAdditionalEmployee: "35.0000", includedPostedDocuments: 500, pricePerAdditionalPostedDocument: "1.5000", taxRate: "15.0000", paymentTermsDays: 30, nextBillingDate: "2026-09-01", notes: null, version: 2, createdAt: "2026-01-08T09:00:00.000Z", updatedAt: "2026-08-01T09:00:00.000Z" },
