@@ -1,5 +1,6 @@
 import { visibleNavigationItems, type NavigationAccess, type View } from "./app-navigation";
 import type { TranslationKey } from "./i18n";
+import type { PlatformModuleCode } from "./types";
 
 // Sections describe the intended destination for the composition owner. The current
 // onNavigate(View) contract opens the real page, never an invented hash/deep link.
@@ -12,6 +13,14 @@ export type RetailFactId = "warehouses" | "units" | "items" | "stock" | "cash";
 export type RetailFactState = "notChecked" | "unavailable" | "loading" | "found" | "empty" | "error";
 export type RetailFacts = Record<RetailFactId, RetailFactState>;
 export type RetailStepId = "business" | "catalog" | "stock" | "cash" | "checkout" | "results";
+export type RetailOutputCapabilityId = "barcodeLabel" | "receiptArchive";
+export type RetailOutputCapability = {
+  id: RetailOutputCapabilityId;
+  title: TranslationKey;
+  description: TranslationKey;
+  modules: readonly PlatformModuleCode[];
+  permissions: readonly string[];
+};
 export type RetailAction = { id: string; label: TranslationKey; target: RetailSetupTarget; permissions?: readonly string[] };
 export type RetailStep = {
   id: RetailStepId;
@@ -62,6 +71,7 @@ export const retailSteps: readonly RetailStep[] = [
     id: "results", title: "home.setup.results", description: "home.setup.resultsDescription", note: "home.setup.resultsNote", facts: [],
     actions: [
       { id: "posResults", label: "home.reviewSales", target: { view: "pos" } },
+      { id: "barcodeOutputs", label: "home.setup.openBarcodes", target: { view: "inventory", section: "items" }, permissions: ["inventory_catalog.view", "inventory_barcodes.view", "inventory_barcodes.print"] },
       { id: "sales", label: "nav.sales", target: { view: "sales" } },
       { id: "receipts", label: "nav.receipts", target: { view: "receipts" } },
       { id: "reports", label: "nav.reports", target: { view: "reports" } },
@@ -79,6 +89,29 @@ export function retailActions(step: RetailStep, access: NavigationAccess) {
 export function showRetailGuide(access: NavigationAccess) {
   return access.hasSelectedCompany && (access.moduleSet.has("POS")
     || (access.moduleSet.has("INVENTORY") && access.moduleSet.has("SALES")));
+}
+
+const outputCapabilities: readonly RetailOutputCapability[] = [
+  {
+    id: "barcodeLabel",
+    title: "home.setup.output.barcodeLabel",
+    description: "home.setup.output.barcodeLabelDescription",
+    modules: ["INVENTORY"],
+    permissions: ["inventory_catalog.view", "inventory_barcodes.view", "inventory_barcodes.print"],
+  },
+  {
+    id: "receiptArchive",
+    title: "home.setup.output.receiptArchive",
+    description: "home.setup.output.receiptArchiveDescription",
+    modules: ["POS", "SALES"],
+    permissions: ["pos.view", "sales_invoices.print"],
+  },
+];
+
+export function retailOutputCapabilities(access: NavigationAccess): readonly RetailOutputCapability[] {
+  if (!access.hasSelectedCompany) return [];
+  return outputCapabilities.filter((capability) => capability.modules.every((module) => access.moduleSet.has(module))
+    && capability.permissions.every((permission) => access.permissionSet.has(permission)));
 }
 
 export function initialRetailStep(access: NavigationAccess): RetailStepId {

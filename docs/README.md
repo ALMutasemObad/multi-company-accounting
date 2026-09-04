@@ -25,6 +25,7 @@
 
 ## التشغيل والبيئات
 
+- [خطة جاهزية البنية P3](P3_INFRASTRUCTURE_READINESS_2026-09-04_AR.md): بوابات ما قبل العرض والـPilot والإنتاج، وحماية `main` وقياس الأداء والتنظيف الآمن.
 - [دليل التشغيل الإنتاجي المستقبلي](production-operations.md).
 - [النشر على iFastNet/cPanel](ifastnet-cpanel-deployment.md).
 - [التعافي من الكوارث](production-disaster-recovery.md).

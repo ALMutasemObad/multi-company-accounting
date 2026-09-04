@@ -277,6 +277,9 @@ h1, h2, h3, .brand strong { font-family: "Cairo", "Noto Sans Devanagari", Tahoma
 .brand strong { font-size: .96rem; }
 .brand span { color: #93b2a7; font-size: .72rem; }
 .sidebar nav { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 6px; margin-top: 28px; padding-bottom: 12px; overflow-y: auto; }
+.sidebar-section-label { padding: 5px 14px 2px; color: #789b8e; font-size: .68rem; font-weight: 800; letter-spacing: .02em; }
+.sidebar-section-label.platform { margin-top: 8px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.1); color: #d8bd72; }
+.sidebar-section-label.modules { margin-top: 8px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.07); }
 .sidebar nav button {
   display: flex;
   align-items: center;
@@ -290,6 +293,8 @@ h1, h2, h3, .brand strong { font-family: "Cairo", "Noto Sans Devanagari", Tahoma
 }
 .sidebar nav button:hover { background: rgba(255,255,255,.06); color: #fff; }
 .sidebar nav button.active { background: linear-gradient(90deg, rgba(216,173,72,.2), rgba(216,173,72,.08)); color: #f1d27f; box-shadow: inset -3px 0 var(--gold); }
+.sidebar nav button.platform-nav-item { border: 1px solid rgba(216,173,72,.18); background: rgba(216,173,72,.06); color: #ead799; }
+.sidebar nav button.platform-nav-item:hover { border-color: rgba(216,173,72,.35); background: rgba(216,173,72,.12); }
 .sidebar-footer { margin-top: auto; padding-top: 20px; border-top: 1px solid rgba(255,255,255,.1); }
 .company-badge { display: flex; align-items: center; gap: 10px; }
 .company-badge > div { display: flex; min-width: 0; flex-direction: column; }
@@ -755,6 +760,14 @@ h1, h2, h3, .brand strong { font-family: "Cairo", "Noto Sans Devanagari", Tahoma
 }
 .period-filter label, .report-toolbar label { min-width: 145px; }
 .period-filter label > span, .report-toolbar label > span { margin-bottom: 4px; font-size: .72rem; }
+.dashboard-quick-actions { display: grid; grid-template-columns: minmax(210px, 1.15fr) repeat(3, minmax(150px, .85fr)); gap: 8px; margin-bottom: 18px; padding: 9px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.72); }
+.dashboard-quick-actions > div { display: grid; align-content: center; gap: 2px; padding: 6px 10px; }
+.dashboard-quick-actions > div strong { color: var(--green-900); font-size: .84rem; }
+.dashboard-quick-actions > div span { color: var(--muted); font-size: .7rem; line-height: 1.55; }
+.dashboard-quick-actions button { display: grid; min-width: 0; min-height: 48px; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 11px; background: #fff; color: var(--green-800); text-align: start; }
+.dashboard-quick-actions button:hover { border-color: #aac2b8; background: #f8fbf9; }
+.dashboard-quick-actions button span { overflow: hidden; font-size: .73rem; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+:root[dir="ltr"] .dashboard-quick-actions button > svg:last-child { transform: scaleX(-1); }
 .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px; }
 .metric-card {
   position: relative;
@@ -1271,13 +1284,35 @@ h1, h2, h3, .brand strong { font-family: "Cairo", "Noto Sans Devanagari", Tahoma
 
 /* System directory and developer-company operations */
 .system-home-page { display: grid; gap: 30px; }
-.system-home-hero { position: relative; min-height: 210px; overflow: hidden; padding: 34px 36px; border-radius: 24px; background: radial-gradient(circle at 85% 15%, rgba(206,170,81,.28), transparent 31%), linear-gradient(135deg, var(--green-950), var(--green-700)); box-shadow: 0 20px 42px rgba(15,57,45,.18); }
+.system-home-hero { position: relative; min-height: 220px; overflow: hidden; padding: 34px 36px; border-radius: 24px; background: radial-gradient(circle at 85% 15%, rgba(206,170,81,.28), transparent 31%), linear-gradient(135deg, var(--green-950), var(--green-700)); box-shadow: 0 20px 42px rgba(15,57,45,.18); }
 .system-home-hero::after { position: absolute; width: 260px; height: 260px; inset-inline-end: -95px; bottom: -155px; border: 1px solid rgba(255,255,255,.16); border-radius: 50%; content: ""; }
-.system-home-hero .page-heading { position: relative; z-index: 1; max-width: 760px; margin: 0; }
+.system-home-hero .page-heading { position: relative; z-index: 1; width: 100%; max-width: none; align-items: center; margin: 0; }
+.system-home-hero .page-heading > div:first-child { max-width: 690px; }
 .system-home-hero .page-heading h1 { color: #fff; }
 .system-home-hero .page-heading p { max-width: 690px; color: rgba(255,255,255,.76); }
 .system-home-hero .page-heading .eyebrow { color: #efd995; }
-.home-hero-badge { position: absolute; z-index: 1; display: flex; align-items: center; gap: 10px; inset-inline-end: 34px; bottom: 30px; padding: 11px 15px; border: 1px solid rgba(255,255,255,.18); border-radius: 14px; background: rgba(255,255,255,.1); color: #fff; font-size: .78rem; font-weight: 700; backdrop-filter: blur(7px); }
+.home-hero-actions { display: flex; flex: 0 0 auto; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 9px; }
+.home-hero-actions .button.primary { background: #f0cf75; color: var(--green-950); box-shadow: 0 9px 24px rgba(0,0,0,.17); }
+.home-hero-actions .button.primary:hover { background: #f5da91; }
+.home-hero-actions .button.secondary { border-color: rgba(255,255,255,.28); background: rgba(255,255,255,.1); color: #fff; }
+.home-quick-section { display: grid; gap: 15px; }
+.home-quick-section > header h2 { margin: 0 0 5px; color: var(--green-900); font-size: 1.15rem; }
+.home-quick-section > header p { margin: 0; color: var(--muted); font-size: .8rem; }
+.home-quick-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.home-quick-card { display: grid; min-width: 0; min-height: 164px; grid-template-columns: auto 1fr auto; grid-template-rows: 1fr auto; align-items: start; gap: 11px; padding: 17px; border: 1px solid #ccdbd4; border-radius: 17px; background: linear-gradient(145deg, #fff, #f5f9f6); color: inherit; text-align: start; box-shadow: 0 8px 24px rgba(24,53,45,.055); }
+.home-quick-card:hover { transform: translateY(-2px); border-color: #94b6a7; box-shadow: 0 13px 28px rgba(24,53,45,.09); }
+.home-quick-icon { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 12px; background: var(--green-100); color: var(--green-700); }
+.home-quick-copy { display: grid; min-width: 0; gap: 5px; }
+.home-quick-copy strong { color: var(--green-900); font-size: .86rem; }
+.home-quick-copy span { color: var(--muted); font-size: .72rem; line-height: 1.6; }
+.home-quick-card small { grid-column: 1 / 3; align-self: end; color: #55756a; font-size: .68rem; font-weight: 700; }
+.home-quick-card > svg { align-self: end; color: var(--green-700); }
+:root[dir="ltr"] .home-quick-card > svg { transform: scaleX(-1); }
+.home-platform-entry { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 17px; padding: 20px 22px; border: 1px solid #d9c27f; border-radius: 18px; background: linear-gradient(135deg, #fff9ea, #fff); box-shadow: 0 9px 26px rgba(80,61,17,.06); }
+.home-platform-entry-icon, .platform-scope-icon { display: grid; width: 48px; height: 48px; place-items: center; border-radius: 14px; background: #f3e5bd; color: #765818; }
+.home-platform-entry .section-kicker { margin-bottom: 3px; color: #8c6a1e; }
+.home-platform-entry h2 { margin: 0 0 4px; color: var(--green-900); font-size: 1.05rem; }
+.home-platform-entry p { margin: 0; color: var(--muted); font-size: .76rem; line-height: 1.65; }
 .system-group { display: grid; gap: 15px; }
 .system-group > header { display: flex; align-items: end; justify-content: space-between; gap: 18px; }
 .system-group > header h2 { margin: 0 0 5px; color: var(--green-900); font-size: 1.15rem; }
@@ -1299,6 +1334,11 @@ h1, h2, h3, .brand strong { font-family: "Cairo", "Noto Sans Devanagari", Tahoma
 
 .platform-page { display: grid; gap: 22px; }
 .platform-page > .page-heading { margin-bottom: 0; }
+.platform-scope-banner { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 14px; padding: 14px 16px; border: 1px solid #d8c487; border-radius: 15px; background: #fffbef; }
+.platform-scope-banner .platform-scope-icon { width: 42px; height: 42px; border-radius: 12px; }
+.platform-scope-banner > div { display: grid; gap: 2px; }
+.platform-scope-banner strong { color: var(--green-900); font-size: .84rem; }
+.platform-scope-banner span { color: var(--muted); font-size: .7rem; line-height: 1.55; }
 .platform-actions { display: flex; align-items: end; gap: 10px; }
 .platform-actions label { display: grid; gap: 5px; color: var(--muted); font-size: .68rem; font-weight: 700; }
 .platform-actions select { min-width: 155px; }
@@ -1432,6 +1472,10 @@ h1, h2, h3, .brand strong { font-family: "Cairo", "Noto Sans Devanagari", Tahoma
 .platform-analytics-meta > div:first-child span, .platform-analytics-meta-actions > span { color: var(--muted); font-size: .66rem; }
 .platform-analytics-meta-actions { display: flex; align-items: end; justify-content: flex-end; gap: 10px; }
 .platform-analytics-meta-actions select { min-width: 105px; }
+.platform-analytics-shortcuts { display: grid; grid-template-columns: minmax(250px, 1fr) auto auto; align-items: center; gap: 9px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 14px; background: #f8faf8; }
+.platform-analytics-shortcuts > div { display: grid; gap: 2px; }
+.platform-analytics-shortcuts strong { color: var(--green-900); font-size: .8rem; }
+.platform-analytics-shortcuts span { color: var(--muted); font-size: .68rem; }
 .platform-analytics-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 11px; }
 .platform-analytics-kpi { display: flex; min-width: 0; align-items: flex-start; gap: 11px; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: #fff; box-shadow: 0 7px 22px rgba(24,53,45,.04); }
 .platform-analytics-kpi > div { display: grid; min-width: 0; gap: 4px; }
@@ -1606,6 +1650,9 @@ h1, h2, h3, .brand strong { font-family: "Cairo", "Noto Sans Devanagari", Tahoma
 .platform-row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 3px; }
 
 @media (max-width: 1180px) {
+  .home-quick-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboard-quick-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .dashboard-quick-actions > div { grid-column: 1 / -1; }
   .platform-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .platform-overview-grid { grid-template-columns: 1fr; }
   .platform-detail-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -1617,8 +1664,11 @@ h1, h2, h3, .brand strong { font-family: "Cairo", "Noto Sans Devanagari", Tahoma
 }
 
 @media (max-width: 780px) {
-  .system-home-hero { min-height: 250px; padding: 27px 24px; }
-  .home-hero-badge { inset-inline-start: 24px; inset-inline-end: auto; bottom: 24px; }
+  .system-home-hero { min-height: 0; padding: 27px 24px; }
+  .system-home-hero .page-heading { align-items: flex-start; flex-direction: column; }
+  .home-hero-actions { width: 100%; justify-content: flex-start; }
+  .home-platform-entry, .platform-scope-banner { grid-template-columns: auto 1fr; align-items: start; }
+  .home-platform-entry .button, .platform-scope-banner .button { grid-column: 1 / -1; width: 100%; }
   .system-group > header { align-items: flex-start; }
   .platform-actions { width: 100%; align-items: stretch; flex-direction: column; }
   .platform-actions select, .platform-actions .button { width: 100%; }
@@ -1635,6 +1685,8 @@ h1, h2, h3, .brand strong { font-family: "Cairo", "Noto Sans Devanagari", Tahoma
   .platform-range-presets button { flex: 1 0 auto; }
   .platform-analytics-meta, .platform-analytics-meta-actions { align-items: stretch; flex-direction: column; }
   .platform-analytics-meta-actions > *, .platform-analytics-meta-actions select { width: 100%; }
+  .platform-analytics-shortcuts { grid-template-columns: 1fr 1fr; }
+  .platform-analytics-shortcuts > div { grid-column: 1 / -1; }
   .platform-chart-panel > header { flex-direction: column; }
   .platform-chart-legend { justify-content: flex-start; }
   .platform-aging { grid-template-columns: 1fr; }
@@ -1643,7 +1695,13 @@ h1, h2, h3, .brand strong { font-family: "Cairo", "Noto Sans Devanagari", Tahoma
 
 @media (max-width: 520px) {
   .system-home-page { gap: 25px; }
-  .system-home-hero { min-height: 275px; border-radius: 19px; }
+  .system-home-hero { min-height: 0; border-radius: 19px; }
+  .home-hero-actions { align-items: stretch; flex-direction: column; }
+  .home-hero-actions .button { width: 100%; }
+  .home-quick-grid, .dashboard-quick-actions { grid-template-columns: 1fr; }
+  .dashboard-quick-actions > div { grid-column: auto; }
+  .home-platform-entry { grid-template-columns: 1fr; }
+  .home-platform-entry-icon { display: none; }
   .system-group > header { align-items: flex-start; flex-direction: column; gap: 9px; }
   .system-card-grid, .platform-metric-grid, .platform-module-grid { grid-template-columns: 1fr; }
   .platform-trend { gap: 6px; padding-inline: 12px; }
@@ -1660,6 +1718,8 @@ h1, h2, h3, .brand strong { font-family: "Cairo", "Noto Sans Devanagari", Tahoma
   .platform-analytics-fields, .platform-analytics-kpis { grid-template-columns: 1fr; }
   .platform-analytics-fields .platform-company-filter { grid-column: auto; }
   .platform-analytics-filter { padding: 12px; }
+  .platform-analytics-shortcuts { grid-template-columns: 1fr; }
+  .platform-analytics-shortcuts > div { grid-column: auto; }
   .platform-interactive-chart { overflow-x: auto; padding-inline: 8px; }
   .platform-interactive-chart svg { min-width: 610px; }
   .platform-chart-tooltip { min-width: 610px; }

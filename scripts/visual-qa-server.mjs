@@ -7,7 +7,7 @@ const meta = { page: 1, pageSize: 20, total: 0, totalPages: 0 };
 const currency = { id: "currency-sar", code: "SAR", nameAr: "ريال سعودي", nameEn: "Saudi Riyal", decimals: 2 };
 const company = {
   id: "company-qa",
-  code: "JWR-QA",
+  code: "CMP-QA",
   name: "المنشأة التجريبية",
   nameAr: "المنشأة التجريبية",
   nameEn: "Demo Business",
@@ -137,6 +137,34 @@ const platformCompanyOptions = [
   { id: "102", name: "شركة الاستشارات القانونية", isActive: true, baseCurrencyCode: "SAR" },
   { id: "103", name: "مجموعة المدار الرقمية", isActive: true, baseCurrencyCode: "USD" },
 ];
+const platformCompanies = [
+  { id: "101", code: "CMP-001", name: "المنشأة التجريبية", organizationName: "مجموعة الأعمال", baseCurrencyCode: "SAR", timezone: "Asia/Riyadh", isActive: true, createdAt: "2026-01-08T09:00:00.000Z", activeUsers: 42, activeEmployees: 58, operations: 3640, postedDocuments: 810, lastActivityAt: "2026-08-29T08:57:00.000Z" },
+  { id: "102", code: "CMP-002", name: "شركة الاستشارات القانونية", organizationName: "بيت الخبرة", baseCurrencyCode: "SAR", timezone: "Asia/Riyadh", isActive: true, createdAt: "2026-02-12T09:00:00.000Z", activeUsers: 31, activeEmployees: 44, operations: 2810, postedDocuments: 624, lastActivityAt: "2026-08-29T08:44:00.000Z" },
+  { id: "103", code: "CMP-003", name: "مجموعة المدار الرقمية", organizationName: "المدار", baseCurrencyCode: "USD", timezone: "Asia/Dubai", isActive: true, createdAt: "2026-04-03T09:00:00.000Z", activeUsers: 26, activeEmployees: 39, operations: 2140, postedDocuments: 510, lastActivityAt: "2026-08-29T07:31:00.000Z" },
+];
+const platformBillingAccounts = [
+  { id: "billing-101", companyId: "101", status: "ACTIVE", planName: "Growth", billingCycle: "MONTHLY", currencyCode: "SAR", recurringFee: "4800.0000", includedUsers: 25, pricePerAdditionalUser: "80.0000", includedEmployees: 50, pricePerAdditionalEmployee: "35.0000", includedPostedDocuments: 500, pricePerAdditionalPostedDocument: "1.5000", taxRate: "15.0000", paymentTermsDays: 30, nextBillingDate: "2026-09-01", notes: null, version: 2, createdAt: "2026-01-08T09:00:00.000Z", updatedAt: "2026-08-01T09:00:00.000Z" },
+  { id: "billing-102", companyId: "102", status: "ACTIVE", planName: "Professional", billingCycle: "MONTHLY", currencyCode: "SAR", recurringFee: "3200.0000", includedUsers: 20, pricePerAdditionalUser: "75.0000", includedEmployees: 35, pricePerAdditionalEmployee: "30.0000", includedPostedDocuments: 350, pricePerAdditionalPostedDocument: "1.5000", taxRate: "15.0000", paymentTermsDays: 30, nextBillingDate: "2026-09-01", notes: null, version: 1, createdAt: "2026-02-12T09:00:00.000Z", updatedAt: "2026-08-01T09:00:00.000Z" },
+  { id: "billing-103", companyId: "103", status: "TRIAL", planName: "International", billingCycle: "MONTHLY", currencyCode: "USD", recurringFee: "950.0000", includedUsers: 20, pricePerAdditionalUser: "18.0000", includedEmployees: 30, pricePerAdditionalEmployee: "8.0000", includedPostedDocuments: 300, pricePerAdditionalPostedDocument: "0.3500", taxRate: "0.0000", paymentTermsDays: 15, nextBillingDate: "2026-09-03", notes: null, version: 0, createdAt: "2026-04-03T09:00:00.000Z", updatedAt: "2026-08-03T09:00:00.000Z" },
+];
+const platformBillingSummary = {
+  generatedAt: "2026-08-29T09:00:00.000Z",
+  metrics: { totalCompanies: 3, configuredCompanies: 3, unconfiguredCompanies: 0, activeAccounts: 2, overdueInvoices: 2 },
+  currencies: [
+    { currencyCode: "SAR", recurringMonthly: "8000.0000", billed: "169800.0000", paid: "154500.0000", balance: "31000.0000", overdue: "4200.0000", collectionRate: "91.0" },
+    { currencyCode: "USD", recurringMonthly: "950.0000", billed: "28400.0000", paid: "24600.0000", balance: "7100.0000", overdue: "1300.0000", collectionRate: "86.6" },
+  ],
+  accounts: platformCompanies.map((item, index) => ({
+    companyId: item.id,
+    companyName: item.name,
+    companyActive: item.isActive,
+    account: platformBillingAccounts[index],
+    billed: index === 0 ? "92000.0000" : index === 1 ? "77800.0000" : "28400.0000",
+    paid: index === 0 ? "84400.0000" : index === 1 ? "70100.0000" : "24600.0000",
+    balance: index === 0 ? "18400.0000" : index === 1 ? "12600.0000" : "7100.0000",
+    overdue: index === 0 ? "4200.0000" : index === 1 ? "0.0000" : "1300.0000",
+  })),
+};
 const compared = (current, previous) => ({
   current,
   previous,
@@ -480,6 +508,8 @@ export function responseFor(url, method, headers = {}) {
     items: [visualElectronicPayment],
     meta: { ...meta, pageSize: 10, total: 1, totalPages: 1 },
   };
+  if (pathname === "/platform/companies") return { data: platformCompanies, total: platformCompanies.length, page: 1, pageSize: 25 };
+  if (pathname === "/platform/billing/summary") return platformBillingSummary;
   if (pathname === "/companies/current") return company;
   if (pathname === "/professional-projects/customer-options") return { data: [professionalCustomer] };
   if (pathname === "/professional-projects/member-options") return { data: [professionalManager] };

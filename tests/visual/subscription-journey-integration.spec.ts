@@ -63,11 +63,18 @@ for (const locale of ['ar', 'en', 'ur', 'hi']) {
     await expect(page.locator('.subscription-usage-grid')).toBeVisible();
     await page.locator('.subscription-usage-heading button').click();
     await expect(page.locator('.subscription-usage-grid')).toBeVisible();
+    const reviewButton = page.locator('.subscription-change-form button[type=submit]');
+    await expect(reviewButton).toBeEnabled();
+    await reviewButton.click();
+    await expect(page.locator('.subscription-change-review')).toBeVisible();
+    await expect(page.locator('.subscription-change-confirmation input')).not.toBeChecked();
+    await expect(page.locator('.subscription-change-actions button').first()).toBeDisabled();
     expect(writes).toEqual(['POST /api/v1/auth/register', 'POST /api/v1/auth/login']);
     expect(csrfReads).toBe(2);
     expect(await page.evaluate(() => sessionStorage.getItem('mcap.csrf'))).toBe('authenticated-journey-token');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     expect(errors).toEqual([]);
+    await page.evaluate(() => window.scrollTo(0, 0));
     await page.screenshot({ path: testInfo.outputPath(`subscription-journey-${locale}.png`), fullPage: true });
   });
 }

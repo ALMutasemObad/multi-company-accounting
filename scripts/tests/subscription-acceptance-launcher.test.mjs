@@ -36,7 +36,9 @@ for (const [name, original, selected] of installations) {
   });
 }
 
-test('Linux uses a short isolated runtime while evidence stays in the workspace run', async () => {
+test('Linux uses a short isolated runtime while evidence stays in the workspace run', {
+  skip: process.platform === 'win32' ? 'requires native Linux path and socket semantics' : false,
+}, async () => {
   const base = mkdtempSync(join(tmpdir(), 'sa-base-'));
   let runtime;
   try {

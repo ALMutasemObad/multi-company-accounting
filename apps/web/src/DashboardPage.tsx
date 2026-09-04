@@ -5,6 +5,7 @@ import { useCallback,
   useEffect,
   useState } from "react";
 import { api } from "./api";
+import { companyQuickStarts, type View } from "./app-navigation";
 import { formatMoney } from "./domain";
 import { currentYearRange,
   monthLabel } from "./reporting";
@@ -16,7 +17,7 @@ import { Button,
   PageHeader,
 } from "./ui";
 
-export function DashboardPage({ onNavigate }: { onNavigate: (view: "customers" | "receipts" | "suppliers" | "payments" | "reports") => void }) {
+export function DashboardPage({ onNavigate }: { onNavigate: (view: View) => void }) {
   const initial = currentYearRange();
   const [dateFrom, setDateFrom] = useState(initial.dateFrom);
   const [dateTo, setDateTo] = useState(initial.dateTo);
@@ -58,6 +59,12 @@ export function DashboardPage({ onNavigate }: { onNavigate: (view: "customers" |
           <Button disabled={!dateFrom || !dateTo || dateFrom > dateTo} onClick={() => setApplied({ dateFrom, dateTo })}>{t("pages.dashboard.015")}</Button>
         </div>} />
       {error && <div className="inline-notice">{t("pages.dashboard.016")}</div>}
+      <nav className="dashboard-quick-actions" aria-label={t("dashboard.quick.aria")}>
+        <div><strong>{t("dashboard.quick.title")}</strong><span>{t("dashboard.quick.description")}</span></div>
+        {companyQuickStarts.slice(0, 3).map((item) => <button type="button" key={item.view} onClick={() => onNavigate(item.view)}>
+          <Icon name={item.icon} size={18} /><span>{t(item.title)}</span><Icon name="back" size={15} />
+        </button>)}
+      </nav>
       <div className="metric-grid">
         {cards.map((card) => <article className={`metric-card ${card.tone}`} key={card.label}><div className="metric-icon"><Icon name={card.icon} /></div><span>{card.label}</span><strong>{card.value}</strong><small>{card.suffix}</small></article>)}
       </div>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { api, idempotencyKey } from "./api";
+import type { View } from "./app-navigation";
 import { activeIntlLocale, useI18n, type TranslationKey } from "./i18n";
 import { formatCurrencyDecimal, isPositiveDecimal, isZeroDecimal } from "./decimal-format";
 import type {
@@ -50,7 +51,7 @@ const monthRange = () => {
   };
 };
 
-export function PlatformOperationsPage() {
+export function PlatformOperationsPage({ onNavigate }: { onNavigate: (view: View) => void }) {
   const { t } = useI18n();
   const [tab, setTab] = useState<PlatformTab>("overview");
   const [days, setDays] = useState<7 | 30 | 90>(30);
@@ -68,10 +69,15 @@ export function PlatformOperationsPage() {
         </select></label>
       </div>}
     />
+    <aside className="platform-scope-banner">
+      <span className="platform-scope-icon"><Icon name="platform" size={24} /></span>
+      <div><strong>{t("platform.scope.title")}</strong><span>{t("platform.scope.description")}</span></div>
+      <Button variant="secondary" icon="home" onClick={() => onNavigate("home")}>{t("platform.scope.companyAction")}</Button>
+    </aside>
     <nav className="platform-tabs" aria-label={t("platform.tabsAria")}>
       {(["overview", "companies", "billing"] as PlatformTab[]).map((item) => <button key={item} type="button" className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{t(`platform.tab.${item}`)}</button>)}
     </nav>
-    {tab === "overview" && <PlatformAnalyticsDashboardView revision={revision} onOpenCompany={setTarget} />}
+    {tab === "overview" && <PlatformAnalyticsDashboardView revision={revision} onOpenCompany={setTarget} onOpenCompanies={() => setTab("companies")} onOpenBilling={() => setTab("billing")} />}
     {tab === "companies" && <CompaniesTab days={days} revision={revision} onOpen={setTarget} />}
     {tab === "billing" && <BillingTab revision={revision} onOpen={setTarget} />}
     {target && <CompanyWorkspace company={target} days={days} onClose={() => setTarget(null)} onChanged={() => setRevision((value) => value + 1)} />}

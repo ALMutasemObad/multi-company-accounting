@@ -5,7 +5,8 @@ import type { NavigationAccess } from "./app-navigation";
 import { AuthorizationProvider } from "./authorization-context";
 import { I18nProvider, loadLocale } from "./i18n";
 import { SystemHomePage } from "./SystemHomePage";
-import { initialRetailStep, retailActions, retailSteps, showRetailGuide } from "./retail-onboarding-model";
+import { RetailOnboardingGuide } from "./RetailOnboardingGuide";
+import { initialRetailStep, retailActions, retailOutputCapabilities, retailSteps, showRetailGuide } from "./retail-onboarding-model";
 import { initialRetailFacts, readRetailFacts, retailEvidence, retailFactDefinitions } from "./retail-onboarding-read";
 import { effectivePermissionSet } from "./module-entitlements";
 import type { CurrentAuthorization, PlatformModuleCode } from "./types";
@@ -53,6 +54,23 @@ describe("R3 real navigation and isolated evidence", () => {
     expect(showRetailGuide(access([], ["PROFESSIONAL_PROJECTS"]))).toBe(false);
     expect(showRetailGuide(access([], modules, false))).toBe(false);
     expect(showRetailGuide(access())).toBe(true);
+  });
+
+  it("shows only output tools that are implemented and authorized, with explicit device boundaries", async () => {
+    const outputPermissions = [...permissions, "inventory_barcodes.print", "sales_invoices.print"];
+    expect(retailOutputCapabilities(access(outputPermissions)).map((output) => output.id)).toEqual(["barcodeLabel", "receiptArchive"]);
+    expect(retailActions(retailSteps[5]!, access(outputPermissions)).some((action) => action.id === "barcodeOutputs")).toBe(true);
+    expect(retailOutputCapabilities(access(["pos.view", "sales_invoices.print"], ["POS", "SALES"])).map((output) => output.id)).toEqual(["receiptArchive"]);
+    expect(retailOutputCapabilities(access(["inventory_catalog.view", "inventory_barcodes.view"], ["INVENTORY"]))).toEqual([]);
+    expect(retailOutputCapabilities(access(outputPermissions, modules, false))).toEqual([]);
+
+    await loadLocale("ar");
+    const receiptAccess = access(["pos.view", "sales_invoices.print"], ["POS", "SALES"]);
+    const markup = renderToStaticMarkup(<I18nProvider><RetailOnboardingGuide access={receiptAccess} onNavigate={() => undefined} /></I18nProvider>);
+    expect(markup).toContain('data-retail-output="receiptArchive"');
+    expect(markup).not.toContain('data-retail-output="barcodeLabel"');
+    expect(markup).toContain("المقاسات الحرارية للمعاينة فقط");
+    expect(markup).toContain("لا يعني أن الطابعة نفّذت المهمة");
   });
 
   it("performs no unavailable reads, never treating an unverified fact as empty", async () => {
