@@ -28,6 +28,58 @@ export type CurrentAuthorization = {
   modules: PlatformModuleCode[];
   permissions: string[];
 };
+export type OrganizationMembershipRole = "OWNER" | "ADMIN" | "VIEWER";
+export type OrganizationWorkspaceReference = {
+  id: string;
+  code: string;
+  name: string;
+  role: OrganizationMembershipRole;
+};
+export type OrganizationDashboardCompany = {
+  id: string;
+  code: string;
+  name: string;
+  timezone: string;
+  isActive: boolean;
+  canSwitch: boolean;
+  baseCurrencyCode: string;
+  metricAccess: {
+    activeUsers: boolean;
+    postedDocuments: boolean;
+    postedSales: boolean;
+    postedPurchases: boolean;
+  };
+  activeUsers: number | null;
+  postedDocuments: number | null;
+  postedSalesBase: string | null;
+  postedPurchasesBase: string | null;
+};
+export type OrganizationDashboard = {
+  generatedAt: string;
+  period: { days: 30 | 90 | 365; from: string; to: string };
+  organization: OrganizationWorkspaceReference & {
+    memberCount: number;
+    canManageMembers: boolean;
+    canManageOwners: boolean;
+  };
+  companies: OrganizationDashboardCompany[];
+  boundaries: {
+    companyAccessRequired: true;
+    companyPermissionsRequired: true;
+    consolidatedStatements: false;
+    intercompanyEliminations: false;
+    crossCurrencyAggregation: false;
+  };
+};
+export type OrganizationMember = {
+  user: { id: string; displayName: string; email: string; isActive: boolean };
+  role: OrganizationMembershipRole;
+  isActive: boolean;
+  version: number;
+  activeCompanyAccess: number;
+  createdAt: string;
+  updatedAt: string;
+};
 export type EmployeeAccountOption = { id: string; employeeNumber: string; nameAr: string; nameEn: string | null; status: "ACTIVE" | "ON_LEAVE" | "TERMINATED" };
 export type AdminUser = { id: string; email: string; nameAr: string; nameEn: string | null; status: "ACTIVE" | "LOCKED" | "DISABLED"; lastLoginAt: string | null; createdAt: string; updatedAt: string; employee: EmployeeAccountOption | null };
 export type Permission = { id: string; code: string; module: string; descriptionAr: string };

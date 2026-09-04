@@ -483,6 +483,12 @@ enum PlatformSubscriptionChangeSource {
   MIGRATION
 }
 
+enum OrganizationMembershipRole {
+  OWNER
+  ADMIN
+  VIEWER
+}
+
 model Organization {
   id                   BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
   code                 String                @unique @default(uuid()) @db.VarChar(80)
@@ -490,6 +496,8 @@ model Organization {
   createdAt            DateTime              @default(now()) @map("created_at")
   updatedAt            DateTime              @updatedAt @map("updated_at")
   companies            Company[]
+  memberships          OrganizationMembership[]
+  auditLogs             OrganizationAuditLog[]
   registrationRequests RegistrationRequest[] @relation("RegistrationOrganization")
 
   @@map("organizations")
@@ -640,9 +648,11 @@ model User {
   createdAt                            DateTime                           @default(now()) @map("created_at")
   updatedAt                            DateTime                           @updatedAt @map("updated_at")
   assignments                          UserCompany[]
+  organizationMemberships              OrganizationMembership[]
   sessions                             Session[]
   idempotency                          IdempotencyRecord[]
   auditLogs                            AuditLog[]
+  organizationAuditLogs                OrganizationAuditLog[]
   platformPlansCreated                 PlatformPlan[]                     @relation("PlatformPlanCreatedBy")
   platformPlansUpdated                 PlatformPlan[]                     @relation("PlatformPlanUpdatedBy")
   platformPlanVersionsCreated          PlatformPlanVersion[]              @relation("PlatformPlanVersionCreatedBy")
@@ -1078,6 +1088,23 @@ model UserCompany {
   @@map("user_companies")
 }
 
+model OrganizationMembership {
+  organizationId BigInt                     @map("organization_id") @db.UnsignedBigInt
+  userId         BigInt                     @map("user_id") @db.UnsignedBigInt
+  role           OrganizationMembershipRole @default(VIEWER)
+  isActive       Boolean                    @default(true) @map("is_active")
+  version        Int                        @default(0) @db.UnsignedInt
+  createdAt      DateTime                   @default(now()) @map("created_at")
+  updatedAt      DateTime                   @updatedAt @map("updated_at")
+  organization   Organization               @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  user           User                       @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@id([organizationId, userId])
+  @@index([userId, isActive])
+  @@index([organizationId, role, isActive])
+  @@map("organization_memberships")
+}
+
 model Role {
   id           BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
   companyId    BigInt            @map("company_id") @db.UnsignedBigInt
@@ -1121,6 +1148,23 @@ model AuditLog {
   @@index([companyId, createdAt])
   @@index([actorUserId])
   @@map("audit_logs")
+}
+
+model OrganizationAuditLog {
+  id             BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
+  organizationId BigInt       @map("organization_id") @db.UnsignedBigInt
+  actorUserId    BigInt       @map("actor_user_id") @db.UnsignedBigInt
+  action         String       @db.VarChar(120)
+  entityType     String       @map("entity_type") @db.VarChar(80)
+  entityId       String       @map("entity_id") @db.VarChar(64)
+  details        Json?
+  createdAt      DateTime     @default(now()) @map("created_at")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  actor          User         @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([organizationId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@map("organization_audit_logs")
 }
 
 model SecurityEvent {

@@ -9,6 +9,8 @@ import { AuthError, type AuthService } from './auth/auth-service.js';
 import { createAuthRouter } from './auth/auth-router.js';
 import type { UserService } from './users/user-service.js';
 import { createUserRouter } from './users/user-router.js';
+import type { OrganizationMembershipService } from './users/organization-membership-service.js';
+import { createOrganizationOwnerRouter } from './organizations/organization-owner-router.js';
 import type { WorkforceAccessService } from './workforce-access/workforce-access-service.js';
 import type { FiscalService } from './fiscal/fiscal-service.js';
 import type { FinancialCloseService } from './fiscal/financial-close-service.js';
@@ -175,6 +177,7 @@ export type AppServices = {
   registration?: RegistrationService;
   passwordReset?: PasswordResetService;
   users?: UserService;
+  organizationMemberships?: OrganizationMembershipService;
   workforceAccess?: WorkforceAccessService;
   platformOperations?: PlatformOperationsService;
   platformBilling?: PlatformBillingService;
@@ -388,6 +391,7 @@ export function createApp(config: AppConfig, services: AppServices = {}) {
     app.use('/api/v1', createSubscriptionUsageRouter(services.auth, services.subscriptionUsage));
   }
   if (services.auth && services.users && services.workforceAccess) app.use('/api/v1', createUserRouter(services.auth, services.users, services.workforceAccess));
+  if (services.auth && services.organizationMemberships) app.use('/api/v1', createOrganizationOwnerRouter(services.auth, services.organizationMemberships));
   if (services.auth && services.companies) app.use('/api/v1', createCompanyRouter(services.auth, services.companies));
   if (services.auth && services.printing) app.use('/api/v1', createPrintRouter(services.auth, services.printing));
   if (services.auth && services.retailReceipts) app.use('/api/v1', createRetailReceiptRouter(services.auth, services.retailReceipts));

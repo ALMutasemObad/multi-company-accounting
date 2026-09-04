@@ -1,8 +1,8 @@
 ---
 title: "Bounded Context Map"
 status: "accepted target architecture"
-version: "3.1"
-last_updated: "2026-08-30"
+version: "3.2"
+last_updated: "2026-09-04"
 ---
 
 # خريطة الـBounded Contexts وملكية البيانات
@@ -19,8 +19,8 @@ last_updated: "2026-08-30"
 
 | Context | المسؤولية | ملكية الكتابة المستهدفة | ملاحظات |
 |---|---|---|---|
-| Identity & Access | الهوية والجلسات والأدوار والصلاحيات واستعادة كلمة المرور | `User`, `Session`, `PasswordResetRequest`, `UserCompany`, `Role`, `Permission`, `RolePermission`, `UserCompanyRole` | يقدم منافذ الهوية؛ `ActorContext` نوع محايد في Application Kernel، وبريد الاستعادة أثر Outbox |
-| Tenant & Company Configuration | المؤسسة والشركة والعملات والإعدادات | `Organization`, `Company`, `Currency`, `CompanyCurrency`, `CompanyExchangeRate` | Organization تجمع الشركات فقط حاليًا؛ لا أدوار مجموعة أو تجميع مالي. فحص الاستخدام عبر Ports، لا عبر معرفة كل جداول المستندات |
+| Identity & Access | الهوية والجلسات وعضويات الشركات والمجموعات والأدوار والصلاحيات واستعادة كلمة المرور | `User`, `Session`, `PasswordResetRequest`, `UserCompany`, `OrganizationMembership`, `Role`, `Permission`, `RolePermission`, `UserCompanyRole` | دور `OrganizationMembership` مستقل عن RBAC الشركة وعن مشغل المنصة، ولا يمنح وصول شركة؛ يقدم السياق منافذ الهوية، و`ActorContext` نوع محايد في Application Kernel |
+| Tenant & Company Configuration | المؤسسة والشركة والعملات والإعدادات | `Organization`, `Company`, `Currency`, `CompanyCurrency`, `CompanyExchangeRate` | `Organization` تجمع الشركات، بينما عضويتها يملكها Identity. لا تجميع مالي أو Intercompany؛ فحص الاستخدام عبر Ports لا عبر معرفة كل جداول المستندات |
 | Registration & Onboarding | دورة التسجيل والتحقق والتنسيق | `RegistrationRequest`, `RegistrationEvent` | Process Manager؛ لا يملك User/Company/Account |
 | Core Accounting | السنة والفترة والدليل والمستند والدفتر والترحيل وحسابات فروقات العملة | `FiscalYear`, `FiscalPeriod`, `DocumentSequence`, `AccountingDocument`, `JournalEntry`, `JournalLine`, `AccountType`, `Account`, `CostCenter` | المالك الوحيد للـPosting Engine ويحل حسابي ربح/خسارة فرق العملة عبر منفذ صغير |
 | Sales & Accounts Receivable | العميل والفاتورة والذمة وسياسة تسوية التحصيل وافتراضات بيع الصنف | `Customer`, `CustomerAddress`, `SalesInvoice`, `SalesInvoiceLine`, `ReceivableItem`, `SalesItemSellingProfile` | يكشف `ReceivableSettlementPort` وكتالوج بيع محدود؛ يقرأ هوية الصنف والعملة والحساب والضريبة عبر Ports ولا ينشئ Journal Lines مباشرة |
@@ -39,7 +39,7 @@ last_updated: "2026-08-30"
 | Platform Operations & Billing | مؤشرات تبني وصحة المنصة وملف الشركة، وحساب الفوترة وفاتورتها وسدادها ودورة الدفع الإلكتروني | `PlatformBillingAccount`, `PlatformBillingInvoice`, `PlatformBillingInvoiceLine`, `PlatformBillingPayment`, `PlatformPaymentAttempt`, `PlatformCheckoutSession`, `PlatformPaymentTransition`, `PlatformWebhookReceipt`, `PlatformBillingRefund` | يقرأ الاستخدام ولقطة الاشتراك عبر Query Ports، ويملك `PlatformPaymentProviderPort`؛ لا يكتب حالة الاشتراك أو Sales/AR أو Treasury أو Ledger للشركة العميلة |
 | Platform Subscriptions & Entitlements | كتالوج الخطط والموديولات واشتراك الشركة واستحقاقاتها وتغييراتها المؤرخة | `PlatformModule`, `PlatformModuleDependency`, `PlatformPlan`, `PlatformPlanVersion`, `PlatformPlanEntitlement`, `PlatformSubscription`, `PlatformSubscriptionEntitlement`, `PlatformSubscriptionChange`, `PlatformSubscriptionChangeModule` | يستهلك حالة الفوترة عبر Port عند الحاجة ولا يكتب جداول الدفع؛ الاستحقاق التجاري مستقل عن RBAC ولا يتغير بمجرد Webhook دفع |
 | Data Import | تنسيق القوالب والمعاينة والاعتماد الجماعي | `DataImportBatch` فقط | Process Manager؛ يستدعي منافذ المالكين ولا يخزن الملف أو يرحّل الفواتير |
-| Audit | سجل الأعمال والامتثال | `AuditLog` | Append-only، وليس Event Bus |
+| Audit | سجل الأعمال والامتثال | `AuditLog`, `OrganizationAuditLog` | Append-only بنطاق شركة أو مؤسسة صريح، وليس Event Bus؛ لا يوضع فعل مجموعة مصطنعًا تحت شركة واحدة |
 | Security Monitoring | أحداث المخاطر والإقرار | `SecurityEvent` | يمكنه إصدار تنبيه Integration بعد حفظ الحدث |
 | Application Infrastructure | Idempotency وOutbox والتسلسلات التقنية والتشغيل والحماية المشتركة من إساءة الاستخدام | `IdempotencyRecord`, `OutboxEvent`, `MasterDataCodeSequence`, `RateLimitCounter` | ليست Bounded Context أعمال؛ تخزن HMAC هوية بسر تشغيل مستقل لا IP أو بريدًا أو رمزًا خامًا، وتوفر حجز الرمز الذري للكيانات المرجعية ولا تملك تلك الكيانات |
 
@@ -73,6 +73,7 @@ Professional Projects ──> Human Resources employee query port
 Professional Projects ──> Tenant currency query port and Sales professional-billing application/query port
 Human Resources ────────> Identity membership query port
 Workforce Access workflow ──> Human Resources employee-account port + Identity account port
+Organization owner workspace ──> Identity membership + Tenant directory + Accounting/Sales/Purchases query ports
 All operational contexts ──> Audit append port
 Authentication/Identity ───> Security append port
 
@@ -160,6 +161,13 @@ Platform Subscriptions & Entitlements وفق [ADR-019](ADR-019-public-subscripti
   للجهة المصدر، وأضيفت حواجز آلية تمنع عودة الكتابات والقراءات المباشرة المحظورة.
 
 لا توجد حاليًا قائمة استثناءات ملكية مسموح بنسخها؛ أي استثناء جديد يحتاج ADR صريحًا.
+
+وفي 4 سبتمبر 2026 نُفذت شريحة مساحة مالك المجموعة وفق
+[حدود عضوية المجموعة ومساحة المالك](ORGANIZATION_MEMBERSHIP_OWNER_WORKSPACE_AR.md).
+يملك Identity العضوية وأدوار `OWNER/ADMIN/VIEWER`، وتبقى عضوية `UserCompany` شرطًا
+مستقلًا لظهور الشركة وللتبديل إليها. تنسق لوحة القراءة منافذ Tenant وCore Accounting
+وSales وPurchases ولا تجمع المبالغ بين العملات ولا تنتج قوائم موحدة أو إلغاءات
+Intercompany. تحفظ تغييرات العضوية في `OrganizationAuditLog` ولا تمنح أي صلاحية منصة.
 
 ## 7. حدود Aggregates المقترحة
 

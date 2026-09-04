@@ -6,6 +6,7 @@ import type { PlatformModuleCode } from './types';
 export type View =
   | "home"
   | "dashboard"
+  | "organizationOwner"
   | "platform"
   | "platformSubscriptions"
   | "subscription"
@@ -38,6 +39,7 @@ export type NavigationItem = {
   label: TranslationKey;
   module?: PlatformModuleCode;
   platformOnly?: boolean;
+  organizationOnly?: boolean;
 };
 
 export type NavigationAccess = {
@@ -45,9 +47,10 @@ export type NavigationAccess = {
   permissionSet: ReadonlySet<string>;
   hasSelectedCompany: boolean;
   platformOperations: boolean;
+  organizationWorkspace?: boolean;
 };
 
-type TenantProtectedView = Exclude<View, "home" | "platform" | "platformSubscriptions">;
+type TenantProtectedView = Exclude<View, "home" | "organizationOwner" | "platform" | "platformSubscriptions">;
 
 export const viewPermissionPolicies: Record<TenantProtectedView, PermissionPolicy> = {
   dashboard: { permission: "dashboard.view" },
@@ -79,6 +82,7 @@ export const viewPermissionPolicies: Record<TenantProtectedView, PermissionPolic
 export const navigationItems: NavigationItem[] = [
   { view: "home", icon: "home", label: "nav.home" },
   { view: "dashboard", icon: "dashboard", label: "nav.dashboard", module: 'REPORTING' },
+  { view: "organizationOwner", icon: "building", label: "nav.organizationOwner", organizationOnly: true },
   { view: "platform", icon: "platform", label: "nav.platform", platformOnly: true },
   { view: "platformSubscriptions", icon: "calendar", label: "nav.platformSubscriptions", platformOnly: true },
   { view: "subscription", icon: "calendar", label: "nav.subscription" },
@@ -119,6 +123,7 @@ export function isNavigationItemVisible(
   if (item.view === "platform" || item.view === "platformSubscriptions") {
     return item.platformOnly === true && access.platformOperations;
   }
+  if (item.view === "organizationOwner") return item.organizationOnly === true && access.organizationWorkspace;
   if (!access.hasSelectedCompany) return false;
   if (item.view === "home") return true;
   if (item.module && !access.moduleSet.has(item.module)) return false;
@@ -131,7 +136,7 @@ export const visibleNavigationItems = (access: NavigationAccess) =>
 export function resolveAuthorizedView(requested: View, access: NavigationAccess): View {
   const requestedItem = navigationItems.find((item) => item.view === requested);
   if (requestedItem && isNavigationItemVisible(requestedItem, access)) return requested;
-  return access.hasSelectedCompany ? "home" : access.platformOperations ? "platform" : "home";
+  return access.hasSelectedCompany ? "home" : access.platformOperations ? "platform" : access.organizationWorkspace ? "organizationOwner" : "home";
 }
 
 export type ModuleCard = NavigationItem & { description: TranslationKey };

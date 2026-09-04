@@ -18,8 +18,10 @@ import { arSubscriptionUsage } from "./subscription-usage";
 import { arSubscriptionChanges } from "./subscription-changes";
 import { arBillingRecovery } from "./billing-recovery";
 import { arCrm } from "./crm";
+import { arOrganizationOwner } from "./organization-owner";
 
 export const ar = {
+  ...arOrganizationOwner,
   ...arCrm,
   ...arSubscriptionChanges,
   ...arBillingRecovery,

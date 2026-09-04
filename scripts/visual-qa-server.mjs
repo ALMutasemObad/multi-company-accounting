@@ -80,6 +80,26 @@ const currentAuthorization = {
   ],
   permissions: visualQaPermissions,
 };
+const organizationWorkspaces = [
+  { id: "501", code: "AFAQ-GROUP", name: "مجموعة أفق", role: "OWNER" },
+];
+const organizationDashboard = {
+  generatedAt: "2026-09-04T12:00:00.000Z",
+  period: { days: 30, from: "2026-08-06", to: "2026-09-04" },
+  organization: { ...organizationWorkspaces[0], memberCount: 4, canManageMembers: true, canManageOwners: true },
+  companies: [
+    { id: "1", code: "AFQ-RUH", name: "أفق الرياض", timezone: "Asia/Riyadh", isActive: true, canSwitch: true, baseCurrencyCode: "SAR", metricAccess: { activeUsers: true, postedDocuments: true, postedSales: true, postedPurchases: true }, activeUsers: 18, postedDocuments: 284, postedSalesBase: "845200.0000", postedPurchasesBase: "319840.0000" },
+    { id: "502", code: "AFQ-JED", name: "أفق جدة", timezone: "Asia/Riyadh", isActive: true, canSwitch: true, baseCurrencyCode: "SAR", metricAccess: { activeUsers: true, postedDocuments: true, postedSales: true, postedPurchases: true }, activeUsers: 11, postedDocuments: 172, postedSalesBase: "492600.0000", postedPurchasesBase: "208350.0000" },
+    { id: "503", code: "AFQ-DXB", name: "Afaq Dubai", timezone: "Asia/Dubai", isActive: true, canSwitch: true, baseCurrencyCode: "AED", metricAccess: { activeUsers: true, postedDocuments: true, postedSales: true, postedPurchases: true }, activeUsers: 7, postedDocuments: 96, postedSalesBase: "301250.0000", postedPurchasesBase: "126800.0000" },
+    { id: "504", code: "AFQ-OLD", name: "فرع مؤرشف", timezone: "Asia/Riyadh", isActive: false, canSwitch: false, baseCurrencyCode: "SAR", metricAccess: { activeUsers: false, postedDocuments: false, postedSales: false, postedPurchases: false }, activeUsers: null, postedDocuments: null, postedSalesBase: null, postedPurchasesBase: null },
+  ],
+  boundaries: { companyAccessRequired: true, companyPermissionsRequired: true, consolidatedStatements: false, intercompanyEliminations: false, crossCurrencyAggregation: false },
+};
+const organizationMembers = [
+  { user: { id: "1", displayName: "مالك المجموعة", email: "owner@afaq.example", isActive: true }, role: "OWNER", isActive: true, version: 2, activeCompanyAccess: 3, createdAt: "2026-01-01T08:00:00.000Z", updatedAt: "2026-08-10T08:00:00.000Z" },
+  { user: { id: "601", displayName: "مدير العمليات", email: "operations@afaq.example", isActive: true }, role: "ADMIN", isActive: true, version: 0, activeCompanyAccess: 2, createdAt: "2026-04-01T08:00:00.000Z", updatedAt: "2026-04-01T08:00:00.000Z" },
+  { user: { id: "602", displayName: "مراجع المجموعة", email: "reviewer@afaq.example", isActive: true }, role: "VIEWER", isActive: true, version: 1, activeCompanyAccess: 1, createdAt: "2026-05-01T08:00:00.000Z", updatedAt: "2026-08-14T08:00:00.000Z" },
+];
 const zeroSection = { rows: [], total: "0.00", comparisonTotal: null, variance: null, variancePercent: null };
 const fiscalPeriod = { id: "1001", fiscalYearId: "1001", periodNumber: 12, name: "ديسمبر 2026", startDate: "2026-12-01", endDate: "2026-12-31", status: "OPEN", closedAt: null, reopenedAt: null, reopenReason: null, version: 0 };
 const closeReadiness = {
@@ -484,6 +504,12 @@ export function responseFor(url, method, headers = {}) {
   if (pathname === "/auth/companies") return { data: [company] };
   if (pathname === "/auth/context" || pathname === "/auth/logout") return null;
   if (pathname === "/platform/capabilities") return { platformOperations: true };
+  if (pathname === "/organizations/workspaces") return { data: organizationWorkspaces };
+  if (pathname === "/organizations/501/dashboard") return {
+    ...organizationDashboard,
+    period: { ...organizationDashboard.period, days: Number(url.searchParams.get("days") ?? 30) },
+  };
+  if (pathname === "/organizations/501/members") return { data: organizationMembers };
   if (pathname === "/platform/overview") return platformOverview;
   if (pathname === "/platform/analytics") return platformAnalytics(url);
   if (pathname === "/platform/subscription-modules") return { modules: [] };

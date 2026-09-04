@@ -51,6 +51,11 @@ try {
     update: { isActive: true },
     create: { userId: user.id, companyId: company.id },
   });
+  await prisma.organizationMembership.upsert({
+    where: { organizationId_userId: { organizationId: organization.id, userId: user.id } },
+    update: { role: 'OWNER', isActive: true },
+    create: { organizationId: organization.id, userId: user.id, role: 'OWNER' },
+  });
   const administratorRole = await prisma.role.upsert({
     where: { companyId_code: { companyId: company.id, code: 'ADMINISTRATOR' } },
     update: { nameAr: 'مدير النظام', isActive: true, isSystemRole: true },

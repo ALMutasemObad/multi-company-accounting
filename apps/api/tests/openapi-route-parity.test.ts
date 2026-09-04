@@ -42,6 +42,7 @@ import { createPlatformOperationsRouter } from '../src/platform-operations/platf
 import { createPlatformPaymentRouter } from '../src/platform-operations/payments/platform-payment-router.js';
 import { createPlatformSubscriptionRouter } from '../src/platform-subscriptions/platform-subscription-router.js';
 import { createSubscriptionUsageRouter } from '../src/platform-subscriptions/subscription-usage-router.js';
+import { createOrganizationOwnerRouter } from '../src/organizations/organization-owner-router.js';
 
 type RouteLayer = {
   route?: {
@@ -60,6 +61,7 @@ const routers = [
   { prefix: '', router: createPlatformSubscriptionRouter(stub, stub, stub) },
   { prefix: '', router: createSubscriptionUsageRouter(stub, stub) },
   { prefix: '', router: createUserRouter(stub, stub, stub) },
+  { prefix: '', router: createOrganizationOwnerRouter(stub, stub) },
   { prefix: '', router: createCompanyRouter(stub, stub) },
   { prefix: '', router: createPrintRouter(stub, stub) },
   { prefix: '', router: createRetailReceiptRouter(stub, stub) },

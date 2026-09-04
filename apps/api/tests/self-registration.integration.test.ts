@@ -104,6 +104,10 @@ describe.runIf(enabled)('self-registration with MariaDB', () => {
       await prisma.account.deleteMany({ where: { companyId: { in: companyIds } } });
       await prisma.company.deleteMany({ where: { id: { in: companyIds } } });
     }
+    if (organizationIds.length) {
+      await prisma.organizationAuditLog.deleteMany({ where: { organizationId: { in: organizationIds } } });
+      await prisma.organizationMembership.deleteMany({ where: { organizationId: { in: organizationIds } } });
+    }
     for (const organizationId of organizationIds) {
       if (await prisma.company.count({ where: { organizationId } }) === 0) await prisma.organization.deleteMany({ where: { id: organizationId } });
     }

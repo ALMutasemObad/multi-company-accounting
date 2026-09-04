@@ -96,6 +96,7 @@ import { createCashierContextService } from './composition/create-cashier-contex
 import { CrmService } from './crm/crm-service.js';
 import { CrmWorkforceAdapter } from './hr/crm-workforce-adapter.js';
 import { CrmCurrencyAdapter } from './companies/crm-currency-adapter.js';
+import { createOrganizationMembershipService } from './composition/create-organization-membership-service.js';
 
 const config = loadConfig();
 if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required to start the API');
@@ -284,6 +285,7 @@ async function startServer() {
     ...(registration ? { registration } : {}),
     ...(passwordReset ? { passwordReset } : {}),
     users,
+    organizationMemberships: createOrganizationMembershipService(database),
     workforceAccess,
     platformOperations,
     platformBilling,

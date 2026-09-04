@@ -72,6 +72,7 @@ last_updated: "2026-08-30"
 57. [إنفاذ قدرات اشتراك الشركة SUB-2](PLATFORM_SUBSCRIPTION_CAPABILITY_ENFORCEMENT_AR.md): تقاطع الاستحقاق المؤرخ مع RBAC وحواجز التفعيل في الخادم، وعقد `/auth/me` ووعي التنقل والأفعال بالموديولات، وحفظ grandfathering للشركات الجديدة.
 58. [مركز الخطط ودورة حياة الاشتراك SUB-3](PLATFORM_SUBSCRIPTION_LIFECYCLE_SUB3_AR.md): إدارة DRAFT/PUBLISH الثابتة، والقوالب غير المسعرة، وتغييرات الاشتراك المؤرخة والمعلقة، وإغلاق اعتماديات الموديولات، وصفحتا المشغل والمالك من دون مزود دفع.
 59. [أساس الدفع الإلكتروني وفوترة الاشتراك SUB-4](PLATFORM_ELECTRONIC_PAYMENTS_SUB4_AR.md): ملكية الدفع لدى Platform Operations & Billing، ودورة Attempt/Checkout/Webhook/Refund، والعملات وminor units والرجوع المحروس، مع توضيح أن Adapter التطوير وAPI والواجهة ما زالت مراحل لاحقة.
+60. [عضوية Organization ومساحة مالك المجموعة](ORGANIZATION_MEMBERSHIP_OWNER_WORKSPACE_AR.md): أدوار المجموعة المستقلة، تقاطع عضوية الشركة، حدود المقارنة غير الموحدة، والتدقيق والتزامن.
 
 التقرير [ARCHITECTURE_AUDIT_DDD_EVENT_DRIVEN_AR.md](../ARCHITECTURE_AUDIT_DDD_EVENT_DRIVEN_AR.md) وثيقة تقييم وأدلة، وليس بديلًا عن القرارات الحاكمة أعلاه.
 
