@@ -4,6 +4,7 @@ import { authMeResponse } from "./auth-me-mock.js";
 const tenantCompany = { id: "1", name: "North Star Services", timezone: "Asia/Riyadh" };
 const tenantPermissions = [
   "pos.view",
+  "sales_invoices.view",
   "professional_projects.view",
   "hr.employees.view",
   "hr.structure.view",
@@ -81,6 +82,7 @@ async function mockBootstrap(page: Page, platformOperations: boolean) {
     if (path === "/auth/context") return route.fulfill({ status: 204, body: "" });
     if (path === "/platform/capabilities") return json({ platformOperations });
     if (path === "/platform/analytics") return json(analytics);
+    if (path === "/platform/companies") return json({ data: [], total: 0, page: 1, pageSize: 25 });
     if (request.method() === "GET") return json({ data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } });
     return route.fulfill({ status: 204, body: "" });
   });
@@ -95,18 +97,28 @@ test("opens the card-based system directory and the authorized platform dashboar
   await expect(page.getByRole("button", { name: "Open Point of Sale" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Open Human resources" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Open Professional projects" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What do you want to complete now?" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start Sales invoices" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Measure adoption and billing across companies" })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await page.setViewportSize({ width: 1440, height: 900 });
 
-  await page.getByRole("button", { name: "Platform operations" }).click();
+  await page.locator(".sidebar").getByRole("button", { name: "Platform operations", exact: true }).click();
   await expect(page).toHaveURL(/#platform$/u);
   await expect(page.getByRole("heading", { name: "Platform operations dashboard" })).toBeVisible();
+  await expect(page.getByText("You are in the platform workspace")).toBeVisible();
+  await expect(page.locator(".topbar-title")).toContainText("Aggregate cross-company scope");
   await expect(page.getByText("12,840").first()).toBeVisible();
   await expect(page.getByText("North Star Services").last()).toBeVisible();
   await expect(page.getByRole("heading", { name: "Usage and operating activity" })).toBeVisible();
+  await page.getByRole("button", { name: "Open companies & usage" }).click();
+  await expect(page.getByRole("button", { name: "Companies & usage" })).toHaveClass(/\bactive\b/u);
+  await expect(page.getByRole("heading", { name: "All companies" })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.getByRole("button", { name: "Return to company work" }).click();
+  await expect(page).toHaveURL(/#home$/u);
 });
 
 test("does not expose the platform dashboard to a tenant-only user", async ({ page }) => {
@@ -115,5 +127,6 @@ test("does not expose the platform dashboard to a tenant-only user", async ({ pa
 
   await expect(page).toHaveURL(/#home$/u);
   await expect(page.getByRole("heading", { name: "Every company workflow in one place" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Platform operations" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Platform operations", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Measure adoption and billing across companies" })).toHaveCount(0);
 });

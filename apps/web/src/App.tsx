@@ -294,11 +294,30 @@ export default function App() {
           <div><strong>{brand.shortName}</strong><span>{t("app.trustedFinance")}</span></div>
         </div>
         <nav aria-label={t("app.mainNavigation")}>
-          {allowedNavigationItems.map((item) => (
-            <button type="button" key={item.view} className={activeView === item.view ? "active" : ""} aria-current={activeView === item.view ? "page" : undefined} onClick={() => navigate(item.view)}>
+          {allowedNavigationItems.some((item) => item.view === "home" || item.view === "dashboard") && <>
+            <span className="sidebar-section-label">{t("app.companyWorkspace")}</span>
+            {allowedNavigationItems.filter((item) => item.view === "home" || item.view === "dashboard").map((item) => (
+              <button type="button" key={item.view} className={activeView === item.view ? "active" : ""} aria-current={activeView === item.view ? "page" : undefined} onClick={() => navigate(item.view)}>
+                <Icon name={item.icon} /><span>{t(item.label)}</span>
+              </button>
+            ))}
+          </>}
+          {allowedNavigationItems.some((item) => item.platformOnly) && <>
+            <span className="sidebar-section-label platform">{t("app.platformWorkspace")}</span>
+            {allowedNavigationItems.filter((item) => item.platformOnly).map((item) => (
+              <button type="button" key={item.view} className={`platform-nav-item ${activeView === item.view ? "active" : ""}`} aria-current={activeView === item.view ? "page" : undefined} onClick={() => navigate(item.view)}>
+                <Icon name={item.icon} /><span>{t(item.label)}</span>
+              </button>
+            ))}
+          </>}
+          {allowedNavigationItems.some((item) => !item.platformOnly && item.view !== "home" && item.view !== "dashboard") && <>
+            <span className="sidebar-section-label modules">{t("app.companyModules")}</span>
+            {allowedNavigationItems.filter((item) => !item.platformOnly && item.view !== "home" && item.view !== "dashboard").map((item) => (
+              <button type="button" key={item.view} className={activeView === item.view ? "active" : ""} aria-current={activeView === item.view ? "page" : undefined} onClick={() => navigate(item.view)}>
               <Icon name={item.icon} /><span>{t(item.label)}</span>
             </button>
           ))}
+          </>}
         </nav>
         {(company || companies.length > 1) && <div className="sidebar-footer">
           {company && <div className="company-badge"><Icon name="building" /><div><span>{t("app.currentCompany")}</span><strong>{company.name}</strong></div></div>}
@@ -315,7 +334,7 @@ export default function App() {
       <div className="app-main">
         <header className="topbar">
           <button type="button" className="menu-button" aria-label={t("app.openNavigation")} onClick={() => setMobileNav(true)}><Icon name="menu" /></button>
-          <div className="topbar-title"><span>{t(viewTitleKey[activeView])}</span><small>{company?.name ?? (activeView === "platform" || activeView === "platformSubscriptions" ? t("nav.platform") : "")}</small></div>
+          <div className="topbar-title"><span>{t(viewTitleKey[activeView])}</span><small>{activeView === "platform" || activeView === "platformSubscriptions" ? t("app.platformScope") : company?.name}</small></div>
           <div className="user-menu">
             <div className="avatar">{user.displayName.slice(0, 1) || brand.mark.slice(0, 1)}</div>
             <span>{user.displayName || t("app.currentUser")}</span>
@@ -341,10 +360,10 @@ export default function App() {
           <Suspense key={`${user.id}:${company?.id ?? "platform"}`} fallback={<div className="loading"><Spinner /><span>{t("app.loadingModule")}</span></div>}>
             {activeView === "home" && <>
               <SubscriptionUpgradeHome dismissals={subscriptionDismissals} onOpenSubscription={() => navigate('subscription')} />
-              <SystemHomePage onNavigate={navigate} onOpenSetupTarget={navigateRoute} />
+              <SystemHomePage onNavigate={navigate} onOpenSetupTarget={navigateRoute} platformOperator={platformOperator === true} />
             </>}
             {activeView === "dashboard" && <DashboardPage onNavigate={navigate} />}
-            {activeView === "platform" && platformOperator && <PlatformOperationsPage />}
+            {activeView === "platform" && platformOperator && <PlatformOperationsPage onNavigate={navigate} />}
             {activeView === "platformSubscriptions" && platformOperator && <PlatformSubscriptionsPage notify={notify} />}
             {activeView === "subscription" && <CompanySubscriptionPage notify={notify} />}
             {activeView === "pos" && <PosPage notify={notify} />}

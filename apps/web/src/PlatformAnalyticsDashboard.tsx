@@ -35,9 +35,13 @@ const moduleLabels: Record<PlatformAnalyticsDashboard["modules"][number]["code"]
 export function PlatformAnalyticsDashboardView({
   revision,
   onOpenCompany,
+  onOpenCompanies,
+  onOpenBilling,
 }: {
   revision: number;
   onOpenCompany: (company: CompanyTarget) => void;
+  onOpenCompanies: () => void;
+  onOpenBilling: () => void;
 }) {
   const { formatNumber, t } = useI18n();
   const initial = useMemo(() => presetRange("30D"), []);
@@ -137,6 +141,11 @@ export function PlatformAnalyticsDashboardView({
           <Button variant="secondary" onClick={() => void load()} disabled={loading}>{t("platform.refresh")}</Button>
         </div>
       </div>
+      <nav className="platform-analytics-shortcuts" aria-label={t("platform.analytics.shortcutsAria")}>
+        <div><strong>{t("platform.analytics.shortcutsTitle")}</strong><span>{t("platform.analytics.shortcutsDescription")}</span></div>
+        <Button variant="secondary" icon="building" onClick={onOpenCompanies}>{t("platform.analytics.openCompanies")}</Button>
+        <Button variant="secondary" icon="payments" onClick={onOpenBilling}>{t("platform.analytics.openBilling")}</Button>
+      </nav>
       {error && <div className="inline-notice">{t("platform.stale")}</div>}
       <AnalyticsBody dashboard={dashboard} currencyCode={currencyCode} onDrillCompany={drillCompany} onOpenCompany={onOpenCompany} />
     </>}

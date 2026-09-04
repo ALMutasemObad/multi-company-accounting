@@ -71,3 +71,8 @@
   .retail-step-actions > button { width: 100%; }
   .retail-home .system-group > header { flex-direction: column; gap: 8px; }
 }
+
+/* The owner demo intentionally keeps the grocery home on two readable type sizes. */
+.retail-home.retail-home :is(h1, h2, h3) { font-size: var(--retail-heading); }
+.retail-home.retail-home :is(h4, p, button, small, strong) { font-size: var(--retail-body); }
+.retail-home.retail-home .system-card-copy > strong { font-size: var(--retail-heading); }

@@ -132,6 +132,47 @@ export function resolveAuthorizedView(requested: View, access: NavigationAccess)
 }
 
 export type ModuleCard = NavigationItem & { description: TranslationKey };
+export type QuickStart = NavigationItem & {
+  title: TranslationKey;
+  description: TranslationKey;
+  path: TranslationKey;
+};
+
+export const companyQuickStarts: QuickStart[] = [
+  {
+    view: "pos",
+    icon: "wallet",
+    label: "nav.pos",
+    title: "home.quick.pos.title",
+    description: "home.quick.pos.description",
+    path: "home.quick.pos.path",
+  },
+  {
+    view: "sales",
+    icon: "document",
+    label: "nav.sales",
+    title: "home.quick.sales.title",
+    description: "home.quick.sales.description",
+    path: "home.quick.sales.path",
+  },
+  {
+    view: "purchases",
+    icon: "suppliers",
+    label: "nav.purchases",
+    title: "home.quick.purchases.title",
+    description: "home.quick.purchases.description",
+    path: "home.quick.purchases.path",
+  },
+  {
+    view: "dashboard",
+    icon: "dashboard",
+    label: "nav.dashboard",
+    title: "home.quick.dashboard.title",
+    description: "home.quick.dashboard.description",
+    path: "home.quick.dashboard.path",
+  },
+];
+
 export type SystemGroup = {
   key: "business" | "workforce" | "finance" | "administration";
   title: TranslationKey;
