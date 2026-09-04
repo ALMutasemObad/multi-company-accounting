@@ -145,6 +145,7 @@ CROSS JOIN (
   SELECT 'CRM_LEAD' AS `entity_type`, 'LED-' AS `prefix`
   UNION ALL SELECT 'CRM_OPPORTUNITY', 'OPP-'
 ) AS `types`
+WHERE 1 = 1
 ON DUPLICATE KEY UPDATE `prefix` = VALUES(`prefix`), `padding` = VALUES(`padding`);
 
 INSERT INTO `permissions` (`code`, `module`, `description_ar`)

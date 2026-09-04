@@ -13,6 +13,7 @@ describe("CRM migration invariants", () => {
     expect(sql).toContain("CHECK ((`lead_id` IS NULL) <> (`opportunity_id` IS NULL))");
     expect(sql).toContain("`probability_bps` <= 10000");
     expect(sql).toContain("UNIQUE KEY `crm_opportunities_lead_company_key`");
+    expect(sql).toMatch(/AS `types`\s+WHERE 1 = 1\s+ON DUPLICATE KEY UPDATE/u);
   });
 
   it("refuses destructive rollback after CRM or idempotency use", async () => {
