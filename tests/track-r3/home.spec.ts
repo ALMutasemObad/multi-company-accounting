@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 const modules = ["SALES", "INVENTORY", "TREASURY", "POS", "REPORTING", "CORE_ACCOUNTING", "PURCHASES"];
-const permissions = ["warehouses.view", "inventory_catalog.view", "inventory_movements.view", "inventory_barcodes.view", "cash_bank_accounts.view", "pos.view", "pos.checkout", "settings.manage", "companies.view", "currencies.view", "fiscal_periods.view", "sales_invoices.view", "receipts.view", "reports.cash_flow.view", "purchase_invoices.view", "suppliers.view", "sales_catalog.view"];
+const permissions = ["warehouses.view", "inventory_catalog.view", "inventory_movements.view", "inventory_barcodes.view", "inventory_barcodes.print", "cash_bank_accounts.view", "pos.view", "pos.checkout", "settings.manage", "companies.view", "currencies.view", "fiscal_periods.view", "sales_invoices.view", "sales_invoices.print", "receipts.view", "reports.cash_flow.view", "purchase_invoices.view", "suppliers.view", "sales_catalog.view"];
 const company = { id: "1", name: "R3 Test Grocery · بقالة اختبار", timezone: "Asia/Riyadh" };
 const evidencePaths = ["/warehouses", "/units-of-measure", "/inventory-items", "/inventory-balances", "/cash-bank-accounts"];
 const labels = {
@@ -59,7 +59,7 @@ for (const locale of ["ar", "en", "ur", "hi"] as const) {
       expect(commands).toEqual([]);
       expect(errors).toEqual([]);
       await expect(home).not.toContainText(/home\.(setup|fact)|undefined|NaN/u);
-      const fontSizes = await home.locator("h1, h2, h3, p, button, small, strong").evaluateAll((elements) => [...new Set(elements.map((element) => getComputedStyle(element).fontSize))].sort());
+      const fontSizes = await home.locator("h1, h2, h3, h4, p, button, small, strong").evaluateAll((elements) => [...new Set(elements.map((element) => getComputedStyle(element).fontSize))].sort());
       expect(fontSizes).toEqual(["16px", "20px"]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       const undersized = await guide.locator("button").evaluateAll((elements) => elements.filter((element) => element.getBoundingClientRect().height < 44).length);
@@ -68,6 +68,8 @@ for (const locale of ["ar", "en", "ur", "hi"] as const) {
       await guide.locator(".retail-next").press("Enter");
       await expect(guide.locator(".retail-step-detail")).toHaveAttribute("data-step", "stock");
       await expect(guide.locator("h3")).toBeFocused();
+      await guide.locator(".retail-step-list button").nth(5).click();
+      await expect(guide.locator("[data-retail-output]")).toHaveCount(2);
       // Only two retained screenshots across the whole matrix.
       if (locale === "ar" && (width === 390 || width === 1440)) {
         await page.evaluate(() => document.fonts.ready);

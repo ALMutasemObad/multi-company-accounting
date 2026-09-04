@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { NavigationAccess, View } from "./app-navigation";
 import { useI18n } from "./i18n";
 import { Icon } from "./ui";
-import { initialRetailStep, retailActions, retailSteps, type RetailFactId, type RetailStepId, type RetailSetupTarget } from "./retail-onboarding-model";
+import { initialRetailStep, retailActions, retailOutputCapabilities, retailSteps, type RetailFactId, type RetailStepId, type RetailSetupTarget } from "./retail-onboarding-model";
 import { canReadRetailFact, initialRetailFacts, readRetailFacts, retailFactDefinitions } from "./retail-onboarding-read";
 
 export function RetailOnboardingGuide({ access, onNavigate, onOpenSetupTarget }: {
@@ -21,6 +21,7 @@ export function RetailOnboardingGuide({ access, onNavigate, onOpenSetupTarget }:
   const canCheck = retailFactDefinitions.some((fact) => canReadRetailFact(fact, access));
   const hasError = Object.values(facts).includes("error");
   const index = retailSteps.indexOf(step);
+  const outputs = retailOutputCapabilities(access);
 
   async function check() {
     request.current?.abort();
@@ -71,6 +72,15 @@ export function RetailOnboardingGuide({ access, onNavigate, onOpenSetupTarget }:
         {step.facts.length > 0 && <ul className="retail-facts" aria-label={t("home.setup.evidence")}>{step.facts.map(evidence)}</ul>}
         <p className="retail-step-note">{t(step.note)}</p>
         {step.id === "catalog" && <p className="retail-price-review">{t("home.setup.priceReview")}</p>}
+        {step.id === "results" && <section className="retail-output-summary" aria-labelledby="retail-output-title">
+          <h4 id="retail-output-title">{t("home.setup.output.title")}</h4>
+          <p>{t("home.setup.output.description")}</p>
+          {outputs.length > 0 ? <ul className="retail-output-list">
+            {outputs.map((output) => <li key={output.id} data-retail-output={output.id}>
+              <strong>{t(output.title)}</strong><span>{t(output.description)}</span>
+            </li>)}
+          </ul> : <p className="retail-access-note">{t("home.setup.output.unavailable")}</p>}
+        </section>}
         <div className="retail-step-actions">
           {actions.map((action) => <button type="button" className="retail-button" key={action.id} data-setup-action={action.id}
             onClick={() => action.target.section && onOpenSetupTarget ? onOpenSetupTarget(action.target) : onNavigate(action.target.view)}>{t(action.label)}<Icon name="back" size={16} /></button>)}

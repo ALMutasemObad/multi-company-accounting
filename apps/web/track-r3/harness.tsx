@@ -24,7 +24,7 @@ window.fetch = async (_input, init) => {
 const initial: CurrentAuthorization = {
   user: { id: "1", displayName: "Synthetic operator" }, selectedCompany: { id: "1", name: "بقالة الاختبار · Synthetic grocery", timezone: "Asia/Riyadh" },
   modules: ["POS", "INVENTORY", "SALES", "PURCHASES", "CORE_ACCOUNTING", "TREASURY", "REPORTING"],
-  permissions: ["pos.view", "pos.checkout", "warehouses.view", "inventory_catalog.view", "inventory_barcodes.view", "inventory_movements.view", "cash_bank_accounts.view", "purchase_invoices.view", "suppliers.view", "sales_invoices.view", "receipts.view", "reports.cash_flow.view", "settings.manage", "companies.view", "currencies.view", "fiscal_periods.view", "sales_catalog.view"],
+  permissions: ["pos.view", "pos.checkout", "warehouses.view", "inventory_catalog.view", "inventory_barcodes.view", "inventory_barcodes.print", "inventory_movements.view", "cash_bank_accounts.view", "purchase_invoices.view", "suppliers.view", "sales_invoices.view", "sales_invoices.print", "receipts.view", "reports.cash_flow.view", "settings.manage", "companies.view", "currencies.view", "fiscal_periods.view", "sales_catalog.view"],
 };
 
 function Harness() {

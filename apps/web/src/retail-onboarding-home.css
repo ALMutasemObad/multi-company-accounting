@@ -38,6 +38,11 @@
 .retail-facts li span { color: #52644e; }
 .retail-facts li[data-state="error"] span, .retail-read-error { color: #8a3030; }
 .retail-home .retail-step-note, .retail-home .retail-price-review { margin-top: 14px; }
+.retail-output-summary { margin-top: 18px; padding: 16px; background: white; border: 1px solid #d6dfd1; border-radius: 10px; }
+.retail-output-summary h4 { margin: 0; font-size: var(--retail-body); line-height: 1.8; }
+.retail-output-list { display: grid; gap: 10px; margin: 14px 0 0; padding: 0; list-style: none; }
+.retail-output-list li { display: grid; gap: 4px; padding-inline-start: 12px; border-inline-start: 3px solid #42735a; }
+.retail-output-list span { color: #52644e; line-height: 1.8; }
 .retail-step-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
 .retail-home .retail-destination-note, .retail-home .retail-access-note { margin-top: 12px; color: #496258; }
 .retail-next { display: flex; align-items: center; gap: 10px; border: 0; border-top: 1px solid #d2dfcb; color: #21583b; background: transparent; padding: 16px 0 0; margin-top: 20px; min-height: 46px; font-weight: 700; text-align: start; line-height: 1.8; }
