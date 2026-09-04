@@ -164,8 +164,8 @@ for (const [pattern, description] of responsiveCssContracts) {
   if (!pattern.test(styles)) failures.push(`apps/web/src/styles.css: missing responsive contract: ${description}`);
 }
 // POS has separate, mutually exclusive headings for scoped content and quarantine.
-if (pageHeaders !== 28) failures.push(`Expected 28 shared PageHeader usages; found ${pageHeaders}`);
-if (tableRegions !== 67) failures.push(`Expected 67 accessible table regions; found ${tableRegions}`);
+if (pageHeaders !== 31) failures.push(`Expected 31 shared PageHeader usages; found ${pageHeaders}`);
+if (tableRegions !== 68) failures.push(`Expected 68 accessible table regions; found ${tableRegions}`);
 
 if (failures.length) {
   console.error("Web UI contract check failed:\n");

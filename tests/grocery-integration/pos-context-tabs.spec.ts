@@ -120,6 +120,7 @@ async function httpFixture(context: BrowserContext) {
     if (path === '/auth/me' && record.method === 'GET') return reply(200, snapshot(session));
     if (path === '/auth/companies' && record.method === 'GET') return reply(200, { data: companies });
     if (path === '/platform/capabilities' && record.method === 'GET') return reply(200, { platformOperations: false });
+    if (path === '/organizations/workspaces' && record.method === 'GET') return reply(200, { data: [] });
     const supportedRead = record.method === 'GET' && (['/pos/context/identity', '/pos/context/period', '/sales/catalog', '/sales/catalog/items/9',
       '/customers', '/accounts', '/tax-rates', '/pos/sales'].includes(path) || fields.some(field => path === `/pos/context/options/${field}`
         || path === `/pos/context/references/${field}/${field === 'currencyId' ? '2' : '1'}`));

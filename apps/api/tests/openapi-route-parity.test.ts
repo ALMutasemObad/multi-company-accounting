@@ -13,6 +13,7 @@ import { createBarcodeLabelRouter } from '../src/printing/barcode-label-router.j
 import { createPurchaseInvoiceRouter } from '../src/purchases/purchase-invoice-router.js';
 import { createReceiptRouter } from '../src/receipts/receipt-router.js';
 import { createCustomerRouter } from '../src/sales/customer-router.js';
+import { createCrmRouter } from '../src/crm/crm-router.js';
 import { createReportRouter } from '../src/reports/report-router.js';
 import { createSalesInvoiceRouter } from '../src/sales/sales-invoice-router.js';
 import { createSellingProfileRouter } from '../src/sales/selling-profile-router.js';
@@ -41,6 +42,8 @@ import { createPlatformOperationsRouter } from '../src/platform-operations/platf
 import { createPlatformPaymentRouter } from '../src/platform-operations/payments/platform-payment-router.js';
 import { createPlatformSubscriptionRouter } from '../src/platform-subscriptions/platform-subscription-router.js';
 import { createSubscriptionUsageRouter } from '../src/platform-subscriptions/subscription-usage-router.js';
+import { createOrganizationOwnerRouter } from '../src/organizations/organization-owner-router.js';
+import { createEmployeeExpenseRouter } from '../src/employee-expenses/employee-expense-router.js';
 
 type RouteLayer = {
   route?: {
@@ -59,6 +62,7 @@ const routers = [
   { prefix: '', router: createPlatformSubscriptionRouter(stub, stub, stub) },
   { prefix: '', router: createSubscriptionUsageRouter(stub, stub) },
   { prefix: '', router: createUserRouter(stub, stub, stub) },
+  { prefix: '', router: createOrganizationOwnerRouter(stub, stub) },
   { prefix: '', router: createCompanyRouter(stub, stub) },
   { prefix: '', router: createPrintRouter(stub, stub) },
   { prefix: '', router: createRetailReceiptRouter(stub, stub) },
@@ -72,9 +76,11 @@ const routers = [
   { prefix: '', router: createProfessionalBillingRouter(stub, stub) },
   { prefix: '', router: createProfessionalProjectAccessRouter(stub, stub) },
   { prefix: '', router: createHrRouter(stub, stub) },
+  { prefix: '', router: createEmployeeExpenseRouter(stub, stub) },
   { prefix: '', router: createAccountRouter(stub, stub) },
   { prefix: '', router: createManualJournalRouter(stub, stub) },
   { prefix: '', router: createCustomerRouter(stub, stub) },
+  { prefix: '', router: createCrmRouter(stub, stub) },
   { prefix: '', router: createTreasuryRouter(stub, stub) },
   { prefix: '', router: createBankReconciliationRouter(stub, stub) },
   { prefix: '', router: createInventoryRouter(stub, stub) },

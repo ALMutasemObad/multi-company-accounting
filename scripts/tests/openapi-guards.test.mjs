@@ -11,12 +11,21 @@ import {
 } from "../generate-openapi-guards.mjs";
 
 test("generated OpenAPI guards are committed and current", () => {
-  assert.equal(guardedOperationIds.length, 170);
-  assert.equal(responseOperationIds.length, 328);
+  assert.equal(guardedOperationIds.length, 181);
+  assert.equal(responseOperationIds.length, 349);
   for (const operation of ['getPosContextIdentity', 'resolvePosContextPeriod', 'getPosContextReference', 'listPosContextOptions']) {
     assert.ok(responseOperationIds.includes(operation));
   }
   assert.ok(responseOperationIds.includes('getRetailReceiptPreview'));
+  assert.ok(responseOperationIds.includes('getOrganizationDashboard'));
+  assert.ok(guardedOperationIds.includes('createOrganizationMember'));
+  assert.ok(guardedOperationIds.includes('updateOrganizationMember'));
+  for (const operation of ['createEmployeeExpenseClaim', 'updateEmployeeExpenseClaim']) {
+    assert.ok(guardedOperationIds.includes(operation));
+  }
+  for (const operation of ['createCrmLead', 'markCrmLeadContacted', 'qualifyCrmLead', 'convertCrmLead', 'moveCrmOpportunityStage', 'createCrmActivity', 'completeCrmActivity']) {
+    assert.ok(guardedOperationIds.includes(operation));
+  }
   for (const operation of ['listSellingCatalog', 'getSellingCatalogItem', 'createItemSellingProfile', 'updateItemSellingProfile', 'listEnabledCurrencyOptions']) {
     assert.ok(responseOperationIds.includes(operation));
   }
@@ -83,7 +92,7 @@ test("guard generation reflects request constraints from the contract", () => {
 
 test("guard generation covers request transforms and response schemas", () => {
   const generated = buildGeneratedSource();
-  assert.match(generated, /openApiContractCoverage = \{ operations: 328, requestBodies: 170, responseBodies: 2199 \}/u);
+  assert.match(generated, /openApiContractCoverage = \{ operations: 349, requestBodies: 181, responseBodies: 2318 \}/u);
   assert.match(generated, /"receivableItemId": z\.string\(\).*\.transform\(\(value\) => BigInt\(value\)\)/u);
   assert.match(generated, /export const openApiResponseBodySchemas = \{/u);
 });

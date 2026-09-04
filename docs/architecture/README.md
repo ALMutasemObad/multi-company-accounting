@@ -1,7 +1,7 @@
 ---
 title: "Architecture Governance Index"
 status: "mandatory"
-last_updated: "2026-08-30"
+last_updated: "2026-09-04"
 ---
 
 # فهرس الحوكمة المعمارية
@@ -72,10 +72,13 @@ last_updated: "2026-08-30"
 57. [إنفاذ قدرات اشتراك الشركة SUB-2](PLATFORM_SUBSCRIPTION_CAPABILITY_ENFORCEMENT_AR.md): تقاطع الاستحقاق المؤرخ مع RBAC وحواجز التفعيل في الخادم، وعقد `/auth/me` ووعي التنقل والأفعال بالموديولات، وحفظ grandfathering للشركات الجديدة.
 58. [مركز الخطط ودورة حياة الاشتراك SUB-3](PLATFORM_SUBSCRIPTION_LIFECYCLE_SUB3_AR.md): إدارة DRAFT/PUBLISH الثابتة، والقوالب غير المسعرة، وتغييرات الاشتراك المؤرخة والمعلقة، وإغلاق اعتماديات الموديولات، وصفحتا المشغل والمالك من دون مزود دفع.
 59. [أساس الدفع الإلكتروني وفوترة الاشتراك SUB-4](PLATFORM_ELECTRONIC_PAYMENTS_SUB4_AR.md): ملكية الدفع لدى Platform Operations & Billing، ودورة Attempt/Checkout/Webhook/Refund، والعملات وminor units والرجوع المحروس، مع توضيح أن Adapter التطوير وAPI والواجهة ما زالت مراحل لاحقة.
+60. [عضوية Organization ومساحة مالك المجموعة](ORGANIZATION_MEMBERSHIP_OWNER_WORKSPACE_AR.md): أدوار المجموعة المستقلة، تقاطع عضوية الشركة، حدود المقارنة غير الموحدة، والتدقيق والتزامن.
+61. [ADR-020 لمطالبات مصروفات الموظفين](ADR-020-employee-expense-claims.md): ملكية المطالبة وبنودها، وربط HR ومراكز التكلفة والعملة وApprovals، وحد `READY_FOR_PAYMENT` الصريح بلا كتابة Treasury أو Ledger.
+62. [شريحة مطالبات المصروفات W2-P3](EMPLOYEE_EXPENSE_CLAIMS_SLICE_AR.md): رحلة الموظف وMaker/Checker وRBAC والعزل وOpenAPI والتزامن والترحيل وأدلة الواجهة.
 
 التقرير [ARCHITECTURE_AUDIT_DDD_EVENT_DRIVEN_AR.md](../ARCHITECTURE_AUDIT_DDD_EVENT_DRIVEN_AR.md) وثيقة تقييم وأدلة، وليس بديلًا عن القرارات الحاكمة أعلاه.
 
-حالة التنفيذ: يخدم Transactional Outbox البريد والآثار اللاحقة ذات المستهلكين المعروفين، ويملك `PostingEngine` دفتر الأستاذ، وتستخدم تسويات Treasury عناصر ذمم مملوكة لـAR/AP. اكتملت المطابقة البنكية والإقفال والتقارير وPOS ومحرك Approvals. ويملك Professional Project Delivery المشروع والفريق والجدار الأخلاقي والوقت وTimesheets المعتمدة وشروط فوترة المشروع، وينشئ ويرحل الفاتورة عبر Sales port دون نسخ حقائق Sales أو Ledger. نُفذت E1 وF1 وأساس HR وأصبحت ضمن baseline Staging `c1a5722`. أما Service Catalog العام فمخطط كسياق وواجهة مستقلين وفق ADR-016. نُفذت محليًا فوق baseline دفعة الأداء والمنصة وB1 وأول مسار POS HID وملصق PNG، وتنتظر بوابات الإصدار. لم يبدأ CRM؛ يصبح مرشحًا بعد بوابات ADR-014، ويظل F2 شرطًا قبل أي تحويل من فرصة إلى قضية قانونية، وتبقى مصروفات E2 مؤجلة حتى قرار ملكية مستقل.
+حالة التنفيذ: يخدم Transactional Outbox البريد والآثار اللاحقة ذات المستهلكين المعروفين، ويملك `PostingEngine` دفتر الأستاذ، وتستخدم تسويات Treasury عناصر ذمم مملوكة لـAR/AP. اكتملت المطابقة البنكية والإقفال والتقارير وPOS ومحرك Approvals. ويملك Professional Project Delivery المشروع والفريق والجدار الأخلاقي والوقت وTimesheets المعتمدة وشروط فوترة المشروع، وينشئ ويرحل الفاتورة عبر Sales port دون نسخ حقائق Sales أو Ledger. نُفذت E1 وF1 وأساس HR وأصبحت ضمن baseline Staging `c1a5722`. نُفذت محليًا CRM-1 للـLead والفرصة والنشاط والتحويل عبر Sales Port، وعضوية Organization ومساحة مالك المجموعة بصلاحيات مستقلة بلا قوائم موحدة، وأول شريحة E2 كسياق Employee Expenses مستقل ينتهي عند `READY_FOR_PAYMENT` بلا دفع أو Ledger. يظل F2 شرطًا قبل أي تحويل من فرصة إلى قضية قانونية، وتنتظر الوحدات الثلاث بوابات المحركين وCI قبل الإصدار.
 
 ## ترتيب مصادر القرار
 

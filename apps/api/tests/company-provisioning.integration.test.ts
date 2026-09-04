@@ -44,6 +44,8 @@ suite('multi-company provisioning integration', () => {
       await prisma.companyExchangeRate.deleteMany({ where: { companyId: { in: companyIds } } });
       await prisma.companyCurrency.deleteMany({ where: { companyId: { in: companyIds } } });
       await prisma.auditLog.deleteMany({ where: { companyId: { in: companyIds } } });
+      await prisma.organizationAuditLog.deleteMany({ where: { organizationId: organization.id } });
+      await prisma.organizationMembership.deleteMany({ where: { organizationId: organization.id } });
       await prisma.securityEvent.deleteMany({ where: { companyId: { in: companyIds } } });
       await prisma.userCompanyRole.deleteMany({ where: { companyId: { in: companyIds } } });
       await prisma.rolePermission.deleteMany({ where: { roleId: { in: roles.map(({ id }) => id) } } });
@@ -95,6 +97,13 @@ suite('multi-company provisioning integration', () => {
 
     const userId = BigInt(first.administrator.id);
     expect(await prisma.userCompany.count({ where: { userId } })).toBe(2);
+    expect(await prisma.organizationMembership.findUnique({
+      where: { organizationId_userId: { organizationId: BigInt(first.organization.id), userId } },
+      select: { role: true, isActive: true },
+    })).toEqual({ role: 'OWNER', isActive: true });
+    expect(await prisma.organizationAuditLog.count({
+      where: { organizationId: BigInt(first.organization.id), action: 'ORGANIZATION_MEMBERSHIP_PROVISIONED' },
+    })).toBe(3);
     for (const companyId of [BigInt(first.company.id), BigInt(second.company.id)]) {
       const role = await prisma.role.findUniqueOrThrow({ where: { companyId_code: { companyId, code: 'ADMINISTRATOR' } }, include: { _count: { select: { permissions: true } } } });
       expect(role._count.permissions).toBe(permissionDefinitions.length);

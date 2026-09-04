@@ -9,6 +9,8 @@ import { AuthError, type AuthService } from './auth/auth-service.js';
 import { createAuthRouter } from './auth/auth-router.js';
 import type { UserService } from './users/user-service.js';
 import { createUserRouter } from './users/user-router.js';
+import type { OrganizationMembershipService } from './users/organization-membership-service.js';
+import { createOrganizationOwnerRouter } from './organizations/organization-owner-router.js';
 import type { WorkforceAccessService } from './workforce-access/workforce-access-service.js';
 import type { FiscalService } from './fiscal/fiscal-service.js';
 import type { FinancialCloseService } from './fiscal/financial-close-service.js';
@@ -102,6 +104,8 @@ import type { ApprovalService } from './approvals/approval-service.js';
 import { createApprovalRouter } from './approvals/approval-router.js';
 import type { ProfessionalProjectService } from './projects/professional-project-service.js';
 import { createProfessionalProjectRouter } from './projects/professional-project-router.js';
+import type { CrmService } from './crm/crm-service.js';
+import { createCrmRouter } from './crm/crm-router.js';
 import type { ProfessionalProjectPlanningService } from './projects/professional-project-planning-service.js';
 import { createProfessionalProjectPlanningRouter } from './projects/professional-project-planning-router.js';
 import type { ProfessionalBillingService } from './projects/professional-billing-service.js';
@@ -110,6 +114,8 @@ import type { ProfessionalProjectAccessService } from './projects/professional-p
 import { createProfessionalProjectAccessRouter } from './projects/professional-project-access-router.js';
 import type { HrService } from './hr/hr-service.js';
 import { createHrRouter } from './hr/hr-router.js';
+import type { EmployeeExpenseService } from './employee-expenses/employee-expense-service.js';
+import { createEmployeeExpenseRouter } from './employee-expenses/employee-expense-router.js';
 import type { PlatformOperationsService } from './platform-operations/platform-operations-service.js';
 import type { PlatformBillingService } from './platform-operations/platform-billing-service.js';
 import { createPlatformOperationsRouter } from './platform-operations/platform-operations-router.js';
@@ -173,6 +179,7 @@ export type AppServices = {
   registration?: RegistrationService;
   passwordReset?: PasswordResetService;
   users?: UserService;
+  organizationMemberships?: OrganizationMembershipService;
   workforceAccess?: WorkforceAccessService;
   platformOperations?: PlatformOperationsService;
   platformBilling?: PlatformBillingService;
@@ -190,10 +197,12 @@ export type AppServices = {
   financialClose?: FinancialCloseService;
   approvals?: ApprovalService;
   professionalProjects?: ProfessionalProjectService;
+  crm?: CrmService;
   professionalProjectPlanning?: ProfessionalProjectPlanningService;
   professionalBilling?: ProfessionalBillingService;
   professionalProjectAccess?: ProfessionalProjectAccessService;
   hr?: HrService;
+  employeeExpenses?: EmployeeExpenseService;
   accounts?: AccountService;
   journals?: ManualJournalService;
   customers?: CustomerService;
@@ -385,6 +394,7 @@ export function createApp(config: AppConfig, services: AppServices = {}) {
     app.use('/api/v1', createSubscriptionUsageRouter(services.auth, services.subscriptionUsage));
   }
   if (services.auth && services.users && services.workforceAccess) app.use('/api/v1', createUserRouter(services.auth, services.users, services.workforceAccess));
+  if (services.auth && services.organizationMemberships) app.use('/api/v1', createOrganizationOwnerRouter(services.auth, services.organizationMemberships));
   if (services.auth && services.companies) app.use('/api/v1', createCompanyRouter(services.auth, services.companies));
   if (services.auth && services.printing) app.use('/api/v1', createPrintRouter(services.auth, services.printing));
   if (services.auth && services.retailReceipts) app.use('/api/v1', createRetailReceiptRouter(services.auth, services.retailReceipts));
@@ -394,10 +404,12 @@ export function createApp(config: AppConfig, services: AppServices = {}) {
   if (services.auth && services.fiscal) app.use('/api/v1', createFiscalRouter(services.auth, services.fiscal, services.financialClose));
   if (services.auth && services.approvals) app.use('/api/v1', createApprovalRouter(services.auth, services.approvals));
   if (services.auth && services.professionalProjects) app.use('/api/v1', createProfessionalProjectRouter(services.auth, services.professionalProjects));
+  if (services.auth && services.crm) app.use('/api/v1', createCrmRouter(services.auth, services.crm));
   if (services.auth && services.professionalProjectPlanning) app.use('/api/v1', createProfessionalProjectPlanningRouter(services.auth, services.professionalProjectPlanning));
   if (services.auth && services.professionalBilling) app.use('/api/v1', createProfessionalBillingRouter(services.auth, services.professionalBilling));
   if (services.auth && services.professionalProjectAccess) app.use('/api/v1', createProfessionalProjectAccessRouter(services.auth, services.professionalProjectAccess));
   if (services.auth && services.hr) app.use('/api/v1', createHrRouter(services.auth, services.hr));
+  if (services.auth && services.employeeExpenses) app.use('/api/v1', createEmployeeExpenseRouter(services.auth, services.employeeExpenses));
   if (services.auth && services.accounts) app.use('/api/v1', createAccountRouter(services.auth, services.accounts));
   if (services.auth && services.journals) app.use('/api/v1', createManualJournalRouter(services.auth, services.journals));
   if (services.auth && services.customers) app.use('/api/v1', createCustomerRouter(services.auth, services.customers));

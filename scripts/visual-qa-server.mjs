@@ -30,6 +30,9 @@ const visualQaPermissions = [
   "customers.view",
   "dashboard.view",
   "data_imports.view",
+  "employee_expenses.review",
+  "employee_expenses.submit",
+  "employee_expenses.view",
   "fiscal_periods.view",
   "hr.contracts.view",
   "hr.employees.view",
@@ -41,6 +44,10 @@ const visualQaPermissions = [
   "payments.view",
   "pos.view",
   "professional_projects.view",
+  "crm.view",
+  "crm.manage",
+  "crm.activities.manage",
+  "crm.convert",
   "purchase_invoices.create",
   "purchase_invoices.view",
   "receipts.view",
@@ -76,6 +83,26 @@ const currentAuthorization = {
   ],
   permissions: visualQaPermissions,
 };
+const organizationWorkspaces = [
+  { id: "501", code: "AFAQ-GROUP", name: "مجموعة أفق", role: "OWNER" },
+];
+const organizationDashboard = {
+  generatedAt: "2026-09-04T12:00:00.000Z",
+  period: { days: 30, from: "2026-08-06", to: "2026-09-04" },
+  organization: { ...organizationWorkspaces[0], memberCount: 4, canManageMembers: true, canManageOwners: true },
+  companies: [
+    { id: "1", code: "AFQ-RUH", name: "أفق الرياض", timezone: "Asia/Riyadh", isActive: true, canSwitch: true, baseCurrencyCode: "SAR", metricAccess: { activeUsers: true, postedDocuments: true, postedSales: true, postedPurchases: true }, activeUsers: 18, postedDocuments: 284, postedSalesBase: "845200.0000", postedPurchasesBase: "319840.0000" },
+    { id: "502", code: "AFQ-JED", name: "أفق جدة", timezone: "Asia/Riyadh", isActive: true, canSwitch: true, baseCurrencyCode: "SAR", metricAccess: { activeUsers: true, postedDocuments: true, postedSales: true, postedPurchases: true }, activeUsers: 11, postedDocuments: 172, postedSalesBase: "492600.0000", postedPurchasesBase: "208350.0000" },
+    { id: "503", code: "AFQ-DXB", name: "Afaq Dubai", timezone: "Asia/Dubai", isActive: true, canSwitch: true, baseCurrencyCode: "AED", metricAccess: { activeUsers: true, postedDocuments: true, postedSales: true, postedPurchases: true }, activeUsers: 7, postedDocuments: 96, postedSalesBase: "301250.0000", postedPurchasesBase: "126800.0000" },
+    { id: "504", code: "AFQ-OLD", name: "فرع مؤرشف", timezone: "Asia/Riyadh", isActive: false, canSwitch: false, baseCurrencyCode: "SAR", metricAccess: { activeUsers: false, postedDocuments: false, postedSales: false, postedPurchases: false }, activeUsers: null, postedDocuments: null, postedSalesBase: null, postedPurchasesBase: null },
+  ],
+  boundaries: { companyAccessRequired: true, companyPermissionsRequired: true, consolidatedStatements: false, intercompanyEliminations: false, crossCurrencyAggregation: false },
+};
+const organizationMembers = [
+  { user: { id: "1", displayName: "مالك المجموعة", email: "owner@afaq.example", isActive: true }, role: "OWNER", isActive: true, version: 2, activeCompanyAccess: 3, createdAt: "2026-01-01T08:00:00.000Z", updatedAt: "2026-08-10T08:00:00.000Z" },
+  { user: { id: "601", displayName: "مدير العمليات", email: "operations@afaq.example", isActive: true }, role: "ADMIN", isActive: true, version: 0, activeCompanyAccess: 2, createdAt: "2026-04-01T08:00:00.000Z", updatedAt: "2026-04-01T08:00:00.000Z" },
+  { user: { id: "602", displayName: "مراجع المجموعة", email: "reviewer@afaq.example", isActive: true }, role: "VIEWER", isActive: true, version: 1, activeCompanyAccess: 1, createdAt: "2026-05-01T08:00:00.000Z", updatedAt: "2026-08-14T08:00:00.000Z" },
+];
 const zeroSection = { rows: [], total: "0.00", comparisonTotal: null, variance: null, variancePercent: null };
 const fiscalPeriod = { id: "1001", fiscalYearId: "1001", periodNumber: 12, name: "ديسمبر 2026", startDate: "2026-12-01", endDate: "2026-12-31", status: "OPEN", closedAt: null, reopenedAt: null, reopenReason: null, version: 0 };
 const closeReadiness = {
@@ -361,6 +388,21 @@ const professionalTimeEntry = {
   updatedAt: "2026-08-27T10:00:00.000Z",
 };
 
+const crmOwner = { id: "813503e9-6353-4b7c-83ef-d1a2f7d15275", employeeNumber: "EMP-000014", nameAr: "نورة القحطاني", nameEn: "Noura Alqahtani" };
+const crmLeads = [
+  { id: "19e7e8dc-125a-4d67-84c0-0dbd5ca849f4", code: "LED-000041", kind: "ORGANIZATION", displayName: "مجموعة المدار الرقمية", contactName: "عمر الحربي", phone: "+966 55 901 2210", email: "omar@example.test", source: "REFERRAL", sourceDetails: null, status: "QUALIFIED", owner: crmOwner, summary: "تطوير منصة خدمة عملاء متعددة الفروع", convertedCustomerId: null, convertedAt: null, disqualificationReason: null, version: 2, createdAt: "2026-09-01T09:00:00.000Z", updatedAt: "2026-09-03T11:00:00.000Z" },
+  { id: "43254adc-39bb-45df-b7a7-366310847c40", code: "LED-000042", kind: "ORGANIZATION", displayName: "شركة روافد الإمداد", contactName: "ليان السالم", phone: "+966 55 811 2230", email: "layan@example.test", source: "WEBSITE", sourceDetails: null, status: "CONTACTED", owner: crmOwner, summary: "توحيد العمليات المالية والمخزون", convertedCustomerId: null, convertedAt: null, disqualificationReason: null, version: 1, createdAt: "2026-09-02T09:00:00.000Z", updatedAt: "2026-09-03T13:00:00.000Z" },
+  { id: "ec5eb570-eaa2-4231-85d2-4c12df1792a1", code: "LED-000043", kind: "INDIVIDUAL", displayName: "مكتب عبدالله للاستشارات", contactName: "عبدالله", phone: "+966 55 313 9000", email: null, source: "MANUAL", sourceDetails: null, status: "NEW", owner: crmOwner, summary: "متابعة أولية", convertedCustomerId: null, convertedAt: null, disqualificationReason: null, version: 0, createdAt: "2026-09-03T09:00:00.000Z", updatedAt: "2026-09-03T09:00:00.000Z" },
+];
+const crmOpportunities = [
+  { id: "158ce96b-a55d-45f0-9de0-96f817aab615", code: "OPP-000019", leadId: "19e7e8dc-125a-4d67-84c0-0dbd5ca849f4", customerId: null, title: "منصة المدار لخدمة العملاء", stage: "PROPOSAL", owner: crmOwner, expectedCloseDate: "2026-10-15", estimatedAmount: "185000.0000", currencyId: "currency-sar", probabilityBps: 6000, lostReason: null, wonAt: null, lostAt: null, version: 1, createdAt: "2026-09-01T10:00:00.000Z", updatedAt: "2026-09-03T11:00:00.000Z" },
+  { id: "6187ee51-c302-4721-80bd-34579509d3cd", code: "OPP-000018", leadId: null, customerId: "41", title: "توسعة أتمتة الفوترة", stage: "NEGOTIATION", owner: crmOwner, expectedCloseDate: "2026-09-30", estimatedAmount: "92000.0000", currencyId: "currency-sar", probabilityBps: 7500, lostReason: null, wonAt: null, lostAt: null, version: 3, createdAt: "2026-08-24T10:00:00.000Z", updatedAt: "2026-09-02T11:00:00.000Z" },
+];
+const crmActivities = [
+  { id: "1178507b-fddf-40d7-8e66-7e08a8c00e65", parentType: "OPPORTUNITY", parentId: "158ce96b-a55d-45f0-9de0-96f817aab615", type: "MEETING", subject: "مراجعة العرض التجاري مع فريق المدار", details: null, assignee: crmOwner, scheduledFor: "2026-09-06T08:30:00.000Z", status: "OPEN", completedAt: null, cancelledAt: null, cancellationReason: null, version: 0, createdAt: "2026-09-03T10:00:00.000Z", updatedAt: "2026-09-03T10:00:00.000Z" },
+  { id: "3d194e1f-e238-4b78-8937-4df8ceea9f02", parentType: "LEAD", parentId: "43254adc-39bb-45df-b7a7-366310847c40", type: "CALL", subject: "تأكيد أصحاب القرار ونطاق الفروع", details: null, assignee: crmOwner, scheduledFor: "2026-09-07T07:00:00.000Z", status: "OPEN", completedAt: null, cancelledAt: null, cancellationReason: null, version: 0, createdAt: "2026-09-03T12:00:00.000Z", updatedAt: "2026-09-03T12:00:00.000Z" },
+];
+
 const subscriptionPlanVersion = {
   id: "2101", planId: "1101", planCode: "VISUAL_BASIC", versionNumber: 1,
   displayName: "الخطة الأساسية", description: "خطة تجريبية للفحص البصري", billingCycle: "MONTHLY",
@@ -421,6 +463,69 @@ const visualElectronicPayment = {
   updatedAt: "2026-08-29T09:01:00.000Z",
 };
 
+const employeeExpenseCostCenters = [
+  { id: "81", code: "CC-000081", nameAr: "الاستشارات", nameEn: "Consulting" },
+  { id: "82", code: "CC-000082", nameAr: "تطوير الأعمال", nameEn: "Business development" },
+];
+const employeeExpenseLine = (id, lineNumber, amount, overrides = {}) => ({
+  id,
+  lineNumber,
+  incurredOn: "2026-09-03",
+  merchant: "قطار الرياض",
+  description: "انتقال لاجتماع عميل",
+  receiptReference: `RCP-${lineNumber}04`,
+  costCenter: employeeExpenseCostCenters[0],
+  amount,
+  ...overrides,
+});
+const employeeExpenseClaim = (id, status, purpose, totalAmount, lines, overrides = {}) => ({
+  id,
+  employee: { employeeNumber: "EMP-000142", nameAr: "سارة المستشار", nameEn: "Sarah Consultant" },
+  currency: { code: "SAR", decimals: 2 },
+  purpose,
+  status,
+  totalAmount,
+  activeSnapshotHashSha256: status === "DRAFT" ? null : "a".repeat(64),
+  submittedAt: status === "DRAFT" ? null : "2026-09-03T12:00:00.000Z",
+  approvedAt: status === "READY_FOR_PAYMENT" ? "2026-09-04T09:00:00.000Z" : null,
+  ownedByCurrentUser: true,
+  version: status === "DRAFT" ? 0 : status === "AWAITING_APPROVAL" ? 1 : 2,
+  createdAt: "2026-09-03T10:00:00.000Z",
+  updatedAt: "2026-09-04T09:00:00.000Z",
+  lines,
+  ...overrides,
+});
+const employeeExpenseClaims = [
+  employeeExpenseClaim(
+    "6cbda871-2654-4e2b-a864-a816464746a1",
+    "READY_FOR_PAYMENT",
+    "زيارة عميل ومراجعة موقع المشروع",
+    "185.7500",
+    [
+      employeeExpenseLine("c0e3e911-21cd-43a6-a303-87b20c7908ba", 1, "125.5000"),
+      employeeExpenseLine("962a7dbc-2a56-46b0-a1d1-8b52e78b28fb", 2, "60.2500", {
+        merchant: "مقهى الأعمال",
+        description: "ضيافة اجتماع العميل",
+        costCenter: employeeExpenseCostCenters[1],
+      }),
+    ],
+  ),
+  employeeExpenseClaim(
+    "6bbdbbd9-974d-4ee8-981f-f106729a8b78",
+    "AWAITING_APPROVAL",
+    "ورشة عمل الفريق",
+    "90.0000",
+    [employeeExpenseLine("7d46241e-8645-46be-993c-37c00fbf69c4", 1, "90.0000", { merchant: "مركز التدريب", description: "مواد الورشة" })],
+  ),
+  employeeExpenseClaim(
+    "7a4860a0-d915-4897-85f2-68fcc827805e",
+    "DRAFT",
+    "تنقل داخلي",
+    "45.0000",
+    [employeeExpenseLine("521497ba-8f64-43ea-8b36-84e53d76532a", 1, "45.0000", { merchant: "سيارة أجرة", receiptReference: null })],
+  ),
+];
+
 function list(data = []) {
   return { data, meta: { ...meta, total: data.length, totalPages: data.length ? 1 : 0 } };
 }
@@ -465,6 +570,12 @@ export function responseFor(url, method, headers = {}) {
   if (pathname === "/auth/companies") return { data: [company] };
   if (pathname === "/auth/context" || pathname === "/auth/logout") return null;
   if (pathname === "/platform/capabilities") return { platformOperations: true };
+  if (pathname === "/organizations/workspaces") return { data: organizationWorkspaces };
+  if (pathname === "/organizations/501/dashboard") return {
+    ...organizationDashboard,
+    period: { ...organizationDashboard.period, days: Number(url.searchParams.get("days") ?? 30) },
+  };
+  if (pathname === "/organizations/501/members") return { data: organizationMembers };
   if (pathname === "/platform/overview") return platformOverview;
   if (pathname === "/platform/analytics") return platformAnalytics(url);
   if (pathname === "/platform/subscription-modules") return { modules: [] };
@@ -511,6 +622,21 @@ export function responseFor(url, method, headers = {}) {
   if (pathname === "/platform/companies") return { data: platformCompanies, total: platformCompanies.length, page: 1, pageSize: 25 };
   if (pathname === "/platform/billing/summary") return platformBillingSummary;
   if (pathname === "/companies/current") return company;
+  if (pathname === "/crm/options") return { owners: [crmOwner], currencies: [currency], customers: [professionalCustomer] };
+  if (pathname === "/crm/leads") return list(crmLeads);
+  if (pathname === "/crm/opportunities") return list(crmOpportunities);
+  if (pathname === "/crm/activities") return list(crmActivities);
+  if (pathname === "/crm/pipeline") return { data: [
+    { stage: "DISCOVERY", currencyId: "currency-sar", opportunityCount: 1, estimatedAmount: "48000.0000", weightedAmount: "14400.0000" },
+    { stage: "PROPOSAL", currencyId: "currency-sar", opportunityCount: 1, estimatedAmount: "185000.0000", weightedAmount: "111000.0000" },
+    { stage: "NEGOTIATION", currencyId: "currency-sar", opportunityCount: 1, estimatedAmount: "92000.0000", weightedAmount: "69000.0000" },
+    { stage: "WON", currencyId: "currency-sar", opportunityCount: 3, estimatedAmount: "260000.0000", weightedAmount: "260000.0000" },
+  ] };
+  if (pathname === "/employee-expense-cost-centers") return { data: employeeExpenseCostCenters };
+  if (pathname === "/employee-expense-claims") return {
+    data: employeeExpenseClaims,
+    meta: { page: 1, pageSize: 10, total: employeeExpenseClaims.length, totalPages: 1 },
+  };
   if (pathname === "/professional-projects/customer-options") return { data: [professionalCustomer] };
   if (pathname === "/professional-projects/member-options") return { data: [professionalManager] };
   if (pathname === "/professional-projects") return list([professionalProject]);

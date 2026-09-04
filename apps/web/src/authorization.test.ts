@@ -125,9 +125,20 @@ describe("permission-aware navigation", () => {
     expect(resolveAuthorizedView("sales", platformOnlyAccess)).toBe("platform");
   });
 
+  it("keeps organization membership independent from company RBAC and platform capability", () => {
+    const organizationOnlyAccess = access([], {
+      hasSelectedCompany: false,
+      platformOperations: false,
+      organizationWorkspace: true,
+    });
+    expect(visibleNavigationItems(organizationOnlyAccess).map((item) => item.view)).toEqual(["organizationOwner"]);
+    expect(resolveAuthorizedView("sales", organizationOnlyAccess)).toBe("organizationOwner");
+    expect(visibleNavigationItems(access(["organization.owner"])).some((item) => item.view === "organizationOwner")).toBe(false);
+  });
+
   it("defines a policy for every non-home tenant navigation item", () => {
     const tenantViews = navigationItems
-      .filter((item) => item.view !== "home" && !item.platformOnly)
+      .filter((item) => item.view !== "home" && !item.platformOnly && !item.organizationOnly)
       .map((item) => item.view)
       .sort();
     expect(Object.keys(viewPermissionPolicies).sort()).toEqual(tenantViews);

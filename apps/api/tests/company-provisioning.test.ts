@@ -43,7 +43,7 @@ describe('company subscription provisioning boundary', () => {
         baseCurrency: { id: 3n, code: 'SAR' },
       }),
     }, { provisionAdministrator: vi.fn().mockResolvedValue({
-      administrator: { id: 4n, email: 'owner@example.com' }, reusedIdentity: false, permissionsGranted: 5,
+      administrator: { id: 4n, email: 'owner@example.com' }, organizationRole: 'OWNER', reusedIdentity: false, permissionsGranted: 5,
     }) }, { provisionAccounting: vi.fn().mockResolvedValue(null) }, {
       provisionTreasury: vi.fn().mockResolvedValue(undefined),
     }, subscriptions, audit);
@@ -51,11 +51,14 @@ describe('company subscription provisioning boundary', () => {
   }
 
   it('passes only the new company identity, trusted currency and time in the same transaction', async () => {
-    const { service, tx, subscriptions } = fixture(true);
+    const { service, tx, subscriptions, audit } = fixture(true);
     await service.provisionPreparedInTransaction(tx, input, 'prepared-password-hash');
     expect(subscriptions.provisionNewCompanyAccess).toHaveBeenCalledExactlyOnceWith(tx, {
       companyId: 2n, baseCurrencyCode: 'SAR', effectiveFrom: createdAt,
     });
+    expect(audit.append).toHaveBeenLastCalledWith(tx, expect.objectContaining({
+      organizationId: 1n, action: 'ORGANIZATION_MEMBERSHIP_PROVISIONED',
+    }));
   });
 
   it('does not consult the start policy for an existing tenant, even if it would fail', async () => {

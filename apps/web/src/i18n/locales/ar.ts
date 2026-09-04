@@ -17,10 +17,16 @@ import { arAuthResilience } from "./auth-resilience";
 import { arSubscriptionUsage } from "./subscription-usage";
 import { arSubscriptionChanges } from "./subscription-changes";
 import { arBillingRecovery } from "./billing-recovery";
+import { arCrm } from "./crm";
+import { arOrganizationOwner } from "./organization-owner";
+import { arEmployeeExpenses } from "./employee-expenses";
 
 export const ar = {
+  ...arOrganizationOwner,
+  ...arCrm,
   ...arSubscriptionChanges,
   ...arBillingRecovery,
+  ...arEmployeeExpenses,
   ...arAuthResilience,
   ...arSubscriptionUsage,
   ...arDomain,

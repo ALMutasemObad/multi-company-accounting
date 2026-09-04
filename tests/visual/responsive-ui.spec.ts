@@ -24,11 +24,14 @@ const workspaceScreens: Screen[] = [
   'dashboard',
   'platform',
   'platformSubscriptions',
+  'organizationOwner',
   'subscription',
   'pos',
   'customers',
+  'crm',
   'professionalProjects',
   'humanResources',
+  'employeeExpenses',
   'sales',
   'receipts',
   'suppliers',
@@ -188,7 +191,7 @@ async function auditCurrentInterface(page: Page, locale: Locale, label: string) 
 }
 
 for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
-  test(`${locale}: all 29 screens satisfy the responsive interface contract`, async ({ page }) => {
+  test(`${locale}: all 32 screens satisfy the responsive interface contract`, async ({ page }) => {
     const runtimeErrors: string[] = [];
     const posRequests: Request[] = [];
     const posResponses: Response[] = [];
@@ -230,6 +233,10 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
         await expect(page).toHaveURL(new RegExp(`#${screen.name}$`));
         await waitForStableInterface(page, screen);
         await auditCurrentInterface(page, locale, screen.name);
+        if (screen.name === 'employeeExpenses') {
+          await expect(page.locator('.employee-expense-claim')).toHaveCount(3);
+          await expect(page.locator('.employee-expense-ready')).toHaveCount(1);
+        }
         if (visitingPos) {
           const identityPath = '/api/v1/pos/context/identity';
           const salesPath = '/api/v1/pos/sales';

@@ -25,6 +25,34 @@ export class IdentityCompanyProvisioningAdapter implements IdentityCompanyProvis
       create: { userId: administrator.id, companyId: input.companyId },
     });
 
+    const existingOrganizationMembership = await tx.organizationMembership.findUnique({
+      where: {
+        organizationId_userId: {
+          organizationId: input.organizationId,
+          userId: administrator.id,
+        },
+      },
+      select: { role: true, isActive: true, version: true },
+    });
+    const organizationRole = existingOrganizationMembership?.role
+      ?? (await tx.organizationMembership.count({
+        where: { organizationId: input.organizationId, role: "OWNER", isActive: true, user: { isActive: true } },
+      }) === 0 ? "OWNER" : "ADMIN");
+    if (!existingOrganizationMembership) {
+      await tx.organizationMembership.create({
+        data: {
+          organizationId: input.organizationId,
+          userId: administrator.id,
+          role: organizationRole,
+        },
+      });
+    } else if (!existingOrganizationMembership.isActive) {
+      await tx.organizationMembership.update({
+        where: { organizationId_userId: { organizationId: input.organizationId, userId: administrator.id } },
+        data: { isActive: true, version: { increment: 1 } },
+      });
+    }
+
     const administratorRole = await tx.role.upsert({
       where: { companyId_code: { companyId: input.companyId, code: "ADMINISTRATOR" } },
       update: { nameAr: "مدير الشركة", isActive: true, isSystemRole: true },
@@ -61,6 +89,7 @@ export class IdentityCompanyProvisioningAdapter implements IdentityCompanyProvis
 
     return {
       administrator: { id: administrator.id, email: administrator.emailNormalized },
+      organizationRole,
       reusedIdentity: Boolean(existingUser),
       permissionsGranted: permissionDefinitions.length,
     };

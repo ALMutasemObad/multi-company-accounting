@@ -36,6 +36,7 @@ export interface TenantCompanyProvisioningPort {
 }
 
 export type AdministratorProvisioningInput = {
+  organizationId: bigint;
   companyId: bigint;
   email: string;
   displayName: string;
@@ -45,6 +46,7 @@ export type AdministratorProvisioningInput = {
 
 export type AdministratorProvisioningResult = {
   administrator: { id: bigint; email: string };
+  organizationRole: "OWNER" | "ADMIN" | "VIEWER";
   reusedIdentity: boolean;
   permissionsGranted: number;
 };

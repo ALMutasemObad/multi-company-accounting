@@ -47,6 +47,12 @@ export interface CustomerImportPort {
 
 export type CrmCustomerReference = { customerId: bigint };
 
+export type CrmCustomerOptionReference = CrmCustomerReference & {
+  code: string;
+  nameAr: string;
+  nameEn: string | null;
+};
+
 export type CrmCustomerProvisioningInput = Omit<CustomerInput, "addresses">;
 
 export interface CrmCustomerQueryPort {
@@ -55,6 +61,10 @@ export interface CrmCustomerQueryPort {
     companyId: bigint,
     customerId: bigint,
   ): Promise<CrmCustomerReference | null>;
+  listActiveCustomers(
+    companyId: bigint,
+    input: { search?: string | undefined; limit: number },
+  ): Promise<CrmCustomerOptionReference[]>;
 }
 
 export interface CrmCustomerProvisioningPort {

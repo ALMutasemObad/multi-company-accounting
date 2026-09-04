@@ -70,6 +70,7 @@ export class CompanyProvisioningService {
 
     const tenant = await this.tenant.provisionTenant(tx, input);
     const identity = await this.identity.provisionAdministrator(tx, {
+      organizationId: tenant.organization.id,
       companyId: tenant.company.id,
       email: input.adminEmail,
       displayName: input.adminDisplayName,
@@ -103,6 +104,18 @@ export class CompanyProvisioningService {
           defaultChartTemplate: defaultChart.templateCode,
           defaultChartAccountsCreated: defaultChart.accountsCreated,
         } : {}),
+      },
+    });
+    await this.audit.append(tx, {
+      organizationId: tenant.organization.id,
+      actorUserId: identity.administrator.id,
+      action: 'ORGANIZATION_MEMBERSHIP_PROVISIONED',
+      entityType: 'ORGANIZATION_MEMBERSHIP',
+      entityId: identity.administrator.id.toString(),
+      details: {
+        role: identity.organizationRole,
+        companyId: tenant.company.id.toString(),
+        reusedIdentity: identity.reusedIdentity,
       },
     });
 

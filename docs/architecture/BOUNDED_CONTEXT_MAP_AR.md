@@ -1,8 +1,8 @@
 ---
 title: "Bounded Context Map"
 status: "accepted target architecture"
-version: "3.1"
-last_updated: "2026-08-30"
+version: "3.2"
+last_updated: "2026-09-04"
 ---
 
 # خريطة الـBounded Contexts وملكية البيانات
@@ -19,8 +19,8 @@ last_updated: "2026-08-30"
 
 | Context | المسؤولية | ملكية الكتابة المستهدفة | ملاحظات |
 |---|---|---|---|
-| Identity & Access | الهوية والجلسات والأدوار والصلاحيات واستعادة كلمة المرور | `User`, `Session`, `PasswordResetRequest`, `UserCompany`, `Role`, `Permission`, `RolePermission`, `UserCompanyRole` | يقدم منافذ الهوية؛ `ActorContext` نوع محايد في Application Kernel، وبريد الاستعادة أثر Outbox |
-| Tenant & Company Configuration | المؤسسة والشركة والعملات والإعدادات | `Organization`, `Company`, `Currency`, `CompanyCurrency`, `CompanyExchangeRate` | Organization تجمع الشركات فقط حاليًا؛ لا أدوار مجموعة أو تجميع مالي. فحص الاستخدام عبر Ports، لا عبر معرفة كل جداول المستندات |
+| Identity & Access | الهوية والجلسات وعضويات الشركات والمجموعات والأدوار والصلاحيات واستعادة كلمة المرور | `User`, `Session`, `PasswordResetRequest`, `UserCompany`, `OrganizationMembership`, `Role`, `Permission`, `RolePermission`, `UserCompanyRole` | دور `OrganizationMembership` مستقل عن RBAC الشركة وعن مشغل المنصة، ولا يمنح وصول شركة؛ يقدم السياق منافذ الهوية، و`ActorContext` نوع محايد في Application Kernel |
+| Tenant & Company Configuration | المؤسسة والشركة والعملات والإعدادات | `Organization`, `Company`, `Currency`, `CompanyCurrency`, `CompanyExchangeRate` | `Organization` تجمع الشركات، بينما عضويتها يملكها Identity. لا تجميع مالي أو Intercompany؛ فحص الاستخدام عبر Ports لا عبر معرفة كل جداول المستندات |
 | Registration & Onboarding | دورة التسجيل والتحقق والتنسيق | `RegistrationRequest`, `RegistrationEvent` | Process Manager؛ لا يملك User/Company/Account |
 | Core Accounting | السنة والفترة والدليل والمستند والدفتر والترحيل وحسابات فروقات العملة | `FiscalYear`, `FiscalPeriod`, `DocumentSequence`, `AccountingDocument`, `JournalEntry`, `JournalLine`, `AccountType`, `Account`, `CostCenter` | المالك الوحيد للـPosting Engine ويحل حسابي ربح/خسارة فرق العملة عبر منفذ صغير |
 | Sales & Accounts Receivable | العميل والفاتورة والذمة وسياسة تسوية التحصيل وافتراضات بيع الصنف | `Customer`, `CustomerAddress`, `SalesInvoice`, `SalesInvoiceLine`, `ReceivableItem`, `SalesItemSellingProfile` | يكشف `ReceivableSettlementPort` وكتالوج بيع محدود؛ يقرأ هوية الصنف والعملة والحساب والضريبة عبر Ports ولا ينشئ Journal Lines مباشرة |
@@ -29,17 +29,18 @@ last_updated: "2026-08-30"
 | Inventory | المستودعات والكتالوج ودفتر الحركة الكمي والقيمي والأرصدة وتقييم المتوسط | `Warehouse`, `UnitOfMeasure`, `InventoryItem`, `InventoryMovementSequence`, `InventoryMovement`, `InventoryMovementLine`, `InventoryBalance`, `InventoryValuationInitialization` | يكشف منفذي اختيار الفاتورة وتطبيق أثرها؛ يعيد حقائق تقييم للفواتير، وينشئ رأس `INVENTORY_ADJUSTMENT` للحركة اليدوية ثم يفوض إنشاء/عكس أسطر Ledger إلى `PostingEngine` |
 | Point of Sale | تنسيق البيع النقدي الحضوري وربط نتيجة الـCheckout | `PosSale` فقط | Process Manager؛ لا يملك بنودًا أو مبالغ أو فاتورة أو حركة مخزون/نقد أو قيدًا، ويستدعي منافذ Sales وTreasury الحالية |
 | Approvals | تنسيق طلبات وقرارات Maker/Checker المشتركة | `ApprovalRequest`, `ApprovalDecision` | يربط الموضوع ونسخته وبصمته فقط؛ يطبق المالك انتقال الموضوع عبر `ApprovalSubjectPort` ولا يملك حالته أو أثره المالي |
-| CRM / Business Development | الاستقطاب قبل العميل، التأهيل، فرصة البيع، مراحلها، وتتبعاتها التجارية | `CrmLead`, `CrmOpportunity`, `CrmActivity` | سياق مستهدف وفق ADR-014؛ يحول Lead إلى Customer عبر Sales Port ولا يملك Customer أو الفاتورة أو المشروع أو أي حقيقة مالية |
+| CRM / Business Development | الاستقطاب قبل العميل، التأهيل، فرصة البيع، مراحلها، وتتبعاتها التجارية | `CrmLead`, `CrmOpportunity`, `CrmActivity` | منفذ محليًا وفق ADR-014؛ يحول Lead إلى Customer عبر Sales Port ولا يملك Customer أو الفاتورة أو المشروع أو أي حقيقة مالية |
 | Service Catalog & Pricing | تعريف الخدمات التجارية وتصنيفها ووحدات تسعيرها وأسعارها المؤرخة | `ServiceCategory`, `ServiceOffering`, `ServicePrice` (مستهدفة) | سياق مستقل مستهدف وفق ADR-016؛ لا يمثل InventoryItem ولا مشروعًا، ويكشف Query Ports لـSales وCRM وProjects ولا يكتب فاتورة أو مخزونًا أو Ledger |
 | Professional Project Delivery | القضايا والتكليفات والمشاريع المهنية، فرقها ووصولها، خطة المراحل والمهام، الوقت المعتمد، وشروط فوترة المشروع ومصدرها | `ProfessionalProject`, `ProfessionalProjectMember`, `ProfessionalProjectAccessGrant`, `ProfessionalProjectStage`, `ProfessionalProjectTask`, `ProfessionalTaskDependency`, `ProfessionalTimeEntry`, `ProfessionalTimesheet`, `ProfessionalTimesheetSubmission`, `ProfessionalServiceContract`, `ProfessionalServiceRate`, `ProfessionalBillingRun`, `ProfessionalBillingSourceLine` | يملك الجدار الأخلاقي وميزانية دقائق المشروع والخطة؛ تبقى العقود والأسعار الحالية خاصة بالمشروع وليست دليل خدمات عامًا، ويقرأ المالكين الآخرين عبر Ports ولا يملك المصروف أو حقائق الفاتورة أو الذمة أو الضريبة أو القيد |
 | Human Resources | الهيكل التنظيمي وهوية الموظف وحالة العمل والعقد غير المالي | `HrDepartment`, `HrPosition`, `Employee`, `EmploymentContract` | الموظف مستقل عن `User` ويرتبط اختياريًا بعضوية الشركة عبر Identity Port؛ لا يملك رواتب أو بيانات بنكية أو قرار موافقة أو وقت مشروع |
+| Employee Expenses | مطالبة الموظف وبنودها ولقطتها ودورة جاهزيتها للصرف | `EmployeeExpenseClaim`, `EmployeeExpenseLine` | يقرأ الموظف ومركز التكلفة والعملة عبر Ports ويرسل قراره إلى Approvals؛ لا يملك فاتورة مورد أو دفعًا أو ذمة أو Ledger، وينتهي حاليًا عند `READY_FOR_PAYMENT` وفق ADR-020 |
 | Tax | معدلات الضرائب وربط حساباتها والحساب والتقريب | `TaxRate` | يكشف `TaxQuotePort` للمبيعات والمشتريات ويملك النسخ المتفائلة |
 | Printing & Document Output | اللقطات التاريخية والتوليد | `DocumentPrintArchive` | يقرأ عبر Document Snapshot Port |
 | Reporting | التقارير والقوائم وRead Models | لا يملك حقائق مالية تشغيلية | قراءة فقط، ويمكنه امتلاك projections مستقبلًا |
 | Platform Operations & Billing | مؤشرات تبني وصحة المنصة وملف الشركة، وحساب الفوترة وفاتورتها وسدادها ودورة الدفع الإلكتروني | `PlatformBillingAccount`, `PlatformBillingInvoice`, `PlatformBillingInvoiceLine`, `PlatformBillingPayment`, `PlatformPaymentAttempt`, `PlatformCheckoutSession`, `PlatformPaymentTransition`, `PlatformWebhookReceipt`, `PlatformBillingRefund` | يقرأ الاستخدام ولقطة الاشتراك عبر Query Ports، ويملك `PlatformPaymentProviderPort`؛ لا يكتب حالة الاشتراك أو Sales/AR أو Treasury أو Ledger للشركة العميلة |
 | Platform Subscriptions & Entitlements | كتالوج الخطط والموديولات واشتراك الشركة واستحقاقاتها وتغييراتها المؤرخة | `PlatformModule`, `PlatformModuleDependency`, `PlatformPlan`, `PlatformPlanVersion`, `PlatformPlanEntitlement`, `PlatformSubscription`, `PlatformSubscriptionEntitlement`, `PlatformSubscriptionChange`, `PlatformSubscriptionChangeModule` | يستهلك حالة الفوترة عبر Port عند الحاجة ولا يكتب جداول الدفع؛ الاستحقاق التجاري مستقل عن RBAC ولا يتغير بمجرد Webhook دفع |
 | Data Import | تنسيق القوالب والمعاينة والاعتماد الجماعي | `DataImportBatch` فقط | Process Manager؛ يستدعي منافذ المالكين ولا يخزن الملف أو يرحّل الفواتير |
-| Audit | سجل الأعمال والامتثال | `AuditLog` | Append-only، وليس Event Bus |
+| Audit | سجل الأعمال والامتثال | `AuditLog`, `OrganizationAuditLog` | Append-only بنطاق شركة أو مؤسسة صريح، وليس Event Bus؛ لا يوضع فعل مجموعة مصطنعًا تحت شركة واحدة |
 | Security Monitoring | أحداث المخاطر والإقرار | `SecurityEvent` | يمكنه إصدار تنبيه Integration بعد حفظ الحدث |
 | Application Infrastructure | Idempotency وOutbox والتسلسلات التقنية والتشغيل والحماية المشتركة من إساءة الاستخدام | `IdempotencyRecord`, `OutboxEvent`, `MasterDataCodeSequence`, `RateLimitCounter` | ليست Bounded Context أعمال؛ تخزن HMAC هوية بسر تشغيل مستقل لا IP أو بريدًا أو رمزًا خامًا، وتوفر حجز الرمز الذري للكيانات المرجعية ولا تملك تلك الكيانات |
 
@@ -72,7 +73,10 @@ Professional Projects ──> Sales customer query port and Identity people quer
 Professional Projects ──> Human Resources employee query port
 Professional Projects ──> Tenant currency query port and Sales professional-billing application/query port
 Human Resources ────────> Identity membership query port
+Employee Expenses ─────> Human Resources employee, Core Accounting cost-center, Tenant currency query ports
+Employee Expenses ─────> Approvals subject application port
 Workforce Access workflow ──> Human Resources employee-account port + Identity account port
+Organization owner workspace ──> Identity membership + Tenant directory + Accounting/Sales/Purchases query ports
 All operational contexts ──> Audit append port
 Authentication/Identity ───> Security append port
 
@@ -134,11 +138,13 @@ Platform Subscriptions & Entitlements وفق [ADR-019](ADR-019-public-subscripti
 
 ثم أضيفت أول شريحة فوترة خدمات وفق [ADR-009](ADR-009-professional-service-billing.md): يملك السياق عقد الخدمة وسعر الساعة المؤرخ ومرجع مصدر الوقت والسعر المستخدم، ويستدعي `ProfessionalBillingSalesPort` لإنشاء وترحيل فاتورة Sales عادية داخل المعاملة نفسها. لا ينسخ رقم الفاتورة أو إجماليها أو ضريبتها أو الذمة أو القيد؛ تُقرأ هذه الحقائق من Sales عبر Query Port، ويبقى `PostingEngine` كاتب Ledger الوحيد.
 
-ثم نُفذت E1 محليًا لتخطيط المشاريع وفق [ADR-010](ADR-010-professional-project-planning.md): يظل `ProfessionalProject` جذر الخطة ويفصل `planningVersion` عن نسخة حقول المشروع، ويملك المراحل والمهام واعتمادياتها وميزانية الدقائق. يرتبط الوقت اختياريًا بالمهمة، وتبقى الفعلية مشتقة من `ProfessionalTimeEntry` بلا عمود مجموع موازٍ. لا تضيف الشريحة اتصالًا بـPurchases أو Approvals أو Ledger ولا Outbox بلا مستهلك. تبقى مصروفات E2 بلا مالك منفذ وتحتاج قرارًا يفصل مطالبة الموظف عن فاتورة المورد والدفع وإعادة الفوترة.
+ثم نُفذت E1 محليًا لتخطيط المشاريع وفق [ADR-010](ADR-010-professional-project-planning.md): يظل `ProfessionalProject` جذر الخطة ويفصل `planningVersion` عن نسخة حقول المشروع، ويملك المراحل والمهام واعتمادياتها وميزانية الدقائق. يرتبط الوقت اختياريًا بالمهمة، وتبقى الفعلية مشتقة من `ProfessionalTimeEntry` بلا عمود مجموع موازٍ. لا تضيف الشريحة اتصالًا بـPurchases أو Approvals أو Ledger ولا Outbox بلا مستهلك.
+
+وفي 4 سبتمبر 2026 اعتمدت E2 سياق `Employee Expenses` المستقل وفق [ADR-020](ADR-020-employee-expense-claims.md): يملك المطالبة وبنودها ولقطتها، ويقرأ موظف HR ومركز تكلفة Core Accounting وعملة Tenant عبر Ports، ثم يستخدم Approvals لفصل Maker/Checker. ينتهي القبول صراحة عند `READY_FOR_PAYMENT` ولا ينشئ Supplier Invoice أو Payment أو PayableItem أو AccountingDocument أو Journal Lines. السلف وإعادة الفوترة والتكامل المالي مؤجلة حتى تعتمد سياسة المقاصة والتسوية والترحيل.
 
 ثم نُفذ الجدار الأخلاقي F1 وفق [ADR-011](ADR-011-professional-ethical-wall.md): يملك Professional Projects وضع وصول القضية ومنحها، وتبقى صلاحية RBAC شرطًا مستقلًا. تستبعد القضية المقيدة من القوائم والمجاميع وتعيد 404 لغير المسموح، ولا تغير المنحة حقائق المشروع أو الفوترة أو Ledger. يظل فحص تعارض المصالح F2 خارج النطاق وشرطًا قبل إنشاء قضية من أي مسار استقبال مستقبلي.
 
-واعتمد [ADR-014](ADR-014-crm-business-development-priority.md) سياق `CRM / Business Development` كهدف المرحلة التالية: يملك Lead وOpportunity وActivity قبل العميل، ويحول عبر منفذ Sales من دون كتابة Customer مباشرة أو نسخ حقائق الفاتورة والذمة. لا ينشئ CRM الأول مشروعًا أو قضية؛ يلزم F2 قبل إضافة هذا الربط لشركات المحاماة.
+ونُفذ [ADR-014](ADR-014-crm-business-development-priority.md) محليًا كسياق `CRM / Business Development`: يملك Lead وOpportunity وActivity قبل العميل، ويحول عبر منفذ Sales من دون كتابة Customer مباشرة أو نسخ حقائق الفاتورة والذمة. لا ينشئ CRM الأول مشروعًا أو قضية؛ يلزم F2 قبل إضافة هذا الربط لشركات المحاماة.
 
 وفي دفعة التثبيت السابقة لـCRM نُقل CRUD العميل وعناوينه من وحدة Receipts إلى Sales،
 وأصبح Data Import يستهلك `CustomerImportPort`. وفي 29 أغسطس 2026 اكتمل تطبيق الحد
@@ -161,6 +167,13 @@ Platform Subscriptions & Entitlements وفق [ADR-019](ADR-019-public-subscripti
 
 لا توجد حاليًا قائمة استثناءات ملكية مسموح بنسخها؛ أي استثناء جديد يحتاج ADR صريحًا.
 
+وفي 4 سبتمبر 2026 نُفذت شريحة مساحة مالك المجموعة وفق
+[حدود عضوية المجموعة ومساحة المالك](ORGANIZATION_MEMBERSHIP_OWNER_WORKSPACE_AR.md).
+يملك Identity العضوية وأدوار `OWNER/ADMIN/VIEWER`، وتبقى عضوية `UserCompany` شرطًا
+مستقلًا لظهور الشركة وللتبديل إليها. تنسق لوحة القراءة منافذ Tenant وCore Accounting
+وSales وPurchases ولا تجمع المبالغ بين العملات ولا تنتج قوائم موحدة أو إلغاءات
+Intercompany. تحفظ تغييرات العضوية في `OrganizationAuditLog` ولا تمنح أي صلاحية منصة.
+
 ## 7. حدود Aggregates المقترحة
 
 | Aggregate | يحمي |
@@ -181,6 +194,7 @@ Platform Subscriptions & Entitlements وفق [ADR-019](ADR-019-public-subscripti
 | `ProfessionalServiceContract` | عملة وشروط السداد وفترة سريان تجارية واحدة غير متداخلة لكل مشروع وقت ومواد |
 | `ProfessionalBillingRun` | استخدام وقت معتمد مرة واحدة وربطه بفاتورة Sales مع تثبيت مصدر الوقت والسعر دون نسخ حقائقها المالية |
 | `Employee` | الهوية الوظيفية داخل الشركة، الإسناد التنظيمي، سلسلة المدير، حالة العمل والعقد النشط الواحد |
+| `EmployeeExpenseClaim` | ملكية الموظف للمسودة، بنود Decimal ومراكز تكلفتها، ثبات snapshot أثناء المراجعة، وانتقالًا واحدًا صادقًا إلى جاهزية الصرف |
 | `ChartOfAccounts`/`Account` | صلاحية الترحيل والبنية الهرمية |
 
 لا يشترط أن تتحول جميعها إلى Classes كبيرة؛ المطلوب أن تكون invariants والملكية ومداخل التغيير واضحة ومختبرة.

@@ -23,19 +23,25 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 328, requestBodies: 170, responseBodies: 2199 });
+    expect(openApiContractCoverage).toEqual({ operations: 349, requestBodies: 181, responseBodies: 2318 });
     expect(openApiOperationRoutes).toMatchObject({
       'GET /pos/context/identity': 'getPosContextIdentity',
       'GET /pos/context/period': 'resolvePosContextPeriod',
       'GET /pos/context/references/{field}/{referenceId}': 'getPosContextReference',
       'GET /pos/context/options/{field}': 'listPosContextOptions',
       'GET /sales-invoices/{id}/receipt-preview': 'getRetailReceiptPreview',
+      'GET /organizations/{organizationId}/dashboard': 'getOrganizationDashboard',
     });
-    expect(guardedOpenApiOperations).toHaveLength(170);
+    expect(guardedOpenApiOperations).toHaveLength(181);
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining(['createItemSellingProfile', 'updateItemSellingProfile']));
     expect(guardedOpenApiOperations).toContain("setPlatformSubscriptionPublicListing");
+    expect(guardedOpenApiOperations).toEqual(expect.arrayContaining(["createOrganizationMember", "updateOrganizationMember"]));
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
-      'login', 'upsertPlatformBillingAccount', 'createPlatformSubscriptionPlan', 'updatePlatformSubscriptionPlanDraft', 'publishPlatformSubscriptionPlanVersion', 'schedulePlatformCompanySubscriptionChange', 'requestCompanySubscriptionChange', 'issuePlatformBillingInvoice', 'recordPlatformBillingPayment', 'voidPlatformBillingInvoice', 'createUser', 'linkUserEmployee', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'initializeInventoryBalanceValuation', 'reverseInventoryMovement', 'createInventoryItemBarcode', 'updateInventoryItemBarcode', 'setPrimaryInventoryItemBarcode', 'deactivateInventoryItemBarcode', 'resolveInventoryBarcode', 'resolveInventoryBarcodeBatch', 'previewDataImport', 'commitDataImport', 'previewBankStatement', 'commitBankStatementImport', 'createBankReconciliationSession', 'generateBankReconciliationSuggestions', 'approveBankReconciliationMatch', 'createManualBankReconciliationMatch', 'releaseBankReconciliationMatch', 'classifyBankStatementLine', 'closeBankReconciliationSession', 'startFinancialCloseRun', 'refreshFinancialCloseRun', 'createApprovalRequest', 'approveApprovalRequest', 'rejectApprovalRequest', 'createProfessionalProject', 'assignProfessionalProjectMember', 'createProfessionalTimeEntry', 'createProfessionalTimesheet', 'createProfessionalServiceContract', 'endProfessionalServiceContract', 'createProfessionalServiceRate', 'endProfessionalServiceRate', 'createProfessionalBillingRun', 'updateProfessionalProjectAccess', 'grantProfessionalProjectAccess', 'revokeProfessionalProjectAccess', 'updateProfessionalProjectTimeBudget', 'createProfessionalProjectStage', 'updateProfessionalProjectStage', 'transitionProfessionalProjectStage', 'createProfessionalProjectTask', 'updateProfessionalProjectTask', 'transitionProfessionalProjectTask', 'createProfessionalProjectTaskDependency', 'removeProfessionalProjectTaskDependency', 'createHrDepartment', 'updateHrDepartment', 'createHrPosition', 'updateHrPosition', 'createEmployee', 'updateEmployee', 'transitionEmployee', 'createEmploymentContract', 'endEmploymentContract', 'returnFinancialCloseRun', 'updateCashFlowMapping',
+      'createCrmLead', 'markCrmLeadContacted', 'qualifyCrmLead', 'convertCrmLead',
+      'moveCrmOpportunityStage', 'createCrmActivity', 'completeCrmActivity',
+    ]));
+    expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
+      'login', 'upsertPlatformBillingAccount', 'createPlatformSubscriptionPlan', 'updatePlatformSubscriptionPlanDraft', 'publishPlatformSubscriptionPlanVersion', 'schedulePlatformCompanySubscriptionChange', 'requestCompanySubscriptionChange', 'issuePlatformBillingInvoice', 'recordPlatformBillingPayment', 'voidPlatformBillingInvoice', 'createUser', 'linkUserEmployee', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'initializeInventoryBalanceValuation', 'reverseInventoryMovement', 'createInventoryItemBarcode', 'updateInventoryItemBarcode', 'setPrimaryInventoryItemBarcode', 'deactivateInventoryItemBarcode', 'resolveInventoryBarcode', 'resolveInventoryBarcodeBatch', 'previewDataImport', 'commitDataImport', 'previewBankStatement', 'commitBankStatementImport', 'createBankReconciliationSession', 'generateBankReconciliationSuggestions', 'approveBankReconciliationMatch', 'createManualBankReconciliationMatch', 'releaseBankReconciliationMatch', 'classifyBankStatementLine', 'closeBankReconciliationSession', 'startFinancialCloseRun', 'refreshFinancialCloseRun', 'createApprovalRequest', 'approveApprovalRequest', 'rejectApprovalRequest', 'createEmployeeExpenseClaim', 'updateEmployeeExpenseClaim', 'createProfessionalProject', 'assignProfessionalProjectMember', 'createProfessionalTimeEntry', 'createProfessionalTimesheet', 'createProfessionalServiceContract', 'endProfessionalServiceContract', 'createProfessionalServiceRate', 'endProfessionalServiceRate', 'createProfessionalBillingRun', 'updateProfessionalProjectAccess', 'grantProfessionalProjectAccess', 'revokeProfessionalProjectAccess', 'updateProfessionalProjectTimeBudget', 'createProfessionalProjectStage', 'updateProfessionalProjectStage', 'transitionProfessionalProjectStage', 'createProfessionalProjectTask', 'updateProfessionalProjectTask', 'transitionProfessionalProjectTask', 'createProfessionalProjectTaskDependency', 'removeProfessionalProjectTaskDependency', 'createHrDepartment', 'updateHrDepartment', 'createHrPosition', 'updateHrPosition', 'createEmployee', 'updateEmployee', 'transitionEmployee', 'createEmploymentContract', 'endEmploymentContract', 'returnFinancialCloseRun', 'updateCashFlowMapping',
     ]));
   });
 
@@ -46,6 +52,49 @@ describe('generated OpenAPI request guards', () => {
     expect(openApiRequestBodySchemas.createWarehouse.safeParse({ code: 'MANUAL', nameAr: 'مستودع' }).success).toBe(false);
     expect(openApiRequestBodySchemas.updateWarehouse.safeParse({ nameAr: 'مستودع' }).success).toBe(false);
     expect(openApiRequestBodySchemas.deactivateWarehouse.safeParse({ version: 0, reason: 'لا' }).success).toBe(false);
+  });
+
+  it('keeps organization roles separate and accepts signed per-company net metrics', () => {
+    expect(openApiRequestBodySchemas.createOrganizationMember.parse({
+      email: '  OWNER@EXAMPLE.TEST ', role: 'VIEWER',
+    })).toEqual({ email: 'OWNER@EXAMPLE.TEST', role: 'VIEWER' });
+    expect(openApiRequestBodySchemas.createOrganizationMember.safeParse({
+      email: 'owner@example.test', role: 'PLATFORM_OPERATOR',
+    }).success).toBe(false);
+    expect(parseOpenApiResponseBody('getOrganizationDashboard', 200, {
+      generatedAt: '2026-09-04T12:00:00.000Z',
+      period: { days: 30, from: '2026-08-06', to: '2026-09-04' },
+      organization: {
+        id: '1', code: 'GROUP', name: 'Group', role: 'OWNER', memberCount: 1,
+        canManageMembers: true, canManageOwners: true,
+      },
+      companies: [{
+        id: '2', code: 'COMPANY', name: 'Company', timezone: 'Asia/Riyadh', isActive: true,
+        canSwitch: true, baseCurrencyCode: 'SAR',
+        metricAccess: { activeUsers: true, postedDocuments: true, postedSales: true, postedPurchases: true },
+        activeUsers: 1, postedDocuments: 2,
+        postedSalesBase: '-5.0000', postedPurchasesBase: '10.0000',
+      }],
+      boundaries: {
+        companyAccessRequired: true, companyPermissionsRequired: true, consolidatedStatements: false,
+        intercompanyEliminations: false, crossCurrencyAggregation: false,
+      },
+    })).toMatchObject({ organization: { role: 'OWNER' }, companies: [{ postedSalesBase: '-5.0000' }] });
+    expect(parseOpenApiResponseBody('getOrganizationDashboard', 200, {
+      generatedAt: '2026-09-04T12:00:00.000Z',
+      period: { days: 30, from: '2026-08-06', to: '2026-09-04' },
+      organization: { id: '1', code: 'GROUP', name: 'Group', role: 'VIEWER', memberCount: 1, canManageMembers: false, canManageOwners: false },
+      companies: [{
+        id: '11', code: 'COMPANY', name: 'Company', timezone: 'Asia/Riyadh', isActive: true,
+        canSwitch: true, baseCurrencyCode: 'SAR',
+        metricAccess: { activeUsers: false, postedDocuments: false, postedSales: false, postedPurchases: false },
+        activeUsers: null, postedDocuments: null, postedSalesBase: null, postedPurchasesBase: null,
+      }],
+      boundaries: {
+        companyAccessRequired: true, companyPermissionsRequired: true, consolidatedStatements: false,
+        intercompanyEliminations: false, crossCurrencyAggregation: false,
+      },
+    })).toMatchObject({ companies: [{ activeUsers: null, postedSalesBase: null }] });
   });
 
   it('enforces semantic unit codes and server-owned inventory item codes', () => {

@@ -51,6 +51,11 @@ try {
     update: { isActive: true },
     create: { userId: user.id, companyId: company.id },
   });
+  await prisma.organizationMembership.upsert({
+    where: { organizationId_userId: { organizationId: organization.id, userId: user.id } },
+    update: { role: 'OWNER', isActive: true },
+    create: { organizationId: organization.id, userId: user.id, role: 'OWNER' },
+  });
   const administratorRole = await prisma.role.upsert({
     where: { companyId_code: { companyId: company.id, code: 'ADMINISTRATOR' } },
     update: { nameAr: 'مدير النظام', isActive: true, isSystemRole: true },
@@ -107,6 +112,9 @@ try {
     ['hr.structure.manage', 'human_resources', 'إنشاء وتعديل وتعطيل الأقسام والمناصب'],
     ['hr.contracts.view', 'human_resources', 'عرض عقود العمل غير المالية'],
     ['hr.contracts.manage', 'human_resources', 'إنشاء عقود العمل وإنهاؤها'],
+    ['employee_expenses.view', 'employee_expenses', 'عرض مطالبات المصروفات الشخصية'],
+    ['employee_expenses.submit', 'employee_expenses', 'إنشاء مطالبات المصروفات الشخصية وتعديلها وإرسالها'],
+    ['employee_expenses.review', 'employee_expenses', 'عرض مطالبات المصروفات على مستوى الشركة'],
     ['fiscal_periods.reopen', 'fiscal', 'إعادة فتح فترة مالية'],
     ['accounts.view', 'accounts', 'عرض دليل الحسابات'],
     ['accounts.create', 'accounts', 'إنشاء حساب'],
@@ -123,6 +131,10 @@ try {
     ['manual_journals.reverse', 'manual_journals', 'عكس القيود اليدوية'],
     ['customers.view', 'customers', 'عرض العملاء'],
     ['customers.manage', 'customers', 'إدارة العملاء'],
+    ['crm.view', 'crm', 'عرض العملاء المحتملين والفرص والأنشطة'],
+    ['crm.manage', 'crm', 'إدارة العملاء المحتملين والفرص'],
+    ['crm.activities.manage', 'crm', 'إدارة أنشطة المتابعة والإجراء التالي'],
+    ['crm.convert', 'crm', 'تحويل العميل المحتمل إلى عميل'],
     ['cash_bank_accounts.view', 'treasury', 'عرض الصناديق والحسابات البنكية'],
     ['cash_bank_accounts.manage', 'treasury', 'إدارة الصناديق والحسابات البنكية'],
     ['bank_reconciliation.view', 'bank_reconciliation', 'عرض استيرادات وجلسات المطابقة البنكية'],

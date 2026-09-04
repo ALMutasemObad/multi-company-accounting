@@ -6,13 +6,16 @@ import type { PlatformModuleCode } from './types';
 export type View =
   | "home"
   | "dashboard"
+  | "organizationOwner"
   | "platform"
   | "platformSubscriptions"
   | "subscription"
   | "pos"
   | "customers"
+  | "crm"
   | "professionalProjects"
   | "humanResources"
+  | "employeeExpenses"
   | "sales"
   | "receipts"
   | "suppliers"
@@ -37,6 +40,7 @@ export type NavigationItem = {
   label: TranslationKey;
   module?: PlatformModuleCode;
   platformOnly?: boolean;
+  organizationOnly?: boolean;
 };
 
 export type NavigationAccess = {
@@ -44,16 +48,19 @@ export type NavigationAccess = {
   permissionSet: ReadonlySet<string>;
   hasSelectedCompany: boolean;
   platformOperations: boolean;
+  organizationWorkspace?: boolean;
 };
 
-type TenantProtectedView = Exclude<View, "home" | "platform" | "platformSubscriptions">;
+type TenantProtectedView = Exclude<View, "home" | "organizationOwner" | "platform" | "platformSubscriptions">;
 
 export const viewPermissionPolicies: Record<TenantProtectedView, PermissionPolicy> = {
   dashboard: { permission: "dashboard.view" },
   pos: { permission: "pos.view" },
   customers: { permission: "customers.view" },
+  crm: { permission: "crm.view" },
   professionalProjects: { permission: "professional_projects.view" },
   humanResources: { allOf: ["hr.employees.view", "hr.structure.view", "hr.contracts.view"] },
+  employeeExpenses: { anyOf: ["employee_expenses.view", "employee_expenses.review"] },
   sales: { permission: "sales_invoices.view" },
   receipts: { permission: "receipts.view" },
   suppliers: { permission: "suppliers.view" },
@@ -77,13 +84,16 @@ export const viewPermissionPolicies: Record<TenantProtectedView, PermissionPolic
 export const navigationItems: NavigationItem[] = [
   { view: "home", icon: "home", label: "nav.home" },
   { view: "dashboard", icon: "dashboard", label: "nav.dashboard", module: 'REPORTING' },
+  { view: "organizationOwner", icon: "building", label: "nav.organizationOwner", organizationOnly: true },
   { view: "platform", icon: "platform", label: "nav.platform", platformOnly: true },
   { view: "platformSubscriptions", icon: "calendar", label: "nav.platformSubscriptions", platformOnly: true },
   { view: "subscription", icon: "calendar", label: "nav.subscription" },
   { view: "pos", icon: "wallet", label: "nav.pos", module: 'POS' },
   { view: "customers", icon: "customers", label: "nav.customers", module: 'SALES' },
+  { view: "crm", icon: "dashboard", label: "nav.crm", module: 'SALES' },
   { view: "professionalProjects", icon: "users", label: "nav.professionalProjects", module: 'PROFESSIONAL_PROJECTS' },
   { view: "humanResources", icon: "building", label: "nav.humanResources", module: 'HUMAN_RESOURCES' },
+  { view: "employeeExpenses", icon: "wallet", label: "nav.employeeExpenses", module: 'HUMAN_RESOURCES' },
   { view: "sales", icon: "document", label: "nav.sales", module: 'SALES' },
   { view: "receipts", icon: "receipts", label: "nav.receipts", module: 'TREASURY' },
   { view: "suppliers", icon: "suppliers", label: "nav.suppliers", module: 'PURCHASES' },
@@ -116,6 +126,7 @@ export function isNavigationItemVisible(
   if (item.view === "platform" || item.view === "platformSubscriptions") {
     return item.platformOnly === true && access.platformOperations;
   }
+  if (item.view === "organizationOwner") return item.organizationOnly === true && access.organizationWorkspace;
   if (!access.hasSelectedCompany) return false;
   if (item.view === "home") return true;
   if (item.module && !access.moduleSet.has(item.module)) return false;
@@ -128,7 +139,7 @@ export const visibleNavigationItems = (access: NavigationAccess) =>
 export function resolveAuthorizedView(requested: View, access: NavigationAccess): View {
   const requestedItem = navigationItems.find((item) => item.view === requested);
   if (requestedItem && isNavigationItemVisible(requestedItem, access)) return requested;
-  return access.hasSelectedCompany ? "home" : access.platformOperations ? "platform" : "home";
+  return access.hasSelectedCompany ? "home" : access.platformOperations ? "platform" : access.organizationWorkspace ? "organizationOwner" : "home";
 }
 
 export type ModuleCard = NavigationItem & { description: TranslationKey };
@@ -185,14 +196,14 @@ export const systemGroups: SystemGroup[] = [
     key: "business",
     title: "home.group.business",
     description: "home.group.businessDescription",
-    modules: navigationItems.filter((item) => ["pos", "customers", "sales", "receipts", "suppliers", "purchases", "payments"].includes(item.view))
+    modules: navigationItems.filter((item) => ["pos", "customers", "crm", "sales", "receipts", "suppliers", "purchases", "payments"].includes(item.view))
       .map((item) => ({ ...item, description: `home.module.${item.view}` as TranslationKey })),
   },
   {
     key: "workforce",
     title: "home.group.workforce",
     description: "home.group.workforceDescription",
-    modules: navigationItems.filter((item) => ["professionalProjects", "humanResources", "approvals"].includes(item.view))
+    modules: navigationItems.filter((item) => ["professionalProjects", "humanResources", "employeeExpenses", "approvals"].includes(item.view))
       .map((item) => ({ ...item, description: `home.module.${item.view}` as TranslationKey })),
   },
   {
@@ -206,7 +217,7 @@ export const systemGroups: SystemGroup[] = [
     key: "administration",
     title: "home.group.administration",
     description: "home.group.administrationDescription",
-    modules: navigationItems.filter((item) => ["subscription", "imports", "admin", "audit", "security", "settings"].includes(item.view))
+    modules: navigationItems.filter((item) => ["organizationOwner", "subscription", "imports", "admin", "audit", "security", "settings"].includes(item.view))
       .map((item) => ({ ...item, description: `home.module.${item.view}` as TranslationKey })),
   },
 ];

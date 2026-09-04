@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.46.2
+  version: 1.48.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -34,6 +34,8 @@ info:
     - يملك سياق Professional Services المشاريع والقضايا المهنية وإسناد أعضائها وسجلات الوقت والعقود والأسعار ومصدر الفوترة؛ ينشئ ويرحل فاتورة مبيعات عادية ذرياً عبر منفذ Sales، ولا يكرر حقائق الفاتورة أو الذمم أو Ledger.
 
     - يملك Human Resources الأقسام والمناصب والموظفين والعقود غير المالية؛ Employee مستقل عن User ويرتبط بعضوية Identity اختياريًا عبر منفذ قراءة فقط، ولا تشمل الشريحة الرواتب أو التعويضات.
+
+    - عضوية Organization عقد Identity مستقل بأدوار OWNER/ADMIN/VIEWER؛ لا تمنح وصول شركة أو صلاحية منصة. تعرض مساحة المجموعة فقط الشركات التي يملك المستخدم عضوية شركة نشطة فيها، وتبقي المقارنات المالية منفصلة حسب عملة الأساس دون قوائم موحدة أو intercompany.
 
     - تبدأ رحلة Inventory بإدارة المستودعات المعزولة حسب الشركة، مع رموز خادمية ثابتة ونسخ متفائلة، دون أثر على الأستاذ في هذه المرحلة.
 
@@ -68,6 +70,8 @@ servers:
 - url: /api/v1
   description: مسار نسبي يعمل على نفس أصل الواجهة في جميع البيئات
 tags:
+- name: CRM
+  description: العملاء المحتملون والفرص وأنشطة المتابعة والتحويل الآمن إلى سجل العميل المملوك للمبيعات.
 - name: Sales Catalog
   description: ملفات بيع الأصناف المملوكة للمبيعات؛ افتراضات وليست عرض سعر نهائيًا.
 - name: Health
@@ -82,6 +86,8 @@ tags:
   description: إدارة المستخدمين وإسناداتهم داخل الشركة.
 - name: Roles
   description: الأدوار والصلاحيات المعزولة حسب الشركة.
+- name: Organization Workspace
+  description: مساحة مالك المجموعة وعضوياتها؛ منفصلة عن تشغيل المنصة ولا تمنح وصولًا إلى شركة بلا UserCompany نشط.
 - name: Companies
   description: بيانات الشركة الحالية وإعداداتها التشغيلية.
 - name: Dashboard
@@ -94,6 +100,8 @@ tags:
   description: المشاريع والقضايا والاستشارات المهنية وأعضاؤها وسجلات الوقت والعقود والأسعار ومصدر فوترة الوقت المعتمد؛ تبقى حقائق الفاتورة والذمم لدى Sales والقيود لدى Core Accounting.
 - name: Human Resources
   description: الهيكل والموظفون والعقود غير المالية؛ الرواتب والهوية الوطنية والحسابات البنكية خارج هذه الشريحة.
+- name: Employee Expenses
+  description: مطالبات مصروفات الموظفين وبنودها ومراجعتها؛ لا يملك السياق HR أو Treasury أو Ledger، ولا يخزن ملفات الإيصالات.
 - name: Accounts
   description: دليل الحسابات ومراكز التكلفة.
 - name: Data Imports
@@ -2082,6 +2090,152 @@ paths:
       - SessionCookie: []
       parameters:
       - $ref: '#/components/parameters/RequestId'
+  /organizations/workspaces:
+    get:
+      tags: [Organization Workspace]
+      summary: عرض المجموعات التي يملك المستخدم عضوية نشطة فيها
+      operationId: listOrganizationWorkspaces
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: المجموعات المتاحة دون منح أي وصول شركة أو منصة
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/OrganizationWorkspaceReference' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-authorization: active organization membership
+  /organizations/{organizationId}/dashboard:
+    get:
+      tags: [Organization Workspace]
+      summary: عرض مقارنة المجموعة للشركات المسموح بها فقط
+      description: لا يعرض شركة إلا عند اجتماع عضوية Organization النشطة وعضوية UserCompany النشطة. المبالغ بعملة أساس كل شركة ولا تجمع عبر العملات.
+      operationId: getOrganizationDashboard
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: organizationId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Id' }
+      - name: days
+        in: query
+        required: false
+        schema: { type: integer, enum: [30, 90, 365], default: 30 }
+      responses:
+        '200':
+          description: لوحة قراءة للمجموعة بلا قوائم موحدة أو إلغاءات intercompany
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationDashboard' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-authorization: active organization membership
+  /organizations/{organizationId}/members:
+    get:
+      tags: [Organization Workspace]
+      summary: عرض أعضاء المجموعة للمالك أو المدير
+      operationId: listOrganizationMembers
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: organizationId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Id' }
+      responses:
+        '200':
+          description: أعضاء المجموعة
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationMemberList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      tags: [Organization Workspace]
+      summary: إضافة حساب موجود ومخوّل في إحدى شركات المجموعة
+      description: لا ينشئ حسابًا ولا يرسل دعوة بريدية ولا يكشف حسابًا خارج شركات المجموعة. المدير يستطيع إضافة VIEWER فقط.
+      operationId: createOrganizationMember
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: organizationId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Id' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrganizationMemberCreateRequest' }
+      responses:
+        '201':
+          description: أضيفت العضوية
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationMember' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-authorization: OWNER any role; ADMIN VIEWER only
+  /organizations/{organizationId}/members/{userId}:
+    patch:
+      tags: [Organization Workspace]
+      summary: تعديل دور عضو المجموعة أو حالته بنسخة تفاؤلية
+      operationId: updateOrganizationMember
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: organizationId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Id' }
+      - name: userId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Id' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrganizationMemberUpdateRequest' }
+      responses:
+        '200':
+          description: العضوية بعد التعديل
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationMember' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-authorization: OWNER any role; ADMIN VIEWER only; last OWNER protected
   /companies/current:
     get:
       tags:
@@ -3982,6 +4136,85 @@ paths:
       x-permission: hr.contracts.manage
       security: [{ SessionCookie: [], CsrfToken: [] }]
       x-idempotency-scope: user + company + operation + key
+  /employee-expense-claims:
+    get:
+      tags: [Employee Expenses]
+      summary: عرض مطالبات مصروفات الموظفين
+      operationId: listEmployeeExpenseClaims
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - { name: scope, in: query, schema: { type: string, enum: [mine, company], default: mine } }
+      - { name: status, in: query, schema: { $ref: '#/components/schemas/EmployeeExpenseClaimStatus' } }
+      responses:
+        '200': { description: مطالبات معزولة حسب الشركة والنطاق, content: { application/json: { schema: { $ref: '#/components/schemas/EmployeeExpenseClaimListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: employee_expenses.view
+      x-permission-by-scope:
+        mine: employee_expenses.view
+        company: employee_expenses.review
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [Employee Expenses]
+      summary: إنشاء مسودة مطالبة للموظف المرتبط بالمستخدم الحالي
+      description: تحفظ مراجع إيصال نصية فقط؛ لا يقبل المسار ملفات أو بيانات ثنائية.
+      operationId: createEmployeeExpenseClaim
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateEmployeeExpenseClaimRequest' } } }
+      responses:
+        '201': { description: المطالبة المنشأة, content: { application/json: { schema: { $ref: '#/components/schemas/EmployeeExpenseClaimResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: employee_expenses.submit
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /employee-expense-claims/{claimId}:
+    patch:
+      tags: [Employee Expenses]
+      summary: استبدال بيانات مسودة مطالبة شخصية
+      operationId: updateEmployeeExpenseClaim
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: claimId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/UpdateEmployeeExpenseClaimRequest' } } }
+      responses:
+        '200': { description: المسودة المحدثة, content: { application/json: { schema: { $ref: '#/components/schemas/EmployeeExpenseClaimResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: employee_expenses.submit
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /employee-expense-cost-centers:
+    get:
+      tags: [Employee Expenses]
+      summary: عرض مراكز التكلفة النشطة المتاحة لبنود المطالبة
+      operationId: listEmployeeExpenseCostCenters
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200': { description: مراجع عبر منفذ Core Accounting, content: { application/json: { schema: { $ref: '#/components/schemas/EmployeeExpenseCostCenterListResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: employee_expenses.view
+      security: [{ SessionCookie: [] }]
   /approval-requests:
     get:
       tags: [Approvals]
@@ -4004,7 +4237,7 @@ paths:
     post:
       tags: [Approvals]
       summary: إرسال موضوع إلى محرك الموافقات
-      description: يتطلب إذن المالك الموافق لنوع الموضوع؛ الإقفال المالي يتطلب fiscal_periods.close والجدول الزمني يتطلب professional_timesheets.submit.
+      description: يتطلب إذن المالك الموافق لنوع الموضوع؛ الإقفال المالي يتطلب fiscal_periods.close، والجدول الزمني يتطلب professional_timesheets.submit، ومطالبة المصروف تتطلب employee_expenses.submit.
       operationId: createApprovalRequest
       parameters:
       - $ref: '#/components/parameters/RequestId'
@@ -4024,6 +4257,7 @@ paths:
       x-permission-by-subject:
         FINANCIAL_CLOSE_RUN: fiscal_periods.close
         PROFESSIONAL_TIMESHEET: professional_timesheets.submit
+        EMPLOYEE_EXPENSE_CLAIM: employee_expenses.submit
       security: [{ SessionCookie: [], CsrfToken: [] }]
       x-idempotency-scope: user + company + operation + key
   /approval-requests/{approvalRequestId}:
@@ -10240,6 +10474,206 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /crm/options:
+    get:
+      tags: [CRM]
+      summary: خيارات CRM من المجالات المالكة
+      operationId: getCrmOptions
+      x-permission: crm.view
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - { name: search, in: query, schema: { type: string, minLength: 1, maxLength: 200 } }
+      responses:
+        '200': { description: الخيارات, content: { application/json: { schema: { $ref: '#/components/schemas/CrmOptionsResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /crm/leads:
+    get:
+      tags: [CRM]
+      summary: قائمة العملاء المحتملين
+      operationId: listCrmLeads
+      x-permission: crm.view
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+      - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      - { name: search, in: query, schema: { type: string, minLength: 1, maxLength: 200 } }
+      - { name: status, in: query, schema: { $ref: '#/components/schemas/CrmLeadStatus' } }
+      responses:
+        '200': { description: القائمة, content: { application/json: { schema: { $ref: '#/components/schemas/CrmLeadListResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [CRM]
+      summary: إنشاء عميل محتمل
+      operationId: createCrmLead
+      x-permission: crm.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CrmLeadCreateRequest' } } }
+      responses:
+        '201': { description: تم الإنشاء, content: { application/json: { schema: { $ref: '#/components/schemas/CrmLeadResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+  /crm/leads/{leadId}/mark-contacted:
+    post:
+      tags: [CRM]
+      summary: تعليم العميل المحتمل كمتصل به
+      operationId: markCrmLeadContacted
+      x-permission: crm.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - { name: leadId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CrmVersionRequest' } } } }
+      responses:
+        '200': { description: تم التحديث, content: { application/json: { schema: { $ref: '#/components/schemas/CrmLeadResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+  /crm/leads/{leadId}/qualify:
+    post:
+      tags: [CRM]
+      summary: تأهيل العميل المحتمل وإنشاء فرصة واحدة
+      operationId: qualifyCrmLead
+      x-permission: crm.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - { name: leadId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CrmLeadQualifyRequest' } } } }
+      responses:
+        '201': { description: تم التأهيل, content: { application/json: { schema: { $ref: '#/components/schemas/CrmOpportunityResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+  /crm/leads/{leadId}/convert:
+    post:
+      tags: [CRM]
+      summary: تحويل العميل المحتمل عبر منفذ مالك سجل العميل
+      description: لا ينشئ هذا الأمر مشروعًا أو قضية مهنية. إنشاء القضايا محجوب حتى تنفيذ فحص التعارض F2.
+      operationId: convertCrmLead
+      x-permission: crm.convert
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - { name: leadId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CrmLeadConvertRequest' } } } }
+      responses:
+        '200': { description: تم التحويل, content: { application/json: { schema: { $ref: '#/components/schemas/CrmConversionResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+  /crm/opportunities:
+    get:
+      tags: [CRM]
+      summary: قائمة الفرص
+      operationId: listCrmOpportunities
+      x-permission: crm.view
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+      - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      - { name: search, in: query, schema: { type: string, minLength: 1, maxLength: 200 } }
+      - { name: stage, in: query, schema: { $ref: '#/components/schemas/CrmOpportunityStage' } }
+      responses:
+        '200': { description: القائمة, content: { application/json: { schema: { $ref: '#/components/schemas/CrmOpportunityListResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /crm/opportunities/{opportunityId}/stage:
+    post:
+      tags: [CRM]
+      summary: نقل الفرصة بين المراحل المفتوحة
+      operationId: moveCrmOpportunityStage
+      x-permission: crm.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - { name: opportunityId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CrmOpportunityStageRequest' } } } }
+      responses:
+        '200': { description: تم النقل, content: { application/json: { schema: { $ref: '#/components/schemas/CrmOpportunityResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+  /crm/pipeline:
+    get:
+      tags: [CRM]
+      summary: مؤشرات خط الفرص مجمعة حسب المرحلة والعملة
+      operationId: getCrmPipeline
+      x-permission: crm.view
+      security: [{ SessionCookie: [] }]
+      responses:
+        '200': { description: المؤشرات, content: { application/json: { schema: { $ref: '#/components/schemas/CrmPipelineResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /crm/activities:
+    get:
+      tags: [CRM]
+      summary: قائمة أنشطة المتابعة
+      operationId: listCrmActivities
+      x-permission: crm.view
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+      - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      - { name: status, in: query, schema: { $ref: '#/components/schemas/CrmActivityStatus' } }
+      responses:
+        '200': { description: القائمة, content: { application/json: { schema: { $ref: '#/components/schemas/CrmActivityListResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [CRM]
+      summary: إضافة إجراء متابعة تالٍ
+      operationId: createCrmActivity
+      x-permission: crm.activities.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CrmActivityCreateRequest' } } } }
+      responses:
+        '201': { description: تم الإنشاء, content: { application/json: { schema: { $ref: '#/components/schemas/CrmActivityResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+  /crm/activities/{activityId}/complete:
+    post:
+      tags: [CRM]
+      summary: إكمال نشاط متابعة
+      operationId: completeCrmActivity
+      x-permission: crm.activities.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - { name: activityId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CrmVersionRequest' } } } }
+      responses:
+        '200': { description: تم الإكمال, content: { application/json: { schema: { $ref: '#/components/schemas/CrmActivityResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
 components:
   securitySchemes:
     SessionCookie:
@@ -10853,6 +11287,10 @@ components:
       type: string
       pattern: '^(0|[1-9][0-9]{0,14})\.[0-9]{4}$'
       description: مبلغ DECIMAL(19,4) غير سالب منقول كنص للحفاظ على الدقة.
+    SignedMoney:
+      type: string
+      pattern: '^-?(0|[1-9][0-9]{0,14})\.[0-9]{4}$'
+      description: مبلغ DECIMAL(19,4) قد يكون سالبًا، منقول كنص للحفاظ على الدقة.
     PlatformCapabilitiesResponse:
       type: object
       additionalProperties: false
@@ -12430,6 +12868,139 @@ components:
             example: '1001'
             description: معرّف BIGINT يُنقل كنص لتجنب فقدان الدقة في JavaScript.
           maxItems: 20
+    OrganizationMembershipRole:
+      type: string
+      enum: [OWNER, ADMIN, VIEWER]
+      description: دور مساحة المجموعة فقط؛ ليس Permission شركة ولا صلاحية Platform Operator.
+    OrganizationWorkspaceReference:
+      type: object
+      additionalProperties: false
+      required: [id, code, name, role]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        code: { type: string, minLength: 1, maxLength: 80 }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        role: { $ref: '#/components/schemas/OrganizationMembershipRole' }
+    OrganizationDashboardCompany:
+      type: object
+      additionalProperties: false
+      required: [id, code, name, timezone, isActive, canSwitch, baseCurrencyCode, metricAccess, activeUsers, postedDocuments, postedSalesBase, postedPurchasesBase]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        code: { type: string, minLength: 1, maxLength: 80 }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+        isActive: { type: boolean }
+        canSwitch: { type: boolean }
+        baseCurrencyCode: { type: string, pattern: '^[A-Z]{3}$' }
+        metricAccess:
+          type: object
+          additionalProperties: false
+          description: صلاحيات شركة فعالة بعد تقاطع RBAC مع استحقاقات الاشتراك؛ دور المؤسسة وحده لا يمنح أي مؤشر.
+          required: [activeUsers, postedDocuments, postedSales, postedPurchases]
+          properties:
+            activeUsers: { type: boolean }
+            postedDocuments: { type: boolean }
+            postedSales: { type: boolean }
+            postedPurchases: { type: boolean }
+        activeUsers:
+          oneOf:
+            - { type: integer, minimum: 0 }
+            - { type: 'null' }
+        postedDocuments:
+          oneOf:
+            - { type: integer, minimum: 0 }
+            - { type: 'null' }
+        postedSalesBase:
+          oneOf:
+            - { $ref: '#/components/schemas/SignedMoney' }
+            - { type: 'null' }
+        postedPurchasesBase:
+          oneOf:
+            - { $ref: '#/components/schemas/SignedMoney' }
+            - { type: 'null' }
+    OrganizationDashboard:
+      type: object
+      additionalProperties: false
+      required: [generatedAt, period, organization, companies, boundaries]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        period:
+          type: object
+          additionalProperties: false
+          required: [days, from, to]
+          properties:
+            days: { type: integer, enum: [30, 90, 365] }
+            from: { type: string, format: date }
+            to: { type: string, format: date }
+        organization:
+          type: object
+          additionalProperties: false
+          required: [id, code, name, role, memberCount, canManageMembers, canManageOwners]
+          properties:
+            id: { $ref: '#/components/schemas/Id' }
+            code: { type: string, minLength: 1, maxLength: 80 }
+            name: { type: string, minLength: 1, maxLength: 200 }
+            role: { $ref: '#/components/schemas/OrganizationMembershipRole' }
+            memberCount: { type: integer, minimum: 1 }
+            canManageMembers: { type: boolean }
+            canManageOwners: { type: boolean }
+        companies:
+          type: array
+          items: { $ref: '#/components/schemas/OrganizationDashboardCompany' }
+        boundaries:
+          type: object
+          additionalProperties: false
+          required: [companyAccessRequired, companyPermissionsRequired, consolidatedStatements, intercompanyEliminations, crossCurrencyAggregation]
+          properties:
+            companyAccessRequired: { type: boolean, const: true }
+            companyPermissionsRequired: { type: boolean, const: true }
+            consolidatedStatements: { type: boolean, const: false }
+            intercompanyEliminations: { type: boolean, const: false }
+            crossCurrencyAggregation: { type: boolean, const: false }
+    OrganizationMember:
+      type: object
+      additionalProperties: false
+      required: [user, role, isActive, version, activeCompanyAccess, createdAt, updatedAt]
+      properties:
+        user:
+          type: object
+          additionalProperties: false
+          required: [id, displayName, email, isActive]
+          properties:
+            id: { $ref: '#/components/schemas/Id' }
+            displayName: { type: string, minLength: 1, maxLength: 160 }
+            email: { type: string, format: email, maxLength: 320 }
+            isActive: { type: boolean }
+        role: { $ref: '#/components/schemas/OrganizationMembershipRole' }
+        isActive: { type: boolean }
+        version: { type: integer, minimum: 0 }
+        activeCompanyAccess: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    OrganizationMemberList:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/OrganizationMember' }
+    OrganizationMemberCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [email, role]
+      properties:
+        email: { type: string, format: email, maxLength: 320, x-trim: true }
+        role: { $ref: '#/components/schemas/OrganizationMembershipRole' }
+    OrganizationMemberUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [role, isActive, version]
+      properties:
+        role: { $ref: '#/components/schemas/OrganizationMembershipRole' }
+        isActive: { type: boolean }
+        version: { type: integer, minimum: 0 }
     Company:
       type: object
       required:
@@ -12960,9 +13531,157 @@ components:
           oneOf:
           - $ref: '#/components/schemas/FinancialCloseRun'
           - type: 'null'
+    EmployeeExpenseClaimStatus:
+      type: string
+      enum: [DRAFT, AWAITING_APPROVAL, READY_FOR_PAYMENT]
+    EmployeeExpenseEmployee:
+      type: object
+      additionalProperties: false
+      required: [employeeNumber, nameAr, nameEn]
+      properties:
+        employeeNumber: { type: string, minLength: 1, maxLength: 40 }
+        nameAr: { type: string, minLength: 1, maxLength: 160 }
+        nameEn: { type: [string, 'null'], maxLength: 160 }
+    EmployeeExpenseCurrency:
+      type: object
+      additionalProperties: false
+      required: [code, decimals]
+      properties:
+        code: { type: string, pattern: '^[A-Z]{3}$' }
+        decimals: { type: integer, minimum: 0, maximum: 4 }
+    EmployeeExpenseCostCenter:
+      type: object
+      additionalProperties: false
+      required: [id, code, nameAr, nameEn]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        code: { type: string, minLength: 1, maxLength: 40 }
+        nameAr: { type: string, minLength: 1, maxLength: 160 }
+        nameEn: { type: [string, 'null'], maxLength: 160 }
+    EmployeeExpenseLine:
+      type: object
+      additionalProperties: false
+      required: [id, lineNumber, incurredOn, merchant, description, receiptReference, costCenter, amount]
+      properties:
+        id: { type: string, format: uuid }
+        lineNumber: { type: integer, minimum: 1, maximum: 20 }
+        incurredOn: { type: string, format: date }
+        merchant: { type: string, minLength: 1, maxLength: 160 }
+        description: { type: string, minLength: 3, maxLength: 500 }
+        receiptReference: { type: [string, 'null'], maxLength: 200 }
+        costCenter: { $ref: '#/components/schemas/EmployeeExpenseCostCenter' }
+        amount: { $ref: '#/components/schemas/Amount' }
+    EmployeeExpenseLineInput:
+      type: object
+      additionalProperties: false
+      required: [incurredOn, merchant, description, costCenterId, amount]
+      properties:
+        incurredOn: { type: string, format: date }
+        merchant: { type: string, x-trim: true, minLength: 1, maxLength: 160 }
+        description: { type: string, x-trim: true, minLength: 3, maxLength: 500 }
+        receiptReference:
+          oneOf:
+          - { type: string, x-trim: true, minLength: 1, maxLength: 200 }
+          - { type: 'null' }
+        costCenterId: { $ref: '#/components/schemas/Id' }
+        amount:
+          type: string
+          pattern: '^(0|[1-9][0-9]{0,14})(\.[0-9]{1,4})?$'
+    CreateEmployeeExpenseClaimRequest:
+      type: object
+      additionalProperties: false
+      required: [purpose, lines]
+      properties:
+        purpose: { type: string, x-trim: true, minLength: 5, maxLength: 500 }
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items: { $ref: '#/components/schemas/EmployeeExpenseLineInput' }
+    UpdateEmployeeExpenseClaimRequest:
+      type: object
+      additionalProperties: false
+      required: [version, purpose, lines]
+      properties:
+        version: { type: integer, minimum: 0 }
+        purpose: { type: string, x-trim: true, minLength: 5, maxLength: 500 }
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items: { $ref: '#/components/schemas/EmployeeExpenseLineInput' }
+    EmployeeExpenseClaim:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - employee
+      - currency
+      - purpose
+      - status
+      - totalAmount
+      - activeSnapshotHashSha256
+      - submittedAt
+      - approvedAt
+      - ownedByCurrentUser
+      - version
+      - createdAt
+      - updatedAt
+      - lines
+      properties:
+        id: { type: string, format: uuid }
+        employee: { $ref: '#/components/schemas/EmployeeExpenseEmployee' }
+        currency: { $ref: '#/components/schemas/EmployeeExpenseCurrency' }
+        purpose: { type: string, minLength: 5, maxLength: 500 }
+        status: { $ref: '#/components/schemas/EmployeeExpenseClaimStatus' }
+        totalAmount: { $ref: '#/components/schemas/Amount' }
+        activeSnapshotHashSha256:
+          oneOf:
+          - { type: string, pattern: '^[a-f0-9]{64}$' }
+          - { type: 'null' }
+        submittedAt:
+          oneOf:
+          - { type: string, format: date-time }
+          - { type: 'null' }
+        approvedAt:
+          oneOf:
+          - { type: string, format: date-time }
+          - { type: 'null' }
+        ownedByCurrentUser: { type: boolean }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items: { $ref: '#/components/schemas/EmployeeExpenseLine' }
+    EmployeeExpenseClaimResponse:
+      type: object
+      additionalProperties: false
+      required: [claim]
+      properties:
+        claim: { $ref: '#/components/schemas/EmployeeExpenseClaim' }
+    EmployeeExpenseClaimListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/EmployeeExpenseClaim' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    EmployeeExpenseCostCenterListResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/EmployeeExpenseCostCenter' }
     ApprovalSubjectType:
       type: string
-      enum: [FINANCIAL_CLOSE_RUN, PROFESSIONAL_TIMESHEET]
+      enum: [FINANCIAL_CLOSE_RUN, PROFESSIONAL_TIMESHEET, EMPLOYEE_EXPENSE_CLAIM]
     ApprovalRequestStatus:
       type: string
       enum: [PENDING, APPROVED, REJECTED, CANCELLED]
@@ -18885,6 +19604,258 @@ components:
         isPrimary:
           type: boolean
           default: false
+    CrmLeadStatus:
+      type: string
+      enum: [NEW, CONTACTED, QUALIFIED, DISQUALIFIED, CONVERTED]
+    CrmOpportunityStage:
+      type: string
+      enum: [DISCOVERY, PROPOSAL, NEGOTIATION, WON, LOST]
+    CrmActivityStatus:
+      type: string
+      enum: [OPEN, COMPLETED, CANCELLED]
+    CrmVersionRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: { type: integer, minimum: 0 }
+    CrmLeadCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [kind, displayName, source, ownerEmployeeId]
+      properties:
+        kind: { type: string, enum: [INDIVIDUAL, ORGANIZATION] }
+        displayName: { type: string, x-trim: true, minLength: 1, maxLength: 200 }
+        contactName: { type: [string, 'null'], maxLength: 160 }
+        phone: { type: [string, 'null'], maxLength: 40 }
+        email: { type: [string, 'null'], format: email, maxLength: 320 }
+        source: { type: string, enum: [MANUAL, REFERRAL, WEBSITE, OTHER] }
+        sourceDetails: { type: [string, 'null'], maxLength: 500 }
+        ownerEmployeeId: { type: string, format: uuid }
+        summary: { type: [string, 'null'], maxLength: 1000 }
+    CrmLeadQualifyRequest:
+      type: object
+      additionalProperties: false
+      required: [version, title, probabilityBps]
+      properties:
+        version: { type: integer, minimum: 0 }
+        title: { type: string, x-trim: true, minLength: 1, maxLength: 200 }
+        expectedCloseDate: { type: [string, 'null'], format: date }
+        estimatedAmount: { type: [string, 'null'], pattern: '^(0|[1-9][0-9]{0,14})(\.[0-9]{1,4})?$' }
+        currencyId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+        probabilityBps: { type: integer, minimum: 0, maximum: 10000 }
+    CrmLeadConvertRequest:
+      oneOf:
+      - type: object
+        additionalProperties: false
+        required: [version, mode, customerId]
+        properties:
+          version: { type: integer, minimum: 0 }
+          mode: { const: EXISTING }
+          customerId: { type: string, pattern: '^[1-9][0-9]*$' }
+      - type: object
+        additionalProperties: false
+        required: [version, mode, receivableAccountId, nameAr]
+        properties:
+          version: { type: integer, minimum: 0 }
+          mode: { const: NEW }
+          receivableAccountId: { type: string, pattern: '^[1-9][0-9]*$' }
+          nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 200 }
+          nameEn: { type: [string, 'null'], maxLength: 200 }
+          phone: { type: [string, 'null'], maxLength: 40 }
+          email: { type: [string, 'null'], format: email, maxLength: 320 }
+          taxNumber: { type: [string, 'null'], maxLength: 64 }
+    CrmOpportunityStageRequest:
+      type: object
+      additionalProperties: false
+      required: [version, stage, probabilityBps]
+      properties:
+        version: { type: integer, minimum: 0 }
+        stage: { type: string, enum: [DISCOVERY, PROPOSAL, NEGOTIATION] }
+        probabilityBps: { type: integer, minimum: 0, maximum: 10000 }
+    CrmActivityCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [parentType, parentId, type, subject, assignedEmployeeId]
+      properties:
+        parentType: { type: string, enum: [LEAD, OPPORTUNITY] }
+        parentId: { type: string, format: uuid }
+        type: { type: string, enum: [CALL, MEETING, TASK, NOTE] }
+        subject: { type: string, x-trim: true, minLength: 1, maxLength: 200 }
+        details: { type: [string, 'null'], maxLength: 1000 }
+        assignedEmployeeId: { type: string, format: uuid }
+        scheduledFor: { type: [string, 'null'], format: date-time }
+    CrmOwner:
+      type: object
+      additionalProperties: false
+      required: [id, employeeNumber, nameAr, nameEn]
+      properties:
+        id: { type: string, format: uuid }
+        employeeNumber: { type: string }
+        nameAr: { type: string }
+        nameEn: { type: [string, 'null'] }
+    CrmLead:
+      type: object
+      additionalProperties: false
+      required: [id, code, kind, displayName, contactName, phone, email, source, sourceDetails, status, owner, summary, convertedCustomerId, convertedAt, disqualificationReason, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        kind: { type: string, enum: [INDIVIDUAL, ORGANIZATION] }
+        displayName: { type: string }
+        contactName: { type: [string, 'null'] }
+        phone: { type: [string, 'null'] }
+        email: { type: [string, 'null'] }
+        source: { type: string, enum: [MANUAL, REFERRAL, WEBSITE, OTHER] }
+        sourceDetails: { type: [string, 'null'] }
+        status: { $ref: '#/components/schemas/CrmLeadStatus' }
+        owner: { oneOf: [{ $ref: '#/components/schemas/CrmOwner' }, { type: 'null' }] }
+        summary: { type: [string, 'null'] }
+        convertedCustomerId: { type: [string, 'null'] }
+        convertedAt: { type: [string, 'null'], format: date-time }
+        disqualificationReason: { type: [string, 'null'] }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CrmOpportunity:
+      type: object
+      additionalProperties: false
+      required: [id, code, leadId, customerId, title, stage, owner, expectedCloseDate, estimatedAmount, currencyId, probabilityBps, lostReason, wonAt, lostAt, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        leadId: { type: [string, 'null'] }
+        customerId: { type: [string, 'null'] }
+        title: { type: string }
+        stage: { $ref: '#/components/schemas/CrmOpportunityStage' }
+        owner: { oneOf: [{ $ref: '#/components/schemas/CrmOwner' }, { type: 'null' }] }
+        expectedCloseDate: { type: [string, 'null'], format: date }
+        estimatedAmount: { type: [string, 'null'] }
+        currencyId: { type: [string, 'null'] }
+        probabilityBps: { type: integer, minimum: 0, maximum: 10000 }
+        lostReason: { type: [string, 'null'] }
+        wonAt: { type: [string, 'null'], format: date-time }
+        lostAt: { type: [string, 'null'], format: date-time }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CrmActivity:
+      type: object
+      additionalProperties: false
+      required: [id, parentType, parentId, type, subject, details, assignee, scheduledFor, status, completedAt, cancelledAt, cancellationReason, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        parentType: { type: string, enum: [LEAD, OPPORTUNITY] }
+        parentId: { type: [string, 'null'], format: uuid }
+        type: { type: string, enum: [CALL, MEETING, TASK, NOTE] }
+        subject: { type: string }
+        details: { type: [string, 'null'] }
+        assignee: { oneOf: [{ $ref: '#/components/schemas/CrmOwner' }, { type: 'null' }] }
+        scheduledFor: { type: [string, 'null'], format: date-time }
+        status: { $ref: '#/components/schemas/CrmActivityStatus' }
+        completedAt: { type: [string, 'null'], format: date-time }
+        cancelledAt: { type: [string, 'null'], format: date-time }
+        cancellationReason: { type: [string, 'null'] }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CrmPagination:
+      type: object
+      additionalProperties: false
+      required: [page, pageSize, total, totalPages]
+      properties:
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+        total: { type: integer, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
+    CrmLeadResponse:
+      type: object
+      additionalProperties: false
+      required: [lead]
+      properties: { lead: { $ref: '#/components/schemas/CrmLead' } }
+    CrmOpportunityResponse:
+      type: object
+      additionalProperties: false
+      required: [opportunity]
+      properties: { opportunity: { $ref: '#/components/schemas/CrmOpportunity' } }
+    CrmActivityResponse:
+      type: object
+      additionalProperties: false
+      required: [activity]
+      properties: { activity: { $ref: '#/components/schemas/CrmActivity' } }
+    CrmLeadListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/CrmLead' } }
+        meta: { $ref: '#/components/schemas/CrmPagination' }
+    CrmOpportunityListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/CrmOpportunity' } }
+        meta: { $ref: '#/components/schemas/CrmPagination' }
+    CrmActivityListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/CrmActivity' } }
+        meta: { $ref: '#/components/schemas/CrmPagination' }
+    CrmOptionsResponse:
+      type: object
+      additionalProperties: false
+      required: [owners, currencies, customers]
+      properties:
+        owners: { type: array, items: { $ref: '#/components/schemas/CrmOwner' } }
+        currencies:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, code, nameAr, decimals]
+            properties:
+              id: { type: string }
+              code: { type: string }
+              nameAr: { type: string }
+              decimals: { type: integer }
+        customers:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, code, nameAr, nameEn]
+            properties:
+              id: { type: string }
+              code: { type: string }
+              nameAr: { type: string }
+              nameEn: { type: [string, 'null'] }
+    CrmPipelineResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [stage, currencyId, opportunityCount, estimatedAmount, weightedAmount]
+            properties:
+              stage: { $ref: '#/components/schemas/CrmOpportunityStage' }
+              currencyId: { type: [string, 'null'] }
+              opportunityCount: { type: integer, minimum: 0 }
+              estimatedAmount: { type: string }
+              weightedAmount: { type: string }
+    CrmConversionResponse:
+      type: object
+      additionalProperties: false
+      required: [leadId, customerId]
+      properties:
+        leadId: { type: string, format: uuid }
+        customerId: { type: string, pattern: '^[1-9][0-9]*$' }
 x-api-decisions:
   companyContext: server-side session
   documentNumberReservation: on draft creation

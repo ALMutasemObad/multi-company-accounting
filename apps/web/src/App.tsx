@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { api, ApiError, logout } from "./api";
 import { localizedBrand } from "./branding";
 import { LanguageSwitcher, useI18n } from "./i18n";
-import type { Company, CurrentAuthorization } from "./types";
+import type { Company, CurrentAuthorization, OrganizationDashboardCompany, OrganizationWorkspaceReference } from "./types";
 import { Button, Icon, Spinner, Toast } from "./ui";
 import { RegistrationPage } from "./RegistrationPage";
 import { PasswordResetPage } from "./PasswordResetPage";
@@ -26,9 +26,11 @@ const SystemHomePage = lazy(() => import("./SystemHomePage").then((module) => ({
 const SubscriptionUpgradeHome = lazy(() => import('./SubscriptionUpgradeHome').then(module => ({ default: module.SubscriptionUpgradeHome })));
 const DashboardPage = lazy(() => import("./DashboardPage").then((module) => ({ default: module.DashboardPage })));
 const PlatformOperationsPage = lazy(() => import("./PlatformOperationsPage").then((module) => ({ default: module.PlatformOperationsPage })));
+const OrganizationOwnerPage = lazy(() => import("./OrganizationOwnerPage").then((module) => ({ default: module.OrganizationOwnerPage })));
 const PlatformSubscriptionsPage = lazy(() => import("./PlatformSubscriptionsPage").then((module) => ({ default: module.PlatformSubscriptionsPage })));
 const CompanySubscriptionPage = lazy(() => import("./CompanySubscriptionPage").then((module) => ({ default: module.CompanySubscriptionPage })));
 const CustomersPage = lazy(() => import("./CustomersPage").then((module) => ({ default: module.CustomersPage })));
+const CrmPage = lazy(() => import("./CrmPage").then((module) => ({ default: module.CrmPage })));
 const SalesInvoicesPage = lazy(() => import("./SalesInvoicesPage").then((module) => ({ default: module.SalesInvoicesPage })));
 const ReceiptsPage = lazy(() => import("./ReceiptsPage").then((module) => ({ default: module.ReceiptsPage })));
 const SuppliersPage = lazy(() => import("./SuppliersPage").then((module) => ({ default: module.SuppliersPage })));
@@ -49,8 +51,10 @@ const PosPage = lazy(() => import("./PosPage").then((module) => ({ default: modu
 const ApprovalsPage = lazy(() => import("./ApprovalsPage").then((module) => ({ default: module.ApprovalsPage })));
 const ProfessionalProjectsPage = lazy(() => import("./ProfessionalProjectsPage").then((module) => ({ default: module.ProfessionalProjectsPage })));
 const HumanResourcesPage = lazy(() => import("./HumanResourcesPage").then((module) => ({ default: module.HumanResourcesPage })));
+const EmployeeExpensesPage = lazy(() => import("./EmployeeExpensesPage").then((module) => ({ default: module.EmployeeExpensesPage })));
 
 type PlatformCapabilities = { platformOperations: boolean };
+type ShellCapabilities = PlatformCapabilities & { organizationWorkspace: boolean };
 
 const replaceHash = (view: string) => {
   const url = new URL(location.href);
@@ -65,6 +69,7 @@ export default function App() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [route, setRoute] = useState<PageRoute>(() => parsePageRoute(location.hash));
   const [platformOperator, setPlatformOperator] = useState<boolean | null>(null);
+  const [organizationWorkspace, setOrganizationWorkspace] = useState<boolean | null>(null);
   const [mobileNav, setMobileNav] = useState(false);
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(null);
   const startup = useAuthAction();
@@ -83,7 +88,7 @@ export default function App() {
 
   const activateAuthorization = useCallback((
     snapshot: CurrentAuthorization,
-    capabilities: PlatformCapabilities,
+    capabilities: ShellCapabilities,
   ) => {
     const planIntent = subscriptionPlanForRoute(location.hash);
     const entryRoute = subscriptionRouteBase(location.hash);
@@ -97,9 +102,14 @@ export default function App() {
     routeScope.current = nextScope;
     setAuthorization(snapshot);
     setPlatformOperator(capabilities.platformOperations);
-    if (!snapshot.selectedCompany && capabilities.platformOperations) {
-      setRoute({ view: "platform" });
-      replaceHash("platform");
+    setOrganizationWorkspace(capabilities.organizationWorkspace);
+    if (!snapshot.selectedCompany && (capabilities.platformOperations || capabilities.organizationWorkspace)) {
+      const requested = parsePageRoute(location.hash).view;
+      const next = requested === "organizationOwner" && capabilities.organizationWorkspace
+        ? "organizationOwner"
+        : capabilities.platformOperations ? "platform" : "organizationOwner";
+      setRoute({ view: next });
+      replaceHash(next);
     } else if (snapshot.selectedCompany && snapshot.permissions.includes("subscriptions.view")
       && planIntent && ["", "#home", "#login", "#register"].includes(entryRoute)) {
       setRoute({ view: "subscription" });
@@ -114,39 +124,42 @@ export default function App() {
       body: JSON.stringify({ companyId: selected.id }),
       signal,
     });
-    const [snapshot, capabilities] = await Promise.all([
+    const [snapshot, capabilities, workspaceResult] = await Promise.all([
       api<CurrentAuthorization>("/auth/me", { signal }),
       api<PlatformCapabilities>("/platform/capabilities", { signal }),
+      api<{ data: OrganizationWorkspaceReference[] }>("/organizations/workspaces", { signal }),
     ]);
     assertRequestActive(signal);
     if (snapshot.selectedCompany?.id !== selected.id) {
       throw new ApiError("", 503, "AUTH_CONTEXT_MISMATCH");
     }
-    activateAuthorization(snapshot, capabilities);
+    activateAuthorization(snapshot, { ...capabilities, organizationWorkspace: workspaceResult.data.length > 0 });
   }, [activateAuthorization]);
 
   const loadAuthenticatedShell = useCallback(async (autoSelectSingleCompany: boolean, signal: AbortSignal) => {
-    const [companyResult, snapshot, capabilities] = await Promise.all([
+    const [companyResult, snapshot, capabilities, workspaceResult] = await Promise.all([
       api<{ data: Company[] }>("/auth/companies", { signal }),
       api<CurrentAuthorization>("/auth/me", { signal }),
       api<PlatformCapabilities>("/platform/capabilities", { signal }),
+      api<{ data: OrganizationWorkspaceReference[] }>("/organizations/workspaces", { signal }),
     ]);
     assertRequestActive(signal);
     setCompanies(companyResult.data);
     if (snapshot.selectedCompany) {
-      activateAuthorization(snapshot, capabilities);
+      activateAuthorization(snapshot, { ...capabilities, organizationWorkspace: workspaceResult.data.length > 0 });
       return;
     }
-    if (companyResult.data.length === 0 && capabilities.platformOperations) {
-      activateAuthorization(snapshot, capabilities);
-      return;
-    }
-    setAuthorization(snapshot);
-    setPlatformOperator(capabilities.platformOperations);
     if (autoSelectSingleCompany && companyResult.data.length === 1) {
       await chooseCompany(companyResult.data[0]!, signal);
       return;
     }
+    if (companyResult.data.length === 0 && (capabilities.platformOperations || workspaceResult.data.length > 0)) {
+      activateAuthorization(snapshot, { ...capabilities, organizationWorkspace: workspaceResult.data.length > 0 });
+      return;
+    }
+    setAuthorization(snapshot);
+    setPlatformOperator(capabilities.platformOperations);
+    setOrganizationWorkspace(false);
     setState("company");
   }, [activateAuthorization, chooseCompany]);
 
@@ -157,8 +170,9 @@ export default function App() {
       permissionSet: effectivePermissionSet(authorization?.permissions ?? [], moduleSet),
       hasSelectedCompany: Boolean(authorization?.selectedCompany),
       platformOperations: platformOperator === true,
+      organizationWorkspace: organizationWorkspace === true,
     };
-  }, [authorization, platformOperator]);
+  }, [authorization, organizationWorkspace, platformOperator]);
   const allowedNavigationItems = useMemo(
     () => visibleNavigationItems(navigationAccess),
     [navigationAccess],
@@ -212,6 +226,13 @@ export default function App() {
     location.hash = pageRouteHash(authorized);
     setMobileNav(false);
   }
+
+  const switchFromOrganization = async (target: OrganizationDashboardCompany) => {
+    const controller = new AbortController();
+    await chooseCompany({ id: target.id, name: target.name }, controller.signal);
+    setRoute({ view: "home" });
+    replaceHash("home");
+  };
 
   if (state === "booting")
     return (
@@ -310,9 +331,17 @@ export default function App() {
               </button>
             ))}
           </>}
-          {allowedNavigationItems.some((item) => !item.platformOnly && item.view !== "home" && item.view !== "dashboard") && <>
+          {allowedNavigationItems.some((item) => item.organizationOnly) && <>
+            <span className="sidebar-section-label">{t("app.organizationWorkspace")}</span>
+            {allowedNavigationItems.filter((item) => item.organizationOnly).map((item) => (
+              <button type="button" key={item.view} className={activeView === item.view ? "active" : ""} aria-current={activeView === item.view ? "page" : undefined} onClick={() => navigate(item.view)}>
+                <Icon name={item.icon} /><span>{t(item.label)}</span>
+              </button>
+            ))}
+          </>}
+          {allowedNavigationItems.some((item) => !item.platformOnly && !item.organizationOnly && item.view !== "home" && item.view !== "dashboard") && <>
             <span className="sidebar-section-label modules">{t("app.companyModules")}</span>
-            {allowedNavigationItems.filter((item) => !item.platformOnly && item.view !== "home" && item.view !== "dashboard").map((item) => (
+            {allowedNavigationItems.filter((item) => !item.platformOnly && !item.organizationOnly && item.view !== "home" && item.view !== "dashboard").map((item) => (
               <button type="button" key={item.view} className={activeView === item.view ? "active" : ""} aria-current={activeView === item.view ? "page" : undefined} onClick={() => navigate(item.view)}>
               <Icon name={item.icon} /><span>{t(item.label)}</span>
             </button>
@@ -334,7 +363,7 @@ export default function App() {
       <div className="app-main">
         <header className="topbar">
           <button type="button" className="menu-button" aria-label={t("app.openNavigation")} onClick={() => setMobileNav(true)}><Icon name="menu" /></button>
-          <div className="topbar-title"><span>{t(viewTitleKey[activeView])}</span><small>{activeView === "platform" || activeView === "platformSubscriptions" ? t("app.platformScope") : company?.name}</small></div>
+          <div className="topbar-title"><span>{t(viewTitleKey[activeView])}</span><small>{activeView === "platform" || activeView === "platformSubscriptions" ? t("app.platformScope") : activeView === "organizationOwner" ? t("app.organizationScope") : company?.name}</small></div>
           <div className="user-menu">
             <div className="avatar">{user.displayName.slice(0, 1) || brand.mark.slice(0, 1)}</div>
             <span>{user.displayName || t("app.currentUser")}</span>
@@ -348,6 +377,7 @@ export default function App() {
                   setAuthorization(null);
                   setCompanies([]);
                   setPlatformOperator(null);
+                  setOrganizationWorkspace(null);
                   setState("login");
                 })
               }
@@ -360,16 +390,24 @@ export default function App() {
           <Suspense key={`${user.id}:${company?.id ?? "platform"}`} fallback={<div className="loading"><Spinner /><span>{t("app.loadingModule")}</span></div>}>
             {activeView === "home" && <>
               <SubscriptionUpgradeHome dismissals={subscriptionDismissals} onOpenSubscription={() => navigate('subscription')} />
-              <SystemHomePage onNavigate={navigate} onOpenSetupTarget={navigateRoute} platformOperator={platformOperator === true} />
+              <SystemHomePage
+                onNavigate={navigate}
+                onOpenSetupTarget={navigateRoute}
+                platformOperator={platformOperator === true}
+                organizationWorkspace={organizationWorkspace === true}
+              />
             </>}
             {activeView === "dashboard" && <DashboardPage onNavigate={navigate} />}
+            {activeView === "organizationOwner" && organizationWorkspace && <OrganizationOwnerPage onSwitchCompany={switchFromOrganization} notify={notify} />}
             {activeView === "platform" && platformOperator && <PlatformOperationsPage onNavigate={navigate} />}
             {activeView === "platformSubscriptions" && platformOperator && <PlatformSubscriptionsPage notify={notify} />}
             {activeView === "subscription" && <CompanySubscriptionPage notify={notify} />}
             {activeView === "pos" && <PosPage notify={notify} />}
             {activeView === "customers" && <CustomersPage notify={notify} />}
+            {activeView === "crm" && <CrmPage notify={notify} />}
             {activeView === "professionalProjects" && <ProfessionalProjectsPage notify={notify} />}
             {activeView === "humanResources" && <HumanResourcesPage notify={notify} />}
+            {activeView === "employeeExpenses" && <EmployeeExpensesPage notify={notify} />}
             {activeView === "sales" && <SalesInvoicesPage notify={notify} />}
             {activeView === "receipts" && <ReceiptsPage notify={notify} />}
             {activeView === "suppliers" && <SuppliersPage notify={notify} />}

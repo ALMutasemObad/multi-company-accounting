@@ -158,6 +158,24 @@ export class CustomerService implements CustomerImportPort, CrmCustomerQueryPort
     return customer ? { customerId: customer.id } : null;
   }
 
+  async listActiveCustomers(companyId: bigint, input: { search?: string | undefined; limit: number }) {
+    const customers = await this.prisma.customer.findMany({
+      where: {
+        companyId,
+        isActive: true,
+        ...(input.search ? { OR: [
+          { code: { contains: input.search } },
+          { nameAr: { contains: input.search } },
+          { nameEn: { contains: input.search } },
+        ] } : {}),
+      },
+      select: { id: true, code: true, nameAr: true, nameEn: true },
+      orderBy: [{ code: "asc" }, { id: "asc" }],
+      take: input.limit,
+    });
+    return customers.map((customer) => ({ customerId: customer.id, code: customer.code, nameAr: customer.nameAr, nameEn: customer.nameEn }));
+  }
+
   async provisionCustomer(
     tx: Prisma.TransactionClient,
     context: ActorContext,

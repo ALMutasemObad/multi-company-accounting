@@ -93,6 +93,15 @@ import { createPlatformPaymentService } from './composition/create-platform-paym
 import { createSubscriptionUsageService } from './composition/create-subscription-usage-service.js';
 import { createSellingProfileService } from './composition/create-selling-profile-service.js';
 import { createCashierContextService } from './composition/create-cashier-context-service.js';
+import { CrmService } from './crm/crm-service.js';
+import { CrmWorkforceAdapter } from './hr/crm-workforce-adapter.js';
+import { CrmCurrencyAdapter } from './companies/crm-currency-adapter.js';
+import { createOrganizationMembershipService } from './composition/create-organization-membership-service.js';
+import { EmployeeExpenseService } from './employee-expenses/employee-expense-service.js';
+import { EmployeeExpenseApprovalAdapter } from './employee-expenses/employee-expense-approval-adapter.js';
+import { EmployeeExpenseEmployeeAdapter } from './hr/employee-expense-employee-adapter.js';
+import { EmployeeExpenseCostCenterAdapter } from './accounts/employee-expense-cost-center-adapter.js';
+import { EmployeeExpenseCurrencyAdapter } from './companies/employee-expense-currency-adapter.js';
 
 const config = loadConfig();
 if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required to start the API');
@@ -215,9 +224,24 @@ const professionalBilling = new ProfessionalBillingService(
   new ProfessionalBillingCurrencyAdapter(database),
   salesInvoices,
 );
+const crm = new CrmService(
+  database,
+  new CrmWorkforceAdapter(database),
+  customers,
+  customers,
+  new CrmCurrencyAdapter(database),
+  new PrismaAuditAppendAdapter(),
+);
+const employeeExpenses = new EmployeeExpenseService(
+  database,
+  new EmployeeExpenseEmployeeAdapter(),
+  new EmployeeExpenseCostCenterAdapter(database),
+  new EmployeeExpenseCurrencyAdapter(),
+);
 const approvals = new ApprovalService(database, {
   FINANCIAL_CLOSE_RUN: new FinancialCloseApprovalAdapter(financialClose),
   PROFESSIONAL_TIMESHEET: new ProfessionalTimesheetApprovalAdapter(professionalProjects),
+  EMPLOYEE_EXPENSE_CLAIM: new EmployeeExpenseApprovalAdapter(employeeExpenses),
 });
 const hr = new HrService(database, new HrIdentityAdapter(database));
 const users = new UserService(database);
@@ -273,6 +297,7 @@ async function startServer() {
     ...(registration ? { registration } : {}),
     ...(passwordReset ? { passwordReset } : {}),
     users,
+    organizationMemberships: createOrganizationMembershipService(database),
     workforceAccess,
     platformOperations,
     platformBilling,
@@ -290,10 +315,12 @@ async function startServer() {
     financialClose,
     approvals,
     professionalProjects,
+    crm,
     professionalProjectPlanning,
     professionalProjectAccess,
     professionalBilling,
     hr,
+    employeeExpenses,
     accounts: new AccountService(database),
     journals: new ManualJournalService(database),
     customers,

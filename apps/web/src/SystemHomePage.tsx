@@ -17,10 +17,12 @@ export function SystemHomePage({
   onNavigate,
   onOpenSetupTarget,
   platformOperator,
+  organizationWorkspace = false,
 }: {
   onNavigate: (view: View) => void;
   onOpenSetupTarget?: (target: RetailSetupTarget) => void;
   platformOperator?: boolean;
+  organizationWorkspace?: boolean;
 }) {
   const { t } = useI18n();
   const { moduleSet, permissionSet, selectedCompany, user } = useAuthorization();
@@ -29,6 +31,7 @@ export function SystemHomePage({
     permissionSet,
     hasSelectedCompany: Boolean(selectedCompany),
     platformOperations: platformOperator === true,
+    organizationWorkspace,
   };
   const groups = visibleSystemGroups(access);
   const visible = visibleNavigationItems(access);
