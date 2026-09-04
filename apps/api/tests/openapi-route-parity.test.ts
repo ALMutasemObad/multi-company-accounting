@@ -43,6 +43,7 @@ import { createPlatformPaymentRouter } from '../src/platform-operations/payments
 import { createPlatformSubscriptionRouter } from '../src/platform-subscriptions/platform-subscription-router.js';
 import { createSubscriptionUsageRouter } from '../src/platform-subscriptions/subscription-usage-router.js';
 import { createOrganizationOwnerRouter } from '../src/organizations/organization-owner-router.js';
+import { createEmployeeExpenseRouter } from '../src/employee-expenses/employee-expense-router.js';
 
 type RouteLayer = {
   route?: {
@@ -75,6 +76,7 @@ const routers = [
   { prefix: '', router: createProfessionalBillingRouter(stub, stub) },
   { prefix: '', router: createProfessionalProjectAccessRouter(stub, stub) },
   { prefix: '', router: createHrRouter(stub, stub) },
+  { prefix: '', router: createEmployeeExpenseRouter(stub, stub) },
   { prefix: '', router: createAccountRouter(stub, stub) },
   { prefix: '', router: createManualJournalRouter(stub, stub) },
   { prefix: '', router: createCustomerRouter(stub, stub) },

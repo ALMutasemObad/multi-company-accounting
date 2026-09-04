@@ -1313,7 +1313,8 @@
 66. `20260831090000_public_subscription_plans`
 67. `20260831110000_sales_item_selling_profiles`
 68. `20260904120000_organization_membership_owner_workspace`
-69. `20260904193000_crm_business_development_vertical`
+69. `20260904150000_employee_expense_claims`
+70. `20260904193000_crm_business_development_vertical`
 
 أثبت تشغيل GitHub Actions رقم 114 تطبيق الترحيلات الـ34 السابقة وترقية المستودعات على MariaDB 10.11.11 وMySQL 8.4.11 ثم نشرها، وأثبت تشغيل PR رقم 116 تطبيق الترحيل 35 وجدولي وحدات القياس والأصناف وتسلسله وصلاحياته من قاعدة فارغة. وأثبت تشغيل الإنتاج [32825710229](https://github.com/ALMutasemObad/multi-company-accounting/actions/runs/32825710229) تطبيق الترحيلات 36 و37 و38 من قاعدة فارغة وعلى مسار الترقية في المحركين، ثم نشر ربط الفواتير ودفتر الحركة والبحث المتدرج والتحقق من الإنتاج على الالتزام `eaf56a7`.
 

@@ -41,6 +41,7 @@ const permissionEntitlementPrefixes = [
   ['approvals.', 'APPROVALS'],
   ['professional_', 'PROFESSIONAL_PROJECTS'],
   ['hr.', 'HUMAN_RESOURCES'],
+  ['employee_expenses.', 'HUMAN_RESOURCES'],
   ['tax_rates.', 'TAX'],
   ['input_tax_rates.', 'TAX'],
 ] as const satisfies readonly (readonly [string, PermissionEntitlement])[];

@@ -49,6 +49,23 @@ describe("approval subject owner permissions", () => {
       .post("/approval-requests")
       .set("Cookie", "sid=test-session")
       .set("X-CSRF-Token", "csrf")
+      .set("Idempotency-Key", "employee-expense-submit-key")
+      .send({
+        subjectType: "EMPLOYEE_EXPENSE_CLAIM",
+        subjectId: approvalRequest.subjectId,
+        subjectVersion: 0,
+      })
+      .expect(201);
+
+    expect(authorize).toHaveBeenLastCalledWith(expect.objectContaining({
+      permission: "employee_expenses.submit",
+      requireCsrf: true,
+    }));
+
+    await request(app)
+      .post("/approval-requests")
+      .set("Cookie", "sid=test-session")
+      .set("X-CSRF-Token", "csrf")
       .set("Idempotency-Key", "financial-close-submit-key")
       .send({
         subjectType: "FINANCIAL_CLOSE_RUN",

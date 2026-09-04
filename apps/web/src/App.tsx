@@ -51,6 +51,7 @@ const PosPage = lazy(() => import("./PosPage").then((module) => ({ default: modu
 const ApprovalsPage = lazy(() => import("./ApprovalsPage").then((module) => ({ default: module.ApprovalsPage })));
 const ProfessionalProjectsPage = lazy(() => import("./ProfessionalProjectsPage").then((module) => ({ default: module.ProfessionalProjectsPage })));
 const HumanResourcesPage = lazy(() => import("./HumanResourcesPage").then((module) => ({ default: module.HumanResourcesPage })));
+const EmployeeExpensesPage = lazy(() => import("./EmployeeExpensesPage").then((module) => ({ default: module.EmployeeExpensesPage })));
 
 type PlatformCapabilities = { platformOperations: boolean };
 type ShellCapabilities = PlatformCapabilities & { organizationWorkspace: boolean };
@@ -401,6 +402,7 @@ export default function App() {
             {activeView === "crm" && <CrmPage notify={notify} />}
             {activeView === "professionalProjects" && <ProfessionalProjectsPage notify={notify} />}
             {activeView === "humanResources" && <HumanResourcesPage notify={notify} />}
+            {activeView === "employeeExpenses" && <EmployeeExpensesPage notify={notify} />}
             {activeView === "sales" && <SalesInvoicesPage notify={notify} />}
             {activeView === "receipts" && <ReceiptsPage notify={notify} />}
             {activeView === "suppliers" && <SuppliersPage notify={notify} />}

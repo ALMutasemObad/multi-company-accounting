@@ -11,7 +11,7 @@ const querySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
   status: z.enum(["PENDING", "APPROVED", "REJECTED", "CANCELLED"]).optional(),
-  subjectType: z.enum(["FINANCIAL_CLOSE_RUN", "PROFESSIONAL_TIMESHEET"]).optional(),
+  subjectType: z.enum(["FINANCIAL_CLOSE_RUN", "PROFESSIONAL_TIMESHEET", "EMPLOYEE_EXPENSE_CLAIM"]).optional(),
   subjectId: z.string().min(1).max(80).optional(),
 });
 
@@ -40,7 +40,9 @@ export function createApprovalRouter(auth: AuthService, approvals: ApprovalServi
     const body = bodies.createApprovalRequest.parse(request.body);
     const permission = body.subjectType === "FINANCIAL_CLOSE_RUN"
       ? "fiscal_periods.close"
-      : "professional_timesheets.submit";
+      : body.subjectType === "PROFESSIONAL_TIMESHEET"
+        ? "professional_timesheets.submit"
+        : "employee_expenses.submit";
     const context = await authorize(request, permission, true);
     response.status(201).json(await approvals.request(context, {
       ...body,

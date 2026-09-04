@@ -222,6 +222,11 @@ describe.runIf(enabled)("professional projects and time with MariaDB", () => {
         reject: async () => { throw new Error("unused financial-close approval port"); },
       },
       PROFESSIONAL_TIMESHEET: new ProfessionalTimesheetApprovalAdapter(service),
+      EMPLOYEE_EXPENSE_CLAIM: {
+        request: async () => { throw new Error("unused employee-expense approval port"); },
+        approve: async () => { throw new Error("unused employee-expense approval port"); },
+        reject: async () => { throw new Error("unused employee-expense approval port"); },
+      },
     });
     billing = new ProfessionalBillingService(
       prisma!,

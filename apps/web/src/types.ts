@@ -1484,3 +1484,37 @@ export type EmploymentContract = {
   createdAt: string;
   updatedAt: string;
 };
+
+export type EmployeeExpenseClaimStatus = "DRAFT" | "AWAITING_APPROVAL" | "READY_FOR_PAYMENT";
+export type EmployeeExpenseCostCenter = {
+  id: string;
+  code: string;
+  nameAr: string;
+  nameEn: string | null;
+};
+export type EmployeeExpenseLine = {
+  id: string;
+  lineNumber: number;
+  incurredOn: string;
+  merchant: string;
+  description: string;
+  receiptReference: string | null;
+  costCenter: EmployeeExpenseCostCenter;
+  amount: string;
+};
+export type EmployeeExpenseClaim = {
+  id: string;
+  employee: { employeeNumber: string; nameAr: string; nameEn: string | null };
+  currency: { code: string; decimals: number };
+  purpose: string;
+  status: EmployeeExpenseClaimStatus;
+  totalAmount: string;
+  activeSnapshotHashSha256: string | null;
+  submittedAt: string | null;
+  approvedAt: string | null;
+  ownedByCurrentUser: boolean;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  lines: EmployeeExpenseLine[];
+};

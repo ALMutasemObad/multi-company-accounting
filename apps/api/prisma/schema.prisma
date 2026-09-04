@@ -44,6 +44,13 @@ enum FinancialCloseRunStatus {
 enum ApprovalSubjectType {
   FINANCIAL_CLOSE_RUN
   PROFESSIONAL_TIMESHEET
+  EMPLOYEE_EXPENSE_CLAIM
+}
+
+enum EmployeeExpenseClaimStatus {
+  DRAFT
+  AWAITING_APPROVAL
+  READY_FOR_PAYMENT
 }
 
 enum ApprovalRequestStatus {
@@ -617,6 +624,7 @@ model Company {
   hrPositions                       HrPosition[]
   employees                         Employee[]
   employmentContracts               EmploymentContract[]
+  employeeExpenseClaims             EmployeeExpenseClaim[]
   platformBillingAccount            PlatformBillingAccount?
   platformBillingInvoices           PlatformBillingInvoice[]
   platformBillingInvoiceLines       PlatformBillingInvoiceLine[]
@@ -708,6 +716,9 @@ model User {
   employmentContractsCreated           EmploymentContract[]               @relation("EmploymentContractCreatedBy")
   employmentContractsUpdated           EmploymentContract[]               @relation("EmploymentContractUpdatedBy")
   employmentContractsEnded             EmploymentContract[]               @relation("EmploymentContractEndedBy")
+  employeeExpenseClaimsCreated         EmployeeExpenseClaim[]             @relation("EmployeeExpenseClaimCreatedBy")
+  employeeExpenseClaimsUpdated         EmployeeExpenseClaim[]             @relation("EmployeeExpenseClaimUpdatedBy")
+  employeeExpenseClaimsApproved        EmployeeExpenseClaim[]             @relation("EmployeeExpenseClaimApprovedBy")
   professionalTimesheetSubmissions     ProfessionalTimesheetSubmission[]  @relation("ProfessionalTimesheetSubmittedBy")
   professionalContractsCreated         ProfessionalServiceContract[]      @relation("ProfessionalContractCreatedBy")
   professionalContractsUpdated         ProfessionalServiceContract[]      @relation("ProfessionalContractUpdatedBy")
@@ -1571,6 +1582,7 @@ model CostCenter {
   journalLines         JournalLine[]
   salesInvoiceLines    SalesInvoiceLine[]
   purchaseInvoiceLines PurchaseInvoiceLine[]
+  employeeExpenseLines EmployeeExpenseLine[]
 
   @@unique([companyId, code])
   @@unique([id, companyId])
@@ -2213,6 +2225,7 @@ model Employee {
   manager               Employee?            @relation("EmployeeManager", fields: [managerEmployeeId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
   directReports         Employee[]           @relation("EmployeeManager")
   contracts             EmploymentContract[]
+  expenseClaims         EmployeeExpenseClaim[]
   createdBy             User                 @relation("EmployeeCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
   updatedBy             User                 @relation("EmployeeUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
   crmLeadsOwned         CrmLead[]            @relation("CrmLeadOwner")
@@ -2259,6 +2272,68 @@ model EmploymentContract {
   @@index([employeeId, companyId, status, startDate])
   @@index([companyId, status, endDate])
   @@map("employment_contracts")
+}
+
+model EmployeeExpenseClaim {
+  id                       BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId                 String                     @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId                BigInt                     @map("company_id") @db.UnsignedBigInt
+  employeeId               BigInt                     @map("employee_id") @db.UnsignedBigInt
+  employeeNumberSnapshot   String                     @map("employee_number_snapshot") @db.VarChar(40)
+  employeeNameArSnapshot   String                     @map("employee_name_ar_snapshot") @db.VarChar(160)
+  employeeNameEnSnapshot   String?                    @map("employee_name_en_snapshot") @db.VarChar(160)
+  currencyCode             String                     @map("currency_code") @db.Char(3)
+  currencyDecimals         Int                        @map("currency_decimals") @db.UnsignedTinyInt
+  purpose                  String                     @db.VarChar(500)
+  status                   EmployeeExpenseClaimStatus @default(DRAFT)
+  totalAmount              Decimal                    @map("total_amount") @db.Decimal(19, 4)
+  activeSnapshotHashSha256 Bytes?                     @map("active_snapshot_hash_sha256") @db.Binary(32)
+  submittedAt              DateTime?                  @map("submitted_at")
+  approvedAt               DateTime?                  @map("approved_at")
+  approvedById             BigInt?                    @map("approved_by_id") @db.UnsignedBigInt
+  version                  Int                        @default(0) @db.UnsignedInt
+  createdById              BigInt                     @map("created_by_id") @db.UnsignedBigInt
+  updatedById              BigInt                     @map("updated_by_id") @db.UnsignedBigInt
+  createdAt                DateTime                   @default(now()) @map("created_at")
+  updatedAt                DateTime                   @updatedAt @map("updated_at")
+  company                  Company                    @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  employee                 Employee                   @relation(fields: [employeeId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  approvedBy               User?                      @relation("EmployeeExpenseClaimApprovedBy", fields: [approvedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  createdBy                User                       @relation("EmployeeExpenseClaimCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy                User                       @relation("EmployeeExpenseClaimUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  lines                    EmployeeExpenseLine[]
+
+  @@unique([id, companyId])
+  @@index([companyId, status, createdAt, id])
+  @@index([companyId, employeeId, createdAt, id])
+  @@index([createdById, companyId, createdAt])
+  @@map("employee_expense_claims")
+}
+
+model EmployeeExpenseLine {
+  id                       BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId                 String               @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId                BigInt               @map("company_id") @db.UnsignedBigInt
+  claimId                  BigInt               @map("claim_id") @db.UnsignedBigInt
+  lineNumber               Int                  @map("line_number") @db.UnsignedSmallInt
+  incurredOn               DateTime             @map("incurred_on") @db.Date
+  merchant                 String               @db.VarChar(160)
+  description              String               @db.VarChar(500)
+  receiptReference         String?              @map("receipt_reference") @db.VarChar(200)
+  costCenterId             BigInt               @map("cost_center_id") @db.UnsignedBigInt
+  costCenterCodeSnapshot   String               @map("cost_center_code_snapshot") @db.VarChar(40)
+  costCenterNameSnapshot   String               @map("cost_center_name_snapshot") @db.VarChar(160)
+  costCenterNameEnSnapshot String?              @map("cost_center_name_en_snapshot") @db.VarChar(160)
+  amount                   Decimal              @db.Decimal(19, 4)
+  createdAt                DateTime             @default(now()) @map("created_at")
+  updatedAt                DateTime             @updatedAt @map("updated_at")
+  claim                    EmployeeExpenseClaim @relation(fields: [claimId, companyId], references: [id, companyId], onDelete: Cascade, onUpdate: Restrict)
+  costCenter               CostCenter           @relation(fields: [costCenterId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([claimId, lineNumber])
+  @@unique([id, companyId])
+  @@index([companyId, costCenterId, incurredOn])
+  @@map("employee_expense_lines")
 }
 
 model CashBankAccount {

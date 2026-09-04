@@ -31,6 +31,7 @@ const workspaceScreens: Screen[] = [
   'crm',
   'professionalProjects',
   'humanResources',
+  'employeeExpenses',
   'sales',
   'receipts',
   'suppliers',
@@ -232,6 +233,10 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
         await expect(page).toHaveURL(new RegExp(`#${screen.name}$`));
         await waitForStableInterface(page, screen);
         await auditCurrentInterface(page, locale, screen.name);
+        if (screen.name === 'employeeExpenses') {
+          await expect(page.locator('.employee-expense-claim')).toHaveCount(3);
+          await expect(page.locator('.employee-expense-ready')).toHaveCount(1);
+        }
         if (visitingPos) {
           const identityPath = '/api/v1/pos/context/identity';
           const salesPath = '/api/v1/pos/sales';

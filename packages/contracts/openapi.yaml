@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.47.0
+  version: 1.48.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -100,6 +100,8 @@ tags:
   description: المشاريع والقضايا والاستشارات المهنية وأعضاؤها وسجلات الوقت والعقود والأسعار ومصدر فوترة الوقت المعتمد؛ تبقى حقائق الفاتورة والذمم لدى Sales والقيود لدى Core Accounting.
 - name: Human Resources
   description: الهيكل والموظفون والعقود غير المالية؛ الرواتب والهوية الوطنية والحسابات البنكية خارج هذه الشريحة.
+- name: Employee Expenses
+  description: مطالبات مصروفات الموظفين وبنودها ومراجعتها؛ لا يملك السياق HR أو Treasury أو Ledger، ولا يخزن ملفات الإيصالات.
 - name: Accounts
   description: دليل الحسابات ومراكز التكلفة.
 - name: Data Imports
@@ -4134,6 +4136,85 @@ paths:
       x-permission: hr.contracts.manage
       security: [{ SessionCookie: [], CsrfToken: [] }]
       x-idempotency-scope: user + company + operation + key
+  /employee-expense-claims:
+    get:
+      tags: [Employee Expenses]
+      summary: عرض مطالبات مصروفات الموظفين
+      operationId: listEmployeeExpenseClaims
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - { name: scope, in: query, schema: { type: string, enum: [mine, company], default: mine } }
+      - { name: status, in: query, schema: { $ref: '#/components/schemas/EmployeeExpenseClaimStatus' } }
+      responses:
+        '200': { description: مطالبات معزولة حسب الشركة والنطاق, content: { application/json: { schema: { $ref: '#/components/schemas/EmployeeExpenseClaimListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: employee_expenses.view
+      x-permission-by-scope:
+        mine: employee_expenses.view
+        company: employee_expenses.review
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [Employee Expenses]
+      summary: إنشاء مسودة مطالبة للموظف المرتبط بالمستخدم الحالي
+      description: تحفظ مراجع إيصال نصية فقط؛ لا يقبل المسار ملفات أو بيانات ثنائية.
+      operationId: createEmployeeExpenseClaim
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateEmployeeExpenseClaimRequest' } } }
+      responses:
+        '201': { description: المطالبة المنشأة, content: { application/json: { schema: { $ref: '#/components/schemas/EmployeeExpenseClaimResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: employee_expenses.submit
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /employee-expense-claims/{claimId}:
+    patch:
+      tags: [Employee Expenses]
+      summary: استبدال بيانات مسودة مطالبة شخصية
+      operationId: updateEmployeeExpenseClaim
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: claimId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/UpdateEmployeeExpenseClaimRequest' } } }
+      responses:
+        '200': { description: المسودة المحدثة, content: { application/json: { schema: { $ref: '#/components/schemas/EmployeeExpenseClaimResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: employee_expenses.submit
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /employee-expense-cost-centers:
+    get:
+      tags: [Employee Expenses]
+      summary: عرض مراكز التكلفة النشطة المتاحة لبنود المطالبة
+      operationId: listEmployeeExpenseCostCenters
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200': { description: مراجع عبر منفذ Core Accounting, content: { application/json: { schema: { $ref: '#/components/schemas/EmployeeExpenseCostCenterListResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: employee_expenses.view
+      security: [{ SessionCookie: [] }]
   /approval-requests:
     get:
       tags: [Approvals]
@@ -4156,7 +4237,7 @@ paths:
     post:
       tags: [Approvals]
       summary: إرسال موضوع إلى محرك الموافقات
-      description: يتطلب إذن المالك الموافق لنوع الموضوع؛ الإقفال المالي يتطلب fiscal_periods.close والجدول الزمني يتطلب professional_timesheets.submit.
+      description: يتطلب إذن المالك الموافق لنوع الموضوع؛ الإقفال المالي يتطلب fiscal_periods.close، والجدول الزمني يتطلب professional_timesheets.submit، ومطالبة المصروف تتطلب employee_expenses.submit.
       operationId: createApprovalRequest
       parameters:
       - $ref: '#/components/parameters/RequestId'
@@ -4176,6 +4257,7 @@ paths:
       x-permission-by-subject:
         FINANCIAL_CLOSE_RUN: fiscal_periods.close
         PROFESSIONAL_TIMESHEET: professional_timesheets.submit
+        EMPLOYEE_EXPENSE_CLAIM: employee_expenses.submit
       security: [{ SessionCookie: [], CsrfToken: [] }]
       x-idempotency-scope: user + company + operation + key
   /approval-requests/{approvalRequestId}:
@@ -13449,9 +13531,157 @@ components:
           oneOf:
           - $ref: '#/components/schemas/FinancialCloseRun'
           - type: 'null'
+    EmployeeExpenseClaimStatus:
+      type: string
+      enum: [DRAFT, AWAITING_APPROVAL, READY_FOR_PAYMENT]
+    EmployeeExpenseEmployee:
+      type: object
+      additionalProperties: false
+      required: [employeeNumber, nameAr, nameEn]
+      properties:
+        employeeNumber: { type: string, minLength: 1, maxLength: 40 }
+        nameAr: { type: string, minLength: 1, maxLength: 160 }
+        nameEn: { type: [string, 'null'], maxLength: 160 }
+    EmployeeExpenseCurrency:
+      type: object
+      additionalProperties: false
+      required: [code, decimals]
+      properties:
+        code: { type: string, pattern: '^[A-Z]{3}$' }
+        decimals: { type: integer, minimum: 0, maximum: 4 }
+    EmployeeExpenseCostCenter:
+      type: object
+      additionalProperties: false
+      required: [id, code, nameAr, nameEn]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        code: { type: string, minLength: 1, maxLength: 40 }
+        nameAr: { type: string, minLength: 1, maxLength: 160 }
+        nameEn: { type: [string, 'null'], maxLength: 160 }
+    EmployeeExpenseLine:
+      type: object
+      additionalProperties: false
+      required: [id, lineNumber, incurredOn, merchant, description, receiptReference, costCenter, amount]
+      properties:
+        id: { type: string, format: uuid }
+        lineNumber: { type: integer, minimum: 1, maximum: 20 }
+        incurredOn: { type: string, format: date }
+        merchant: { type: string, minLength: 1, maxLength: 160 }
+        description: { type: string, minLength: 3, maxLength: 500 }
+        receiptReference: { type: [string, 'null'], maxLength: 200 }
+        costCenter: { $ref: '#/components/schemas/EmployeeExpenseCostCenter' }
+        amount: { $ref: '#/components/schemas/Amount' }
+    EmployeeExpenseLineInput:
+      type: object
+      additionalProperties: false
+      required: [incurredOn, merchant, description, costCenterId, amount]
+      properties:
+        incurredOn: { type: string, format: date }
+        merchant: { type: string, x-trim: true, minLength: 1, maxLength: 160 }
+        description: { type: string, x-trim: true, minLength: 3, maxLength: 500 }
+        receiptReference:
+          oneOf:
+          - { type: string, x-trim: true, minLength: 1, maxLength: 200 }
+          - { type: 'null' }
+        costCenterId: { $ref: '#/components/schemas/Id' }
+        amount:
+          type: string
+          pattern: '^(0|[1-9][0-9]{0,14})(\.[0-9]{1,4})?$'
+    CreateEmployeeExpenseClaimRequest:
+      type: object
+      additionalProperties: false
+      required: [purpose, lines]
+      properties:
+        purpose: { type: string, x-trim: true, minLength: 5, maxLength: 500 }
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items: { $ref: '#/components/schemas/EmployeeExpenseLineInput' }
+    UpdateEmployeeExpenseClaimRequest:
+      type: object
+      additionalProperties: false
+      required: [version, purpose, lines]
+      properties:
+        version: { type: integer, minimum: 0 }
+        purpose: { type: string, x-trim: true, minLength: 5, maxLength: 500 }
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items: { $ref: '#/components/schemas/EmployeeExpenseLineInput' }
+    EmployeeExpenseClaim:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - employee
+      - currency
+      - purpose
+      - status
+      - totalAmount
+      - activeSnapshotHashSha256
+      - submittedAt
+      - approvedAt
+      - ownedByCurrentUser
+      - version
+      - createdAt
+      - updatedAt
+      - lines
+      properties:
+        id: { type: string, format: uuid }
+        employee: { $ref: '#/components/schemas/EmployeeExpenseEmployee' }
+        currency: { $ref: '#/components/schemas/EmployeeExpenseCurrency' }
+        purpose: { type: string, minLength: 5, maxLength: 500 }
+        status: { $ref: '#/components/schemas/EmployeeExpenseClaimStatus' }
+        totalAmount: { $ref: '#/components/schemas/Amount' }
+        activeSnapshotHashSha256:
+          oneOf:
+          - { type: string, pattern: '^[a-f0-9]{64}$' }
+          - { type: 'null' }
+        submittedAt:
+          oneOf:
+          - { type: string, format: date-time }
+          - { type: 'null' }
+        approvedAt:
+          oneOf:
+          - { type: string, format: date-time }
+          - { type: 'null' }
+        ownedByCurrentUser: { type: boolean }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items: { $ref: '#/components/schemas/EmployeeExpenseLine' }
+    EmployeeExpenseClaimResponse:
+      type: object
+      additionalProperties: false
+      required: [claim]
+      properties:
+        claim: { $ref: '#/components/schemas/EmployeeExpenseClaim' }
+    EmployeeExpenseClaimListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/EmployeeExpenseClaim' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    EmployeeExpenseCostCenterListResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/EmployeeExpenseCostCenter' }
     ApprovalSubjectType:
       type: string
-      enum: [FINANCIAL_CLOSE_RUN, PROFESSIONAL_TIMESHEET]
+      enum: [FINANCIAL_CLOSE_RUN, PROFESSIONAL_TIMESHEET, EMPLOYEE_EXPENSE_CLAIM]
     ApprovalRequestStatus:
       type: string
       enum: [PENDING, APPROVED, REJECTED, CANCELLED]

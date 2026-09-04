@@ -30,6 +30,9 @@ const visualQaPermissions = [
   "customers.view",
   "dashboard.view",
   "data_imports.view",
+  "employee_expenses.review",
+  "employee_expenses.submit",
+  "employee_expenses.view",
   "fiscal_periods.view",
   "hr.contracts.view",
   "hr.employees.view",
@@ -460,6 +463,69 @@ const visualElectronicPayment = {
   updatedAt: "2026-08-29T09:01:00.000Z",
 };
 
+const employeeExpenseCostCenters = [
+  { id: "81", code: "CC-000081", nameAr: "الاستشارات", nameEn: "Consulting" },
+  { id: "82", code: "CC-000082", nameAr: "تطوير الأعمال", nameEn: "Business development" },
+];
+const employeeExpenseLine = (id, lineNumber, amount, overrides = {}) => ({
+  id,
+  lineNumber,
+  incurredOn: "2026-09-03",
+  merchant: "قطار الرياض",
+  description: "انتقال لاجتماع عميل",
+  receiptReference: `RCP-${lineNumber}04`,
+  costCenter: employeeExpenseCostCenters[0],
+  amount,
+  ...overrides,
+});
+const employeeExpenseClaim = (id, status, purpose, totalAmount, lines, overrides = {}) => ({
+  id,
+  employee: { employeeNumber: "EMP-000142", nameAr: "سارة المستشار", nameEn: "Sarah Consultant" },
+  currency: { code: "SAR", decimals: 2 },
+  purpose,
+  status,
+  totalAmount,
+  activeSnapshotHashSha256: status === "DRAFT" ? null : "a".repeat(64),
+  submittedAt: status === "DRAFT" ? null : "2026-09-03T12:00:00.000Z",
+  approvedAt: status === "READY_FOR_PAYMENT" ? "2026-09-04T09:00:00.000Z" : null,
+  ownedByCurrentUser: true,
+  version: status === "DRAFT" ? 0 : status === "AWAITING_APPROVAL" ? 1 : 2,
+  createdAt: "2026-09-03T10:00:00.000Z",
+  updatedAt: "2026-09-04T09:00:00.000Z",
+  lines,
+  ...overrides,
+});
+const employeeExpenseClaims = [
+  employeeExpenseClaim(
+    "6cbda871-2654-4e2b-a864-a816464746a1",
+    "READY_FOR_PAYMENT",
+    "زيارة عميل ومراجعة موقع المشروع",
+    "185.7500",
+    [
+      employeeExpenseLine("c0e3e911-21cd-43a6-a303-87b20c7908ba", 1, "125.5000"),
+      employeeExpenseLine("962a7dbc-2a56-46b0-a1d1-8b52e78b28fb", 2, "60.2500", {
+        merchant: "مقهى الأعمال",
+        description: "ضيافة اجتماع العميل",
+        costCenter: employeeExpenseCostCenters[1],
+      }),
+    ],
+  ),
+  employeeExpenseClaim(
+    "6bbdbbd9-974d-4ee8-981f-f106729a8b78",
+    "AWAITING_APPROVAL",
+    "ورشة عمل الفريق",
+    "90.0000",
+    [employeeExpenseLine("7d46241e-8645-46be-993c-37c00fbf69c4", 1, "90.0000", { merchant: "مركز التدريب", description: "مواد الورشة" })],
+  ),
+  employeeExpenseClaim(
+    "7a4860a0-d915-4897-85f2-68fcc827805e",
+    "DRAFT",
+    "تنقل داخلي",
+    "45.0000",
+    [employeeExpenseLine("521497ba-8f64-43ea-8b36-84e53d76532a", 1, "45.0000", { merchant: "سيارة أجرة", receiptReference: null })],
+  ),
+];
+
 function list(data = []) {
   return { data, meta: { ...meta, total: data.length, totalPages: data.length ? 1 : 0 } };
 }
@@ -566,6 +632,11 @@ export function responseFor(url, method, headers = {}) {
     { stage: "NEGOTIATION", currencyId: "currency-sar", opportunityCount: 1, estimatedAmount: "92000.0000", weightedAmount: "69000.0000" },
     { stage: "WON", currencyId: "currency-sar", opportunityCount: 3, estimatedAmount: "260000.0000", weightedAmount: "260000.0000" },
   ] };
+  if (pathname === "/employee-expense-cost-centers") return { data: employeeExpenseCostCenters };
+  if (pathname === "/employee-expense-claims") return {
+    data: employeeExpenseClaims,
+    meta: { page: 1, pageSize: 10, total: employeeExpenseClaims.length, totalPages: 1 },
+  };
   if (pathname === "/professional-projects/customer-options") return { data: [professionalCustomer] };
   if (pathname === "/professional-projects/member-options") return { data: [professionalManager] };
   if (pathname === "/professional-projects") return list([professionalProject]);

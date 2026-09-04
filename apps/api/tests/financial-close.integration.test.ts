@@ -151,6 +151,11 @@ describe.runIf(enabled)("reviewed financial close workflow with MariaDB", () => 
         approve: async () => { throw new Error("unused timesheet approval port"); },
         reject: async () => { throw new Error("unused timesheet approval port"); },
       },
+      EMPLOYEE_EXPENSE_CLAIM: {
+        request: async () => { throw new Error("unused employee-expense approval port"); },
+        approve: async () => { throw new Error("unused employee-expense approval port"); },
+        reject: async () => { throw new Error("unused employee-expense approval port"); },
+      },
     });
     await createPostedDocument("FC-IT-001", "200.0000", "70.0000");
   });

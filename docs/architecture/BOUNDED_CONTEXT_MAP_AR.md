@@ -33,6 +33,7 @@ last_updated: "2026-09-04"
 | Service Catalog & Pricing | تعريف الخدمات التجارية وتصنيفها ووحدات تسعيرها وأسعارها المؤرخة | `ServiceCategory`, `ServiceOffering`, `ServicePrice` (مستهدفة) | سياق مستقل مستهدف وفق ADR-016؛ لا يمثل InventoryItem ولا مشروعًا، ويكشف Query Ports لـSales وCRM وProjects ولا يكتب فاتورة أو مخزونًا أو Ledger |
 | Professional Project Delivery | القضايا والتكليفات والمشاريع المهنية، فرقها ووصولها، خطة المراحل والمهام، الوقت المعتمد، وشروط فوترة المشروع ومصدرها | `ProfessionalProject`, `ProfessionalProjectMember`, `ProfessionalProjectAccessGrant`, `ProfessionalProjectStage`, `ProfessionalProjectTask`, `ProfessionalTaskDependency`, `ProfessionalTimeEntry`, `ProfessionalTimesheet`, `ProfessionalTimesheetSubmission`, `ProfessionalServiceContract`, `ProfessionalServiceRate`, `ProfessionalBillingRun`, `ProfessionalBillingSourceLine` | يملك الجدار الأخلاقي وميزانية دقائق المشروع والخطة؛ تبقى العقود والأسعار الحالية خاصة بالمشروع وليست دليل خدمات عامًا، ويقرأ المالكين الآخرين عبر Ports ولا يملك المصروف أو حقائق الفاتورة أو الذمة أو الضريبة أو القيد |
 | Human Resources | الهيكل التنظيمي وهوية الموظف وحالة العمل والعقد غير المالي | `HrDepartment`, `HrPosition`, `Employee`, `EmploymentContract` | الموظف مستقل عن `User` ويرتبط اختياريًا بعضوية الشركة عبر Identity Port؛ لا يملك رواتب أو بيانات بنكية أو قرار موافقة أو وقت مشروع |
+| Employee Expenses | مطالبة الموظف وبنودها ولقطتها ودورة جاهزيتها للصرف | `EmployeeExpenseClaim`, `EmployeeExpenseLine` | يقرأ الموظف ومركز التكلفة والعملة عبر Ports ويرسل قراره إلى Approvals؛ لا يملك فاتورة مورد أو دفعًا أو ذمة أو Ledger، وينتهي حاليًا عند `READY_FOR_PAYMENT` وفق ADR-020 |
 | Tax | معدلات الضرائب وربط حساباتها والحساب والتقريب | `TaxRate` | يكشف `TaxQuotePort` للمبيعات والمشتريات ويملك النسخ المتفائلة |
 | Printing & Document Output | اللقطات التاريخية والتوليد | `DocumentPrintArchive` | يقرأ عبر Document Snapshot Port |
 | Reporting | التقارير والقوائم وRead Models | لا يملك حقائق مالية تشغيلية | قراءة فقط، ويمكنه امتلاك projections مستقبلًا |
@@ -72,6 +73,8 @@ Professional Projects ──> Sales customer query port and Identity people quer
 Professional Projects ──> Human Resources employee query port
 Professional Projects ──> Tenant currency query port and Sales professional-billing application/query port
 Human Resources ────────> Identity membership query port
+Employee Expenses ─────> Human Resources employee, Core Accounting cost-center, Tenant currency query ports
+Employee Expenses ─────> Approvals subject application port
 Workforce Access workflow ──> Human Resources employee-account port + Identity account port
 Organization owner workspace ──> Identity membership + Tenant directory + Accounting/Sales/Purchases query ports
 All operational contexts ──> Audit append port
@@ -135,7 +138,9 @@ Platform Subscriptions & Entitlements وفق [ADR-019](ADR-019-public-subscripti
 
 ثم أضيفت أول شريحة فوترة خدمات وفق [ADR-009](ADR-009-professional-service-billing.md): يملك السياق عقد الخدمة وسعر الساعة المؤرخ ومرجع مصدر الوقت والسعر المستخدم، ويستدعي `ProfessionalBillingSalesPort` لإنشاء وترحيل فاتورة Sales عادية داخل المعاملة نفسها. لا ينسخ رقم الفاتورة أو إجماليها أو ضريبتها أو الذمة أو القيد؛ تُقرأ هذه الحقائق من Sales عبر Query Port، ويبقى `PostingEngine` كاتب Ledger الوحيد.
 
-ثم نُفذت E1 محليًا لتخطيط المشاريع وفق [ADR-010](ADR-010-professional-project-planning.md): يظل `ProfessionalProject` جذر الخطة ويفصل `planningVersion` عن نسخة حقول المشروع، ويملك المراحل والمهام واعتمادياتها وميزانية الدقائق. يرتبط الوقت اختياريًا بالمهمة، وتبقى الفعلية مشتقة من `ProfessionalTimeEntry` بلا عمود مجموع موازٍ. لا تضيف الشريحة اتصالًا بـPurchases أو Approvals أو Ledger ولا Outbox بلا مستهلك. تبقى مصروفات E2 بلا مالك منفذ وتحتاج قرارًا يفصل مطالبة الموظف عن فاتورة المورد والدفع وإعادة الفوترة.
+ثم نُفذت E1 محليًا لتخطيط المشاريع وفق [ADR-010](ADR-010-professional-project-planning.md): يظل `ProfessionalProject` جذر الخطة ويفصل `planningVersion` عن نسخة حقول المشروع، ويملك المراحل والمهام واعتمادياتها وميزانية الدقائق. يرتبط الوقت اختياريًا بالمهمة، وتبقى الفعلية مشتقة من `ProfessionalTimeEntry` بلا عمود مجموع موازٍ. لا تضيف الشريحة اتصالًا بـPurchases أو Approvals أو Ledger ولا Outbox بلا مستهلك.
+
+وفي 4 سبتمبر 2026 اعتمدت E2 سياق `Employee Expenses` المستقل وفق [ADR-020](ADR-020-employee-expense-claims.md): يملك المطالبة وبنودها ولقطتها، ويقرأ موظف HR ومركز تكلفة Core Accounting وعملة Tenant عبر Ports، ثم يستخدم Approvals لفصل Maker/Checker. ينتهي القبول صراحة عند `READY_FOR_PAYMENT` ولا ينشئ Supplier Invoice أو Payment أو PayableItem أو AccountingDocument أو Journal Lines. السلف وإعادة الفوترة والتكامل المالي مؤجلة حتى تعتمد سياسة المقاصة والتسوية والترحيل.
 
 ثم نُفذ الجدار الأخلاقي F1 وفق [ADR-011](ADR-011-professional-ethical-wall.md): يملك Professional Projects وضع وصول القضية ومنحها، وتبقى صلاحية RBAC شرطًا مستقلًا. تستبعد القضية المقيدة من القوائم والمجاميع وتعيد 404 لغير المسموح، ولا تغير المنحة حقائق المشروع أو الفوترة أو Ledger. يظل فحص تعارض المصالح F2 خارج النطاق وشرطًا قبل إنشاء قضية من أي مسار استقبال مستقبلي.
 
@@ -189,6 +194,7 @@ Intercompany. تحفظ تغييرات العضوية في `OrganizationAuditLog`
 | `ProfessionalServiceContract` | عملة وشروط السداد وفترة سريان تجارية واحدة غير متداخلة لكل مشروع وقت ومواد |
 | `ProfessionalBillingRun` | استخدام وقت معتمد مرة واحدة وربطه بفاتورة Sales مع تثبيت مصدر الوقت والسعر دون نسخ حقائقها المالية |
 | `Employee` | الهوية الوظيفية داخل الشركة، الإسناد التنظيمي، سلسلة المدير، حالة العمل والعقد النشط الواحد |
+| `EmployeeExpenseClaim` | ملكية الموظف للمسودة، بنود Decimal ومراكز تكلفتها، ثبات snapshot أثناء المراجعة، وانتقالًا واحدًا صادقًا إلى جاهزية الصرف |
 | `ChartOfAccounts`/`Account` | صلاحية الترحيل والبنية الهرمية |
 
 لا يشترط أن تتحول جميعها إلى Classes كبيرة؛ المطلوب أن تكون invariants والملكية ومداخل التغيير واضحة ومختبرة.

@@ -17,12 +17,14 @@ import { hiSubscriptionChanges } from "./subscription-changes";
 import { hiBillingRecovery } from "./billing-recovery";
 import { hiCrm } from "./crm";
 import { hiOrganizationOwner } from "./organization-owner";
+import { hiEmployeeExpenses } from "./employee-expenses";
 
 export const hi = {
   ...hiOrganizationOwner,
   ...hiCrm,
   ...hiSubscriptionChanges,
   ...hiBillingRecovery,
+  ...hiEmployeeExpenses,
   ...hiAuthResilience,
   ...hiSubscriptionUsage,
   ...hiReconciliation,
