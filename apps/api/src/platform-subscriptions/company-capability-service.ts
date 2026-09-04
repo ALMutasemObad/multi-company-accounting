@@ -21,6 +21,7 @@ const permissionEntitlementPrefixes = [
   ['cost_centers.', 'CORE_ACCOUNTING'],
   ['manual_journals.', 'CORE_ACCOUNTING'],
   ['customers.', 'SALES'],
+  ['crm.', 'SALES'],
   ['sales_invoices.', 'SALES'],
   ['sales_catalog.', 'SALES'],
   ['suppliers.', 'PURCHASES'],

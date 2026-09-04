@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.46.2
+  version: 1.47.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -68,6 +68,8 @@ servers:
 - url: /api/v1
   description: مسار نسبي يعمل على نفس أصل الواجهة في جميع البيئات
 tags:
+- name: CRM
+  description: العملاء المحتملون والفرص وأنشطة المتابعة والتحويل الآمن إلى سجل العميل المملوك للمبيعات.
 - name: Sales Catalog
   description: ملفات بيع الأصناف المملوكة للمبيعات؛ افتراضات وليست عرض سعر نهائيًا.
 - name: Health
@@ -10240,6 +10242,206 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /crm/options:
+    get:
+      tags: [CRM]
+      summary: خيارات CRM من المجالات المالكة
+      operationId: getCrmOptions
+      x-permission: crm.view
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - { name: search, in: query, schema: { type: string, minLength: 1, maxLength: 200 } }
+      responses:
+        '200': { description: الخيارات, content: { application/json: { schema: { $ref: '#/components/schemas/CrmOptionsResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /crm/leads:
+    get:
+      tags: [CRM]
+      summary: قائمة العملاء المحتملين
+      operationId: listCrmLeads
+      x-permission: crm.view
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+      - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      - { name: search, in: query, schema: { type: string, minLength: 1, maxLength: 200 } }
+      - { name: status, in: query, schema: { $ref: '#/components/schemas/CrmLeadStatus' } }
+      responses:
+        '200': { description: القائمة, content: { application/json: { schema: { $ref: '#/components/schemas/CrmLeadListResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [CRM]
+      summary: إنشاء عميل محتمل
+      operationId: createCrmLead
+      x-permission: crm.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CrmLeadCreateRequest' } } }
+      responses:
+        '201': { description: تم الإنشاء, content: { application/json: { schema: { $ref: '#/components/schemas/CrmLeadResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+  /crm/leads/{leadId}/mark-contacted:
+    post:
+      tags: [CRM]
+      summary: تعليم العميل المحتمل كمتصل به
+      operationId: markCrmLeadContacted
+      x-permission: crm.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - { name: leadId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CrmVersionRequest' } } } }
+      responses:
+        '200': { description: تم التحديث, content: { application/json: { schema: { $ref: '#/components/schemas/CrmLeadResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+  /crm/leads/{leadId}/qualify:
+    post:
+      tags: [CRM]
+      summary: تأهيل العميل المحتمل وإنشاء فرصة واحدة
+      operationId: qualifyCrmLead
+      x-permission: crm.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - { name: leadId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CrmLeadQualifyRequest' } } } }
+      responses:
+        '201': { description: تم التأهيل, content: { application/json: { schema: { $ref: '#/components/schemas/CrmOpportunityResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+  /crm/leads/{leadId}/convert:
+    post:
+      tags: [CRM]
+      summary: تحويل العميل المحتمل عبر منفذ مالك سجل العميل
+      description: لا ينشئ هذا الأمر مشروعًا أو قضية مهنية. إنشاء القضايا محجوب حتى تنفيذ فحص التعارض F2.
+      operationId: convertCrmLead
+      x-permission: crm.convert
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - { name: leadId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CrmLeadConvertRequest' } } } }
+      responses:
+        '200': { description: تم التحويل, content: { application/json: { schema: { $ref: '#/components/schemas/CrmConversionResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+  /crm/opportunities:
+    get:
+      tags: [CRM]
+      summary: قائمة الفرص
+      operationId: listCrmOpportunities
+      x-permission: crm.view
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+      - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      - { name: search, in: query, schema: { type: string, minLength: 1, maxLength: 200 } }
+      - { name: stage, in: query, schema: { $ref: '#/components/schemas/CrmOpportunityStage' } }
+      responses:
+        '200': { description: القائمة, content: { application/json: { schema: { $ref: '#/components/schemas/CrmOpportunityListResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /crm/opportunities/{opportunityId}/stage:
+    post:
+      tags: [CRM]
+      summary: نقل الفرصة بين المراحل المفتوحة
+      operationId: moveCrmOpportunityStage
+      x-permission: crm.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - { name: opportunityId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CrmOpportunityStageRequest' } } } }
+      responses:
+        '200': { description: تم النقل, content: { application/json: { schema: { $ref: '#/components/schemas/CrmOpportunityResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+  /crm/pipeline:
+    get:
+      tags: [CRM]
+      summary: مؤشرات خط الفرص مجمعة حسب المرحلة والعملة
+      operationId: getCrmPipeline
+      x-permission: crm.view
+      security: [{ SessionCookie: [] }]
+      responses:
+        '200': { description: المؤشرات, content: { application/json: { schema: { $ref: '#/components/schemas/CrmPipelineResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /crm/activities:
+    get:
+      tags: [CRM]
+      summary: قائمة أنشطة المتابعة
+      operationId: listCrmActivities
+      x-permission: crm.view
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+      - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      - { name: status, in: query, schema: { $ref: '#/components/schemas/CrmActivityStatus' } }
+      responses:
+        '200': { description: القائمة, content: { application/json: { schema: { $ref: '#/components/schemas/CrmActivityListResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [CRM]
+      summary: إضافة إجراء متابعة تالٍ
+      operationId: createCrmActivity
+      x-permission: crm.activities.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CrmActivityCreateRequest' } } } }
+      responses:
+        '201': { description: تم الإنشاء, content: { application/json: { schema: { $ref: '#/components/schemas/CrmActivityResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+  /crm/activities/{activityId}/complete:
+    post:
+      tags: [CRM]
+      summary: إكمال نشاط متابعة
+      operationId: completeCrmActivity
+      x-permission: crm.activities.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - { name: activityId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CrmVersionRequest' } } } }
+      responses:
+        '200': { description: تم الإكمال, content: { application/json: { schema: { $ref: '#/components/schemas/CrmActivityResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
 components:
   securitySchemes:
     SessionCookie:
@@ -18885,6 +19087,258 @@ components:
         isPrimary:
           type: boolean
           default: false
+    CrmLeadStatus:
+      type: string
+      enum: [NEW, CONTACTED, QUALIFIED, DISQUALIFIED, CONVERTED]
+    CrmOpportunityStage:
+      type: string
+      enum: [DISCOVERY, PROPOSAL, NEGOTIATION, WON, LOST]
+    CrmActivityStatus:
+      type: string
+      enum: [OPEN, COMPLETED, CANCELLED]
+    CrmVersionRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: { type: integer, minimum: 0 }
+    CrmLeadCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [kind, displayName, source, ownerEmployeeId]
+      properties:
+        kind: { type: string, enum: [INDIVIDUAL, ORGANIZATION] }
+        displayName: { type: string, x-trim: true, minLength: 1, maxLength: 200 }
+        contactName: { type: [string, 'null'], maxLength: 160 }
+        phone: { type: [string, 'null'], maxLength: 40 }
+        email: { type: [string, 'null'], format: email, maxLength: 320 }
+        source: { type: string, enum: [MANUAL, REFERRAL, WEBSITE, OTHER] }
+        sourceDetails: { type: [string, 'null'], maxLength: 500 }
+        ownerEmployeeId: { type: string, format: uuid }
+        summary: { type: [string, 'null'], maxLength: 1000 }
+    CrmLeadQualifyRequest:
+      type: object
+      additionalProperties: false
+      required: [version, title, probabilityBps]
+      properties:
+        version: { type: integer, minimum: 0 }
+        title: { type: string, x-trim: true, minLength: 1, maxLength: 200 }
+        expectedCloseDate: { type: [string, 'null'], format: date }
+        estimatedAmount: { type: [string, 'null'], pattern: '^(0|[1-9][0-9]{0,14})(\.[0-9]{1,4})?$' }
+        currencyId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+        probabilityBps: { type: integer, minimum: 0, maximum: 10000 }
+    CrmLeadConvertRequest:
+      oneOf:
+      - type: object
+        additionalProperties: false
+        required: [version, mode, customerId]
+        properties:
+          version: { type: integer, minimum: 0 }
+          mode: { const: EXISTING }
+          customerId: { type: string, pattern: '^[1-9][0-9]*$' }
+      - type: object
+        additionalProperties: false
+        required: [version, mode, receivableAccountId, nameAr]
+        properties:
+          version: { type: integer, minimum: 0 }
+          mode: { const: NEW }
+          receivableAccountId: { type: string, pattern: '^[1-9][0-9]*$' }
+          nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 200 }
+          nameEn: { type: [string, 'null'], maxLength: 200 }
+          phone: { type: [string, 'null'], maxLength: 40 }
+          email: { type: [string, 'null'], format: email, maxLength: 320 }
+          taxNumber: { type: [string, 'null'], maxLength: 64 }
+    CrmOpportunityStageRequest:
+      type: object
+      additionalProperties: false
+      required: [version, stage, probabilityBps]
+      properties:
+        version: { type: integer, minimum: 0 }
+        stage: { type: string, enum: [DISCOVERY, PROPOSAL, NEGOTIATION] }
+        probabilityBps: { type: integer, minimum: 0, maximum: 10000 }
+    CrmActivityCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [parentType, parentId, type, subject, assignedEmployeeId]
+      properties:
+        parentType: { type: string, enum: [LEAD, OPPORTUNITY] }
+        parentId: { type: string, format: uuid }
+        type: { type: string, enum: [CALL, MEETING, TASK, NOTE] }
+        subject: { type: string, x-trim: true, minLength: 1, maxLength: 200 }
+        details: { type: [string, 'null'], maxLength: 1000 }
+        assignedEmployeeId: { type: string, format: uuid }
+        scheduledFor: { type: [string, 'null'], format: date-time }
+    CrmOwner:
+      type: object
+      additionalProperties: false
+      required: [id, employeeNumber, nameAr, nameEn]
+      properties:
+        id: { type: string, format: uuid }
+        employeeNumber: { type: string }
+        nameAr: { type: string }
+        nameEn: { type: [string, 'null'] }
+    CrmLead:
+      type: object
+      additionalProperties: false
+      required: [id, code, kind, displayName, contactName, phone, email, source, sourceDetails, status, owner, summary, convertedCustomerId, convertedAt, disqualificationReason, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        kind: { type: string, enum: [INDIVIDUAL, ORGANIZATION] }
+        displayName: { type: string }
+        contactName: { type: [string, 'null'] }
+        phone: { type: [string, 'null'] }
+        email: { type: [string, 'null'] }
+        source: { type: string, enum: [MANUAL, REFERRAL, WEBSITE, OTHER] }
+        sourceDetails: { type: [string, 'null'] }
+        status: { $ref: '#/components/schemas/CrmLeadStatus' }
+        owner: { oneOf: [{ $ref: '#/components/schemas/CrmOwner' }, { type: 'null' }] }
+        summary: { type: [string, 'null'] }
+        convertedCustomerId: { type: [string, 'null'] }
+        convertedAt: { type: [string, 'null'], format: date-time }
+        disqualificationReason: { type: [string, 'null'] }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CrmOpportunity:
+      type: object
+      additionalProperties: false
+      required: [id, code, leadId, customerId, title, stage, owner, expectedCloseDate, estimatedAmount, currencyId, probabilityBps, lostReason, wonAt, lostAt, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        leadId: { type: [string, 'null'] }
+        customerId: { type: [string, 'null'] }
+        title: { type: string }
+        stage: { $ref: '#/components/schemas/CrmOpportunityStage' }
+        owner: { oneOf: [{ $ref: '#/components/schemas/CrmOwner' }, { type: 'null' }] }
+        expectedCloseDate: { type: [string, 'null'], format: date }
+        estimatedAmount: { type: [string, 'null'] }
+        currencyId: { type: [string, 'null'] }
+        probabilityBps: { type: integer, minimum: 0, maximum: 10000 }
+        lostReason: { type: [string, 'null'] }
+        wonAt: { type: [string, 'null'], format: date-time }
+        lostAt: { type: [string, 'null'], format: date-time }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CrmActivity:
+      type: object
+      additionalProperties: false
+      required: [id, parentType, parentId, type, subject, details, assignee, scheduledFor, status, completedAt, cancelledAt, cancellationReason, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        parentType: { type: string, enum: [LEAD, OPPORTUNITY] }
+        parentId: { type: [string, 'null'], format: uuid }
+        type: { type: string, enum: [CALL, MEETING, TASK, NOTE] }
+        subject: { type: string }
+        details: { type: [string, 'null'] }
+        assignee: { oneOf: [{ $ref: '#/components/schemas/CrmOwner' }, { type: 'null' }] }
+        scheduledFor: { type: [string, 'null'], format: date-time }
+        status: { $ref: '#/components/schemas/CrmActivityStatus' }
+        completedAt: { type: [string, 'null'], format: date-time }
+        cancelledAt: { type: [string, 'null'], format: date-time }
+        cancellationReason: { type: [string, 'null'] }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CrmPagination:
+      type: object
+      additionalProperties: false
+      required: [page, pageSize, total, totalPages]
+      properties:
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+        total: { type: integer, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
+    CrmLeadResponse:
+      type: object
+      additionalProperties: false
+      required: [lead]
+      properties: { lead: { $ref: '#/components/schemas/CrmLead' } }
+    CrmOpportunityResponse:
+      type: object
+      additionalProperties: false
+      required: [opportunity]
+      properties: { opportunity: { $ref: '#/components/schemas/CrmOpportunity' } }
+    CrmActivityResponse:
+      type: object
+      additionalProperties: false
+      required: [activity]
+      properties: { activity: { $ref: '#/components/schemas/CrmActivity' } }
+    CrmLeadListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/CrmLead' } }
+        meta: { $ref: '#/components/schemas/CrmPagination' }
+    CrmOpportunityListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/CrmOpportunity' } }
+        meta: { $ref: '#/components/schemas/CrmPagination' }
+    CrmActivityListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/CrmActivity' } }
+        meta: { $ref: '#/components/schemas/CrmPagination' }
+    CrmOptionsResponse:
+      type: object
+      additionalProperties: false
+      required: [owners, currencies, customers]
+      properties:
+        owners: { type: array, items: { $ref: '#/components/schemas/CrmOwner' } }
+        currencies:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, code, nameAr, decimals]
+            properties:
+              id: { type: string }
+              code: { type: string }
+              nameAr: { type: string }
+              decimals: { type: integer }
+        customers:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, code, nameAr, nameEn]
+            properties:
+              id: { type: string }
+              code: { type: string }
+              nameAr: { type: string }
+              nameEn: { type: [string, 'null'] }
+    CrmPipelineResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [stage, currencyId, opportunityCount, estimatedAmount, weightedAmount]
+            properties:
+              stage: { $ref: '#/components/schemas/CrmOpportunityStage' }
+              currencyId: { type: [string, 'null'] }
+              opportunityCount: { type: integer, minimum: 0 }
+              estimatedAmount: { type: string }
+              weightedAmount: { type: string }
+    CrmConversionResponse:
+      type: object
+      additionalProperties: false
+      required: [leadId, customerId]
+      properties:
+        leadId: { type: string, format: uuid }
+        customerId: { type: string, pattern: '^[1-9][0-9]*$' }
 x-api-decisions:
   companyContext: server-side session
   documentNumberReservation: on draft creation

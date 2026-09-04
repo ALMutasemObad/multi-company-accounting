@@ -27,6 +27,7 @@ const workspaceScreens: Screen[] = [
   'subscription',
   'pos',
   'customers',
+  'crm',
   'professionalProjects',
   'humanResources',
   'sales',

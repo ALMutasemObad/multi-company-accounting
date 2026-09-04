@@ -11,6 +11,7 @@ export type View =
   | "subscription"
   | "pos"
   | "customers"
+  | "crm"
   | "professionalProjects"
   | "humanResources"
   | "sales"
@@ -52,6 +53,7 @@ export const viewPermissionPolicies: Record<TenantProtectedView, PermissionPolic
   dashboard: { permission: "dashboard.view" },
   pos: { permission: "pos.view" },
   customers: { permission: "customers.view" },
+  crm: { permission: "crm.view" },
   professionalProjects: { permission: "professional_projects.view" },
   humanResources: { allOf: ["hr.employees.view", "hr.structure.view", "hr.contracts.view"] },
   sales: { permission: "sales_invoices.view" },
@@ -82,6 +84,7 @@ export const navigationItems: NavigationItem[] = [
   { view: "subscription", icon: "calendar", label: "nav.subscription" },
   { view: "pos", icon: "wallet", label: "nav.pos", module: 'POS' },
   { view: "customers", icon: "customers", label: "nav.customers", module: 'SALES' },
+  { view: "crm", icon: "dashboard", label: "nav.crm", module: 'SALES' },
   { view: "professionalProjects", icon: "users", label: "nav.professionalProjects", module: 'PROFESSIONAL_PROJECTS' },
   { view: "humanResources", icon: "building", label: "nav.humanResources", module: 'HUMAN_RESOURCES' },
   { view: "sales", icon: "document", label: "nav.sales", module: 'SALES' },
@@ -185,7 +188,7 @@ export const systemGroups: SystemGroup[] = [
     key: "business",
     title: "home.group.business",
     description: "home.group.businessDescription",
-    modules: navigationItems.filter((item) => ["pos", "customers", "sales", "receipts", "suppliers", "purchases", "payments"].includes(item.view))
+    modules: navigationItems.filter((item) => ["pos", "customers", "crm", "sales", "receipts", "suppliers", "purchases", "payments"].includes(item.view))
       .map((item) => ({ ...item, description: `home.module.${item.view}` as TranslationKey })),
   },
   {

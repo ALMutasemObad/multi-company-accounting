@@ -13,7 +13,9 @@ export type MasterDataEntityType =
   | "PROFESSIONAL_PROJECT"
   | "HR_DEPARTMENT"
   | "HR_POSITION"
-  | "EMPLOYEE";
+  | "EMPLOYEE"
+  | "CRM_LEAD"
+  | "CRM_OPPORTUNITY";
 
 const defaults: Record<
   MasterDataEntityType,
@@ -38,6 +40,8 @@ const defaults: Record<
   HR_DEPARTMENT: { prefix: "DEP-", padding: 6 },
   HR_POSITION: { prefix: "JOB-", padding: 6 },
   EMPLOYEE: { prefix: "EMP-", padding: 6 },
+  CRM_LEAD: { prefix: "LED-", padding: 6 },
+  CRM_OPPORTUNITY: { prefix: "OPP-", padding: 6 },
 };
 
 type ReservedSequenceRow = {

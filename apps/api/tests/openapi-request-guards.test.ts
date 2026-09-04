@@ -23,7 +23,7 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 328, requestBodies: 170, responseBodies: 2199 });
+    expect(openApiContractCoverage).toEqual({ operations: 340, requestBodies: 177, responseBodies: 2262 });
     expect(openApiOperationRoutes).toMatchObject({
       'GET /pos/context/identity': 'getPosContextIdentity',
       'GET /pos/context/period': 'resolvePosContextPeriod',
@@ -31,9 +31,13 @@ describe('generated OpenAPI request guards', () => {
       'GET /pos/context/options/{field}': 'listPosContextOptions',
       'GET /sales-invoices/{id}/receipt-preview': 'getRetailReceiptPreview',
     });
-    expect(guardedOpenApiOperations).toHaveLength(170);
+    expect(guardedOpenApiOperations).toHaveLength(177);
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining(['createItemSellingProfile', 'updateItemSellingProfile']));
     expect(guardedOpenApiOperations).toContain("setPlatformSubscriptionPublicListing");
+    expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
+      'createCrmLead', 'markCrmLeadContacted', 'qualifyCrmLead', 'convertCrmLead',
+      'moveCrmOpportunityStage', 'createCrmActivity', 'completeCrmActivity',
+    ]));
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
       'login', 'upsertPlatformBillingAccount', 'createPlatformSubscriptionPlan', 'updatePlatformSubscriptionPlanDraft', 'publishPlatformSubscriptionPlanVersion', 'schedulePlatformCompanySubscriptionChange', 'requestCompanySubscriptionChange', 'issuePlatformBillingInvoice', 'recordPlatformBillingPayment', 'voidPlatformBillingInvoice', 'createUser', 'linkUserEmployee', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'initializeInventoryBalanceValuation', 'reverseInventoryMovement', 'createInventoryItemBarcode', 'updateInventoryItemBarcode', 'setPrimaryInventoryItemBarcode', 'deactivateInventoryItemBarcode', 'resolveInventoryBarcode', 'resolveInventoryBarcodeBatch', 'previewDataImport', 'commitDataImport', 'previewBankStatement', 'commitBankStatementImport', 'createBankReconciliationSession', 'generateBankReconciliationSuggestions', 'approveBankReconciliationMatch', 'createManualBankReconciliationMatch', 'releaseBankReconciliationMatch', 'classifyBankStatementLine', 'closeBankReconciliationSession', 'startFinancialCloseRun', 'refreshFinancialCloseRun', 'createApprovalRequest', 'approveApprovalRequest', 'rejectApprovalRequest', 'createProfessionalProject', 'assignProfessionalProjectMember', 'createProfessionalTimeEntry', 'createProfessionalTimesheet', 'createProfessionalServiceContract', 'endProfessionalServiceContract', 'createProfessionalServiceRate', 'endProfessionalServiceRate', 'createProfessionalBillingRun', 'updateProfessionalProjectAccess', 'grantProfessionalProjectAccess', 'revokeProfessionalProjectAccess', 'updateProfessionalProjectTimeBudget', 'createProfessionalProjectStage', 'updateProfessionalProjectStage', 'transitionProfessionalProjectStage', 'createProfessionalProjectTask', 'updateProfessionalProjectTask', 'transitionProfessionalProjectTask', 'createProfessionalProjectTaskDependency', 'removeProfessionalProjectTaskDependency', 'createHrDepartment', 'updateHrDepartment', 'createHrPosition', 'updateHrPosition', 'createEmployee', 'updateEmployee', 'transitionEmployee', 'createEmploymentContract', 'endEmploymentContract', 'returnFinancialCloseRun', 'updateCashFlowMapping',
     ]));

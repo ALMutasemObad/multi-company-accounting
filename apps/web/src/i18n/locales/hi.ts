@@ -15,8 +15,10 @@ import { hiAuthResilience } from "./auth-resilience";
 import { hiSubscriptionUsage } from "./subscription-usage";
 import { hiSubscriptionChanges } from "./subscription-changes";
 import { hiBillingRecovery } from "./billing-recovery";
+import { hiCrm } from "./crm";
 
 export const hi = {
+  ...hiCrm,
   ...hiSubscriptionChanges,
   ...hiBillingRecovery,
   ...hiAuthResilience,

@@ -29,6 +29,7 @@ const PlatformOperationsPage = lazy(() => import("./PlatformOperationsPage").the
 const PlatformSubscriptionsPage = lazy(() => import("./PlatformSubscriptionsPage").then((module) => ({ default: module.PlatformSubscriptionsPage })));
 const CompanySubscriptionPage = lazy(() => import("./CompanySubscriptionPage").then((module) => ({ default: module.CompanySubscriptionPage })));
 const CustomersPage = lazy(() => import("./CustomersPage").then((module) => ({ default: module.CustomersPage })));
+const CrmPage = lazy(() => import("./CrmPage").then((module) => ({ default: module.CrmPage })));
 const SalesInvoicesPage = lazy(() => import("./SalesInvoicesPage").then((module) => ({ default: module.SalesInvoicesPage })));
 const ReceiptsPage = lazy(() => import("./ReceiptsPage").then((module) => ({ default: module.ReceiptsPage })));
 const SuppliersPage = lazy(() => import("./SuppliersPage").then((module) => ({ default: module.SuppliersPage })));
@@ -368,6 +369,7 @@ export default function App() {
             {activeView === "subscription" && <CompanySubscriptionPage notify={notify} />}
             {activeView === "pos" && <PosPage notify={notify} />}
             {activeView === "customers" && <CustomersPage notify={notify} />}
+            {activeView === "crm" && <CrmPage notify={notify} />}
             {activeView === "professionalProjects" && <ProfessionalProjectsPage notify={notify} />}
             {activeView === "humanResources" && <HumanResourcesPage notify={notify} />}
             {activeView === "sales" && <SalesInvoicesPage notify={notify} />}

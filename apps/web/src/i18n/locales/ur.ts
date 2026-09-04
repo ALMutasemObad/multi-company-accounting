@@ -15,8 +15,10 @@ import { urAuthResilience } from "./auth-resilience";
 import { urSubscriptionUsage } from "./subscription-usage";
 import { urSubscriptionChanges } from "./subscription-changes";
 import { urBillingRecovery } from "./billing-recovery";
+import { urCrm } from "./crm";
 
 export const ur = {
+  ...urCrm,
   ...urSubscriptionChanges,
   ...urBillingRecovery,
   ...urAuthResilience,

@@ -13,6 +13,7 @@ import { createBarcodeLabelRouter } from '../src/printing/barcode-label-router.j
 import { createPurchaseInvoiceRouter } from '../src/purchases/purchase-invoice-router.js';
 import { createReceiptRouter } from '../src/receipts/receipt-router.js';
 import { createCustomerRouter } from '../src/sales/customer-router.js';
+import { createCrmRouter } from '../src/crm/crm-router.js';
 import { createReportRouter } from '../src/reports/report-router.js';
 import { createSalesInvoiceRouter } from '../src/sales/sales-invoice-router.js';
 import { createSellingProfileRouter } from '../src/sales/selling-profile-router.js';
@@ -75,6 +76,7 @@ const routers = [
   { prefix: '', router: createAccountRouter(stub, stub) },
   { prefix: '', router: createManualJournalRouter(stub, stub) },
   { prefix: '', router: createCustomerRouter(stub, stub) },
+  { prefix: '', router: createCrmRouter(stub, stub) },
   { prefix: '', router: createTreasuryRouter(stub, stub) },
   { prefix: '', router: createBankReconciliationRouter(stub, stub) },
   { prefix: '', router: createInventoryRouter(stub, stub) },

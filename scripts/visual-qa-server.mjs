@@ -41,6 +41,10 @@ const visualQaPermissions = [
   "payments.view",
   "pos.view",
   "professional_projects.view",
+  "crm.view",
+  "crm.manage",
+  "crm.activities.manage",
+  "crm.convert",
   "purchase_invoices.create",
   "purchase_invoices.view",
   "receipts.view",
@@ -361,6 +365,21 @@ const professionalTimeEntry = {
   updatedAt: "2026-08-27T10:00:00.000Z",
 };
 
+const crmOwner = { id: "813503e9-6353-4b7c-83ef-d1a2f7d15275", employeeNumber: "EMP-000014", nameAr: "نورة القحطاني", nameEn: "Noura Alqahtani" };
+const crmLeads = [
+  { id: "19e7e8dc-125a-4d67-84c0-0dbd5ca849f4", code: "LED-000041", kind: "ORGANIZATION", displayName: "مجموعة المدار الرقمية", contactName: "عمر الحربي", phone: "+966 55 901 2210", email: "omar@example.test", source: "REFERRAL", sourceDetails: null, status: "QUALIFIED", owner: crmOwner, summary: "تطوير منصة خدمة عملاء متعددة الفروع", convertedCustomerId: null, convertedAt: null, disqualificationReason: null, version: 2, createdAt: "2026-09-01T09:00:00.000Z", updatedAt: "2026-09-03T11:00:00.000Z" },
+  { id: "43254adc-39bb-45df-b7a7-366310847c40", code: "LED-000042", kind: "ORGANIZATION", displayName: "شركة روافد الإمداد", contactName: "ليان السالم", phone: "+966 55 811 2230", email: "layan@example.test", source: "WEBSITE", sourceDetails: null, status: "CONTACTED", owner: crmOwner, summary: "توحيد العمليات المالية والمخزون", convertedCustomerId: null, convertedAt: null, disqualificationReason: null, version: 1, createdAt: "2026-09-02T09:00:00.000Z", updatedAt: "2026-09-03T13:00:00.000Z" },
+  { id: "ec5eb570-eaa2-4231-85d2-4c12df1792a1", code: "LED-000043", kind: "INDIVIDUAL", displayName: "مكتب عبدالله للاستشارات", contactName: "عبدالله", phone: "+966 55 313 9000", email: null, source: "MANUAL", sourceDetails: null, status: "NEW", owner: crmOwner, summary: "متابعة أولية", convertedCustomerId: null, convertedAt: null, disqualificationReason: null, version: 0, createdAt: "2026-09-03T09:00:00.000Z", updatedAt: "2026-09-03T09:00:00.000Z" },
+];
+const crmOpportunities = [
+  { id: "158ce96b-a55d-45f0-9de0-96f817aab615", code: "OPP-000019", leadId: "19e7e8dc-125a-4d67-84c0-0dbd5ca849f4", customerId: null, title: "منصة المدار لخدمة العملاء", stage: "PROPOSAL", owner: crmOwner, expectedCloseDate: "2026-10-15", estimatedAmount: "185000.0000", currencyId: "currency-sar", probabilityBps: 6000, lostReason: null, wonAt: null, lostAt: null, version: 1, createdAt: "2026-09-01T10:00:00.000Z", updatedAt: "2026-09-03T11:00:00.000Z" },
+  { id: "6187ee51-c302-4721-80bd-34579509d3cd", code: "OPP-000018", leadId: null, customerId: "41", title: "توسعة أتمتة الفوترة", stage: "NEGOTIATION", owner: crmOwner, expectedCloseDate: "2026-09-30", estimatedAmount: "92000.0000", currencyId: "currency-sar", probabilityBps: 7500, lostReason: null, wonAt: null, lostAt: null, version: 3, createdAt: "2026-08-24T10:00:00.000Z", updatedAt: "2026-09-02T11:00:00.000Z" },
+];
+const crmActivities = [
+  { id: "1178507b-fddf-40d7-8e66-7e08a8c00e65", parentType: "OPPORTUNITY", parentId: "158ce96b-a55d-45f0-9de0-96f817aab615", type: "MEETING", subject: "مراجعة العرض التجاري مع فريق المدار", details: null, assignee: crmOwner, scheduledFor: "2026-09-06T08:30:00.000Z", status: "OPEN", completedAt: null, cancelledAt: null, cancellationReason: null, version: 0, createdAt: "2026-09-03T10:00:00.000Z", updatedAt: "2026-09-03T10:00:00.000Z" },
+  { id: "3d194e1f-e238-4b78-8937-4df8ceea9f02", parentType: "LEAD", parentId: "43254adc-39bb-45df-b7a7-366310847c40", type: "CALL", subject: "تأكيد أصحاب القرار ونطاق الفروع", details: null, assignee: crmOwner, scheduledFor: "2026-09-07T07:00:00.000Z", status: "OPEN", completedAt: null, cancelledAt: null, cancellationReason: null, version: 0, createdAt: "2026-09-03T12:00:00.000Z", updatedAt: "2026-09-03T12:00:00.000Z" },
+];
+
 const subscriptionPlanVersion = {
   id: "2101", planId: "1101", planCode: "VISUAL_BASIC", versionNumber: 1,
   displayName: "الخطة الأساسية", description: "خطة تجريبية للفحص البصري", billingCycle: "MONTHLY",
@@ -511,6 +530,16 @@ export function responseFor(url, method, headers = {}) {
   if (pathname === "/platform/companies") return { data: platformCompanies, total: platformCompanies.length, page: 1, pageSize: 25 };
   if (pathname === "/platform/billing/summary") return platformBillingSummary;
   if (pathname === "/companies/current") return company;
+  if (pathname === "/crm/options") return { owners: [crmOwner], currencies: [currency], customers: [professionalCustomer] };
+  if (pathname === "/crm/leads") return list(crmLeads);
+  if (pathname === "/crm/opportunities") return list(crmOpportunities);
+  if (pathname === "/crm/activities") return list(crmActivities);
+  if (pathname === "/crm/pipeline") return { data: [
+    { stage: "DISCOVERY", currencyId: "currency-sar", opportunityCount: 1, estimatedAmount: "48000.0000", weightedAmount: "14400.0000" },
+    { stage: "PROPOSAL", currencyId: "currency-sar", opportunityCount: 1, estimatedAmount: "185000.0000", weightedAmount: "111000.0000" },
+    { stage: "NEGOTIATION", currencyId: "currency-sar", opportunityCount: 1, estimatedAmount: "92000.0000", weightedAmount: "69000.0000" },
+    { stage: "WON", currencyId: "currency-sar", opportunityCount: 3, estimatedAmount: "260000.0000", weightedAmount: "260000.0000" },
+  ] };
   if (pathname === "/professional-projects/customer-options") return { data: [professionalCustomer] };
   if (pathname === "/professional-projects/member-options") return { data: [professionalManager] };
   if (pathname === "/professional-projects") return list([professionalProject]);

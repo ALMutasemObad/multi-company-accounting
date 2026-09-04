@@ -19,8 +19,10 @@ import { enAuthResilience } from "./auth-resilience";
 import { enSubscriptionUsage } from "./subscription-usage";
 import { enSubscriptionChanges } from "./subscription-changes";
 import { enBillingRecovery } from "./billing-recovery";
+import { enCrm } from "./crm";
 
 export const en = {
+  ...enCrm,
   ...enSubscriptionChanges,
   ...enBillingRecovery,
   ...enAuthResilience,

@@ -307,6 +307,47 @@ enum ProfessionalProjectTaskStatus {
   CANCELLED
 }
 
+enum CrmLeadKind {
+  INDIVIDUAL
+  ORGANIZATION
+}
+
+enum CrmLeadSource {
+  MANUAL
+  REFERRAL
+  WEBSITE
+  OTHER
+}
+
+enum CrmLeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  DISQUALIFIED
+  CONVERTED
+}
+
+enum CrmOpportunityStage {
+  DISCOVERY
+  PROPOSAL
+  NEGOTIATION
+  WON
+  LOST
+}
+
+enum CrmActivityType {
+  CALL
+  MEETING
+  TASK
+  NOTE
+}
+
+enum CrmActivityStatus {
+  OPEN
+  COMPLETED
+  CANCELLED
+}
+
 enum HrEmploymentType {
   FULL_TIME
   PART_TIME
@@ -549,6 +590,9 @@ model Company {
   cashFlowAccountMappings           CashFlowAccountMapping[]
   posSales                          PosSale[]
   professionalProjects              ProfessionalProject[]
+  crmLeads                          CrmLead[]
+  crmOpportunities                  CrmOpportunity[]
+  crmActivities                     CrmActivity[]
   professionalProjectMembers        ProfessionalProjectMember[]
   professionalProjectAccessGrants   ProfessionalProjectAccessGrant[]
   professionalProjectStages         ProfessionalProjectStage[]
@@ -584,93 +628,99 @@ model Company {
 }
 
 model User {
-  id                                BigInt                             @id @default(autoincrement()) @db.UnsignedBigInt
-  emailNormalized                   String                             @unique @map("email_normalized") @db.VarChar(320)
-  passwordHash                      String                             @map("password_hash") @db.VarChar(255)
-  displayName                       String                             @map("display_name") @db.VarChar(160)
-  nameEn                            String?                            @map("name_en") @db.VarChar(160)
-  isActive                          Boolean                            @default(true) @map("is_active")
-  failedLoginAttempts               Int                                @default(0) @map("failed_login_attempts") @db.UnsignedTinyInt
-  lockedUntil                       DateTime?                          @map("locked_until")
-  lastLoginAt                       DateTime?                          @map("last_login_at")
-  createdAt                         DateTime                           @default(now()) @map("created_at")
-  updatedAt                         DateTime                           @updatedAt @map("updated_at")
-  assignments                       UserCompany[]
-  sessions                          Session[]
-  idempotency                       IdempotencyRecord[]
-  auditLogs                         AuditLog[]
-  platformPlansCreated              PlatformPlan[]                     @relation("PlatformPlanCreatedBy")
-  platformPlansUpdated              PlatformPlan[]                     @relation("PlatformPlanUpdatedBy")
-  platformPlanVersionsCreated       PlatformPlanVersion[]              @relation("PlatformPlanVersionCreatedBy")
-  platformPlanVersionsUpdated       PlatformPlanVersion[]              @relation("PlatformPlanVersionUpdatedBy")
-  platformPlanVersionsPublished     PlatformPlanVersion[]              @relation("PlatformPlanVersionPublishedBy")
-  securityEvents                    SecurityEvent[]                    @relation("SecurityEventUser")
-  securityEventsAcknowledged        SecurityEvent[]                    @relation("SecurityEventAcknowledgedBy")
-  periodsClosed                     FiscalPeriod[]                     @relation("PeriodClosedBy")
-  periodsReopened                   FiscalPeriod[]                     @relation("PeriodReopenedBy")
-  documentsCreated                  AccountingDocument[]               @relation("DocumentCreatedBy")
-  documentsPosted                   AccountingDocument[]               @relation("DocumentPostedBy")
-  printArchivesCreated              DocumentPrintArchive[]             @relation("PrintArchiveCreatedBy")
-  exchangeRatesUpdated              CompanyExchangeRate[]              @relation("ExchangeRateUpdatedBy")
-  registrationRequests              RegistrationRequest[]              @relation("RegistrationUser")
-  passwordResetRequests             PasswordResetRequest[]
-  dataImportBatches                 DataImportBatch[]                  @relation("DataImportCreatedBy")
-  inventoryMovementsCreated         InventoryMovement[]                @relation("InventoryMovementCreatedBy")
-  inventoryValuationsCreated        InventoryValuationInitialization[] @relation("InventoryValuationCreatedBy")
-  bankStatementImportsCreated       BankStatementImport[]              @relation("BankStatementImportCreatedBy")
-  bankStatementLinesClassified      BankStatementLine[]                @relation("BankStatementLineClassifiedBy")
-  bankReconciliationSessionsCreated BankReconciliationSession[]        @relation("BankReconciliationSessionCreatedBy")
-  bankReconciliationSessionsClosed  BankReconciliationSession[]        @relation("BankReconciliationSessionClosedBy")
-  bankReconciliationMatchesApproved BankReconciliationMatch[]          @relation("BankReconciliationMatchApprovedBy")
-  bankReconciliationMatchesReleased BankReconciliationMatch[]          @relation("BankReconciliationMatchReleasedBy")
-  financialCloseRunsStarted         FinancialCloseRun[]                @relation("FinancialCloseRunStartedBy")
-  financialCloseRunsReviewed        FinancialCloseRun[]                @relation("FinancialCloseRunReviewedBy")
-  financialCloseRunsReturned        FinancialCloseRun[]                @relation("FinancialCloseRunReturnedBy")
-  financialCloseRunsClosed          FinancialCloseRun[]                @relation("FinancialCloseRunClosedBy")
-  approvalRequestsCreated           ApprovalRequest[]                  @relation("ApprovalRequestCreatedBy")
-  approvalDecisionsMade             ApprovalDecision[]                 @relation("ApprovalDecisionMadeBy")
-  cashFlowMappingsCreated           CashFlowAccountMapping[]           @relation("CashFlowMappingCreatedBy")
-  cashFlowMappingsUpdated           CashFlowAccountMapping[]           @relation("CashFlowMappingUpdatedBy")
-  posSalesCompleted                 PosSale[]                          @relation("PosSaleCompletedBy")
-  professionalProjectsCreated       ProfessionalProject[]              @relation("ProfessionalProjectCreatedBy")
-  professionalProjectsUpdated       ProfessionalProject[]              @relation("ProfessionalProjectUpdatedBy")
-  professionalMembersAssigned       ProfessionalProjectMember[]        @relation("ProfessionalProjectMemberAssignedBy")
-  professionalMembersUpdated        ProfessionalProjectMember[]        @relation("ProfessionalProjectMemberUpdatedBy")
-  professionalAccessGrantsGranted   ProfessionalProjectAccessGrant[]   @relation("ProfessionalProjectAccessGrantGrantedBy")
-  professionalAccessGrantsRevoked   ProfessionalProjectAccessGrant[]   @relation("ProfessionalProjectAccessGrantRevokedBy")
-  professionalAccessGrantsUpdated   ProfessionalProjectAccessGrant[]   @relation("ProfessionalProjectAccessGrantUpdatedBy")
-  hrDepartmentsCreated              HrDepartment[]                     @relation("HrDepartmentCreatedBy")
-  hrDepartmentsUpdated              HrDepartment[]                     @relation("HrDepartmentUpdatedBy")
-  hrPositionsCreated                HrPosition[]                       @relation("HrPositionCreatedBy")
-  hrPositionsUpdated                HrPosition[]                       @relation("HrPositionUpdatedBy")
-  employeesCreated                  Employee[]                         @relation("EmployeeCreatedBy")
-  employeesUpdated                  Employee[]                         @relation("EmployeeUpdatedBy")
-  employmentContractsCreated        EmploymentContract[]               @relation("EmploymentContractCreatedBy")
-  employmentContractsUpdated        EmploymentContract[]               @relation("EmploymentContractUpdatedBy")
-  employmentContractsEnded          EmploymentContract[]               @relation("EmploymentContractEndedBy")
-  professionalTimesheetSubmissions  ProfessionalTimesheetSubmission[]  @relation("ProfessionalTimesheetSubmittedBy")
-  professionalContractsCreated      ProfessionalServiceContract[]      @relation("ProfessionalContractCreatedBy")
-  professionalContractsUpdated      ProfessionalServiceContract[]      @relation("ProfessionalContractUpdatedBy")
-  professionalRatesCreated          ProfessionalServiceRate[]          @relation("ProfessionalRateCreatedBy")
-  professionalRatesUpdated          ProfessionalServiceRate[]          @relation("ProfessionalRateUpdatedBy")
-  professionalBillingRunsCreated    ProfessionalBillingRun[]           @relation("ProfessionalBillingRunCreatedBy")
-  professionalStagesCreated         ProfessionalProjectStage[]         @relation("ProfessionalProjectStageCreatedBy")
-  professionalStagesUpdated         ProfessionalProjectStage[]         @relation("ProfessionalProjectStageUpdatedBy")
-  professionalTasksCreated          ProfessionalProjectTask[]          @relation("ProfessionalProjectTaskCreatedBy")
-  professionalTasksUpdated          ProfessionalProjectTask[]          @relation("ProfessionalProjectTaskUpdatedBy")
-  professionalDependenciesCreated   ProfessionalTaskDependency[]       @relation("ProfessionalTaskDependencyCreatedBy")
-  professionalDependenciesUpdated   ProfessionalTaskDependency[]       @relation("ProfessionalTaskDependencyUpdatedBy")
-  professionalDependenciesRemoved   ProfessionalTaskDependency[]       @relation("ProfessionalTaskDependencyRemovedBy")
-  platformBillingAccountsCreated    PlatformBillingAccount[]           @relation("PlatformBillingAccountCreatedBy")
-  platformBillingAccountsUpdated    PlatformBillingAccount[]           @relation("PlatformBillingAccountUpdatedBy")
-  platformBillingInvoicesIssued     PlatformBillingInvoice[]           @relation("PlatformBillingInvoiceIssuedBy")
-  platformBillingInvoicesVoided     PlatformBillingInvoice[]           @relation("PlatformBillingInvoiceVoidedBy")
-  platformBillingPaymentsReceived   PlatformBillingPayment[]           @relation("PlatformBillingPaymentReceivedBy")
+  id                                   BigInt                             @id @default(autoincrement()) @db.UnsignedBigInt
+  emailNormalized                      String                             @unique @map("email_normalized") @db.VarChar(320)
+  passwordHash                         String                             @map("password_hash") @db.VarChar(255)
+  displayName                          String                             @map("display_name") @db.VarChar(160)
+  nameEn                               String?                            @map("name_en") @db.VarChar(160)
+  isActive                             Boolean                            @default(true) @map("is_active")
+  failedLoginAttempts                  Int                                @default(0) @map("failed_login_attempts") @db.UnsignedTinyInt
+  lockedUntil                          DateTime?                          @map("locked_until")
+  lastLoginAt                          DateTime?                          @map("last_login_at")
+  createdAt                            DateTime                           @default(now()) @map("created_at")
+  updatedAt                            DateTime                           @updatedAt @map("updated_at")
+  assignments                          UserCompany[]
+  sessions                             Session[]
+  idempotency                          IdempotencyRecord[]
+  auditLogs                            AuditLog[]
+  platformPlansCreated                 PlatformPlan[]                     @relation("PlatformPlanCreatedBy")
+  platformPlansUpdated                 PlatformPlan[]                     @relation("PlatformPlanUpdatedBy")
+  platformPlanVersionsCreated          PlatformPlanVersion[]              @relation("PlatformPlanVersionCreatedBy")
+  platformPlanVersionsUpdated          PlatformPlanVersion[]              @relation("PlatformPlanVersionUpdatedBy")
+  platformPlanVersionsPublished        PlatformPlanVersion[]              @relation("PlatformPlanVersionPublishedBy")
+  securityEvents                       SecurityEvent[]                    @relation("SecurityEventUser")
+  securityEventsAcknowledged           SecurityEvent[]                    @relation("SecurityEventAcknowledgedBy")
+  periodsClosed                        FiscalPeriod[]                     @relation("PeriodClosedBy")
+  periodsReopened                      FiscalPeriod[]                     @relation("PeriodReopenedBy")
+  documentsCreated                     AccountingDocument[]               @relation("DocumentCreatedBy")
+  documentsPosted                      AccountingDocument[]               @relation("DocumentPostedBy")
+  printArchivesCreated                 DocumentPrintArchive[]             @relation("PrintArchiveCreatedBy")
+  exchangeRatesUpdated                 CompanyExchangeRate[]              @relation("ExchangeRateUpdatedBy")
+  registrationRequests                 RegistrationRequest[]              @relation("RegistrationUser")
+  passwordResetRequests                PasswordResetRequest[]
+  dataImportBatches                    DataImportBatch[]                  @relation("DataImportCreatedBy")
+  inventoryMovementsCreated            InventoryMovement[]                @relation("InventoryMovementCreatedBy")
+  inventoryValuationsCreated           InventoryValuationInitialization[] @relation("InventoryValuationCreatedBy")
+  bankStatementImportsCreated          BankStatementImport[]              @relation("BankStatementImportCreatedBy")
+  bankStatementLinesClassified         BankStatementLine[]                @relation("BankStatementLineClassifiedBy")
+  bankReconciliationSessionsCreated    BankReconciliationSession[]        @relation("BankReconciliationSessionCreatedBy")
+  bankReconciliationSessionsClosed     BankReconciliationSession[]        @relation("BankReconciliationSessionClosedBy")
+  bankReconciliationMatchesApproved    BankReconciliationMatch[]          @relation("BankReconciliationMatchApprovedBy")
+  bankReconciliationMatchesReleased    BankReconciliationMatch[]          @relation("BankReconciliationMatchReleasedBy")
+  financialCloseRunsStarted            FinancialCloseRun[]                @relation("FinancialCloseRunStartedBy")
+  financialCloseRunsReviewed           FinancialCloseRun[]                @relation("FinancialCloseRunReviewedBy")
+  financialCloseRunsReturned           FinancialCloseRun[]                @relation("FinancialCloseRunReturnedBy")
+  financialCloseRunsClosed             FinancialCloseRun[]                @relation("FinancialCloseRunClosedBy")
+  approvalRequestsCreated              ApprovalRequest[]                  @relation("ApprovalRequestCreatedBy")
+  approvalDecisionsMade                ApprovalDecision[]                 @relation("ApprovalDecisionMadeBy")
+  cashFlowMappingsCreated              CashFlowAccountMapping[]           @relation("CashFlowMappingCreatedBy")
+  cashFlowMappingsUpdated              CashFlowAccountMapping[]           @relation("CashFlowMappingUpdatedBy")
+  posSalesCompleted                    PosSale[]                          @relation("PosSaleCompletedBy")
+  professionalProjectsCreated          ProfessionalProject[]              @relation("ProfessionalProjectCreatedBy")
+  professionalProjectsUpdated          ProfessionalProject[]              @relation("ProfessionalProjectUpdatedBy")
+  crmLeadsCreated                      CrmLead[]                          @relation("CrmLeadCreatedBy")
+  crmLeadsUpdated                      CrmLead[]                          @relation("CrmLeadUpdatedBy")
+  crmOpportunitiesCreated              CrmOpportunity[]                   @relation("CrmOpportunityCreatedBy")
+  crmOpportunitiesUpdated              CrmOpportunity[]                   @relation("CrmOpportunityUpdatedBy")
+  crmActivitiesCreated                 CrmActivity[]                      @relation("CrmActivityCreatedBy")
+  crmActivitiesUpdated                 CrmActivity[]                      @relation("CrmActivityUpdatedBy")
+  professionalMembersAssigned          ProfessionalProjectMember[]        @relation("ProfessionalProjectMemberAssignedBy")
+  professionalMembersUpdated           ProfessionalProjectMember[]        @relation("ProfessionalProjectMemberUpdatedBy")
+  professionalAccessGrantsGranted      ProfessionalProjectAccessGrant[]   @relation("ProfessionalProjectAccessGrantGrantedBy")
+  professionalAccessGrantsRevoked      ProfessionalProjectAccessGrant[]   @relation("ProfessionalProjectAccessGrantRevokedBy")
+  professionalAccessGrantsUpdated      ProfessionalProjectAccessGrant[]   @relation("ProfessionalProjectAccessGrantUpdatedBy")
+  hrDepartmentsCreated                 HrDepartment[]                     @relation("HrDepartmentCreatedBy")
+  hrDepartmentsUpdated                 HrDepartment[]                     @relation("HrDepartmentUpdatedBy")
+  hrPositionsCreated                   HrPosition[]                       @relation("HrPositionCreatedBy")
+  hrPositionsUpdated                   HrPosition[]                       @relation("HrPositionUpdatedBy")
+  employeesCreated                     Employee[]                         @relation("EmployeeCreatedBy")
+  employeesUpdated                     Employee[]                         @relation("EmployeeUpdatedBy")
+  employmentContractsCreated           EmploymentContract[]               @relation("EmploymentContractCreatedBy")
+  employmentContractsUpdated           EmploymentContract[]               @relation("EmploymentContractUpdatedBy")
+  employmentContractsEnded             EmploymentContract[]               @relation("EmploymentContractEndedBy")
+  professionalTimesheetSubmissions     ProfessionalTimesheetSubmission[]  @relation("ProfessionalTimesheetSubmittedBy")
+  professionalContractsCreated         ProfessionalServiceContract[]      @relation("ProfessionalContractCreatedBy")
+  professionalContractsUpdated         ProfessionalServiceContract[]      @relation("ProfessionalContractUpdatedBy")
+  professionalRatesCreated             ProfessionalServiceRate[]          @relation("ProfessionalRateCreatedBy")
+  professionalRatesUpdated             ProfessionalServiceRate[]          @relation("ProfessionalRateUpdatedBy")
+  professionalBillingRunsCreated       ProfessionalBillingRun[]           @relation("ProfessionalBillingRunCreatedBy")
+  professionalStagesCreated            ProfessionalProjectStage[]         @relation("ProfessionalProjectStageCreatedBy")
+  professionalStagesUpdated            ProfessionalProjectStage[]         @relation("ProfessionalProjectStageUpdatedBy")
+  professionalTasksCreated             ProfessionalProjectTask[]          @relation("ProfessionalProjectTaskCreatedBy")
+  professionalTasksUpdated             ProfessionalProjectTask[]          @relation("ProfessionalProjectTaskUpdatedBy")
+  professionalDependenciesCreated      ProfessionalTaskDependency[]       @relation("ProfessionalTaskDependencyCreatedBy")
+  professionalDependenciesUpdated      ProfessionalTaskDependency[]       @relation("ProfessionalTaskDependencyUpdatedBy")
+  professionalDependenciesRemoved      ProfessionalTaskDependency[]       @relation("ProfessionalTaskDependencyRemovedBy")
+  platformBillingAccountsCreated       PlatformBillingAccount[]           @relation("PlatformBillingAccountCreatedBy")
+  platformBillingAccountsUpdated       PlatformBillingAccount[]           @relation("PlatformBillingAccountUpdatedBy")
+  platformBillingInvoicesIssued        PlatformBillingInvoice[]           @relation("PlatformBillingInvoiceIssuedBy")
+  platformBillingInvoicesVoided        PlatformBillingInvoice[]           @relation("PlatformBillingInvoiceVoidedBy")
+  platformBillingPaymentsReceived      PlatformBillingPayment[]           @relation("PlatformBillingPaymentReceivedBy")
   platformPaymentAttemptsRequested     PlatformPaymentAttempt[]           @relation("PlatformPaymentAttemptRequestedBy")
   platformPaymentTransitionsActed      PlatformPaymentTransition[]        @relation("PlatformPaymentTransitionActor")
   platformBillingRefundsRequested      PlatformBillingRefund[]            @relation("PlatformBillingRefundRequestedBy")
-  platformSubscriptionChangesRequested PlatformSubscriptionChange[]    @relation("PlatformSubscriptionChangeRequestedBy")
-  platformSubscriptionChangesDecided   PlatformSubscriptionChange[]    @relation("PlatformSubscriptionChangeDecidedBy")
+  platformSubscriptionChangesRequested PlatformSubscriptionChange[]       @relation("PlatformSubscriptionChangeRequestedBy")
+  platformSubscriptionChangesDecided   PlatformSubscriptionChange[]       @relation("PlatformSubscriptionChangeDecidedBy")
 
   @@map("users")
 }
@@ -982,6 +1032,7 @@ model CompanyCurrency {
   currency                     Currency                      @relation(fields: [currencyId], references: [id])
   rates                        CompanyExchangeRate[]
   professionalServiceContracts ProfessionalServiceContract[]
+  crmOpportunities             CrmOpportunity[]
   itemSellingProfiles          SalesItemSellingProfile[]
 
   @@id([companyId, currencyId])
@@ -1009,18 +1060,18 @@ model CompanyExchangeRate {
 }
 
 model UserCompany {
-  userId                         BigInt                      @map("user_id") @db.UnsignedBigInt
-  companyId                      BigInt                      @map("company_id") @db.UnsignedBigInt
-  isActive                       Boolean                     @default(true) @map("is_active")
-  createdAt                      DateTime                    @default(now()) @map("created_at")
-  user                           User                        @relation(fields: [userId], references: [id])
-  company                        Company                     @relation(fields: [companyId], references: [id])
-  roles                          UserCompanyRole[]
-  professionalProjectMemberships ProfessionalProjectMember[]
+  userId                          BigInt                           @map("user_id") @db.UnsignedBigInt
+  companyId                       BigInt                           @map("company_id") @db.UnsignedBigInt
+  isActive                        Boolean                          @default(true) @map("is_active")
+  createdAt                       DateTime                         @default(now()) @map("created_at")
+  user                            User                             @relation(fields: [userId], references: [id])
+  company                         Company                          @relation(fields: [companyId], references: [id])
+  roles                           UserCompanyRole[]
+  professionalProjectMemberships  ProfessionalProjectMember[]
   professionalProjectAccessGrants ProfessionalProjectAccessGrant[]
-  professionalTimesheets         ProfessionalTimesheet[]
-  professionalServiceRates       ProfessionalServiceRate[]
-  employee                       Employee?
+  professionalTimesheets          ProfessionalTimesheet[]
+  professionalServiceRates        ProfessionalServiceRate[]
+  employee                        Employee?
 
   @@id([userId, companyId])
   @@index([companyId])
@@ -1398,37 +1449,37 @@ model AccountType {
 }
 
 model Account {
-  id                       BigInt                   @id @default(autoincrement()) @db.UnsignedBigInt
-  companyId                BigInt                   @map("company_id") @db.UnsignedBigInt
-  accountTypeId            BigInt                   @map("account_type_id") @db.UnsignedBigInt
-  parentAccountId          BigInt?                  @map("parent_account_id") @db.UnsignedBigInt
-  code                     String                   @db.VarChar(40)
-  nameAr                   String                   @map("name_ar") @db.VarChar(180)
-  nameEn                   String?                  @map("name_en") @db.VarChar(180)
-  level                    Int                      @db.UnsignedTinyInt
-  allowsPosting            Boolean                  @map("allows_posting")
-  isControlAccount         Boolean                  @default(false) @map("is_control_account")
-  isActive                 Boolean                  @default(true) @map("is_active")
-  sourceTemplateCode       String?                  @map("source_template_code") @db.VarChar(80)
-  sourceTemplateKey        String?                  @map("source_template_key") @db.VarChar(80)
-  createdAt                DateTime                 @default(now()) @map("created_at")
-  updatedAt                DateTime                 @updatedAt @map("updated_at")
-  company                  Company                  @relation(fields: [companyId], references: [id])
-  accountType              AccountType              @relation(fields: [accountTypeId], references: [id])
-  parent                   Account?                 @relation("AccountTree", fields: [parentAccountId, companyId], references: [id, companyId])
-  children                 Account[]                @relation("AccountTree")
+  id                       BigInt                    @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId                BigInt                    @map("company_id") @db.UnsignedBigInt
+  accountTypeId            BigInt                    @map("account_type_id") @db.UnsignedBigInt
+  parentAccountId          BigInt?                   @map("parent_account_id") @db.UnsignedBigInt
+  code                     String                    @db.VarChar(40)
+  nameAr                   String                    @map("name_ar") @db.VarChar(180)
+  nameEn                   String?                   @map("name_en") @db.VarChar(180)
+  level                    Int                       @db.UnsignedTinyInt
+  allowsPosting            Boolean                   @map("allows_posting")
+  isControlAccount         Boolean                   @default(false) @map("is_control_account")
+  isActive                 Boolean                   @default(true) @map("is_active")
+  sourceTemplateCode       String?                   @map("source_template_code") @db.VarChar(80)
+  sourceTemplateKey        String?                   @map("source_template_key") @db.VarChar(80)
+  createdAt                DateTime                  @default(now()) @map("created_at")
+  updatedAt                DateTime                  @updatedAt @map("updated_at")
+  company                  Company                   @relation(fields: [companyId], references: [id])
+  accountType              AccountType               @relation(fields: [accountTypeId], references: [id])
+  parent                   Account?                  @relation("AccountTree", fields: [parentAccountId, companyId], references: [id, companyId])
+  children                 Account[]                 @relation("AccountTree")
   journalLines             JournalLine[]
   customers                Customer[]
   cashBankAccounts         CashBankAccount[]
-  receiptCounterAccounts   Receipt[]                @relation("ReceiptCounterAccount")
+  receiptCounterAccounts   Receipt[]                 @relation("ReceiptCounterAccount")
   suppliers                Supplier[]
-  paymentCounterAccounts   Payment[]                @relation("PaymentCounterAccount")
-  outputTaxRates           TaxRate[]                @relation("OutputTaxAccount")
-  inputTaxRates            TaxRate[]                @relation("InputTaxAccount")
-  salesInvoiceLines        SalesInvoiceLine[]       @relation("SalesRevenueAccount")
+  paymentCounterAccounts   Payment[]                 @relation("PaymentCounterAccount")
+  outputTaxRates           TaxRate[]                 @relation("OutputTaxAccount")
+  inputTaxRates            TaxRate[]                 @relation("InputTaxAccount")
+  salesInvoiceLines        SalesInvoiceLine[]        @relation("SalesRevenueAccount")
   itemSellingProfiles      SalesItemSellingProfile[]
-  purchaseInvoiceLines     PurchaseInvoiceLine[]    @relation("PurchaseDebitAccount")
-  inventoryOffsetMovements InventoryMovement[]      @relation("InventoryMovementOffsetAccount")
+  purchaseInvoiceLines     PurchaseInvoiceLine[]     @relation("PurchaseDebitAccount")
+  inventoryOffsetMovements InventoryMovement[]       @relation("InventoryMovementOffsetAccount")
   cashFlowMappings         CashFlowAccountMapping[]
 
   @@unique([companyId, code])
@@ -1504,6 +1555,8 @@ model Customer {
   salesInvoices        SalesInvoice[]
   receivableItems      ReceivableItem[]
   professionalProjects ProfessionalProject[]
+  crmLeads             CrmLead[]
+  crmOpportunities     CrmOpportunity[]
 
   @@unique([companyId, code])
   @@unique([id, companyId])
@@ -1531,33 +1584,150 @@ model CustomerAddress {
   @@map("customer_addresses")
 }
 
+model CrmLead {
+  id                     BigInt          @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId               String          @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId              BigInt          @map("company_id") @db.UnsignedBigInt
+  code                   String          @db.VarChar(40)
+  kind                   CrmLeadKind
+  displayName            String          @map("display_name") @db.VarChar(200)
+  contactName            String?         @map("contact_name") @db.VarChar(160)
+  phone                  String?         @db.VarChar(40)
+  email                  String?         @db.VarChar(320)
+  source                 CrmLeadSource
+  sourceDetails          String?         @map("source_details") @db.VarChar(500)
+  status                 CrmLeadStatus   @default(NEW)
+  ownerEmployeeId        BigInt          @map("owner_employee_id") @db.UnsignedBigInt
+  summary                String?         @db.VarChar(1000)
+  convertedCustomerId    BigInt?         @map("converted_customer_id") @db.UnsignedBigInt
+  convertedAt            DateTime?       @map("converted_at")
+  disqualificationReason String?         @map("disqualification_reason") @db.VarChar(500)
+  version                Int             @default(0) @db.UnsignedInt
+  createdById            BigInt          @map("created_by_id") @db.UnsignedBigInt
+  updatedById            BigInt          @map("updated_by_id") @db.UnsignedBigInt
+  createdAt              DateTime        @default(now()) @map("created_at")
+  updatedAt              DateTime        @updatedAt @map("updated_at")
+  company                Company         @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  owner                  Employee        @relation("CrmLeadOwner", fields: [ownerEmployeeId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  convertedCustomer      Customer?       @relation(fields: [convertedCustomerId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  createdBy              User            @relation("CrmLeadCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy              User            @relation("CrmLeadUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  opportunity            CrmOpportunity?
+  activities             CrmActivity[]
+
+  @@unique([companyId, code])
+  @@unique([id, companyId])
+  @@index([companyId, status, createdAt, id])
+  @@index([companyId, ownerEmployeeId, status, id])
+  @@index([companyId, displayName, id])
+  @@index([companyId, convertedCustomerId])
+  @@map("crm_leads")
+}
+
+model CrmOpportunity {
+  id                BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId          String               @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId         BigInt               @map("company_id") @db.UnsignedBigInt
+  code              String               @db.VarChar(40)
+  leadId            BigInt?              @map("lead_id") @db.UnsignedBigInt
+  customerId        BigInt?              @map("customer_id") @db.UnsignedBigInt
+  title             String               @db.VarChar(200)
+  stage             CrmOpportunityStage  @default(DISCOVERY)
+  previousOpenStage CrmOpportunityStage? @map("previous_open_stage")
+  ownerEmployeeId   BigInt               @map("owner_employee_id") @db.UnsignedBigInt
+  expectedCloseDate DateTime?            @map("expected_close_date") @db.Date
+  estimatedAmount   Decimal?             @map("estimated_amount") @db.Decimal(19, 4)
+  currencyId        BigInt?              @map("currency_id") @db.UnsignedBigInt
+  probabilityBps    Int                  @default(0) @map("probability_bps") @db.UnsignedSmallInt
+  lostReason        String?              @map("lost_reason") @db.VarChar(500)
+  wonAt             DateTime?            @map("won_at")
+  lostAt            DateTime?            @map("lost_at")
+  version           Int                  @default(0) @db.UnsignedInt
+  createdById       BigInt               @map("created_by_id") @db.UnsignedBigInt
+  updatedById       BigInt               @map("updated_by_id") @db.UnsignedBigInt
+  createdAt         DateTime             @default(now()) @map("created_at")
+  updatedAt         DateTime             @updatedAt @map("updated_at")
+  company           Company              @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  lead              CrmLead?             @relation(fields: [leadId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  customer          Customer?            @relation(fields: [customerId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  owner             Employee             @relation("CrmOpportunityOwner", fields: [ownerEmployeeId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  currency          CompanyCurrency?     @relation(fields: [companyId, currencyId], references: [companyId, currencyId], onDelete: Restrict, onUpdate: Restrict)
+  createdBy         User                 @relation("CrmOpportunityCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy         User                 @relation("CrmOpportunityUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  activities        CrmActivity[]
+
+  @@unique([companyId, code])
+  @@unique([id, companyId])
+  @@unique([leadId, companyId])
+  @@index([companyId, stage, expectedCloseDate, id])
+  @@index([companyId, ownerEmployeeId, stage, id])
+  @@index([companyId, customerId, stage, id])
+  @@index([companyId, currencyId, stage, id])
+  @@map("crm_opportunities")
+}
+
+model CrmActivity {
+  id                 BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId           String            @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId          BigInt            @map("company_id") @db.UnsignedBigInt
+  leadId             BigInt?           @map("lead_id") @db.UnsignedBigInt
+  opportunityId      BigInt?           @map("opportunity_id") @db.UnsignedBigInt
+  type               CrmActivityType
+  subject            String            @db.VarChar(200)
+  details            String?           @db.VarChar(1000)
+  assignedEmployeeId BigInt            @map("assigned_employee_id") @db.UnsignedBigInt
+  scheduledFor       DateTime?         @map("scheduled_for")
+  status             CrmActivityStatus @default(OPEN)
+  completedAt        DateTime?         @map("completed_at")
+  cancelledAt        DateTime?         @map("cancelled_at")
+  cancellationReason String?           @map("cancellation_reason") @db.VarChar(500)
+  version            Int               @default(0) @db.UnsignedInt
+  createdById        BigInt            @map("created_by_id") @db.UnsignedBigInt
+  updatedById        BigInt            @map("updated_by_id") @db.UnsignedBigInt
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
+  company            Company           @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  lead               CrmLead?          @relation(fields: [leadId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  opportunity        CrmOpportunity?   @relation(fields: [opportunityId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  assignee           Employee          @relation("CrmActivityAssignee", fields: [assignedEmployeeId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  createdBy          User              @relation("CrmActivityCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy          User              @relation("CrmActivityUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([id, companyId])
+  @@index([companyId, status, scheduledFor, id])
+  @@index([companyId, assignedEmployeeId, status, scheduledFor, id])
+  @@index([companyId, leadId, createdAt, id])
+  @@index([companyId, opportunityId, createdAt, id])
+  @@map("crm_activities")
+}
+
 model ProfessionalProject {
-  id                BigInt                          @id @default(autoincrement()) @db.UnsignedBigInt
-  publicId          String                          @unique @default(uuid()) @map("public_id") @db.Char(36)
-  companyId         BigInt                          @map("company_id") @db.UnsignedBigInt
-  customerId        BigInt                          @map("customer_id") @db.UnsignedBigInt
-  code              String                          @db.VarChar(40)
-  nameAr            String                          @map("name_ar") @db.VarChar(200)
-  nameEn            String?                         @map("name_en") @db.VarChar(200)
+  id                BigInt                           @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId          String                           @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId         BigInt                           @map("company_id") @db.UnsignedBigInt
+  customerId        BigInt                           @map("customer_id") @db.UnsignedBigInt
+  code              String                           @db.VarChar(40)
+  nameAr            String                           @map("name_ar") @db.VarChar(200)
+  nameEn            String?                          @map("name_en") @db.VarChar(200)
   kind              ProfessionalProjectKind
-  billingModel      ProfessionalProjectBillingModel @map("billing_model")
-  status            ProfessionalProjectStatus       @default(ACTIVE)
-  startDate         DateTime                        @map("start_date") @db.Date
-  targetEndDate     DateTime?                       @map("target_end_date") @db.Date
-  timeBudgetMinutes Int?                            @map("time_budget_minutes") @db.UnsignedInt
-  planningVersion   Int                             @default(0) @map("planning_version") @db.UnsignedInt
-  accessMode        ProfessionalProjectAccessMode   @default(COMPANY) @map("access_mode")
-  accessVersion     Int                             @default(0) @map("access_version") @db.UnsignedInt
-  description       String?                         @db.VarChar(1000)
-  version           Int                             @default(0) @db.UnsignedInt
-  createdById       BigInt                          @map("created_by_id") @db.UnsignedBigInt
-  updatedById       BigInt                          @map("updated_by_id") @db.UnsignedBigInt
-  createdAt         DateTime                        @default(now()) @map("created_at")
-  updatedAt         DateTime                        @updatedAt @map("updated_at")
-  company           Company                         @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  customer          Customer                        @relation(fields: [customerId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
-  createdBy         User                            @relation("ProfessionalProjectCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  updatedBy         User                            @relation("ProfessionalProjectUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  billingModel      ProfessionalProjectBillingModel  @map("billing_model")
+  status            ProfessionalProjectStatus        @default(ACTIVE)
+  startDate         DateTime                         @map("start_date") @db.Date
+  targetEndDate     DateTime?                        @map("target_end_date") @db.Date
+  timeBudgetMinutes Int?                             @map("time_budget_minutes") @db.UnsignedInt
+  planningVersion   Int                              @default(0) @map("planning_version") @db.UnsignedInt
+  accessMode        ProfessionalProjectAccessMode    @default(COMPANY) @map("access_mode")
+  accessVersion     Int                              @default(0) @map("access_version") @db.UnsignedInt
+  description       String?                          @db.VarChar(1000)
+  version           Int                              @default(0) @db.UnsignedInt
+  createdById       BigInt                           @map("created_by_id") @db.UnsignedBigInt
+  updatedById       BigInt                           @map("updated_by_id") @db.UnsignedBigInt
+  createdAt         DateTime                         @default(now()) @map("created_at")
+  updatedAt         DateTime                         @updatedAt @map("updated_at")
+  company           Company                          @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  customer          Customer                         @relation(fields: [customerId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  createdBy         User                             @relation("ProfessionalProjectCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy         User                             @relation("ProfessionalProjectUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
   members           ProfessionalProjectMember[]
   accessGrants      ProfessionalProjectAccessGrant[]
   stages            ProfessionalProjectStage[]
@@ -1971,36 +2141,39 @@ model HrPosition {
 }
 
 model Employee {
-  id                 BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
-  publicId           String               @unique @default(uuid()) @map("public_id") @db.Char(36)
-  companyId          BigInt               @map("company_id") @db.UnsignedBigInt
-  userId             BigInt?              @map("user_id") @db.UnsignedBigInt
-  departmentId       BigInt?              @map("department_id") @db.UnsignedBigInt
-  positionId         BigInt?              @map("position_id") @db.UnsignedBigInt
-  managerEmployeeId  BigInt?              @map("manager_employee_id") @db.UnsignedBigInt
-  employeeNumber     String               @map("employee_number") @db.VarChar(40)
-  nameAr             String               @map("name_ar") @db.VarChar(160)
-  nameEn             String?              @map("name_en") @db.VarChar(160)
-  employmentType     HrEmploymentType     @map("employment_type")
-  status             HrEmploymentStatus   @default(ACTIVE)
-  hireDate           DateTime             @map("hire_date") @db.Date
-  terminationDate    DateTime?            @map("termination_date") @db.Date
-  terminationReason  String?              @map("termination_reason") @db.VarChar(500)
-  workLocation       String?              @map("work_location") @db.VarChar(160)
-  version            Int                  @default(0) @db.UnsignedInt
-  createdById        BigInt               @map("created_by_id") @db.UnsignedBigInt
-  updatedById        BigInt               @map("updated_by_id") @db.UnsignedBigInt
-  createdAt          DateTime             @default(now()) @map("created_at")
-  updatedAt          DateTime             @updatedAt @map("updated_at")
-  company            Company              @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  identityAssignment UserCompany?         @relation(fields: [userId, companyId], references: [userId, companyId], onDelete: Restrict, onUpdate: Restrict)
-  department         HrDepartment?        @relation(fields: [departmentId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
-  position           HrPosition?          @relation(fields: [positionId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
-  manager            Employee?            @relation("EmployeeManager", fields: [managerEmployeeId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
-  directReports      Employee[]           @relation("EmployeeManager")
-  contracts          EmploymentContract[]
-  createdBy          User                 @relation("EmployeeCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  updatedBy          User                 @relation("EmployeeUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  id                    BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId              String               @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId             BigInt               @map("company_id") @db.UnsignedBigInt
+  userId                BigInt?              @map("user_id") @db.UnsignedBigInt
+  departmentId          BigInt?              @map("department_id") @db.UnsignedBigInt
+  positionId            BigInt?              @map("position_id") @db.UnsignedBigInt
+  managerEmployeeId     BigInt?              @map("manager_employee_id") @db.UnsignedBigInt
+  employeeNumber        String               @map("employee_number") @db.VarChar(40)
+  nameAr                String               @map("name_ar") @db.VarChar(160)
+  nameEn                String?              @map("name_en") @db.VarChar(160)
+  employmentType        HrEmploymentType     @map("employment_type")
+  status                HrEmploymentStatus   @default(ACTIVE)
+  hireDate              DateTime             @map("hire_date") @db.Date
+  terminationDate       DateTime?            @map("termination_date") @db.Date
+  terminationReason     String?              @map("termination_reason") @db.VarChar(500)
+  workLocation          String?              @map("work_location") @db.VarChar(160)
+  version               Int                  @default(0) @db.UnsignedInt
+  createdById           BigInt               @map("created_by_id") @db.UnsignedBigInt
+  updatedById           BigInt               @map("updated_by_id") @db.UnsignedBigInt
+  createdAt             DateTime             @default(now()) @map("created_at")
+  updatedAt             DateTime             @updatedAt @map("updated_at")
+  company               Company              @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  identityAssignment    UserCompany?         @relation(fields: [userId, companyId], references: [userId, companyId], onDelete: Restrict, onUpdate: Restrict)
+  department            HrDepartment?        @relation(fields: [departmentId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  position              HrPosition?          @relation(fields: [positionId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  manager               Employee?            @relation("EmployeeManager", fields: [managerEmployeeId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  directReports         Employee[]           @relation("EmployeeManager")
+  contracts             EmploymentContract[]
+  createdBy             User                 @relation("EmployeeCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy             User                 @relation("EmployeeUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  crmLeadsOwned         CrmLead[]            @relation("CrmLeadOwner")
+  crmOpportunitiesOwned CrmOpportunity[]     @relation("CrmOpportunityOwner")
+  crmActivitiesAssigned CrmActivity[]        @relation("CrmActivityAssignee")
 
   @@unique([companyId, employeeNumber])
   @@unique([userId, companyId])
@@ -2116,19 +2289,19 @@ model UnitOfMeasure {
 }
 
 model InventoryItem {
-  id                   BigInt                  @id @default(autoincrement()) @db.UnsignedBigInt
-  companyId            BigInt                  @map("company_id") @db.UnsignedBigInt
-  unitOfMeasureId      BigInt                  @map("unit_of_measure_id") @db.UnsignedBigInt
-  code                 String                  @db.VarChar(40)
-  nameAr               String                  @map("name_ar") @db.VarChar(200)
-  nameEn               String?                 @map("name_en") @db.VarChar(200)
-  description          String?                 @db.VarChar(500)
-  isActive             Boolean                 @default(true) @map("is_active")
-  version              Int                     @default(0) @db.UnsignedInt
-  createdAt            DateTime                @default(now()) @map("created_at")
-  updatedAt            DateTime                @updatedAt @map("updated_at")
-  company              Company                 @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  unitOfMeasure        UnitOfMeasure           @relation(fields: [unitOfMeasureId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  id                   BigInt                    @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId            BigInt                    @map("company_id") @db.UnsignedBigInt
+  unitOfMeasureId      BigInt                    @map("unit_of_measure_id") @db.UnsignedBigInt
+  code                 String                    @db.VarChar(40)
+  nameAr               String                    @map("name_ar") @db.VarChar(200)
+  nameEn               String?                   @map("name_en") @db.VarChar(200)
+  description          String?                   @db.VarChar(500)
+  isActive             Boolean                   @default(true) @map("is_active")
+  version              Int                       @default(0) @db.UnsignedInt
+  createdAt            DateTime                  @default(now()) @map("created_at")
+  updatedAt            DateTime                  @updatedAt @map("updated_at")
+  company              Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  unitOfMeasure        UnitOfMeasure             @relation(fields: [unitOfMeasureId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
   salesInvoiceLines    SalesInvoiceLine[]
   purchaseInvoiceLines PurchaseInvoiceLine[]
   movementLines        InventoryMovementLine[]
@@ -2144,20 +2317,20 @@ model InventoryItem {
 }
 
 model InventoryItemBarcode {
-  id                     BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
-  companyId              BigInt                     @map("company_id") @db.UnsignedBigInt
-  inventoryItemId        BigInt                     @map("inventory_item_id") @db.UnsignedBigInt
+  id                     BigInt                    @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId              BigInt                    @map("company_id") @db.UnsignedBigInt
+  inventoryItemId        BigInt                    @map("inventory_item_id") @db.UnsignedBigInt
   symbology              InventoryBarcodeSymbology
-  value                   String                     @db.VarChar(255)
-  normalizedValue        String                     @map("normalized_value") @db.VarChar(255)
-  isPrimary              Boolean                    @default(false) @map("is_primary")
-  primaryInventoryItemId BigInt?                    @map("primary_inventory_item_id") @db.UnsignedBigInt
-  isActive               Boolean                    @default(true) @map("is_active")
-  version                 Int                        @default(0) @db.UnsignedInt
-  createdAt               DateTime                   @default(now()) @map("created_at")
-  updatedAt               DateTime                   @updatedAt @map("updated_at")
-  company                 Company                    @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  inventoryItem           InventoryItem              @relation(fields: [inventoryItemId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict, map: "inventory_item_barcodes_inventory_item_id_company_id_fkey")
+  value                  String                    @db.VarChar(255)
+  normalizedValue        String                    @map("normalized_value") @db.VarChar(255)
+  isPrimary              Boolean                   @default(false) @map("is_primary")
+  primaryInventoryItemId BigInt?                   @map("primary_inventory_item_id") @db.UnsignedBigInt
+  isActive               Boolean                   @default(true) @map("is_active")
+  version                Int                       @default(0) @db.UnsignedInt
+  createdAt              DateTime                  @default(now()) @map("created_at")
+  updatedAt              DateTime                  @updatedAt @map("updated_at")
+  company                Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  inventoryItem          InventoryItem             @relation(fields: [inventoryItemId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict, map: "inventory_item_barcodes_inventory_item_id_company_id_fkey")
 
   @@unique([id, companyId], map: "inventory_barcodes_id_company_key")
   @@unique([companyId, normalizedValue], map: "inventory_barcodes_company_normalized_key")
@@ -2360,20 +2533,20 @@ model ReceiptAllocation {
 }
 
 model TaxRate {
-  id                   BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
-  companyId            BigInt                @map("company_id") @db.UnsignedBigInt
-  outputTaxAccountId   BigInt?               @map("output_tax_account_id") @db.UnsignedBigInt
-  inputTaxAccountId    BigInt?               @map("input_tax_account_id") @db.UnsignedBigInt
-  code                 String                @db.VarChar(40)
-  nameAr               String                @map("name_ar") @db.VarChar(120)
-  rate                 Decimal               @db.Decimal(9, 4)
-  isActive             Boolean               @default(true) @map("is_active")
-  version              Int                   @default(0) @db.UnsignedInt
-  createdAt            DateTime              @default(now()) @map("created_at")
-  updatedAt            DateTime              @updatedAt @map("updated_at")
-  company              Company               @relation(fields: [companyId], references: [id])
-  outputTaxAccount     Account?              @relation("OutputTaxAccount", fields: [outputTaxAccountId, companyId], references: [id, companyId])
-  inputTaxAccount      Account?              @relation("InputTaxAccount", fields: [inputTaxAccountId, companyId], references: [id, companyId])
+  id                   BigInt                    @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId            BigInt                    @map("company_id") @db.UnsignedBigInt
+  outputTaxAccountId   BigInt?                   @map("output_tax_account_id") @db.UnsignedBigInt
+  inputTaxAccountId    BigInt?                   @map("input_tax_account_id") @db.UnsignedBigInt
+  code                 String                    @db.VarChar(40)
+  nameAr               String                    @map("name_ar") @db.VarChar(120)
+  rate                 Decimal                   @db.Decimal(9, 4)
+  isActive             Boolean                   @default(true) @map("is_active")
+  version              Int                       @default(0) @db.UnsignedInt
+  createdAt            DateTime                  @default(now()) @map("created_at")
+  updatedAt            DateTime                  @updatedAt @map("updated_at")
+  company              Company                   @relation(fields: [companyId], references: [id])
+  outputTaxAccount     Account?                  @relation("OutputTaxAccount", fields: [outputTaxAccountId, companyId], references: [id, companyId])
+  inputTaxAccount      Account?                  @relation("InputTaxAccount", fields: [inputTaxAccountId, companyId], references: [id, companyId])
   invoiceLines         SalesInvoiceLine[]
   itemSellingProfiles  SalesItemSellingProfile[]
   purchaseInvoiceLines PurchaseInvoiceLine[]
@@ -2741,32 +2914,32 @@ model PaymentAllocation {
 }
 
 model PlatformBillingAccount {
-  id                                 BigInt                       @id @default(autoincrement()) @db.UnsignedBigInt
-  companyId                          BigInt                       @unique @map("company_id") @db.UnsignedBigInt
-  status                             PlatformBillingAccountStatus @default(TRIAL)
-  planName                           String                       @map("plan_name") @db.VarChar(160)
-  billingCycle                       PlatformBillingCycle         @default(MONTHLY) @map("billing_cycle")
-  currencyCode                       String                       @map("currency_code") @db.Char(3)
-  recurringFee                       Decimal                      @default(0) @map("recurring_fee") @db.Decimal(19, 4)
-  includedUsers                      Int                          @default(0) @map("included_users") @db.UnsignedInt
-  pricePerAdditionalUser             Decimal                      @default(0) @map("price_per_additional_user") @db.Decimal(19, 4)
-  includedEmployees                  Int                          @default(0) @map("included_employees") @db.UnsignedInt
-  pricePerAdditionalEmployee         Decimal                      @default(0) @map("price_per_additional_employee") @db.Decimal(19, 4)
-  includedPostedDocuments            Int                          @default(0) @map("included_posted_documents") @db.UnsignedInt
-  pricePerAdditionalPostedDocument   Decimal                      @default(0) @map("price_per_additional_posted_document") @db.Decimal(19, 4)
-  taxRate                            Decimal                      @default(0) @map("tax_rate") @db.Decimal(9, 4)
-  paymentTermsDays                   Int                          @default(0) @map("payment_terms_days") @db.UnsignedSmallInt
-  nextBillingDate                    DateTime?                    @map("next_billing_date") @db.Date
-  notes                              String?                      @db.VarChar(1000)
-  version                            Int                          @default(0) @db.UnsignedInt
-  createdById                        BigInt                       @map("created_by_id") @db.UnsignedBigInt
-  updatedById                        BigInt                       @map("updated_by_id") @db.UnsignedBigInt
-  createdAt                          DateTime                     @default(now()) @map("created_at")
-  updatedAt                          DateTime                     @updatedAt @map("updated_at")
-  company                            Company                      @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  createdBy                          User                         @relation("PlatformBillingAccountCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  updatedBy                          User                         @relation("PlatformBillingAccountUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  invoices                           PlatformBillingInvoice[]
+  id                               BigInt                       @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId                        BigInt                       @unique @map("company_id") @db.UnsignedBigInt
+  status                           PlatformBillingAccountStatus @default(TRIAL)
+  planName                         String                       @map("plan_name") @db.VarChar(160)
+  billingCycle                     PlatformBillingCycle         @default(MONTHLY) @map("billing_cycle")
+  currencyCode                     String                       @map("currency_code") @db.Char(3)
+  recurringFee                     Decimal                      @default(0) @map("recurring_fee") @db.Decimal(19, 4)
+  includedUsers                    Int                          @default(0) @map("included_users") @db.UnsignedInt
+  pricePerAdditionalUser           Decimal                      @default(0) @map("price_per_additional_user") @db.Decimal(19, 4)
+  includedEmployees                Int                          @default(0) @map("included_employees") @db.UnsignedInt
+  pricePerAdditionalEmployee       Decimal                      @default(0) @map("price_per_additional_employee") @db.Decimal(19, 4)
+  includedPostedDocuments          Int                          @default(0) @map("included_posted_documents") @db.UnsignedInt
+  pricePerAdditionalPostedDocument Decimal                      @default(0) @map("price_per_additional_posted_document") @db.Decimal(19, 4)
+  taxRate                          Decimal                      @default(0) @map("tax_rate") @db.Decimal(9, 4)
+  paymentTermsDays                 Int                          @default(0) @map("payment_terms_days") @db.UnsignedSmallInt
+  nextBillingDate                  DateTime?                    @map("next_billing_date") @db.Date
+  notes                            String?                      @db.VarChar(1000)
+  version                          Int                          @default(0) @db.UnsignedInt
+  createdById                      BigInt                       @map("created_by_id") @db.UnsignedBigInt
+  updatedById                      BigInt                       @map("updated_by_id") @db.UnsignedBigInt
+  createdAt                        DateTime                     @default(now()) @map("created_at")
+  updatedAt                        DateTime                     @updatedAt @map("updated_at")
+  company                          Company                      @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  createdBy                        User                         @relation("PlatformBillingAccountCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy                        User                         @relation("PlatformBillingAccountUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  invoices                         PlatformBillingInvoice[]
 
   @@unique([id, companyId])
   @@index([status, nextBillingDate])
@@ -2775,46 +2948,46 @@ model PlatformBillingAccount {
 }
 
 model PlatformBillingInvoice {
-  id                    BigInt                      @id @default(autoincrement()) @db.UnsignedBigInt
-  publicId              String                      @unique @default(uuid()) @map("public_id") @db.Char(36)
-  companyId             BigInt                      @map("company_id") @db.UnsignedBigInt
-  billingAccountId      BigInt                      @map("billing_account_id") @db.UnsignedBigInt
+  id                      BigInt                       @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId                String                       @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId               BigInt                       @map("company_id") @db.UnsignedBigInt
+  billingAccountId        BigInt                       @map("billing_account_id") @db.UnsignedBigInt
   subscriptionId          BigInt?                      @map("subscription_id") @db.UnsignedBigInt
   planVersionId           BigInt?                      @map("plan_version_id") @db.UnsignedBigInt
   subscriptionChangeId    BigInt?                      @map("subscription_change_id") @db.UnsignedBigInt
   planDisplayNameSnapshot String?                      @map("plan_display_name_snapshot") @db.VarChar(160)
-  invoiceNumber         String                      @unique @map("invoice_number") @db.VarChar(60)
-  state                 PlatformBillingInvoiceState @default(ISSUED)
-  periodStart           DateTime                    @map("period_start") @db.Date
-  periodEnd             DateTime                    @map("period_end") @db.Date
-  issueDate             DateTime                    @map("issue_date") @db.Date
-  dueDate               DateTime                    @map("due_date") @db.Date
-  currencyCode          String                      @map("currency_code") @db.Char(3)
-  usageUsers            Int                         @map("usage_users") @db.UnsignedInt
-  usageEmployees        Int                         @map("usage_employees") @db.UnsignedInt
-  usagePostedDocuments  Int                         @map("usage_posted_documents") @db.UnsignedInt
-  usageOperations       Int                         @map("usage_operations") @db.UnsignedInt
-  subtotal              Decimal                     @db.Decimal(19, 4)
-  taxRateSnapshot       Decimal                     @map("tax_rate_snapshot") @db.Decimal(9, 4)
-  taxAmount             Decimal                     @map("tax_amount") @db.Decimal(19, 4)
-  totalAmount           Decimal                     @map("total_amount") @db.Decimal(19, 4)
-  notes                 String?                     @db.VarChar(1000)
-  version               Int                         @default(0) @db.UnsignedInt
-  issuedById            BigInt                      @map("issued_by_id") @db.UnsignedBigInt
-  voidedById            BigInt?                     @map("voided_by_id") @db.UnsignedBigInt
-  voidedAt              DateTime?                   @map("voided_at")
-  voidReason            String?                     @map("void_reason") @db.VarChar(500)
-  createdAt             DateTime                    @default(now()) @map("created_at")
-  updatedAt             DateTime                    @updatedAt @map("updated_at")
-  company               Company                     @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  billingAccount        PlatformBillingAccount      @relation(fields: [billingAccountId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  invoiceNumber           String                       @unique @map("invoice_number") @db.VarChar(60)
+  state                   PlatformBillingInvoiceState  @default(ISSUED)
+  periodStart             DateTime                     @map("period_start") @db.Date
+  periodEnd               DateTime                     @map("period_end") @db.Date
+  issueDate               DateTime                     @map("issue_date") @db.Date
+  dueDate                 DateTime                     @map("due_date") @db.Date
+  currencyCode            String                       @map("currency_code") @db.Char(3)
+  usageUsers              Int                          @map("usage_users") @db.UnsignedInt
+  usageEmployees          Int                          @map("usage_employees") @db.UnsignedInt
+  usagePostedDocuments    Int                          @map("usage_posted_documents") @db.UnsignedInt
+  usageOperations         Int                          @map("usage_operations") @db.UnsignedInt
+  subtotal                Decimal                      @db.Decimal(19, 4)
+  taxRateSnapshot         Decimal                      @map("tax_rate_snapshot") @db.Decimal(9, 4)
+  taxAmount               Decimal                      @map("tax_amount") @db.Decimal(19, 4)
+  totalAmount             Decimal                      @map("total_amount") @db.Decimal(19, 4)
+  notes                   String?                      @db.VarChar(1000)
+  version                 Int                          @default(0) @db.UnsignedInt
+  issuedById              BigInt                       @map("issued_by_id") @db.UnsignedBigInt
+  voidedById              BigInt?                      @map("voided_by_id") @db.UnsignedBigInt
+  voidedAt                DateTime?                    @map("voided_at")
+  voidReason              String?                      @map("void_reason") @db.VarChar(500)
+  createdAt               DateTime                     @default(now()) @map("created_at")
+  updatedAt               DateTime                     @updatedAt @map("updated_at")
+  company                 Company                      @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  billingAccount          PlatformBillingAccount       @relation(fields: [billingAccountId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
   subscription            PlatformSubscription?        @relation(fields: [subscriptionId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
   planVersion             PlatformPlanVersion?         @relation(fields: [planVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   subscriptionChange      PlatformSubscriptionChange?  @relation(fields: [subscriptionChangeId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
-  issuedBy              User                        @relation("PlatformBillingInvoiceIssuedBy", fields: [issuedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  voidedBy              User?                       @relation("PlatformBillingInvoiceVoidedBy", fields: [voidedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  lines                 PlatformBillingInvoiceLine[]
-  payments              PlatformBillingPayment[]
+  issuedBy                User                         @relation("PlatformBillingInvoiceIssuedBy", fields: [issuedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  voidedBy                User?                        @relation("PlatformBillingInvoiceVoidedBy", fields: [voidedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  lines                   PlatformBillingInvoiceLine[]
+  payments                PlatformBillingPayment[]
   paymentAttempts         PlatformPaymentAttempt[]
 
   @@unique([id, companyId])
@@ -2848,21 +3021,21 @@ model PlatformBillingInvoiceLine {
 }
 
 model PlatformBillingPayment {
-  id             BigInt                       @id @default(autoincrement()) @db.UnsignedBigInt
-  publicId       String                       @unique @default(uuid()) @map("public_id") @db.Char(36)
-  companyId      BigInt                       @map("company_id") @db.UnsignedBigInt
-  invoiceId      BigInt                       @map("invoice_id") @db.UnsignedBigInt
+  id               BigInt                       @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId         String                       @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId        BigInt                       @map("company_id") @db.UnsignedBigInt
+  invoiceId        BigInt                       @map("invoice_id") @db.UnsignedBigInt
   paymentAttemptId BigInt?                      @unique @map("payment_attempt_id") @db.UnsignedBigInt
-  paymentDate    DateTime                     @map("payment_date") @db.Date
-  amount         Decimal                      @db.Decimal(19, 4)
-  method         PlatformBillingPaymentMethod
+  paymentDate      DateTime                     @map("payment_date") @db.Date
+  amount           Decimal                      @db.Decimal(19, 4)
+  method           PlatformBillingPaymentMethod
   source           PlatformBillingPaymentSource @default(MANUAL)
-  reference      String?                      @db.VarChar(160)
-  notes          String?                      @db.VarChar(1000)
+  reference        String?                      @db.VarChar(160)
+  notes            String?                      @db.VarChar(1000)
   receivedById     BigInt?                      @map("received_by_id") @db.UnsignedBigInt
-  createdAt      DateTime                     @default(now()) @map("created_at")
-  company        Company                      @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  invoice        PlatformBillingInvoice       @relation(fields: [invoiceId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  createdAt        DateTime                     @default(now()) @map("created_at")
+  company          Company                      @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  invoice          PlatformBillingInvoice       @relation(fields: [invoiceId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
   paymentAttempt   PlatformPaymentAttempt?      @relation(fields: [paymentAttemptId, companyId, invoiceId], references: [id, companyId, invoiceId], onDelete: Restrict, onUpdate: Restrict)
   receivedBy       User?                        @relation("PlatformBillingPaymentReceivedBy", fields: [receivedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
   refund           PlatformBillingRefund?
@@ -3021,17 +3194,17 @@ model PlatformBillingRefund {
 }
 
 model PlatformModule {
-  id                       BigInt                            @id @default(autoincrement()) @db.UnsignedBigInt
-  code                     String                            @unique @db.VarChar(64)
-  displayName              String                            @map("display_name") @db.VarChar(160)
-  isActive                 Boolean                           @default(true) @map("is_active")
-  version                  Int                               @default(0) @db.UnsignedInt
-  createdAt                DateTime                          @default(now()) @map("created_at")
-  updatedAt                DateTime                          @updatedAt @map("updated_at")
-  dependencies             PlatformModuleDependency[]        @relation("PlatformModuleDependencySource")
-  requiredBy               PlatformModuleDependency[]        @relation("PlatformModuleDependencyTarget")
-  planEntitlements         PlatformPlanEntitlement[]
-  subscriptionEntitlements PlatformSubscriptionEntitlement[]
+  id                        BigInt                             @id @default(autoincrement()) @db.UnsignedBigInt
+  code                      String                             @unique @db.VarChar(64)
+  displayName               String                             @map("display_name") @db.VarChar(160)
+  isActive                  Boolean                            @default(true) @map("is_active")
+  version                   Int                                @default(0) @db.UnsignedInt
+  createdAt                 DateTime                           @default(now()) @map("created_at")
+  updatedAt                 DateTime                           @updatedAt @map("updated_at")
+  dependencies              PlatformModuleDependency[]         @relation("PlatformModuleDependencySource")
+  requiredBy                PlatformModuleDependency[]         @relation("PlatformModuleDependencyTarget")
+  planEntitlements          PlatformPlanEntitlement[]
+  subscriptionEntitlements  PlatformSubscriptionEntitlement[]
   subscriptionChangeModules PlatformSubscriptionChangeModule[]
 
   @@index([isActive, code])
@@ -3071,41 +3244,41 @@ model PlatformPlan {
 }
 
 model PlatformPlanVersion {
-  id                               BigInt                    @id @default(autoincrement()) @db.UnsignedBigInt
-  planId                           BigInt                    @map("plan_id") @db.UnsignedBigInt
-  versionNumber                    Int                       @map("version_number") @db.UnsignedInt
-  displayName                      String                    @map("display_name") @db.VarChar(160)
-  description                      String?                   @db.VarChar(1000)
-  billingCycle                     PlatformBillingCycle      @map("billing_cycle")
-  currencyCode                     String                    @map("currency_code") @db.Char(3)
-  version                          Int                       @default(0) @db.UnsignedInt
-  recurringFee                     Decimal?                  @map("recurring_fee") @db.Decimal(19, 4)
-  includedUsers                    Int?                      @map("included_users") @db.UnsignedInt
-  pricePerAdditionalUser           Decimal?                  @map("price_per_additional_user") @db.Decimal(19, 4)
-  includedEmployees                Int?                      @map("included_employees") @db.UnsignedInt
-  pricePerAdditionalEmployee       Decimal?                  @map("price_per_additional_employee") @db.Decimal(19, 4)
-  includedPostedDocuments          Int?                      @map("included_posted_documents") @db.UnsignedInt
-  pricePerAdditionalPostedDocument Decimal?                  @map("price_per_additional_posted_document") @db.Decimal(19, 4)
-  taxRate                          Decimal                   @default(0) @map("tax_rate") @db.Decimal(9, 4)
-  paymentTermsDays                 Int                       @default(0) @map("payment_terms_days") @db.UnsignedSmallInt
-  trialDays                        Int                       @default(0) @map("trial_days") @db.UnsignedSmallInt
-  effectiveFrom                    DateTime                  @map("effective_from")
+  id                               BigInt                        @id @default(autoincrement()) @db.UnsignedBigInt
+  planId                           BigInt                        @map("plan_id") @db.UnsignedBigInt
+  versionNumber                    Int                           @map("version_number") @db.UnsignedInt
+  displayName                      String                        @map("display_name") @db.VarChar(160)
+  description                      String?                       @db.VarChar(1000)
+  billingCycle                     PlatformBillingCycle          @map("billing_cycle")
+  currencyCode                     String                        @map("currency_code") @db.Char(3)
+  version                          Int                           @default(0) @db.UnsignedInt
+  recurringFee                     Decimal?                      @map("recurring_fee") @db.Decimal(19, 4)
+  includedUsers                    Int?                          @map("included_users") @db.UnsignedInt
+  pricePerAdditionalUser           Decimal?                      @map("price_per_additional_user") @db.Decimal(19, 4)
+  includedEmployees                Int?                          @map("included_employees") @db.UnsignedInt
+  pricePerAdditionalEmployee       Decimal?                      @map("price_per_additional_employee") @db.Decimal(19, 4)
+  includedPostedDocuments          Int?                          @map("included_posted_documents") @db.UnsignedInt
+  pricePerAdditionalPostedDocument Decimal?                      @map("price_per_additional_posted_document") @db.Decimal(19, 4)
+  taxRate                          Decimal                       @default(0) @map("tax_rate") @db.Decimal(9, 4)
+  paymentTermsDays                 Int                           @default(0) @map("payment_terms_days") @db.UnsignedSmallInt
+  trialDays                        Int                           @default(0) @map("trial_days") @db.UnsignedSmallInt
+  effectiveFrom                    DateTime                      @map("effective_from")
   selfServicePolicy                PlatformPlanSelfServicePolicy @default(DISABLED) @map("self_service_policy")
-  publishedAt                      DateTime?                 @map("published_at")
-  publiclyListed                   Boolean                   @default(false) @map("publicly_listed")
-  retiredAt                        DateTime?                 @map("retired_at")
-  createdById                      BigInt?                   @map("created_by_id") @db.UnsignedBigInt
-  updatedById                      BigInt?                   @map("updated_by_id") @db.UnsignedBigInt
-  publishedById                    BigInt?                   @map("published_by_id") @db.UnsignedBigInt
-  createdAt                        DateTime                  @default(now()) @map("created_at")
-  plan                             PlatformPlan              @relation(fields: [planId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  createdBy                        User?                     @relation("PlatformPlanVersionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  updatedBy                        User?                     @relation("PlatformPlanVersionUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  publishedBy                      User?                     @relation("PlatformPlanVersionPublishedBy", fields: [publishedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  publishedAt                      DateTime?                     @map("published_at")
+  publiclyListed                   Boolean                       @default(false) @map("publicly_listed")
+  retiredAt                        DateTime?                     @map("retired_at")
+  createdById                      BigInt?                       @map("created_by_id") @db.UnsignedBigInt
+  updatedById                      BigInt?                       @map("updated_by_id") @db.UnsignedBigInt
+  publishedById                    BigInt?                       @map("published_by_id") @db.UnsignedBigInt
+  createdAt                        DateTime                      @default(now()) @map("created_at")
+  plan                             PlatformPlan                  @relation(fields: [planId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  createdBy                        User?                         @relation("PlatformPlanVersionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy                        User?                         @relation("PlatformPlanVersionUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  publishedBy                      User?                         @relation("PlatformPlanVersionPublishedBy", fields: [publishedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
   entitlements                     PlatformPlanEntitlement[]
   subscriptions                    PlatformSubscription[]
-  subscriptionChanges              PlatformSubscriptionChange[] @relation("PlatformSubscriptionChangeTargetVersion")
-  subscriptionChangesFrom          PlatformSubscriptionChange[] @relation("PlatformSubscriptionChangeFromVersion")
+  subscriptionChanges              PlatformSubscriptionChange[]  @relation("PlatformSubscriptionChangeTargetVersion")
+  subscriptionChangesFrom          PlatformSubscriptionChange[]  @relation("PlatformSubscriptionChangeFromVersion")
   billingInvoices                  PlatformBillingInvoice[]
 
   @@unique([planId, versionNumber])
@@ -3119,13 +3292,13 @@ model PlatformPlanVersion {
 }
 
 model PlatformPlanEntitlement {
-  planVersionId BigInt              @map("plan_version_id") @db.UnsignedBigInt
-  moduleId      BigInt              @map("module_id") @db.UnsignedBigInt
-  selectionMode PlatformPlanModuleSelection @default(INCLUDED) @map("selection_mode")
-  additionalRecurringFee Decimal?   @map("additional_recurring_fee") @db.Decimal(19, 4)
-  createdAt     DateTime            @default(now()) @map("created_at")
-  planVersion   PlatformPlanVersion @relation(fields: [planVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  module        PlatformModule      @relation(fields: [moduleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  planVersionId          BigInt                      @map("plan_version_id") @db.UnsignedBigInt
+  moduleId               BigInt                      @map("module_id") @db.UnsignedBigInt
+  selectionMode          PlatformPlanModuleSelection @default(INCLUDED) @map("selection_mode")
+  additionalRecurringFee Decimal?                    @map("additional_recurring_fee") @db.Decimal(19, 4)
+  createdAt              DateTime                    @default(now()) @map("created_at")
+  planVersion            PlatformPlanVersion         @relation(fields: [planVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  module                 PlatformModule              @relation(fields: [moduleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
   @@id([planVersionId, moduleId])
   @@index([moduleId, planVersionId])
@@ -3179,33 +3352,33 @@ model PlatformSubscriptionEntitlement {
 }
 
 model PlatformSubscriptionChange {
-  id                           BigInt                           @id @default(autoincrement()) @db.UnsignedBigInt
-  publicId                     String                           @unique @default(uuid()) @map("public_id") @db.Char(36)
-  companyId                    BigInt                           @map("company_id") @db.UnsignedBigInt
-  subscriptionId               BigInt                           @map("subscription_id") @db.UnsignedBigInt
-  fromPlanVersionId            BigInt?                          @map("from_plan_version_id") @db.UnsignedBigInt
-  targetPlanVersionId          BigInt                           @map("target_plan_version_id") @db.UnsignedBigInt
+  id                           BigInt                             @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId                     String                             @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId                    BigInt                             @map("company_id") @db.UnsignedBigInt
+  subscriptionId               BigInt                             @map("subscription_id") @db.UnsignedBigInt
+  fromPlanVersionId            BigInt?                            @map("from_plan_version_id") @db.UnsignedBigInt
+  targetPlanVersionId          BigInt                             @map("target_plan_version_id") @db.UnsignedBigInt
   state                        PlatformSubscriptionChangeState
   source                       PlatformSubscriptionChangeSource
-  requestedById                BigInt?                          @map("requested_by_id") @db.UnsignedBigInt
-  decidedById                  BigInt?                          @map("decided_by_id") @db.UnsignedBigInt
-  requestedSubscriptionVersion Int                              @map("requested_subscription_version") @db.UnsignedInt
-  requestedAt                  DateTime                         @default(now()) @map("requested_at")
-  effectiveAt                  DateTime?                        @map("effective_at")
-  decidedAt                    DateTime?                        @map("decided_at")
-  decisionReason               String?                          @map("decision_reason") @db.VarChar(500)
-  currencyCode                 String                           @map("currency_code") @db.Char(3)
-  baseRecurringFee             Decimal                          @map("base_recurring_fee") @db.Decimal(19, 4)
-  optionalRecurringFee         Decimal                          @map("optional_recurring_fee") @db.Decimal(19, 4)
-  totalRecurringFee            Decimal                          @map("total_recurring_fee") @db.Decimal(19, 4)
-  createdAt                    DateTime                         @default(now()) @map("created_at")
-  updatedAt                    DateTime                         @updatedAt @map("updated_at")
-  company                      Company                          @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  subscription                 PlatformSubscription             @relation(fields: [subscriptionId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
-  fromPlanVersion              PlatformPlanVersion?             @relation("PlatformSubscriptionChangeFromVersion", fields: [fromPlanVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  targetPlanVersion            PlatformPlanVersion              @relation("PlatformSubscriptionChangeTargetVersion", fields: [targetPlanVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  requestedBy                  User?                            @relation("PlatformSubscriptionChangeRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  decidedBy                    User?                            @relation("PlatformSubscriptionChangeDecidedBy", fields: [decidedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  requestedById                BigInt?                            @map("requested_by_id") @db.UnsignedBigInt
+  decidedById                  BigInt?                            @map("decided_by_id") @db.UnsignedBigInt
+  requestedSubscriptionVersion Int                                @map("requested_subscription_version") @db.UnsignedInt
+  requestedAt                  DateTime                           @default(now()) @map("requested_at")
+  effectiveAt                  DateTime?                          @map("effective_at")
+  decidedAt                    DateTime?                          @map("decided_at")
+  decisionReason               String?                            @map("decision_reason") @db.VarChar(500)
+  currencyCode                 String                             @map("currency_code") @db.Char(3)
+  baseRecurringFee             Decimal                            @map("base_recurring_fee") @db.Decimal(19, 4)
+  optionalRecurringFee         Decimal                            @map("optional_recurring_fee") @db.Decimal(19, 4)
+  totalRecurringFee            Decimal                            @map("total_recurring_fee") @db.Decimal(19, 4)
+  createdAt                    DateTime                           @default(now()) @map("created_at")
+  updatedAt                    DateTime                           @updatedAt @map("updated_at")
+  company                      Company                            @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  subscription                 PlatformSubscription               @relation(fields: [subscriptionId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  fromPlanVersion              PlatformPlanVersion?               @relation("PlatformSubscriptionChangeFromVersion", fields: [fromPlanVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  targetPlanVersion            PlatformPlanVersion                @relation("PlatformSubscriptionChangeTargetVersion", fields: [targetPlanVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  requestedBy                  User?                              @relation("PlatformSubscriptionChangeRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  decidedBy                    User?                              @relation("PlatformSubscriptionChangeDecidedBy", fields: [decidedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
   modules                      PlatformSubscriptionChangeModule[]
   billingInvoices              PlatformBillingInvoice[]
 
@@ -3220,12 +3393,12 @@ model PlatformSubscriptionChange {
 }
 
 model PlatformSubscriptionChangeModule {
-  changeId      BigInt                       @map("change_id") @db.UnsignedBigInt
-  moduleId      BigInt                       @map("module_id") @db.UnsignedBigInt
-  selectionMode PlatformPlanModuleSelection  @map("selection_mode")
-  createdAt     DateTime                     @default(now()) @map("created_at")
-  change        PlatformSubscriptionChange   @relation(fields: [changeId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  module        PlatformModule               @relation(fields: [moduleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  changeId      BigInt                      @map("change_id") @db.UnsignedBigInt
+  moduleId      BigInt                      @map("module_id") @db.UnsignedBigInt
+  selectionMode PlatformPlanModuleSelection @map("selection_mode")
+  createdAt     DateTime                    @default(now()) @map("created_at")
+  change        PlatformSubscriptionChange  @relation(fields: [changeId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  module        PlatformModule              @relation(fields: [moduleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
   @@id([changeId, moduleId])
   @@index([moduleId, changeId], map: "platform_subscription_change_modules_module_idx")

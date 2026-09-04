@@ -102,6 +102,8 @@ import type { ApprovalService } from './approvals/approval-service.js';
 import { createApprovalRouter } from './approvals/approval-router.js';
 import type { ProfessionalProjectService } from './projects/professional-project-service.js';
 import { createProfessionalProjectRouter } from './projects/professional-project-router.js';
+import type { CrmService } from './crm/crm-service.js';
+import { createCrmRouter } from './crm/crm-router.js';
 import type { ProfessionalProjectPlanningService } from './projects/professional-project-planning-service.js';
 import { createProfessionalProjectPlanningRouter } from './projects/professional-project-planning-router.js';
 import type { ProfessionalBillingService } from './projects/professional-billing-service.js';
@@ -190,6 +192,7 @@ export type AppServices = {
   financialClose?: FinancialCloseService;
   approvals?: ApprovalService;
   professionalProjects?: ProfessionalProjectService;
+  crm?: CrmService;
   professionalProjectPlanning?: ProfessionalProjectPlanningService;
   professionalBilling?: ProfessionalBillingService;
   professionalProjectAccess?: ProfessionalProjectAccessService;
@@ -394,6 +397,7 @@ export function createApp(config: AppConfig, services: AppServices = {}) {
   if (services.auth && services.fiscal) app.use('/api/v1', createFiscalRouter(services.auth, services.fiscal, services.financialClose));
   if (services.auth && services.approvals) app.use('/api/v1', createApprovalRouter(services.auth, services.approvals));
   if (services.auth && services.professionalProjects) app.use('/api/v1', createProfessionalProjectRouter(services.auth, services.professionalProjects));
+  if (services.auth && services.crm) app.use('/api/v1', createCrmRouter(services.auth, services.crm));
   if (services.auth && services.professionalProjectPlanning) app.use('/api/v1', createProfessionalProjectPlanningRouter(services.auth, services.professionalProjectPlanning));
   if (services.auth && services.professionalBilling) app.use('/api/v1', createProfessionalBillingRouter(services.auth, services.professionalBilling));
   if (services.auth && services.professionalProjectAccess) app.use('/api/v1', createProfessionalProjectAccessRouter(services.auth, services.professionalProjectAccess));
