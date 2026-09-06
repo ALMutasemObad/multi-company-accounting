@@ -489,6 +489,22 @@ export class SocialAuthService {
       if (decision.kind === 'reject') throw new SocialAuthError('IDENTITY_CONFLICT');
 
       const userId = decision.userId;
+      const user = await tx.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: {
+          emailNormalized: true,
+          assignments: {
+            where: { isActive: true, company: { isActive: true } },
+            select: { companyId: true },
+          },
+        },
+      });
+      // SecurityEvent is currently company-scoped. Match unlink's fail-closed
+      // behavior: never create an unaudited account link for a detached or
+      // platform-only identity until a global security-event scope exists.
+      if (decision.kind === 'link_to_authenticated_user' && !user.assignments.length) {
+        throw new SocialAuthError('INVALID_REQUEST');
+      }
       if (decision.kind === 'link_to_authenticated_user') {
         await tx.externalIdentity.create({ data: {
           userId,
@@ -514,16 +530,6 @@ export class SocialAuthService {
       await tx.user.update({
         where: { id: userId },
         data: { lastLoginAt: now, failedLoginAttempts: 0, lockedUntil: null },
-      });
-      const user = await tx.user.findUniqueOrThrow({
-        where: { id: userId },
-        select: {
-          emailNormalized: true,
-          assignments: {
-            where: { isActive: true, company: { isActive: true } },
-            select: { companyId: true },
-          },
-        },
       });
       if (user.assignments.length) {
         await this.security.appendMany(tx, user.assignments.map(({ companyId }) => ({

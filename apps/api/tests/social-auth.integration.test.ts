@@ -229,6 +229,41 @@ describe.runIf(enabled)('social authentication persistence and races', () => {
     expect(await prisma!.session.count({ where: { userId: user.id, state: 'AUTHENTICATED', revokedAt: null } })).toBe(1);
   });
 
+  it('fails closed before linking when no company-scoped security event can be written', async () => {
+    const suffix = Date.now().toString();
+    const user = await prisma!.user.create({ data: {
+      emailNormalized: `detached-social-link-${suffix}@example.test`,
+      displayName: 'Detached linking user',
+      passwordHash: 'not-used-by-this-test',
+    } });
+    const sid = createOpaqueToken();
+    const csrf = createOpaqueToken();
+    const session = await prisma!.session.create({ data: {
+      tokenHash: hashToken(sid), csrfHash: hashToken(csrf), state: 'AUTHENTICATED',
+      userId: user.id, authenticatedAt: new Date(), expiresAt: new Date(Date.now() + 600_000),
+    } });
+    const auth = service();
+    try {
+      const started = await auth.start({
+        provider: 'GOOGLE', purpose: 'LINK', sid, csrfToken: csrf, consent: true,
+        returnPath: '/?account=security',
+      });
+      const state = new URL(started.authorizationUrl).searchParams.get('state')!;
+
+      await expect(auth.callback({
+        provider: 'GOOGLE', state, browserBinding: started.browserBinding,
+        callback: new URL(`https://callback.test/?code=x&state=${state}`),
+      })).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+
+      expect(await prisma!.externalIdentity.count({ where: { userId: user.id } })).toBe(0);
+      expect((await prisma!.session.findUniqueOrThrow({ where: { id: session.id } })).revokedAt).toBeNull();
+    } finally {
+      await prisma!.socialAuthorizationTransaction.deleteMany({ where: { initiatingUserId: user.id } });
+      await prisma!.session.deleteMany({ where: { userId: user.id } });
+      await prisma!.user.delete({ where: { id: user.id } });
+    }
+  });
+
   it('returns a completed LINK callback to account security without exposing claims', async () => {
     const current = await authenticated();
     const auth = service();
@@ -276,6 +311,45 @@ describe.runIf(enabled)('social authentication persistence and races', () => {
       provider: 'GOOGLE',
       state,
       browserBinding,
+      callback: new URL(`https://callback.test/?code=replay&state=${encodeURIComponent(state)}`),
+    })).rejects.toMatchObject({ code: 'TRANSACTION_INVALID' });
+  });
+
+  it('consumes a correlated callback after provider exchange failure and rejects replay', async () => {
+    const initial = await preAuth();
+    const failingProvider: SocialOidcProvider = {
+      authorizationUrl: ({ state }) => `https://issuer.example.test/auth?state=${encodeURIComponent(state)}`,
+      exchange: async () => { throw new Error('OIDC_PROVIDER_UNAVAILABLE'); },
+    };
+    const auth = new SocialAuthService(prisma!, {
+      transactionSecret: 'integration-social-transaction-secret-123456789',
+      transactionTtlMinutes: 10,
+      sessionTtlHours: 12,
+      providers: { GOOGLE: failingProvider },
+      onboarding,
+    });
+    const app = createApp({ NODE_ENV: 'test', PORT: 3000, WEB_ORIGIN: 'http://localhost:5173', SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: process.env.DATABASE_URL }, { socialAuth: auth });
+    const started = await request(app)
+      .post('/api/v1/auth/social/google/start')
+      .set('Cookie', `sid=${initial.sid}`)
+      .set('X-CSRF-Token', initial.csrf)
+      .send({ purpose: 'SIGN_IN', consent: false, returnPath: '/login' })
+      .expect(200);
+    const correlation = (started.headers['set-cookie'] as unknown as string[])[0]!;
+    const browserBinding = decodeURIComponent(correlation.split(';')[0]!.split('=', 2)[1]!);
+    const state = new URL(started.body.authorizationUrl).searchParams.get('state')!;
+
+    const failed = await request(app)
+      .get(`/api/v1/auth/social/google/callback?code=code&state=${encodeURIComponent(state)}`)
+      .set('Cookie', correlation.split(';')[0]!)
+      .expect(303);
+
+    expect(failed.headers.location).toBe('/login?social=error');
+    expect((await prisma!.socialAuthorizationTransaction.findFirstOrThrow({
+      where: { stateHash: hashToken(state) },
+    })).usedAt).not.toBeNull();
+    await expect(auth.callback({
+      provider: 'GOOGLE', state, browserBinding,
       callback: new URL(`https://callback.test/?code=replay&state=${encodeURIComponent(state)}`),
     })).rejects.toMatchObject({ code: 'TRANSACTION_INVALID' });
   });

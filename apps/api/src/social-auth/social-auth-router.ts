@@ -91,7 +91,10 @@ export function createSocialAuthRouter(service: SocialAuthService, secureSession
       const raw = provider === 'apple' ? request.body : request.query;
       const state = typeof raw?.state === 'string' ? raw.state : undefined;
       const browserBinding = cookies(request.headers.cookie)[bindingName(provider)];
-      const returnPath = await service.callbackReturnPath({
+      // Any callback attempt with valid correlation is terminal. Burning the
+      // authorization transaction here prevents a failed provider exchange or
+      // malformed callback from leaving a replayable state behind.
+      const returnPath = await service.cancelAuthorization({
         provider: providerOf(provider),
         ...(state ? { state } : {}),
         ...(browserBinding ? { browserBinding } : {}),

@@ -25,6 +25,25 @@ function appFor(service: unknown) {
 }
 
 describe('social onboarding HTTP boundary', () => {
+  it('consumes a correlated authorization after a failed callback before returning an error', async () => {
+    const callback = vi.fn(async () => { throw new Error('provider exchange failed'); });
+    const cancelAuthorization = vi.fn(async () => '/?account=security');
+    const callbackReturnPath = vi.fn(async () => '/should-not-be-used');
+    const response = await request(appFor({ callback, cancelAuthorization, callbackReturnPath }))
+      .get('/api/v1/auth/social/google/callback?code=provider-code&state=opaque-state')
+      .set('Cookie', 'social_google_binding=opaque-browser')
+      .expect(303);
+
+    expect(cancelAuthorization).toHaveBeenCalledWith({
+      provider: 'GOOGLE',
+      state: 'opaque-state',
+      browserBinding: 'opaque-browser',
+    });
+    expect(callbackReturnPath).not.toHaveBeenCalled();
+    expect(response.headers.location).toBe('/?account=security&social=error');
+    expect((response.headers['set-cookie'] as unknown as string[])[0]).toContain('social_google_binding=;');
+  });
+
   it('takes opaque credentials only from HttpOnly cookies and rotates the session', async () => {
     const completeOnboarding = vi.fn(async () => ({
       kind: 'completed' as const,
