@@ -9,6 +9,7 @@ import { localizedBrand } from "./branding";
 import { localizedReferenceName, LanguageSwitcher, localeDetails, resolveLocale, supportedLocales, useI18n, type Locale } from "./i18n";
 import { Button, Spinner } from "./ui";
 import { subscriptionPlanForRoute } from "./public-plans";
+import { RegistrationDeliveryPending } from "./registration-email-delivery/RegistrationDeliveryPending";
 
 type RegistrationOptions = {
   currencies: Array<{ code: string; nameAr: string; decimals: number }>;
@@ -29,6 +30,7 @@ export function RegistrationPage({ onBackToLogin }: { onBackToLogin: () => void 
   const [validationError, setValidationError] = useState("");
   const [inProgress, setInProgress] = useState(false);
   const [recoverExistingAccount, setRecoverExistingAccount] = useState(false);
+  const [resendAccepted, setResendAccepted] = useState(false);
   const token = useMemo(() => new URLSearchParams(location.hash.split("?", 2)[1] ?? "").get("token"), []);
   const optionsAction = useAuthAction();
   const action = useAuthAction();
@@ -97,7 +99,10 @@ export function RegistrationPage({ onBackToLogin }: { onBackToLogin: () => void 
   }
 
   async function resend() {
-    void action.run((signal) => authPost("/auth/register/resend", { email }, signal));
+    setResendAccepted(false);
+    void action.run((signal) => authPost("/auth/register/resend", { email }, signal), {
+      onSuccess: () => setResendAccepted(true),
+    });
   }
 
   const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -154,7 +159,7 @@ export function RegistrationPage({ onBackToLogin }: { onBackToLogin: () => void 
               )}
             </>
           )}
-          {state === "pending" && <RegistrationResult title={t("organization.registration.received")} description={t("organization.registration.nextSteps")}><AuthFeedback {...action} hint={uncertainAuthResult(action.error) ? "authResilience.mailUncertain" : undefined} /><Button onClick={() => void resend()} disabled={busy} variant="secondary">{busy ? t("registration.resending") : t("registration.resend")}</Button><Button onClick={onBackToLogin} variant="ghost">{t("registration.backToLogin")}</Button><a className="auth-text-link" href="#reset-password" onClick={(event) => { event.preventDefault(); history.replaceState(null, "", `${location.pathname}${location.search}#reset-password`); setRecoverExistingAccount(true); }}>{t("organization.registration.recover")}</a></RegistrationResult>}
+          {state === "pending" && <RegistrationDeliveryPending locale={locale} busy={busy} resendAccepted={resendAccepted} feedback={<AuthFeedback {...action} hint={uncertainAuthResult(action.error) ? "authResilience.mailUncertain" : undefined} />} resendLabel={t("registration.resend")} resendingLabel={t("registration.resending")} backLabel={t("registration.backToLogin")} recoveryLink={<a className="auth-text-link" href="#reset-password" onClick={(event) => { event.preventDefault(); history.replaceState(null, "", `${location.pathname}${location.search}#reset-password`); setRecoverExistingAccount(true); }}>{t("organization.registration.recover")}</a>} onResend={() => void resend()} onBack={onBackToLogin} />}
           {state === "verifying" && <RegistrationResult title={t("registration.verifyingTitle")} description={t("registration.verifyingDescription")}><AuthFeedback {...action} /><Button onClick={onBackToLogin} variant="ghost">{t("registration.backToLogin")}</Button></RegistrationResult>}
           {state === "completed" && <RegistrationResult title={t("registration.completedTitle")} description={t("registration.completedDescription")}><Button onClick={onBackToLogin}>{t("registration.signIn")}</Button></RegistrationResult>}
           {state === "verification-error" && <RegistrationResult title={t("authResilience.verificationUnconfirmed")} description={t(uncertainAuthResult(action.error) || inProgress ? "authResilience.verifyUncertain" : "registration.verificationErrorDescription")}><AuthFeedback {...action} />{inProgress && <p role="status">{t("authResilience.verifyInProgress")}</p>}<Button onClick={verify} disabled={busy} variant="secondary">{t("authResilience.verifyAgain")}</Button><Button onClick={onBackToLogin}>{t("registration.backToLogin")}</Button></RegistrationResult>}
