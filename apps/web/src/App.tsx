@@ -89,13 +89,13 @@ export default function App() {
     routeScope.current = null;
     setRoute({ view: "home" });
     setState("login");
+    replaceHash("login");
   }, []);
 
   useEffect(() => {
     const unsubscribe = onSessionExpired(() => {
       clearShell();
       setSessionExpired(true);
-      replaceHash("login");
     });
     return () => { unsubscribe(); invalidateSessionRequests(); };
   }, [clearShell]);
