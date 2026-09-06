@@ -5,8 +5,9 @@
 - سياسة نقية لهوية Google وApple تعتمد `issuer + subject` ولا تدمج بالبريد.
 - نتائج صريحة للدخول، الحساب المعطل، تعارض الربط، إثبات الحساب القائم، المصادقة
   الحديثة، الموافقة، التسجيل، والحاجة إلى بريد موثق.
-- سياسة معاملة Authorization قصيرة العمر وأحادية الاستخدام تربط provider وstate
-  وnonce وPKCE.
+- عقد policy لمعاملة Authorization قصيرة العمر تربط provider وstate وnonce وPKCE
+  وارتباط المتصفح، وتطلب رفض replay. الذرّية والاستهلاك ومنع replay الفعلي غير
+  منفذة تشغيليًا دون مخزن ومعاملة وcallback في شريحة التكامل.
 - تطبيع مصدر Google القديم الموثق إلى المصدر القانوني، وتمييز Apple Private Relay.
 - وثيقة تصميم وإعداد وتكامل مبنية على مصادر Google وApple وOIDC الأصلية الحالية.
 
@@ -22,13 +23,17 @@
 تعارض الملكية، البريد غير الموثق، مصدر المزود، relay، وstate/replay/session swapping.
 
 - نجح `Workspace.ps1 -Action Check -Refresh`: المرجع `9be397c` ومهمتان نشطتان من 3.
-- نجح `node --experimental-strip-types --check` لملفات المصدر واختبار الوحدة.
-- نجح smoke test مستقل بلا اعتماديات لرفض الدمج بالبريد، ومنع session swapping،
-  وتطبيع مصدر Google القديم.
+- نجح Vitest المحدد: ملف واحد، و`8/8` اختبارات ناجحة خلال 1.10 ثانية.
+- نجح `npm run typecheck -w @mcap/api`: فحص `tsconfig.json` و`tsconfig.test.json`
+  دون أخطاء بعد توليد Prisma Client داخل `node_modules` المستقل للمهمة.
+- استخدم التوليد `DATABASE_URL` شكليًا محليًا لأن `prisma.config.ts` يشترط وجوده؛
+  لم يتصل الأمر بقاعدة بيانات ولم يستخدم Secret.
+- نجح أيضًا `node --experimental-strip-types --check` وsmoke test مستقل لرفض
+  الدمج بالبريد، ومنع session swapping في القرار، وتطبيع مصدر Google القديم.
 - نجح `git diff --check`.
-- لم تشغّل Vitest ولا TypeScript project typecheck لأن شجرة المهمة لا تحتوي
-  `node_modules` مستقلًا، ولم تُثبت اعتماديات أو تُشارك من مهمة أخرى. يجب تشغيل
-  `npm run test -w @mcap/api -- social-auth-policy.test.ts` وtypecheck بعد التثبيت
-  المحلي من lockfile في جولة التكامل المصرح بها.
 - لم يختبر اتصال فعلي بـGoogle أوApple، ولا callback متصفح أو تدوير جلسة أو قاعدة
   بيانات؛ فهذه الشريحة policy foundation وليست تكاملًا عاملًا.
+- أُنشئ `node_modules` مستقل من lockfile باستخدام npm `12.0.2` ومخزن التنزيل
+  `E:/DevelopmentCaches/npm`؛ لم تشارك اعتماديات أو Prisma مع مهمة أخرى. أبلغ
+  `npm ci` عن ثغرتين في شجرة الاعتماد الحالية: واحدة متوسطة وواحدة عالية؛ لم ينفذ
+  `npm audit fix` أو تغيير lockfile ضمن هذه الشريحة.
