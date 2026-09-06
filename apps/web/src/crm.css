@@ -58,3 +58,17 @@
   .crm-form .full { grid-column: auto; }
   .crm-record-actions .button { flex: 1 1 auto; }
 }
+
+.crm-form { border: 0; padding: 1rem; margin: 0; min-width: 0; }
+.crm-next-step { margin: .75rem 0; color: var(--muted); }
+.crm-page .crm-stage-select select { min-width: 0; max-width: 100%; }
+.crm-form :is(input, select, textarea, button), .crm-form label { font-size: .9375rem; }
+.crm-record-actions button, .crm-search button { min-height: 44px; }
+@media (max-width: 560px) {
+  .crm-record-actions > *, .crm-stage-select { flex: 1 1 100%; }
+  .crm-stage-select { justify-content: space-between; }
+  .crm-activity > div { min-width: 0; overflow-wrap: anywhere; }
+}
+
+.crm-stage-select > span { flex-shrink: 0; white-space: nowrap; }
+.crm-stage-select > select { flex: 1; width: auto; }

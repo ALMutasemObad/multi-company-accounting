@@ -1,4 +1,14 @@
 export const arCrm = {
+  "crm.loading": "جارٍ تحميل العملاء والفرص والمتابعات…",
+  "crm.saving": "جارٍ حفظ التغيير…",
+  "crm.searchScope": "نتائج البحث عن «{search}» للعملاء والفرص فقط. المؤشرات والمتابعات تشمل جميع السجلات.",
+  "crm.noSearchResults": "لا توجد نتائج مطابقة. غيّر عبارة البحث أو امسحها ثم ابحث مجددًا.",
+  "crm.next.NEW": "الخطوة التالية: تواصل مع العميل وسجّل احتياجه قبل التأهيل.",
+  "crm.next.CONTACTED": "الخطوة التالية: أهّل الاحتياج لإنشاء فرصة، أو أضف متابعة.",
+  "crm.next.QUALIFIED": "الخطوة التالية: تابع الفرصة أو اربط العميل المحتمل بسجل عميل المبيعات.",
+  "crm.next.CONVERTED": "اكتمل التحويل إلى سجل عميل المبيعات.",
+  "crm.next.DISQUALIFIED": "العميل المحتمل غير مؤهل؛ لا تتاح إجراءات متابعة جديدة.",
+
   "nav.crm": "تطوير الأعمال",
   "home.module.crm": "أدر العملاء المحتملين والفرص وإجراءات المتابعة حتى التحويل الآمن إلى عميل.",
   "crm.kicker": "إدارة العلاقات وتطوير الأعمال",
@@ -95,6 +105,16 @@ export const arCrm = {
 } as const;
 
 export const enCrm = {
+  "crm.loading": "Loading leads, opportunities and follow-ups…",
+  "crm.saving": "Saving change…",
+  "crm.searchScope": "Search results for “{search}” apply to leads and opportunities only. Indicators and follow-ups include all records.",
+  "crm.noSearchResults": "No matching results. Change or clear the search and search again.",
+  "crm.next.NEW": "Next: contact the lead and record their needs before qualification.",
+  "crm.next.CONTACTED": "Next: qualify the need to create an opportunity, or add a follow-up.",
+  "crm.next.QUALIFIED": "Next: follow up on the opportunity or link the lead to a Sales customer.",
+  "crm.next.CONVERTED": "Converted to a Sales customer.",
+  "crm.next.DISQUALIFIED": "This lead is disqualified; new follow-up actions are unavailable.",
+
   "nav.crm": "Business development", "home.module.crm": "Manage leads, opportunities and next actions through safe customer conversion.",
   "crm.kicker": "CRM and business development", "crm.title": "Opportunity pipeline", "crm.description": "Move a lead from first contact to an opportunity and next action, then safely convert it into a Sales customer.",
   "crm.legalBlocked": "Creating professional matters from CRM remains unavailable until the F2 conflict check and ethical-wall gate are approved.", "crm.newLead": "New lead", "crm.search": "Search by code or name", "crm.searchAction": "Search",
@@ -108,6 +128,16 @@ export const enCrm = {
 
 export const urCrm = {
   ...enCrm,
+  "crm.loading": "لیڈز، مواقع اور فالو اپ لوڈ ہو رہے ہیں…",
+  "crm.saving": "تبدیلی محفوظ ہو رہی ہے…",
+  "crm.searchScope": "«{search}» کی تلاش صرف لیڈز اور مواقع پر لاگو ہے۔ اشاریے اور فالو اپ تمام ریکارڈز کے ہیں۔",
+  "crm.noSearchResults": "کوئی نتیجہ نہیں ملا۔ تلاش بدلیں یا صاف کر کے دوبارہ تلاش کریں۔",
+  "crm.next.NEW": "اگلا قدم: اہلیت سے پہلے رابطہ کریں اور ضرورت درج کریں۔",
+  "crm.next.CONTACTED": "اگلا قدم: ضرورت کو اہل بنا کر موقع بنائیں یا فالو اپ شامل کریں۔",
+  "crm.next.QUALIFIED": "اگلا قدم: موقع کا فالو اپ کریں یا لیڈ کو سیلز کسٹمر سے منسلک کریں۔",
+  "crm.next.CONVERTED": "سیلز کسٹمر میں تبدیلی مکمل ہو گئی۔",
+  "crm.next.DISQUALIFIED": "یہ لیڈ نااہل ہے؛ نیا فالو اپ دستیاب نہیں۔",
+
   "nav.crm": "کاروباری ترقی", "home.module.crm": "محفوظ کسٹمر تبدیلی تک لیڈز، مواقع اور اگلے اقدامات سنبھالیں۔", "crm.kicker": "CRM اور کاروباری ترقی", "crm.title": "مواقع کی پائپ لائن", "crm.description": "لیڈ کو پہلے رابطے سے موقع اور اگلے اقدام تک لے جائیں، پھر محفوظ طور پر سیلز کسٹمر میں تبدیل کریں۔", "crm.legalBlocked": "CRM سے پیشہ ورانہ کیس بنانا F2 تضاد جانچ اور اخلاقی دیوار کی منظوری تک دستیاب نہیں ہے۔", "crm.newLead": "نئی لیڈ", "crm.search": "کوڈ یا نام سے تلاش", "crm.searchAction": "تلاش", "crm.pipeline": "پائپ لائن اشاریے", "crm.leads": "لیڈز", "crm.opportunities": "مواقع", "crm.activities": "اگلا اقدام", "crm.emptyLeads": "کوئی لیڈ نہیں", "crm.emptyOpportunities": "کوئی موقع نہیں", "crm.emptyActivities": "کوئی فالو اپ نہیں", "crm.owner": "مالک", "crm.status": "حالت", "crm.stage": "مرحلہ", "crm.value": "قدر", "crm.actions": "اقدامات", "crm.markContacted": "رابطہ ہوا", "crm.qualify": "اہل بنائیں", "crm.convert": "کسٹمر میں تبدیل کریں", "crm.addActivity": "فالو اپ شامل کریں", "crm.complete": "مکمل", "crm.createLeadTitle": "لیڈ بنائیں", "crm.displayName": "لیڈ کا نام", "crm.contactName": "رابطے کا نام", "crm.phone": "فون", "crm.email": "ای میل", "crm.source": "ذریعہ", "crm.summary": "ضرورت کا خلاصہ", "crm.create": "بنائیں", "crm.qualifyTitle": "اہل بنائیں اور موقع بنائیں", "crm.opportunityTitle": "موقع کا عنوان", "crm.expectedClose": "متوقع اختتام", "crm.estimatedAmount": "متوقع قدر", "crm.currency": "کرنسی", "crm.probabilityBps": "جیت کا امکان (%)", "crm.activityTitle": "اگلا اقدام شامل کریں", "crm.subject": "موضوع", "crm.details": "تفصیلات", "crm.scheduledFor": "مقررہ وقت", "crm.convertTitle": "محفوظ کسٹمر تبدیلی", "crm.customer": "کسٹمر", "crm.receivableAccountId": "قابل وصول اکاؤنٹ ID", "crm.customerNameAr": "عربی کسٹمر نام", "crm.customerNameEn": "انگریزی کسٹمر نام", "crm.required": "مطلوبہ خانے مکمل کریں۔",
   "crm.pipelineDescription": "قدریں ہر کرنسی کے اندر الگ رہتی ہیں؛ مختلف کرنسیاں جمع نہیں کی جاتیں۔",
   "crm.nextActions": "کھلے فالو اپ", "crm.emptyLeadsDescription": "کاروباری ترقی کا سفر شروع کرنے کے لیے پہلی لیڈ بنائیں۔", "crm.emptyOpportunitiesDescription": "لیڈ کو اہل بنانے کے بعد موقع یہاں ظاہر ہوگا۔", "crm.emptyActivitiesDescription": "اگلے اقدام کے طور پر کال، میٹنگ یا کام شامل کریں۔", "crm.loadError": "کاروباری ترقی کی جگہ لوڈ نہیں ہو سکی۔", "crm.saved": "تبدیلی محفوظ ہو گئی۔", "crm.saveError": "تبدیلی محفوظ نہیں ہو سکی۔", "crm.code": "کوڈ", "crm.name": "نام", "crm.weighted": "وزنی قدر", "crm.count": "مواقع", "crm.probability": "امکان", "crm.nextAction": "اگلا اقدام", "crm.due": "آخری تاریخ",
@@ -117,6 +147,16 @@ export const urCrm = {
 
 export const hiCrm = {
   ...enCrm,
+  "crm.loading": "लीड, अवसर और फ़ॉलो-अप लोड हो रहे हैं…",
+  "crm.saving": "बदलाव सहेजा जा रहा है…",
+  "crm.searchScope": "«{search}» की खोज केवल लीड और अवसरों पर लागू है। संकेतक और फ़ॉलो-अप सभी रिकॉर्ड के हैं।",
+  "crm.noSearchResults": "कोई परिणाम नहीं मिला। खोज बदलें या साफ़ करके फिर खोजें।",
+  "crm.next.NEW": "अगला कदम: योग्यता तय करने से पहले संपर्क करें और ज़रूरत दर्ज करें।",
+  "crm.next.CONTACTED": "अगला कदम: ज़रूरत को योग्य करके अवसर बनाएँ या फ़ॉलो-अप जोड़ें।",
+  "crm.next.QUALIFIED": "अगला कदम: अवसर का फ़ॉलो-अप करें या लीड को बिक्री ग्राहक से जोड़ें।",
+  "crm.next.CONVERTED": "बिक्री ग्राहक में रूपांतरण पूरा हुआ।",
+  "crm.next.DISQUALIFIED": "यह लीड अयोग्य है; नया फ़ॉलो-अप उपलब्ध नहीं है।",
+
   "nav.crm": "व्यवसाय विकास", "home.module.crm": "सुरक्षित ग्राहक रूपांतरण तक लीड, अवसर और अगली कार्रवाइयाँ संभालें।", "crm.kicker": "CRM और व्यवसाय विकास", "crm.title": "अवसर पाइपलाइन", "crm.description": "लीड को पहले संपर्क से अवसर और अगली कार्रवाई तक ले जाएँ, फिर सुरक्षित रूप से Sales ग्राहक में बदलें।", "crm.legalBlocked": "CRM से पेशेवर मामला बनाना F2 conflict check और ethical-wall gate स्वीकृत होने तक उपलब्ध नहीं है।", "crm.newLead": "नई लीड", "crm.search": "कोड या नाम से खोजें", "crm.searchAction": "खोजें", "crm.pipeline": "पाइपलाइन संकेतक", "crm.leads": "लीड", "crm.opportunities": "अवसर", "crm.activities": "अगली कार्रवाई", "crm.emptyLeads": "कोई लीड नहीं", "crm.emptyOpportunities": "कोई अवसर नहीं", "crm.emptyActivities": "कोई फ़ॉलो-अप नहीं", "crm.owner": "स्वामी", "crm.status": "स्थिति", "crm.stage": "चरण", "crm.value": "मूल्य", "crm.actions": "कार्रवाइयाँ", "crm.markContacted": "संपर्क हुआ", "crm.qualify": "योग्य करें", "crm.convert": "ग्राहक में बदलें", "crm.addActivity": "फ़ॉलो-अप जोड़ें", "crm.complete": "पूरा करें", "crm.createLeadTitle": "लीड बनाएँ", "crm.displayName": "लीड का नाम", "crm.contactName": "संपर्क नाम", "crm.phone": "फ़ोन", "crm.email": "ईमेल", "crm.source": "स्रोत", "crm.summary": "आवश्यकता सार", "crm.create": "बनाएँ", "crm.qualifyTitle": "योग्य करके अवसर बनाएँ", "crm.opportunityTitle": "अवसर शीर्षक", "crm.expectedClose": "अपेक्षित समापन", "crm.estimatedAmount": "अनुमानित मूल्य", "crm.currency": "मुद्रा", "crm.probabilityBps": "जीत संभावना (%)", "crm.activityTitle": "अगली कार्रवाई जोड़ें", "crm.subject": "विषय", "crm.details": "विवरण", "crm.scheduledFor": "नियत समय", "crm.convertTitle": "सुरक्षित ग्राहक रूपांतरण", "crm.customer": "ग्राहक", "crm.receivableAccountId": "प्राप्य खाता ID", "crm.customerNameAr": "अरबी ग्राहक नाम", "crm.customerNameEn": "अंग्रेज़ी ग्राहक नाम", "crm.required": "आवश्यक फ़ील्ड भरें।",
   "crm.pipelineDescription": "मान हर मुद्रा में अलग समूहित रहते हैं; अलग-अलग मुद्राओं को जोड़ा नहीं जाता।",
   "crm.nextActions": "खुले फ़ॉलो-अप", "crm.emptyLeadsDescription": "व्यवसाय-विकास यात्रा शुरू करने के लिए पहली लीड बनाएँ।", "crm.emptyOpportunitiesDescription": "लीड को योग्य करने के बाद अवसर यहाँ दिखाई देगा।", "crm.emptyActivitiesDescription": "अगली कार्रवाई के रूप में कॉल, बैठक या कार्य जोड़ें।", "crm.loadError": "व्यवसाय-विकास कार्यक्षेत्र लोड नहीं हो सका।", "crm.saved": "बदलाव सहेजा गया।", "crm.saveError": "बदलाव सहेजा नहीं जा सका।", "crm.code": "कोड", "crm.name": "नाम", "crm.weighted": "भारित", "crm.count": "अवसर", "crm.probability": "संभावना", "crm.nextAction": "अगली कार्रवाई", "crm.due": "नियत तारीख",
