@@ -1,0 +1,7 @@
+.optional-modules { font-family: "Cairo", sans-serif; font-size: 1rem; line-height: 1.8; color: #172d3e; max-width: 76rem; margin-inline: auto; padding: 1.5rem; background: #f5f8fa; }
+.optional-modules h2, .optional-modules h3 { font-size: 1.25rem; line-height: 1.6; margin: 0 0 .75rem; font-weight: 700; }
+.optional-modules p { margin: .75rem 0; }
+.optional-modules__list { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 23rem), 1fr)); gap: 1rem; }
+.optional-modules__card { min-width: 0; padding: 1.25rem; border: 1px solid #cad6de; border-radius: .75rem; background: #fff; overflow-wrap: anywhere; }
+.optional-modules__card ul { padding-inline-start: 1.5rem; }
+@media (max-width: 30rem) { .optional-modules { padding: 1rem; } }
