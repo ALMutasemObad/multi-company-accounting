@@ -15,7 +15,7 @@ try {
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.goto(url);
-    await page.getByRole('heading', { name: 'وحدات الخطة الحالية' }).waitFor();
+    await page.getByRole('heading', { name: 'وحدات الخطة الحالية' }).last().waitFor();
     await page.evaluate(() => document.fonts.ready);
     assert.equal(await page.locator('.optional-modules__card').count(), 6);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);

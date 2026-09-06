@@ -1,3 +1,4 @@
+import { I18nProvider, loadLocale, useI18n } from '../i18n';
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import '@fontsource/cairo/400.css';
@@ -6,6 +7,7 @@ import { OptionalModulesCatalog, type OptionalModulesInput } from './OptionalMod
 import { fixtureInput } from './fixture-data';
 
 function Fixture() {
+  const { t } = useI18n();
   const [scenario, setScenario] = useState('ready');
   const ready = fixtureInput();
   let read: OptionalModulesInput['read'] = ready;
@@ -15,12 +17,12 @@ function Fixture() {
   if (scenario === 'pending') { ready.snapshot.pending = { ...ready.snapshot.current, state: 'PENDING_APPROVAL' }; ready.snapshot.scheduled = { ...ready.snapshot.current }; }
   return <main>
     <div className="optional-modules" dir="rtl" lang="ar">
-      <h2>معاينة محلية ببيانات محاكاة</h2>
-      <label>حالة العرض <select style={{ font: 'inherit' }} value={scenario} onChange={event => setScenario(event.target.value)}>
-        <option value="ready">الحالة الحالية</option><option value="pending">طلب معلق وتغيير مجدول</option><option value="loading">تحميل</option><option value="error">فشل القراءة</option><option value="unavailable">غير متاحة</option><option value="foreign">شركة مختلفة</option><option value="forbidden">دون صلاحية العرض</option>
+      <h2>{t('optionalModules.heading')}</h2>
+      <label>{t('subscription.status')} <select style={{ font: 'inherit' }} value={scenario} onChange={event => setScenario(event.target.value)}>
+        <option value="ready">{t('subscription.currentPlan')}</option><option value="pending">{t('optionalModules.pending')}</option><option value="loading">{t('subscription.loading')}</option><option value="error">{t('optionalModules.error')}</option><option value="unavailable">{t('optionalModules.unavailable')}</option><option value="foreign">{t('optionalModules.contextChanged')}</option><option value="forbidden">{t('optionalModules.viewRequired')}</option>
       </select></label>
     </div>
     <OptionalModulesCatalog companyId="42" userId="7" read={read} />
   </main>;
 }
-if (import.meta.env.DEV) createRoot(document.getElementById('root')!).render(<Fixture />);
+if (import.meta.env.DEV) await loadLocale('ar').then(() => createRoot(document.getElementById('root')!).render(<I18nProvider initialLocale="ar"><Fixture /></I18nProvider>));

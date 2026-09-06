@@ -1,3 +1,4 @@
+import { arOptionalModules } from "./optional-modules";
 import { arPages } from "./ar-pages";
 import { arDomain } from "./ar-domain";
 import { arEvents } from "./ar-events";
@@ -22,6 +23,7 @@ import { arOrganizationOwner } from "./organization-owner";
 import { arEmployeeExpenses } from "./employee-expenses";
 
 export const ar = {
+  ...arOptionalModules,
   ...arOrganizationOwner,
   ...arCrm,
   ...arSubscriptionChanges,

@@ -3,7 +3,7 @@ import { api } from "./api";
 import { Can, useAuthorization } from "./authorization-context";
 import { SubscriptionBillingCenter } from "./SubscriptionBillingCenter";
 import { useI18n } from "./i18n";
-import type { SubscriptionCatalog, SubscriptionPlanVersion, SubscriptionSnapshot } from "./types";
+import type { CurrentAuthorization, SubscriptionCatalog, SubscriptionPlanVersion, SubscriptionSnapshot } from "./types";
 import { Button, PageHeader, Spinner } from "./ui";
 import { clearSubscriptionPlanPreference, subscriptionPlanForRoute, subscriptionRouteBase } from "./public-plans";
 import { subscriptionRouteIntent, withoutSubscriptionPlanIntent, type SubscriptionRouteIntent } from './subscription-route-intent';
@@ -13,21 +13,28 @@ import { withinRequest } from "./request-scope";
 import { SubscriptionChangeReviewDetails } from "./subscription-change-review";
 import { createSubscriptionChangeAttempt, createSubscriptionChangeReview, isSubscriptionContextMismatch, rememberedSubscriptionChange, rememberSubscriptionChange, sendSubscriptionChange, subscriptionChangeAttemptMatchesCompany, subscriptionChangeFailure, subscriptionChangeFingerprint, SubscriptionContextMismatch, SUBSCRIPTION_CHANGE_READ_MS, type SubscriptionChangeRecord, type SubscriptionChangeReview } from "./subscription-change-safety";
 
+import { OptionalModulesCatalog, type OptionalModulesInput } from './optional-modules/OptionalModulesCatalog';
+import { authorizationScope } from './optional-modules/authorization-scope';
+
 type Notice = (message: string, tone?: "success" | "error") => void;
 
 const moneyText = (value: string | null, currency: string, fallback: string) =>
   value === null ? fallback : `${value} ${currency}`;
 
-export function CompanySubscriptionPage({ notify }: { notify: Notice }) {
-  const { selectedCompany, user, permissionSet } = useAuthorization();
+export function CompanySubscriptionPage({ notify, onAuthorizationRead }: { notify: Notice; onAuthorizationRead?: (value: CurrentAuthorization) => void }) {
+  const authorization = useAuthorization();
+  const { selectedCompany, user, permissionSet } = authorization;
   if (!selectedCompany || !permissionSet.has("subscriptions.view")) return null;
-  const scope = `${user.id}:${selectedCompany.id}:${permissionSet.has("subscriptions.manage")}`;
-  return <CompanySubscriptionBody key={scope} notify={notify} companyId={selectedCompany.id} scope={`${user.id}:${selectedCompany.id}`} />;
+  const scope = authorizationScope(authorization);
+  return <CompanySubscriptionBody key={scope} authorization={authorization} onAuthorizationRead={onAuthorizationRead} notify={notify} companyId={selectedCompany.id} scope={`${user.id}:${selectedCompany.id}`} />;
 }
 
-function CompanySubscriptionBody({ notify, companyId, scope }: { notify: Notice; companyId: string; scope: string }) {
+function CompanySubscriptionBody({ notify, companyId, scope, authorization, onAuthorizationRead }: { notify: Notice; companyId: string; scope: string; authorization: CurrentAuthorization; onAuthorizationRead?: (value: CurrentAuthorization) => void }) {
   const { formatDateTime, t } = useI18n();
   const { permissionSet } = useAuthorization();
+  const actorId = authorization.user.id;
+  const authorizationKey = authorizationScope(authorization);
+  const [moduleRead, setModuleRead] = useState<OptionalModulesInput['read']>({ state: 'loading' });
   const [snapshot, setSnapshot] = useState<SubscriptionSnapshot | null>(null);
   const [catalog, setCatalog] = useState<SubscriptionCatalog>({ plans: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } });
   const [selectedPlanId, setSelectedPlanId] = useState("");
@@ -76,6 +83,7 @@ function CompanySubscriptionBody({ notify, companyId, scope }: { notify: Notice;
     ++contextRevision.current;
     readSucceededRef.current = false;
     setContextBlocked(true); setReadSucceeded(false);
+    setModuleRead({ state: 'unavailable' });
     if (!recordRef.current) { setReview(null); setAcknowledged(false); }
   }, []);
   useEffect(() => {
@@ -161,6 +169,7 @@ function CompanySubscriptionBody({ notify, companyId, scope }: { notify: Notice;
   }, [applyCatalog]);
 
   const load = useCallback(async () => {
+    setModuleRead({ state: 'loading' });
     const requestId = ++catalogRequest.current;
     const startedContextRevision = contextRevision.current;
     read.current?.abort();
@@ -172,7 +181,7 @@ function CompanySubscriptionBody({ notify, companyId, scope }: { notify: Notice;
     setReadSucceeded(false);
     setError("");
     try {
-      const [nextSnapshot, nextCatalog] = await withinRequest(signal => Promise.all([
+      const [nextSnapshot, nextCatalog, nextAuthorization] = await withinRequest(signal => Promise.all([
         api<SubscriptionSnapshot>("/subscription?page=1&pageSize=20", { signal }).then(result => {
           if (!signal.aborted && mounted.current && !controller.signal.aborted && requestId === catalogRequest.current
             && startedContextRevision === contextRevision.current && result?.company?.id !== companyId) {
@@ -184,12 +193,20 @@ function CompanySubscriptionBody({ notify, companyId, scope }: { notify: Notice;
           return result;
         }),
         api<SubscriptionCatalog>(`/subscription/catalog?page=${catalogPageRef.current}&pageSize=100`, { signal }),
+        api<CurrentAuthorization>("/auth/me", { signal }),
       ]), { signal: controller.signal, timeoutMs: SUBSCRIPTION_CHANGE_READ_MS });
       if (!mounted.current || controller.signal.aborted || requestId !== catalogRequest.current
         || startedContextRevision !== contextRevision.current) return false;
       // The owner response must identify its actual company. Capturing the tab's
       // scope alone is not proof of the cookie-backed session's current company.
       if (nextSnapshot?.company?.id !== companyId) throw new SubscriptionContextMismatch();
+      if (nextAuthorization.user.id !== actorId || nextAuthorization.selectedCompany?.id !== companyId) throw new SubscriptionContextMismatch();
+      if (authorizationScope(nextAuthorization) !== authorizationKey) {
+        blockContext();
+        onAuthorizationRead?.(nextAuthorization);
+        return false;
+      }
+      setModuleRead({ state: 'ready', companyId, userId: actorId, authorization: nextAuthorization, snapshot: nextSnapshot });
       setSnapshot(nextSnapshot);
       applyCatalog(nextCatalog);
       contextBlockedRef.current = false;
@@ -201,13 +218,14 @@ function CompanySubscriptionBody({ notify, companyId, scope }: { notify: Notice;
       if (mounted.current && !controller.signal.aborted && requestId === catalogRequest.current
         && startedContextRevision === contextRevision.current) {
         if (isSubscriptionContextMismatch(cause)) blockContext();
+        else setModuleRead({ state: 'error' });
         setError(t("subscriptionChanges.readFailed"));
       }
       return false;
     } finally {
       if (mounted.current && requestId === catalogRequest.current) { catalogBusy.current = false; setLoading(false); setCatalogLoading(false); }
     }
-  }, [applyCatalog, blockContext, companyId, t]);
+  }, [applyCatalog, blockContext, companyId, actorId, authorizationKey, onAuthorizationRead, t]);
 
   async function pageCatalog(page: number) {
     if (command.current || recordRef.current || contextBlockedRef.current) return;
@@ -389,11 +407,7 @@ function CompanySubscriptionBody({ notify, companyId, scope }: { notify: Notice;
       </div>
 
       <CompanySubscriptionUsagePanel key={current.plan.id} />
-        <section className="panel subscription-panel">
-          <header><div><h2>{t("subscription.modules")}</h2><p>{t("subscription.modulesDescription")}</p></div></header>
-          {snapshot.effectiveModules.length ? <ul className="subscription-module-list">{snapshot.effectiveModules.map((module) => <li key={module.id}><strong>{module.displayName}</strong><small>{module.code}</small></li>)}</ul>
-            : <div className="empty-state"><h3>{t("subscription.noModules")}</h3><p>{t("subscription.noModulesDescription")}</p></div>}
-        </section>
+      <OptionalModulesCatalog companyId={companyId} userId={actorId} read={moduleRead} />
 
       {([{ change: snapshot.pending, pending: true }, { change: snapshot.scheduled, pending: false }]).map(({ change, pending }) => change && <section key={pending ? "pending" : "scheduled"} className="panel subscription-panel subscription-attention">
         <header><div><h2>{pending ? t("subscription.pendingChange") : t("subscription.scheduledChange")}</h2><p>{pending ? t("subscription.pendingPaymentSafe") : t("subscription.effectiveOn", { value1: change.effectiveAt ? formatDateTime(change.effectiveAt) : "—" })}</p></div></header>

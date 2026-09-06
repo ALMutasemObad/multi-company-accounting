@@ -144,6 +144,11 @@ export default function App() {
     setState("ready");
   }, []);
 
+  const acceptSubscriptionAuthorization = useCallback((next: CurrentAuthorization) => {
+    setAuthorization(current => current && current.user.id === next.user.id
+      && current.selectedCompany?.id === next.selectedCompany?.id ? next : current);
+  }, []);
+
   const chooseCompany = useCallback(async (selected: Company, signal: AbortSignal) => {
     invalidateSessionRequests();
     await api<void>("/auth/context", {
@@ -427,7 +432,7 @@ export default function App() {
             {activeView === "organizationOwner" && organizationWorkspace && <OrganizationOwnerPage onSwitchCompany={switchFromOrganization} notify={notify} />}
             {activeView === "platform" && platformOperator && <PlatformOperationsPage onNavigate={navigate} />}
             {activeView === "platformSubscriptions" && platformOperator && <PlatformSubscriptionsPage notify={notify} />}
-            {activeView === "subscription" && <CompanySubscriptionPage notify={notify} />}
+            {activeView === "subscription" && <CompanySubscriptionPage notify={notify} onAuthorizationRead={acceptSubscriptionAuthorization} />}
             {activeView === "pos" && <PosPage notify={notify} />}
             {activeView === "customers" && <CustomersPage notify={notify} />}
             {activeView === "crm" && <CrmPage notify={notify} />}

@@ -13,7 +13,7 @@
 | `apps/web/src/types.ts` | `SubscriptionPlanModule` يملك `active/selectionMode/dependencyIds/additionalRecurringFee`، والكود نص؛ `PlatformModuleCode` اتحاد أكواد معروف | نستورد الأنواع نفسها؛ لا نحول أي كود غير معروف إلى صلاحية |
 | `apps/api/src/platform-subscriptions/platform-subscription-service.ts`، `ownerCompany` | `effectiveModules` استحقاقات ضمن نافذة الزمن؛ الاستعلام هنا لا يستبعد الوحدة غير النشطة ولا يغلق الاعتماديات | نقول «استحقاق مسجل» ولا نقول إن الوحدة قابلة للتشغيل |
 | `apps/api/src/platform-subscriptions/prisma-company-entitlement-query-adapter.ts` | يرشح النشاط والزمن والأكواد، ويغلق الاعتماديات تكراريًا ويرفض الدوران | نعتمد قائمة `/auth/me` في وصف لقطة الصلاحيات، ولا نكرر حل الاعتماديات |
-| الملف السابق | يعيد حالة الاشتراك لكنه لا يرشح `moduleCodes` حسب `SUSPENDED/CANCELED` | لا نستنتج المنع أو الإتاحة من اسم الحالة. سياسة lifecycle تحتاج مراجعة مستقلة قبل أي تعطيل |
+| الملف السابق | يعيد حالة الاشتراك لكنه لا يرشح `moduleCodes` حسب `SUSPENDED/CANCELED` | لا نستنتج المنع أو الإتاحة من اسم الحالة. هذا سلوك مقصود وفق سياسة SUB-2 المؤرخة 2026-08-30: الاستحقاق المؤرخ مصدر الوصول، وليست حالة الاشتراك بوابة إلغاء مستقلة |
 | `apps/api/src/platform-subscriptions/company-capability-service.ts` و`apps/api/src/auth/auth-service.ts` | تقاطع RBAC والاستحقاق؛ أكواد `crm.*` و`sales_catalog.*` تتبع `SALES`، و`employee_expenses.*` تتبع `HUMAN_RESOURCES` | لا نعرض CRM التجاري كقدرة مستقلة منفذة لمجرد وجود شاشة CRM |
 | `apps/web/src/module-entitlements.ts` و`authorization-context.tsx` | جدول الربط وتصفية الصلاحيات في الواجهة؛ صلاحيات foundation ومنها الاشتراك منفصلة | يعرض المكون تفاصيل الاشتراك فقط مع `subscriptions.view` ويشرح غياب `subscriptions.manage` |
 | `apps/api/src/platform-subscriptions/platform-subscription-router.ts` | `GET /subscription` و`GET /subscription/catalog` بصلاحية العرض؛ `POST /subscription/change-requests` بصلاحية الإدارة وCSRF وexpectedCompanyId وIdempotency | لا ينشئ المكون طلبات ولا يتصل بالخادم |
@@ -40,7 +40,7 @@
 
 ## الأولويات لتفعيل وتعطيل آمنين لاحقًا
 
-- **P0 — مراجعة السياسة عند مالك الاشتراك**: تحديد معنى توقف كل عملية مع إبقاء القراءة والتصدير والتدقيق التاريخي. لا حذف بيانات ولا تغيير دفتر الأستاذ عند التعطيل. تراجع فجوة lifecycle المذكورة أعلاه؛ لا تحويلها إلى قاعدة إخفاء في React.
+- **تخطيط مستقل — سياسة تعطيل مستقبلية عند مالك الاشتراك**: تحديد معنى توقف كل عملية مع إبقاء القراءة والتصدير والتدقيق التاريخي. لا حذف بيانات ولا تغيير دفتر الأستاذ عند التعطيل. وصف هذا السلوك سابقًا بفجوة P0 مسحوب: [سياسة SUB-2](PLATFORM_SUBSCRIPTION_CAPABILITY_ENFORCEMENT_AR.md) مؤرخة 2026-08-30 وتؤجل صراحة تعريف أثر حالات الاشتراك. أي سياسة تعطيل جديدة قرار منتج وخادم مستقل، ولا تتحول إلى قاعدة إخفاء في React.
 - **P0 — إثبات الحواجز القائمة**: اختبارات API مباشرة لـRBAC والاستحقاق والشركة والاعتماديات؛ لا يكفي وجود كود في `/auth/me` لأن rollout والقيود التشغيلية الخاصة تبقى شروطًا إضافية.
 - **P1 — إعادة استخدام التغييرات المؤرخة**: تمر كل إضافة/إزالة باختيار خطة ووحدات ومراجعة سعر وتأثير ثم أمر المالك القائم مع expectedCompanyId وversion وIdempotency. تبقى الحالات المعلقة والمجدولة والنتيجة المجهولة منفصلة، ولا يعادل الدفع الناجح تفعيلًا.
 - **P1 — تحليل أثر الإزالة**: منع ترك تبعيات مكسورة؛ كشف العمليات المفتوحة ومهام الخلفية والتقارير اللازمة من خلال Query/Application Ports عند مالكيها. لا استعلام Prisma جديد عابر للسياق؛ لا API أسماء افتراضية قبل اعتماد عقد الحالة المحددة.
