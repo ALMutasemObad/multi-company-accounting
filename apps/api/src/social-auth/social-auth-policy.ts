@@ -81,4 +81,3 @@ export function decideSocialAuthentication(input: Readonly<{
   if (!input.profile.email?.verified) return { kind: 'require_verified_contact_email', profile: input.profile };
   return { kind: 'continue_registration', profile: input.profile };
 }
-

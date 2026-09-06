@@ -60,6 +60,27 @@ describe.runIf(enabled)('social authentication persistence and races', () => {
     expect(await prisma!.externalIdentity.count({ where: { subject: profile.identity.subject } })).toBe(0);
   });
 
+  it('links an issuer+subject only after recent authenticated consent and rotates the session', async () => {
+    const user = await prisma!.user.findUniqueOrThrow({ where: { emailNormalized: 'admin@mcap.local' } });
+    const sid = createOpaqueToken(); const csrf = createOpaqueToken();
+    const initiatingSession = await prisma!.session.create({ data: {
+      tokenHash: hashToken(sid), csrfHash: hashToken(csrf), state: 'AUTHENTICATED', userId: user.id,
+      authenticatedAt: new Date(), expiresAt: new Date(Date.now() + 600_000),
+    } });
+    const auth = service();
+    const started = await auth.start({ provider: 'GOOGLE', purpose: 'LINK', sid, csrfToken: csrf, consent: true });
+    const state = new URL(started.authorizationUrl).searchParams.get('state')!;
+    const result = await auth.callback({ provider: 'GOOGLE', state, browserBinding: started.browserBinding, callback: new URL(`https://callback.test/?code=x&state=${state}`) });
+
+    expect(result.kind).toBe('linked');
+    expect(await prisma!.externalIdentity.findUniqueOrThrow({
+      where: { issuer_subject: { issuer: profile.identity.issuer, subject: profile.identity.subject } },
+      select: { userId: true },
+    })).toEqual({ userId: user.id });
+    expect((await prisma!.session.findUniqueOrThrow({ where: { id: initiatingSession.id } })).revokedAt).not.toBeNull();
+    expect(await prisma!.session.count({ where: { userId: user.id, state: 'AUTHENTICATED', revokedAt: null } })).toBe(1);
+  });
+
   it('accepts Apple form_post with its narrow cross-site correlation cookie', async () => {
     const appleProvider: SocialOidcProvider = {
       authorizationUrl: ({ state }) => `https://appleid.apple.com/auth/authorize?state=${encodeURIComponent(state)}`,

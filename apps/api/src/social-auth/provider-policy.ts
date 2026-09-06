@@ -41,4 +41,3 @@ export function providerIdentityFromVerifiedClaims(input: Readonly<{
 export function isApplePrivateRelayEmail(email: string): boolean {
   return email.trim().toLocaleLowerCase('en-US').endsWith('@privaterelay.appleid.com');
 }
-
