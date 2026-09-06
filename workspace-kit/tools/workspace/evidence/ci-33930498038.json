@@ -1,0 +1,37 @@
+{
+  "checkedAt": "2026-09-06T06:08:25.533Z",
+  "runId": 33930498038,
+  "url": "https://github.com/ALMutasemObad/multi-company-accounting/actions/runs/33930498038",
+  "jobs": [
+    {
+      "id": 101207933216,
+      "name": "verify",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 101207933376,
+      "name": "Production upgrade compatibility (MySQL 8.4)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 101207933446,
+      "name": "iFastNet compatibility (Node 22 / MariaDB 10.11)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 101207933477,
+      "name": "Production upgrade compatibility (MariaDB 10.11)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 101212231750,
+      "name": "Deploy staging to iFastNet",
+      "status": "completed",
+      "conclusion": "success"
+    }
+  ]
+}
