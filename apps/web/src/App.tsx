@@ -47,6 +47,7 @@ const ReportsPage = lazy(() => import("./ReportsPage").then((module) => ({ defau
 const AdminPage = lazy(() => import("./AdminPage").then((module) => ({ default: module.AdminPage })));
 const AuditLogsPage = lazy(() => import("./AuditLogsPage").then((module) => ({ default: module.AuditLogsPage })));
 const SecurityEventsPage = lazy(() => import("./SecurityEventsPage").then((module) => ({ default: module.SecurityEventsPage })));
+const AccountSecurityPage = lazy(() => import("./social-auth/AccountSecurityPage").then((module) => ({ default: module.AccountSecurityPage })));
 const CompanySettingsPage = lazy(() => import("./CompanySettingsPage").then((module) => ({ default: module.CompanySettingsPage })));
 const DataImportsPage = lazy(() => import("./DataImportsPage").then((module) => ({ default: module.DataImportsPage })));
 const PosPage = lazy(() => import("./PosPage").then((module) => ({ default: module.PosPage })));
@@ -118,6 +119,7 @@ export default function App() {
   ) => {
     const planIntent = subscriptionPlanForRoute(location.hash);
     const entryRoute = subscriptionRouteBase(location.hash);
+    const accountSecurityIntent = new URLSearchParams(location.search).get("account") === "security";
     const nextScope = JSON.stringify([snapshot.user.id, snapshot.selectedCompany?.id,
       [...snapshot.modules].sort(), [...snapshot.permissions].sort()]);
     if (routeScope.current !== null && routeScope.current !== nextScope) {
@@ -137,6 +139,9 @@ export default function App() {
         : capabilities.platformOperations ? "platform" : "organizationOwner";
       setRoute({ view: next });
       replaceHash(next);
+    } else if (snapshot.selectedCompany && accountSecurityIntent) {
+      setRoute({ view: "accountSecurity" });
+      replaceHash("accountSecurity");
     } else if (snapshot.selectedCompany && snapshot.permissions.includes("subscriptions.view")
       && planIntent && ["", "#home", "#login", "#register"].includes(entryRoute)) {
       setRoute({ view: "subscription" });
@@ -478,6 +483,7 @@ export default function App() {
             {activeView === "admin" && <AdminPage notify={notify} />}
             {activeView === "audit" && <AuditLogsPage notify={notify} onNavigate={navigate} />}
             {activeView === "security" && <SecurityEventsPage notify={notify} />}
+            {activeView === "accountSecurity" && <AccountSecurityPage notify={notify} />}
             {activeView === "settings" && <CompanySettingsPage notify={notify} />}
           </Suspense>
         </main>

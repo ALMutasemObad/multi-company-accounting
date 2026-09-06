@@ -3598,7 +3598,7 @@ model ExternalIdentity {
   user           User           @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
   @@unique([issuer, subject], map: "external_identities_issuer_subject_key")
-  @@index([userId, provider], map: "external_identities_user_provider_idx")
+  @@unique([userId, provider], map: "ext_identity_user_provider_key")
   @@map("external_identities")
 }
 

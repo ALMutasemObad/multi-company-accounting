@@ -38,3 +38,57 @@
   color: var(--green-700);
   font-weight: 700;
 }
+
+.social-account-security {
+  display: grid;
+  gap: 1.25rem;
+  font-size: 1rem;
+}
+
+.social-account-security h1,
+.social-account-security h2 {
+  font-size: 1.5rem;
+}
+
+.social-account-security header p,
+.social-account-card p {
+  color: var(--muted);
+}
+
+.social-account-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+  gap: 1rem;
+}
+
+.social-account-card {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--surface);
+}
+
+.social-account-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  line-height: 1.6;
+}
+
+.social-account-consent input {
+  width: 1.15rem;
+  height: 1.15rem;
+  margin-block-start: 0.2rem;
+  flex: 0 0 auto;
+}
+
+.social-account-warning {
+  padding: 1rem;
+  border-radius: 0.75rem;
+  background: var(--warning-soft, #fff4d8);
+  color: var(--ink);
+  font-weight: 700;
+}

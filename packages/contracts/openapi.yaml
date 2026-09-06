@@ -247,6 +247,37 @@ paths:
         '200':
           description: قدرات آمنة مغلقة افتراضيًا
           content: { application/json: { schema: { $ref: '#/components/schemas/SocialAuthProvidersResponse' } } }
+  /auth/social/accounts:
+    get:
+      tags: [Authentication]
+      summary: وسائل الدخول الاجتماعية للمستخدم الحالي
+      operationId: getCurrentSocialAccounts
+      description: يعيد المزودات المهيأة فقط وحالة الربط وتاريخه؛ لا يعيد issuer أو subject أو البريد أو أي token.
+      security: [{ SessionCookie: [] }]
+      responses:
+        '200':
+          description: وسائل الدخول الاجتماعية وحالة حداثة المصادقة
+          content: { application/json: { schema: { $ref: '#/components/schemas/SocialAccountsResponse' } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+  /auth/social/accounts/{provider}:
+    delete:
+      tags: [Authentication]
+      summary: فك مزود اجتماعي عن المستخدم الحالي
+      operationId: unlinkCurrentSocialAccount
+      description: يتطلب جلسة حديثة وCSRF وتأكيدًا صريحًا، ويرفض إزالة آخر وسيلة دخول مثبتة.
+      parameters:
+      - { name: provider, in: path, required: true, schema: { type: string, enum: [google, apple] } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/SocialAccountUnlinkRequest' } } }
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      responses:
+        '204': { description: فُك المزود عن المستخدم الحالي }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /auth/social/{provider}/start:
     post:
       tags: [Authentication]
@@ -11198,6 +11229,29 @@ components:
       properties:
         google: { type: boolean }
         apple: { type: boolean }
+    SocialAccountLinkStatus:
+      type: object
+      additionalProperties: false
+      required: [provider, status, linkedAt]
+      properties:
+        provider: { type: string, enum: [GOOGLE, APPLE] }
+        status: { type: string, enum: [LINKED, NOT_LINKED] }
+        linkedAt: { type: [string, 'null'], format: date-time }
+    SocialAccountsResponse:
+      type: object
+      additionalProperties: false
+      required: [data, recentAuthenticationRequired]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/SocialAccountLinkStatus' }
+        recentAuthenticationRequired: { type: boolean }
+    SocialAccountUnlinkRequest:
+      type: object
+      additionalProperties: false
+      required: [consent]
+      properties:
+        consent: { type: boolean, enum: [true] }
     SocialAuthStartRequest:
       type: object
       additionalProperties: false

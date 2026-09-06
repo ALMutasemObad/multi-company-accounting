@@ -1,6 +1,6 @@
 import express, { Router, type ErrorRequestHandler, type Request } from 'express';
 import { z } from 'zod';
-import { completeSocialOnboardingRequestSchema, startSocialAuthRequestSchema } from '../generated/openapi-request-guards.js';
+import { completeSocialOnboardingRequestSchema, startSocialAuthRequestSchema, unlinkCurrentSocialAccountRequestSchema } from '../generated/openapi-request-guards.js';
 import { SocialAuthError, type SocialAuthService } from './social-auth-service.js';
 import type { SocialProvider } from './social-auth-policy.js';
 
@@ -22,6 +22,28 @@ export function createSocialAuthRouter(service: SocialAuthService, secureSession
   const clearOnboardingCookies = () => [clearOnboardingCookie('social_onboarding'), clearOnboardingCookie('social_onboarding_binding')];
 
   router.get('/providers', (_request, response) => response.json(service.capabilities()));
+  router.get('/accounts', async (request, response) => {
+    const result = await service.accounts({ sid: cookies(request.headers.cookie).sid });
+    response.json({
+      ...result,
+      data: result.data.map((entry) => ({
+        ...entry,
+        linkedAt: entry.linkedAt?.toISOString() ?? null,
+      })),
+    });
+  });
+  router.delete('/accounts/:provider', async (request, response) => {
+    const providerSlug = providerSchema.parse(request.params.provider);
+    const body = unlinkCurrentSocialAccountRequestSchema.parse(request.body);
+    await service.unlink({
+      provider: providerOf(providerSlug),
+      ...(cookies(request.headers.cookie).sid ? { sid: cookies(request.headers.cookie).sid } : {}),
+      ...(request.header('X-CSRF-Token') ? { csrfToken: request.header('X-CSRF-Token')! } : {}),
+      consent: body.consent,
+      metadata: metadata(request),
+    });
+    response.status(204).end();
+  });
   router.post('/:provider/start', async (request, response) => {
     const providerSlug = providerSchema.parse(request.params.provider);
     const body = startSocialAuthRequestSchema.parse(request.body);
@@ -35,11 +57,21 @@ export function createSocialAuthRouter(service: SocialAuthService, secureSession
   const finish = async (providerSlug: 'google' | 'apple', request: Request, response: express.Response) => {
     const body = callbackSchema.parse(providerSlug === 'apple' ? request.body : request.query);
     const resultMarker = body.error ? 'cancelled' : 'error';
-    if (body.error || !body.state || !body.code) { response.setHeader('Set-Cookie', clearBinding(providerSlug)); response.redirect(303, `/login?social=${resultMarker}`); return; }
+    const browserBinding = cookies(request.headers.cookie)[bindingName(providerSlug)];
+    if (body.error || !body.state || !body.code) {
+      const returnPath = await service.cancelAuthorization({
+        provider: providerOf(providerSlug),
+        ...(body.state ? { state: body.state } : {}),
+        ...(browserBinding ? { browserBinding } : {}),
+      });
+      response.setHeader('Set-Cookie', clearBinding(providerSlug));
+      const separator = returnPath.includes('?') ? '&' : '?';
+      response.redirect(303, `${returnPath}${separator}social=${resultMarker}`);
+      return;
+    }
     const callback = providerSlug === 'apple'
       ? new Request('https://callback.invalid/', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ code: body.code, state: body.state }) })
       : new URL(`https://callback.invalid/?code=${encodeURIComponent(body.code)}&state=${encodeURIComponent(body.state)}`);
-    const browserBinding = cookies(request.headers.cookie)[bindingName(providerSlug)];
     const result = await service.callback({ provider: providerOf(providerSlug), state: body.state, ...(browserBinding ? { browserBinding } : {}), callback, ...(body.user ? { appleUser: body.user } : {}), metadata: metadata(request) });
     const headers = [clearBinding(providerSlug)];
     if (result.kind === 'signed_in' || result.kind === 'linked') headers.push(sidCookie(result.sid, result.expiresAt));
@@ -56,7 +88,16 @@ export function createSocialAuthRouter(service: SocialAuthService, secureSession
     try { await finish(provider, request, response); }
     catch {
       response.setHeader('Set-Cookie', clearBinding(provider));
-      response.redirect(303, '/login?social=error');
+      const raw = provider === 'apple' ? request.body : request.query;
+      const state = typeof raw?.state === 'string' ? raw.state : undefined;
+      const browserBinding = cookies(request.headers.cookie)[bindingName(provider)];
+      const returnPath = await service.callbackReturnPath({
+        provider: providerOf(provider),
+        ...(state ? { state } : {}),
+        ...(browserBinding ? { browserBinding } : {}),
+      }).catch(() => '/login');
+      const separator = returnPath.includes('?') ? '&' : '?';
+      response.redirect(303, `${returnPath}${separator}social=error`);
     }
   };
   router.get('/google/callback', (request, response) => safeFinish('google', request, response));
@@ -111,7 +152,8 @@ export function createSocialAuthRouter(service: SocialAuthService, secureSession
     const status = error.code === 'PROVIDER_DISABLED' ? 404
       : error.code === 'AUTHENTICATION_REQUIRED' ? 401
       : error.code === 'ONBOARDING_INVALID' ? 410
-      : error.code === 'IDENTITY_CONFLICT' || error.code === 'ACCOUNT_PROOF_REQUIRED' ? 409
+      : error.code === 'IDENTITY_NOT_LINKED' ? 404
+      : error.code === 'IDENTITY_CONFLICT' || error.code === 'ACCOUNT_PROOF_REQUIRED' || error.code === 'LAST_SIGN_IN_METHOD' ? 409
       : error.code === 'PROVISIONING_FAILED' ? 503
       : error.code === 'INVALID_REQUEST' ? 400
       : 403;

@@ -19,6 +19,8 @@ export class SocialAuthError extends Error {
     | 'AUTHENTICATION_REQUIRED'
     | 'RECENT_AUTHENTICATION_REQUIRED'
     | 'IDENTITY_CONFLICT'
+    | 'IDENTITY_NOT_LINKED'
+    | 'LAST_SIGN_IN_METHOD'
     | 'ONBOARDING_INVALID'
     | 'ACCOUNT_PROOF_REQUIRED'
     | 'PROVISIONING_FAILED') {
@@ -71,6 +73,121 @@ export class SocialAuthService {
 
   capabilities() {
     return { google: Boolean(this.options.providers.GOOGLE), apple: Boolean(this.options.providers.APPLE) };
+  }
+
+  async accounts(input: { sid?: string }) {
+    const session = await this.authenticatedSession(input.sid);
+    const identities = await this.prisma.externalIdentity.findMany({
+      where: { userId: session.userId! },
+      select: { provider: true, createdAt: true },
+    });
+    const byProvider = new Map(identities.map((identity) => [identity.provider, identity.createdAt]));
+    const data = (['GOOGLE', 'APPLE'] as const)
+      .filter((provider) => Boolean(this.options.providers[provider]))
+      .map((provider) => ({
+        provider,
+        status: byProvider.has(provider) ? 'LINKED' as const : 'NOT_LINKED' as const,
+        linkedAt: byProvider.get(provider) ?? null,
+      }));
+    return {
+      data,
+      recentAuthenticationRequired: !session.authenticatedAt
+        || this.now().getTime() - session.authenticatedAt.getTime() > 10 * 60_000,
+    };
+  }
+
+  async unlink(input: {
+    provider: SocialProvider;
+    sid?: string;
+    csrfToken?: string;
+    consent: boolean;
+    metadata?: ClientMetadata;
+  }) {
+    if (!this.options.providers[input.provider]) throw new SocialAuthError('PROVIDER_DISABLED');
+    if (!input.consent) throw new SocialAuthError('INVALID_REQUEST');
+    const session = await this.authenticatedSession(input.sid, input.csrfToken);
+    if (!session.authenticatedAt || this.now().getTime() - session.authenticatedAt.getTime() > 10 * 60_000) {
+      throw new SocialAuthError('RECENT_AUTHENTICATION_REQUIRED');
+    }
+    const now = this.now();
+    return this.transactions.execute({
+      operation: 'SOCIAL_IDENTITY_UNLINK',
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      maxWaitMs: 2_000,
+      timeoutMs: 8_000,
+      deadlineMs: 15_000,
+    }, async (tx) => {
+      await tx.$queryRaw`SELECT id FROM users WHERE id = ${session.userId!} FOR UPDATE`;
+      const currentSession = await tx.session.findUnique({ where: { id: session.id } });
+      if (!currentSession || currentSession.revokedAt || currentSession.expiresAt <= now
+        || currentSession.state !== 'AUTHENTICATED' || currentSession.userId !== session.userId
+        || !tokenMatches(input.csrfToken!, currentSession.csrfHash)) {
+        throw new SocialAuthError('AUTHENTICATION_REQUIRED');
+      }
+      const user = await tx.user.findUniqueOrThrow({
+        where: { id: session.userId! },
+        select: {
+          passwordHash: true,
+          emailNormalized: true,
+          externalIdentities: { select: { id: true, provider: true } },
+          assignments: {
+            where: { isActive: true, company: { isActive: true } },
+            select: { companyId: true },
+          },
+        },
+      });
+      const identity = user.externalIdentities.find((entry) => entry.provider === input.provider);
+      if (!identity) throw new SocialAuthError('IDENTITY_NOT_LINKED');
+      if (!user.passwordHash && user.externalIdentities.length <= 1) {
+        throw new SocialAuthError('LAST_SIGN_IN_METHOD');
+      }
+      // SecurityEvent is company-scoped. Do not perform an unaudited unlink for
+      // a detached/platform-only identity until that schema has a global scope.
+      if (!user.assignments.length) throw new SocialAuthError('INVALID_REQUEST');
+      const removed = await tx.externalIdentity.deleteMany({
+        where: { id: identity.id, userId: session.userId!, provider: input.provider },
+      });
+      if (removed.count !== 1) throw new SocialAuthError('IDENTITY_NOT_LINKED');
+      await this.security.appendMany(tx, user.assignments.map(({ companyId }) => ({
+        companyId,
+        userId: session.userId!,
+        sessionId: currentSession.id,
+        eventType: 'SOCIAL_IDENTITY_UNLINKED',
+        severity: 'WARNING',
+        emailSnapshot: user.emailNormalized,
+        ipAddress: input.metadata?.ipAddress ?? null,
+        userAgent: input.metadata?.userAgent ?? null,
+        details: { provider: input.provider },
+      })));
+    });
+  }
+
+  async callbackReturnPath(input: { provider: SocialProvider; state?: string; browserBinding?: string }) {
+    if (!input.state || !input.browserBinding) return '/login';
+    const record = await this.prisma.socialAuthorizationTransaction.findUnique({
+      where: { stateHash: digest(input.state) },
+      select: { provider: true, browserBindingHash: true, returnPath: true },
+    });
+    return record && record.provider === input.provider
+      && buffersEqual(record.browserBindingHash, digest(input.browserBinding))
+      ? this.safeReturnPath(record.returnPath)
+      : '/login';
+  }
+
+  async cancelAuthorization(input: { provider: SocialProvider; state?: string; browserBinding?: string }) {
+    if (!input.state || !input.browserBinding) return '/login';
+    const now = this.now();
+    const record = await this.prisma.socialAuthorizationTransaction.findUnique({
+      where: { stateHash: digest(input.state) },
+      select: { id: true, provider: true, browserBindingHash: true, returnPath: true, usedAt: true, expiresAt: true },
+    });
+    if (!record || record.provider !== input.provider || record.usedAt || record.expiresAt <= now
+      || !buffersEqual(record.browserBindingHash, digest(input.browserBinding))) return '/login';
+    const consumed = await this.prisma.socialAuthorizationTransaction.updateMany({
+      where: { id: record.id, usedAt: null, expiresAt: { gt: now } },
+      data: { usedAt: now },
+    });
+    return consumed.count === 1 ? this.safeReturnPath(record.returnPath) : '/login';
   }
 
   async start(input: { provider: SocialProvider; purpose: SocialAuthorizationPurpose; sid?: string; csrfToken?: string; consent: boolean; returnPath?: string; browserBinding?: string }) {
@@ -296,7 +413,6 @@ export class SocialAuthService {
     metadata?: ClientMetadata,
   ) {
     const sid = createOpaqueToken();
-    const csrfToken = createOpaqueToken();
     const now = this.now();
     const expiresAt = new Date(now.getTime() + this.options.sessionTtlHours * 3_600_000);
     return this.transactions.execute({ operation: 'social-auth-callback', maxAttempts: 3 }, async (tx) => {
@@ -387,8 +503,11 @@ export class SocialAuthService {
       const session = await tx.session.create({ data: {
         state: 'AUTHENTICATED',
         userId,
+        selectedCompanyId: record.purpose === 'LINK' ? record.initiatingSession.selectedCompanyId : null,
         tokenHash: hashToken(sid),
-        csrfHash: hashToken(csrfToken),
+        // The opaque SID is rotated. Keeping the already browser-held CSRF
+        // proof avoids putting a new secret in an OAuth redirect or URL.
+        csrfHash: record.initiatingSession.csrfHash,
         authenticatedAt: now,
         expiresAt,
       } });
@@ -422,7 +541,6 @@ export class SocialAuthService {
       return {
         kind: decision.kind === 'sign_in' ? 'signed_in' as const : 'linked' as const,
         sid,
-        csrfToken,
         expiresAt,
         returnPath: record.returnPath,
       };
@@ -445,6 +563,17 @@ export class SocialAuthService {
   private requireOnboarding() {
     if (!this.options.onboarding) throw new SocialAuthError('ONBOARDING_INVALID');
     return this.options.onboarding;
+  }
+
+  private async authenticatedSession(sid?: string, csrfToken?: string) {
+    if (!sid) throw new SocialAuthError('AUTHENTICATION_REQUIRED');
+    const session = await this.prisma.session.findUnique({ where: { tokenHash: hashToken(sid) } });
+    if (!session || session.state !== 'AUTHENTICATED' || !session.userId
+      || session.revokedAt || session.expiresAt <= this.now()
+      || (csrfToken !== undefined && !tokenMatches(csrfToken, session.csrfHash))) {
+      throw new SocialAuthError('AUTHENTICATION_REQUIRED');
+    }
+    return session;
   }
 
   private async validContinuation(input: { sid?: string; continuation?: string; browserBinding?: string }) {

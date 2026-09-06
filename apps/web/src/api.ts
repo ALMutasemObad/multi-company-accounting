@@ -110,6 +110,28 @@ export async function login(email: string, password: string, options: RequestPol
 
 export type SocialAuthProviders = { google: boolean; apple: boolean };
 export const socialAuthProviders = (options: RequestPolicy = {}) => api<SocialAuthProviders>('/auth/social/providers', options);
+export type SocialAccount = {
+  provider: 'GOOGLE' | 'APPLE';
+  status: 'LINKED' | 'NOT_LINKED';
+  linkedAt: string | null;
+};
+export type SocialAccounts = { data: SocialAccount[]; recentAuthenticationRequired: boolean };
+export const socialAccounts = (options: RequestPolicy = {}) => api<SocialAccounts>('/auth/social/accounts', options);
+
+export async function startSocialAccountLink(provider: 'google' | 'apple', options: RequestPolicy = {}) {
+  return api<{ authorizationUrl: string; expiresAt: string }>(`/auth/social/${provider}/start`, {
+    ...options,
+    method: 'POST',
+    body: JSON.stringify({ purpose: 'LINK', consent: true, returnPath: '/?account=security' }),
+  });
+}
+
+export const unlinkSocialAccount = (provider: 'google' | 'apple', options: RequestPolicy = {}) =>
+  api<void>(`/auth/social/accounts/${provider}`, {
+    ...options,
+    method: 'DELETE',
+    body: JSON.stringify({ consent: true }),
+  });
 export async function startSocialSignIn(provider: 'google' | 'apple', options: RequestPolicy = {}) {
   await beginLogin(options);
   return api<{ authorizationUrl: string; expiresAt: string }>(`/auth/social/${provider}/start`, {
