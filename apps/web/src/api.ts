@@ -108,6 +108,17 @@ export async function login(email: string, password: string, options: RequestPol
   }, { ...options, signal: sessionRequestSignal(options.signal) });
 }
 
+export type SocialAuthProviders = { google: boolean; apple: boolean };
+export const socialAuthProviders = (options: RequestPolicy = {}) => api<SocialAuthProviders>('/auth/social/providers', options);
+export async function startSocialSignIn(provider: 'google' | 'apple', options: RequestPolicy = {}) {
+  await beginLogin(options);
+  return api<{ authorizationUrl: string; expiresAt: string }>(`/auth/social/${provider}/start`, {
+    ...options,
+    method: 'POST',
+    body: JSON.stringify({ purpose: 'SIGN_IN', consent: false, returnPath: '/login' }),
+  });
+}
+
 export async function logout() {
   invalidateSessionRequests();
   const pending = api<void>("/auth/logout", { method: "POST" });

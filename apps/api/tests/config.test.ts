@@ -4,6 +4,27 @@ import { loadConfig } from '../src/config.js';
 const rateLimitIdentitySecret = 'test-rate-limit-identity-secret-1234567890';
 
 describe('production configuration', () => {
+  it('keeps both social providers disabled and rejects incomplete opt-in', () => {
+    const disabled = loadConfig({ NODE_ENV: 'test' });
+    expect(disabled.GOOGLE_OIDC_ENABLED).toBe(false);
+    expect(disabled.APPLE_OIDC_ENABLED).toBe(false);
+    expect(() => loadConfig({ NODE_ENV: 'test', GOOGLE_OIDC_ENABLED: 'true' })).toThrow(/GOOGLE_OIDC_CLIENT_ID|transaction protection/);
+    expect(() => loadConfig({
+      NODE_ENV: 'test',
+      GOOGLE_OIDC_ENABLED: 'true',
+      SOCIAL_AUTH_TRANSACTION_SECRET: 'test-social-transaction-secret-1234567890',
+      GOOGLE_OIDC_CLIENT_ID: 'google-client',
+      GOOGLE_OIDC_CLIENT_SECRET: 'google-secret',
+      GOOGLE_OIDC_REDIRECT_URI: 'https://app.example.test/api/v1/auth/social/google/callback',
+    })).not.toThrow();
+    expect(() => loadConfig({
+      NODE_ENV: 'test',
+      APPLE_OIDC_ENABLED: 'true',
+      SOCIAL_AUTH_TRANSACTION_SECRET: 'test-social-transaction-secret-1234567890',
+      APPLE_OIDC_CLIENT_ID: 'apple.services.id',
+      APPLE_OIDC_REDIRECT_URI: 'https://app.example.test/api/v1/auth/social/apple/callback',
+    })).toThrow(/APPLE_OIDC_CLIENT_SECRET/);
+  });
   it('fails fast when production transport settings are unsafe', () => {
     expect(() => loadConfig({
       NODE_ENV: 'production',

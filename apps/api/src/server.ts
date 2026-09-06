@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { createApp } from './app.js';
 import { loadConfig } from './config.js';
 import { hash, verify } from 'argon2';
+import { randomBytes } from 'node:crypto';
 import { AuthService } from './auth/auth-service.js';
 import { PrismaAuthStore } from './auth/prisma-auth-store.js';
 import { createDatabase } from './database.js';
@@ -103,6 +104,8 @@ import { EmployeeExpenseApprovalAdapter } from './employee-expenses/employee-exp
 import { EmployeeExpenseEmployeeAdapter } from './hr/employee-expense-employee-adapter.js';
 import { EmployeeExpenseCostCenterAdapter } from './accounts/employee-expense-cost-center-adapter.js';
 import { EmployeeExpenseCurrencyAdapter } from './companies/employee-expense-currency-adapter.js';
+import { OidcProviderAdapter } from './social-auth/oidc-provider-adapter.js';
+import { SocialAuthService } from './social-auth/social-auth-service.js';
 
 const config = loadConfig();
 if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required to start the API');
@@ -133,6 +136,17 @@ const auth = new AuthService(new PrismaAuthStore(database), { verify }, {
   companyCapabilities: new CompanyCapabilityService(
     new PrismaCompanyEntitlementQueryAdapter(database),
   ),
+});
+const socialProviders = {
+  ...(config.GOOGLE_OIDC_ENABLED ? { GOOGLE: new OidcProviderAdapter({ provider: 'GOOGLE', clientId: config.GOOGLE_OIDC_CLIENT_ID!, clientSecret: config.GOOGLE_OIDC_CLIENT_SECRET!, redirectUri: config.GOOGLE_OIDC_REDIRECT_URI!, authorizationEndpoint: config.GOOGLE_OIDC_AUTHORIZATION_ENDPOINT, tokenEndpoint: config.GOOGLE_OIDC_TOKEN_ENDPOINT, jwksUri: config.GOOGLE_OIDC_JWKS_URI }) } : {}),
+  ...(config.APPLE_OIDC_ENABLED ? { APPLE: new OidcProviderAdapter({ provider: 'APPLE', clientId: config.APPLE_OIDC_CLIENT_ID!, clientSecret: config.APPLE_OIDC_CLIENT_SECRET!, redirectUri: config.APPLE_OIDC_REDIRECT_URI!, authorizationEndpoint: config.APPLE_OIDC_AUTHORIZATION_ENDPOINT, tokenEndpoint: config.APPLE_OIDC_TOKEN_ENDPOINT, jwksUri: config.APPLE_OIDC_JWKS_URI }) } : {}),
+};
+const socialAuth = new SocialAuthService(database, {
+  // Ephemeral only while every provider is disabled; config validation requires a stable secret before enablement.
+  transactionSecret: config.SOCIAL_AUTH_TRANSACTION_SECRET ?? randomBytes(32).toString('base64url'),
+  transactionTtlMinutes: config.SOCIAL_AUTH_TRANSACTION_TTL_MINUTES,
+  sessionTtlHours: config.SESSION_TTL_HOURS,
+  providers: socialProviders,
 });
 const registrationMailer = config.REGISTRATION_EMAIL_MODE === 'resend'
   ? new ResendRegistrationMailer(config.RESEND_API_KEY!, config.REGISTRATION_EMAIL_FROM!)
@@ -295,6 +309,7 @@ async function startServer() {
       config.RATE_LIMIT_IDENTITY_SECRET ?? 'local-development-rate-limit-identity-secret',
     ),
     auth,
+    socialAuth,
     ...(registration ? { registration } : {}),
     ...(passwordReset ? { passwordReset } : {}),
     users,

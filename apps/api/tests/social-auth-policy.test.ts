@@ -1,4 +1,7 @@
+import { createServer } from 'node:http';
+import { generateKeyPairSync, sign } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
+import { OidcProviderAdapter } from '../src/social-auth/oidc-provider-adapter.js';
 import {
   decideAuthorizationCallback,
   decideSocialAuthentication,
@@ -66,6 +69,33 @@ describe('social authentication account policy', () => {
 });
 
 describe('provider and authorization transaction policy', () => {
+  it('cryptographically verifies a local OIDC issuer simulation through openid-client', async () => {
+    const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const jwk = publicKey.export({ format: 'jwk' });
+    let expectedNonce = '';
+    const server = createServer((request, response) => {
+      response.setHeader('content-type', 'application/json');
+      if (request.url === '/jwks') { response.end(JSON.stringify({ keys: [{ ...jwk, kid: 'test-key', use: 'sig', alg: 'RS256' }] })); return; }
+      if (request.url === '/token') {
+        const now = Math.floor(Date.now() / 1000);
+        const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
+        const unsigned = `${encode({ alg: 'RS256', kid: 'test-key', typ: 'JWT' })}.${encode({ iss: 'https://accounts.google.com', sub: 'crypto-subject', aud: 'test-client', iat: now, exp: now + 300, nonce: expectedNonce, email: 'relay@example.test', email_verified: true })}`;
+        const idToken = `${unsigned}.${sign('RSA-SHA256', Buffer.from(unsigned), privateKey).toString('base64url')}`;
+        response.end(JSON.stringify({ access_token: 'not-stored', token_type: 'Bearer', expires_in: 300, id_token: idToken })); return;
+      }
+      response.statusCode = 404; response.end('{}');
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const address = server.address(); if (!address || typeof address === 'string') throw new Error('test server unavailable');
+      const base = `http://127.0.0.1:${address.port}`;
+      const adapter = new OidcProviderAdapter({ provider: 'GOOGLE', clientId: 'test-client', clientSecret: 'test-secret', redirectUri: `${base}/callback`, authorizationEndpoint: `${base}/authorize`, tokenEndpoint: `${base}/token`, jwksUri: `${base}/jwks`, allowInsecureForTests: true });
+      expectedNonce = 'nonce-from-server-transaction';
+      const verified = await adapter.exchange({ callback: new URL(`${base}/callback?code=code-1&state=state-1`), state: 'state-1', nonce: expectedNonce, codeVerifier: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~' });
+      expect(verified.identity).toEqual({ provider: 'GOOGLE', issuer: 'https://accounts.google.com', subject: 'crypto-subject' });
+      expect(verified.email?.verified).toBe(true);
+    } finally { await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())); }
+  });
   it('canonicalizes the documented legacy Google issuer but rejects foreign issuers', () => {
     expect(providerIdentityFromVerifiedClaims({ provider: 'GOOGLE', issuer: 'accounts.google.com', subject: 'abc' }))
       .toEqual({ kind: 'accepted', identity: { provider: 'GOOGLE', issuer: 'https://accounts.google.com', subject: 'abc' } });

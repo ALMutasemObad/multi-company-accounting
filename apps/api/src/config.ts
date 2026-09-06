@@ -39,6 +39,22 @@ const configSchema = z.object({
   SESSION_COOKIE_SECURE: booleanString.default(false),
   PRE_AUTH_TTL_MINUTES: z.coerce.number().int().min(1).max(30).default(10),
   SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(168).default(12),
+  SOCIAL_AUTH_TRANSACTION_SECRET: z.string().min(32).max(500).optional(),
+  SOCIAL_AUTH_TRANSACTION_TTL_MINUTES: z.coerce.number().int().min(2).max(15).default(10),
+  GOOGLE_OIDC_ENABLED: booleanString.default(false),
+  GOOGLE_OIDC_CLIENT_ID: z.string().trim().min(1).max(500).optional(),
+  GOOGLE_OIDC_CLIENT_SECRET: z.string().min(1).max(2000).optional(),
+  GOOGLE_OIDC_REDIRECT_URI: z.string().url().optional(),
+  GOOGLE_OIDC_AUTHORIZATION_ENDPOINT: z.string().url().default('https://accounts.google.com/o/oauth2/v2/auth'),
+  GOOGLE_OIDC_TOKEN_ENDPOINT: z.string().url().default('https://oauth2.googleapis.com/token'),
+  GOOGLE_OIDC_JWKS_URI: z.string().url().default('https://www.googleapis.com/oauth2/v3/certs'),
+  APPLE_OIDC_ENABLED: booleanString.default(false),
+  APPLE_OIDC_CLIENT_ID: z.string().trim().min(1).max(500).optional(),
+  APPLE_OIDC_CLIENT_SECRET: z.string().min(1).max(4000).optional(),
+  APPLE_OIDC_REDIRECT_URI: z.string().url().optional(),
+  APPLE_OIDC_AUTHORIZATION_ENDPOINT: z.string().url().default('https://appleid.apple.com/auth/authorize'),
+  APPLE_OIDC_TOKEN_ENDPOINT: z.string().url().default('https://appleid.apple.com/auth/token'),
+  APPLE_OIDC_JWKS_URI: z.string().url().default('https://appleid.apple.com/auth/keys'),
   TRUST_PROXY: booleanString.default(false),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1_000).max(3_600_000).default(60_000),
   RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(100_000).default(300),
@@ -92,6 +108,17 @@ const configSchema = z.object({
   ALERT_OUTBOX_DEAD_LETTER_COUNT_THRESHOLD: z.coerce.number().int().min(1).max(100_000).default(1),
   ALERT_COOLDOWN_MS: z.coerce.number().int().min(10_000).max(3_600_000).default(300_000),
 }).superRefine((config, context) => {
+  const requireSocial = (enabled: boolean, provider: 'GOOGLE' | 'APPLE', values: Array<[string, unknown]>) => {
+    if (!enabled) return;
+    if (!config.SOCIAL_AUTH_TRANSACTION_SECRET) context.addIssue({ code: 'custom', path: ['SOCIAL_AUTH_TRANSACTION_SECRET'], message: 'Enabled social login requires a transaction protection secret' });
+    for (const [key, value] of values) if (!value) context.addIssue({ code: 'custom', path: [key], message: `${provider} social login is enabled but ${key} is missing` });
+  };
+  requireSocial(config.GOOGLE_OIDC_ENABLED, 'GOOGLE', [
+    ['GOOGLE_OIDC_CLIENT_ID', config.GOOGLE_OIDC_CLIENT_ID], ['GOOGLE_OIDC_CLIENT_SECRET', config.GOOGLE_OIDC_CLIENT_SECRET], ['GOOGLE_OIDC_REDIRECT_URI', config.GOOGLE_OIDC_REDIRECT_URI],
+  ]);
+  requireSocial(config.APPLE_OIDC_ENABLED, 'APPLE', [
+    ['APPLE_OIDC_CLIENT_ID', config.APPLE_OIDC_CLIENT_ID], ['APPLE_OIDC_CLIENT_SECRET', config.APPLE_OIDC_CLIENT_SECRET], ['APPLE_OIDC_REDIRECT_URI', config.APPLE_OIDC_REDIRECT_URI],
+  ]);
   if (config.OUTBOX_LEASE_MS <= config.OUTBOX_HANDLER_TIMEOUT_MS + 1_000) {
     context.addIssue({ code: 'custom', path: ['OUTBOX_LEASE_MS'], message: 'OUTBOX_LEASE_MS must exceed OUTBOX_HANDLER_TIMEOUT_MS by more than one second' });
   }
@@ -146,6 +173,17 @@ const configSchema = z.object({
     }
   }
   if (config.NODE_ENV !== 'production') return;
+  const requireProductionOidcEndpoints = (enabled: boolean, provider: string, redirectUri: string | undefined, endpoints: Array<[string, string, string]>) => {
+    if (!enabled) return;
+    if (!redirectUri?.startsWith('https://') || new URL(redirectUri).origin !== new URL(config.WEB_ORIGIN).origin) context.addIssue({ code: 'custom', path: [`${provider}_OIDC_REDIRECT_URI`], message: `${provider} redirect URI must be HTTPS and same-origin with WEB_ORIGIN` });
+    for (const [key, actual, expected] of endpoints) if (actual !== expected) context.addIssue({ code: 'custom', path: [key], message: `${key} cannot override the canonical provider endpoint in production` });
+  };
+  requireProductionOidcEndpoints(config.GOOGLE_OIDC_ENABLED, 'GOOGLE', config.GOOGLE_OIDC_REDIRECT_URI, [
+    ['GOOGLE_OIDC_AUTHORIZATION_ENDPOINT', config.GOOGLE_OIDC_AUTHORIZATION_ENDPOINT, 'https://accounts.google.com/o/oauth2/v2/auth'], ['GOOGLE_OIDC_TOKEN_ENDPOINT', config.GOOGLE_OIDC_TOKEN_ENDPOINT, 'https://oauth2.googleapis.com/token'], ['GOOGLE_OIDC_JWKS_URI', config.GOOGLE_OIDC_JWKS_URI, 'https://www.googleapis.com/oauth2/v3/certs'],
+  ]);
+  requireProductionOidcEndpoints(config.APPLE_OIDC_ENABLED, 'APPLE', config.APPLE_OIDC_REDIRECT_URI, [
+    ['APPLE_OIDC_AUTHORIZATION_ENDPOINT', config.APPLE_OIDC_AUTHORIZATION_ENDPOINT, 'https://appleid.apple.com/auth/authorize'], ['APPLE_OIDC_TOKEN_ENDPOINT', config.APPLE_OIDC_TOKEN_ENDPOINT, 'https://appleid.apple.com/auth/token'], ['APPLE_OIDC_JWKS_URI', config.APPLE_OIDC_JWKS_URI, 'https://appleid.apple.com/auth/keys'],
+  ]);
   if (config.REGISTRATION_EMAIL_CAPTURE_PATH) {
     context.addIssue({ code: 'custom', path: ['REGISTRATION_EMAIL_CAPTURE_PATH'], message: 'Registration email capture is forbidden in production' });
   }
@@ -197,7 +235,7 @@ type LoadedAppConfig = z.infer<typeof configSchema>;
 export type AppConfig = Pick<LoadedAppConfig,
   'NODE_ENV' | 'PORT' | 'DATABASE_URL' | 'WEB_ORIGIN' | 'SESSION_COOKIE_SECURE' | 'PRE_AUTH_TTL_MINUTES' | 'SESSION_TTL_HOURS'
 > & Partial<Pick<LoadedAppConfig,
-  'DATABASE_POOL_CONNECTION_LIMIT' | 'DATABASE_POOL_MIN_IDLE' | 'DATABASE_POOL_ACQUIRE_TIMEOUT_MS' | 'DATABASE_CONNECT_TIMEOUT_MS' | 'DATABASE_POOL_IDLE_TIMEOUT_SECONDS' | 'SERVE_WEB_ASSETS' | 'TRUST_PROXY' | 'RATE_LIMIT_WINDOW_MS' | 'RATE_LIMIT_MAX' | 'AUTH_RATE_LIMIT_MAX' | 'RATE_LIMIT_NETWORK_MULTIPLIER' | 'RATE_LIMIT_IDENTITY_SECRET' | 'SELF_REGISTRATION_ENABLED' | 'REGISTRATION_RATE_LIMIT_MAX' | 'REGISTRATION_TOKEN_TTL_HOURS' | 'REGISTRATION_EMAIL_MODE' | 'REGISTRATION_EMAIL_FROM' | 'REGISTRATION_EMAIL_CAPTURE_PATH' | 'RESEND_API_KEY' | 'REGISTRATION_AUDIT_PEPPER' | 'REGISTRATION_TOKEN_SECRET' | 'PASSWORD_RESET_ENABLED' | 'PASSWORD_RESET_RATE_LIMIT_MAX' | 'PASSWORD_RESET_TOKEN_TTL_MINUTES' | 'BANK_RECONCILIATION_ENABLED' | 'BANK_RECONCILIATION_COMPANY_IDS' | 'BANK_RECONCILIATION_ROLLOUT_STAGE' | 'OUTBOX_POLL_INTERVAL_MS' | 'OUTBOX_LEASE_MS' | 'OUTBOX_BATCH_SIZE' | 'OUTBOX_MAX_ATTEMPTS' | 'OUTBOX_BASE_BACKOFF_MS' | 'OUTBOX_HANDLER_TIMEOUT_MS' | 'OUTBOX_RETENTION_DAYS' | 'READINESS_TIMEOUT_MS' | 'SHUTDOWN_TIMEOUT_MS' | 'LOG_REQUESTS' | 'HTTP_REQUEST_TIMEOUT_MS' | 'HTTP_HEADERS_TIMEOUT_MS' | 'HTTP_KEEP_ALIVE_TIMEOUT_MS' | 'API_READ_DEADLINE_MS' | 'API_WRITE_DEADLINE_MS' | 'API_REGISTRATION_WRITE_DEADLINE_MS' | 'METRICS_ENABLED' | 'METRICS_BEARER_TOKEN' | 'PLATFORM_OPERATOR_USER_IDS' | 'PLATFORM_OPERATOR_EMAILS' | 'PLATFORM_PAYMENT_PROVIDER_MODE' | 'PLATFORM_PAYMENT_DEVELOPMENT_WEBHOOK_SECRET' | 'PLATFORM_PAYMENT_WEBHOOK_TOLERANCE_SECONDS' | 'ALERT_WINDOW_MS' | 'ALERT_MIN_TRANSACTION_SAMPLES' | 'ALERT_DEADLOCK_RATIO_THRESHOLD' | 'ALERT_RETRY_EXHAUSTED_RATIO_THRESHOLD' | 'ALERT_REQUEST_DEADLINE_COUNT_THRESHOLD' | 'ALERT_OUTBOX_LAG_MS_THRESHOLD' | 'ALERT_OUTBOX_DEAD_LETTER_COUNT_THRESHOLD' | 'ALERT_COOLDOWN_MS'
+  'DATABASE_POOL_CONNECTION_LIMIT' | 'DATABASE_POOL_MIN_IDLE' | 'DATABASE_POOL_ACQUIRE_TIMEOUT_MS' | 'DATABASE_CONNECT_TIMEOUT_MS' | 'DATABASE_POOL_IDLE_TIMEOUT_SECONDS' | 'SERVE_WEB_ASSETS' | 'TRUST_PROXY' | 'RATE_LIMIT_WINDOW_MS' | 'RATE_LIMIT_MAX' | 'AUTH_RATE_LIMIT_MAX' | 'RATE_LIMIT_NETWORK_MULTIPLIER' | 'RATE_LIMIT_IDENTITY_SECRET' | 'SELF_REGISTRATION_ENABLED' | 'REGISTRATION_RATE_LIMIT_MAX' | 'REGISTRATION_TOKEN_TTL_HOURS' | 'REGISTRATION_EMAIL_MODE' | 'REGISTRATION_EMAIL_FROM' | 'REGISTRATION_EMAIL_CAPTURE_PATH' | 'RESEND_API_KEY' | 'REGISTRATION_AUDIT_PEPPER' | 'REGISTRATION_TOKEN_SECRET' | 'PASSWORD_RESET_ENABLED' | 'PASSWORD_RESET_RATE_LIMIT_MAX' | 'PASSWORD_RESET_TOKEN_TTL_MINUTES' | 'BANK_RECONCILIATION_ENABLED' | 'BANK_RECONCILIATION_COMPANY_IDS' | 'BANK_RECONCILIATION_ROLLOUT_STAGE' | 'OUTBOX_POLL_INTERVAL_MS' | 'OUTBOX_LEASE_MS' | 'OUTBOX_BATCH_SIZE' | 'OUTBOX_MAX_ATTEMPTS' | 'OUTBOX_BASE_BACKOFF_MS' | 'OUTBOX_HANDLER_TIMEOUT_MS' | 'OUTBOX_RETENTION_DAYS' | 'READINESS_TIMEOUT_MS' | 'SHUTDOWN_TIMEOUT_MS' | 'LOG_REQUESTS' | 'HTTP_REQUEST_TIMEOUT_MS' | 'HTTP_HEADERS_TIMEOUT_MS' | 'HTTP_KEEP_ALIVE_TIMEOUT_MS' | 'API_READ_DEADLINE_MS' | 'API_WRITE_DEADLINE_MS' | 'API_REGISTRATION_WRITE_DEADLINE_MS' | 'METRICS_ENABLED' | 'METRICS_BEARER_TOKEN' | 'PLATFORM_OPERATOR_USER_IDS' | 'PLATFORM_OPERATOR_EMAILS' | 'PLATFORM_PAYMENT_PROVIDER_MODE' | 'PLATFORM_PAYMENT_DEVELOPMENT_WEBHOOK_SECRET' | 'PLATFORM_PAYMENT_WEBHOOK_TOLERANCE_SECONDS' | 'ALERT_WINDOW_MS' | 'ALERT_MIN_TRANSACTION_SAMPLES' | 'ALERT_DEADLOCK_RATIO_THRESHOLD' | 'ALERT_RETRY_EXHAUSTED_RATIO_THRESHOLD' | 'ALERT_REQUEST_DEADLINE_COUNT_THRESHOLD' | 'ALERT_OUTBOX_LAG_MS_THRESHOLD' | 'ALERT_OUTBOX_DEAD_LETTER_COUNT_THRESHOLD' | 'ALERT_COOLDOWN_MS' | 'SOCIAL_AUTH_TRANSACTION_SECRET' | 'SOCIAL_AUTH_TRANSACTION_TTL_MINUTES' | 'GOOGLE_OIDC_ENABLED' | 'GOOGLE_OIDC_CLIENT_ID' | 'GOOGLE_OIDC_CLIENT_SECRET' | 'GOOGLE_OIDC_REDIRECT_URI' | 'GOOGLE_OIDC_AUTHORIZATION_ENDPOINT' | 'GOOGLE_OIDC_TOKEN_ENDPOINT' | 'GOOGLE_OIDC_JWKS_URI' | 'APPLE_OIDC_ENABLED' | 'APPLE_OIDC_CLIENT_ID' | 'APPLE_OIDC_CLIENT_SECRET' | 'APPLE_OIDC_REDIRECT_URI' | 'APPLE_OIDC_AUTHORIZATION_ENDPOINT' | 'APPLE_OIDC_TOKEN_ENDPOINT' | 'APPLE_OIDC_JWKS_URI'
 >>;
 
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env): LoadedAppConfig {

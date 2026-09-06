@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.48.0
+  version: 1.49.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -237,6 +237,69 @@ paths:
       security: []
       parameters:
       - $ref: '#/components/parameters/RequestId'
+  /auth/social/providers:
+    get:
+      tags: [Authentication]
+      summary: المزودون الاجتماعيون المهيؤون فعليًا
+      operationId: getSocialAuthProviders
+      security: []
+      responses:
+        '200':
+          description: قدرات آمنة مغلقة افتراضيًا
+          content: { application/json: { schema: { $ref: '#/components/schemas/SocialAuthProvidersResponse' } } }
+  /auth/social/{provider}/start:
+    post:
+      tags: [Authentication]
+      summary: بدء معاملة OIDC قصيرة العمر ومربوطة بالمتصفح
+      operationId: startSocialAuth
+      parameters:
+      - { name: provider, in: path, required: true, schema: { type: string, enum: [google, apple] } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/SocialAuthStartRequest' } } }
+      responses:
+        '200':
+          description: عنوان التفويض الخارجي
+          content: { application/json: { schema: { $ref: '#/components/schemas/SocialAuthStartResponse' } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /auth/social/google/callback:
+    get:
+      tags: [Authentication]
+      summary: رد Google OIDC
+      operationId: completeGoogleSocialAuth
+      security: []
+      parameters:
+      - { name: code, in: query, required: false, schema: { type: string, minLength: 1, maxLength: 4096 } }
+      - { name: state, in: query, required: false, schema: { type: string, minLength: 1, maxLength: 1024 } }
+      - { name: error, in: query, required: false, schema: { type: string, maxLength: 200 } }
+      responses:
+        '303': { description: إعادة آمنة إلى الواجهة الداخلية }
+        '400': { $ref: '#/components/responses/ValidationError' }
+  /auth/social/apple/callback:
+    post:
+      tags: [Authentication]
+      summary: رد Apple OIDC عبر form_post
+      operationId: completeAppleSocialAuth
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [state]
+              properties:
+                code: { type: string, minLength: 1, maxLength: 4096 }
+                state: { type: string, minLength: 1, maxLength: 1024 }
+                user: { type: string, maxLength: 4096 }
+                error: { type: string, maxLength: 200 }
+      responses:
+        '303': { description: إعادة آمنة إلى الواجهة الداخلية }
+        '400': { $ref: '#/components/responses/ValidationError' }
   /auth/register/options:
     get:
       tags: [Authentication]
@@ -11076,6 +11139,28 @@ components:
           type: string
           minLength: 1
           maxLength: 1024
+    SocialAuthProvidersResponse:
+      type: object
+      additionalProperties: false
+      required: [google, apple]
+      properties:
+        google: { type: boolean }
+        apple: { type: boolean }
+    SocialAuthStartRequest:
+      type: object
+      additionalProperties: false
+      required: [purpose, consent]
+      properties:
+        purpose: { type: string, enum: [SIGN_IN, LINK] }
+        consent: { type: boolean }
+        returnPath: { type: string, pattern: '^/(?!/)[A-Za-z0-9/_?=&.-]{0,254}$' }
+    SocialAuthStartResponse:
+      type: object
+      additionalProperties: false
+      required: [authorizationUrl, expiresAt]
+      properties:
+        authorizationUrl: { type: string, minLength: 1, maxLength: 4096 }
+        expiresAt: { type: string, format: date-time }
     PasswordResetStartRequest:
       type: object
       additionalProperties: false

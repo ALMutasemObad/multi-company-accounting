@@ -22,6 +22,12 @@ export const arAuthResilience = {
   "authResilience.verifyInProgress": "ما زال تجهيز النشاط جاريًا. لن نكرر الطلب تلقائيًا؛ انتظر قليلًا ثم تابع يدويًا.",
   "authResilience.back": "العودة إلى الدخول",
   "authResilience.bootTitle": "فتح مساحة العمل",
+  "authResilience.socialOptions": "خيارات دخول إضافية",
+  "authResilience.continueGoogle": "المتابعة باستخدام Google",
+  "authResilience.continueApple": "المتابعة باستخدام Apple",
+  "authResilience.socialCancelled": "أُلغيت محاولة الدخول. يمكنك المحاولة مرة أخرى.",
+  "authResilience.socialError": "تعذر إكمال الدخول الآمن. حاول مرة أخرى.",
+  "authResilience.socialAccountProof": "سجّل الدخول إلى حسابك الحالي أولًا، ثم اربط المزود من إعدادات الحساب.",
 };
 export const enAuthResilience = {
   "authResilience.verificationUnconfirmed": "Verification has not been confirmed yet",
@@ -47,6 +53,12 @@ export const enAuthResilience = {
   "authResilience.verifyInProgress": "Workspace setup is still running. We will not repeat the request automatically; wait a moment, then continue manually.",
   "authResilience.back": "Back to sign in",
   "authResilience.bootTitle": "Opening your workspace",
+  "authResilience.socialOptions": "Additional sign-in options",
+  "authResilience.continueGoogle": "Continue with Google",
+  "authResilience.continueApple": "Continue with Apple",
+  "authResilience.socialCancelled": "Sign-in was cancelled. You can try again.",
+  "authResilience.socialError": "Secure sign-in could not be completed. Try again.",
+  "authResilience.socialAccountProof": "Sign in to your existing account first, then link the provider from account settings.",
 } satisfies Record<keyof typeof arAuthResilience, string>;
 export const urAuthResilience = {
   "authResilience.verificationUnconfirmed": "تصدیق کا حتمی نتیجہ ابھی نہیں پہنچا",
@@ -72,6 +84,12 @@ export const urAuthResilience = {
   "authResilience.verifyInProgress": "کام کی جگہ کی تیاری جاری ہے۔ درخواست خودکار نہیں دہرائیں گے؛ کچھ دیر بعد خود جاری رکھیں۔",
   "authResilience.back": "لاگ اِن پر واپس جائیں",
   "authResilience.bootTitle": "کام کی جگہ کھل رہی ہے",
+  "authResilience.socialOptions": "اضافی لاگ اِن اختیارات",
+  "authResilience.continueGoogle": "Google کے ساتھ جاری رکھیں",
+  "authResilience.continueApple": "Apple کے ساتھ جاری رکھیں",
+  "authResilience.socialCancelled": "لاگ اِن منسوخ ہوگیا۔ آپ دوبارہ کوشش کر سکتے ہیں۔",
+  "authResilience.socialError": "محفوظ لاگ اِن مکمل نہیں ہوسکا۔ دوبارہ کوشش کریں۔",
+  "authResilience.socialAccountProof": "پہلے اپنے موجودہ اکاؤنٹ میں لاگ اِن کریں، پھر اکاؤنٹ سیٹنگز سے فراہم کنندہ منسلک کریں۔",
 } satisfies Record<keyof typeof arAuthResilience, string>;
 export const hiAuthResilience = {
   "authResilience.verificationUnconfirmed": "सत्यापन का नतीजा अभी पुष्ट नहीं हुआ है",
@@ -97,4 +115,10 @@ export const hiAuthResilience = {
   "authResilience.verifyInProgress": "कार्यक्षेत्र की तैयारी चल रही है। हम अनुरोध अपने-आप नहीं दोहराएँगे; कुछ देर बाद स्वयं जारी रखें।",
   "authResilience.back": "लॉगिन पर वापस जाएँ",
   "authResilience.bootTitle": "कार्यक्षेत्र खुल रहा है",
+  "authResilience.socialOptions": "अतिरिक्त साइन-इन विकल्प",
+  "authResilience.continueGoogle": "Google से जारी रखें",
+  "authResilience.continueApple": "Apple से जारी रखें",
+  "authResilience.socialCancelled": "साइन-इन रद्द कर दिया गया। आप फिर कोशिश कर सकते हैं।",
+  "authResilience.socialError": "सुरक्षित साइन-इन पूरा नहीं हो सका। फिर कोशिश करें।",
+  "authResilience.socialAccountProof": "पहले अपने मौजूदा खाते में साइन इन करें, फिर खाता सेटिंग से प्रदाता लिंक करें।",
 } satisfies Record<keyof typeof arAuthResilience, string>;

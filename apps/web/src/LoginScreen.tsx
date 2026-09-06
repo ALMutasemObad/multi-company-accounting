@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from "react";
-import { api, ApiError, login } from "./api";
+import { useEffect, useState, type FormEvent } from "react";
+import { api, ApiError, login, socialAuthProviders, startSocialSignIn, type SocialAuthProviders } from "./api";
 import type { CurrentAuthorization } from "./types";
 import { AUTH_TIMEOUT_MS, uncertainAuthResult } from "./auth-resilience";
 import { AuthFeedback } from "./AuthFeedback";
@@ -8,6 +8,7 @@ import { LanguageSwitcher, useI18n } from "./i18n";
 import { assertRequestActive, withinRequest } from "./request-scope";
 import { Button } from "./ui";
 import { useAuthAction } from "./use-auth-action";
+import "./social-auth/social-auth.css";
 
 export function LoginScreen({ onLoggedIn, onRegister, onForgotPassword, sessionExpired = false }: {
   sessionExpired?: boolean;
@@ -20,6 +21,9 @@ export function LoginScreen({ onLoggedIn, onRegister, onForgotPassword, sessionE
   const action = useAuthAction();
   const [sessionReady, setSessionReady] = useState(false);
   const [sessionFound, setSessionFound] = useState(false);
+  const [socialProviders, setSocialProviders] = useState<SocialAuthProviders>({ google: false, apple: false });
+  const socialResult = new URLSearchParams(location.search).get('social');
+  useEffect(() => { const controller = new AbortController(); void socialAuthProviders({ signal: controller.signal }).then(setSocialProviders).catch(() => setSocialProviders({ google: false, apple: false })); return () => controller.abort(); }, []);
   const onError = (cause: unknown) => { if (cause instanceof ApiError && cause.status === 401) setSessionReady(false); };
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -42,6 +46,13 @@ export function LoginScreen({ onLoggedIn, onRegister, onForgotPassword, sessionE
       onSuccess: () => setSessionFound(true), onError,
     });
   }
+  function socialSignIn(provider: 'google' | 'apple') {
+    void action.run(async (signal) => {
+      const result = await startSocialSignIn(provider, { signal, timeoutMs: AUTH_TIMEOUT_MS });
+      assertRequestActive(signal);
+      location.assign(result.authorizationUrl);
+    }, { timeoutMs: AUTH_TIMEOUT_MS, onError });
+  }
   return (
     <main className="auth-layout auth-resilient" dir={dir}>
       <div className="auth-language"><LanguageSwitcher /></div>
@@ -55,6 +66,7 @@ export function LoginScreen({ onLoggedIn, onRegister, onForgotPassword, sessionE
           <h2>{t("login.title")}</h2>
           <p>{t("login.description")}</p>
           {sessionExpired && <p role="alert">{t("authResilience.sessionExpired")}</p>}
+          {socialResult && socialResult !== 'success' && <p role="alert">{t(socialResult === 'account_proof_required' ? "authResilience.socialAccountProof" : socialResult === 'cancelled' ? "authResilience.socialCancelled" : "authResilience.socialError")}</p>}
           {sessionReady && <p role="status">{t(action.busy ? "authResilience.workspace" : "authResilience.workspaceHint")}</p>}
           {sessionFound && <p role="status">{t("authResilience.sessionFound")}</p>}
           <AuthFeedback {...action} hint={uncertainAuthResult(action.error) ? (sessionReady ? "authResilience.workspaceHint" : "authResilience.loginUncertain") : undefined} />
@@ -62,6 +74,10 @@ export function LoginScreen({ onLoggedIn, onRegister, onForgotPassword, sessionE
             <label><span>{t("login.email")}</span><input name="email" type="email" dir="ltr" autoComplete="username" required disabled={action.busy} /></label>
             <label><span>{t("login.password")}</span><input name="password" type="password" dir="ltr" autoComplete="current-password" required disabled={action.busy} /></label>
             <Button type="submit" disabled={action.busy}>{action.busy ? t("login.checking") : t("login.submit")}</Button>
+            {(socialProviders.google || socialProviders.apple) && <div className="social-auth-actions" aria-label={t("authResilience.socialOptions")}>
+              {socialProviders.google && <Button type="button" variant="secondary" disabled={action.busy} onClick={() => socialSignIn('google')}>{t("authResilience.continueGoogle")}</Button>}
+              {socialProviders.apple && <Button type="button" variant="secondary" disabled={action.busy} onClick={() => socialSignIn('apple')}>{t("authResilience.continueApple")}</Button>}
+            </div>}
           </>}
           {(sessionReady || uncertainAuthResult(action.error)) && <div className="auth-recovery">
             <Button type="button" variant="secondary" disabled={action.busy} onClick={continueWorkspace}>{t(sessionReady ? "authResilience.continueWorkspace" : "authResilience.checkSession")}</Button>

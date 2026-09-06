@@ -44,6 +44,7 @@ import { createPlatformSubscriptionRouter } from '../src/platform-subscriptions/
 import { createSubscriptionUsageRouter } from '../src/platform-subscriptions/subscription-usage-router.js';
 import { createOrganizationOwnerRouter } from '../src/organizations/organization-owner-router.js';
 import { createEmployeeExpenseRouter } from '../src/employee-expenses/employee-expense-router.js';
+import { createSocialAuthRouter } from '../src/social-auth/social-auth-router.js';
 
 type RouteLayer = {
   route?: {
@@ -55,6 +56,7 @@ type RouteLayer = {
 const stub = {} as never;
 const routers = [
   { prefix: '/auth', router: createAuthRouter(stub, false) },
+  { prefix: '/auth/social', router: createSocialAuthRouter(stub, false) },
   { prefix: '/auth/password', router: createPasswordResetRouter(stub, stub) },
   { prefix: '/auth/register', router: createRegistrationRouter(stub, stub) },
   { prefix: '', router: createPlatformOperationsRouter(stub, stub, stub) },

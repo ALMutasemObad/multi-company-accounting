@@ -235,6 +235,12 @@ export default function App() {
   }, [activeHash, requestedHash, state]);
 
   useEffect(() => {
+      const socialResult = new URLSearchParams(location.search).get("social");
+      if (socialResult === "onboarding_required") {
+        history.replaceState(null, "", `${location.pathname}#register`);
+        setState("register");
+        return;
+      }
       if (location.hash.startsWith("#reset-password")) {
         setState("password-reset");
         return;
