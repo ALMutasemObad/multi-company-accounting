@@ -9,7 +9,8 @@ import { assertRequestActive, withinRequest } from "./request-scope";
 import { Button } from "./ui";
 import { useAuthAction } from "./use-auth-action";
 
-export function LoginScreen({ onLoggedIn, onRegister, onForgotPassword }: {
+export function LoginScreen({ onLoggedIn, onRegister, onForgotPassword, sessionExpired = false }: {
+  sessionExpired?: boolean;
   onLoggedIn: (signal: AbortSignal) => Promise<void>;
   onRegister: () => void;
   onForgotPassword: () => void;
@@ -53,6 +54,7 @@ export function LoginScreen({ onLoggedIn, onRegister, onForgotPassword }: {
           <div className="mobile-auth-brand"><div className="brand-mark">{brand.mark}</div><strong>{brand.shortName}</strong></div>
           <h2>{t("login.title")}</h2>
           <p>{t("login.description")}</p>
+          {sessionExpired && <p role="alert">{t("authResilience.sessionExpired")}</p>}
           {sessionReady && <p role="status">{t(action.busy ? "authResilience.workspace" : "authResilience.workspaceHint")}</p>}
           {sessionFound && <p role="status">{t("authResilience.sessionFound")}</p>}
           <AuthFeedback {...action} hint={uncertainAuthResult(action.error) ? (sessionReady ? "authResilience.workspaceHint" : "authResilience.loginUncertain") : undefined} />

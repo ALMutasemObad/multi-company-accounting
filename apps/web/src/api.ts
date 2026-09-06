@@ -1,5 +1,6 @@
 import { messageForError } from "./domain";
 import { storageKey } from "./branding";
+import { expireSession, invalidateSessionRequests, isSessionExpiry, sessionRequestSignal, withinSessionRequest } from "./session-safety/session";
 import { assertRequestActive, RequestError, withinRequest, type RequestPolicy } from "./request-scope";
 
 export class ApiError extends Error {
@@ -37,7 +38,7 @@ export async function api<T>(
   if (options.idempotencyKey)
     headers.set("Idempotency-Key", options.idempotencyKey);
   const { timeoutMs, idempotencyKey: _key, ...request } = options;
-  return withinRequest(async (signal) => {
+  return withinSessionRequest(async (signal) => {
     let response: Response;
     try {
       response = await fetch(`/api/v1${path}`, { ...request, headers, signal, credentials: "include" });
@@ -55,6 +56,10 @@ export async function api<T>(
     });
     assertRequestActive(signal);
     if (!response.ok) {
+      if (isSessionExpiry(path, response.status, body?.code, body?.reason)) {
+        clearCsrfToken();
+        expireSession();
+      }
       throw new ApiError(messageForError(body?.code, body?.reason), response.status, body?.code, body?.reason);
     }
     return body as T;
@@ -62,23 +67,30 @@ export async function api<T>(
 }
 
 let beginLoginRequest: Promise<void> | null = null;
+let beginLoginSignal: AbortSignal | null = null;
 
 export function beginLogin(options: RequestPolicy = {}) {
+  const contextSignal = sessionRequestSignal(options.signal);
   const request = () => api<{ csrfToken: string }>("/auth/csrf", options)
     .then((result) => {
       assertRequestActive(options.signal);
+      assertRequestActive(contextSignal);
       if (!result?.csrfToken) throw new RequestError("response");
       setCsrfToken(result.csrfToken);
     });
   // Scoped callers own cancellation; they must never share an aborted promise/token write.
   if (options.signal || options.timeoutMs !== undefined) return request();
-  if (beginLoginRequest) return beginLoginRequest;
-  beginLoginRequest = request()
-    .finally(() => { beginLoginRequest = null; });
+  if (beginLoginRequest && !beginLoginSignal?.aborted) return beginLoginRequest;
+  beginLoginSignal = contextSignal;
+  const pending = request().finally(() => {
+    if (beginLoginRequest === pending) beginLoginRequest = null;
+  });
+  beginLoginRequest = pending;
   return beginLoginRequest;
 }
 
 export async function login(email: string, password: string, options: RequestPolicy = {}) {
+  invalidateSessionRequests();
   return withinRequest(async (signal) => {
     await beginLogin({ signal });
     const result = await api<{
@@ -93,15 +105,14 @@ export async function login(email: string, password: string, options: RequestPol
     if (!result?.csrfToken || !result.user) throw new RequestError("response");
     setCsrfToken(result.csrfToken);
     return result.user;
-  }, options);
+  }, { ...options, signal: sessionRequestSignal(options.signal) });
 }
 
 export async function logout() {
-  try {
-    await api<void>("/auth/logout", { method: "POST" });
-  } finally {
-    clearCsrfToken();
-  }
+  invalidateSessionRequests();
+  const pending = api<void>("/auth/logout", { method: "POST" });
+  clearCsrfToken();
+  await pending;
 }
 
 export const idempotencyKey = (operation: string, id: string) =>
@@ -113,12 +124,16 @@ export type DownloadOptions = RequestPolicy & {
 };
 
 export async function downloadFile(path: string, fallbackFilename: string, options: DownloadOptions = {}) {
-  return withinRequest(async (signal) => {
+  return withinSessionRequest(async (signal) => {
     const response = await fetch(`/api/v1${path}`, { credentials: "include", ...(options.headers === undefined ? {} : { headers: options.headers }), signal });
     assertRequestActive(signal);
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
       assertRequestActive(signal);
+      if (isSessionExpiry(path, response.status, body?.code, body?.reason)) {
+        clearCsrfToken();
+        expireSession();
+      }
       throw new ApiError(messageForError(body.code, body.reason), response.status, body.code, body.reason);
     }
     const blob = await response.blob();

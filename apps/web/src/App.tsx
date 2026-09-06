@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, logout } from "./api";
+import { invalidateSessionRequests, onSessionExpired, sessionRequestSignal } from "./session-safety/session";
 import { localizedBrand } from "./branding";
 import { LanguageSwitcher, useI18n } from "./i18n";
 import type { Company, CurrentAuthorization, OrganizationDashboardCompany, OrganizationWorkspaceReference } from "./types";
@@ -72,19 +73,43 @@ export default function App() {
   const [organizationWorkspace, setOrganizationWorkspace] = useState<boolean | null>(null);
   const [mobileNav, setMobileNav] = useState(false);
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(null);
+  const [sessionExpired, setSessionExpired] = useState(false);
   const startup = useAuthAction();
   const runStartup = startup.run;
   const routeScope = useRef<string | null>(null);
   const subscriptionDismissals = useMemo(() => createSubscriptionUpgradeDismissals(), [authorization?.user.id]);
 
+  const clearShell = useCallback(() => {
+    setAuthorization(null);
+    setCompanies([]);
+    setPlatformOperator(null);
+    setOrganizationWorkspace(null);
+    setToast(null);
+    setMobileNav(false);
+    routeScope.current = null;
+    setRoute({ view: "home" });
+    setState("login");
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onSessionExpired(() => {
+      clearShell();
+      setSessionExpired(true);
+      replaceHash("login");
+    });
+    return () => { unsubscribe(); invalidateSessionRequests(); };
+  }, [clearShell]);
+
   useEffect(() => {
     document.title = brand.name;
   }, [brand.name]);
 
+  const notificationSignal = sessionRequestSignal();
   const notify = useCallback((message: string, tone: "success" | "error" = "success") => {
+    if (notificationSignal.aborted) return;
     setToast({ message, tone });
-    window.setTimeout(() => setToast(null), 4500);
-  }, []);
+    window.setTimeout(() => { if (!notificationSignal.aborted) setToast(null); }, 4500);
+  }, [notificationSignal]);
 
   const activateAuthorization = useCallback((
     snapshot: CurrentAuthorization,
@@ -100,6 +125,7 @@ export default function App() {
       replaceHash(pageRouteHash(pageOnly));
     }
     routeScope.current = nextScope;
+    setSessionExpired(false);
     setAuthorization(snapshot);
     setPlatformOperator(capabilities.platformOperations);
     setOrganizationWorkspace(capabilities.organizationWorkspace);
@@ -119,6 +145,7 @@ export default function App() {
   }, []);
 
   const chooseCompany = useCallback(async (selected: Company, signal: AbortSignal) => {
+    invalidateSessionRequests();
     await api<void>("/auth/context", {
       method: "PUT",
       body: JSON.stringify({ companyId: selected.id }),
@@ -229,6 +256,8 @@ export default function App() {
 
   const switchFromOrganization = async (target: OrganizationDashboardCompany) => {
     const controller = new AbortController();
+    setToast(null);
+    setState("company");
     await chooseCompany({ id: target.id, name: target.name }, controller.signal);
     setRoute({ view: "home" });
     replaceHash("home");
@@ -252,6 +281,7 @@ export default function App() {
   if (state === "login")
     return (
       <LoginScreen
+        sessionExpired={sessionExpired}
         onForgotPassword={() => {
           location.hash = "reset-password";
           setState("password-reset");
@@ -290,7 +320,7 @@ export default function App() {
       <CompanyScreen
         companies={companies}
         onSelect={chooseCompany}
-        onBackToLogin={() => setState("login")}
+        onBackToLogin={() => { invalidateSessionRequests(); clearShell(); }}
       />
     );
 
@@ -353,7 +383,7 @@ export default function App() {
           {companies.length > 1 && <button
             type="button"
             className="switch-company"
-            onClick={() => setState("company")}
+            onClick={() => { invalidateSessionRequests(); setToast(null); setState("company"); }}
           >
             {t("app.switchCompany")}
           </button>}
@@ -372,15 +402,11 @@ export default function App() {
               type="button"
               aria-label={t("app.logout")}
               title={t("app.logout")}
-              onClick={() =>
-                void logout().catch(() => undefined).finally(() => {
-                  setAuthorization(null);
-                  setCompanies([]);
-                  setPlatformOperator(null);
-                  setOrganizationWorkspace(null);
-                  setState("login");
-                })
-              }
+              onClick={() => {
+                clearShell();
+                setSessionExpired(false);
+                void logout().catch(() => undefined);
+              }}
             >
               <Icon name="logout" size={19} />
             </button>
