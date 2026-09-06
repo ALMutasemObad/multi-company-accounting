@@ -1,0 +1,13 @@
+{
+  "name": "mcap-migration-toolchain",
+  "private": true,
+  "version": "1.0.0",
+  "packageManager": "npm@12.0.2",
+  "engines": { "node": ">=22" },
+  "dependencies": { "prisma": "7.9.1" },
+  "overrides": { "mysql2": "3.23.1", "deepmerge-ts": "8.0.1" },
+  "allowScripts": {
+    "@prisma/engines@7.9.1": true,
+    "prisma@7.9.1": true
+  }
+}

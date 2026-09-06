@@ -9,7 +9,6 @@ archive_input=${1:-}
 expected_sha=${2:-${MCAP_RELEASE_SHA256:-}}
 deploy_root=${MCAP_DEPLOY_ROOT:-}
 node_bin=${MCAP_NODE_BIN:-/opt/alt/alt-nodejs22/root/usr/bin/node}
-npx_cli=${MCAP_NPX_CLI:-/opt/alt/alt-nodejs22/root/usr/lib/node_modules/npm/bin/npx-cli.js}
 mysql_bin=${MCAP_MYSQL_BIN:-/usr/bin/mysql}
 curl_bin=${MCAP_CURL_BIN:-/usr/bin/curl}
 health_url=${MCAP_HEALTH_URL:-}
@@ -37,7 +36,6 @@ fi
 [[ -x "$node_bin" ]] || fail "Node executable is unavailable: $node_bin"
 [[ -x "$curl_bin" ]] || fail "curl executable is unavailable: $curl_bin"
 if [[ "$run_database_migrations" == true ]]; then
-  [[ -f "$npx_cli" && ! -L "$npx_cli" ]] || fail "npm exec entrypoint is unavailable: $npx_cli"
   [[ -x "$mysql_bin" ]] || fail "MySQL client is unavailable: $mysql_bin"
   [[ "${DATABASE_URL:-}" == mysql://* ]] || fail "DATABASE_URL must be a MySQL URL when migrations are enabled"
   [[ "${MIGRATION_DATABASE_URL:-}" == mysql://* ]] \
@@ -86,6 +84,7 @@ release_dir="$releases_dir/$release_id"
 [[ ! -e "$release_dir" && ! -L "$release_dir" ]] || fail "release already exists: $release_id"
 
 if [[ "$run_database_migrations" == true ]]; then
+  "$node_bin" "$incoming/deploy/scripts/prisma-toolchain/run.mjs" --version
   log "verifying distinct runtime and migration database identities"
   DATABASE_URL="$runtime_database_url" \
   MIGRATION_DATABASE_URL="$migration_database_url" \
@@ -96,7 +95,7 @@ if [[ "$run_database_migrations" == true ]]; then
     cd "$incoming/apps/api"
     DATABASE_URL="$migration_database_url" \
     PATH="$(dirname -- "$node_bin"):${PATH:-/usr/bin:/bin}" \
-      "$node_bin" "$npx_cli" --yes prisma@7.9.1 migrate deploy
+      "$node_bin" "$incoming/deploy/scripts/prisma-toolchain/run.mjs" migrate deploy
   )
   log "seeding production reference data for $release_id"
   (

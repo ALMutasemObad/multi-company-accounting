@@ -30,6 +30,13 @@ case "$source_date_epoch" in
 esac
 export SOURCE_DATE_EPOCH="$source_date_epoch"
 
+# Install the independent, locked migration CLI before the manifest is built.
+# deploy/scripts is already a release input; the host needs no npm/npx download.
+test "$(npm --version)" = 12.0.2 || { printf 'npm 12.0.2 is required\n' >&2; exit 1; }
+npm ci --prefix "$workspace/deploy/scripts/prisma-toolchain" --include=dev --include=optional --no-fund >&2
+npm audit --prefix "$workspace/deploy/scripts/prisma-toolchain" --audit-level=moderate >&2
+node "$workspace/deploy/scripts/prisma-toolchain/run.mjs" --version >&2
+
 node "$workspace/scripts/release/create-release.mjs" \
   --source "$workspace" --output "$release_root" >&2
 node "$workspace/scripts/release/verify-release.mjs" --root "$release_root" >&2
@@ -44,7 +51,7 @@ tar -xzf "$archive" -C "$roundtrip_root"
 node "$roundtrip_root/scripts/release/verify-release.mjs" --root "$roundtrip_root" >&2
 (
   cd -- "$roundtrip_root/apps/api"
-  npx --yes prisma@7.9.1 validate
+  node "$roundtrip_root/deploy/scripts/prisma-toolchain/run.mjs" validate
 ) >&2
 
 (

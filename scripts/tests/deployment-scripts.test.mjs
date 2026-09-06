@@ -133,7 +133,7 @@ test("cPanel installer migrates and seeds the candidate before activating it", a
     path.join(repositoryRoot, "deploy", "scripts", "install-cpanel-release.sh"),
     "utf8",
   );
-  const migrationIndex = source.indexOf("prisma@7.9.1 migrate deploy");
+  const migrationIndex = source.indexOf('prisma-toolchain/run.mjs" migrate deploy');
   const identityVerificationIndex = source.indexOf("verify-database-identities.mjs");
   const seedIndex = source.indexOf("apps/api/dist/platform/seed-reference-data.js");
   const activationIndex = source.indexOf('atomic_link "$release_dir" "$current_link"');
