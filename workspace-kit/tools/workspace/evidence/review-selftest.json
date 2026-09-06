@@ -1,0 +1,67 @@
+{
+  "cases": [
+    {
+      "name": "clean canonical accepted",
+      "result": "pass"
+    },
+    {
+      "name": "path traversal rejected",
+      "result": "pass"
+    },
+    {
+      "name": "freshness required",
+      "result": "pass"
+    },
+    {
+      "name": "dot prefix cannot bypass scope ownership",
+      "result": "pass"
+    },
+    {
+      "name": "root dot scope rejected",
+      "result": "pass"
+    },
+    {
+      "name": "overlapping ownership rejected, including Windows case",
+      "result": "pass"
+    },
+    {
+      "name": "fourth active task rejected",
+      "result": "pass"
+    },
+    {
+      "name": "dirty task cannot be marked ready",
+      "result": "pass"
+    },
+    {
+      "name": "ready result captures clean commit",
+      "result": "pass"
+    },
+    {
+      "name": "stale ready commit rejected",
+      "result": "pass"
+    },
+    {
+      "name": "dirty close preserves bytes",
+      "result": "pass"
+    },
+    {
+      "name": "internal dependency junction survives archival",
+      "result": "pass"
+    },
+    {
+      "name": "shared dependencies rejected",
+      "result": "pass"
+    },
+    {
+      "name": "unregistered worktree rejected",
+      "result": "pass"
+    },
+    {
+      "name": "report reflects current health and permission fields",
+      "result": "pass"
+    }
+  ],
+  "passed": 15,
+  "note": "Local disposable repository only. Retained as evidence; no production code or remote service changed.",
+  "at": "2026-09-06T06:47:31.4963350Z"
+}

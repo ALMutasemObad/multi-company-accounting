@@ -1,3 +1,4 @@
+#Requires -Version 7.0
 [CmdletBinding()]
 param(
     [ValidateSet('Check','Start','Close','MarkReady')][string]$Action = 'Check',
@@ -28,6 +29,22 @@ function RunGit([string]$path, [string[]]$arguments) {
     if ($LASTEXITCODE -ne 0) { throw "Git failed: $($arguments -join ' ')" }
     return $output
 }
+function InternalLinks([string]$source) {
+    $queue = [Collections.Generic.Queue[string]]::new()
+    $queue.Enqueue($source)
+    while ($queue.Count) {
+        foreach ($path in [IO.Directory]::EnumerateFileSystemEntries($queue.Dequeue())) {
+            if ([IO.Path]::GetFileName($path) -eq '.git') { continue }
+            $attributes = [IO.File]::GetAttributes($path)
+            if ($attributes -band [IO.FileAttributes]::ReparsePoint) {
+                $link = Get-Item -LiteralPath $path -Force
+                if ([string]$link.Target -and ([string]$link.Target).StartsWith($source + '\',[StringComparison]::OrdinalIgnoreCase)) {
+                    [pscustomobject]@{ relative=[IO.Path]::GetRelativePath($source,$path); targetRelative=[IO.Path]::GetRelativePath($source,[string]$link.Target); type=$link.LinkType; directory=[bool]$link.PSIsContainer }
+                }
+            } elseif ($attributes -band [IO.FileAttributes]::Directory) { $queue.Enqueue($path) }
+        }
+    }
+}
 function CheckCanonical {
     if ($Refresh) { RunGit $repo @('fetch','origin') | Out-Null }
     if (((RunGit $repo @('branch','--show-current')) -join '') -ne 'main') { throw 'Canonical must remain on main.' }
@@ -51,6 +68,11 @@ function CheckTasks {
         $dependencies = Join-Path $task.path 'node_modules'
         if (Test-Path -LiteralPath $dependencies) {
             if ((Get-Item -LiteralPath $dependencies -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Shared node_modules is forbidden: $($task.id)" }
+        }
+        if ($task.PSObject.Properties['phase'] -and $task.phase -eq 'ready-for-local-review' -and -not ($Action -eq 'MarkReady' -and $task.id -eq $Id)) {
+            if (((RunGit $task.path @('rev-parse','HEAD')) -join '') -ne $task.resultCommit -or @(RunGit $task.path @('status','--porcelain')).Count) {
+                throw "Ready result is stale: $($task.id). Review and MarkReady again."
+            }
         }
     }
     for ($i = 0; $i -lt $active.Count; $i++) {
@@ -100,7 +122,7 @@ try {
         if ($active.Count -ge $registry.policy.maxActiveTasks) { throw 'Finish or archive an active task before starting another.' }
         if (@($registry.tasks | Where-Object id -EQ $Id).Count) { throw 'Task ID already exists.' }
         foreach ($area in $Scope) {
-            if ($area -notmatch '^[a-zA-Z0-9_./-]+$' -or $area.StartsWith('/') -or $area.Contains('..')) { throw 'Scope must be a repository-relative file or directory, without wildcards.' }
+            if ($area -notmatch '^[a-zA-Z0-9_./-]+$' -or $area.StartsWith('/') -or @($area.TrimEnd('/') -split '/' | Where-Object { $_ -in @('','.','..') }).Count) { throw 'Scope must be a normalized repository-relative file or directory, without wildcards or dot segments.' }
             foreach ($task in $active) {
                 foreach ($owned in $task.scope) {
                     if (ScopesOverlap $area $owned) { throw "Scope overlap with $($task.id): $area" }
@@ -126,8 +148,18 @@ try {
         if (-not $destination.StartsWith((Join-Path $root '_workspace_archive/tasks') + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe archive path.' }
         $status = @(RunGit $task.path @('status','--porcelain=v1','--untracked-files=all'))
         $head = (RunGit $task.path @('rev-parse','HEAD')) -join ''
+        $links = @(InternalLinks $sourcePath)
         New-Item -ItemType Directory -Path (Split-Path $destination -Parent) -Force | Out-Null
         RunGit $repo @('worktree','move',$sourcePath,$destination) | Out-Null
+        foreach ($link in $links) {
+            $path = [IO.Path]::GetFullPath((Join-Path $destination $link.relative))
+            $target = [IO.Path]::GetFullPath((Join-Path $destination $link.targetRelative))
+            if (-not $path.StartsWith($destination + '\',[StringComparison]::OrdinalIgnoreCase) -or -not $target.StartsWith($destination + '\',[StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe archived link path' }
+            $item = Get-Item -LiteralPath $path -Force
+            if (-not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Archive link changed unexpectedly' }
+            if ($link.directory) { [IO.Directory]::Delete($path) } else { [IO.File]::Delete($path) }
+            New-Item -ItemType $link.type -Path $path -Target $target | Out-Null
+        }
         if (((RunGit $destination @('rev-parse','HEAD')) -join '') -ne $head -or ((@(RunGit $destination @('status','--porcelain=v1','--untracked-files=all'))) -join "`n") -cne ($status -join "`n")) { throw 'Archive verification failed; preserve both registry and files for recovery.' }
         RunGit $repo @('worktree','lock','--reason','Archived by workspace manager; restore through a new task',$destination) | Out-Null
         $task.state = 'archived-unmerged'

@@ -1,6 +1,6 @@
 ---
 title: "Current System State and Next Steps"
-status: "verified release snapshot; local documentation correction pending publication"
+status: "verified release snapshot at review time; consult release evidence for later deployments"
 version: "3.0"
 date: "2026-09-06"
 snapshot_base_commit: "8e68632ebe678ac94a5face4e78481a32fcab930"
@@ -17,7 +17,7 @@ snapshot_base_commit: "8e68632ebe678ac94a5face4e78481a32fcab930"
 بما فيها النشر إلى **Staging**. أعيد الاستعلام عن نتائج الوظائف في 6 سبتمبر 2026؛
 لم تتضمن جولة تنظيم مساحة العمل فحص صحة حيًا جديدًا للموقع أو نشرًا جديدًا أو ترقية إلى الإنتاج.
 
-هذه الوثيقة تصحيح محلي للتوثيق، ولا يعني وجودها أن فرع التصحيح دُمج أو نُشر.
+هذه لقطة موثقة وقت المراجعة؛ الإصدارات التالية تثبت من main وCI وسجل الإصدار، لا من تاريخ هذه اللقطة وحده.
 تعريف القدرات الفعلي في الكود وعقد OpenAPI ومخطط Prisma والترحيلات؛ القرارات المعمارية
 في [فهرس الحوكمة](architecture/README.md). جرد أغسطس القديم محفوظ في
 [الأرشيف التاريخي](history/CURRENT_STATE_PRE_20260906_AR.md)، وليس مصدرًا للحالة الحالية.
