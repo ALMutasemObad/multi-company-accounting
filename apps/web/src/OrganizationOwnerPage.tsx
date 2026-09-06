@@ -11,6 +11,7 @@ import type {
 } from "./types";
 import { Button, EmptyState, Icon, PageHeader, Spinner } from "./ui";
 import "./organization-owner.css";
+import { CreateGroupCompany } from "./group-company-onboarding/CreateGroupCompany";
 
 const roles: OrganizationMembershipRole[] = ["OWNER", "ADMIN", "VIEWER"];
 
@@ -30,6 +31,7 @@ export function OrganizationOwnerPage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [switchingId, setSwitchingId] = useState("");
+  const [companyCreationPending, setCompanyCreationPending] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -53,9 +55,11 @@ export function OrganizationOwnerPage({
     setError("");
     try {
       const result = await api<OrganizationDashboard>(`/organizations/${organizationId}/dashboard?days=${days}`, { signal });
+      if (signal?.aborted) return;
       setDashboard(result);
       if (result.organization.canManageMembers) {
         const memberResult = await api<{ data: OrganizationMember[] }>(`/organizations/${organizationId}/members`, { signal });
+        if (signal?.aborted) return;
         setMembers(memberResult.data);
       } else {
         setMembers(null);
@@ -90,16 +94,17 @@ export function OrganizationOwnerPage({
       title={t("organization.title")}
       description={t("organization.description")}
       actions={<div className="organization-filters">
-        <label><span>{t("organization.select")}</span><select value={organizationId} onChange={(event) => setOrganizationId(event.target.value)}>
+        <label><span>{t("organization.select")}</span><select disabled={companyCreationPending} value={organizationId} onChange={(event) => setOrganizationId(event.target.value)}>
           {(workspaces ?? []).map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}
         </select></label>
-        <label><span>{t("organization.window")}</span><select value={days} onChange={(event) => setDays(Number(event.target.value) as 30 | 90 | 365)}>
+        <label><span>{t("organization.window")}</span><select disabled={companyCreationPending} value={days} onChange={(event) => setDays(Number(event.target.value) as 30 | 90 | 365)}>
           {[30, 90, 365].map((value) => <option key={value} value={value}>{t("organization.days", { days: value })}</option>)}
         </select></label>
       </div>}
     />
 
     {error && <div className="form-error" role="alert">{error} <Button variant="ghost" onClick={() => void loadDashboard()}>{t("common.retry")}</Button></div>}
+    {workspaces?.some(workspace => workspace.id === organizationId && workspace.role === "OWNER") && <CreateGroupCompany key={organizationId} organizationId={organizationId} onCreated={() => loadDashboard()} onPendingChange={setCompanyCreationPending} />}
     {loading && !dashboard ? <Spinner label={t("organization.loading")} /> : dashboard && <>
       <div className="organization-summary" aria-label={t("organization.title")}>
         <Summary icon="building" label={t("organization.summary.companies")} value={formatNumber(totals.companies)} />
@@ -127,7 +132,7 @@ export function OrganizationOwnerPage({
             <Button
               variant="secondary"
               icon="back"
-              disabled={!company.canSwitch || switchingId !== ""}
+              disabled={!company.canSwitch || switchingId !== "" || companyCreationPending}
               onClick={() => {
                 setSwitchingId(company.id);
                 void onSwitchCompany(company).catch((cause: unknown) => notify(cause instanceof Error ? cause.message : t("app.chooseCompanyError"), "error")).finally(() => setSwitchingId(""));

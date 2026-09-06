@@ -504,6 +504,7 @@ model Organization {
   updatedAt            DateTime              @updatedAt @map("updated_at")
   companies            Company[]
   memberships          OrganizationMembership[]
+  idempotency          OrganizationIdempotencyRecord[]
   auditLogs             OrganizationAuditLog[]
   registrationRequests RegistrationRequest[] @relation("RegistrationOrganization")
 
@@ -657,6 +658,7 @@ model User {
   updatedAt                            DateTime                           @updatedAt @map("updated_at")
   assignments                          UserCompany[]
   organizationMemberships              OrganizationMembership[]
+  organizationIdempotency              OrganizationIdempotencyRecord[]
   sessions                             Session[]
   idempotency                          IdempotencyRecord[]
   auditLogs                            AuditLog[]
@@ -3566,6 +3568,27 @@ model Session {
   @@index([userId, revokedAt, expiresAt])
   @@index([selectedCompanyId])
   @@map("sessions")
+}
+
+model OrganizationIdempotencyRecord {
+  id                 BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  organizationId     BigInt            @map("organization_id") @db.UnsignedBigInt
+  userId             BigInt            @map("user_id") @db.UnsignedBigInt
+  operation          String            @db.VarChar(100)
+  keyHash            Bytes             @map("key_hash") @db.Binary(32)
+  requestFingerprint Bytes             @map("request_fingerprint") @db.Binary(32)
+  status             IdempotencyStatus
+  responseStatus     Int?              @map("response_status") @db.UnsignedSmallInt
+  responseBody       Json?             @map("response_body")
+  expiresAt          DateTime          @map("expires_at")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  completedAt        DateTime?         @map("completed_at")
+  organization       Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "org_idempotency_organization_fk")
+  user               User              @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "org_idempotency_user_fk")
+
+  @@unique([organizationId, userId, operation, keyHash], map: "org_idempotency_scope_key")
+  @@index([expiresAt], map: "org_idempotency_expiry")
+  @@map("organization_idempotency_records")
 }
 
 model IdempotencyRecord {

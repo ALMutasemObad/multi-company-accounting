@@ -2145,6 +2145,64 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/InternalError' }
       x-authorization: active organization membership
+  /organizations/{organizationId}/company-options:
+    get:
+      tags: [Organization Workspace]
+      summary: خيارات إنشاء شركة جديدة لمالك المجموعة النشط
+      operationId: getOrganizationCompanyOptions
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - name: organizationId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Id' }
+      responses:
+        '200':
+          description: العملات النشطة والمناطق الزمنية، دون اختيار خطة اشتراك
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationCompanyOptions' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { description: Company setup unavailable, content: { application/json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+  /organizations/{organizationId}/companies:
+    post:
+      tags: [Organization Workspace]
+      summary: إنشاء شركة جديدة ضمن المجموعة بواسطة OWNER نشط
+      description: تأسيس مدير للشركة الجديدة فقط وسياسة اشتراك البداية الخادمة الحالية. لا يعدل المنظمة أو الهوية أو الشركات السابقة. مفتاح التكرار مقيد بالمنظمة والمستخدم والعملية، ويبقى محفوظاً دون حذف آلي حتى بعد 24 ساعة.
+      operationId: createOrganizationCompany
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: organizationId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Id' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrganizationCompanyCreateRequest' }
+      responses:
+        '201':
+          description: الشركة الجديدة أو نتيجة الطلب المطابق المحفوظة
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationCompanyCreated' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { description: Company setup unavailable, content: { application/json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+      x-authorization: Active organization OWNER only; company administrator and platform roles do not grant this operation
   /organizations/{organizationId}/members:
     get:
       tags: [Organization Workspace]
@@ -12919,6 +12977,47 @@ components:
           oneOf:
             - { $ref: '#/components/schemas/SignedMoney' }
             - { type: 'null' }
+    OrganizationCompanyCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [companyName, timezone, baseCurrencyCode]
+      properties:
+        companyName: { type: string, minLength: 1, maxLength: 200, x-trim: true }
+        timezone: { type: string, minLength: 1, maxLength: 64, x-trim: true }
+        baseCurrencyCode: { type: string, pattern: '^[A-Z]{3}$' }
+    OrganizationCompanyCreated:
+      type: object
+      additionalProperties: false
+      required: [organizationId, company]
+      properties:
+        organizationId: { $ref: '#/components/schemas/Id' }
+        company:
+          type: object
+          additionalProperties: false
+          required: [id, code, name, timezone, baseCurrencyCode]
+          properties:
+            id: { $ref: '#/components/schemas/Id' }
+            code: { type: string }
+            name: { type: string }
+            timezone: { type: string }
+            baseCurrencyCode: { type: string, pattern: '^[A-Z]{3}$' }
+    OrganizationCompanyOptions:
+      type: object
+      additionalProperties: false
+      required: [currencies, timezones]
+      properties:
+        currencies:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, nameAr]
+            properties:
+              code: { type: string }
+              nameAr: { type: string }
+        timezones:
+          type: array
+          items: { type: string }
     OrganizationDashboard:
       type: object
       additionalProperties: false

@@ -2,6 +2,7 @@ import { FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } 
 import { api } from "./api";
 import { AUTH_VERIFICATION_TIMEOUT_MS, authPost, uncertainAuthResult } from "./auth-resilience";
 import { AuthFeedback } from "./AuthFeedback";
+import { PasswordResetPage } from "./PasswordResetPage";
 import { useAuthAction } from "./use-auth-action";
 import { RequestError } from "./request-scope";
 import { localizedBrand } from "./branding";
@@ -27,6 +28,7 @@ export function RegistrationPage({ onBackToLogin }: { onBackToLogin: () => void 
   const [email, setEmail] = useState("");
   const [validationError, setValidationError] = useState("");
   const [inProgress, setInProgress] = useState(false);
+  const [recoverExistingAccount, setRecoverExistingAccount] = useState(false);
   const token = useMemo(() => new URLSearchParams(location.hash.split("?", 2)[1] ?? "").get("token"), []);
   const optionsAction = useAuthAction();
   const action = useAuthAction();
@@ -103,6 +105,8 @@ export function RegistrationPage({ onBackToLogin }: { onBackToLogin: () => void 
   const defaultCurrency = options?.currencies.find((currency) => currency.code === "YER")?.code ?? options?.currencies[0]?.code;
   const defaultChart = options?.chartTemplates[0]?.code;
 
+  if (recoverExistingAccount) return <PasswordResetPage onBackToLogin={onBackToLogin} />;
+
   return (
     <main className="auth-layout registration-layout auth-resilient" dir={dir}>
       <div className="auth-language"><LanguageSwitcher /></div>
@@ -150,7 +154,7 @@ export function RegistrationPage({ onBackToLogin }: { onBackToLogin: () => void 
               )}
             </>
           )}
-          {state === "pending" && <RegistrationResult title={t("registration.pendingTitle")} description={t("registration.pendingDescription")}><AuthFeedback {...action} hint={uncertainAuthResult(action.error) ? "authResilience.mailUncertain" : undefined} /><Button onClick={() => void resend()} disabled={busy} variant="secondary">{busy ? t("registration.resending") : t("registration.resend")}</Button><Button onClick={onBackToLogin} variant="ghost">{t("registration.backToLogin")}</Button></RegistrationResult>}
+          {state === "pending" && <RegistrationResult title={t("organization.registration.received")} description={t("organization.registration.nextSteps")}><AuthFeedback {...action} hint={uncertainAuthResult(action.error) ? "authResilience.mailUncertain" : undefined} /><Button onClick={() => void resend()} disabled={busy} variant="secondary">{busy ? t("registration.resending") : t("registration.resend")}</Button><Button onClick={onBackToLogin} variant="ghost">{t("registration.backToLogin")}</Button><a className="auth-text-link" href="#reset-password" onClick={(event) => { event.preventDefault(); history.replaceState(null, "", `${location.pathname}${location.search}#reset-password`); setRecoverExistingAccount(true); }}>{t("organization.registration.recover")}</a></RegistrationResult>}
           {state === "verifying" && <RegistrationResult title={t("registration.verifyingTitle")} description={t("registration.verifyingDescription")}><AuthFeedback {...action} /><Button onClick={onBackToLogin} variant="ghost">{t("registration.backToLogin")}</Button></RegistrationResult>}
           {state === "completed" && <RegistrationResult title={t("registration.completedTitle")} description={t("registration.completedDescription")}><Button onClick={onBackToLogin}>{t("registration.signIn")}</Button></RegistrationResult>}
           {state === "verification-error" && <RegistrationResult title={t("authResilience.verificationUnconfirmed")} description={t(uncertainAuthResult(action.error) || inProgress ? "authResilience.verifyUncertain" : "registration.verificationErrorDescription")}><AuthFeedback {...action} />{inProgress && <p role="status">{t("authResilience.verifyInProgress")}</p>}<Button onClick={verify} disabled={busy} variant="secondary">{t("authResilience.verifyAgain")}</Button><Button onClick={onBackToLogin}>{t("registration.backToLogin")}</Button></RegistrationResult>}

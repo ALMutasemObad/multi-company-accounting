@@ -23,7 +23,7 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 349, requestBodies: 181, responseBodies: 2318 });
+    expect(openApiContractCoverage).toEqual({ operations: 351, requestBodies: 182, responseBodies: 2336 });
     expect(openApiOperationRoutes).toMatchObject({
       'GET /pos/context/identity': 'getPosContextIdentity',
       'GET /pos/context/period': 'resolvePosContextPeriod',
@@ -31,8 +31,11 @@ describe('generated OpenAPI request guards', () => {
       'GET /pos/context/options/{field}': 'listPosContextOptions',
       'GET /sales-invoices/{id}/receipt-preview': 'getRetailReceiptPreview',
       'GET /organizations/{organizationId}/dashboard': 'getOrganizationDashboard',
+      'GET /organizations/{organizationId}/company-options': 'getOrganizationCompanyOptions',
+      'POST /organizations/{organizationId}/companies': 'createOrganizationCompany',
     });
-    expect(guardedOpenApiOperations).toHaveLength(181);
+    expect(guardedOpenApiOperations).toHaveLength(182);
+    expect(guardedOpenApiOperations).toContain('createOrganizationCompany');
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining(['createItemSellingProfile', 'updateItemSellingProfile']));
     expect(guardedOpenApiOperations).toContain("setPlatformSubscriptionPublicListing");
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining(["createOrganizationMember", "updateOrganizationMember"]));

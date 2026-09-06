@@ -97,6 +97,7 @@ import { CrmService } from './crm/crm-service.js';
 import { CrmWorkforceAdapter } from './hr/crm-workforce-adapter.js';
 import { CrmCurrencyAdapter } from './companies/crm-currency-adapter.js';
 import { createOrganizationMembershipService } from './composition/create-organization-membership-service.js';
+import { createGroupCompanyOnboardingService } from './composition/create-group-company-onboarding-service.js';
 import { EmployeeExpenseService } from './employee-expenses/employee-expense-service.js';
 import { EmployeeExpenseApprovalAdapter } from './employee-expenses/employee-expense-approval-adapter.js';
 import { EmployeeExpenseEmployeeAdapter } from './hr/employee-expense-employee-adapter.js';
@@ -298,6 +299,7 @@ async function startServer() {
     ...(passwordReset ? { passwordReset } : {}),
     users,
     organizationMemberships: createOrganizationMembershipService(database),
+    groupCompanyOnboarding: createGroupCompanyOnboardingService(database),
     workforceAccess,
     platformOperations,
     platformBilling,

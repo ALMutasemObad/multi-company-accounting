@@ -1,8 +1,8 @@
 ---
 title: "Bounded Context Map"
 status: "accepted target architecture"
-version: "3.2"
-last_updated: "2026-09-04"
+version: "3.3"
+last_updated: "2026-09-06"
 ---
 
 # خريطة الـBounded Contexts وملكية البيانات
@@ -42,7 +42,7 @@ last_updated: "2026-09-04"
 | Data Import | تنسيق القوالب والمعاينة والاعتماد الجماعي | `DataImportBatch` فقط | Process Manager؛ يستدعي منافذ المالكين ولا يخزن الملف أو يرحّل الفواتير |
 | Audit | سجل الأعمال والامتثال | `AuditLog`, `OrganizationAuditLog` | Append-only بنطاق شركة أو مؤسسة صريح، وليس Event Bus؛ لا يوضع فعل مجموعة مصطنعًا تحت شركة واحدة |
 | Security Monitoring | أحداث المخاطر والإقرار | `SecurityEvent` | يمكنه إصدار تنبيه Integration بعد حفظ الحدث |
-| Application Infrastructure | Idempotency وOutbox والتسلسلات التقنية والتشغيل والحماية المشتركة من إساءة الاستخدام | `IdempotencyRecord`, `OutboxEvent`, `MasterDataCodeSequence`, `RateLimitCounter` | ليست Bounded Context أعمال؛ تخزن HMAC هوية بسر تشغيل مستقل لا IP أو بريدًا أو رمزًا خامًا، وتوفر حجز الرمز الذري للكيانات المرجعية ولا تملك تلك الكيانات |
+| Application Infrastructure | Idempotency وOutbox والتسلسلات التقنية والتشغيل والحماية المشتركة من إساءة الاستخدام | `IdempotencyRecord`, `OrganizationIdempotencyRecord`, `OutboxEvent`, `MasterDataCodeSequence`, `RateLimitCounter` | ليست Bounded Context أعمال؛ سجل تكرار المنظمة منفذ محليًا قيد التحقق، مستقل عن سجل الشركة ولا يملك الشركة الناتجة. تخزن حماية إساءة الاستخدام HMAC هوية بسر تشغيل مستقل لا IP أو بريدًا أو رمزًا خامًا، وتوفر البنية حجز الرمز الذري للكيانات المرجعية ولا تملك تلك الكيانات |
 
 ## 4. اتجاهات الاعتماد المسموحة
 
@@ -77,6 +77,7 @@ Employee Expenses ─────> Human Resources employee, Core Accounting cos
 Employee Expenses ─────> Approvals subject application port
 Workforce Access workflow ──> Human Resources employee-account port + Identity account port
 Organization owner workspace ──> Identity membership + Tenant directory + Accounting/Sales/Purchases query ports
+Group company creation workflow ──> Identity authorization/bootstrap + Tenant creation + Accounting/Treasury setup + Subscription start-policy ports
 All operational contexts ──> Audit append port
 Authentication/Identity ───> Security append port
 
@@ -173,6 +174,13 @@ Platform Subscriptions & Entitlements وفق [ADR-019](ADR-019-public-subscripti
 مستقلًا لظهور الشركة وللتبديل إليها. تنسق لوحة القراءة منافذ Tenant وCore Accounting
 وSales وPurchases ولا تجمع المبالغ بين العملات ولا تنتج قوائم موحدة أو إلغاءات
 Intercompany. تحفظ تغييرات العضوية في `OrganizationAuditLog` ولا تمنح أي صلاحية منصة.
+
+أضيف محليًا، قيد التحقق وغير منشور، أمر إنشاء شركة للمجموعة وفق
+[حدود تأسيس الشركة](GROUP_COMPANY_ONBOARDING_AR.md). المنسق يستدعي منافذ المالكين
+داخل معاملة واحدة، ولا تصبح لوحة القراءة مالكًا للمنظمة أو الشركة أو الهوية. يمنح
+الأمر الصريح OWNER النشط دور مدير للشركة الجديدة فقط، ويبقى `Organization/Company`
+لـTenant و`User/UserCompany/Role` لـIdentity والاشتراك لسياقه القائم. يملك Infrastructure
+سجل التكرار المنفصل للمنظمة، ويظل التدقيق تابعًا لنطاقه الصحيح لدى Audit.
 
 ## 7. حدود Aggregates المقترحة
 
