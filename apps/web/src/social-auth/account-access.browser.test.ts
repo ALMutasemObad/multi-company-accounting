@@ -2,7 +2,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { chromium, expect as browserExpect, type Browser, type Page } from "@playwright/test";
 import { createServer, type ViteDevServer } from "vite";
 import { fileURLToPath } from "node:url";
-import copy from "../registration-email-delivery/copy.json";
 
 const enabled = process.env.RUN_ACCOUNT_ACCESS_BROWSER_TESTS === "true";
 
@@ -64,44 +63,56 @@ describe.runIf(enabled)("account access browser integration", () => {
     await configured.close();
   }, 60_000);
 
-  it("falls back safely from social onboarding to the ordinary privacy-preserving registration flow", async () => {
+  it("completes social onboarding without exposing or collecting identity claims or a password", async () => {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
     let submittedBody: Record<string, unknown> | undefined;
-    await page.route("**/api/v1/auth/register/options", (route) => route.fulfill({ json: {
+    await routeUnauthenticatedShell(page);
+    await page.route("**/api/v1/auth/social/providers", (route) => route.fulfill({ json: { google: true, apple: true } }));
+    await page.route("**/api/v1/auth/social/onboarding/options", (route) => route.fulfill({ json: {
       currencies: [{ code: "SAR", nameAr: "ريال", decimals: 2 }],
       locales: ["ar", "en", "ur", "hi"],
       timezones: ["UTC"],
       chartTemplates: [{ code: "SMALL_BUSINESS_GENERAL", nameAr: "عام", nameEn: "General" }],
-      passwordPolicy: { minLength: 12, maxLength: 1024 },
     } }));
     await page.route("**/api/v1/auth/csrf", (route) => route.fulfill({ json: { csrfToken: "browser-test" } }));
-    await page.route("**/api/v1/auth/register", async (route) => {
+    await page.route("**/api/v1/auth/social/onboarding", async (route) => {
       submittedBody = route.request().postDataJSON() as Record<string, unknown>;
-      await route.fulfill({ status: 202, json: { status: "PENDING_VERIFICATION" } });
+      await route.fulfill({ status: 201, json: {
+        status: "COMPLETED",
+        user: { id: "77", displayName: "Owner" },
+        companyId: "88",
+        csrfToken: "rotated-csrf",
+      } });
     });
 
     await page.goto(`${origin}/?social=onboarding_required`);
     await useEnglish(page);
-    await browserExpect(page.getByRole("heading", { name: "Create your account and company" })).toBeVisible();
+    await browserExpect(page.getByRole("heading", { name: "Finish creating your workspace" }).first()).toBeVisible();
     expect(new URL(page.url()).searchParams.has("social")).toBe(false);
-    expect(await page.locator('[name="provider"], [name="issuer"], [name="subject"]').count()).toBe(0);
+    expect(await page.locator('[name="provider"], [name="issuer"], [name="subject"], [name="email"], [name="password"]').count()).toBe(0);
 
     for (const [name, value] of Object.entries({
       displayName: "Owner",
-      email: "new-owner@example.test",
-      password: "long-test-password",
-      passwordConfirmation: "long-test-password",
       organizationName: "Group",
       companyName: "Company",
     })) await page.locator(`[name="${name}"]`).fill(value);
-    await page.getByRole("button", { name: "Send verification link" }).click();
+    await page.locator('[name="consent"]').check();
+    await page.getByRole("button", { name: "Create account and workspace" }).click();
 
-    await browserExpect(page.getByRole("heading", { name: copy.en.acceptedTitle })).toBeVisible();
-    await browserExpect(page.getByText(copy.en.acceptedDescription)).toBeVisible();
+    await browserExpect.poll(() => submittedBody).toBeDefined();
     expect(submittedBody).toBeDefined();
-    expect(submittedBody).not.toHaveProperty("provider");
-    expect(submittedBody).not.toHaveProperty("issuer");
-    expect(submittedBody).not.toHaveProperty("subject");
+    for (const forbidden of ["provider", "issuer", "subject", "email", "password", "passwordConfirmation", "accessToken", "refreshToken"]) {
+      expect(submittedBody).not.toHaveProperty(forbidden);
+    }
+    expect(submittedBody).toMatchObject({
+      displayName: "Owner",
+      organizationName: "Group",
+      companyName: "Company",
+      baseCurrencyCode: "SAR",
+      timezone: "UTC",
+      chartTemplateCode: "SMALL_BUSINESS_GENERAL",
+      consent: true,
+    });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.close();
   }, 60_000);

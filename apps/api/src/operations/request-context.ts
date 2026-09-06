@@ -43,7 +43,8 @@ export function runWithRequestContext<T>(context: RequestExecutionContext, work:
 }
 
 export function classifyRequest(method: string, path: string): RequestClass {
-  if (!['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase()) && path.startsWith('/api/v1/auth/register')) {
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase())
+    && (path.startsWith('/api/v1/auth/register') || path === '/api/v1/auth/social/onboarding')) {
     return 'REGISTRATION_WRITE';
   }
   return ['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase()) ? 'READ' : 'WRITE';

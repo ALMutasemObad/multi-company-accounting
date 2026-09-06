@@ -377,6 +377,9 @@ export function createApp(config: AppConfig, services: AppServices = {}) {
   app.post('/api/v1/auth/social/:provider/start', ...sensitivePair('social-auth-start', config.AUTH_RATE_LIMIT_MAX ?? 20));
   app.get('/api/v1/auth/social/google/callback', sensitiveLimiter('social-auth-google-callback', (config.AUTH_RATE_LIMIT_MAX ?? 20) * networkMultiplier));
   app.post('/api/v1/auth/social/apple/callback', sensitiveLimiter('social-auth-apple-callback', (config.AUTH_RATE_LIMIT_MAX ?? 20) * networkMultiplier));
+  app.get('/api/v1/auth/social/onboarding/options', ...sensitivePair('social-onboarding-options', config.REGISTRATION_RATE_LIMIT_MAX ?? 5));
+  app.post('/api/v1/auth/social/onboarding', ...sensitivePair('social-onboarding', config.REGISTRATION_RATE_LIMIT_MAX ?? 5));
+  app.delete('/api/v1/auth/social/onboarding', ...sensitivePair('social-onboarding-cancel', config.REGISTRATION_RATE_LIMIT_MAX ?? 5));
   const registrationLimiters = sensitivePair('registration', config.REGISTRATION_RATE_LIMIT_MAX ?? 5);
   app.post('/api/v1/auth/register', ...registrationLimiters);
   app.post('/api/v1/auth/register/resend', ...registrationLimiters);

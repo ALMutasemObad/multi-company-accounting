@@ -2,6 +2,11 @@ import type { AuthStore, ClientMetadata, PasswordVerifier, StoredSession } from 
 import type { CompanyCapabilityPort } from '../platform-subscriptions/company-capability-service.js';
 import { createOpaqueToken, hashToken, tokenMatches } from './session-tokens.js';
 
+// A fixed, valid Argon2id hash keeps unknown and social-only accounts on the
+// same expensive verification path as password accounts without introducing a
+// usable credential.
+const DUMMY_PASSWORD_HASH = '$argon2id$v=19$m=65536,p=4,t=3$MDEyMzQ1Njc4OWFiY2RlZg$gLpnTAbsSMkKR/Zs3x82Wsr3k5ntmvImI0rlwrCNjDk';
+
 export class AuthError extends Error {
   constructor(public readonly reason: 'UNAUTHENTICATED' | 'INVALID_CSRF' | 'INVALID_CREDENTIALS' | 'ACCOUNT_LOCKED' | 'FORBIDDEN') {
     super(reason);
@@ -34,12 +39,12 @@ export class AuthService {
     const session = await this.requireSession(input.sid, input.csrfToken, 'PRE_AUTH');
     const emailNormalized = input.email.trim().toLocaleLowerCase('en-US');
     const user = await this.store.findUser(emailNormalized);
-    const validPassword = user ? await this.passwords.verify(user.passwordHash, input.password) : false;
+    const validPassword = await this.passwords.verify(user?.passwordHash ?? DUMMY_PASSWORD_HASH, input.password);
     const now = this.now();
 
     if (!user || !user.isActive || !validPassword) {
-      if (user?.isActive) await this.store.recordFailedLogin(user.id, now, input.metadata);
-      else if (user) await this.store.recordDisabledLogin(user.id, now, input.metadata);
+      if (user?.isActive && user.passwordHash) await this.store.recordFailedLogin(user.id, now, input.metadata);
+      else if (user && !user.isActive) await this.store.recordDisabledLogin(user.id, now, input.metadata);
       throw new AuthError('INVALID_CREDENTIALS');
     }
     if (user.lockedUntil && user.lockedUntil > now) {

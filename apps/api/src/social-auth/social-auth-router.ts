@@ -1,6 +1,6 @@
 import express, { Router, type ErrorRequestHandler, type Request } from 'express';
 import { z } from 'zod';
-import { startSocialAuthRequestSchema } from '../generated/openapi-request-guards.js';
+import { completeSocialOnboardingRequestSchema, startSocialAuthRequestSchema } from '../generated/openapi-request-guards.js';
 import { SocialAuthError, type SocialAuthService } from './social-auth-service.js';
 import type { SocialProvider } from './social-auth-policy.js';
 
@@ -16,6 +16,10 @@ export function createSocialAuthRouter(service: SocialAuthService, secureSession
   const bindingName = (provider: string) => `social_${provider}_binding`;
   const bindingCookie = (provider: string, value: string, expires: Date) => `${bindingName(provider)}=${encodeURIComponent(value)}; Path=/api/v1/auth/social/${provider}/callback; HttpOnly; SameSite=None; Secure; Expires=${expires.toUTCString()}`;
   const clearBinding = (provider: string) => `${bindingName(provider)}=; Path=/api/v1/auth/social/${provider}/callback; HttpOnly; SameSite=None; Secure; Max-Age=0`;
+  const onboardingPath = '/api/v1/auth/social/onboarding';
+  const onboardingCookie = (name: string, value: string, expires: Date) => `${name}=${encodeURIComponent(value)}; Path=${onboardingPath}; HttpOnly; SameSite=Lax; Expires=${expires.toUTCString()}${secureSessionCookie ? '; Secure' : ''}`;
+  const clearOnboardingCookie = (name: string) => `${name}=; Path=${onboardingPath}; HttpOnly; SameSite=Lax; Max-Age=0${secureSessionCookie ? '; Secure' : ''}`;
+  const clearOnboardingCookies = () => [clearOnboardingCookie('social_onboarding'), clearOnboardingCookie('social_onboarding_binding')];
 
   router.get('/providers', (_request, response) => response.json(service.capabilities()));
   router.post('/:provider/start', async (request, response) => {
@@ -39,6 +43,10 @@ export function createSocialAuthRouter(service: SocialAuthService, secureSession
     const result = await service.callback({ provider: providerOf(providerSlug), state: body.state, ...(browserBinding ? { browserBinding } : {}), callback, ...(body.user ? { appleUser: body.user } : {}), metadata: metadata(request) });
     const headers = [clearBinding(providerSlug)];
     if (result.kind === 'signed_in' || result.kind === 'linked') headers.push(sidCookie(result.sid, result.expiresAt));
+    if (result.kind === 'onboarding_required') {
+      headers.push(onboardingCookie('social_onboarding', result.continuation, result.expiresAt));
+      headers.push(onboardingCookie('social_onboarding_binding', result.browserBinding, result.expiresAt));
+    }
     response.setHeader('Set-Cookie', headers);
     const status = result.kind === 'signed_in' ? 'success' : result.kind === 'linked' ? 'linked' : result.kind;
     const separator = result.returnPath.includes('?') ? '&' : '?';
@@ -54,9 +62,62 @@ export function createSocialAuthRouter(service: SocialAuthService, secureSession
   router.get('/google/callback', (request, response) => safeFinish('google', request, response));
   router.post('/apple/callback', express.urlencoded({ extended: false, limit: '16kb', parameterLimit: 8 }), (request, response) => safeFinish('apple', request, response));
 
+  router.get('/onboarding/options', async (request, response) => {
+    const cookieValues = cookies(request.headers.cookie);
+    const result = await service.onboardingOptions({
+      sid: cookieValues.sid,
+      continuation: cookieValues.social_onboarding,
+      browserBinding: cookieValues.social_onboarding_binding,
+    });
+    response.json(result);
+  });
+
+  router.post('/onboarding', async (request, response) => {
+    const body = completeSocialOnboardingRequestSchema.parse(request.body);
+    const cookieValues = cookies(request.headers.cookie);
+    const csrfToken = request.header('X-CSRF-Token');
+    const result = await service.completeOnboarding({
+      ...(cookieValues.sid ? { sid: cookieValues.sid } : {}),
+      ...(csrfToken ? { csrfToken } : {}),
+      ...(cookieValues.social_onboarding ? { continuation: cookieValues.social_onboarding } : {}),
+      ...(cookieValues.social_onboarding_binding ? { browserBinding: cookieValues.social_onboarding_binding } : {}),
+      form: body,
+      metadata: metadata(request),
+    });
+    response.setHeader('Set-Cookie', [sidCookie(result.sid, result.expiresAt), ...clearOnboardingCookies()]);
+    response.status(201).json({
+      status: 'COMPLETED',
+      user: result.user,
+      companyId: result.companyId,
+      csrfToken: result.csrfToken,
+    });
+  });
+
+  router.delete('/onboarding', async (request, response) => {
+    const cookieValues = cookies(request.headers.cookie);
+    const csrfToken = request.header('X-CSRF-Token');
+    await service.cancelOnboarding({
+      ...(cookieValues.sid ? { sid: cookieValues.sid } : {}),
+      ...(csrfToken ? { csrfToken } : {}),
+      ...(cookieValues.social_onboarding ? { continuation: cookieValues.social_onboarding } : {}),
+      ...(cookieValues.social_onboarding_binding ? { browserBinding: cookieValues.social_onboarding_binding } : {}),
+    });
+    response.setHeader('Set-Cookie', clearOnboardingCookies());
+    response.status(204).end();
+  });
+
   const errors: ErrorRequestHandler = (error, _request, response, next) => {
     if (!(error instanceof SocialAuthError)) { next(error); return; }
-    const status = error.code === 'PROVIDER_DISABLED' ? 404 : error.code === 'AUTHENTICATION_REQUIRED' ? 401 : error.code === 'IDENTITY_CONFLICT' ? 409 : 403;
+    const status = error.code === 'PROVIDER_DISABLED' ? 404
+      : error.code === 'AUTHENTICATION_REQUIRED' ? 401
+      : error.code === 'ONBOARDING_INVALID' ? 410
+      : error.code === 'IDENTITY_CONFLICT' || error.code === 'ACCOUNT_PROOF_REQUIRED' ? 409
+      : error.code === 'PROVISIONING_FAILED' ? 503
+      : error.code === 'INVALID_REQUEST' ? 400
+      : 403;
+    if (error.code === 'ONBOARDING_INVALID' || error.code === 'ACCOUNT_PROOF_REQUIRED') {
+      response.setHeader('Set-Cookie', clearOnboardingCookies());
+    }
     response.status(status).json({ type: 'about:blank', title: 'Social authentication failed', status, code: error.code });
   };
   router.use(errors);

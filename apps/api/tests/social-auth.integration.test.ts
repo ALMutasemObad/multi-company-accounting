@@ -22,13 +22,15 @@ const fakeProvider: SocialOidcProvider = {
 
 describe.runIf(enabled)('social authentication persistence and races', () => {
   beforeEach(async () => {
+    await prisma!.socialOnboardingContinuation.deleteMany();
     await prisma!.socialAuthorizationTransaction.deleteMany();
     await prisma!.externalIdentity.deleteMany({ where: { subject: profile.identity.subject } });
     await prisma!.session.deleteMany();
   });
   afterAll(async () => { await prisma!.$disconnect(); });
 
-  const service = () => new SocialAuthService(prisma!, { transactionSecret: 'integration-social-transaction-secret-123456789', transactionTtlMinutes: 10, sessionTtlHours: 12, providers: { GOOGLE: fakeProvider } });
+  const onboarding = { continuationTtlMinutes: 10, provisioning: {} as never, owners: {} as never };
+  const service = () => new SocialAuthService(prisma!, { transactionSecret: 'integration-social-transaction-secret-123456789', transactionTtlMinutes: 10, sessionTtlHours: 12, providers: { GOOGLE: fakeProvider }, onboarding });
   async function preAuth() {
     const sid = createOpaqueToken(); const csrf = createOpaqueToken();
     await prisma!.session.create({ data: { tokenHash: hashToken(sid), csrfHash: hashToken(csrf), state: 'PRE_AUTH', expiresAt: new Date(Date.now() + 600_000) } });
@@ -60,6 +62,34 @@ describe.runIf(enabled)('social authentication persistence and races', () => {
     expect(await prisma!.externalIdentity.count({ where: { subject: profile.identity.subject } })).toBe(0);
   });
 
+  it('requires separate account proof when verified provider email belongs to an existing account', async () => {
+    const existing = await prisma!.user.findUniqueOrThrow({ where: { emailNormalized: 'admin@mcap.local' } });
+    const existingEmailProfile = {
+      ...profile,
+      identity: { ...profile.identity, subject: `existing-email-${Date.now()}` },
+      email: { ...profile.email, value: existing.emailNormalized },
+    };
+    const provider: SocialOidcProvider = {
+      authorizationUrl: ({ state }) => `https://issuer.example.test/auth?state=${encodeURIComponent(state)}`,
+      exchange: async () => existingEmailProfile,
+    };
+    const auth = new SocialAuthService(prisma!, {
+      transactionSecret: 'integration-social-transaction-secret-123456789',
+      transactionTtlMinutes: 10,
+      sessionTtlHours: 12,
+      providers: { GOOGLE: provider },
+      onboarding,
+    });
+    const initial = await preAuth();
+    const started = await auth.start({ provider: 'GOOGLE', purpose: 'SIGN_IN', sid: initial.sid, csrfToken: initial.csrf, consent: false });
+    const state = new URL(started.authorizationUrl).searchParams.get('state')!;
+    const result = await auth.callback({ provider: 'GOOGLE', state, browserBinding: started.browserBinding, callback: new URL(`https://callback.test/?code=x&state=${state}`) });
+
+    expect(result.kind).toBe('account_proof_required');
+    expect(await prisma!.externalIdentity.count({ where: { subject: existingEmailProfile.identity.subject } })).toBe(0);
+    expect(await prisma!.socialOnboardingContinuation.count({ where: { initiatingSession: { tokenHash: hashToken(initial.sid) } } })).toBe(0);
+  });
+
   it('links an issuer+subject only after recent authenticated consent and rotates the session', async () => {
     const user = await prisma!.user.findUniqueOrThrow({ where: { emailNormalized: 'admin@mcap.local' } });
     const sid = createOpaqueToken(); const csrf = createOpaqueToken();
@@ -86,7 +116,7 @@ describe.runIf(enabled)('social authentication persistence and races', () => {
       authorizationUrl: ({ state }) => `https://appleid.apple.com/auth/authorize?state=${encodeURIComponent(state)}`,
       exchange: async () => ({ identity: { provider: 'APPLE', issuer: 'https://appleid.apple.com', subject: 'apple-form-post-subject' }, email: { value: 'relay@privaterelay.appleid.com', verified: true, privateRelay: true }, displayName: 'Apple User' }),
     };
-    const auth = new SocialAuthService(prisma!, { transactionSecret: 'integration-social-transaction-secret-123456789', transactionTtlMinutes: 10, sessionTtlHours: 12, providers: { APPLE: appleProvider } });
+    const auth = new SocialAuthService(prisma!, { transactionSecret: 'integration-social-transaction-secret-123456789', transactionTtlMinutes: 10, sessionTtlHours: 12, providers: { APPLE: appleProvider }, onboarding });
     const initial = await preAuth();
     const app = createApp({ NODE_ENV: 'test', PORT: 3000, WEB_ORIGIN: 'http://localhost:5173', SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: process.env.DATABASE_URL }, { socialAuth: auth });
     expect((await request(app).get('/api/v1/auth/social/providers').expect(200)).body).toEqual({ google: false, apple: true });
@@ -97,5 +127,13 @@ describe.runIf(enabled)('social authentication persistence and races', () => {
     const state = new URL(started.body.authorizationUrl).searchParams.get('state')!;
     const completed = await request(app).post('/api/v1/auth/social/apple/callback').set('Cookie', correlation.split(';')[0]!).type('form').send({ code: 'apple-code', state, user: JSON.stringify({ name: { firstName: 'Apple' } }) }).expect(303);
     expect(completed.headers.location).toBe('/?social=onboarding_required');
+    const completionCookies = completed.headers['set-cookie'] as unknown as string[];
+    expect(completionCookies).toHaveLength(3);
+    expect(completionCookies[1]).toContain('social_onboarding=');
+    expect(completionCookies[1]).toContain('HttpOnly');
+    expect(completionCookies[1]).toContain('SameSite=Lax');
+    expect(completionCookies[2]).toContain('social_onboarding_binding=');
+    expect(JSON.stringify(completed.headers)).not.toContain('apple-form-post-subject');
+    expect(JSON.stringify(completed.headers)).not.toContain('relay@privaterelay.appleid.com');
   });
 });

@@ -300,6 +300,52 @@ paths:
       responses:
         '303': { description: إعادة آمنة إلى الواجهة الداخلية }
         '400': { $ref: '#/components/responses/ValidationError' }
+  /auth/social/onboarding/options:
+    get:
+      tags: [Authentication]
+      summary: خيارات التسجيل المرتبطة باستمرار اجتماعي صالح
+      operationId: getSocialOnboardingOptions
+      description: لا يعيد هوية المزود أو بريده أو subject؛ يتحقق خادميًا من continuation وارتباط المتصفح وجلسة PRE_AUTH.
+      security: [{ SessionCookie: [] }]
+      responses:
+        '200':
+          description: خيارات التسجيل العامة
+          content: { application/json: { schema: { $ref: '#/components/schemas/SocialOnboardingOptionsResponse' } } }
+        '410': { $ref: '#/components/responses/Gone' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/RateLimitUnavailable' }
+  /auth/social/onboarding:
+    post:
+      tags: [Authentication]
+      summary: إنشاء حساب اجتماعي ومجموعة وشركة ذريًا
+      operationId: completeSocialOnboarding
+      description: يستهلك continuation من Cookie خادمة أحادية الاستخدام؛ لا يقبل issuer أو subject أو token مزود أو بريدًا من JavaScript.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/SocialOnboardingCompleteRequest' } } }
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      responses:
+        '201':
+          description: اكتمل الإنشاء ودُوّرت الجلسة
+          content: { application/json: { schema: { $ref: '#/components/schemas/SocialOnboardingCompletedResponse' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '410': { $ref: '#/components/responses/Gone' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/RegistrationUnavailable' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+    delete:
+      tags: [Authentication]
+      summary: إلغاء continuation الاجتماعي الحالي
+      operationId: cancelSocialOnboarding
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      responses:
+        '204': { description: أُلغي الاستمرار ومسحت Cookies الخاصة به }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '410': { $ref: '#/components/responses/Gone' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/RateLimitUnavailable' }
   /auth/register/options:
     get:
       tags: [Authentication]
@@ -10907,6 +10953,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Problem'
+    Gone:
+      description: انتهى الاستمرار الأمني أو استُهلك أو لا يطابق هذا المتصفح
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Problem'
     Conflict:
       description: تعارض إصدار أو تزامن أو تكرار
       content:
@@ -11161,6 +11213,65 @@ components:
       properties:
         authorizationUrl: { type: string, minLength: 1, maxLength: 4096 }
         expiresAt: { type: string, format: date-time }
+    SocialOnboardingCompleteRequest:
+      type: object
+      additionalProperties: false
+      required: [displayName, organizationName, companyName, timezone, baseCurrencyCode, locale, chartTemplateCode, consent]
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 160, x-trim: true }
+        organizationName: { type: string, minLength: 1, maxLength: 200, x-trim: true }
+        companyName: { type: string, minLength: 1, maxLength: 200, x-trim: true }
+        timezone: { type: string, minLength: 1, maxLength: 64, x-trim: true }
+        baseCurrencyCode: { type: string, pattern: '^[A-Z]{3}$', x-trim: true }
+        locale: { type: string, enum: [ar, en, ur, hi] }
+        chartTemplateCode: { type: string, minLength: 1, maxLength: 80, x-trim: true }
+        consent: { type: boolean, enum: [true] }
+    SocialOnboardingOptionsResponse:
+      type: object
+      additionalProperties: false
+      required: [currencies, locales, timezones, chartTemplates]
+      properties:
+        currencies:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, nameAr, decimals]
+            properties:
+              code: { type: string, pattern: '^[A-Z]{3}$' }
+              nameAr: { type: string }
+              decimals: { type: integer, minimum: 0, maximum: 6 }
+        locales:
+          type: array
+          items: { type: string, enum: [ar, en, ur, hi] }
+        timezones:
+          type: array
+          items: { type: string }
+        chartTemplates:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, nameAr, nameEn]
+            properties:
+              code: { type: string }
+              nameAr: { type: string }
+              nameEn: { type: string }
+    SocialOnboardingCompletedResponse:
+      type: object
+      additionalProperties: false
+      required: [status, user, companyId, csrfToken]
+      properties:
+        status: { type: string, enum: [COMPLETED] }
+        user:
+          type: object
+          additionalProperties: false
+          required: [id, displayName]
+          properties:
+            id: { type: string, pattern: '^[1-9][0-9]*$' }
+            displayName: { type: string, minLength: 1, maxLength: 160 }
+        companyId: { type: string, pattern: '^[1-9][0-9]*$' }
+        csrfToken: { type: string, minLength: 32 }
     PasswordResetStartRequest:
       type: object
       additionalProperties: false

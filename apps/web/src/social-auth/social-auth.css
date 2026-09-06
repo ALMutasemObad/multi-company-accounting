@@ -3,3 +3,38 @@
   gap: 0.75rem;
   margin-block: 0.75rem;
 }
+
+.social-onboarding .registration-card > h2,
+.social-onboarding .auth-story h1 {
+  font-size: 2rem;
+}
+
+.social-onboarding .registration-card,
+.social-onboarding .auth-story,
+.social-onboarding .registration-form {
+  font-size: 1rem;
+}
+
+.social-onboarding-consent {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: flex-start;
+  gap: 0.75rem;
+  line-height: 1.65;
+}
+
+.social-onboarding-consent input {
+  flex: 0 0 auto;
+  width: 1.15rem;
+  height: 1.15rem;
+  margin-block-start: 0.2rem;
+}
+
+.social-onboarding-actions {
+  grid-column: 1 / -1;
+}
+
+.social-onboarding-status {
+  color: var(--green-700);
+  font-weight: 700;
+}

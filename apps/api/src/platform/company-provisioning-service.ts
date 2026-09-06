@@ -6,6 +6,7 @@ import type { PlatformSubscriptionCompanyProvisioningPort } from '../platform-su
 import {
   CompanyProvisioningError,
   type AccountingCompanyProvisioningPort,
+  type AdministratorProvisioningInput,
   type IdentityCompanyProvisioningPort,
   type TenantCompanyProvisioningPort,
   type TreasuryCompanyProvisioningPort,
@@ -60,12 +61,16 @@ export class CompanyProvisioningService {
   async provisionPreparedInTransaction(
     tx: Prisma.TransactionClient,
     rawInput: PreparedCompanyProvisioningInput,
-    passwordHash: string,
-    options: { requireNewAdminIdentity?: boolean } = {},
+    passwordHash: string | null,
+    options: {
+      requireNewAdminIdentity?: boolean;
+      externalIdentity?: AdministratorProvisioningInput["externalIdentity"];
+    } = {},
   ) {
     const input = preparedCompanyProvisioningSchema.parse(rawInput);
-    if (!passwordHash || passwordHash.length > 255) {
-      throw new TypeError('A valid prepared password hash is required');
+    if ((passwordHash !== null && (!passwordHash || passwordHash.length > 255))
+      || (passwordHash === null && !options.externalIdentity)) {
+      throw new TypeError('A password hash or trusted social identity is required');
     }
 
     const tenant = await this.tenant.provisionTenant(tx, input);
@@ -75,6 +80,7 @@ export class CompanyProvisioningService {
       email: input.adminEmail,
       displayName: input.adminDisplayName,
       passwordHash,
+      ...(options.externalIdentity ? { externalIdentity: options.externalIdentity } : {}),
       requireNewIdentity: options.requireNewAdminIdentity ?? false,
     });
     const defaultChart = await this.accounting.provisionAccounting(
@@ -144,8 +150,11 @@ export class CompanyProvisioningService {
 
   async provisionPrepared(
     rawInput: PreparedCompanyProvisioningInput,
-    passwordHash: string,
-    options: { requireNewAdminIdentity?: boolean } = {},
+    passwordHash: string | null,
+    options: {
+      requireNewAdminIdentity?: boolean;
+      externalIdentity?: AdministratorProvisioningInput["externalIdentity"];
+    } = {},
   ) {
     return this.prisma.$transaction(
       (tx) => this.provisionPreparedInTransaction(tx, rawInput, passwordHash, options),

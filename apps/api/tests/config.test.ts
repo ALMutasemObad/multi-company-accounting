@@ -8,6 +8,9 @@ describe('production configuration', () => {
     const disabled = loadConfig({ NODE_ENV: 'test' });
     expect(disabled.GOOGLE_OIDC_ENABLED).toBe(false);
     expect(disabled.APPLE_OIDC_ENABLED).toBe(false);
+    expect(disabled.SOCIAL_ONBOARDING_CONTINUATION_TTL_MINUTES).toBe(10);
+    expect(() => loadConfig({ NODE_ENV: 'test', SOCIAL_ONBOARDING_CONTINUATION_TTL_MINUTES: '1' })).toThrow();
+    expect(() => loadConfig({ NODE_ENV: 'test', SOCIAL_ONBOARDING_CONTINUATION_TTL_MINUTES: '16' })).toThrow();
     expect(() => loadConfig({ NODE_ENV: 'test', GOOGLE_OIDC_ENABLED: 'true' })).toThrow(/GOOGLE_OIDC_CLIENT_ID|transaction protection/);
     expect(() => loadConfig({
       NODE_ENV: 'test',

@@ -119,6 +119,44 @@ export async function startSocialSignIn(provider: 'google' | 'apple', options: R
   });
 }
 
+export type SocialOnboardingOptions = {
+  currencies: Array<{ code: string; nameAr: string; decimals: number }>;
+  locales: Array<'ar' | 'en' | 'ur' | 'hi'>;
+  timezones: string[];
+  chartTemplates: Array<{ code: string; nameAr: string; nameEn: string }>;
+};
+
+export const socialOnboardingOptions = (options: RequestPolicy = {}) =>
+  api<SocialOnboardingOptions>('/auth/social/onboarding/options', options);
+
+export async function completeSocialOnboarding(input: {
+  displayName: string;
+  organizationName: string;
+  companyName: string;
+  timezone: string;
+  baseCurrencyCode: string;
+  locale: 'ar' | 'en' | 'ur' | 'hi';
+  chartTemplateCode: string;
+  consent: true;
+}, options: RequestPolicy = {}) {
+  const result = await api<{
+    status: 'COMPLETED';
+    user: { id: string; displayName: string };
+    companyId: string;
+    csrfToken: string;
+  }>('/auth/social/onboarding', {
+    ...options,
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+  if (result.status !== 'COMPLETED' || !result.csrfToken) throw new RequestError('response');
+  setCsrfToken(result.csrfToken);
+  return result;
+}
+
+export const cancelSocialOnboarding = (options: RequestPolicy = {}) =>
+  api<void>('/auth/social/onboarding', { ...options, method: 'DELETE' });
+
 export async function logout() {
   invalidateSessionRequests();
   const pending = api<void>("/auth/logout", { method: "POST" });

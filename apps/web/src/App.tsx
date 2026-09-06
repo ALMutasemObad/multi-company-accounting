@@ -9,6 +9,7 @@ import { RegistrationPage } from "./RegistrationPage";
 import { PasswordResetPage } from "./PasswordResetPage";
 import { subscriptionPlanForRoute, subscriptionPlanHash, subscriptionRouteBase } from "./public-plans";
 import { LoginScreen } from "./LoginScreen";
+import { SocialOnboardingPage } from "./social-auth/SocialOnboardingPage";
 import { AuthFeedback } from "./AuthFeedback";
 import { useAuthAction } from "./use-auth-action";
 import { assertRequestActive } from "./request-scope";
@@ -65,7 +66,7 @@ const replaceHash = (view: string) => {
 export default function App() {
   const { dir, t } = useI18n();
   const brand = localizedBrand(t);
-  const [state, setState] = useState<"booting" | "login" | "register" | "password-reset" | "company" | "ready">("booting");
+  const [state, setState] = useState<"booting" | "login" | "register" | "social-register" | "password-reset" | "company" | "ready">("booting");
   const [authorization, setAuthorization] = useState<CurrentAuthorization | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [route, setRoute] = useState<PageRoute>(() => parsePageRoute(location.hash));
@@ -236,9 +237,9 @@ export default function App() {
 
   useEffect(() => {
       const socialResult = new URLSearchParams(location.search).get("social");
-      if (socialResult === "onboarding_required") {
-        history.replaceState(null, "", `${location.pathname}#register`);
-        setState("register");
+      if (socialResult === "onboarding_required" || location.hash === "#social-onboarding") {
+        history.replaceState(null, "", `${location.pathname}#social-onboarding`);
+        setState("social-register");
         return;
       }
       if (location.hash.startsWith("#reset-password")) {
@@ -311,6 +312,22 @@ export default function App() {
         onBackToLogin={() => {
           replaceHash(subscriptionPlanHash("login", subscriptionPlanForRoute(location.hash)));
           setState("login");
+        }}
+      />
+    );
+
+  if (state === "social-register")
+    return (
+      <SocialOnboardingPage
+        onBackToLogin={() => {
+          replaceHash("login");
+          setState("login");
+        }}
+        onCompleted={() => {
+          setState("booting");
+          void runStartup((signal) => loadAuthenticatedShell(false, signal), {
+            onError: () => setState("login"),
+          });
         }}
       />
     );

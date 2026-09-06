@@ -23,7 +23,7 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 355, requestBodies: 183, responseBodies: 2343 });
+    expect(openApiContractCoverage).toEqual({ operations: 358, requestBodies: 184, responseBodies: 2359 });
     expect(openApiOperationRoutes).toMatchObject({
       'GET /pos/context/identity': 'getPosContextIdentity',
       'GET /pos/context/period': 'resolvePosContextPeriod',
@@ -33,8 +33,11 @@ describe('generated OpenAPI request guards', () => {
       'GET /organizations/{organizationId}/dashboard': 'getOrganizationDashboard',
       'GET /organizations/{organizationId}/company-options': 'getOrganizationCompanyOptions',
       'POST /organizations/{organizationId}/companies': 'createOrganizationCompany',
+      'POST /auth/social/onboarding': 'completeSocialOnboarding',
+      'DELETE /auth/social/onboarding': 'cancelSocialOnboarding',
     });
-    expect(guardedOpenApiOperations).toHaveLength(183);
+    expect(guardedOpenApiOperations).toHaveLength(184);
+    expect(guardedOpenApiOperations).toContain('completeSocialOnboarding');
     expect(guardedOpenApiOperations).toContain('createOrganizationCompany');
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining(['createItemSellingProfile', 'updateItemSellingProfile']));
     expect(guardedOpenApiOperations).toContain("setPlatformSubscriptionPublicListing");

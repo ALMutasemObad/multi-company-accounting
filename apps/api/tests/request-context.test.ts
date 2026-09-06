@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { OperationalMetrics } from '../src/operations/metrics.js';
 import {
   ClientDisconnectedError,
+  classifyRequest,
   currentRequestContext,
   requestContextMiddleware,
 } from '../src/operations/request-context.js';
@@ -26,6 +27,12 @@ function withRequestContext(deadlineMs: number, metrics = new OperationalMetrics
 }
 
 describe('HTTP request execution context', () => {
+  it('gives social onboarding completion the registration write budget', () => {
+    expect(classifyRequest('POST', '/api/v1/auth/social/onboarding')).toBe('REGISTRATION_WRITE');
+    expect(classifyRequest('DELETE', '/api/v1/auth/social/onboarding')).toBe('REGISTRATION_WRITE');
+    expect(classifyRequest('GET', '/api/v1/auth/social/onboarding/options')).toBe('READ');
+  });
+
   it('propagates one absolute deadline and request identifier through async work', async () => {
     const app = withRequestContext(1_000);
     app.get('/context', async (_request, response) => {

@@ -141,12 +141,19 @@ const socialProviders = {
   ...(config.GOOGLE_OIDC_ENABLED ? { GOOGLE: new OidcProviderAdapter({ provider: 'GOOGLE', clientId: config.GOOGLE_OIDC_CLIENT_ID!, clientSecret: config.GOOGLE_OIDC_CLIENT_SECRET!, redirectUri: config.GOOGLE_OIDC_REDIRECT_URI!, authorizationEndpoint: config.GOOGLE_OIDC_AUTHORIZATION_ENDPOINT, tokenEndpoint: config.GOOGLE_OIDC_TOKEN_ENDPOINT, jwksUri: config.GOOGLE_OIDC_JWKS_URI }) } : {}),
   ...(config.APPLE_OIDC_ENABLED ? { APPLE: new OidcProviderAdapter({ provider: 'APPLE', clientId: config.APPLE_OIDC_CLIENT_ID!, clientSecret: config.APPLE_OIDC_CLIENT_SECRET!, redirectUri: config.APPLE_OIDC_REDIRECT_URI!, authorizationEndpoint: config.APPLE_OIDC_AUTHORIZATION_ENDPOINT, tokenEndpoint: config.APPLE_OIDC_TOKEN_ENDPOINT, jwksUri: config.APPLE_OIDC_JWKS_URI }) } : {}),
 };
+const companyProvisioning = createCompanyProvisioningService(database);
+const registrationOwners = createRegistrationOwnerPorts(database);
 const socialAuth = new SocialAuthService(database, {
   // Ephemeral only while every provider is disabled; config validation requires a stable secret before enablement.
   transactionSecret: config.SOCIAL_AUTH_TRANSACTION_SECRET ?? randomBytes(32).toString('base64url'),
   transactionTtlMinutes: config.SOCIAL_AUTH_TRANSACTION_TTL_MINUTES,
   sessionTtlHours: config.SESSION_TTL_HOURS,
   providers: socialProviders,
+  onboarding: {
+    continuationTtlMinutes: config.SOCIAL_ONBOARDING_CONTINUATION_TTL_MINUTES,
+    provisioning: companyProvisioning,
+    owners: registrationOwners,
+  },
 });
 const registrationMailer = config.REGISTRATION_EMAIL_MODE === 'resend'
   ? new ResendRegistrationMailer(config.RESEND_API_KEY!, config.REGISTRATION_EMAIL_FROM!)
@@ -157,9 +164,9 @@ const outboxAppender = new PrismaOutboxAppender(config.OUTBOX_MAX_ATTEMPTS);
 const registration = config.SELF_REGISTRATION_ENABLED
   ? new RegistrationService(
       database,
-      createCompanyProvisioningService(database),
+      companyProvisioning,
       outboxAppender,
-      createRegistrationOwnerPorts(database),
+      registrationOwners,
       {
         auditPepper: registrationAuditPepper,
       },
