@@ -1,4 +1,5 @@
 export const arEmployeeExpenses = {
+  "employeeExpenses.summary.page": "ملخص الصفحة الحالية فقط، وفق الفلاتر المحددة. جاهزة للصرف لا تعني أنها دُفعت.",
   "nav.employeeExpenses": "مصروفات الموظفين",
   "view.employeeExpenses": "مطالبات مصروفات الموظفين",
   "home.module.employeeExpenses": "إنشاء مطالبات الموظفين ومراجعتها حتى تصبح جاهزة للصرف.",
@@ -42,7 +43,7 @@ export const arEmployeeExpenses = {
   "employeeExpenses.submit": "إرسال للمراجعة",
   "employeeExpenses.submitConfirm": "هل تريد تثبيت هذه البنود وإرسالها إلى مراجع مستقل؟",
   "employeeExpenses.readyTitle": "اعتمدت وجاهزة للصرف",
-  "employeeExpenses.readyDescription": "لم يُنشأ سند صرف أو قيد محاسبي. يتطلب ذلك سياسة معتمدة لحساب المقاصة وربط Treasury/PostingEngine.",
+  "employeeExpenses.readyDescription": "لم تُدفع المطالبة ولم يُنشأ سند صرف أو قيد محاسبي. الصرف خطوة مالية منفصلة بعد اعتماد سياسة الربط المالي.",
   "employeeExpenses.noReceipt": "لا يوجد مرجع إيصال",
   "employeeExpenses.total": "الإجمالي",
   "employeeExpenses.employee": "الموظف",
@@ -57,6 +58,7 @@ export const arEmployeeExpenses = {
 } as const;
 
 export const enEmployeeExpenses = {
+  "employeeExpenses.summary.page": "Current page only, using the selected filters. Ready for payment does not mean paid.",
   "nav.employeeExpenses": "Employee expenses",
   "view.employeeExpenses": "Employee expense claims",
   "home.module.employeeExpenses": "Create and review employee claims until they are ready for payment.",
@@ -100,7 +102,7 @@ export const enEmployeeExpenses = {
   "employeeExpenses.submit": "Send for review",
   "employeeExpenses.submitConfirm": "Freeze these items and send them to an independent checker?",
   "employeeExpenses.readyTitle": "Approved and ready for payment",
-  "employeeExpenses.readyDescription": "No payment voucher or journal entry was created. That requires an approved clearing-account policy and Treasury/PostingEngine integration.",
+  "employeeExpenses.readyDescription": "This claim has not been paid. No payment voucher or journal entry was created. Payment is a separate financial step after the financial integration policy is approved.",
   "employeeExpenses.noReceipt": "No receipt reference",
   "employeeExpenses.total": "Total",
   "employeeExpenses.employee": "Employee",
@@ -115,6 +117,7 @@ export const enEmployeeExpenses = {
 } as const satisfies Record<keyof typeof arEmployeeExpenses, string>;
 
 export const hiEmployeeExpenses = {
+  "employeeExpenses.summary.page": "चुने गए फ़िल्टर के अनुसार केवल वर्तमान पृष्ठ का सारांश। भुगतान के लिए तैयार का अर्थ भुगतान हो चुका नहीं है।",
   "nav.employeeExpenses": "कर्मचारी खर्च",
   "view.employeeExpenses": "कर्मचारी खर्च दावे",
   "home.module.employeeExpenses": "कर्मचारी दावे बनाएँ और भुगतान के लिए तैयार होने तक उनकी समीक्षा करें।",
@@ -173,6 +176,7 @@ export const hiEmployeeExpenses = {
 } as const satisfies Record<keyof typeof arEmployeeExpenses, string>;
 
 export const urEmployeeExpenses = {
+  "employeeExpenses.summary.page": "منتخب فلٹر کے مطابق صرف موجودہ صفحے کا خلاصہ۔ ادائیگی کے لیے تیار کا مطلب ادا شدہ نہیں ہے۔",
   "nav.employeeExpenses": "ملازمین کے اخراجات",
   "view.employeeExpenses": "ملازمین کے خرچ کے دعوے",
   "home.module.employeeExpenses": "ملازمین کے دعوے بنائیں اور ادائیگی کے لیے تیار ہونے تک ان کا جائزہ لیں۔",
