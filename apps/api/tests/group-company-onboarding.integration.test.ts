@@ -132,8 +132,12 @@ describe.runIf(enabled)("group company creation on a real database", () => {
     }, { timeout: 15_000 });
     await acquired;
     const create = service().create(user.id, organization.id, randomUUID(), input);
+    // Attach the rejection assertion before releasing the competing transaction.
+    // MariaDB may reject quickly enough for Node to otherwise report a transient
+    // unhandled rejection even though the assertion awaits the same promise later.
+    const createRejection = expect(create).rejects.toMatchObject({ reason: "ORGANIZATION_ROLE_FORBIDDEN" });
     release(); await revocation;
-    await expect(create).rejects.toMatchObject({ reason: "ORGANIZATION_ROLE_FORBIDDEN" });
+    await createRejection;
     await db!.organizationMembership.updateMany({ where: { organizationId: organization.id }, data: { role: "OWNER" } });
     let releaseCreate!: () => void; let ownerLocked!: () => void;
     const createGate = new Promise<void>(resolve => { releaseCreate = resolve; });
