@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { deflateSync } from "node:zlib";
 import { test } from "node:test";
-import { assertVerifiedLinuxPlatform } from "../../deploy/scripts/prisma-toolchain/platform-policy.mjs";
+import { assertVerifiedLinuxPlatform, selectPackagedEngineName } from "../../deploy/scripts/prisma-toolchain/platform-policy.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const toolchain = path.join(root, "deploy/scripts/prisma-toolchain");
@@ -29,6 +29,20 @@ test("migration platform policy accepts a directly observed glibc fallback and r
   assert.throws(
     () => assertVerifiedLinuxPlatform({ ...cloudLinuxSelector, binaryTarget: "debian-openssl-1.1.x" }, { glibcVersionRuntime: "2.28" }),
     /TOOLCHAIN_LINUX_ABI_UNKNOWN/u,
+  );
+});
+
+test("migration platform policy selects only the matching locked OpenSSL engine", () => {
+  const engines = ["schema-engine-debian-openssl-1.1.x", "schema-engine-debian-openssl-3.0.x"];
+  assert.equal(selectPackagedEngineName(engines, engines[0]), engines[0]);
+  assert.equal(selectPackagedEngineName(engines, engines[1]), engines[1]);
+  assert.throws(
+    () => selectPackagedEngineName([...engines, "schema-engine-rhel-openssl-3.0.x"], engines[0]),
+    /One or two packaged schema engines/u,
+  );
+  assert.throws(
+    () => selectPackagedEngineName([engines[0], "schema-engine-unapproved"], engines[0]),
+    /Unapproved packaged schema engine/u,
   );
 });
 
@@ -57,6 +71,7 @@ test("packager authenticates the isolated CLI in the release and installer never
   const creator = await readFile(path.join(root, "scripts/release/create-release.mjs"), "utf8");
   assert.match(creator, /"deploy\/scripts"/u);
   assert.ok(packager.indexOf("npm ci --prefix") < packager.indexOf("create-release.mjs"));
+  assert.match(packager, /PRISMA_CLI_BINARY_TARGETS=debian-openssl-1\.1\.x,debian-openssl-3\.0\.x/u);
   assert.match(packager, /npm audit --prefix[^\n]+--audit-level=moderate/u);
   assert.match(packager, /roundtrip_root\/deploy\/scripts\/prisma-toolchain\/run.mjs" validate/u);
   assert.doesNotMatch(packager + installer, /\bnpx\b(?! download)|prisma@7\.9\.1 migrate|MCAP_NPX_CLI/u);
@@ -91,7 +106,7 @@ test("migration launcher fails closed and propagates the packaged CLI result", a
   await writeFile(path.join(fixture, "node_modules/prisma/build/index.js"), 'console.log(JSON.stringify({ args: process.argv.slice(2), engine: process.env.PRISMA_SCHEMA_ENGINE_BINARY })); process.exit(23);');
   assert.match(run("migrate", "deploy").stderr, /Unapproved toolchain dependency: mysql2/u);
   await writeFile(mysqlManifest, JSON.stringify({ name: "mysql2", version: "3.23.1" }));
-  assert.match(run("migrate", "deploy").stderr, /Exactly one packaged schema engine is required/u);
+  assert.match(run("migrate", "deploy").stderr, /One or two packaged schema engines are required/u);
   await writeFile(path.join(fixture, `node_modules/@prisma/engines/schema-engine-fixture${process.platform === "win32" ? ".exe" : ""}`), "fixture");
   await setPlatform({ platform: "linux", binaryTarget: "debian-openssl-1.1.x", targetDistro: "debian" });
   const unknownSSL = run("migrate", "deploy");

@@ -33,7 +33,8 @@ export SOURCE_DATE_EPOCH="$source_date_epoch"
 # Install the independent, locked migration CLI before the manifest is built.
 # deploy/scripts is already a release input; the host needs no npm/npx download.
 test "$(npm --version)" = 12.0.2 || { printf 'npm 12.0.2 is required\n' >&2; exit 1; }
-npm ci --prefix "$workspace/deploy/scripts/prisma-toolchain" --include=dev --include=optional --no-fund >&2
+PRISMA_CLI_BINARY_TARGETS=debian-openssl-1.1.x,debian-openssl-3.0.x \
+  npm ci --prefix "$workspace/deploy/scripts/prisma-toolchain" --include=dev --include=optional --no-fund >&2
 npm audit --prefix "$workspace/deploy/scripts/prisma-toolchain" --audit-level=moderate >&2
 node "$workspace/deploy/scripts/prisma-toolchain/run.mjs" --version >&2
 
