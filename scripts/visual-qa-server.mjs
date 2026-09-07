@@ -566,6 +566,14 @@ export function responseFor(url, method, headers = {}) {
     meta: { page: 1, pageSize: 9, total: 3, totalPages: 1 },
   };
   if (pathname === "/auth/csrf") return { csrfToken: "visual-qa-csrf" };
+  if (pathname === "/auth/social/providers") return { google: false, apple: false };
+  if (pathname === "/auth/social/accounts") return {
+    data: [
+      { provider: "GOOGLE", status: "NOT_LINKED", linkedAt: null },
+      { provider: "APPLE", status: "NOT_LINKED", linkedAt: null },
+    ],
+    recentAuthenticationRequired: false,
+  };
   if (pathname === "/auth/me") return currentAuthorization;
   if (pathname === "/auth/companies") return { data: [company] };
   if (pathname === "/auth/context" || pathname === "/auth/logout") return null;
@@ -576,6 +584,10 @@ export function responseFor(url, method, headers = {}) {
     period: { ...organizationDashboard.period, days: Number(url.searchParams.get("days") ?? 30) },
   };
   if (pathname === "/organizations/501/members") return { data: organizationMembers };
+  if (pathname === "/organizations/501/company-options") return {
+    currencies: [{ code: "SAR", nameAr: "ريال سعودي" }, { code: "USD", nameAr: "دولار أمريكي" }],
+    timezones: ["Asia/Riyadh", "UTC"],
+  };
   if (pathname === "/platform/overview") return platformOverview;
   if (pathname === "/platform/analytics") return platformAnalytics(url);
   if (pathname === "/platform/subscription-modules") return { modules: [] };

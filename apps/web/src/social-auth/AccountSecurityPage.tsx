@@ -45,7 +45,9 @@ export function AccountSecurityPage({ notify }: {
       history.replaceState(null, "", `${location.pathname}${params.size ? `?${params}` : ""}${location.hash}`);
     }
     void refresh(controller.signal)
-      .catch((error: unknown) => notify(error instanceof Error ? error.message : t("accountSecurity.failed"), "error"))
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) notify(error instanceof Error ? error.message : t("accountSecurity.failed"), "error");
+      })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, []);
@@ -77,10 +79,10 @@ export function AccountSecurityPage({ notify }: {
     }
   }
 
-  if (loading) return <div className="loading"><Spinner /><span>{t("accountSecurity.loading")}</span></div>;
+  if (loading) return <div className="workspace-page social-account-security loading"><Spinner /><span>{t("accountSecurity.loading")}</span></div>;
 
   return (
-    <section className="social-account-security" dir={dir}>
+    <section className="workspace-page social-account-security" dir={dir}>
       <header>
         <h1>{t("accountSecurity.title")}</h1>
         <p>{t("accountSecurity.description")}</p>

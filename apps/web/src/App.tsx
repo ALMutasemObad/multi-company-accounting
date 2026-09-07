@@ -304,6 +304,7 @@ export default function App() {
   if (state === "login")
     return (
       <LoginScreen
+        key={sessionExpired ? "expired-session" : "login"}
         sessionExpired={sessionExpired}
         onForgotPassword={() => {
           location.hash = "reset-password";
@@ -313,7 +314,10 @@ export default function App() {
           location.hash = subscriptionPlanHash("register", subscriptionPlanForRoute(location.hash));
           setState("register");
         }}
-        onLoggedIn={(signal) => loadAuthenticatedShell(true, signal)}
+        onLoggedIn={(signal) => {
+          authenticatedShell.current = true;
+          return loadAuthenticatedShell(true, signal);
+        }}
       />
     );
 

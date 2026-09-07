@@ -6,6 +6,9 @@ import { confirmedGroupCompanyResult, type GroupCompanyResult } from "./result";
 
 type Options = { currencies: Array<{ code: string; nameAr: string }>; timezones: string[] };
 type Attempt = { key: string; body: string };
+const validOptions = (value: Options) => Array.isArray(value?.currencies)
+  && value.currencies.every(currency => typeof currency?.code === "string" && typeof currency?.nameAr === "string")
+  && Array.isArray(value?.timezones) && value.timezones.every(zone => typeof zone === "string");
 
 export function CreateGroupCompany({ organizationId, onCreated, onPendingChange }: { organizationId: string; onCreated: () => Promise<void>; onPendingChange: (pending: boolean) => void }) {
   const { t } = useI18n();
@@ -21,7 +24,10 @@ export function CreateGroupCompany({ organizationId, onCreated, onPendingChange 
     active.current = true;
     const controller = new AbortController();
     api<Options>(`/organizations/${organizationId}/company-options`, { signal: controller.signal })
-      .then(value => { if (!controller.signal.aborted) { setOptions(value); setError(""); } })
+      .then(value => {
+        if (!validOptions(value)) throw new Error(t("organization.create.failed"));
+        if (!controller.signal.aborted) { setOptions(value); setError(""); }
+      })
       .catch((cause: unknown) => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : t("organization.create.failed")); });
     return () => { active.current = false; controller.abort(); };
   }, [organizationId, reload, t]);

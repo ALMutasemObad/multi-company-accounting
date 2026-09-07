@@ -48,6 +48,7 @@ const workspaceScreens: Screen[] = [
   'admin',
   'audit',
   'security',
+  'accountSecurity',
   'settings',
 ].map((name): Screen => ({ name, path: `/?qa=${name}#${name}`, ready: '.workspace-page', kind: 'workspace' }));
 
@@ -191,7 +192,7 @@ async function auditCurrentInterface(page: Page, locale: Locale, label: string) 
 }
 
 for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
-  test(`${locale}: all 32 screens satisfy the responsive interface contract`, async ({ page }) => {
+  test(`${locale}: all 33 screens satisfy the responsive interface contract`, async ({ page }) => {
     const runtimeErrors: string[] = [];
     const posRequests: Request[] = [];
     const posResponses: Response[] = [];
