@@ -7,10 +7,30 @@ import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { deflateSync } from "node:zlib";
 import { test } from "node:test";
+import { assertVerifiedLinuxPlatform } from "../../deploy/scripts/prisma-toolchain/platform-policy.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const toolchain = path.join(root, "deploy/scripts/prisma-toolchain");
 const require = createRequire(import.meta.url);
+
+test("migration platform policy accepts a directly observed glibc fallback and rejects incomplete claims", () => {
+  const cloudLinuxSelector = {
+    platform: "linux",
+    arch: "x64",
+    archFromUname: "x86_64",
+    libssl: "3.0.x",
+    binaryTarget: "debian-openssl-3.0.x",
+  };
+  assert.doesNotThrow(() => assertVerifiedLinuxPlatform(cloudLinuxSelector, { glibcVersionRuntime: "2.28" }));
+  assert.throws(
+    () => assertVerifiedLinuxPlatform(cloudLinuxSelector, {}),
+    /TOOLCHAIN_LINUX_ABI_UNKNOWN/u,
+  );
+  assert.throws(
+    () => assertVerifiedLinuxPlatform({ ...cloudLinuxSelector, binaryTarget: "debian-openssl-1.1.x" }, { glibcVersionRuntime: "2.28" }),
+    /TOOLCHAIN_LINUX_ABI_UNKNOWN/u,
+  );
+});
 
 test("application and isolated migration lock both resolve the patched mysql2 without upgrading Prisma", async () => {
   for (const directory of [root, toolchain]) {
@@ -48,6 +68,10 @@ test("migration launcher fails closed and propagates the packaged CLI result", a
   const fixture = await mkdtemp(path.join(tmpdir(), "toolchain-launcher-"));
   const launcher = path.join(fixture, "run.mjs");
   await writeFile(launcher, await readFile(path.join(toolchain, "run.mjs")));
+  await writeFile(
+    path.join(fixture, "platform-policy.mjs"),
+    await readFile(path.join(toolchain, "platform-policy.mjs")),
+  );
   const run = (...args) => spawnSync(process.execPath, [launcher, ...args], {
     encoding: "utf8",
     env: { ...process.env, PRISMA_SCHEMA_ENGINE_BINARY: "/untrusted/engine", PRISMA_MIGRATION_ENGINE_BINARY: "/untrusted/engine" },
