@@ -1,8 +1,16 @@
-import { upgradeSnapshot } from '../subscription-upgrade-test-fixtures';
-import type { OptionalModulesInput } from './OptionalModulesCatalog';
+import { upgradeSnapshot } from '../subscription-upgrade-test-fixtures.js';
+import type { CurrentAuthorization, SubscriptionSnapshot } from '../types.js';
+
+type OptionalModulesReady = {
+  state: 'ready';
+  companyId: string;
+  userId: string;
+  authorization: CurrentAuthorization;
+  snapshot: SubscriptionSnapshot;
+};
 
 /** Synthetic only: never import into application routes or production loaders. */
-export function fixtureInput(): Extract<OptionalModulesInput['read'], { state: 'ready' }> {
+export function fixtureInput(): OptionalModulesReady {
   const snapshot = upgradeSnapshot();
   snapshot.current.plan.displayName = 'Synthetic local plan';
   snapshot.current.plan.modules = [

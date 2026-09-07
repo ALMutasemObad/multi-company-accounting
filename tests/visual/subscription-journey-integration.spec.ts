@@ -86,7 +86,7 @@ for (const locale of ['ar', 'en', 'ur', 'hi']) {
 // Real App + CompanySubscriptionPage; HTTP fixtures do not prove database behavior.
 import type { Page } from '@playwright/test';
 import type { SubscriptionSnapshot } from '../../apps/web/src/types';
-import { fixtureInput } from '../../apps/web/src/optional-modules/fixture-data';
+import { fixtureInput } from '../../apps/web/src/optional-modules/fixture-data.js';
 
 declare global {
   interface Window {
@@ -215,7 +215,7 @@ test('wired modules: refresh failure hides old cards; CSRF 403/401 keeps session
 
 test('wired modules: same actor permission/module changes invalidate the accepted read', async ({ page }) => {
   const state = await optionalPage(page);
-  state.auth.permissions = state.auth.permissions.filter(p => p !== 'crm.view');
+  state.auth.permissions = state.auth.permissions.filter((p: string) => p !== 'crm.view');
   await refreshOptional(page);
   await expect(page.locator('.optional-modules')).toContainText('دون صلاحية مستخدم مرتبطة');
   await expect(page.locator('.optional-modules__card').filter({ has: page.getByRole('heading', { name: 'Sales', exact: true }) })).not.toContainText('ولديك صلاحيات مرتبطة');

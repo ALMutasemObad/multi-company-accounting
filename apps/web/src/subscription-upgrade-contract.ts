@@ -1,4 +1,4 @@
-import type { SubscriptionCatalog, SubscriptionPlanVersion, SubscriptionSnapshot } from './types';
+import type { SubscriptionCatalog, SubscriptionPlanVersion, SubscriptionSnapshot } from './types.js';
 
 /** Capture this scope when starting the read, never after it completes. */
 export type SubscriptionUpgradeScope = Readonly<{ actorId: string; companyId: string }>;

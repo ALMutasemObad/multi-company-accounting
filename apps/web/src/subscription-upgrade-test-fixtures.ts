@@ -1,5 +1,5 @@
-import type { SubscriptionPlanVersion, SubscriptionSnapshot } from './types';
-import { subscriptionUpgradeFromCatalog, subscriptionUpgradeFromSnapshot, type SubscriptionUpgradeInput } from './subscription-upgrade-contract';
+import type { SubscriptionPlanVersion, SubscriptionSnapshot } from './types.js';
+import { subscriptionUpgradeFromCatalog, subscriptionUpgradeFromSnapshot, type SubscriptionUpgradeInput } from './subscription-upgrade-contract.js';
 
 // Test-only fixtures. None are imported by production components/adapters.
 export const upgradeScope = { actorId: '7', companyId: '42' };
