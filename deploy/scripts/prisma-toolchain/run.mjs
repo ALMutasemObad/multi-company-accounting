@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { assertVerifiedLinuxPlatform } from "./platform-policy.mjs";
 
 // This tree is installed from its own lock at build time and covered by the
 // release manifest. Never resolve a CLI from PATH, npm's cache or the app tree.
@@ -23,16 +24,9 @@ const platformModule = realpathSync(requireFromEngines.resolve("@prisma/get-plat
 if (!platformModule.startsWith(`${modules}${path.sep}`)) throw new Error("External platform resolver is forbidden");
 const { getPlatformInfo } = requireFromEngines(platformModule);
 const platformInfo = await getPlatformInfo();
-// binaryTarget alone can silently default to Debian/OpenSSL 1.1 when detection
-// fails. Require the underlying Linux observations before accepting that target.
-if (platformInfo.platform === "linux") {
-  if (!["1.0.x", "1.1.x", "3.0.x"].includes(platformInfo.libssl)) {
-    throw new Error("TOOLCHAIN_OPENSSL_ABI_UNKNOWN: refusing Prisma's default target without launching or downloading an engine");
-  }
-  if (!["debian", "rhel", "musl"].includes(platformInfo.targetDistro)) {
-    throw new Error("TOOLCHAIN_LINUX_ABI_UNKNOWN: a verified deployment platform is required");
-  }
-}
+// binaryTarget alone can silently fall back when detection fails. Require the
+// underlying distro or runtime ABI observations before accepting that target.
+assertVerifiedLinuxPlatform(platformInfo, process.report?.getReport()?.header);
 const target = platformInfo.binaryTarget;
 const expectedEngine = `schema-engine-${target}${process.platform === "win32" ? ".exe" : ""}`;
 const engines = readdirSync(engineRoot, { withFileTypes: true })
