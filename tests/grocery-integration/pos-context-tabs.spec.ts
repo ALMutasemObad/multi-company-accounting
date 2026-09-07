@@ -90,6 +90,7 @@ async function httpFixture(context: BrowserContext) {
       } finally { requestHold?.done.resolve(); responseHold?.done.resolve(); }
     };
     const error = (status: number, code: string) => reply(status, { status, code });
+    if (path === '/auth/social/providers' && record.method === 'GET') return reply(200, { google: false, apple: false });
     if (path === '/auth/csrf' && record.method === 'GET') return reply(200, { csrfToken: 'fixture-login-csrf' });
     if (path === '/auth/login' && record.method === 'POST') {
       expect(record.csrf).toBe('fixture-login-csrf');

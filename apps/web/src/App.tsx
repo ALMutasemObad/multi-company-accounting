@@ -79,9 +79,10 @@ export default function App() {
   const startup = useAuthAction();
   const runStartup = startup.run;
   const routeScope = useRef<string | null>(null);
+  const authenticatedShell = useRef(false);
   const subscriptionDismissals = useMemo(() => createSubscriptionUpgradeDismissals(), [authorization?.user.id]);
 
-  const clearShell = useCallback(() => {
+  const clearShell = useCallback((preserveRequestedRoute = false) => {
     setAuthorization(null);
     setCompanies([]);
     setPlatformOperator(null);
@@ -89,15 +90,19 @@ export default function App() {
     setToast(null);
     setMobileNav(false);
     routeScope.current = null;
-    setRoute({ view: "home" });
+    authenticatedShell.current = false;
+    if (!preserveRequestedRoute) {
+      setRoute({ view: "home" });
+      replaceHash("login");
+    }
     setState("login");
-    replaceHash("login");
   }, []);
 
   useEffect(() => {
     const unsubscribe = onSessionExpired(() => {
-      clearShell();
-      setSessionExpired(true);
+      const wasAuthenticated = authenticatedShell.current;
+      clearShell(!wasAuthenticated);
+      setSessionExpired(wasAuthenticated);
     });
     return () => { unsubscribe(); invalidateSessionRequests(); };
   }, [clearShell]);
@@ -128,6 +133,7 @@ export default function App() {
       replaceHash(pageRouteHash(pageOnly));
     }
     routeScope.current = nextScope;
+    authenticatedShell.current = true;
     setSessionExpired(false);
     setAuthorization(snapshot);
     setPlatformOperator(capabilities.platformOperations);
@@ -353,7 +359,7 @@ export default function App() {
       <CompanyScreen
         companies={companies}
         onSelect={chooseCompany}
-        onBackToLogin={() => { invalidateSessionRequests(); clearShell(); }}
+        onBackToLogin={() => { invalidateSessionRequests(); clearShell(true); }}
       />
     );
 
@@ -436,7 +442,7 @@ export default function App() {
               aria-label={t("app.logout")}
               title={t("app.logout")}
               onClick={() => {
-                clearShell();
+                clearShell(true);
                 setSessionExpired(false);
                 void logout().catch(() => undefined);
               }}

@@ -76,7 +76,7 @@ test('self-registers, switches locale, configures currency, and creates the firs
   await registration.locator('[name="baseCurrencyCode"]').selectOption('YER');
   await registration.locator('[name="chartTemplateCode"]').selectOption({ index: 0 });
   await registration.getByRole('button', { name: 'Send verification link' }).click();
-  await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Request received' })).toBeVisible();
 
   const verification = await capturedVerificationFor(email);
   expect(verification.locale).toBe('en');

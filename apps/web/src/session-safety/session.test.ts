@@ -36,7 +36,7 @@ describe("session isolation", () => {
     await api("/probe", { method: "POST" });
     expect(transport.mock.calls.at(-1)![1].headers.get("X-CSRF-Token")).toBe("new-session");
   });
-  it.each(["/auth/login", "/auth/logout", "/auth/csrf", "/auth/password/reset", "/auth/password/forgot?locale=ar"])("excludes %s", path => {
+  it.each(["/auth/login", "/auth/logout", "/auth/csrf", "/auth/social/providers", "/auth/password/reset", "/auth/password/forgot?locale=ar"])("excludes %s", path => {
     expect(isSessionExpiry(path, 401, "UNAUTHENTICATED")).toBe(false);
   });
   it.each([401, 403])("does not expire on CSRF status %s", async status => {

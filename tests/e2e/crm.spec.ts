@@ -65,7 +65,7 @@ test("lead to opportunity to next action to safe customer conversion", async ({ 
 
   expect(commandHeaders).toHaveLength(4);
   expect(commandHeaders.every((value) => value.length >= 16)).toBe(true);
-  await expect(page.getByText("Converted")).toBeVisible();
+  await expect(page.getByText("Converted", { exact: true })).toBeVisible();
   await expect(page.getByText("فرصة أولى")).toBeVisible();
   await expect(page.getByText("مكالمة متابعة")).toBeVisible();
   await expect(page.locator(".crm-boundary-note")).toContainText("F2");

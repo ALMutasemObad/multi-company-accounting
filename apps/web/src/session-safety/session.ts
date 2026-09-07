@@ -26,7 +26,7 @@ export function isSessionExpiry(path: string, status: number, code?: string, rea
   const route = path.split(/[?#]/)[0];
   if (code === "INVALID_CSRF" || reason === "INVALID_CSRF") return false;
   if (route === "/auth/login" || route === "/auth/logout" || route === "/auth/csrf"
-    || route?.startsWith("/auth/password/")) return false;
+    || route === "/auth/social/providers" || route?.startsWith("/auth/password/")) return false;
   return status === 401;
 }
 
