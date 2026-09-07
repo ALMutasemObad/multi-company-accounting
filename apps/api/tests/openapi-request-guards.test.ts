@@ -23,16 +23,25 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 349, requestBodies: 181, responseBodies: 2318 });
+    expect(openApiContractCoverage).toEqual({ operations: 360, requestBodies: 185, responseBodies: 2366 });
     expect(openApiOperationRoutes).toMatchObject({
       'GET /pos/context/identity': 'getPosContextIdentity',
+      'GET /auth/social/accounts': 'getCurrentSocialAccounts',
+      'DELETE /auth/social/accounts/{provider}': 'unlinkCurrentSocialAccount',
       'GET /pos/context/period': 'resolvePosContextPeriod',
       'GET /pos/context/references/{field}/{referenceId}': 'getPosContextReference',
       'GET /pos/context/options/{field}': 'listPosContextOptions',
       'GET /sales-invoices/{id}/receipt-preview': 'getRetailReceiptPreview',
       'GET /organizations/{organizationId}/dashboard': 'getOrganizationDashboard',
+      'GET /organizations/{organizationId}/company-options': 'getOrganizationCompanyOptions',
+      'POST /organizations/{organizationId}/companies': 'createOrganizationCompany',
+      'POST /auth/social/onboarding': 'completeSocialOnboarding',
+      'DELETE /auth/social/onboarding': 'cancelSocialOnboarding',
     });
-    expect(guardedOpenApiOperations).toHaveLength(181);
+    expect(guardedOpenApiOperations).toHaveLength(185);
+    expect(guardedOpenApiOperations).toContain('unlinkCurrentSocialAccount');
+    expect(guardedOpenApiOperations).toContain('completeSocialOnboarding');
+    expect(guardedOpenApiOperations).toContain('createOrganizationCompany');
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining(['createItemSellingProfile', 'updateItemSellingProfile']));
     expect(guardedOpenApiOperations).toContain("setPlatformSubscriptionPublicListing");
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining(["createOrganizationMember", "updateOrganizationMember"]));

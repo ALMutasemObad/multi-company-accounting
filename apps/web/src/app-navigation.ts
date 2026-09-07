@@ -32,6 +32,7 @@ export type View =
   | "admin"
   | "audit"
   | "security"
+  | "accountSecurity"
   | "settings";
 
 export type NavigationItem = {
@@ -51,7 +52,7 @@ export type NavigationAccess = {
   organizationWorkspace?: boolean;
 };
 
-type TenantProtectedView = Exclude<View, "home" | "organizationOwner" | "platform" | "platformSubscriptions">;
+type TenantProtectedView = Exclude<View, "home" | "organizationOwner" | "platform" | "platformSubscriptions" | "accountSecurity">;
 
 export const viewPermissionPolicies: Record<TenantProtectedView, PermissionPolicy> = {
   dashboard: { permission: "dashboard.view" },
@@ -110,6 +111,7 @@ export const navigationItems: NavigationItem[] = [
   { view: "admin", icon: "users", label: "nav.admin" },
   { view: "audit", icon: "audit", label: "nav.audit" },
   { view: "security", icon: "audit", label: "nav.security" },
+  { view: "accountSecurity", icon: "settings", label: "nav.accountSecurity" },
   { view: "settings", icon: "settings", label: "nav.settings" },
 ];
 
@@ -129,6 +131,7 @@ export function isNavigationItemVisible(
   if (item.view === "organizationOwner") return item.organizationOnly === true && access.organizationWorkspace;
   if (!access.hasSelectedCompany) return false;
   if (item.view === "home") return true;
+  if (item.view === "accountSecurity") return true;
   if (item.module && !access.moduleSet.has(item.module)) return false;
   return allows(access.permissionSet, viewPermissionPolicies[item.view]);
 }
@@ -217,7 +220,7 @@ export const systemGroups: SystemGroup[] = [
     key: "administration",
     title: "home.group.administration",
     description: "home.group.administrationDescription",
-    modules: navigationItems.filter((item) => ["organizationOwner", "subscription", "imports", "admin", "audit", "security", "settings"].includes(item.view))
+    modules: navigationItems.filter((item) => ["organizationOwner", "subscription", "imports", "admin", "audit", "security", "accountSecurity", "settings"].includes(item.view))
       .map((item) => ({ ...item, description: `home.module.${item.view}` as TranslationKey })),
   },
 ];

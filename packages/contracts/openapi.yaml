@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Core Accounting MVP API
-  version: 1.48.0
+  version: 1.49.0
   description: 'مواصفات REST API للنواة المحاسبية القابلة للتوسع.
 
 
@@ -237,6 +237,146 @@ paths:
       security: []
       parameters:
       - $ref: '#/components/parameters/RequestId'
+  /auth/social/providers:
+    get:
+      tags: [Authentication]
+      summary: المزودون الاجتماعيون المهيؤون فعليًا
+      operationId: getSocialAuthProviders
+      security: []
+      responses:
+        '200':
+          description: قدرات آمنة مغلقة افتراضيًا
+          content: { application/json: { schema: { $ref: '#/components/schemas/SocialAuthProvidersResponse' } } }
+  /auth/social/accounts:
+    get:
+      tags: [Authentication]
+      summary: وسائل الدخول الاجتماعية للمستخدم الحالي
+      operationId: getCurrentSocialAccounts
+      description: يعيد المزودات المهيأة فقط وحالة الربط وتاريخه؛ لا يعيد issuer أو subject أو البريد أو أي token.
+      security: [{ SessionCookie: [] }]
+      responses:
+        '200':
+          description: وسائل الدخول الاجتماعية وحالة حداثة المصادقة
+          content: { application/json: { schema: { $ref: '#/components/schemas/SocialAccountsResponse' } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+  /auth/social/accounts/{provider}:
+    delete:
+      tags: [Authentication]
+      summary: فك مزود اجتماعي عن المستخدم الحالي
+      operationId: unlinkCurrentSocialAccount
+      description: يتطلب جلسة حديثة وCSRF وتأكيدًا صريحًا، ويرفض إزالة آخر وسيلة دخول مثبتة.
+      parameters:
+      - { name: provider, in: path, required: true, schema: { type: string, enum: [google, apple] } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/SocialAccountUnlinkRequest' } } }
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      responses:
+        '204': { description: فُك المزود عن المستخدم الحالي }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /auth/social/{provider}/start:
+    post:
+      tags: [Authentication]
+      summary: بدء معاملة OIDC قصيرة العمر ومربوطة بالمتصفح
+      operationId: startSocialAuth
+      parameters:
+      - { name: provider, in: path, required: true, schema: { type: string, enum: [google, apple] } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/SocialAuthStartRequest' } } }
+      responses:
+        '200':
+          description: عنوان التفويض الخارجي
+          content: { application/json: { schema: { $ref: '#/components/schemas/SocialAuthStartResponse' } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /auth/social/google/callback:
+    get:
+      tags: [Authentication]
+      summary: رد Google OIDC
+      operationId: completeGoogleSocialAuth
+      security: []
+      parameters:
+      - { name: code, in: query, required: false, schema: { type: string, minLength: 1, maxLength: 4096 } }
+      - { name: state, in: query, required: false, schema: { type: string, minLength: 1, maxLength: 1024 } }
+      - { name: error, in: query, required: false, schema: { type: string, maxLength: 200 } }
+      responses:
+        '303': { description: إعادة آمنة إلى الواجهة الداخلية }
+        '400': { $ref: '#/components/responses/ValidationError' }
+  /auth/social/apple/callback:
+    post:
+      tags: [Authentication]
+      summary: رد Apple OIDC عبر form_post
+      operationId: completeAppleSocialAuth
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [state]
+              properties:
+                code: { type: string, minLength: 1, maxLength: 4096 }
+                state: { type: string, minLength: 1, maxLength: 1024 }
+                user: { type: string, maxLength: 4096 }
+                error: { type: string, maxLength: 200 }
+      responses:
+        '303': { description: إعادة آمنة إلى الواجهة الداخلية }
+        '400': { $ref: '#/components/responses/ValidationError' }
+  /auth/social/onboarding/options:
+    get:
+      tags: [Authentication]
+      summary: خيارات التسجيل المرتبطة باستمرار اجتماعي صالح
+      operationId: getSocialOnboardingOptions
+      description: لا يعيد هوية المزود أو بريده أو subject؛ يتحقق خادميًا من continuation وارتباط المتصفح وجلسة PRE_AUTH.
+      security: [{ SessionCookie: [] }]
+      responses:
+        '200':
+          description: خيارات التسجيل العامة
+          content: { application/json: { schema: { $ref: '#/components/schemas/SocialOnboardingOptionsResponse' } } }
+        '410': { $ref: '#/components/responses/Gone' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/RateLimitUnavailable' }
+  /auth/social/onboarding:
+    post:
+      tags: [Authentication]
+      summary: إنشاء حساب اجتماعي ومجموعة وشركة ذريًا
+      operationId: completeSocialOnboarding
+      description: يستهلك continuation من Cookie خادمة أحادية الاستخدام؛ لا يقبل issuer أو subject أو token مزود أو بريدًا من JavaScript.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/SocialOnboardingCompleteRequest' } } }
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      responses:
+        '201':
+          description: اكتمل الإنشاء ودُوّرت الجلسة
+          content: { application/json: { schema: { $ref: '#/components/schemas/SocialOnboardingCompletedResponse' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '410': { $ref: '#/components/responses/Gone' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/RegistrationUnavailable' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+    delete:
+      tags: [Authentication]
+      summary: إلغاء continuation الاجتماعي الحالي
+      operationId: cancelSocialOnboarding
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      responses:
+        '204': { description: أُلغي الاستمرار ومسحت Cookies الخاصة به }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '410': { $ref: '#/components/responses/Gone' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/RateLimitUnavailable' }
   /auth/register/options:
     get:
       tags: [Authentication]
@@ -2145,6 +2285,64 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/InternalError' }
       x-authorization: active organization membership
+  /organizations/{organizationId}/company-options:
+    get:
+      tags: [Organization Workspace]
+      summary: خيارات إنشاء شركة جديدة لمالك المجموعة النشط
+      operationId: getOrganizationCompanyOptions
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - name: organizationId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Id' }
+      responses:
+        '200':
+          description: العملات النشطة والمناطق الزمنية، دون اختيار خطة اشتراك
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationCompanyOptions' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { description: Company setup unavailable, content: { application/json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+  /organizations/{organizationId}/companies:
+    post:
+      tags: [Organization Workspace]
+      summary: إنشاء شركة جديدة ضمن المجموعة بواسطة OWNER نشط
+      description: تأسيس مدير للشركة الجديدة فقط وسياسة اشتراك البداية الخادمة الحالية. لا يعدل المنظمة أو الهوية أو الشركات السابقة. مفتاح التكرار مقيد بالمنظمة والمستخدم والعملية، ويبقى محفوظاً دون حذف آلي حتى بعد 24 ساعة.
+      operationId: createOrganizationCompany
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: organizationId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Id' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrganizationCompanyCreateRequest' }
+      responses:
+        '201':
+          description: الشركة الجديدة أو نتيجة الطلب المطابق المحفوظة
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationCompanyCreated' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { description: Company setup unavailable, content: { application/json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+      x-authorization: Active organization OWNER only; company administrator and platform roles do not grant this operation
   /organizations/{organizationId}/members:
     get:
       tags: [Organization Workspace]
@@ -10786,6 +10984,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Problem'
+    Gone:
+      description: انتهى الاستمرار الأمني أو استُهلك أو لا يطابق هذا المتصفح
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Problem'
     Conflict:
       description: تعارض إصدار أو تزامن أو تكرار
       content:
@@ -11018,6 +11222,110 @@ components:
           type: string
           minLength: 1
           maxLength: 1024
+    SocialAuthProvidersResponse:
+      type: object
+      additionalProperties: false
+      required: [google, apple]
+      properties:
+        google: { type: boolean }
+        apple: { type: boolean }
+    SocialAccountLinkStatus:
+      type: object
+      additionalProperties: false
+      required: [provider, status, linkedAt]
+      properties:
+        provider: { type: string, enum: [GOOGLE, APPLE] }
+        status: { type: string, enum: [LINKED, NOT_LINKED] }
+        linkedAt: { type: [string, 'null'], format: date-time }
+    SocialAccountsResponse:
+      type: object
+      additionalProperties: false
+      required: [data, recentAuthenticationRequired]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/SocialAccountLinkStatus' }
+        recentAuthenticationRequired: { type: boolean }
+    SocialAccountUnlinkRequest:
+      type: object
+      additionalProperties: false
+      required: [consent]
+      properties:
+        consent: { type: boolean, enum: [true] }
+    SocialAuthStartRequest:
+      type: object
+      additionalProperties: false
+      required: [purpose, consent]
+      properties:
+        purpose: { type: string, enum: [SIGN_IN, LINK] }
+        consent: { type: boolean }
+        returnPath: { type: string, pattern: '^/(?!/)[A-Za-z0-9/_?=&.-]{0,254}$' }
+    SocialAuthStartResponse:
+      type: object
+      additionalProperties: false
+      required: [authorizationUrl, expiresAt]
+      properties:
+        authorizationUrl: { type: string, minLength: 1, maxLength: 4096 }
+        expiresAt: { type: string, format: date-time }
+    SocialOnboardingCompleteRequest:
+      type: object
+      additionalProperties: false
+      required: [displayName, organizationName, companyName, timezone, baseCurrencyCode, locale, chartTemplateCode, consent]
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 160, x-trim: true }
+        organizationName: { type: string, minLength: 1, maxLength: 200, x-trim: true }
+        companyName: { type: string, minLength: 1, maxLength: 200, x-trim: true }
+        timezone: { type: string, minLength: 1, maxLength: 64, x-trim: true }
+        baseCurrencyCode: { type: string, pattern: '^[A-Z]{3}$', x-trim: true }
+        locale: { type: string, enum: [ar, en, ur, hi] }
+        chartTemplateCode: { type: string, minLength: 1, maxLength: 80, x-trim: true }
+        consent: { type: boolean, enum: [true] }
+    SocialOnboardingOptionsResponse:
+      type: object
+      additionalProperties: false
+      required: [currencies, locales, timezones, chartTemplates]
+      properties:
+        currencies:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, nameAr, decimals]
+            properties:
+              code: { type: string, pattern: '^[A-Z]{3}$' }
+              nameAr: { type: string }
+              decimals: { type: integer, minimum: 0, maximum: 6 }
+        locales:
+          type: array
+          items: { type: string, enum: [ar, en, ur, hi] }
+        timezones:
+          type: array
+          items: { type: string }
+        chartTemplates:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, nameAr, nameEn]
+            properties:
+              code: { type: string }
+              nameAr: { type: string }
+              nameEn: { type: string }
+    SocialOnboardingCompletedResponse:
+      type: object
+      additionalProperties: false
+      required: [status, user, companyId, csrfToken]
+      properties:
+        status: { type: string, enum: [COMPLETED] }
+        user:
+          type: object
+          additionalProperties: false
+          required: [id, displayName]
+          properties:
+            id: { type: string, pattern: '^[1-9][0-9]*$' }
+            displayName: { type: string, minLength: 1, maxLength: 160 }
+        companyId: { type: string, pattern: '^[1-9][0-9]*$' }
+        csrfToken: { type: string, minLength: 32 }
     PasswordResetStartRequest:
       type: object
       additionalProperties: false
@@ -12919,6 +13227,47 @@ components:
           oneOf:
             - { $ref: '#/components/schemas/SignedMoney' }
             - { type: 'null' }
+    OrganizationCompanyCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [companyName, timezone, baseCurrencyCode]
+      properties:
+        companyName: { type: string, minLength: 1, maxLength: 200, x-trim: true }
+        timezone: { type: string, minLength: 1, maxLength: 64, x-trim: true }
+        baseCurrencyCode: { type: string, pattern: '^[A-Z]{3}$' }
+    OrganizationCompanyCreated:
+      type: object
+      additionalProperties: false
+      required: [organizationId, company]
+      properties:
+        organizationId: { $ref: '#/components/schemas/Id' }
+        company:
+          type: object
+          additionalProperties: false
+          required: [id, code, name, timezone, baseCurrencyCode]
+          properties:
+            id: { $ref: '#/components/schemas/Id' }
+            code: { type: string }
+            name: { type: string }
+            timezone: { type: string }
+            baseCurrencyCode: { type: string, pattern: '^[A-Z]{3}$' }
+    OrganizationCompanyOptions:
+      type: object
+      additionalProperties: false
+      required: [currencies, timezones]
+      properties:
+        currencies:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, nameAr]
+            properties:
+              code: { type: string }
+              nameAr: { type: string }
+        timezones:
+          type: array
+          items: { type: string }
     OrganizationDashboard:
       type: object
       additionalProperties: false

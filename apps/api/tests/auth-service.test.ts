@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AuthError, AuthService } from '../src/auth/auth-service.js';
 import type { AuthStore, AuthorizationSnapshot, CompanyAccess, StoredSession, StoredUser } from '../src/auth/auth-store.js';
 import type { CompanyCapabilityPort } from '../src/platform-subscriptions/company-capability-service.js';
@@ -10,6 +10,7 @@ class TestStore implements AuthStore {
   permissions: string[] = [];
   authorizationSnapshot: AuthorizationSnapshot | null | undefined;
   failedLogins = 0;
+  disabledLogins = 0;
   selectedCompanyId: bigint | null = null;
   private nextSessionId = 1n;
 
@@ -20,7 +21,7 @@ class TestStore implements AuthStore {
   async findUser(emailNormalized: string) { return this.users.get(emailNormalized) ?? null; }
   async recordFailedLogin() { this.failedLogins += 1; }
   async recordLockedLogin() {}
-  async recordDisabledLogin() {}
+  async recordDisabledLogin() { this.disabledLogins += 1; }
   async rotateToAuthenticated(input: { oldSessionId: bigint; userId: bigint; tokenHash: Uint8Array<ArrayBuffer>; csrfHash: Uint8Array<ArrayBuffer>; authenticatedAt: Date; expiresAt: Date }) {
     for (const [key, session] of this.sessions) if (session.id === input.oldSessionId) this.sessions.delete(key);
     this.sessions.set(Buffer.from(input.tokenHash).toString('hex'), { id: this.nextSessionId++, state: 'AUTHENTICATED', userId: input.userId, selectedCompanyId: null, csrfHash: input.csrfHash, expiresAt: input.expiresAt, revokedAt: null });
@@ -128,6 +129,29 @@ describe('AuthService', () => {
       await expect(auth.login({ sid: preAuth.sid, csrfToken: preAuth.csrfToken, email, password: 'wrong' })).rejects.toMatchObject({ reason: 'INVALID_CREDENTIALS' });
     }
     expect(store.failedLogins).toBe(1);
+  });
+
+  it('keeps a social-only account passwordless and on the indistinguishable verification path', async () => {
+    const store = new TestStore();
+    store.users.set('social@example.com', { ...user, emailNormalized: 'social@example.com', passwordHash: null });
+    const verify = vi.fn(async (_hash: string, _password: string) => false);
+    const auth = new AuthService(store, { verify }, {
+      preAuthTtlMinutes: 10,
+      sessionTtlHours: 12,
+      companyCapabilities,
+    }, () => now);
+    const preAuth = await auth.issueCsrf();
+
+    await expect(auth.login({
+      sid: preAuth.sid,
+      csrfToken: preAuth.csrfToken,
+      email: 'social@example.com',
+      password: 'not-a-password',
+    })).rejects.toEqual(new AuthError('INVALID_CREDENTIALS'));
+    expect(verify).toHaveBeenCalledOnce();
+    expect(verify.mock.calls[0]?.[0]).toMatch(/^\$argon2id\$/u);
+    expect(store.failedLogins).toBe(0);
+    expect(store.disabledLogins).toBe(0);
   });
 
   it('prevents selecting a company outside the user assignments', async () => {

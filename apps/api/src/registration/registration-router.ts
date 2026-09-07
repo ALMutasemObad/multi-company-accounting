@@ -33,13 +33,15 @@ export function createRegistrationRouter(auth: AuthService, registration: Regist
   router.post('/', async (request, response) => {
     await requirePreAuth(auth, request);
     const body = startSelfRegistrationRequestSchema.parse(request.body);
-    response.status(202).json(await registration.start(body, metadata(request)));
+    await registration.start(body, metadata(request));
+    response.status(202).json({ status: 'PENDING_VERIFICATION' });
   });
 
   router.post('/resend', async (request, response) => {
     await requirePreAuth(auth, request);
     const body = resendSelfRegistrationVerificationRequestSchema.parse(request.body);
-    response.status(202).json(await registration.resend(body.email, metadata(request)));
+    await registration.resend(body.email, metadata(request));
+    response.status(202).json({ status: 'PENDING_VERIFICATION' });
   });
 
   router.post('/verify', async (request, response) => {

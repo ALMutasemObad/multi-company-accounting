@@ -2,6 +2,10 @@ import { Router, type ErrorRequestHandler, type Request } from "express";
 import { z, ZodError } from "zod";
 import type { AuthService } from "../auth/auth-service.js";
 import { openApiRequestBodySchemas as bodies } from "../generated/openapi-request-guards.js";
+import type { GroupCompanyOnboardingService } from "./group-company-onboarding-service.js";
+import { GroupCompanyOnboardingError } from "./group-company-onboarding-ports.js";
+import { OrganizationIdempotencyError } from "../platform/organization-idempotent-command-executor.js";
+import { SubscriptionStartPolicyError } from "../platform-subscriptions/new-company-start-policy.js";
 import {
   OrganizationMembershipError,
   type OrganizationMembershipService,
@@ -17,7 +21,7 @@ function sid(request: Request) {
   return Object.fromEntries(entries).sid;
 }
 
-export function createOrganizationOwnerRouter(auth: AuthService, service: OrganizationMembershipService) {
+export function createOrganizationOwnerRouter(auth: AuthService, service: OrganizationMembershipService, onboarding?: GroupCompanyOnboardingService) {
   const router = Router();
   router.use("/organizations", (_request, response, next) => {
     response.set({ "Cache-Control": "no-store", Pragma: "no-cache", Expires: "0" });
@@ -27,6 +31,20 @@ export function createOrganizationOwnerRouter(auth: AuthService, service: Organi
     sid: sid(request),
     csrfToken: request.header("X-CSRF-Token") ?? undefined,
     requireCsrf,
+  });
+
+  router.get("/organizations/:organizationId/company-options", async (request, response) => {
+    const actor = await authenticate(request, false);
+    if (!onboarding) throw new GroupCompanyOnboardingError("COMPANY_SETUP_UNAVAILABLE");
+    response.json(await onboarding.options(actor.userId, id.parse(request.params.organizationId)));
+  });
+
+  router.post("/organizations/:organizationId/companies", async (request, response) => {
+    const actor = await authenticate(request, true);
+    if (!onboarding) throw new GroupCompanyOnboardingError("COMPANY_SETUP_UNAVAILABLE");
+    response.status(201).json(await onboarding.create(actor.userId, id.parse(request.params.organizationId),
+      z.string().min(16).max(100).parse(request.header("Idempotency-Key")),
+      bodies.createOrganizationCompany.parse(request.body)));
   });
 
   router.get("/organizations/workspaces", async (request, response) => {
@@ -68,6 +86,12 @@ export function createOrganizationOwnerRouter(auth: AuthService, service: Organi
   });
 
   const errors: ErrorRequestHandler = (error, _request, response, next) => {
+    if (error instanceof GroupCompanyOnboardingError || error instanceof SubscriptionStartPolicyError || error instanceof OrganizationIdempotencyError) {
+      const status = error instanceof OrganizationIdempotencyError ? 409 : error instanceof GroupCompanyOnboardingError && error.reason === "INVALID_COMPANY_OPTION" ? 422 : 503;
+      const code = error instanceof OrganizationIdempotencyError ? error.reason : status === 503 ? "COMPANY_SETUP_UNAVAILABLE" : "BUSINESS_RULE_VIOLATION";
+      response.status(status).json({ type: "about:blank", title: "Company creation could not complete", status, code });
+      return;
+    }
     if (error instanceof ZodError) {
       response.status(400).json({ type: "about:blank", title: "Validation failed", status: 400, code: "VALIDATION_ERROR", errors: error.issues });
       return;

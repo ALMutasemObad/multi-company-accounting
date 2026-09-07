@@ -1,3 +1,4 @@
+import { urOptionalModules } from "./optional-modules";
 import type { ar } from "./ar";
 import { urReconciliation } from "./reconciliation";
 import { urFinancialClose } from "./financial-close";
@@ -20,6 +21,7 @@ import { urOrganizationOwner } from "./organization-owner";
 import { urEmployeeExpenses } from "./employee-expenses";
 
 export const ur = {
+  ...urOptionalModules,
   ...urOrganizationOwner,
   ...urCrm,
   ...urSubscriptionChanges,

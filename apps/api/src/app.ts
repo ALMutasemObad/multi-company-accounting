@@ -7,9 +7,12 @@ import { ZodError } from 'zod';
 import type { AppConfig } from './config.js';
 import { AuthError, type AuthService } from './auth/auth-service.js';
 import { createAuthRouter } from './auth/auth-router.js';
+import type { SocialAuthService } from './social-auth/social-auth-service.js';
+import { createSocialAuthRouter } from './social-auth/social-auth-router.js';
 import type { UserService } from './users/user-service.js';
 import { createUserRouter } from './users/user-router.js';
 import type { OrganizationMembershipService } from './users/organization-membership-service.js';
+import type { GroupCompanyOnboardingService } from './organizations/group-company-onboarding-service.js';
 import { createOrganizationOwnerRouter } from './organizations/organization-owner-router.js';
 import type { WorkforceAccessService } from './workforce-access/workforce-access-service.js';
 import type { FiscalService } from './fiscal/fiscal-service.js';
@@ -176,10 +179,12 @@ export type AppServices = {
   metrics?: OperationalMetrics;
   sensitiveRateLimits?: RateLimitStore;
   auth?: AuthService;
+  socialAuth?: SocialAuthService;
   registration?: RegistrationService;
   passwordReset?: PasswordResetService;
   users?: UserService;
   organizationMemberships?: OrganizationMembershipService;
+  groupCompanyOnboarding?: GroupCompanyOnboardingService;
   workforceAccess?: WorkforceAccessService;
   platformOperations?: PlatformOperationsService;
   platformBilling?: PlatformBillingService;
@@ -369,6 +374,14 @@ export function createApp(config: AppConfig, services: AppServices = {}) {
     ),
   );
   app.post('/api/v1/auth/login', ...sensitivePair('login', config.AUTH_RATE_LIMIT_MAX ?? 20));
+  app.post('/api/v1/auth/social/:provider/start', ...sensitivePair('social-auth-start', config.AUTH_RATE_LIMIT_MAX ?? 20));
+  app.get('/api/v1/auth/social/google/callback', sensitiveLimiter('social-auth-google-callback', (config.AUTH_RATE_LIMIT_MAX ?? 20) * networkMultiplier));
+  app.post('/api/v1/auth/social/apple/callback', sensitiveLimiter('social-auth-apple-callback', (config.AUTH_RATE_LIMIT_MAX ?? 20) * networkMultiplier));
+  app.get('/api/v1/auth/social/accounts', ...sensitivePair('social-account-read', config.AUTH_RATE_LIMIT_MAX ?? 20));
+  app.delete('/api/v1/auth/social/accounts/:provider', ...sensitivePair('social-account-unlink', config.AUTH_RATE_LIMIT_MAX ?? 20));
+  app.get('/api/v1/auth/social/onboarding/options', ...sensitivePair('social-onboarding-options', config.REGISTRATION_RATE_LIMIT_MAX ?? 5));
+  app.post('/api/v1/auth/social/onboarding', ...sensitivePair('social-onboarding', config.REGISTRATION_RATE_LIMIT_MAX ?? 5));
+  app.delete('/api/v1/auth/social/onboarding', ...sensitivePair('social-onboarding-cancel', config.REGISTRATION_RATE_LIMIT_MAX ?? 5));
   const registrationLimiters = sensitivePair('registration', config.REGISTRATION_RATE_LIMIT_MAX ?? 5);
   app.post('/api/v1/auth/register', ...registrationLimiters);
   app.post('/api/v1/auth/register/resend', ...registrationLimiters);
@@ -377,6 +390,7 @@ export function createApp(config: AppConfig, services: AppServices = {}) {
   app.post('/api/v1/auth/password/forgot', ...passwordResetLimiters);
   app.post('/api/v1/auth/password/reset', ...passwordResetLimiters);
   if (services.auth) app.use('/api/v1/auth', createAuthRouter(services.auth, config.SESSION_COOKIE_SECURE));
+  if (services.socialAuth) app.use('/api/v1/auth/social', createSocialAuthRouter(services.socialAuth, config.SESSION_COOKIE_SECURE));
   if (services.auth && services.registration) app.use('/api/v1/auth/register', createRegistrationRouter(services.auth, services.registration));
   if (services.auth && services.passwordReset) app.use('/api/v1/auth/password', createPasswordResetRouter(services.auth, services.passwordReset));
   if (services.auth && services.platformOperations && services.platformBilling) app.use('/api/v1', createPlatformOperationsRouter(services.auth, services.platformOperations, services.platformBilling));
@@ -394,7 +408,7 @@ export function createApp(config: AppConfig, services: AppServices = {}) {
     app.use('/api/v1', createSubscriptionUsageRouter(services.auth, services.subscriptionUsage));
   }
   if (services.auth && services.users && services.workforceAccess) app.use('/api/v1', createUserRouter(services.auth, services.users, services.workforceAccess));
-  if (services.auth && services.organizationMemberships) app.use('/api/v1', createOrganizationOwnerRouter(services.auth, services.organizationMemberships));
+  if (services.auth && services.organizationMemberships) app.use('/api/v1', createOrganizationOwnerRouter(services.auth, services.organizationMemberships, services.groupCompanyOnboarding));
   if (services.auth && services.companies) app.use('/api/v1', createCompanyRouter(services.auth, services.companies));
   if (services.auth && services.printing) app.use('/api/v1', createPrintRouter(services.auth, services.printing));
   if (services.auth && services.retailReceipts) app.use('/api/v1', createRetailReceiptRouter(services.auth, services.retailReceipts));

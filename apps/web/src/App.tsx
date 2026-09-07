@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, logout } from "./api";
+import { invalidateSessionRequests, onSessionExpired, sessionRequestSignal } from "./session-safety/session";
 import { localizedBrand } from "./branding";
 import { LanguageSwitcher, useI18n } from "./i18n";
 import type { Company, CurrentAuthorization, OrganizationDashboardCompany, OrganizationWorkspaceReference } from "./types";
@@ -8,6 +9,7 @@ import { RegistrationPage } from "./RegistrationPage";
 import { PasswordResetPage } from "./PasswordResetPage";
 import { subscriptionPlanForRoute, subscriptionPlanHash, subscriptionRouteBase } from "./public-plans";
 import { LoginScreen } from "./LoginScreen";
+import { SocialOnboardingPage } from "./social-auth/SocialOnboardingPage";
 import { AuthFeedback } from "./AuthFeedback";
 import { useAuthAction } from "./use-auth-action";
 import { assertRequestActive } from "./request-scope";
@@ -45,6 +47,7 @@ const ReportsPage = lazy(() => import("./ReportsPage").then((module) => ({ defau
 const AdminPage = lazy(() => import("./AdminPage").then((module) => ({ default: module.AdminPage })));
 const AuditLogsPage = lazy(() => import("./AuditLogsPage").then((module) => ({ default: module.AuditLogsPage })));
 const SecurityEventsPage = lazy(() => import("./SecurityEventsPage").then((module) => ({ default: module.SecurityEventsPage })));
+const AccountSecurityPage = lazy(() => import("./social-auth/AccountSecurityPage").then((module) => ({ default: module.AccountSecurityPage })));
 const CompanySettingsPage = lazy(() => import("./CompanySettingsPage").then((module) => ({ default: module.CompanySettingsPage })));
 const DataImportsPage = lazy(() => import("./DataImportsPage").then((module) => ({ default: module.DataImportsPage })));
 const PosPage = lazy(() => import("./PosPage").then((module) => ({ default: module.PosPage })));
@@ -64,7 +67,7 @@ const replaceHash = (view: string) => {
 export default function App() {
   const { dir, t } = useI18n();
   const brand = localizedBrand(t);
-  const [state, setState] = useState<"booting" | "login" | "register" | "password-reset" | "company" | "ready">("booting");
+  const [state, setState] = useState<"booting" | "login" | "register" | "social-register" | "password-reset" | "company" | "ready">("booting");
   const [authorization, setAuthorization] = useState<CurrentAuthorization | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [route, setRoute] = useState<PageRoute>(() => parsePageRoute(location.hash));
@@ -72,19 +75,48 @@ export default function App() {
   const [organizationWorkspace, setOrganizationWorkspace] = useState<boolean | null>(null);
   const [mobileNav, setMobileNav] = useState(false);
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(null);
+  const [sessionExpired, setSessionExpired] = useState(false);
   const startup = useAuthAction();
   const runStartup = startup.run;
   const routeScope = useRef<string | null>(null);
+  const authenticatedShell = useRef(false);
   const subscriptionDismissals = useMemo(() => createSubscriptionUpgradeDismissals(), [authorization?.user.id]);
+
+  const clearShell = useCallback((preserveRequestedRoute = false) => {
+    setAuthorization(null);
+    setCompanies([]);
+    setPlatformOperator(null);
+    setOrganizationWorkspace(null);
+    setToast(null);
+    setMobileNav(false);
+    routeScope.current = null;
+    authenticatedShell.current = false;
+    if (!preserveRequestedRoute) {
+      setRoute({ view: "home" });
+      replaceHash("login");
+    }
+    setState("login");
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onSessionExpired(() => {
+      const wasAuthenticated = authenticatedShell.current;
+      clearShell(!wasAuthenticated);
+      setSessionExpired(wasAuthenticated);
+    });
+    return () => { unsubscribe(); invalidateSessionRequests(); };
+  }, [clearShell]);
 
   useEffect(() => {
     document.title = brand.name;
   }, [brand.name]);
 
+  const notificationSignal = sessionRequestSignal();
   const notify = useCallback((message: string, tone: "success" | "error" = "success") => {
+    if (notificationSignal.aborted) return;
     setToast({ message, tone });
-    window.setTimeout(() => setToast(null), 4500);
-  }, []);
+    window.setTimeout(() => { if (!notificationSignal.aborted) setToast(null); }, 4500);
+  }, [notificationSignal]);
 
   const activateAuthorization = useCallback((
     snapshot: CurrentAuthorization,
@@ -92,6 +124,7 @@ export default function App() {
   ) => {
     const planIntent = subscriptionPlanForRoute(location.hash);
     const entryRoute = subscriptionRouteBase(location.hash);
+    const accountSecurityIntent = new URLSearchParams(location.search).get("account") === "security";
     const nextScope = JSON.stringify([snapshot.user.id, snapshot.selectedCompany?.id,
       [...snapshot.modules].sort(), [...snapshot.permissions].sort()]);
     if (routeScope.current !== null && routeScope.current !== nextScope) {
@@ -100,6 +133,8 @@ export default function App() {
       replaceHash(pageRouteHash(pageOnly));
     }
     routeScope.current = nextScope;
+    authenticatedShell.current = true;
+    setSessionExpired(false);
     setAuthorization(snapshot);
     setPlatformOperator(capabilities.platformOperations);
     setOrganizationWorkspace(capabilities.organizationWorkspace);
@@ -110,6 +145,9 @@ export default function App() {
         : capabilities.platformOperations ? "platform" : "organizationOwner";
       setRoute({ view: next });
       replaceHash(next);
+    } else if (snapshot.selectedCompany && accountSecurityIntent) {
+      setRoute({ view: "accountSecurity" });
+      replaceHash("accountSecurity");
     } else if (snapshot.selectedCompany && snapshot.permissions.includes("subscriptions.view")
       && planIntent && ["", "#home", "#login", "#register"].includes(entryRoute)) {
       setRoute({ view: "subscription" });
@@ -118,7 +156,13 @@ export default function App() {
     setState("ready");
   }, []);
 
+  const acceptSubscriptionAuthorization = useCallback((next: CurrentAuthorization) => {
+    setAuthorization(current => current && current.user.id === next.user.id
+      && current.selectedCompany?.id === next.selectedCompany?.id ? next : current);
+  }, []);
+
   const chooseCompany = useCallback(async (selected: Company, signal: AbortSignal) => {
+    invalidateSessionRequests();
     await api<void>("/auth/context", {
       method: "PUT",
       body: JSON.stringify({ companyId: selected.id }),
@@ -203,6 +247,12 @@ export default function App() {
   }, [activeHash, requestedHash, state]);
 
   useEffect(() => {
+      const socialResult = new URLSearchParams(location.search).get("social");
+      if (socialResult === "onboarding_required" || location.hash === "#social-onboarding") {
+        history.replaceState(null, "", `${location.pathname}#social-onboarding`);
+        setState("social-register");
+        return;
+      }
       if (location.hash.startsWith("#reset-password")) {
         setState("password-reset");
         return;
@@ -229,6 +279,8 @@ export default function App() {
 
   const switchFromOrganization = async (target: OrganizationDashboardCompany) => {
     const controller = new AbortController();
+    setToast(null);
+    setState("company");
     await chooseCompany({ id: target.id, name: target.name }, controller.signal);
     setRoute({ view: "home" });
     replaceHash("home");
@@ -252,6 +304,8 @@ export default function App() {
   if (state === "login")
     return (
       <LoginScreen
+        key={sessionExpired ? "expired-session" : "login"}
+        sessionExpired={sessionExpired}
         onForgotPassword={() => {
           location.hash = "reset-password";
           setState("password-reset");
@@ -260,7 +314,10 @@ export default function App() {
           location.hash = subscriptionPlanHash("register", subscriptionPlanForRoute(location.hash));
           setState("register");
         }}
-        onLoggedIn={(signal) => loadAuthenticatedShell(true, signal)}
+        onLoggedIn={(signal) => {
+          authenticatedShell.current = true;
+          return loadAuthenticatedShell(true, signal);
+        }}
       />
     );
 
@@ -270,6 +327,22 @@ export default function App() {
         onBackToLogin={() => {
           replaceHash(subscriptionPlanHash("login", subscriptionPlanForRoute(location.hash)));
           setState("login");
+        }}
+      />
+    );
+
+  if (state === "social-register")
+    return (
+      <SocialOnboardingPage
+        onBackToLogin={() => {
+          replaceHash("login");
+          setState("login");
+        }}
+        onCompleted={() => {
+          setState("booting");
+          void runStartup((signal) => loadAuthenticatedShell(false, signal), {
+            onError: () => setState("login"),
+          });
         }}
       />
     );
@@ -290,7 +363,7 @@ export default function App() {
       <CompanyScreen
         companies={companies}
         onSelect={chooseCompany}
-        onBackToLogin={() => setState("login")}
+        onBackToLogin={() => { invalidateSessionRequests(); clearShell(true); }}
       />
     );
 
@@ -353,7 +426,7 @@ export default function App() {
           {companies.length > 1 && <button
             type="button"
             className="switch-company"
-            onClick={() => setState("company")}
+            onClick={() => { invalidateSessionRequests(); setToast(null); setState("company"); }}
           >
             {t("app.switchCompany")}
           </button>}
@@ -372,15 +445,11 @@ export default function App() {
               type="button"
               aria-label={t("app.logout")}
               title={t("app.logout")}
-              onClick={() =>
-                void logout().catch(() => undefined).finally(() => {
-                  setAuthorization(null);
-                  setCompanies([]);
-                  setPlatformOperator(null);
-                  setOrganizationWorkspace(null);
-                  setState("login");
-                })
-              }
+              onClick={() => {
+                clearShell(true);
+                setSessionExpired(false);
+                void logout().catch(() => undefined);
+              }}
             >
               <Icon name="logout" size={19} />
             </button>
@@ -401,7 +470,7 @@ export default function App() {
             {activeView === "organizationOwner" && organizationWorkspace && <OrganizationOwnerPage onSwitchCompany={switchFromOrganization} notify={notify} />}
             {activeView === "platform" && platformOperator && <PlatformOperationsPage onNavigate={navigate} />}
             {activeView === "platformSubscriptions" && platformOperator && <PlatformSubscriptionsPage notify={notify} />}
-            {activeView === "subscription" && <CompanySubscriptionPage notify={notify} />}
+            {activeView === "subscription" && <CompanySubscriptionPage notify={notify} onAuthorizationRead={acceptSubscriptionAuthorization} />}
             {activeView === "pos" && <PosPage notify={notify} />}
             {activeView === "customers" && <CustomersPage notify={notify} />}
             {activeView === "crm" && <CrmPage notify={notify} />}
@@ -424,6 +493,7 @@ export default function App() {
             {activeView === "admin" && <AdminPage notify={notify} />}
             {activeView === "audit" && <AuditLogsPage notify={notify} onNavigate={navigate} />}
             {activeView === "security" && <SecurityEventsPage notify={notify} />}
+            {activeView === "accountSecurity" && <AccountSecurityPage notify={notify} />}
             {activeView === "settings" && <CompanySettingsPage notify={notify} />}
           </Suspense>
         </main>

@@ -1,6 +1,6 @@
 .organization-owner-page {
   --organization-heading: 1.25rem;
-  --organization-copy: .86rem;
+  --organization-copy: 1rem;
   display: grid;
   gap: 20px;
 }
@@ -76,3 +76,10 @@
   .organization-member-add .button { width: 100%; justify-content: center; }
   .organization-member-notice { margin-inline: 15px; }
 }
+.group-company-create { padding: 20px; min-width: 0; font-size: var(--organization-copy, 1rem); }
+.group-company-create h2 { font-size: var(--organization-heading, 1.25rem); margin: 0 0 0.75rem; }
+.group-company-create p { margin-block: 0.75rem; line-height: 1.7; }
+.group-company-create fieldset { border: 0; padding: 0; margin: 1rem 0; min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 1rem; }
+.group-company-create label { display: grid; gap: 0.5rem; }
+.group-company-create label span { font-size: var(--organization-copy, 1rem); }
+.group-company-create input, .group-company-create select, .group-company-create button { min-width: 0; max-width: 100%; font-size: var(--organization-copy, 1rem); }

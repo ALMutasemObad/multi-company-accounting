@@ -1,3 +1,4 @@
+import { hiOptionalModules } from "./optional-modules";
 import type { ar } from "./ar";
 import { hiReconciliation } from "./reconciliation";
 import { hiFinancialClose } from "./financial-close";
@@ -20,6 +21,7 @@ import { hiOrganizationOwner } from "./organization-owner";
 import { hiEmployeeExpenses } from "./employee-expenses";
 
 export const hi = {
+  ...hiOptionalModules,
   ...hiOrganizationOwner,
   ...hiCrm,
   ...hiSubscriptionChanges,

@@ -1,5 +1,6 @@
 import { messageForError } from "./domain";
 import { storageKey } from "./branding";
+import { expireSession, invalidateSessionRequests, isSessionExpiry, sessionRequestSignal, withinSessionRequest } from "./session-safety/session";
 import { assertRequestActive, RequestError, withinRequest, type RequestPolicy } from "./request-scope";
 
 export class ApiError extends Error {
@@ -37,7 +38,7 @@ export async function api<T>(
   if (options.idempotencyKey)
     headers.set("Idempotency-Key", options.idempotencyKey);
   const { timeoutMs, idempotencyKey: _key, ...request } = options;
-  return withinRequest(async (signal) => {
+  return withinSessionRequest(async (signal) => {
     let response: Response;
     try {
       response = await fetch(`/api/v1${path}`, { ...request, headers, signal, credentials: "include" });
@@ -55,6 +56,10 @@ export async function api<T>(
     });
     assertRequestActive(signal);
     if (!response.ok) {
+      if (isSessionExpiry(path, response.status, body?.code, body?.reason)) {
+        clearCsrfToken();
+        expireSession();
+      }
       throw new ApiError(messageForError(body?.code, body?.reason), response.status, body?.code, body?.reason);
     }
     return body as T;
@@ -62,23 +67,30 @@ export async function api<T>(
 }
 
 let beginLoginRequest: Promise<void> | null = null;
+let beginLoginSignal: AbortSignal | null = null;
 
 export function beginLogin(options: RequestPolicy = {}) {
+  const contextSignal = sessionRequestSignal(options.signal);
   const request = () => api<{ csrfToken: string }>("/auth/csrf", options)
     .then((result) => {
       assertRequestActive(options.signal);
+      assertRequestActive(contextSignal);
       if (!result?.csrfToken) throw new RequestError("response");
       setCsrfToken(result.csrfToken);
     });
   // Scoped callers own cancellation; they must never share an aborted promise/token write.
   if (options.signal || options.timeoutMs !== undefined) return request();
-  if (beginLoginRequest) return beginLoginRequest;
-  beginLoginRequest = request()
-    .finally(() => { beginLoginRequest = null; });
+  if (beginLoginRequest && !beginLoginSignal?.aborted) return beginLoginRequest;
+  beginLoginSignal = contextSignal;
+  const pending = request().finally(() => {
+    if (beginLoginRequest === pending) beginLoginRequest = null;
+  });
+  beginLoginRequest = pending;
   return beginLoginRequest;
 }
 
 export async function login(email: string, password: string, options: RequestPolicy = {}) {
+  invalidateSessionRequests();
   return withinRequest(async (signal) => {
     await beginLogin({ signal });
     const result = await api<{
@@ -93,15 +105,85 @@ export async function login(email: string, password: string, options: RequestPol
     if (!result?.csrfToken || !result.user) throw new RequestError("response");
     setCsrfToken(result.csrfToken);
     return result.user;
-  }, options);
+  }, { ...options, signal: sessionRequestSignal(options.signal) });
 }
 
+export type SocialAuthProviders = { google: boolean; apple: boolean };
+export const socialAuthProviders = (options: RequestPolicy = {}) => api<SocialAuthProviders>('/auth/social/providers', options);
+export type SocialAccount = {
+  provider: 'GOOGLE' | 'APPLE';
+  status: 'LINKED' | 'NOT_LINKED';
+  linkedAt: string | null;
+};
+export type SocialAccounts = { data: SocialAccount[]; recentAuthenticationRequired: boolean };
+export const socialAccounts = (options: RequestPolicy = {}) => api<SocialAccounts>('/auth/social/accounts', options);
+
+export async function startSocialAccountLink(provider: 'google' | 'apple', options: RequestPolicy = {}) {
+  return api<{ authorizationUrl: string; expiresAt: string }>(`/auth/social/${provider}/start`, {
+    ...options,
+    method: 'POST',
+    body: JSON.stringify({ purpose: 'LINK', consent: true, returnPath: '/?account=security' }),
+  });
+}
+
+export const unlinkSocialAccount = (provider: 'google' | 'apple', options: RequestPolicy = {}) =>
+  api<void>(`/auth/social/accounts/${provider}`, {
+    ...options,
+    method: 'DELETE',
+    body: JSON.stringify({ consent: true }),
+  });
+export async function startSocialSignIn(provider: 'google' | 'apple', options: RequestPolicy = {}) {
+  await beginLogin(options);
+  return api<{ authorizationUrl: string; expiresAt: string }>(`/auth/social/${provider}/start`, {
+    ...options,
+    method: 'POST',
+    body: JSON.stringify({ purpose: 'SIGN_IN', consent: false, returnPath: '/login' }),
+  });
+}
+
+export type SocialOnboardingOptions = {
+  currencies: Array<{ code: string; nameAr: string; decimals: number }>;
+  locales: Array<'ar' | 'en' | 'ur' | 'hi'>;
+  timezones: string[];
+  chartTemplates: Array<{ code: string; nameAr: string; nameEn: string }>;
+};
+
+export const socialOnboardingOptions = (options: RequestPolicy = {}) =>
+  api<SocialOnboardingOptions>('/auth/social/onboarding/options', options);
+
+export async function completeSocialOnboarding(input: {
+  displayName: string;
+  organizationName: string;
+  companyName: string;
+  timezone: string;
+  baseCurrencyCode: string;
+  locale: 'ar' | 'en' | 'ur' | 'hi';
+  chartTemplateCode: string;
+  consent: true;
+}, options: RequestPolicy = {}) {
+  const result = await api<{
+    status: 'COMPLETED';
+    user: { id: string; displayName: string };
+    companyId: string;
+    csrfToken: string;
+  }>('/auth/social/onboarding', {
+    ...options,
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+  if (result.status !== 'COMPLETED' || !result.csrfToken) throw new RequestError('response');
+  setCsrfToken(result.csrfToken);
+  return result;
+}
+
+export const cancelSocialOnboarding = (options: RequestPolicy = {}) =>
+  api<void>('/auth/social/onboarding', { ...options, method: 'DELETE' });
+
 export async function logout() {
-  try {
-    await api<void>("/auth/logout", { method: "POST" });
-  } finally {
-    clearCsrfToken();
-  }
+  invalidateSessionRequests();
+  const pending = api<void>("/auth/logout", { method: "POST" });
+  clearCsrfToken();
+  await pending;
 }
 
 export const idempotencyKey = (operation: string, id: string) =>
@@ -113,12 +195,16 @@ export type DownloadOptions = RequestPolicy & {
 };
 
 export async function downloadFile(path: string, fallbackFilename: string, options: DownloadOptions = {}) {
-  return withinRequest(async (signal) => {
+  return withinSessionRequest(async (signal) => {
     const response = await fetch(`/api/v1${path}`, { credentials: "include", ...(options.headers === undefined ? {} : { headers: options.headers }), signal });
     assertRequestActive(signal);
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
       assertRequestActive(signal);
+      if (isSessionExpiry(path, response.status, body?.code, body?.reason)) {
+        clearCsrfToken();
+        expireSession();
+      }
       throw new ApiError(messageForError(body.code, body.reason), response.status, body.code, body.reason);
     }
     const blob = await response.blob();

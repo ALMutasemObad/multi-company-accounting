@@ -1,4 +1,15 @@
 export const arOrganizationOwner = {
+  "errors.COMPANY_SETUP_UNAVAILABLE": "تعذر تجهيز الشركة وفق إعدادات البداية الحالية. أعد المحاولة بالطلب نفسه أو تواصل مع مسؤول المنصة.",
+  "organization.create.title": "إنشاء شركة للمجموعة",
+  "organization.create.description": "ينشئ مالك المجموعة شركة جديدة ويصبح مديرها. يبدأ الاشتراك وفق إعداد المنصة الحالي؛ لا تُنسخ اشتراكات الشركات الأخرى أو صلاحياتها.",
+  "organization.create.submit": "إنشاء الشركة",
+  "organization.create.failed": "تعذر إكمال إنشاء الشركة.",
+  "organization.create.created": "تم إنشاء شركة {name}.",
+  "organization.create.openHint": "ستظهر الشركة ضمن القائمة أدناه. افتحها للبدء.",
+  "organization.create.retryHint": "أعد المحاولة من هنا بالطلب نفسه للتحقق من النتيجة. احتفظ بهذه الشاشة مفتوحة حتى تتضح النتيجة.",
+  "organization.registration.received": "تم استلام الطلب",
+  "organization.registration.nextSteps": "إذا كان البريد مؤهلًا لتسجيل جديد، ستصلك رسالة تحقق. إن كان لديك حساب، سجّل الدخول أو استعد كلمة المرور، ثم افتح مساحة المجموعة لإنشاء شركة. هذه الرسالة لا تؤكد إرسال بريد.",
+  "organization.registration.recover": "استعادة كلمة المرور للحساب الحالي",
   "nav.organizationOwner": "مساحة المجموعة",
   "home.module.organizationOwner": "قارن شركات المجموعة المصرح بها وانتقل بينها من دون دمج أرصدتها أو صلاحياتها.",
   "app.organizationWorkspace": "مساحة مالك المجموعة",
@@ -58,6 +69,17 @@ export const arOrganizationOwner = {
 } as const;
 
 export const enOrganizationOwner: Record<keyof typeof arOrganizationOwner, string> = {
+  "errors.COMPANY_SETUP_UNAVAILABLE": "Company setup is unavailable under the current start configuration. Retry the same request or contact the platform administrator.",
+  "organization.create.title": "Create a group company",
+  "organization.create.description": "A group owner creates a new company and becomes its administrator. The subscription follows the current platform start policy; other companies’ subscriptions and permissions are not copied.",
+  "organization.create.submit": "Create company",
+  "organization.create.failed": "Company creation could not complete.",
+  "organization.create.created": "Company {name} was created.",
+  "organization.create.openHint": "The company will appear in the list below. Open it to get started.",
+  "organization.create.retryHint": "Retry here with the same request to confirm the outcome. Keep this screen open until the outcome is clear.",
+  "organization.registration.received": "Request received",
+  "organization.registration.nextSteps": "If the email is eligible for a new registration, you will receive a verification message. If you already have an account, sign in or reset your password, then open the group workspace to create a company. This message does not confirm email delivery.",
+  "organization.registration.recover": "Reset your existing account password",
   "nav.organizationOwner": "Group workspace",
   "home.module.organizationOwner": "Compare authorized group companies and switch between them without combining balances or permissions.",
   "app.organizationWorkspace": "Group owner workspace",
@@ -117,6 +139,17 @@ export const enOrganizationOwner: Record<keyof typeof arOrganizationOwner, strin
 };
 
 export const urOrganizationOwner: Record<keyof typeof arOrganizationOwner, string> = {
+  "errors.COMPANY_SETUP_UNAVAILABLE": "موجودہ ابتدائی ترتیبات کے تحت کمپنی تیار نہیں ہو سکی۔ اسی درخواست کے ساتھ دوبارہ کوشش کریں یا پلیٹ فارم منتظم سے رابطہ کریں۔",
+  "organization.create.title": "گروپ میں کمپنی بنائیں",
+  "organization.create.description": "گروپ کا مالک نئی کمپنی بناتا ہے اور اس کا منتظم بنتا ہے۔ سبسکرپشن پلیٹ فارم کی موجودہ ابتدائی پالیسی کے مطابق ہے؛ دوسری کمپنیوں کی سبسکرپشن یا اجازتیں نقل نہیں ہوتیں۔",
+  "organization.create.submit": "کمپنی بنائیں",
+  "organization.create.failed": "کمپنی بنانا مکمل نہیں ہو سکا۔",
+  "organization.create.created": "کمپنی {name} بن گئی۔",
+  "organization.create.openHint": "کمپنی نیچے فہرست میں نظر آئے گی۔ شروع کرنے کے لیے اسے کھولیں۔",
+  "organization.create.retryHint": "نتیجہ جاننے کے لیے اسی درخواست کے ساتھ یہاں دوبارہ کوشش کریں۔ نتیجہ واضح ہونے تک یہ اسکرین کھلی رکھیں۔",
+  "organization.registration.received": "درخواست موصول ہو گئی",
+  "organization.registration.nextSteps": "اگر ای میل نئی رجسٹریشن کے لیے اہل ہے تو تصدیقی پیغام آئے گا۔ اگر آپ کا اکاؤنٹ موجود ہے تو سائن ان کریں یا پاس ورڈ بحال کریں، پھر کمپنی بنانے کے لیے گروپ ورک اسپیس کھولیں۔ یہ پیغام ای میل بھیجے جانے کی تصدیق نہیں کرتا۔",
+  "organization.registration.recover": "موجودہ اکاؤنٹ کا پاس ورڈ بحال کریں",
   "nav.organizationOwner": "گروپ ورک اسپیس",
   "home.module.organizationOwner": "مجاز گروپ کمپنیوں کا موازنہ کریں اور بیلنس یا اجازتیں یکجا کیے بغیر ان کے درمیان جائیں۔",
   "app.organizationWorkspace": "گروپ مالک ورک اسپیس",
@@ -176,6 +209,17 @@ export const urOrganizationOwner: Record<keyof typeof arOrganizationOwner, strin
 };
 
 export const hiOrganizationOwner: Record<keyof typeof arOrganizationOwner, string> = {
+  "errors.COMPANY_SETUP_UNAVAILABLE": "वर्तमान प्रारंभ सेटिंग के अनुसार कंपनी तैयार नहीं हो सकी। उसी अनुरोध से फिर प्रयास करें या प्लेटफ़ॉर्म प्रशासक से संपर्क करें।",
+  "organization.create.title": "समूह की कंपनी बनाएँ",
+  "organization.create.description": "समूह स्वामी नई कंपनी बनाता है और उसका प्रशासक बनता है। सदस्यता प्लेटफ़ॉर्म की वर्तमान प्रारंभ नीति के अनुसार होगी; दूसरी कंपनियों की सदस्यता या अनुमतियाँ कॉपी नहीं होंगी।",
+  "organization.create.submit": "कंपनी बनाएँ",
+  "organization.create.failed": "कंपनी बनाना पूरा नहीं हो सका।",
+  "organization.create.created": "कंपनी {name} बन गई।",
+  "organization.create.openHint": "कंपनी नीचे सूची में दिखेगी। शुरू करने के लिए उसे खोलें।",
+  "organization.create.retryHint": "परिणाम की पुष्टि के लिए यहाँ उसी अनुरोध से फिर प्रयास करें। परिणाम स्पष्ट होने तक यह स्क्रीन खुली रखें।",
+  "organization.registration.received": "अनुरोध प्राप्त हुआ",
+  "organization.registration.nextSteps": "यदि ईमेल नए पंजीकरण के लिए पात्र है, तो आपको सत्यापन संदेश मिलेगा। यदि आपका खाता पहले से है, तो साइन इन करें या पासवर्ड रीसेट करें, फिर कंपनी बनाने के लिए समूह कार्यक्षेत्र खोलें। यह संदेश ईमेल भेजे जाने की पुष्टि नहीं करता।",
+  "organization.registration.recover": "मौजूदा खाते का पासवर्ड रीसेट करें",
   "nav.organizationOwner": "समूह कार्यस्थान",
   "home.module.organizationOwner": "अधिकृत समूह कंपनियों की तुलना करें और शेष या अनुमतियाँ मिलाए बिना उनके बीच जाएँ।",
   "app.organizationWorkspace": "समूह स्वामी कार्यस्थान",

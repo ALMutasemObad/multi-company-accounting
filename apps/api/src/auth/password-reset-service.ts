@@ -45,12 +45,12 @@ export class PasswordResetService {
     const emailNormalized = input.email.trim().toLocaleLowerCase('en-US');
     const user = await this.prisma.user.findUnique({
       where: { emailNormalized },
-      select: { id: true, isActive: true },
+      select: { id: true, isActive: true, passwordHash: true },
     });
 
     // The public response is deliberately identical for missing, disabled and
     // active accounts so this endpoint cannot enumerate identities.
-    if (!user?.isActive) return { status: 'ACCEPTED' as const };
+    if (!user?.isActive || !user.passwordHash) return { status: 'ACCEPTED' as const };
 
     await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw<Array<{ id: bigint }>>`
@@ -58,9 +58,9 @@ export class PasswordResetService {
       `;
       const lockedUser = await tx.user.findUnique({
         where: { id: user.id },
-        select: { isActive: true },
+        select: { isActive: true, passwordHash: true },
       });
-      if (!lockedUser?.isActive) return;
+      if (!lockedUser?.isActive || !lockedUser.passwordHash) return;
       await tx.passwordResetRequest.updateMany({
         where: { userId: user.id, status: 'PENDING' },
         data: { status: 'REVOKED' },

@@ -1,0 +1,26 @@
+{
+  "ar": {
+    "acceptedTitle": "تم استلام الطلب",
+    "acceptedDescription": "إذا كان البريد مؤهلًا لتسجيل جديد، فسيُعالج طلب رابط التحقق في الخلفية. إن كان لديك حساب، فسجّل الدخول أو استعد كلمة المرور، ثم افتح مساحة المجموعة لإنشاء شركة. هذه الرسالة لا تؤكد إرسال بريد أو وصوله.",
+    "resendAccepted": "استلمنا طلب إعادة الإرسال. لا تعني هذه الرسالة أن البريد وصل بعد.",
+    "resendHelp": "يمكنك إعادة المحاولة إذا لم يصل الرابط، مع مراعاة الحد المطبق على الطلبات المتكررة."
+  },
+  "en": {
+    "acceptedTitle": "Request received",
+    "acceptedDescription": "To protect account privacy, every email gets the same result. If the email is eligible for a new registration, the verification-link request will be processed in the background. If you already have an account, sign in or use password recovery, then open the group workspace to create a company. This message does not confirm that an email was sent or delivered.",
+    "resendAccepted": "The resend request was received. This does not mean the email has arrived yet.",
+    "resendHelp": "You can retry if the link does not arrive, subject to the limit on repeated requests."
+  },
+  "ur": {
+    "acceptedTitle": "درخواست موصول ہو گئی",
+    "acceptedDescription": "اگر ای میل نئی رجسٹریشن کے لیے اہل ہے تو تصدیقی لنک کی درخواست پس منظر میں عمل میں آئے گی۔ اگر اکاؤنٹ موجود ہے تو سائن اِن کریں یا پاس ورڈ بحال کریں، پھر کمپنی بنانے کے لیے گروپ ورک اسپیس کھولیں۔ یہ پیغام ای میل بھیجے جانے یا پہنچنے کی تصدیق نہیں کرتا۔",
+    "resendAccepted": "دوبارہ بھیجنے کی درخواست موصول ہو گئی۔ اس کا مطلب یہ نہیں کہ ای میل ابھی پہنچ گئی ہے۔",
+    "resendHelp": "لنک نہ پہنچے تو دوبارہ کوشش کی جا سکتی ہے، مگر بار بار درخواستوں کی حد لاگو ہوگی۔"
+  },
+  "hi": {
+    "acceptedTitle": "अनुरोध प्राप्त हुआ",
+    "acceptedDescription": "यदि ईमेल नए पंजीकरण के लिए पात्र है, तो सत्यापन लिंक का अनुरोध पृष्ठभूमि में संसाधित होगा। यदि खाता पहले से है, तो साइन इन करें या पासवर्ड रीसेट करें, फिर कंपनी बनाने के लिए समूह कार्यक्षेत्र खोलें। यह संदेश ईमेल भेजे जाने या पहुँचने की पुष्टि नहीं करता।",
+    "resendAccepted": "दोबारा भेजने का अनुरोध मिला। इसका अर्थ यह नहीं है कि ईमेल अभी पहुँच गया है।",
+    "resendHelp": "लिंक न मिले तो फिर प्रयास करें; बार-बार अनुरोध करने की सीमा लागू होगी।"
+  }
+}

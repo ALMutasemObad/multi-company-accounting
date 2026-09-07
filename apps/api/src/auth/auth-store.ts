@@ -11,7 +11,7 @@ export type StoredSession = {
 export type StoredUser = {
   id: bigint;
   emailNormalized: string;
-  passwordHash: string;
+  passwordHash: string | null;
   displayName: string;
   isActive: boolean;
   failedLoginAttempts: number;

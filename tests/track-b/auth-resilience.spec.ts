@@ -273,14 +273,14 @@ test("boot network failure is bounded and direct recovery pages do not await CSR
   await expect(page.locator(".auth-wait")).toHaveCount(0);
 });
 
-test("session expiry during shell recovery returns to manual login without replay or clearing CSRF", async ({ page }) => {
+test("session expiry during shell recovery returns to manual login without replay and clears stale CSRF", async ({ page }) => {
   const state = await authFixture(page);
   await page.route("**/api/v1/auth/me", (route) => route.fulfill({ status: 401, json: { code: "AUTHENTICATION_REQUIRED" } }));
   await openLogin(page);
   await page.locator("button[type=submit]").click();
-  await expect(page.getByRole("alert")).toContainText("no valid sign-in session");
+  await expect(page.locator(".login-card > p[role=alert]")).toContainText("no valid sign-in session");
   await expect(page.locator("input[name=password]")).toBeVisible();
-  expect(await page.evaluate(() => sessionStorage.getItem("mcap.csrf"))).toBe("authenticated-token");
+  expect(await page.evaluate(() => sessionStorage.getItem("mcap.csrf"))).toBeNull();
   expect(state.posts).toEqual(["/auth/login"]);
   expect(state.csrf).toBe(1);
   await expect(page.locator(".app-shell")).toHaveCount(0);

@@ -1,3 +1,4 @@
+import { enOptionalModules } from "./optional-modules";
 import type { ar } from "./ar";
 import { enPages } from "./en-pages";
 import { enDomain } from "./en-domain";
@@ -24,6 +25,7 @@ import { enOrganizationOwner } from "./organization-owner";
 import { enEmployeeExpenses } from "./employee-expenses";
 
 export const en = {
+  ...enOptionalModules,
   ...enOrganizationOwner,
   ...enCrm,
   ...enSubscriptionChanges,

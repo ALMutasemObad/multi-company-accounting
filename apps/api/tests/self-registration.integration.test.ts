@@ -189,7 +189,8 @@ describe.runIf(enabled)('self-registration with MariaDB', () => {
     const completed = await prisma.registrationRequest.findUniqueOrThrow({ where: { emailNormalized: email } });
     expect(completed).toMatchObject({ status: 'COMPLETED', passwordHash: null, deliveryStatus: 'SENT' });
     const user = await prisma.user.findUniqueOrThrow({ where: { emailNormalized: email } });
-    expect(await verify(user.passwordHash, password)).toBe(true);
+    expect(user.passwordHash).not.toBeNull();
+    expect(await verify(user.passwordHash!, password)).toBe(true);
     const companyId = BigInt(first.companyId);
     const subscription = await prisma.platformSubscription.findUniqueOrThrow({
       where: { companyId }, include: { planVersion: true, entitlements: true, changes: true },

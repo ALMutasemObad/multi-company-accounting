@@ -87,10 +87,12 @@ describe("permission-aware navigation", () => {
       "home",
       "dashboard",
       "sales",
+      "accountSecurity",
     ]);
     expect(visibleSystemGroups(tenantAccess).flatMap((group) => group.modules.map((item) => item.view))).toEqual([
       "sales",
       "dashboard",
+      "accountSecurity",
     ]);
   });
 
@@ -103,13 +105,13 @@ describe("permission-aware navigation", () => {
       moduleSet: new Set<PlatformModuleCode>(['REPORTING']),
     });
 
-    expect(visibleNavigationItems(tenantAccess).map((item) => item.view)).toEqual(['home']);
+    expect(visibleNavigationItems(tenantAccess).map((item) => item.view)).toEqual(['home', 'accountSecurity']);
     expect(allows(tenantAccess.permissionSet, actionPermissionPolicies.salesInvoices.create)).toBe(false);
   });
 
   it("keeps platform capability independent from tenant permissions", () => {
     const tenantOperator = access([], { platformOperations: true });
-    expect(visibleNavigationItems(tenantOperator).map((item) => item.view)).toEqual(["home", "platform", "platformSubscriptions"]);
+    expect(visibleNavigationItems(tenantOperator).map((item) => item.view)).toEqual(["home", "platform", "platformSubscriptions", "accountSecurity"]);
 
     const permissionWithoutCapability = access(["platform.operations"]);
     expect(visibleNavigationItems(permissionWithoutCapability).some((item) => item.view === "platform")).toBe(false);
@@ -138,7 +140,7 @@ describe("permission-aware navigation", () => {
 
   it("defines a policy for every non-home tenant navigation item", () => {
     const tenantViews = navigationItems
-      .filter((item) => item.view !== "home" && !item.platformOnly && !item.organizationOnly)
+      .filter((item) => item.view !== "home" && item.view !== "accountSecurity" && !item.platformOnly && !item.organizationOnly)
       .map((item) => item.view)
       .sort();
     expect(Object.keys(viewPermissionPolicies).sort()).toEqual(tenantViews);
@@ -148,7 +150,7 @@ describe("permission-aware navigation", () => {
     const subscriptionAccess = access(["subscriptions.view"], {
       moduleSet: new Set<PlatformModuleCode>(),
     });
-    expect(visibleNavigationItems(subscriptionAccess).map((item) => item.view)).toEqual(["home", "subscription"]);
+    expect(visibleNavigationItems(subscriptionAccess).map((item) => item.view)).toEqual(["home", "subscription", "accountSecurity"]);
     expect(resolveAuthorizedView("subscription", subscriptionAccess)).toBe("subscription");
   });
 });

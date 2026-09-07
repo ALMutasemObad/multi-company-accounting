@@ -4,7 +4,8 @@ export type CompanyProvisioningErrorReason =
   | "CURRENCY_NOT_FOUND"
   | "COMPANY_CURRENCY_MISMATCH"
   | "ADMIN_USER_DISABLED"
-  | "ADMIN_USER_EXISTS";
+  | "ADMIN_USER_EXISTS"
+  | "EXTERNAL_IDENTITY_EXISTS";
 
 export class CompanyProvisioningError extends Error {
   constructor(public readonly reason: CompanyProvisioningErrorReason) {
@@ -40,7 +41,14 @@ export type AdministratorProvisioningInput = {
   companyId: bigint;
   email: string;
   displayName: string;
-  passwordHash: string;
+  passwordHash: string | null;
+  externalIdentity?: {
+    provider: "GOOGLE" | "APPLE";
+    issuer: string;
+    subject: string;
+    emailSnapshot: string | null;
+    privateRelay: boolean;
+  } | undefined;
   requireNewIdentity: boolean;
 };
 
@@ -99,7 +107,10 @@ export interface CompanyProvisioningPort {
   provisionPreparedInTransaction(
     tx: Prisma.TransactionClient,
     input: CompanyProvisioningCommand,
-    passwordHash: string,
-    options?: { requireNewAdminIdentity?: boolean },
+    passwordHash: string | null,
+    options?: {
+      requireNewAdminIdentity?: boolean;
+      externalIdentity?: AdministratorProvisioningInput["externalIdentity"];
+    },
   ): Promise<CompanyProvisioningResult>;
 }

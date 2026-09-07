@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { createApp } from './app.js';
 import { loadConfig } from './config.js';
 import { hash, verify } from 'argon2';
+import { randomBytes } from 'node:crypto';
 import { AuthService } from './auth/auth-service.js';
 import { PrismaAuthStore } from './auth/prisma-auth-store.js';
 import { createDatabase } from './database.js';
@@ -97,11 +98,14 @@ import { CrmService } from './crm/crm-service.js';
 import { CrmWorkforceAdapter } from './hr/crm-workforce-adapter.js';
 import { CrmCurrencyAdapter } from './companies/crm-currency-adapter.js';
 import { createOrganizationMembershipService } from './composition/create-organization-membership-service.js';
+import { createGroupCompanyOnboardingService } from './composition/create-group-company-onboarding-service.js';
 import { EmployeeExpenseService } from './employee-expenses/employee-expense-service.js';
 import { EmployeeExpenseApprovalAdapter } from './employee-expenses/employee-expense-approval-adapter.js';
 import { EmployeeExpenseEmployeeAdapter } from './hr/employee-expense-employee-adapter.js';
 import { EmployeeExpenseCostCenterAdapter } from './accounts/employee-expense-cost-center-adapter.js';
 import { EmployeeExpenseCurrencyAdapter } from './companies/employee-expense-currency-adapter.js';
+import { OidcProviderAdapter } from './social-auth/oidc-provider-adapter.js';
+import { SocialAuthService } from './social-auth/social-auth-service.js';
 
 const config = loadConfig();
 if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required to start the API');
@@ -133,6 +137,24 @@ const auth = new AuthService(new PrismaAuthStore(database), { verify }, {
     new PrismaCompanyEntitlementQueryAdapter(database),
   ),
 });
+const socialProviders = {
+  ...(config.GOOGLE_OIDC_ENABLED ? { GOOGLE: new OidcProviderAdapter({ provider: 'GOOGLE', clientId: config.GOOGLE_OIDC_CLIENT_ID!, clientSecret: config.GOOGLE_OIDC_CLIENT_SECRET!, redirectUri: config.GOOGLE_OIDC_REDIRECT_URI!, authorizationEndpoint: config.GOOGLE_OIDC_AUTHORIZATION_ENDPOINT, tokenEndpoint: config.GOOGLE_OIDC_TOKEN_ENDPOINT, jwksUri: config.GOOGLE_OIDC_JWKS_URI }) } : {}),
+  ...(config.APPLE_OIDC_ENABLED ? { APPLE: new OidcProviderAdapter({ provider: 'APPLE', clientId: config.APPLE_OIDC_CLIENT_ID!, clientSecret: config.APPLE_OIDC_CLIENT_SECRET!, redirectUri: config.APPLE_OIDC_REDIRECT_URI!, authorizationEndpoint: config.APPLE_OIDC_AUTHORIZATION_ENDPOINT, tokenEndpoint: config.APPLE_OIDC_TOKEN_ENDPOINT, jwksUri: config.APPLE_OIDC_JWKS_URI }) } : {}),
+};
+const companyProvisioning = createCompanyProvisioningService(database);
+const registrationOwners = createRegistrationOwnerPorts(database);
+const socialAuth = new SocialAuthService(database, {
+  // Ephemeral only while every provider is disabled; config validation requires a stable secret before enablement.
+  transactionSecret: config.SOCIAL_AUTH_TRANSACTION_SECRET ?? randomBytes(32).toString('base64url'),
+  transactionTtlMinutes: config.SOCIAL_AUTH_TRANSACTION_TTL_MINUTES,
+  sessionTtlHours: config.SESSION_TTL_HOURS,
+  providers: socialProviders,
+  onboarding: {
+    continuationTtlMinutes: config.SOCIAL_ONBOARDING_CONTINUATION_TTL_MINUTES,
+    provisioning: companyProvisioning,
+    owners: registrationOwners,
+  },
+});
 const registrationMailer = config.REGISTRATION_EMAIL_MODE === 'resend'
   ? new ResendRegistrationMailer(config.RESEND_API_KEY!, config.REGISTRATION_EMAIL_FROM!)
   : new DevelopmentRegistrationMailer(config.REGISTRATION_EMAIL_CAPTURE_PATH);
@@ -142,9 +164,9 @@ const outboxAppender = new PrismaOutboxAppender(config.OUTBOX_MAX_ATTEMPTS);
 const registration = config.SELF_REGISTRATION_ENABLED
   ? new RegistrationService(
       database,
-      createCompanyProvisioningService(database),
+      companyProvisioning,
       outboxAppender,
-      createRegistrationOwnerPorts(database),
+      registrationOwners,
       {
         auditPepper: registrationAuditPepper,
       },
@@ -294,10 +316,12 @@ async function startServer() {
       config.RATE_LIMIT_IDENTITY_SECRET ?? 'local-development-rate-limit-identity-secret',
     ),
     auth,
+    socialAuth,
     ...(registration ? { registration } : {}),
     ...(passwordReset ? { passwordReset } : {}),
     users,
     organizationMemberships: createOrganizationMembershipService(database),
+    groupCompanyOnboarding: createGroupCompanyOnboardingService(database),
     workforceAccess,
     platformOperations,
     platformBilling,

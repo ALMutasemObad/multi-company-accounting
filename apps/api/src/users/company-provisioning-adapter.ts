@@ -8,6 +8,21 @@ import { permissionDefinitions } from "../platform/reference-data.js";
 
 export class IdentityCompanyProvisioningAdapter implements IdentityCompanyProvisioningPort {
   async provisionAdministrator(tx: Prisma.TransactionClient, input: AdministratorProvisioningInput) {
+    if (input.passwordHash === null && !input.externalIdentity) {
+      throw new TypeError("A social-only administrator requires an external identity");
+    }
+    if (input.externalIdentity) {
+      const linked = await tx.externalIdentity.findUnique({
+        where: {
+          issuer_subject: {
+            issuer: input.externalIdentity.issuer,
+            subject: input.externalIdentity.subject,
+          },
+        },
+        select: { id: true },
+      });
+      if (linked) throw new CompanyProvisioningError("EXTERNAL_IDENTITY_EXISTS");
+    }
     const existingUser = await tx.user.findUnique({ where: { emailNormalized: input.email } });
     if (existingUser && !existingUser.isActive) throw new CompanyProvisioningError("ADMIN_USER_DISABLED");
     if (existingUser && input.requireNewIdentity) throw new CompanyProvisioningError("ADMIN_USER_EXISTS");
@@ -19,6 +34,19 @@ export class IdentityCompanyProvisioningAdapter implements IdentityCompanyProvis
         passwordHash: input.passwordHash,
       },
     });
+    if (input.externalIdentity) {
+      if (existingUser) throw new CompanyProvisioningError("ADMIN_USER_EXISTS");
+      await tx.externalIdentity.create({
+        data: {
+          userId: administrator.id,
+          provider: input.externalIdentity.provider,
+          issuer: input.externalIdentity.issuer,
+          subject: input.externalIdentity.subject,
+          emailSnapshot: input.externalIdentity.emailSnapshot,
+          privateRelay: input.externalIdentity.privateRelay,
+        },
+      });
+    }
     await tx.userCompany.upsert({
       where: { userId_companyId: { userId: administrator.id, companyId: input.companyId } },
       update: { isActive: true },
