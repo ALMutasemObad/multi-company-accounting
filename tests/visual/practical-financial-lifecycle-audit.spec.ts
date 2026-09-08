@@ -252,7 +252,7 @@ test("prerequisites, counterparties and reports form a coherent read-only journe
   await openView(page, "suppliers", "SUP-000001");
   await expect(page.getByRole("button", { name: "Lifecycle Supplier", exact: true })).toBeVisible();
   await openView(page, "reports", "Indirect cash flow statement");
-  await page.getByRole("button", { name: "Trial balance", exact: true }).click();
+  await page.getByRole("tab", { name: "Trial balance", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Trial balance", exact: true })).toBeVisible();
   await expect(page.getByText("1100", { exact: true })).toBeVisible();
 
@@ -324,16 +324,16 @@ test("documents post, reverse and remain traceable into journal reports", async 
   }
   for (const post of fixture.sideEffects.filter((entry) => entry.path.endsWith("/post"))) expect(post.body.version).toBe(0);
   for (const reversal of fixture.sideEffects.filter((entry) => entry.path.endsWith("/reverse"))) {
-    expect(reversal.body).toMatchObject({ version: 1, reason: "Synthetic lifecycle reversal", reversalDate: "2026-09-08" });
+    expect(reversal.body).toMatchObject({ version: 1, reason: "Synthetic lifecycle reversal", reversalDate: "2026-09-09" });
   }
 
-  // Reproducible P1: at 22:30 UTC the company's Asia/Riyadh date is 2026-09-09,
-  // but all four reversal prompts default to the previous UTC date.
+  // FIN-LIFE-P1-001 regression: all four prompts and request bodies use the
+  // company's calendar date across the UTC midnight boundary.
   expect(dateInTimeZone("2026-09-08T22:30:00.000Z", "Asia/Riyadh")).toBe("2026-09-09");
-  expect(reversalPromptDefaults).toEqual(["2026-09-08", "2026-09-08", "2026-09-08", "2026-09-08"]);
+  expect(reversalPromptDefaults).toEqual(["2026-09-09", "2026-09-09", "2026-09-09", "2026-09-09"]);
 
   await openView(page, "reports", "Indirect cash flow statement");
-  await page.getByRole("button", { name: "Journal", exact: true }).click();
+  await page.getByRole("tab", { name: "Journal", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Journal", exact: true })).toBeVisible();
   for (const document of documents) await expect(page.getByText(document.number, { exact: true })).toBeVisible();
   await expect(page.locator(".status-chip.reversed")).toHaveCount(4);

@@ -1,4 +1,5 @@
 import type { FiscalPeriod } from "./types";
+import { companyCalendarDate } from "./company-calendar-date";
 
 type SelectablePeriod = Pick<FiscalPeriod, "id" | "startDate" | "endDate" | "status">;
 
@@ -12,25 +13,7 @@ export type InvoiceDateFields = InvoicePeriodDefaults & { dueDate: string };
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/u;
 
 export function invoiceDateToday(timeZone?: string, now = new Date()) {
-  if (timeZone) {
-    try {
-      const parts = new Intl.DateTimeFormat("en", {
-        timeZone,
-        calendar: "gregory",
-        numberingSystem: "latn",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      }).formatToParts(now);
-      const value = ["year", "month", "day"]
-        .map((type) => parts.find((part) => part.type === type)?.value ?? "")
-        .join("-");
-      if (isoDatePattern.test(value)) return value;
-    } catch {
-      // UTC is a deterministic fallback when the company timezone is absent or invalid.
-    }
-  }
-  return now.toISOString().slice(0, 10);
+  return companyCalendarDate(timeZone, now);
 }
 
 function dateValue(value: string) {
