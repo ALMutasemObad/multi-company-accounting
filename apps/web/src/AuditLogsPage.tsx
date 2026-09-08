@@ -1,8 +1,6 @@
 import {
   activeIntlLocale,
-  hasTranslation,
-  translate as t,
-  type TranslationKey } from "./i18n";
+  translate as t } from "./i18n";
 import { FormEvent,
   useCallback,
   useEffect,
@@ -11,6 +9,7 @@ import { api,
   downloadFile } from "./api";
 import { Can, useAuthorization } from "./authorization-context";
 import { canUseControlAction, controlActionPermissionPolicies } from "./control-action-permission-policies";
+import { auditFilterLabel } from "./audit-filter-labels";
 import type { AuditLog,
   AuditOptions,
   ListResponse } from "./types";
@@ -27,12 +26,8 @@ type Filters = { search: string; userId: string; action: string; entityType: str
 type TargetView = "admin" | "settings" | "customers" | "suppliers" | "receipts" | "payments" | "journals" | "fiscal" | "accounts" | "treasury" | "inventory";
 const emptyFilters: Filters = { search: "", userId: "", action: "", entityType: "", dateFrom: "", dateTo: "" };
 
-function codedLabel(scope: "action" | "entity", code: string) {
-  const key = `audit.${scope}.${code}`;
-  return hasTranslation(key) ? t(key) : code;
-}
-const actionLabel = (code: string) => codedLabel("action", code);
-const entityLabel = (code: string) => codedLabel("entity", code);
+const actionLabel = (code: string) => auditFilterLabel("action", code);
+const entityLabel = (code: string) => auditFilterLabel("entity", code);
 const targetFor = (entityType: string): TargetView | null => ({ USER: "admin", ROLE: "admin", COMPANY: "settings", CUSTOMER: "customers", SUPPLIER: "suppliers", RECEIPT: "receipts", PAYMENT: "payments", MANUAL_JOURNAL: "journals", FISCAL_YEAR: "fiscal", FISCAL_PERIOD: "fiscal", ACCOUNT: "accounts", COST_CENTER: "accounts", CASH_BANK_ACCOUNT: "treasury", PAYMENT_METHOD: "treasury", WAREHOUSE: "inventory", UNIT_OF_MEASURE: "inventory", INVENTORY_ITEM: "inventory", INVENTORY_MOVEMENT: "inventory", INVENTORY_BALANCE: "inventory" } as Record<string, TargetView>)[entityType] ?? null;
 
 export function AuditLogsPage({ notify, onNavigate }: { notify: Notice; onNavigate: (view: TargetView) => void }) {
