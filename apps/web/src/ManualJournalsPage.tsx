@@ -6,6 +6,7 @@ import { FormEvent,
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState } from "react";
 import { api,
   downloadPdf,
@@ -19,6 +20,9 @@ import { Can, useAuthorization } from "./authorization-context";
 import { endpointPermissionPolicies } from "./endpoint-permissions";
 import { exchangeRateForDocumentDate,
   missingDatedRateMessage } from "./currency-rates";
+import { defaultManualJournalPeriod,
+  manualJournalCalendarDate,
+  pendingManualJournalDefaults } from "./manual-journal-date-defaults";
 import {
   exchangeRateForCurrency,
   formatMoney,
@@ -79,15 +83,15 @@ const line = (number: number, currencyId = "", exchangeRate = "1.00000000"): Jou
   debitAmount: "",
   creditAmount: "",
 });
-const entry = (number: number, currencyId = "", exchangeRate = "1.00000000"): JournalEntry => ({
+const entry = (number: number, currencyId = "", exchangeRate = "1.00000000", entryDate = today()): JournalEntry => ({
   entryNumber: number,
-  entryDate: today(),
+  entryDate,
   description: "",
   lines: [line(1, currencyId, exchangeRate), line(2, currencyId, exchangeRate)],
 });
 
 export function ManualJournalsPage({ notify }: { notify: Notice }) {
-  const { permissionSet } = useAuthorization();
+  const { permissionSet, selectedCompany } = useAuthorization();
   const permissions = actionPermissionPolicies.manualJournals;
   const [items, setItems] = useState<ManualJournal[]>([]);
   const [meta, setMeta] = useState({
@@ -369,6 +373,7 @@ export function ManualJournalsPage({ notify }: { notify: Notice }) {
           journal={form === "edit" ? selected : null}
           references={references}
           policy={form === "edit" ? permissions.update : permissions.create}
+          companyTimeZone={selectedCompany?.timezone}
           onClose={() => setForm(null)}
           onSaved={async (journal) => {
             setForm(null);
@@ -412,12 +417,14 @@ function JournalForm({
   journal,
   references,
   policy,
+  companyTimeZone,
   onClose,
   onSaved,
 }: {
   journal: ManualJournal | null;
   references: References;
   policy: typeof actionPermissionPolicies.manualJournals.create | typeof actionPermissionPolicies.manualJournals.update;
+  companyTimeZone?: string;
   onClose: () => void;
   onSaved: (value: ManualJournal) => void;
 }) {
@@ -425,20 +432,37 @@ function JournalForm({
   const defaultCurrency = references.currencies.find((currency) => currency.isBase) ?? references.currencies[0];
   const defaultCurrencyId = defaultCurrency?.id ?? "";
   const defaultExchangeRate = exchangeRateForCurrency(defaultCurrency);
+  const [companyDate] = useState(() => manualJournalCalendarDate(companyTimeZone));
+  const [initialDefaults] = useState(() => defaultManualJournalPeriod(references.periods, companyDate));
+  const touched = useRef({ period: false, documentDate: false, entryDates: false });
   const [periodId, setPeriodId] = useState(
-    journal?.document.fiscalPeriodId ?? "",
+    journal?.document.fiscalPeriodId ?? initialDefaults?.fiscalPeriodId ?? "",
   );
   const [documentDate, setDocumentDate] = useState(
-    journal?.document.documentDate ?? today(),
+    journal?.document.documentDate ?? initialDefaults?.documentDate ?? companyDate,
   );
   const [description, setDescription] = useState(
     journal?.document.description ?? "",
   );
   const [entries, setEntries] = useState<JournalEntry[]>(
-    journal?.entries ?? [entry(1, defaultCurrencyId, defaultExchangeRate)],
+    journal?.entries ?? [entry(1, defaultCurrencyId, defaultExchangeRate, initialDefaults?.documentDate ?? companyDate)],
   );
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    const defaults = pendingManualJournalDefaults(references.periods, companyDate, documentDate, {
+      persistedDraft: Boolean(journal),
+      userTouchedPeriod: touched.current.period,
+      userTouchedDocumentDate: touched.current.documentDate,
+      userTouchedEntryDate: touched.current.entryDates,
+    });
+    if (!defaults) return;
+    if (defaults.fiscalPeriodId !== null) setPeriodId(defaults.fiscalPeriodId);
+    if (defaults.documentDate !== null) setDocumentDate(defaults.documentDate);
+    const entryDate = defaults.entryDate;
+    if (entryDate !== null)
+      setEntries((items) => items.map((item) => ({ ...item, entryDate })));
+  }, [companyDate, documentDate, journal, references.periods]);
   useEffect(() => {
     if (!journal && defaultCurrencyId)
       setEntries((items) =>
@@ -573,7 +597,10 @@ function JournalForm({
             <span>{t("pages.manual-journals.046")}</span>
             <select
               value={periodId}
-              onChange={(e) => setPeriodId(e.target.value)}
+              onChange={(e) => {
+                touched.current.period = true;
+                setPeriodId(e.target.value);
+              }}
               required
             >
               <option value="">{t("pages.manual-journals.047")}</option>
@@ -589,7 +616,10 @@ function JournalForm({
             <input
               type="date"
               value={documentDate}
-              onChange={(e) => setDocumentDate(e.target.value)}
+              onChange={(e) => {
+                touched.current.documentDate = true;
+                setDocumentDate(e.target.value);
+              }}
               required
             />
           </label>
@@ -627,7 +657,10 @@ function JournalForm({
                   <input
                     type="date"
                     value={item.entryDate}
-                    onChange={(e) => void changeEntryDate(entryIndex, e.target.value)}
+                    onChange={(e) => {
+                      touched.current.entryDates = true;
+                      void changeEntryDate(entryIndex, e.target.value);
+                    }}
                   />
                 </label>
                 <label>
@@ -836,12 +869,13 @@ function JournalForm({
             type="button"
             variant="secondary"
             icon="plus"
-            onClick={() =>
+            onClick={() => {
+              touched.current.entryDates = true;
               setEntries((items) => [
                 ...items,
-                entry(items.length + 1, defaultCurrencyId, defaultExchangeRate),
-              ])
-            }
+                entry(items.length + 1, defaultCurrencyId, defaultExchangeRate, documentDate),
+              ]);
+            }}
           >{t("pages.manual-journals.074")}</Button>
           <span className="form-spacer" />
           <Button type="button" variant="ghost" onClick={onClose}>{t("pages.manual-journals.075")}</Button>
