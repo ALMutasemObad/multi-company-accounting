@@ -23,6 +23,7 @@ import {
   canUseInventoryBarcodeScanner,
 } from "./barcode";
 import { endpointPermissionPolicies } from "./endpoint-permissions";
+import { availableDocumentTabs, documentPanelId, documentTabId, nextDocumentTab, resolveDocumentTab, type DocumentTab } from "./document-tabs";
 import { exchangeRateForDocumentDate,
   missingDatedRateMessage } from "./currency-rates";
 import {
@@ -65,7 +66,7 @@ import { Button,
 } from "./ui";
 
 type Notice = (message: string, tone?: "success" | "error") => void;
-type Section = "invoices" | "aging" | "taxes";
+type Section = DocumentTab;
 type InvoiceType = "PURCHASE_INVOICE" | "PURCHASE_DEBIT_NOTE";
 type References = { periods: FiscalPeriod[]; currencies: Currency[] };
 const emptyReferences: References = { periods: [], currencies: [] };
@@ -86,6 +87,8 @@ export function PurchaseInvoicesPage({ notify }: { notify: Notice }) {
   const [selected, setSelected] = useState<PurchaseInvoice | null>(null);
   const [form, setForm] = useState<{ type: InvoiceType; invoice: PurchaseInvoice | null } | null>(null);
   const [references, setReferences] = useState<References>(emptyReferences);
+  const availableSections = availableDocumentTabs(allows(permissionSet, endpointPermissionPolicies.payablesAging));
+  const activeSection = resolveDocumentTab(section, availableSections);
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
@@ -117,10 +120,21 @@ export function PurchaseInvoicesPage({ notify }: { notify: Notice }) {
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { void loadReferences(); }, [loadReferences]);
   useEffect(() => {
-    if (section === "aging" && !allows(permissionSet, endpointPermissionPolicies.payablesAging)) {
-      setSection("invoices");
-    }
-  }, [permissionSet, section]);
+    if (section !== activeSection) setSection(activeSection);
+  }, [activeSection, section]);
+
+  function selectSection(next: Section) {
+    if (availableSections.includes(next)) setSection(next);
+  }
+
+  function moveSection(event: React.KeyboardEvent<HTMLButtonElement>, current: Section) {
+    const direction = getComputedStyle(event.currentTarget).direction === "rtl" ? "rtl" : "ltr";
+    const next = nextDocumentTab(current, availableSections, event.key, direction);
+    if (!next) return;
+    event.preventDefault();
+    selectSection(next);
+    requestAnimationFrame(() => document.getElementById(documentTabId("purchases", next))?.focus());
+  }
 
   async function openDetails(id: string) {
     try { setSelected(await api<PurchaseInvoice>(`/purchase-invoices/${id}`)); }
@@ -142,18 +156,18 @@ export function PurchaseInvoicesPage({ notify }: { notify: Notice }) {
   }
 
   return <section className="workspace-page sales-workspace">
-    <PageHeader kicker={t("pages.purchase-invoices.012")} title={t("pages.purchase-invoices.013")} description={t("pages.purchase-invoices.014")} actions={section === "invoices" && <Can policy={permissions.create}><div className="page-actions"><Button variant="secondary" icon="reverse" onClick={() => setForm({ type: "PURCHASE_DEBIT_NOTE", invoice: null })}>{t("pages.purchase-invoices.015")}</Button><Button icon="plus" onClick={() => setForm({ type: "PURCHASE_INVOICE", invoice: null })}>{t("pages.purchase-invoices.016")}</Button></div></Can>} />
-    <div className="section-tabs sales-tabs" role="tablist">
-      <button className={section === "invoices" ? "active" : ""} onClick={() => setSection("invoices")}>{t("pages.purchase-invoices.017")}</button>
-      <Can policy={endpointPermissionPolicies.payablesAging}><button className={section === "aging" ? "active" : ""} onClick={() => setSection("aging")}>{t("pages.purchase-invoices.018")}</button></Can>
-      <button className={section === "taxes" ? "active" : ""} onClick={() => setSection("taxes")}>{t("pages.purchase-invoices.019")}</button>
+    <PageHeader kicker={t("pages.purchase-invoices.012")} title={t("pages.purchase-invoices.013")} description={t("pages.purchase-invoices.014")} actions={activeSection === "invoices" && <Can policy={permissions.create}><div className="page-actions"><Button variant="secondary" icon="reverse" onClick={() => setForm({ type: "PURCHASE_DEBIT_NOTE", invoice: null })}>{t("pages.purchase-invoices.015")}</Button><Button icon="plus" onClick={() => setForm({ type: "PURCHASE_INVOICE", invoice: null })}>{t("pages.purchase-invoices.016")}</Button></div></Can>} />
+    <div className="section-tabs sales-tabs" role="tablist" aria-label={t("pages.purchase-invoices.013")}>
+      {availableSections.map((item) => <button key={item} type="button" id={documentTabId("purchases", item)} role="tab" aria-selected={activeSection === item} aria-controls={documentPanelId("purchases")} tabIndex={activeSection === item ? 0 : -1} className={activeSection === item ? "active" : ""} onClick={() => selectSection(item)} onKeyDown={(event) => moveSection(event, item)}>{t(item === "invoices" ? "pages.purchase-invoices.017" : item === "aging" ? "pages.purchase-invoices.018" : "pages.purchase-invoices.019")}</button>)}
     </div>
-    {section === "invoices" && <>
+    <div id={documentPanelId("purchases")} role="tabpanel" aria-labelledby={documentTabId("purchases", activeSection)}>
+    {activeSection === "invoices" && <>
       <div className="toolbar sales-filters"><form className="search-box" onSubmit={(event) => { event.preventDefault(); setPage(1); setSubmittedSearch(search.trim()); }}><input aria-label={t("pages.purchase-invoices.020")} value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("pages.purchase-invoices.021")} /><button type="submit">{t("pages.accounts.026")}</button></form><select aria-label={t("pages.purchase-invoices.023")} value={documentType} onChange={(event) => { setPage(1); setDocumentType(event.target.value); }}><option value="">{t("pages.purchase-invoices.024")}</option><option value="PURCHASE_INVOICE">{t("pages.purchase-invoices.025")}</option><option value="PURCHASE_DEBIT_NOTE">{t("pages.purchase-invoices.015")}</option></select><select aria-label={t("pages.purchase-invoices.026")} value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }}><option value="">{t("pages.accounts.027")}</option><option value="DRAFT">{t("pages.dashboard.044")}</option><option value="POSTED">{t("pages.dashboard.045")}</option><option value="CANCELLED">{t("pages.dashboard.046")}</option><option value="REVERSED">{t("pages.dashboard.047")}</option></select></div>
       {error ? <div className="error-panel" role="alert"><p>{error}</p><Button variant="secondary" onClick={() => void load()}>{t("pages.accounts.030")}</Button></div> : loading ? <Spinner label={t("pages.purchase-invoices.033")} /> : !items.length ? <EmptyState title={t("pages.purchase-invoices.034")} description={t("pages.purchase-invoices.035")} action={<Can policy={permissions.create}><Button icon="plus" onClick={() => setForm({ type: "PURCHASE_INVOICE", invoice: null })}>{t("pages.purchase-invoices.036")}</Button></Can>} /> : <><div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table sales-invoices-table"><thead><tr><th>{t("pages.purchase-invoices.037")}</th><th>{t("pages.accounts.040")}</th><th>{t("pages.purchase-invoices.039")}</th><th>{t("pages.purchase-invoices.040")}</th><th>{t("pages.purchase-invoices.041")}</th><th>{t("pages.purchase-invoices.042")}</th><th>{t("pages.accounts.043")}</th><th></th></tr></thead><tbody>{items.map((invoice) => <tr key={invoice.id}><td><button className="text-link strong" dir="ltr" onClick={() => void openDetails(invoice.id)}>{invoice.document.documentNumber}</button></td><td>{invoice.document.documentType === "PURCHASE_INVOICE" ? t("pages.purchase-invoices.044") : t("pages.purchase-invoices.015")}</td><td>{invoice.supplierNameSnapshot}</td><td>{invoice.document.documentDate}<small>{t("pages.purchase-invoices.045")}{invoice.dueDate}</small></td><td className="money-cell">{formatMoney(invoice.total)}</td><td className="money-cell">{invoice.document.documentType === "PURCHASE_INVOICE" ? formatMoney(invoice.outstandingAmount) : "—"}</td><td><span className={`status-chip ${invoice.document.status.toLowerCase()}`}>{statusLabel(invoice.document.status)}</span>{invoice.document.status === "POSTED" && invoice.document.documentType === "PURCHASE_INVOICE" && <small>{settlementLabel(invoice.settlementStatus)}</small>}</td><td><Button variant="ghost" onClick={() => void openDetails(invoice.id)}>{t("pages.payments.040")}</Button></td></tr>)}</tbody></table></div><Pagination {...meta} page={page} onChange={setPage} /></>}
     </>}
-    {section === "aging" && allows(permissionSet, endpointPermissionPolicies.payablesAging) && <AgingReport />}
-    {section === "taxes" && <TaxRatesPanel notify={notify} />}
+    {activeSection === "aging" && <AgingReport />}
+    {activeSection === "taxes" && <TaxRatesPanel notify={notify} />}
+    </div>
     {form && allows(permissionSet, form.invoice ? permissions.update : permissions.create) && <InvoiceForm type={form.type} invoice={form.invoice} references={references} onClose={() => setForm(null)} onSaved={async (invoice) => { setForm(null); setSelected(invoice); notify(form.invoice ? t("pages.purchase-invoices.047") : form.type === "PURCHASE_INVOICE" ? t("pages.purchase-invoices.048") : t("pages.purchase-invoices.049")); await Promise.all([load(), loadReferences()]); }} />}
     {selected && !form && <InvoiceDetails invoice={selected} onClose={() => setSelected(null)} onEdit={() => { if (allows(permissionSet, permissions.update)) setForm({ type: selected.document.documentType as InvoiceType, invoice: selected }); }} onCommand={(operation) => void command(operation, selected)} onPrint={() => { if (allows(permissionSet, permissions.print)) void downloadPdf(`/purchase-invoices/${selected.id}/pdf`).catch((cause) => notify(cause instanceof Error ? cause.message : t("pages.purchase-invoices.050"), "error")); }} />}
   </section>;
