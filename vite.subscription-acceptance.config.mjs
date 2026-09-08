@@ -2,11 +2,12 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { localeManifestPlugin } from './apps/web/vite.config.ts';
 
 const output = process.env.SUBSCRIPTION_ACCEPTANCE_RUN_DIR;
 if (!output) throw new Error('Missing isolated subscription acceptance output directory');
 export default defineConfig({
-  root: resolve('apps/web'), plugins: [react()],
+  root: resolve('apps/web'), plugins: [localeManifestPlugin(), react()],
   cacheDir: resolve(output, 'cache/vite'),
   build: { outDir: resolve(output, 'build'), emptyOutDir: false },
   server: {
