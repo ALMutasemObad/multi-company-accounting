@@ -177,7 +177,7 @@ export function SuppliersPage({ notify }: { notify: Notice }) {
           description={
             submittedSearch
               ? t("pages.customers.024")
-              : t("pages.suppliers.025")
+              : canManage ? t("pages.suppliers.025") : t("referencePicker.empty")
           }
           action={
             !submittedSearch && (

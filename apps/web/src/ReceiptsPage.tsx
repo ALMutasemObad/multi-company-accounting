@@ -248,7 +248,7 @@ export function ReceiptsPage({ notify }: { notify: Notice }) {
       ) : items.length === 0 ? (
         <EmptyState
           title={t("pages.receipts.030")}
-          description={t("pages.receipts.031")}
+          description={allows(permissionSet, permissions.create) ? t("pages.receipts.031") : t("referencePicker.empty")}
           action={<Can policy={permissions.create}><Button icon="plus" onClick={() => setForm("create")}>{t("pages.payments.032")}</Button></Can>}
         />
       ) : (
