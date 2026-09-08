@@ -123,7 +123,7 @@ test("smoke: administrative read journeys stay usable for a limited reader", asy
   await readOnlySmoke(page, readerPermissions);
 });
 
-test.fixme("reader does not see user and role creation controls", async ({ page }) => {
+test("reader does not see user and role creation controls", async ({ page }) => {
   await usePermissions(page, readerPermissions);
   await openView(page, "admin", "المستخدمون والأدوار والصلاحيات");
   await expect(page.getByRole("button", { name: "مستخدم جديد", exact: true })).toHaveCount(0);
@@ -131,19 +131,19 @@ test.fixme("reader does not see user and role creation controls", async ({ page 
   await expect(page.getByRole("button", { name: "دور جديد", exact: true })).toHaveCount(0);
 });
 
-test.fixme("users-view alone can open the users surface without roles-view", async ({ page }) => {
+test("users-view alone can open the users surface without roles-view", async ({ page }) => {
   await usePermissions(page, ["users.view"]);
   await openView(page, "admin", "المستخدمون والأدوار والصلاحيات");
   await expect(page.getByRole("button", { name: "المستخدمون", exact: true })).toBeVisible();
 });
 
-test.fixme("reader without auth-sessions-view does not see the sessions tab", async ({ page }) => {
+test("reader without auth-sessions-view does not see the sessions tab", async ({ page }) => {
   await usePermissions(page, readerPermissions);
   await openView(page, "admin", "المستخدمون والأدوار والصلاحيات");
   await expect(page.getByRole("button", { name: "جلساتي", exact: true })).toHaveCount(0);
 });
 
-test.fixme("approval reader does not see decision actions", async ({ page }) => {
+test("approval reader does not see decision actions", async ({ page }) => {
   await usePermissions(page, ["approvals.view"]);
   await fulfillPendingApproval(page);
   await openView(page, "approvals", "صندوق الموافقات");
@@ -151,13 +151,13 @@ test.fixme("approval reader does not see decision actions", async ({ page }) => 
   await expect(page.getByRole("button", { name: "رفض", exact: true })).toHaveCount(0);
 });
 
-test.fixme("audit reader does not see CSV export", async ({ page }) => {
+test("audit reader does not see CSV export", async ({ page }) => {
   await usePermissions(page, ["audit_logs.view"]);
   await openView(page, "audit", "سجل التدقيق");
   await expect(page.getByRole("button", { name: "تصدير CSV", exact: true })).toHaveCount(0);
 });
 
-test.fixme("security reader does not see alert acknowledgement", async ({ page }) => {
+test("security reader does not see alert acknowledgement", async ({ page }) => {
   await usePermissions(page, ["security_events.view"]);
   await fulfillHighSecurityEvent(page);
   await openView(page, "security", "سجل الأمان");

@@ -85,7 +85,7 @@ test("P1: accounts.view alone can open the chart without cost-center management"
   await expect(page.getByRole("button", { name: "مراكز التكلفة", exact: true })).toHaveCount(0);
 });
 
-test.fixme("P1: inventory view-only sections do not expose write actions", async ({ page }) => {
+test("P1: inventory view-only sections do not expose write actions", async ({ page }) => {
   await openFixture(page, "inventory");
   await expect(page.getByRole("button", { name: "إنشاء مستودع", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "تعديل", exact: true })).toHaveCount(0);
