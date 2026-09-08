@@ -165,7 +165,14 @@ test('wired modules: exact prices, pending/scheduled and a single existing chang
   await expect(catalog).toContainText('25.0000 SAR');
   await expect(catalog).toContainText('0.0000 SAR');
   await expect(catalog).toContainText('غير محدد؛ لا يعني أنه مجاني');
-  expect(await catalog.locator('button, input, form, a').count()).toBe(0);
+  const catalogFilters = catalog.locator('.optional-modules__filters button');
+  await expect(catalogFilters).toHaveCount(4);
+  await expect(catalogFilters.first()).toHaveAttribute('aria-pressed', 'true');
+  expect(await catalog.locator('input, form, a').count()).toBe(0);
+  await catalogFilters.nth(1).click();
+  await expect(catalogFilters.nth(1)).toHaveAttribute('aria-pressed', 'true');
+  expect(state.writes).toHaveLength(0);
+  await catalogFilters.first().click();
   await expect(page.locator('.subscription-change-form')).toHaveCount(1);
   state.snapshot.scheduled = { ...state.snapshot.current };
   state.snapshot.subscription.status = 'SUSPENDED';

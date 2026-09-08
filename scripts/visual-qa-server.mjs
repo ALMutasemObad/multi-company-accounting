@@ -34,11 +34,14 @@ const visualQaPermissions = [
   "employee_expenses.submit",
   "employee_expenses.view",
   "fiscal_periods.view",
+  "fiscal_periods.close",
   "hr.contracts.view",
   "hr.employees.view",
   "hr.structure.view",
   "inventory_catalog.view",
+  "inventory_catalog.manage",
   "inventory_movements.view",
+  "inventory_movements.create",
   "inventory_barcodes.resolve",
   "manual_journals.view",
   "payments.view",
@@ -62,6 +65,7 @@ const visualQaPermissions = [
   "suppliers.view",
   "users.view",
   "warehouses.view",
+  "warehouses.manage",
 ];
 /** @satisfies {import("../apps/web/src/types.ts").CurrentAuthorization} */
 const currentAuthorization = {
