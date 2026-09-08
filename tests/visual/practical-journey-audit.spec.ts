@@ -38,7 +38,6 @@ test("the nine audited journeys load without page overflow or runtime errors", a
 });
 
 test("P1: new sales and purchase documents start inside the selected open period", async ({ page }) => {
-  test.fixme(true, "Known gap: the document date defaults to today even when it is outside the only open fiscal period.");
   const failures: string[] = [];
 
   for (const route of ["sales", "purchases"] as const) {
