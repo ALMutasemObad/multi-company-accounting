@@ -104,7 +104,7 @@ test.fixme("P1: a new manual journal starts inside the selected open fiscal peri
   await expect(journalDate).toHaveValue(/2026-12-/);
 });
 
-test.fixme("P2: view-only empty states do not instruct users to create unavailable records", async ({ page }) => {
+test("P2: view-only empty states do not instruct users to create unavailable records", async ({ page }) => {
   for (const qa of ["suppliers", "receipts", "payments"] as const) {
     await openFixture(page, qa);
     await expect(page.locator(".empty-state")).not.toContainText(/أضف|أنشئ/u);
