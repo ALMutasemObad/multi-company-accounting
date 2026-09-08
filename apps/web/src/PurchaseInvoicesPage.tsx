@@ -17,6 +17,7 @@ import { allows,
   requestIfAllowed,
   requestValue } from "./authorization";
 import { Can, useAuthorization } from "./authorization-context";
+import { companyCalendarDate } from "./company-calendar-date";
 import {
   applyResolvedBarcodeToLines,
   canUseInventoryBarcodeScanner,
@@ -70,7 +71,7 @@ type References = { periods: FiscalPeriod[]; currencies: Currency[] };
 const emptyReferences: References = { periods: [], currencies: [] };
 
 export function PurchaseInvoicesPage({ notify }: { notify: Notice }) {
-  const { permissionSet } = useAuthorization();
+  const { permissionSet, selectedCompany } = useAuthorization();
   const permissions = actionPermissionPolicies.purchaseInvoices;
   const [section, setSection] = useState<Section>("invoices");
   const [items, setItems] = useState<PurchaseInvoice[]>([]);
@@ -132,7 +133,7 @@ export function PurchaseInvoicesPage({ notify }: { notify: Notice }) {
     if (!window.confirm(t("pages.purchase-invoices.007", { value1: action, value2: invoice.document.documentNumber }))) return;
     const reason = operation === "post" ? "" : window.prompt(t("pages.purchase-invoices.008", { value1: action }));
     if (operation !== "post" && (!reason || reason.trim().length < 3)) return;
-    const reversalDate = operation === "reverse" ? window.prompt(t("pages.purchase-invoices.009"), new Date().toISOString().slice(0, 10)) : "";
+    const reversalDate = operation === "reverse" ? window.prompt(t("pages.purchase-invoices.009"), companyCalendarDate(selectedCompany?.timezone)) : "";
     if (operation === "reverse" && !reversalDate) return;
     try {
       await api(`/purchase-invoices/${invoice.id}/${operation}`, { method: "POST", idempotencyKey: operation === "cancel" ? undefined : idempotencyKey(operation, invoice.id), body: JSON.stringify({ version: invoice.document.version, ...(reason ? { reason: reason.trim() } : {}), ...(reversalDate ? { reversalDate } : {}) }) });
