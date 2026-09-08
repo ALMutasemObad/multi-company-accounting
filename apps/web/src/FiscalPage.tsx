@@ -9,6 +9,9 @@ import { FormEvent,
   useState } from "react";
 import { api,
   idempotencyKey } from "./api";
+import { actionPermissionPolicies } from "./action-permissions";
+import { allows, type PermissionPolicy } from "./authorization";
+import { Can, useAuthorization } from "./authorization-context";
 import { validateFiscalPeriods } from "./domain";
 import type { FinancialCloseReadiness,
   FinancialCloseRun,
@@ -38,6 +41,8 @@ const newYear = () => ({
 });
 
 export function FiscalPage({ notify }: { notify: Notice }) {
+  const { permissionSet } = useAuthorization();
+  const permissions = actionPermissionPolicies.fiscalPeriods;
   const [years, setYears] = useState<FiscalYear[]>([]);
   const [meta, setMeta] = useState({ page: 1, pageSize: 10, total: 0, totalPages: 0 });
   const [page, setPage] = useState(1);
@@ -61,6 +66,7 @@ export function FiscalPage({ notify }: { notify: Notice }) {
   const visible = useMemo(() => years.map((year) => ({ ...year, periods: status ? year.periods.filter((period) => period.status === status) : year.periods })).filter((year) => !status || year.periods.length), [years, status]);
 
   async function reopenPeriod(period: FiscalPeriod) {
+    if (!allows(permissionSet, permissions.reopen)) return;
     const reason = window.prompt(t("pages.fiscal.005"));
     if (!reason || reason.trim().length < 10) return;
     try {
@@ -74,23 +80,25 @@ export function FiscalPage({ notify }: { notify: Notice }) {
   }
 
   return <section className="workspace-page">
-    <PageHeader kicker={t("pages.accounts.013")} title={t("pages.fiscal.010")} description={t("pages.fiscal.011")} actions={<Button icon="plus" onClick={() => setCreating(true)}>{t("pages.fiscal.012")}</Button>} />
+    <PageHeader kicker={t("pages.accounts.013")} title={t("pages.fiscal.010")} description={t("pages.fiscal.011")} actions={<Can policy={permissions.manage}><Button icon="plus" onClick={() => { if (allows(permissionSet, permissions.manage)) setCreating(true); }}>{t("pages.fiscal.012")}</Button></Can>} />
     <div className="toolbar fiscal-filters"><select aria-label={t("pages.fiscal.013")} value={status} onChange={(event) => setStatus(event.target.value)}><option value="">{t("pages.fiscal.014")}</option><option value="OPEN">{t("pages.fiscal.015")}</option><option value="REOPENED">{t("pages.fiscal.016")}</option><option value="CLOSED">{t("pages.fiscal.017")}</option></select></div>
     {error ? <div className="error-panel" role="alert"><p>{error}</p><Button variant="secondary" onClick={() => void load()}>{t("pages.accounts.030")}</Button></div>
       : loading ? <Spinner label={t("pages.fiscal.019")} />
-      : visible.length === 0 ? <EmptyState title={t("pages.fiscal.020")} description={t("pages.fiscal.021")} action={<Button icon="plus" onClick={() => setCreating(true)}>{t("pages.fiscal.022")}</Button>} />
+      : visible.length === 0 ? <EmptyState title={t("pages.fiscal.020")} description={t("pages.fiscal.021")} action={<Can policy={permissions.manage}><Button icon="plus" onClick={() => { if (allows(permissionSet, permissions.manage)) setCreating(true); }}>{t("pages.fiscal.022")}</Button></Can>} />
       : <>{visible.map((year) => <article className="fiscal-year-card" key={year.id}>
-        <header><div><h2>{year.name}</h2><p>{new Date(year.startDate).toLocaleDateString(activeIntlLocale())} — {new Date(year.endDate).toLocaleDateString(activeIntlLocale())}</p></div><Button variant="ghost" icon="edit" onClick={() => setEditingYear(year)}>{t("pages.fiscal.023")}</Button></header>
-        <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("pages.fiscal.024")}</th><th>{t("pages.dashboard.013")}</th><th>{t("pages.dashboard.014")}</th><th>{t("pages.accounts.043")}</th><th>{t("pages.fiscal.028")}</th></tr></thead><tbody>{year.periods.map((period) => <tr key={period.id}><td><strong>{period.periodNumber}. {period.name}</strong>{period.reopenReason && <small>{t("pages.fiscal.029")}{period.reopenReason}</small>}</td><td>{new Date(period.startDate).toLocaleDateString(activeIntlLocale())}</td><td>{new Date(period.endDate).toLocaleDateString(activeIntlLocale())}</td><td><span className={`status-chip ${period.status.toLowerCase()}`}>{period.status === "CLOSED" ? t("pages.fiscal.017") : period.status === "REOPENED" ? t("pages.fiscal.016") : t("pages.fiscal.015")}</span></td><td className="row-actions"><Button variant="ghost" icon="edit" onClick={() => setEditingPeriod(period)}>{t("pages.accounts.048")}</Button>{period.status === "CLOSED" ? <Button variant="secondary" icon="reverse" onClick={() => void reopenPeriod(period)}>{t("pages.fiscal.031")}</Button> : <Button variant="secondary" icon="check" onClick={() => setClosingPeriod(period)}>{t("pages.audit-logs.037")}</Button>}</td></tr>)}</tbody></table></div>
+        <header><div><h2>{year.name}</h2><p>{new Date(year.startDate).toLocaleDateString(activeIntlLocale())} — {new Date(year.endDate).toLocaleDateString(activeIntlLocale())}</p></div><Can policy={permissions.manage}><Button variant="ghost" icon="edit" onClick={() => { if (allows(permissionSet, permissions.manage)) setEditingYear(year); }}>{t("pages.fiscal.023")}</Button></Can></header>
+        <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("pages.fiscal.024")}</th><th>{t("pages.dashboard.013")}</th><th>{t("pages.dashboard.014")}</th><th>{t("pages.accounts.043")}</th><th>{t("pages.fiscal.028")}</th></tr></thead><tbody>{year.periods.map((period) => <tr key={period.id}><td><strong>{period.periodNumber}. {period.name}</strong>{period.reopenReason && <small>{t("pages.fiscal.029")}{period.reopenReason}</small>}</td><td>{new Date(period.startDate).toLocaleDateString(activeIntlLocale())}</td><td>{new Date(period.endDate).toLocaleDateString(activeIntlLocale())}</td><td><span className={`status-chip ${period.status.toLowerCase()}`}>{period.status === "CLOSED" ? t("pages.fiscal.017") : period.status === "REOPENED" ? t("pages.fiscal.016") : t("pages.fiscal.015")}</span></td><td className="row-actions"><Can policy={permissions.manage}><Button variant="ghost" icon="edit" onClick={() => { if (allows(permissionSet, permissions.manage)) setEditingPeriod(period); }}>{t("pages.accounts.048")}</Button></Can>{period.status === "CLOSED" ? <Can policy={permissions.reopen}><Button variant="secondary" icon="reverse" onClick={() => void reopenPeriod(period)}>{t("pages.fiscal.031")}</Button></Can> : <Can policy={permissions.close}><Button variant="secondary" icon="check" onClick={() => { if (allows(permissionSet, permissions.close)) setClosingPeriod(period); }}>{t("pages.audit-logs.037")}</Button></Can>}</td></tr>)}</tbody></table></div>
       </article>)}<Pagination {...meta} page={page} onChange={setPage} /></>}
-    {creating && <YearForm onClose={() => setCreating(false)} onSaved={async () => { setCreating(false); notify(t("pages.fiscal.033")); await load(); }} />}
-    {editingYear && <YearEdit year={editingYear} onClose={() => setEditingYear(null)} onSaved={async () => { setEditingYear(null); notify(t("pages.fiscal.034")); await load(); }} />}
-    {editingPeriod && <PeriodEdit period={editingPeriod} onClose={() => setEditingPeriod(null)} onSaved={async () => { setEditingPeriod(null); notify(t("pages.fiscal.035")); await load(); }} />}
-    {closingPeriod && <CloseWorkspace period={closingPeriod} notify={notify} onClose={() => setClosingPeriod(null)} onClosed={async () => { setClosingPeriod(null); await load(); }} />}
+    {creating && allows(permissionSet, permissions.manage) && <YearForm policy={permissions.manage} onClose={() => setCreating(false)} onSaved={async () => { setCreating(false); notify(t("pages.fiscal.033")); await load(); }} />}
+    {editingYear && allows(permissionSet, permissions.manage) && <YearEdit policy={permissions.manage} year={editingYear} onClose={() => setEditingYear(null)} onSaved={async () => { setEditingYear(null); notify(t("pages.fiscal.034")); await load(); }} />}
+    {editingPeriod && allows(permissionSet, permissions.manage) && <PeriodEdit policy={permissions.manage} period={editingPeriod} onClose={() => setEditingPeriod(null)} onSaved={async () => { setEditingPeriod(null); notify(t("pages.fiscal.035")); await load(); }} />}
+    {closingPeriod && allows(permissionSet, permissions.close) && <CloseWorkspace period={closingPeriod} notify={notify} onClose={() => setClosingPeriod(null)} onClosed={async () => { setClosingPeriod(null); await load(); }} />}
   </section>;
 }
 
 function CloseWorkspace({ period, notify, onClose, onClosed }: { period: FiscalPeriod; notify: Notice; onClose: () => void; onClosed: () => void }) {
+  const { permissionSet } = useAuthorization();
+  const closePolicy = actionPermissionPolicies.fiscalPeriods.close;
   const [readiness, setReadiness] = useState<FinancialCloseReadiness | null>(null);
   const [run, setRun] = useState<FinancialCloseRun | null>(null);
   const [loading, setLoading] = useState(true);
@@ -113,7 +121,7 @@ function CloseWorkspace({ period, notify, onClose, onClosed }: { period: FiscalP
   useEffect(() => { void loadClose(); }, [loadClose]);
 
   async function updateRun(operation: "start" | "refresh" | "submit" | "return") {
-    if (!readiness) return;
+    if (!allows(permissionSet, closePolicy) || !readiness) return;
     setWorking(operation); setError("");
     try {
       if (operation === "submit") {
@@ -150,7 +158,7 @@ function CloseWorkspace({ period, notify, onClose, onClosed }: { period: FiscalP
   }
 
   async function finalizeClose() {
-    if (!run || !readiness || !window.confirm(t("financialClose.finalConfirm"))) return;
+    if (!allows(permissionSet, closePolicy) || !run || !readiness || !window.confirm(t("financialClose.finalConfirm"))) return;
     setWorking("close"); setError("");
     try {
       await api(`/fiscal-periods/${period.id}/close`, {
@@ -203,19 +211,22 @@ function CloseWorkspace({ period, notify, onClose, onClosed }: { period: FiscalP
     </div>
   </Modal>;
 }
-function YearForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+function YearForm({ policy, onClose, onSaved }: { policy: PermissionPolicy; onClose: () => void; onSaved: () => void }) {
+  const { permissionSet } = useAuthorization();
   const initial = newYear(); const [name, setName] = useState(initial.name); const [startDate, setStartDate] = useState(initial.startDate); const [endDate, setEndDate] = useState(initial.endDate); const [periods, setPeriods] = useState<PeriodDraft[]>(initial.periods); const [error, setError] = useState(""); const [saving, setSaving] = useState(false);
   function change(index: number, patch: Partial<PeriodDraft>) { setPeriods((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item)); }
-  async function submit(event: FormEvent) { event.preventDefault(); const errors = validateFiscalPeriods(startDate, endDate, periods); if (!name.trim()) errors.unshift(t("pages.fiscal.036")); if (errors.length) { setError(errors.join(" ")); return; } setSaving(true); setError(""); try { await api("/fiscal-years", { method: "POST", body: JSON.stringify({ name: name.trim(), startDate, endDate, periods }) }); onSaved(); } catch (cause) { setError(cause instanceof Error ? cause.message : t("pages.fiscal.037")); } finally { setSaving(false); } }
+  async function submit(event: FormEvent) { event.preventDefault(); if (!allows(permissionSet, policy)) return; const errors = validateFiscalPeriods(startDate, endDate, periods); if (!name.trim()) errors.unshift(t("pages.fiscal.036")); if (errors.length) { setError(errors.join(" ")); return; } setSaving(true); setError(""); try { await api("/fiscal-years", { method: "POST", body: JSON.stringify({ name: name.trim(), startDate, endDate, periods }) }); onSaved(); } catch (cause) { setError(cause instanceof Error ? cause.message : t("pages.fiscal.037")); } finally { setSaving(false); } }
   return <Modal title={t("pages.fiscal.012")} description={t("pages.fiscal.038")} onClose={onClose} wide><form className="document-form" onSubmit={submit}>{error && <div className="form-error" role="alert">{error}</div>}<div className="form-grid"><label><span>{t("pages.fiscal.039")}</span><input value={name} onChange={(e) => setName(e.target.value)} required /></label><label><span>{t("pages.fiscal.040")}</span><input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required /></label><label><span>{t("pages.fiscal.041")}</span><input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} required /></label></div><div className="subsection-heading"><h3>{t("pages.fiscal.042")}</h3><Button type="button" variant="secondary" icon="plus" onClick={() => setPeriods((items) => [...items, { periodNumber: items.length + 1, name: t("pages.fiscal.002", { value1: items.length + 1 }), startDate: "", endDate: "" }])}>{t("pages.fiscal.043")}</Button></div><div className="period-editor">{periods.map((period, index) => <div key={index}><input aria-label={t("pages.fiscal.044")} type="number" min="1" value={period.periodNumber} onChange={(e) => change(index, { periodNumber: Number(e.target.value) })} /><input aria-label={t("pages.fiscal.045")} value={period.name} onChange={(e) => change(index, { name: e.target.value })} required /><input aria-label={t("pages.fiscal.046")} type="date" value={period.startDate} onChange={(e) => change(index, { startDate: e.target.value })} required /><input aria-label={t("pages.fiscal.047")} type="date" value={period.endDate} onChange={(e) => change(index, { endDate: e.target.value })} required /><Button type="button" variant="ghost" icon="trash" aria-label={t("pages.fiscal.048")} disabled={periods.length === 1} onClick={() => setPeriods((items) => items.filter((_, i) => i !== index))} /></div>)}</div><div className="form-actions"><Button type="button" variant="ghost" onClick={onClose}>{t("pages.accounts.065")}</Button><Button type="submit" disabled={saving}>{saving ? t("pages.accounts.066") : t("pages.fiscal.051")}</Button></div></form></Modal>;
 }
-function YearEdit({ year, onClose, onSaved }: { year: FiscalYear; onClose: () => void; onSaved: () => void }) {
+function YearEdit({ policy, year, onClose, onSaved }: { policy: PermissionPolicy; year: FiscalYear; onClose: () => void; onSaved: () => void }) {
+  const { permissionSet } = useAuthorization();
   const [name, setName] = useState(year.name); const [startDate, setStartDate] = useState(year.startDate); const [endDate, setEndDate] = useState(year.endDate); const [error, setError] = useState("");
-  async function submit(e: FormEvent) { e.preventDefault(); try { await api(`/fiscal-years/${year.id}`, { method: "PATCH", body: JSON.stringify({ name: name.trim(), startDate, endDate }) }); onSaved(); } catch (cause) { setError(cause instanceof Error ? cause.message : t("pages.fiscal.052")); } }
+  async function submit(e: FormEvent) { e.preventDefault(); if (!allows(permissionSet, policy)) return; try { await api(`/fiscal-years/${year.id}`, { method: "PATCH", body: JSON.stringify({ name: name.trim(), startDate, endDate }) }); onSaved(); } catch (cause) { setError(cause instanceof Error ? cause.message : t("pages.fiscal.052")); } }
   return <Modal title={t("pages.fiscal.053")} onClose={onClose}><form className="document-form" onSubmit={submit}>{error && <div className="form-error" role="alert">{error}</div>}<label><span>{t("pages.fiscal.054")}</span><input value={name} onChange={(e) => setName(e.target.value)} required /></label><div className="form-grid"><label><span>{t("pages.fiscal.040")}</span><input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} /></label><label><span>{t("pages.fiscal.041")}</span><input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></label></div><div className="form-actions"><Button type="button" variant="ghost" onClick={onClose}>{t("pages.accounts.065")}</Button><Button type="submit">{t("pages.accounts.067")}</Button></div></form></Modal>;
 }
-function PeriodEdit({ period, onClose, onSaved }: { period: FiscalPeriod; onClose: () => void; onSaved: () => void }) {
+function PeriodEdit({ policy, period, onClose, onSaved }: { policy: PermissionPolicy; period: FiscalPeriod; onClose: () => void; onSaved: () => void }) {
+  const { permissionSet } = useAuthorization();
   const [name, setName] = useState(period.name); const [startDate, setStartDate] = useState(period.startDate); const [endDate, setEndDate] = useState(period.endDate); const [error, setError] = useState("");
-  async function submit(e: FormEvent) { e.preventDefault(); try { await api(`/fiscal-periods/${period.id}`, { method: "PATCH", body: JSON.stringify({ version: period.version, name: name.trim(), startDate, endDate }) }); onSaved(); } catch (cause) { setError(cause instanceof Error ? cause.message : t("pages.fiscal.052")); } }
+  async function submit(e: FormEvent) { e.preventDefault(); if (!allows(permissionSet, policy)) return; try { await api(`/fiscal-periods/${period.id}`, { method: "PATCH", body: JSON.stringify({ version: period.version, name: name.trim(), startDate, endDate }) }); onSaved(); } catch (cause) { setError(cause instanceof Error ? cause.message : t("pages.fiscal.052")); } }
   return <Modal title={t("pages.fiscal.056")} onClose={onClose}><form className="document-form" onSubmit={submit}>{error && <div className="form-error" role="alert">{error}</div>}<label><span>{t("pages.fiscal.054")}</span><input value={name} onChange={(e) => setName(e.target.value)} required /></label><div className="form-grid"><label><span>{t("pages.fiscal.040")}</span><input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} /></label><label><span>{t("pages.fiscal.041")}</span><input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></label></div><div className="form-actions"><Button type="button" variant="ghost" onClick={onClose}>{t("pages.accounts.065")}</Button><Button type="submit">{t("pages.accounts.067")}</Button></div></form></Modal>;
 }
