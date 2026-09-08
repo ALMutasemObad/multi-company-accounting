@@ -77,7 +77,7 @@ test("view-only journal and fiscal users cannot initiate mutations", async ({ pa
   await expect(page.getByRole("button", { name: "إغلاق", exact: true })).toHaveCount(0);
 });
 
-test.fixme("P1: a new manual journal starts inside the selected open fiscal period", async ({ page }) => {
+test("P1: a new manual journal starts inside the selected open fiscal period", async ({ page }) => {
   await page.route("**/api/v1/auth/me", async (route) => {
     const response = await route.fetch();
     const authorization = await response.json();
@@ -111,7 +111,7 @@ test("P2: view-only empty states do not instruct users to create unavailable rec
   }
 });
 
-test.fixme("P2: Arabic audit filters do not expose raw internal codes", async ({ page }) => {
+test("P2: Arabic audit filters do not expose raw internal codes", async ({ page }) => {
   await openFixture(page, "audit");
 
   const visibleOptionLabels = await page.locator("select option").evaluateAll((options) =>

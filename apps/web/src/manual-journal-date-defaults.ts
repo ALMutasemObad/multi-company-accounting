@@ -1,4 +1,5 @@
 import type { FiscalPeriod } from "./types";
+import { companyCalendarDate } from "./company-calendar-date";
 
 type EligiblePeriod = Pick<FiscalPeriod, "id" | "startDate" | "endDate" | "status">;
 
@@ -15,25 +16,7 @@ export type PendingManualJournalDefaults = {
 
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/u;
 
-export function manualJournalCalendarDate(timeZone?: string, now = new Date()) {
-  const fallback = now.toISOString().slice(0, 10);
-  if (!timeZone?.trim()) return fallback;
-  try {
-    const parts = new Intl.DateTimeFormat("en-US-u-ca-iso8601-nu-latn", {
-      timeZone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).formatToParts(now);
-    const value = ["year", "month", "day"]
-      .map((type) => parts.find((part) => part.type === type)?.value ?? "")
-      .join("-");
-    return isoDatePattern.test(value) ? value : fallback;
-  } catch (cause) {
-    if (cause instanceof RangeError) return fallback;
-    throw cause;
-  }
-}
+export const manualJournalCalendarDate = companyCalendarDate;
 
 function dateValue(value: string) {
   if (!isoDatePattern.test(value)) return null;

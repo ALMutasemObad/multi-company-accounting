@@ -483,7 +483,8 @@ describe('generated OpenAPI request guards', () => {
       .toEqual({ email: 'owner@example.com', locale: 'ar' });
     expect(startPasswordResetRequestSchema.safeParse({ email: 'owner@example.com', locale: 'ur' }).success).toBe(true);
     expect(startPasswordResetRequestSchema.safeParse({ email: 'owner@example.com', locale: 'hi' }).success).toBe(true);
-    expect(startPasswordResetRequestSchema.safeParse({ email: 'owner@example.com', locale: 'fr' }).success).toBe(false);
+    expect(startPasswordResetRequestSchema.safeParse({ email: 'owner@example.com', locale: 'fr' }).success).toBe(true);
+    expect(startPasswordResetRequestSchema.safeParse({ email: 'owner@example.com', locale: 'not_a_locale' }).success).toBe(false);
     expect(startPasswordResetRequestSchema.safeParse({ email: 'owner@example.com', locale: 'ar', extra: true }).success).toBe(false);
 
     const token = 'a'.repeat(43);

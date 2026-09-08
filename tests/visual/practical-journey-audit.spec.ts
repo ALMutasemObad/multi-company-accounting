@@ -78,7 +78,6 @@ test("P2: treasury shows a business-readable ledger account instead of an opaque
 });
 
 test("P2: sales, purchases, and reports expose complete tab semantics", async ({ page }) => {
-  test.fixme(true, "Known gap: visible tab bars declare tablist but their buttons are not semantic tabs and have no selected state.");
   const failures: string[] = [];
 
   for (const route of ["sales", "purchases", "reports"] as const) {
