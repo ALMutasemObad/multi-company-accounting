@@ -7,7 +7,7 @@ const auditedJourneys = [
   { qa: "suppliers", marker: "لا يوجد موردون مطابقون" },
   { qa: "receipts", marker: "لا توجد سندات قبض" },
   { qa: "payments", marker: "لا توجد سندات صرف" },
-  { qa: "journals", marker: "قيد يومية جديد" },
+  { qa: "journals", marker: "القيود اليومية" },
   { qa: "fiscal", marker: "السنة المالية 2026" },
   { qa: "settings", marker: "المنطقة الزمنية" },
   { qa: "audit", marker: "نوع الكيان" },
@@ -36,7 +36,7 @@ test("Arabic core workflows render at 390px and 1440px without blank screens or 
   for (const journey of auditedJourneys) {
     await test.step(journey.qa, async () => {
       await openFixture(page, journey.qa);
-      await expect(page.getByText(journey.marker, { exact: false }).first()).toBeVisible();
+      await expect(page.locator(".workspace-page").getByText(journey.marker, { exact: false }).first()).toBeVisible();
       await expect(page.locator("html")).toHaveAttribute("lang", "ar");
       await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
 
@@ -66,7 +66,7 @@ test.fixme("P1 QA: customer details remain rendered when the synthetic customer 
   expect(pageErrors).toEqual([]);
 });
 
-test.fixme("P1: view-only journal and fiscal users cannot initiate mutations", async ({ page }) => {
+test("view-only journal and fiscal users cannot initiate mutations", async ({ page }) => {
   await openFixture(page, "journals");
   await expect(page.getByRole("button", { name: "قيد يومية جديد", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "إنشاء قيد", exact: true })).toHaveCount(0);
