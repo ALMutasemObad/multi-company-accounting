@@ -26,7 +26,7 @@ describe.runIf(process.env.RUN_GROUP_ONBOARDING_BROWSER_TESTS === "true")("group
         await loadLocale('ar');
         const registration = location.search.includes('registration');
         const owner = location.search.includes('owner');
-        const content = owner ? React.createElement(React.Fragment, null, React.createElement(LanguageSwitcher), React.createElement(OrganizationOwnerPage, {onSwitchCompany: async () => {}, notify: () => {}})) : React.createElement(registration ? RegistrationPage : CreateGroupCompany, registration ? {onBackToLogin: () => {document.body.dataset.login='true'}} : {organizationId: '1', onCreated: async () => {document.body.dataset.created='true'}, onPendingChange: value => {document.body.dataset.pending=String(value)}});
+        const content = owner ? React.createElement(React.Fragment, null, React.createElement(LanguageSwitcher), React.createElement(OrganizationOwnerPage, {onSwitchCompany: async () => {document.body.dataset.switched='true'}, notify: () => {}})) : React.createElement(registration ? RegistrationPage : CreateGroupCompany, registration ? {onBackToLogin: () => {document.body.dataset.login='true'}} : {organizationId: '1', onCreated: async result => {document.body.dataset.created='true'; if (location.search.includes('refresh-fail')) throw new Error('refresh failed'); return { ...result.company, isActive: true, canSwitch: true, metricAccess: {activeUsers: true, postedDocuments: true, postedSales: true, postedPurchases: true}, activeUsers: 1, postedDocuments: 0, postedSalesBase: '0', postedPurchasesBase: '0' }}, onOpenCreated: async () => {document.body.dataset.switched='true'}, onPendingChange: value => {document.body.dataset.pending=String(value)}});
         createRoot(document.getElementById('root')).render(React.createElement(I18nProvider, { initialLocale: 'ar' }, content));
       </script></body></html>`));
     });
@@ -65,14 +65,89 @@ describe.runIf(process.env.RUN_GROUP_ONBOARDING_BROWSER_TESTS === "true")("group
 
   it("allows correction after confirmed validation rejection while preserving fields", async () => {
     const page = await browser.newPage();
-    await page.route("**/api/v1/organizations/1/company-options", route => route.fulfill({ json: { currencies: [{ code: "SAR", nameAr: "ريال" }], timezones: ["UTC"] } }));
-    await page.route("**/api/v1/organizations/1/companies", route => route.fulfill({ status: 422, json: { code: "BUSINESS_RULE_VIOLATION" } }));
+    const keys: Array<string | undefined> = [];
+    await page.route("**/api/v1/organizations/1/company-options", route => route.fulfill({ json: { currencies: [{ code: "SAR", nameAr: "ريال" }, { code: "USD", nameAr: "دولار" }], timezones: ["UTC", "Asia/Riyadh"] } }));
+    await page.route("**/api/v1/organizations/1/companies", route => { keys.push(route.request().headers()["idempotency-key"]); return route.fulfill({ status: 422, json: { code: "BUSINESS_RULE_VIOLATION" } }); });
     await page.goto(`${origin}/__group-company-test`);
     await page.locator('input[name="companyName"]').fill("Preserved company");
+    await page.locator('select[name="timezone"]').selectOption("Asia/Riyadh");
+    await page.locator('select[name="baseCurrencyCode"]').selectOption("USD");
     await page.locator('button[type="submit"]').click();
     await browserExpect(page.getByRole("alert")).toBeVisible();
     await browserExpect(page.locator('input[name="companyName"]')).toBeEnabled();
     await browserExpect(page.locator('input[name="companyName"]')).toHaveValue("Preserved company");
+    await browserExpect(page.locator('select[name="timezone"]')).toHaveValue("Asia/Riyadh");
+    await browserExpect(page.locator('select[name="baseCurrencyCode"]')).toHaveValue("USD");
+    await page.locator('button[type="submit"]').click();
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).not.toBe(keys[1]);
+    await page.close();
+  }, 60_000);
+
+  it("keeps a confirmed create after refresh failure and never repeats the POST", async () => {
+    const page = await browser.newPage();
+    let posts = 0;
+    await page.route("**/api/v1/organizations/1/company-options", route => route.fulfill({ json: { currencies: [{ code: "SAR", nameAr: "ريال" }], timezones: ["UTC"] } }));
+    await page.route("**/api/v1/organizations/1/companies", route => { posts += 1; return route.fulfill({ status: 201, json: { organizationId: "1", company: { id: "2", code: "generated", name: "شركة مؤكدة", timezone: "UTC", baseCurrencyCode: "SAR" } } }); });
+    await page.goto(`${origin}/__group-company-test?refresh-fail`);
+    await page.locator('input[name="companyName"]').fill("شركة مؤكدة");
+    await page.locator('button[type="submit"]').click();
+    await browserExpect(page.getByText("تم إنشاء شركة شركة مؤكدة.")).toBeVisible();
+    await browserExpect(page.getByText(/تم إنشاء الشركة، لكن تعذر تحديث القائمة/)).toBeVisible();
+    await page.getByRole("button", { name: "تحديث قائمة الشركات" }).click();
+    await browserExpect(page.getByText(/تم إنشاء الشركة، لكن تعذر تحديث القائمة/)).toBeVisible();
+    expect(posts).toBe(1);
+    await page.close();
+  }, 60_000);
+
+  it("discovers creation from the owner header and opens the confirmed company after refresh", async () => {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    let dashboards = 0;
+    let posts = 0;
+    await page.route("**/api/v1/organizations/workspaces", route => route.fulfill({ json: { data: [{ id: "1", code: "GROUP", name: "Group", role: "OWNER" }] } }));
+    await page.route("**/api/v1/organizations/1/dashboard?*", route => {
+      dashboards += 1;
+      const companies = dashboards > 1 ? [{ id: "2", code: "generated", name: "شركة جاهزة", timezone: "UTC", baseCurrencyCode: "SAR", isActive: true, canSwitch: true, metricAccess: { activeUsers: true, postedDocuments: true, postedSales: true, postedPurchases: true }, activeUsers: 1, postedDocuments: 0, postedSalesBase: "0", postedPurchasesBase: "0" }] : [];
+      return route.fulfill({ json: { generatedAt: "2026-09-08T00:00:00Z", period: { days: 30, from: "2026-08-01", to: "2026-09-01" }, organization: { id: "1", code: "GROUP", name: "Group", role: "OWNER", memberCount: 1, canManageMembers: true, canManageOwners: true }, companies, boundaries: { companyAccessRequired: true, companyPermissionsRequired: true, subscriptionEntitlementRequired: true, aggregation: "NONE", currencyConversion: "NONE" } } });
+    });
+    await page.route("**/api/v1/organizations/1/members", route => route.fulfill({ json: { data: [] } }));
+    await page.route("**/api/v1/organizations/1/company-options", route => route.fulfill({ json: { currencies: [{ code: "SAR", nameAr: "ريال" }], timezones: ["UTC"] } }));
+    await page.route("**/api/v1/organizations/1/companies", route => { posts += 1; return route.fulfill({ status: 201, json: { organizationId: "1", company: { id: "2", code: "generated", name: "شركة جاهزة", timezone: "UTC", baseCurrencyCode: "SAR" } } }); });
+    await page.goto(`${origin}/__group-company-test?owner`);
+    await page.getByRole("button", { name: "إنشاء شركة أخرى" }).click();
+    await browserExpect(page.locator('input[name="companyName"]')).toBeFocused();
+    await page.locator('input[name="companyName"]').fill("شركة جاهزة");
+    await page.locator('.group-company-create button[type="submit"]').click();
+    await page.locator("#group-company-create").getByRole("button", { name: "فتح الشركة" }).click();
+    await browserExpect(page.locator("body")).toHaveAttribute("data-switched", "true");
+    expect(posts).toBe(1);
+    await page.close();
+  }, 60_000);
+
+  it("ignores late options and dashboard responses after the organization changes", async () => {
+    const page = await browser.newPage();
+    let releaseOldOptions!: () => void;
+    let releaseOldDashboard!: () => void;
+    const oldOptionsReady = new Promise<void>(resolve => { releaseOldOptions = resolve; });
+    const oldDashboardReady = new Promise<void>(resolve => { releaseOldDashboard = resolve; });
+    await page.route("**/api/v1/organizations/workspaces", route => route.fulfill({ json: { data: [
+      { id: "1", code: "OLD", name: "Old group", role: "OWNER" },
+      { id: "2", code: "NEW", name: "New group", role: "OWNER" },
+    ] } }));
+    await page.route("**/api/v1/organizations/1/company-options", async route => { await oldOptionsReady; await route.fulfill({ json: { currencies: [{ code: "SAR", nameAr: "ريال" }], timezones: ["UTC"] } }); });
+    await page.route("**/api/v1/organizations/1/dashboard?*", async route => { await oldDashboardReady; await route.fulfill({ json: { generatedAt: "2026-09-08T00:00:00Z", period: { days: 30, from: "2026-08-01", to: "2026-09-01" }, organization: { id: "1", code: "OLD", name: "Old group", role: "OWNER", memberCount: 1, canManageMembers: false, canManageOwners: true }, companies: [], boundaries: {} } }); });
+    await page.route("**/api/v1/organizations/2/company-options", route => route.fulfill({ json: { currencies: [{ code: "USD", nameAr: "دولار" }], timezones: ["America/New_York"] } }));
+    await page.route("**/api/v1/organizations/2/dashboard?*", route => route.fulfill({ json: { generatedAt: "2026-09-08T00:00:00Z", period: { days: 30, from: "2026-08-01", to: "2026-09-01" }, organization: { id: "2", code: "NEW", name: "New group", role: "OWNER", memberCount: 1, canManageMembers: false, canManageOwners: true }, companies: [], boundaries: {} } }));
+    await page.goto(`${origin}/__group-company-test?owner`);
+    await page.locator(".organization-filters select").first().selectOption("2");
+    await browserExpect(page.locator('select[name="baseCurrencyCode"]')).toHaveValue("USD");
+    await browserExpect(page.locator('select[name="timezone"]')).toHaveValue("America/New_York");
+    releaseOldOptions();
+    releaseOldDashboard();
+    await page.waitForTimeout(50);
+    await browserExpect(page.locator(".organization-filters select").first()).toHaveValue("2");
+    await browserExpect(page.locator('select[name="baseCurrencyCode"]')).toHaveValue("USD");
+    await browserExpect(page.locator('select[name="timezone"]')).toHaveValue("America/New_York");
     await page.close();
   }, 60_000);
 
