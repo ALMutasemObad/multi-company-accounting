@@ -11,7 +11,7 @@
 
 ## التحقق
 
-- اختبار Playwright عملي مخصص يفحص البنية، ووجود هدف `aria-controls` لكل تبويب بعد كل حالة تنقل، والعلاقة العكسية مع اللوحة، وroving tabindex، والتركيز، وArrowLeft/ArrowRight/Home/End، والنقر، وعدم التجاوز الأفقي.
+- اختبار Playwright العملي المخصص `tests/visual/reports-tab-accessibility.spec.ts` يفحص البنية، ووجود هدف `aria-controls` لكل تبويب بعد كل حالة تنقل، والعلاقة العكسية مع اللوحة، وroving tabindex، والتركيز، وArrowLeft/ArrowRight/Home/End، والنقر، وعدم التجاوز الأفقي. يبقى تدقيق الرحلات العملي العام في ملف مستقل ولا يشارك هذا الاسم.
 - نطاق العرض: 390×844 و1440×900، باللغة العربية وعلى خادم QA المحلي المعزول.
 - Playwright: نجح 2/2 على `mobile-390` و`desktop-1440`.
 - `typecheck` للواجهة و`e2e:typecheck`: ناجحان.
