@@ -24,6 +24,13 @@ import {
 import { endpointPermissionPolicies } from "./endpoint-permissions";
 import { exchangeRateForDocumentDate,
   missingDatedRateMessage } from "./currency-rates";
+import {
+  clampDocumentDate,
+  dueDateAfterDocumentDateChange,
+  initialInvoiceDateFields,
+  invoiceDateToday,
+  pendingCreationDateDefaults,
+} from "./invoice-date-defaults";
 import { exchangeRateForCurrency,
   formatMoney,
   statusLabel,
@@ -155,7 +162,7 @@ type DraftLine = { inventoryItemId: string; inventoryItemLabel: string; descript
 const blankLine = (): DraftLine => ({ inventoryItemId: "", inventoryItemLabel: "", description: "", quantity: "1", unitPrice: "", discountAmount: "0.0000", debitAccountId: "", debitAccountLabel: "", costCenterId: "", costCenterLabel: "", taxRateId: "", taxRateLabel: "", taxRateRate: "0" });
 
 function InvoiceForm({ type, invoice, references, onClose, onSaved }: { type: InvoiceType; invoice: PurchaseInvoice | null; references: References; onClose: () => void; onSaved: (value: PurchaseInvoice) => void }) {
-  const { permissionSet } = useAuthorization();
+  const { permissionSet, selectedCompany } = useAuthorization();
   const operationPolicy = invoice
     ? actionPermissionPolicies.purchaseInvoices.update
     : actionPermissionPolicies.purchaseInvoices.create;
@@ -166,12 +173,26 @@ function InvoiceForm({ type, invoice, references, onClose, onSaved }: { type: In
   const canReadWarehouses = allows(permissionSet, endpointPermissionPolicies.warehouses);
   const [supplierId, setSupplierId] = useState(invoice?.supplierId ?? "");
   const [warehouseId, setWarehouseId] = useState(invoice?.warehouseId ?? "");
+  const today = useMemo(() => invoiceDateToday(selectedCompany?.timezone), [selectedCompany?.timezone]);
+  const initialDateFields = useMemo(
+    () => initialInvoiceDateFields(references.periods, today, invoice ? {
+      fiscalPeriodId: invoice.document.fiscalPeriodId,
+      documentDate: invoice.document.documentDate,
+      dueDate: invoice.dueDate,
+    } : undefined),
+    [invoice, references.periods, today],
+  );
   const [currencyId, setCurrencyId] = useState(invoice?.currencyId ?? references.currencies[0]?.id ?? "");
   const [exchangeRate, setExchangeRate] = useState(invoice?.exchangeRate ?? exchangeRateForCurrency(references.currencies[0]));
-  const [documentDate, setDocumentDate] = useState(invoice?.document.documentDate ?? new Date().toISOString().slice(0, 10));
+  const [fiscalPeriodId, setFiscalPeriodId] = useState(initialDateFields.fiscalPeriodId);
+  const [documentDate, setDocumentDate] = useState(initialDateFields.documentDate);
+  const [dueDate, setDueDate] = useState(initialDateFields.dueDate);
   const [sourceInvoiceId, setSourceInvoiceId] = useState(invoice?.sourceInvoiceId ?? "");
   const [lines, setLines] = useState<DraftLine[]>(invoice?.lines.map(lineDraft) ?? [blankLine()]);
   const linesRef = useRef(lines);
+  const periodDefaultsAppliedRef = useRef(Boolean(invoice));
+  const dateFieldsTouchedRef = useRef(false);
+  const dueDateWasEditedRef = useRef(Boolean(invoice));
   const barcodeScannerRef = useRef<InventoryBarcodeScannerHandle>(null);
   const [barcodePendingCount, setBarcodePendingCount] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -179,8 +200,31 @@ function InvoiceForm({ type, invoice, references, onClose, onSaved }: { type: In
   const totals = useMemo(() => lines.reduce((value, line) => { const gross = Number(line.quantity || 0) * Number(line.unitPrice || 0); const discount = Number(line.discountAmount || 0); const net = Math.max(0, gross - discount); const tax = net * Number(line.taxRateRate || 0) / 100; return { subtotal: value.subtotal + gross, discount: value.discount + discount, tax: value.tax + tax, total: value.total + net + tax }; }, { subtotal: 0, discount: 0, tax: 0, total: 0 }), [lines]);
 
   useEffect(() => { if (!currencyId && references.currencies[0]) { setCurrencyId(references.currencies[0].id); setExchangeRate(exchangeRateForCurrency(references.currencies[0])); } }, [currencyId, references.currencies]);
+  useEffect(() => {
+    if (periodDefaultsAppliedRef.current) return;
+    const defaults = pendingCreationDateDefaults(references.periods, today, {
+      existingInvoice: Boolean(invoice),
+      userTouchedDateFields: dateFieldsTouchedRef.current,
+    });
+    if (!defaults) return;
+    setFiscalPeriodId(defaults.fiscalPeriodId);
+    setDocumentDate(defaults.documentDate);
+    setDueDate(defaults.documentDate);
+    periodDefaultsAppliedRef.current = true;
+  }, [invoice, references.periods, today]);
   async function selectCurrency(id: string, date = documentDate) { const selected = references.currencies.find((currency) => currency.id === id); setCurrencyId(id); try { setExchangeRate(await exchangeRateForDocumentDate(selected, date)); setErrors((current) => current.filter((message) => message !== missingDatedRateMessage())); } catch { setExchangeRate(""); setErrors([missingDatedRateMessage()]); } }
-  function changeDocumentDate(value: string) { setDocumentDate(value); if (currencyId) void selectCurrency(currencyId, value); }
+  function changeDocumentDate(value: string) {
+    dateFieldsTouchedRef.current = true;
+    setDocumentDate(value);
+    setDueDate((current) => dueDateAfterDocumentDateChange(current, value, dueDateWasEditedRef.current));
+    if (currencyId) void selectCurrency(currencyId, value);
+  }
+  function changeFiscalPeriod(value: string) {
+    dateFieldsTouchedRef.current = true;
+    setFiscalPeriodId(value);
+    const period = references.periods.find((candidate) => candidate.id === value && candidate.status !== "CLOSED");
+    if (period) changeDocumentDate(clampDocumentDate(documentDate, period));
+  }
   function updateLines(update: (current: readonly DraftLine[]) => DraftLine[]) {
     const next = update(linesRef.current);
     linesRef.current = next;
@@ -219,9 +263,9 @@ function InvoiceForm({ type, invoice, references, onClose, onSaved }: { type: In
   }
 
   return <Modal title={invoice ? t("pages.payments.046", { value1: invoice.document.documentNumber }) : type === "PURCHASE_INVOICE" ? t("pages.purchase-invoices.057") : t("pages.purchase-invoices.058")} description={t("pages.purchase-invoices.059")} onClose={onClose} wide><form className="form-grid sales-invoice-form" onSubmit={submit}>{errors.length > 0 && <div className="form-error full" role="alert">{errors.map((error) => <p key={error}>{error}</p>)}</div>}
-    <label><span>{t("pages.payments.049")}</span><select name="fiscalPeriodId" defaultValue={invoice?.document.fiscalPeriodId} disabled={!canReadFiscalPeriods} required><option value="">{t("pages.manual-journals.047")}</option>{references.periods.map((period) => <option key={period.id} value={period.id}>{period.name} — {period.startDate}{t("pages.payments.051")}{period.endDate}</option>)}</select></label>
+    <label><span>{t("pages.payments.049")}</span><select name="fiscalPeriodId" value={fiscalPeriodId} onChange={(event) => changeFiscalPeriod(event.target.value)} disabled={!canReadFiscalPeriods} required><option value="">{t("pages.manual-journals.047")}</option>{references.periods.map((period) => <option key={period.id} value={period.id}>{period.name} — {period.startDate}{t("pages.payments.051")}{period.endDate}</option>)}</select></label>
     <label><span>{t("pages.purchase-invoices.063")}</span><input name="documentDate" type="date" value={documentDate} onChange={(event) => changeDocumentDate(event.target.value)} required /></label>
-    <label><span>{t("pages.purchase-invoices.064")}</span><input name="dueDate" type="date" defaultValue={invoice?.dueDate ?? new Date().toISOString().slice(0, 10)} required /></label>
+    <label><span>{t("pages.purchase-invoices.064")}</span><input name="dueDate" type="date" value={dueDate} onChange={(event) => { dueDateWasEditedRef.current = true; dateFieldsTouchedRef.current = true; setDueDate(event.target.value); }} required /></label>
     <label><span>{t("pages.payments.057")}</span><ReferenceCombobox<Supplier> endpoint="/suppliers?active=true" value={supplierId} selectedLabel={invoice?.supplier ? `${invoice.supplier.code} — ${localizedReferenceName(invoice.supplier)}` : invoice?.supplierNameSnapshot ?? ""} onChange={(supplier) => { setSupplierId(supplier?.id ?? ""); setSourceInvoiceId(""); }} optionLabel={(supplier) => `${supplier.code} — ${localizedReferenceName(supplier)}`} placeholder={t("pages.payments.058")} searchLabel={t("pages.suppliers.014")} required disabled={!canReadSuppliers} /></label>
     <label><span>{t("pages.purchase-invoices.067")}</span><input name="supplierInvoiceNumber" defaultValue={invoice?.supplierInvoiceNumber ?? ""} maxLength={100} dir="ltr" /></label>
     {type === "PURCHASE_DEBIT_NOTE" && <label className="full"><span>{t("pages.purchase-invoices.068")}</span><ReferenceCombobox<PurchaseInvoice> endpoint={`/purchase-invoices?documentType=PURCHASE_INVOICE&status=POSTED${supplierId ? `&supplierId=${supplierId}` : ""}`} value={sourceInvoiceId} selectedLabel={invoice?.sourceInvoiceNumber ?? ""} onChange={(source) => setSourceInvoiceId(source?.id ?? "")} optionLabel={(source) => `${source.document.documentNumber}${t("pages.purchase-invoices.070")}${formatMoney(source.total)}${t("pages.payments.082")}${formatMoney(source.outstandingAmount)}`} optionDisabled={(source) => Number(source.total) <= Number(source.debitedAmount)} placeholder={t("pages.purchase-invoices.069")} searchLabel={t("pages.purchase-invoices.068")} required disabled={!supplierId} /></label>}
