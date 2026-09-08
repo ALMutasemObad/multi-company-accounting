@@ -1,7 +1,17 @@
 .optional-modules { font-family: "Cairo", "Noto Sans Devanagari", Tahoma, Arial, sans-serif; font-size: 1rem; line-height: 1.8; color: #172d3e; max-width: 76rem; margin-inline: auto; padding: 1.5rem; background: #f5f8fa; }
 .optional-modules h2, .optional-modules h3 { font-size: 1.25rem; line-height: 1.6; margin: 0 0 .75rem; font-weight: 700; }
 .optional-modules p { margin: .75rem 0; }
+.optional-modules__filters { display: flex; flex-wrap: wrap; gap: .5rem; margin-block: 1rem .5rem; }
+.optional-modules__filters button { display: inline-flex; align-items: center; gap: .5rem; min-height: 2.75rem; padding: .55rem .85rem; border: 1px solid #9dafba; border-radius: 999px; background: #fff; color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
+.optional-modules__filters button[aria-pressed="true"] { border-color: #176b87; background: #dff3f7; box-shadow: inset 0 0 0 1px #176b87; }
+.optional-modules__filters button:focus-visible { outline: 3px solid #f3b61f; outline-offset: 2px; }
+.optional-modules__count { display: inline-grid; place-items: center; min-width: 1.75rem; min-height: 1.75rem; padding-inline: .35rem; border-radius: 999px; background: #e7edf1; font-weight: 700; }
+.optional-modules__filter-hint { color: #425b6b; }
 .optional-modules__list { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 23rem), 1fr)); gap: 1rem; }
 .optional-modules__card { min-width: 0; padding: 1.25rem; border: 1px solid #cad6de; border-radius: .75rem; background: #fff; overflow-wrap: anywhere; }
 .optional-modules__card ul { padding-inline-start: 1.5rem; }
+.optional-modules__badges { display: flex; flex-wrap: wrap; gap: .5rem; margin-block: .75rem; }
+.optional-modules__badges span { padding: .3rem .65rem; border-radius: 999px; background: #edf3f6; font-weight: 700; }
+.optional-modules-fixture-controls label { display: grid; gap: .5rem; }
+.optional-modules-fixture-controls select { box-sizing: border-box; width: 100%; max-width: 100%; }
 @media (max-width: 30rem) { .optional-modules { padding: 1rem; } }
