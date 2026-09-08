@@ -108,7 +108,7 @@ test.fixme("P1: inventory view-only sections do not expose write actions", async
   await expect(page.getByRole("button", { name: "تعطيل", exact: true })).toHaveCount(0);
 });
 
-test.fixme("P1: import preview capability is resolved before file selection", async ({ page }) => {
+test("P1: import preview capability is resolved before file selection", async ({ page }) => {
   await openFixture(page, "imports");
 
   const importType = page.getByRole("combobox", { name: "نوع البيانات", exact: true });
