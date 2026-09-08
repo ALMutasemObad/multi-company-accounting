@@ -73,3 +73,48 @@ describe("CRM conversion command", () => {
     expect(customers.findActiveCustomer).not.toHaveBeenCalled();
   });
 });
+
+describe("CRM read isolation", () => {
+  it("scopes every workspace read and reference lookup to the current company", async () => {
+    const companyId = 73n;
+    const crmLead = { findMany: vi.fn().mockResolvedValue([]), count: vi.fn().mockResolvedValue(0) };
+    const crmOpportunity = { findMany: vi.fn().mockResolvedValue([]), count: vi.fn().mockResolvedValue(0) };
+    const crmActivity = { findMany: vi.fn().mockResolvedValue([]), count: vi.fn().mockResolvedValue(0) };
+    const prisma = {
+      crmLead,
+      crmOpportunity,
+      crmActivity,
+      $transaction: vi.fn(async (operations: Array<Promise<unknown>>) => Promise.all(operations)),
+      $queryRaw: vi.fn().mockResolvedValue([]),
+    };
+    const workforce = { findAssignable: vi.fn(), listAssignable: vi.fn().mockResolvedValue([]), listByInternalIds: vi.fn().mockResolvedValue([]) };
+    const customers = { findActiveCustomer: vi.fn(), listActiveCustomers: vi.fn().mockResolvedValue([]) };
+    const currencies = { findEnabled: vi.fn(), listEnabled: vi.fn().mockResolvedValue([]) };
+    const service = new CrmService(
+      prisma as never,
+      workforce,
+      customers,
+      { provisionCustomer: vi.fn() },
+      currencies,
+      { append: vi.fn() },
+    );
+    const context = { companyId, userId: 9n };
+
+    await service.listOptions(context, "scope");
+    await service.listLeads(context, { page: 1, pageSize: 8 });
+    await service.listOpportunities(context, { page: 1, pageSize: 8 });
+    await service.listActivities(context, { page: 1, pageSize: 8, status: "OPEN" });
+    await service.pipeline(context);
+
+    expect(workforce.listAssignable).toHaveBeenCalledWith(companyId, { search: "scope", limit: 50 });
+    expect(customers.listActiveCustomers).toHaveBeenCalledWith(companyId, { search: "scope", limit: 50 });
+    expect(currencies.listEnabled).toHaveBeenCalledWith(companyId);
+    expect(crmLead.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ companyId }) }));
+    expect(crmLead.count).toHaveBeenCalledWith({ where: expect.objectContaining({ companyId }) });
+    expect(crmOpportunity.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ companyId }) }));
+    expect(crmOpportunity.count).toHaveBeenCalledWith({ where: expect.objectContaining({ companyId }) });
+    expect(crmActivity.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ companyId }) }));
+    expect(crmActivity.count).toHaveBeenCalledWith({ where: expect.objectContaining({ companyId }) });
+    expect(prisma.$queryRaw).toHaveBeenCalledWith(expect.anything(), companyId);
+  });
+});

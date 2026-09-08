@@ -5,6 +5,7 @@ import { createCrmRouter } from "../src/crm/crm-router.js";
 
 const leadId = "5aa8b232-356c-4d55-8b89-f27d44d1678d";
 const opportunityId = "74d5c65e-3381-4aba-a3ae-0b61409375f6";
+const activityId = "1178507b-fddf-40d7-8e66-7e08a8c00e65";
 const employeeId = "813503e9-6353-4b7c-83ef-d1a2f7d15275";
 
 describe("CRM route permissions and generated guards", () => {
@@ -12,9 +13,17 @@ describe("CRM route permissions and generated guards", () => {
     const context = { companyId: 1n, userId: 2n };
     const authorize = vi.fn().mockResolvedValue(context);
     const crm = {
+      listOptions: vi.fn().mockResolvedValue({ owners: [], currencies: [], customers: [] }),
+      listLeads: vi.fn().mockResolvedValue({ data: [], meta: {} }),
       createLead: vi.fn().mockResolvedValue({ lead: {} }),
+      markLeadContacted: vi.fn().mockResolvedValue({ lead: {} }),
       qualifyLead: vi.fn().mockResolvedValue({ opportunity: {} }),
+      listOpportunities: vi.fn().mockResolvedValue({ data: [], meta: {} }),
+      moveOpportunityStage: vi.fn().mockResolvedValue({ opportunity: {} }),
+      pipeline: vi.fn().mockResolvedValue({ data: [] }),
+      listActivities: vi.fn().mockResolvedValue({ data: [], meta: {} }),
       createActivity: vi.fn().mockResolvedValue({ activity: {} }),
+      completeActivity: vi.fn().mockResolvedValue({ activity: {} }),
       convertLead: vi.fn().mockResolvedValue({ leadId, customerId: "9" }),
     };
     const app = express();
@@ -25,23 +34,38 @@ describe("CRM route permissions and generated guards", () => {
       .set("X-CSRF-Token", "csrf")
       .set("Idempotency-Key", "crm-command-test-key-1234");
 
+    await request(app).get("/crm/options").set("Cookie", "sid=test-session").expect(200);
+    await request(app).get("/crm/leads").set("Cookie", "sid=test-session").expect(200);
+    await request(app).get("/crm/opportunities").set("Cookie", "sid=test-session").expect(200);
+    await request(app).get("/crm/pipeline").set("Cookie", "sid=test-session").expect(200);
+    await request(app).get("/crm/activities").set("Cookie", "sid=test-session").expect(200);
     await headers(request(app).post("/crm/leads")).send({
       kind: "ORGANIZATION", displayName: "مؤسسة اختبار", source: "REFERRAL", ownerEmployeeId: employeeId,
     }).expect(201);
+    await headers(request(app).post(`/crm/leads/${leadId}/mark-contacted`)).send({ version: 0 }).expect(200);
     await headers(request(app).post(`/crm/leads/${leadId}/qualify`)).send({
       version: 0, title: "فرصة اختبار", estimatedAmount: "1250.0000", currencyId: "1", probabilityBps: 3500,
     }).expect(201);
+    await headers(request(app).post(`/crm/opportunities/${opportunityId}/stage`)).send({
+      version: 0, stage: "PROPOSAL", probabilityBps: 5000,
+    }).expect(200);
     await headers(request(app).post("/crm/activities")).send({
       parentType: "OPPORTUNITY", parentId: opportunityId, type: "CALL", subject: "متابعة العرض", assignedEmployeeId: employeeId,
     }).expect(201);
+    await headers(request(app).post(`/crm/activities/${activityId}/complete`)).send({ version: 0 }).expect(200);
     await headers(request(app).post(`/crm/leads/${leadId}/convert`)).send({
       version: 1, mode: "EXISTING", customerId: "9",
     }).expect(200);
 
     expect(authorize.mock.calls.map(([input]) => input.permission)).toEqual([
-      "crm.manage", "crm.manage", "crm.activities.manage", "crm.convert",
+      "crm.view", "crm.view", "crm.view", "crm.view", "crm.view",
+      "crm.manage", "crm.manage", "crm.manage", "crm.manage",
+      "crm.activities.manage", "crm.activities.manage", "crm.convert",
     ]);
-    expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ requireCsrf: true }));
+    expect(authorize.mock.calls.map(([input]) => input.requireCsrf)).toEqual([
+      false, false, false, false, false,
+      true, true, true, true, true, true, true,
+    ]);
     expect(crm.createLead).toHaveBeenCalledWith(context, expect.objectContaining({ idempotencyKey: "crm-command-test-key-1234" }));
     expect(crm.qualifyLead).toHaveBeenCalledWith(context, leadId, expect.objectContaining({ currencyId: 1n }));
     expect(crm.createActivity).toHaveBeenCalledWith(context, expect.objectContaining({ parentId: opportunityId }));
