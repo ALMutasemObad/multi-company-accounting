@@ -1,10 +1,22 @@
 import type {
+  BankReconciliationCapabilities,
   BankReconciliationMatch,
   BankReconciliationSessionDetail,
   BankStatementLine,
 } from "./types";
 
 export type ReconciliationLineState = "APPROVED" | "PROPOSED" | "CLASSIFIED" | "UNMATCHED";
+export type BankReconciliationWriteAction = "IMPORT" | "SUGGEST" | "REVIEW" | "CLOSE";
+
+export function canWriteBankReconciliation(
+  capabilities: BankReconciliationCapabilities,
+  action: BankReconciliationWriteAction,
+) {
+  if (action === "IMPORT") return capabilities.canImport;
+  if (action === "SUGGEST") return capabilities.canSuggest;
+  if (action === "REVIEW") return capabilities.canReview;
+  return capabilities.canClose;
+}
 
 export function activeMatchForLine(matches: BankReconciliationMatch[], lineId: string) {
   return matches.find((match) => match.bankStatementLineId === lineId && match.status === "APPROVED")
