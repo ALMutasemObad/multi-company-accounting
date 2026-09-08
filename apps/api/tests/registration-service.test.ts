@@ -5,6 +5,7 @@ import type { CompanyProvisioningPort } from '../src/platform/company-provisioni
 import { RegistrationService } from '../src/registration/registration-service.js';
 import type { RegistrationOwnerPorts } from '../src/registration/registration-owner-ports.js';
 import { SubscriptionStartPolicyError } from '../src/platform-subscriptions/new-company-start-policy.js';
+import { socialOnboardingCompleteRequestRequestComponentSchema, startSelfRegistrationRequestSchema } from '../src/generated/openapi-request-guards.js';
 
 const input = {
   email: ' owner@example.com ',
@@ -82,6 +83,34 @@ describe('RegistrationService anonymous boundary', () => {
     expect(upsert).not.toHaveBeenCalled();
     expect(outbox.append).not.toHaveBeenCalled();
     expect(events).toEqual([expect.objectContaining({ data: expect.objectContaining({ eventType: 'REGISTRATION_EXISTING_IDENTITY_ATTEMPT', severity: 'WARNING' }) })]);
+  });
+
+  it('canonicalizes a safe BCP47 locale without requiring a server allow-list entry', async () => {
+    const { service, upsert } = fixture();
+    await service.start({ ...input, locale: 'de-de' });
+    expect(upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({ locale: 'de-DE' }),
+      update: expect.objectContaining({ locale: 'de-DE' }),
+    }));
+  });
+
+  it('rejects malformed or oversized locale values before persistence', async () => {
+    const { service, upsert } = fixture();
+    await expect(service.start({ ...input, locale: 'de_DE' })).rejects.toMatchObject({ reason: 'INVALID_OPTION' });
+    await expect(service.start({ ...input, locale: `en-${'x'.repeat(36)}` })).rejects.toMatchObject({ reason: 'INVALID_OPTION' });
+    expect(upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('registration locale contract', () => {
+  it('accepts safe BCP47 input for email and social registration while rejecting malformed tags', () => {
+    const registration = { ...input, locale: 'zh-Hant-TW' };
+    const { email: _email, password: _password, ...socialRegistration } = registration;
+    const social = { ...socialRegistration, consent: true };
+    expect(startSelfRegistrationRequestSchema.safeParse(registration).success).toBe(true);
+    expect(socialOnboardingCompleteRequestRequestComponentSchema.safeParse(social).success).toBe(true);
+    expect(startSelfRegistrationRequestSchema.safeParse({ ...registration, locale: 'zh_Hant_TW' }).success).toBe(false);
+    expect(socialOnboardingCompleteRequestRequestComponentSchema.safeParse({ ...social, locale: 'x'.repeat(36) }).success).toBe(false);
   });
 });
 

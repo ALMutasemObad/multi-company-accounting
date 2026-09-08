@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, idempotencyKey } from "./api";
+import { Can, useAuthorization } from "./authorization-context";
+import { canUseControlAction, controlActionPermissionPolicies } from "./control-action-permission-policies";
 import { activeIntlLocale, translate as t } from "./i18n";
 import type { ApprovalRequest, ListResponse } from "./types";
 import { Button, EmptyState, PageHeader, Pagination, Spinner } from "./ui";
@@ -8,6 +10,7 @@ type Notice = (message: string, tone?: "success" | "error") => void;
 type ApprovalStatus = ApprovalRequest["status"] | "";
 
 export function ApprovalsPage({ notify }: { notify: Notice }) {
+  const { permissionSet } = useAuthorization();
   const [requests, setRequests] = useState<ApprovalRequest[]>([]);
   const [meta, setMeta] = useState({ page: 1, pageSize: 20, total: 0, totalPages: 0 });
   const [page, setPage] = useState(1);
@@ -35,6 +38,7 @@ export function ApprovalsPage({ notify }: { notify: Notice }) {
   useEffect(() => { void load(); }, [load]);
 
   async function decide(request: ApprovalRequest, decision: "approve" | "reject") {
+    if (!canUseControlAction(permissionSet, "approvalsDecide")) return;
     let reason: string | undefined;
     if (decision === "approve") {
       if (!window.confirm(t("approvals.approveConfirm"))) return;
@@ -86,10 +90,10 @@ export function ApprovalsPage({ notify }: { notify: Notice }) {
               <td>{new Date(request.createdAt).toLocaleString(activeIntlLocale())}</td>
               <td><span className={`status-chip ${request.status.toLowerCase()}`}>{t(`approvals.status.${request.status}`)}</span></td>
               <td>{request.decision ? <><strong>{request.decision.actor.displayName}</strong><small>{request.decision.reason ?? t("approvals.noReason")}</small></> : <span>{t("approvals.pendingDecision")}</span>}</td>
-              <td className="row-actions">{request.status === "PENDING" ? <>
+              <td className="row-actions">{request.status === "PENDING" ? <Can policy={controlActionPermissionPolicies.approvalsDecide}><>
                 <Button disabled={working === request.id} onClick={() => void decide(request, "approve")}>{t("approvals.approve")}</Button>
                 <Button variant="danger" disabled={working === request.id} onClick={() => void decide(request, "reject")}>{t("approvals.reject")}</Button>
-              </> : <span>—</span>}</td>
+              </></Can> : <span>—</span>}</td>
             </tr>)}</tbody>
           </table>
         </div>

@@ -6,7 +6,7 @@ import { CompanyProvisioningError, type CompanyProvisioningPort } from '../platf
 import type { SecurityEventAppendPort } from '../platform/security-event-append-port.js';
 import { TransactionExecutor } from '../platform/transaction-executor.js';
 import type { RegistrationOwnerPorts } from '../registration/registration-owner-ports.js';
-import { supportedLocales, type SupportedLocale } from '../registration/supported-locales.js';
+import { emailTemplateLocales, normalizeSupportedLocale, type SupportedLocale } from '../registration/supported-locales.js';
 import { PrismaSecurityEventAppendAdapter } from '../security/prisma-security-event-append-adapter.js';
 import { decideSocialAuthentication, type SocialProvider, type VerifiedProviderProfile } from './social-auth-policy.js';
 import { calculatePKCECodeChallenge, randomNonce, randomPKCECodeVerifier, randomState, type SocialOidcProvider } from './oidc-provider-adapter.js';
@@ -251,7 +251,7 @@ export class SocialAuthService {
     const owners = this.options.onboarding!.owners;
     return {
       currencies: await owners.tenant.listGlobalCurrencies(),
-      locales: supportedLocales,
+      locales: emailTemplateLocales,
       timezones: [...new Set(['UTC', ...Intl.supportedValuesOf('timeZone')])],
       chartTemplates: owners.accounting.listChartTemplates(),
     };
@@ -603,6 +603,7 @@ export class SocialAuthService {
   }
 
   private normalizeOnboardingInput(input: SocialOnboardingInput): SocialOnboardingInput {
+    const locale = normalizeSupportedLocale(input.locale);
     const normalized = {
       ...input,
       displayName: input.displayName.trim(),
@@ -611,6 +612,7 @@ export class SocialAuthService {
       timezone: input.timezone.trim(),
       baseCurrencyCode: input.baseCurrencyCode.trim().toUpperCase(),
       chartTemplateCode: input.chartTemplateCode.trim(),
+      locale: locale ?? input.locale,
     };
     let timezoneValid = true;
     try {
@@ -625,7 +627,7 @@ export class SocialAuthService {
       || !timezoneValid
       || !/^[A-Z]{3}$/u.test(normalized.baseCurrencyCode)
       || normalized.chartTemplateCode.length < 1 || normalized.chartTemplateCode.length > 80
-      || !supportedLocales.includes(normalized.locale)) {
+      || !locale) {
       throw new SocialAuthError('INVALID_REQUEST');
     }
     return normalized;

@@ -16,4 +16,9 @@ describe("registration email delivery copy", () => {
     expect(copy.acceptedDescription).toContain("password recovery");
     expect(copy.resendHelp).toContain("limit");
   });
+
+  it("uses base-language then Arabic fallback for newly discovered locales", () => {
+    expect(deliveryCopyFor("en-GB")).toEqual(registrationDeliveryCopy.en);
+    expect(deliveryCopyFor("de-DE")).toEqual(registrationDeliveryCopy.ar);
+  });
 });

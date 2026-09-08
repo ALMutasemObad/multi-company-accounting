@@ -1,12 +1,12 @@
-import { I18nProvider, loadLocale } from '../i18n';
-await loadLocale('ar');
+import { I18nProvider, loadLocale, type Locale } from '../i18n';
+await Promise.all((['ar', 'en', 'ur', 'hi'] as const).map(loadLocale));
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { OptionalModulesCatalog, type OptionalModulesInput } from './OptionalModulesCatalog';
 import { fixtureInput } from './fixture-data';
 
-const render = (read: OptionalModulesInput['read'], companyId = '42', userId = '7') => renderToStaticMarkup(<I18nProvider initialLocale="ar"><OptionalModulesCatalog companyId={companyId} userId={userId} read={read} /></I18nProvider>);
+const render = (read: OptionalModulesInput['read'], companyId = '42', userId = '7', locale: Locale = 'ar') => renderToStaticMarkup(<I18nProvider initialLocale={locale}><OptionalModulesCatalog companyId={companyId} userId={userId} read={read} /></I18nProvider>);
 describe('current-plan optional module catalogue', () => {
   it('shows entitlement, catalogue state, requirements and exact decimal strings without an activation control', () => {
     const html = render(fixtureInput());
@@ -18,7 +18,16 @@ describe('current-plan optional module catalogue', () => {
     expect(html).toContain('غير محدد؛ لا يعني أنه مجاني');
     expect(html).toContain('استحقاق غير مسجل حاليًا');
     expect(html).toContain('غير نشطة في نسخة الخطة');
-    expect(html).not.toMatch(/<button|<input|<a |<form|undefined|NaN/u);
+    expect(html.match(/<button type="button"/gu)).toHaveLength(4);
+    expect(html).not.toMatch(/<input|<a |<form|undefined|NaN/u);
+  });
+  it('shows overlapping inclusion and entitlement-source filters with honest counts', () => {
+    const html = render(fixtureInput());
+    expect(html).toMatch(/الكل<\/span><span[^>]*>6<\/span>/u);
+    expect(html).toMatch(/مشمولة<\/span><span[^>]*>1<\/span>/u);
+    expect(html).toMatch(/اختيارية<\/span><span[^>]*>4<\/span>/u);
+    expect(html).toMatch(/إضافات حالية<\/span><span[^>]*>1<\/span>/u);
+    expect(html).toContain('قد تظهر الوحدة في أكثر من تصنيف');
   });
   it.each(['loading', 'error', 'unavailable'] as const)('does not turn %s into an absent entitlement', state => {
     const html = render({ state });
@@ -70,7 +79,9 @@ describe('current-plan optional module catalogue', () => {
   });
   it.each(['DISABLED', 'REQUEST_ONLY', 'IMMEDIATE_FREE'] as const)('never activates via %s policy', policy => {
     const read = fixtureInput(); read.snapshot.current.plan.selfServicePolicy = policy;
-    expect(render(read)).not.toContain('<button');
+    const html = render(read);
+    expect(html.match(/<button type="button"/gu)).toHaveLength(4);
+    expect(html).not.toMatch(/<form|<input|type="submit"/u);
   });
   it('does not infer capability changes from subscription lifecycle status', () => {
     const read = fixtureInput(); const active = render(read);
@@ -88,5 +99,16 @@ describe('current-plan optional module catalogue', () => {
   it('explains empty data without claiming deletion', () => {
     const read = fixtureInput(); read.snapshot.current.plan.modules = []; read.snapshot.effectiveModules = [];
     expect(render(read)).toContain('لا يعني ذلك حذف بيانات الشركة');
+  });
+  it.each([
+    ['ar', 'rtl', 'تصفية وحدات الاشتراك'],
+    ['en', 'ltr', 'Filter subscription modules'],
+    ['ur', 'rtl', 'اشتراک کے ماڈیول چھانٹیں'],
+    ['hi', 'ltr', 'सदस्यता मॉड्यूल फ़िल्टर करें'],
+  ] as const)('renders localized filter semantics for %s', (locale, dir, label) => {
+    const html = render(fixtureInput(), '42', '7', locale);
+    expect(html).toContain(`dir="${dir}" lang="${locale}"`);
+    expect(html).toContain(`aria-label="${label}"`);
+    expect(html).not.toContain('optionalModules.');
   });
 });

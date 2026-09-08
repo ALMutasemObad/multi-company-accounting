@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { chromium, expect as browserExpect, type Browser } from "@playwright/test";
 import { createServer, type ViteDevServer } from "vite";
+import { fileURLToPath } from "node:url";
+import { localeManifestPlugin } from "../../vite.config";
 
 const enabled = process.env.RUN_SOCIAL_ACCOUNT_BROWSER_TESTS === "true";
 const locales = ["ar", "en", "ur", "hi"] as const;
@@ -19,11 +21,12 @@ describe.runIf(enabled)("social account security browser journey", () => {
   beforeAll(async () => {
     server = await createServer({
       configFile: false,
-      root: process.cwd(),
+      root: fileURLToPath(new URL("../..", import.meta.url)),
+      cacheDir: fileURLToPath(new URL("../../node_modules/.vite/account-security", import.meta.url)),
       server: { host: "127.0.0.1", port: 0 },
       optimizeDeps: { entries: [], include: ["react", "react-dom/client", "react/jsx-runtime"] },
       esbuild: { jsx: "automatic" },
-      plugins: [{
+      plugins: [localeManifestPlugin(), {
         name: "social-account-security-test-harness",
         configureServer(vite) {
           vite.middlewares.use("/__social-account-security-test", async (request, response, next) => {
@@ -32,9 +35,9 @@ describe.runIf(enabled)("social account security browser journey", () => {
             response.end(await vite.transformIndexHtml("/__social-account-security-test", `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="root"></div><script type="module">
               import React from 'react';
               import { createRoot } from 'react-dom/client';
-              import { I18nProvider, loadLocale } from '/apps/web/src/i18n/index.ts';
-              import { AccountSecurityPage } from '/apps/web/src/social-auth/AccountSecurityPage.tsx';
-              import '/apps/web/src/styles.css';
+              import { I18nProvider, loadLocale } from '/src/i18n/index.ts';
+              import { AccountSecurityPage } from '/src/social-auth/AccountSecurityPage.tsx';
+              import '/src/styles.css';
               const locale = new URLSearchParams(location.search).get('locale') || 'en';
               await Promise.all(['ar', 'en', 'ur', 'hi'].map(loadLocale));
               createRoot(document.getElementById('root')).render(React.createElement(I18nProvider, {initialLocale: locale}, React.createElement(AccountSecurityPage, {notify: (message, tone) => {document.body.dataset.notice = message; document.body.dataset.tone = tone || 'success'}})));
@@ -53,7 +56,7 @@ describe.runIf(enabled)("social account security browser journey", () => {
   afterAll(async () => {
     await browser?.close();
     await server?.close();
-  });
+  }, 30_000);
 
   for (const locale of locales) {
     it(`renders configured providers only in ${locale} with the correct direction`, async () => {

@@ -17,6 +17,7 @@ import { allows,
   requestIfAllowed,
   requestValue } from "./authorization";
 import { Can, useAuthorization } from "./authorization-context";
+import { companyCalendarDate } from "./company-calendar-date";
 import { endpointPermissionPolicies } from "./endpoint-permissions";
 import { exchangeRateForDocumentDate,
   missingDatedRateMessage } from "./currency-rates";
@@ -72,7 +73,7 @@ const emptyReferences: References = {
 };
 
 export function ReceiptsPage({ notify }: { notify: Notice }) {
-  const { permissionSet } = useAuthorization();
+  const { permissionSet, selectedCompany } = useAuthorization();
   const permissions = actionPermissionPolicies.receipts;
   const [items, setItems] = useState<Receipt[]>([]);
   const [meta, setMeta] = useState({ page: 1, pageSize: 10, total: 0, totalPages: 0 });
@@ -180,7 +181,7 @@ export function ReceiptsPage({ notify }: { notify: Notice }) {
     if (operation !== "post" && (!reason || reason.trim().length < 3)) return;
     const reversalDate =
       operation === "reverse"
-        ? window.prompt(t("pages.manual-journals.009"), new Date().toISOString().slice(0, 10))
+        ? window.prompt(t("pages.manual-journals.009"), companyCalendarDate(selectedCompany?.timezone))
         : "";
     if (operation === "reverse" && !reversalDate) return;
     try {
@@ -248,7 +249,7 @@ export function ReceiptsPage({ notify }: { notify: Notice }) {
       ) : items.length === 0 ? (
         <EmptyState
           title={t("pages.receipts.030")}
-          description={t("pages.receipts.031")}
+          description={allows(permissionSet, permissions.create) ? t("pages.receipts.031") : t("referencePicker.empty")}
           action={<Can policy={permissions.create}><Button icon="plus" onClick={() => setForm("create")}>{t("pages.payments.032")}</Button></Can>}
         />
       ) : (

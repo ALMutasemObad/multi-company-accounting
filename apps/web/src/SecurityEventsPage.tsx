@@ -8,6 +8,8 @@ import { FormEvent,
   useEffect,
   useState } from "react";
 import { api } from "./api";
+import { Can, useAuthorization } from "./authorization-context";
+import { canUseControlAction, controlActionPermissionPolicies } from "./control-action-permission-policies";
 import type { ListResponse,
   SecurityEvent,
   SecurityEventOptions,
@@ -32,6 +34,7 @@ function eventLabel(eventType: string) {
   return hasTranslation(key) ? t(key) : eventType;
 }
 export function SecurityEventsPage({ notify }: { notify: Notice }) {
+  const { permissionSet } = useAuthorization();
   const [rows, setRows] = useState<SecurityEvent[]>([]);
   const [summary, setSummary] = useState<SecurityEventSummary | null>(null);
   const [options, setOptions] = useState<SecurityEventOptions>({ eventTypes: [], users: [] });
@@ -65,6 +68,7 @@ export function SecurityEventsPage({ notify }: { notify: Notice }) {
     setPage(1); setApplied(draft);
   }
   async function acknowledge(item: SecurityEvent) {
+    if (!canUseControlAction(permissionSet, "securityAcknowledge")) return;
     try {
       const updated = await api<SecurityEvent>(`/security-events/${item.id}/acknowledge`, { method: "POST" });
       setSelected(updated); notify(t("pages.security-events.003")); await load();
@@ -96,7 +100,7 @@ export function SecurityEventsPage({ notify }: { notify: Notice }) {
     {selected && <Modal title={eventLabel(selected.eventType)} description={t("pages.security-events.043", { value1: selected.id })} onClose={() => setSelected(null)} wide>
       <dl className="detail-grid audit-detail-grid"><div><dt>{t("pages.security-events.023")}</dt><dd><span className={`severity-chip ${selected.severity.toLowerCase()}`}>{severityLabel(selected.severity)}</span></dd></div><div><dt>{t("pages.audit-logs.026")}</dt><dd>{new Date(selected.createdAt).toLocaleString(activeIntlLocale())}</dd></div><div><dt>{t("pages.admin.021")}</dt><dd>{selected.user?.name ?? t("pages.security-events.044")}<small dir="ltr">{selected.email}</small></dd></div><div><dt>{t("pages.security-events.037")}</dt><dd dir="ltr">{selected.ipAddress ?? "—"}</dd></div><div className="full"><dt>{t("pages.security-events.045")}</dt><dd dir="ltr">{selected.userAgent ?? "—"}</dd></div>{selected.acknowledgedAt && <div className="full"><dt>{t("pages.security-events.046")}</dt><dd>{selected.acknowledgedBy?.name} — {new Date(selected.acknowledgedAt).toLocaleString(activeIntlLocale())}</dd></div>}</dl>
       <section className="audit-details-json"><h3>{t("pages.security-events.047")}</h3><pre dir="ltr">{JSON.stringify(selected.details ?? {}, null, 2)}</pre></section>
-      <div className="form-actions">{!selected.acknowledgedAt && ["HIGH", "CRITICAL"].includes(selected.severity) && <Button onClick={() => void acknowledge(selected)}>{t("pages.security-events.048")}</Button>}<Button variant="ghost" onClick={() => setSelected(null)}>{t("pages.audit-logs.037")}</Button></div>
+      <div className="form-actions">{!selected.acknowledgedAt && ["HIGH", "CRITICAL"].includes(selected.severity) && <Can policy={controlActionPermissionPolicies.securityAcknowledge}><Button onClick={() => void acknowledge(selected)}>{t("pages.security-events.048")}</Button></Can>}<Button variant="ghost" onClick={() => setSelected(null)}>{t("pages.audit-logs.037")}</Button></div>
     </Modal>}
   </section>;
 }

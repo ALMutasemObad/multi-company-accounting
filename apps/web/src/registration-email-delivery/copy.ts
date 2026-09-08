@@ -1,3 +1,4 @@
+import { localizedCopyFor } from "../i18n";
 import type { Locale } from "../i18n";
 import copy from "./copy.json";
 
@@ -8,8 +9,8 @@ type RegistrationDeliveryCopy = {
   resendHelp: string;
 };
 
-export const registrationDeliveryCopy = copy satisfies Record<Locale, RegistrationDeliveryCopy>;
+export const registrationDeliveryCopy: Readonly<Record<string, RegistrationDeliveryCopy>> = copy;
 
-export function deliveryCopyFor(locale: Locale) {
-  return registrationDeliveryCopy[locale];
+export function deliveryCopyFor(locale: Locale): RegistrationDeliveryCopy {
+  return localizedCopyFor(registrationDeliveryCopy, locale, "ar");
 }

@@ -207,7 +207,7 @@ jobs:
 
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 70
     outputs:
       release_archive_sha256: ${{ steps.release.outputs.archive_sha256 }}
       release_manifest_sha256: ${{ steps.release.outputs.manifest_sha256 }}

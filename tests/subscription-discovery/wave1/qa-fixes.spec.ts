@@ -214,7 +214,7 @@ test('D2 fix: failed English dictionary remains observable and Arabic fallback s
       setItem() { throw new Error('QA write denied'); },
     } });
   });
-  await page.route('**/src/i18n/locales/en.ts*', route => route.abort('failed'));
+  await page.route('**/src/i18n/locales/en.locale.ts*', route => route.abort('failed'));
   await page.goto('/plans'); await expect(page.locator('.plans-card')).toHaveCount(3);
   await expect(page.locator('html')).toHaveAttribute('lang', 'ar');
   expect(errors).toContain('initial_locale_dictionary_load_failed');

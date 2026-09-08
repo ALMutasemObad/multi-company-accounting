@@ -1,4 +1,5 @@
 import type { Locale } from './registry';
+import { localizedCopyFor } from '../locale-definition';
 
 export const arSubscriptionUpgrade = {
   title: 'الاشتراك والخطط',
@@ -200,7 +201,7 @@ export const urSubscriptionUpgrade: Record<keyof typeof arSubscriptionUpgrade, s
   noCompany: 'اشتراک کے اختیارات دیکھنے کے لیے کاروبار منتخب کریں۔',
 };
 
-const subscriptionUpgradeCopies: Record<Locale, Record<keyof typeof arSubscriptionUpgrade, string>> = {
+const subscriptionUpgradeCopies = {
   ar: arSubscriptionUpgrade,
   en: enSubscriptionUpgrade,
   hi: hiSubscriptionUpgrade,
@@ -208,5 +209,5 @@ const subscriptionUpgradeCopies: Record<Locale, Record<keyof typeof arSubscripti
 };
 
 export function subscriptionUpgradeCopy(locale: Locale): Record<keyof typeof arSubscriptionUpgrade, string> {
-  return subscriptionUpgradeCopies[locale];
+  return localizedCopyFor(subscriptionUpgradeCopies, locale, 'ar');
 }

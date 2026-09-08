@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, idempotencyKey } from "./api";
 import {
   activeMatchForLine,
+  type BankReconciliationWriteAction,
+  canWriteBankReconciliation,
   isZeroDecimal,
   reconciliationCsv,
   reconciliationLineState,
@@ -126,7 +128,7 @@ export function BankReconciliationPage({ capabilities, notify }: { capabilities:
   const waitingImports = imports.filter((item) => !knownSessionImportIds.has(item.id));
 
   async function startSession(statementImport: BankStatementImport) {
-    if (!capabilities.canSuggest) {
+    if (!canWriteBankReconciliation(capabilities, "SUGGEST")) {
       notify(t("reconciliation.statementCommitted"));
       setTab("history");
       await loadWorkspace();
@@ -171,7 +173,7 @@ export function BankReconciliationPage({ capabilities, notify }: { capabilities:
       <button type="button" role="tab" aria-selected={tab === "history"} className={tab === "history" ? "active" : ""} onClick={() => setTab("history")}>{t("reconciliation.historyTab")}</button>
     </div>
     {error && <div className="error-panel" role="alert"><p>{error}</p><Button variant="secondary" onClick={() => void loadWorkspace()}>{t("common.retry")}</Button></div>}
-    {loading ? <Spinner label={t("reconciliation.loading")} /> : tab === "new" ? <StatementImportBuilder accounts={accounts} onCommitted={async (item) => { await loadWorkspace(); await startSession(item); }} /> : <div className="reconciliation-history">
+    {loading ? <Spinner label={t("reconciliation.loading")} /> : tab === "new" && capabilities.canImport ? <StatementImportBuilder accounts={accounts} canImport={capabilities.canImport} onCommitted={async (item) => { await loadWorkspace(); await startSession(item); }} /> : <div className="reconciliation-history">
       {waitingImports.length > 0 && <article className="panel pending-imports">
         <header><div><h2>{t("reconciliation.pendingImports")}</h2><p>{t("reconciliation.pendingImportsDescription")}</p></div></header>
         <div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}>
@@ -187,7 +189,7 @@ export function BankReconciliationPage({ capabilities, notify }: { capabilities:
   </div>;
 }
 
-function StatementImportBuilder({ accounts, onCommitted }: { accounts: CashBankAccount[]; onCommitted: (item: BankStatementImport) => Promise<void> }) {
+function StatementImportBuilder({ accounts, canImport, onCommitted }: { accounts: CashBankAccount[]; canImport: boolean; onCommitted: (item: BankStatementImport) => Promise<void> }) {
   const { formatNumber, t } = useI18n();
   const [cashBankAccountId, setCashBankAccountId] = useState(accounts[0]?.id ?? "");
   const [format, setFormat] = useState<BankStatementFormat>("CSV");
@@ -225,7 +227,7 @@ function StatementImportBuilder({ accounts, onCommitted }: { accounts: CashBankA
   }
 
   async function runPreview() {
-    if (!file || !contentBase64 || !cashBankAccountId) return;
+    if (!canImport || !file || !contentBase64 || !cashBankAccountId) return;
     setBusy(true); setError(""); setPreview(null);
     try { setPreview(await api<NormalizedBankStatementPreview>("/bank-statement-imports/preview", { method: "POST", body: JSON.stringify(request()) })); }
     catch (cause) { setError(cause instanceof Error ? cause.message : t("reconciliation.previewError")); }
@@ -233,7 +235,7 @@ function StatementImportBuilder({ accounts, onCommitted }: { accounts: CashBankA
   }
 
   async function commit() {
-    if (!preview) return;
+    if (!canImport || !preview) return;
     setBusy(true); setError("");
     try {
       const imported = await api<BankStatementImport>("/bank-statement-imports", {
@@ -327,7 +329,8 @@ function ReconciliationSessionView({ sessionId, capabilities, notify, onBack }: 
 
   useEffect(() => { setLinePage(1); }, [lineFilter, amountFilter, dateFrom, dateTo]);
 
-  async function write(path: string, operation: string, body: Record<string, unknown>, success: string) {
+  async function write(action: BankReconciliationWriteAction, path: string, operation: string, body: Record<string, unknown>, success: string) {
+    if (!canWriteBankReconciliation(capabilities, action)) return;
     setBusy(true); setError("");
     try {
       await api(path, { method: "POST", idempotencyKey: idempotencyKey(operation, sessionId), body: JSON.stringify(body) });
@@ -337,13 +340,13 @@ function ReconciliationSessionView({ sessionId, capabilities, notify, onBack }: 
   }
 
   async function generateSuggestions() {
-    if (!session) return;
-    await write(`/bank-reconciliation/sessions/${session.id}/suggestions`, "bank-reconciliation-suggestions", { sessionVersion: session.version, dateWindowDays }, t("reconciliation.suggestionsGenerated"));
+    if (!session || !canWriteBankReconciliation(capabilities, "SUGGEST")) return;
+    await write("SUGGEST", `/bank-reconciliation/sessions/${session.id}/suggestions`, "bank-reconciliation-suggestions", { sessionVersion: session.version, dateWindowDays }, t("reconciliation.suggestionsGenerated"));
   }
 
   async function closeSession() {
-    if (!session) return;
-    await write(`/bank-reconciliation/sessions/${session.id}/close`, "bank-reconciliation-close", { sessionVersion: session.version, ...(closingExplanation.trim() ? { explanation: closingExplanation.trim() } : {}) }, t("reconciliation.sessionClosed"));
+    if (!session || !canWriteBankReconciliation(capabilities, "CLOSE")) return;
+    await write("CLOSE", `/bank-reconciliation/sessions/${session.id}/close`, "bank-reconciliation-close", { sessionVersion: session.version, ...(closingExplanation.trim() ? { explanation: closingExplanation.trim() } : {}) }, t("reconciliation.sessionClosed"));
   }
 
   function statusLabel(line: BankStatementLine, match: BankReconciliationMatch | null) {
@@ -399,8 +402,7 @@ function ReconciliationSessionView({ sessionId, capabilities, notify, onBack }: 
       <div className={differenceIsZero ? "balanced" : "difference"}><span>{t("reconciliation.difference")}</span><strong dir="ltr">{session.difference} {session.currency}</strong><small>{differenceIsZero ? t("reconciliation.zeroDifference") : t("reconciliation.differenceNeedsReview")}</small></div>
     </div>
     <div className="reconciliation-actions-bar">
-      <label><span>{t("reconciliation.dateWindow")}</span><input type="number" min={0} max={30} value={dateWindowDays} onChange={(event) => setDateWindowDays(Number(event.target.value))} /></label>
-      <Button variant="secondary" onClick={() => void generateSuggestions()} disabled={busy || !capabilities.canSuggest || session.status === "CLOSED"}>{t("reconciliation.generateSuggestions")}</Button>
+      {capabilities.canSuggest && <><label><span>{t("reconciliation.dateWindow")}</span><input type="number" min={0} max={30} value={dateWindowDays} onChange={(event) => setDateWindowDays(Number(event.target.value))} /></label><Button variant="secondary" onClick={() => void generateSuggestions()} disabled={busy || session.status === "CLOSED"}>{t("reconciliation.generateSuggestions")}</Button></>}
       <div className="export-actions"><Button variant="ghost" icon="arrowDown" onClick={() => exportReport(false)}>{t("reconciliation.exportReport")}</Button><Button variant="ghost" icon="arrowDown" onClick={() => exportReport(true)}>{t("reconciliation.exportExceptions")}</Button></div>
     </div>
     {!capabilities.canReview && session.status === "OPEN" && <div className="inline-notice neutral">{t("reconciliation.shadowNotice")}</div>}
@@ -416,8 +418,8 @@ function ReconciliationSessionView({ sessionId, capabilities, notify, onBack }: 
       return <tr key={line.id}><td><div className="movement-cell"><strong dir="ltr">{line.amount} {line.currency}</strong><span dir="ltr">{line.bookingDate}</span><small>{line.reference || line.externalId || t("reconciliation.noReference")}</small><p>{line.description || "—"}</p></div></td><td>{match ? <div className="movement-cell"><strong>{match.bookMovement.documentNumber}</strong><span>{documentTypeLabel(match.bookMovement.documentType)} · <span dir="ltr">{match.bookMovement.occurredOn}</span></span><small dir="ltr">{match.bookMovement.amount} {match.bookMovement.currency}</small><p>{match.bookMovement.reference || t("reconciliation.noReference")}</p></div> : <span className="muted-value">{t("reconciliation.noBookMovement")}</span>}</td><td><span className={`status-chip reconciliation-${state.toLowerCase()}`}>{statusLabel(line, match)}</span>{match?.status === "PROPOSED" && <small className="match-reason">{ruleLabel(match)} · {formatNumber(match.score)}%</small>}{line.classification && <small className="match-reason">{classificationLabel(line.classification)}</small>}</td><td>{session.status === "OPEN" && (capabilities.canReview || match?.status === "PROPOSED") && <Button variant="ghost" onClick={() => setReviewLine(line)}>{capabilities.canReview ? t("reconciliation.reviewLine") : t("reconciliation.viewSuggestion")}</Button>}</td></tr>;
     }) : <tr><td colSpan={4}>{t("reconciliation.noFilteredLines")}</td></tr>}</tbody></table></div>
     {filteredLines.length > pageSize && <Pagination page={linePage} totalPages={totalPages} total={filteredLines.length} onChange={setLinePage} />}
-    <section className="reconciliation-close-panel"><div><h3>{t("reconciliation.closeTitle")}</h3><p>{t("reconciliation.closeDescription", { value: formatNumber(unresolved) })}</p></div>{!differenceIsZero && <label><span>{t("reconciliation.closingExplanation")}</span><textarea value={closingExplanation} minLength={3} maxLength={500} onChange={(event) => setClosingExplanation(event.target.value)} disabled={session.status === "CLOSED"} /></label>}<Button icon="check" onClick={() => void closeSession()} disabled={busy || !canClose}>{session.status === "CLOSED" ? t("reconciliation.closed") : t("reconciliation.closeSession")}</Button>{!capabilities.canClose && session.status === "OPEN" && <small>{t("reconciliation.closeNotEnabled")}</small>}</section>
-    {reviewLine && <LineReviewModal session={session} line={reviewLine} match={activeMatchForLine(session.matches, reviewLine.id)} movements={movements} canReview={capabilities.canReview} busy={busy} onClose={() => setReviewLine(null)} onWrite={write} />}
+    <section className="reconciliation-close-panel"><div><h3>{t("reconciliation.closeTitle")}</h3><p>{t("reconciliation.closeDescription", { value: formatNumber(unresolved) })}</p></div>{capabilities.canClose && !differenceIsZero && <label><span>{t("reconciliation.closingExplanation")}</span><textarea value={closingExplanation} minLength={3} maxLength={500} onChange={(event) => setClosingExplanation(event.target.value)} disabled={session.status === "CLOSED"} /></label>}{capabilities.canClose ? <Button icon="check" onClick={() => void closeSession()} disabled={busy || !canClose}>{session.status === "CLOSED" ? t("reconciliation.closed") : t("reconciliation.closeSession")}</Button> : session.status === "OPEN" ? <small>{t("reconciliation.closeNotEnabled")}</small> : null}</section>
+    {reviewLine && <LineReviewModal session={session} line={reviewLine} match={activeMatchForLine(session.matches, reviewLine.id)} movements={movements} canReview={capabilities.canReview} busy={busy} onClose={() => setReviewLine(null)} onWrite={(path, operation, body, success) => write("REVIEW", path, operation, body, success)} />}
   </div>;
 }
 

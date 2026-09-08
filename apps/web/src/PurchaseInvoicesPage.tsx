@@ -17,13 +17,22 @@ import { allows,
   requestIfAllowed,
   requestValue } from "./authorization";
 import { Can, useAuthorization } from "./authorization-context";
+import { companyCalendarDate } from "./company-calendar-date";
 import {
   applyResolvedBarcodeToLines,
   canUseInventoryBarcodeScanner,
 } from "./barcode";
 import { endpointPermissionPolicies } from "./endpoint-permissions";
+import { availableDocumentTabs, documentPanelId, documentTabId, nextDocumentTab, resolveDocumentTab, type DocumentTab } from "./document-tabs";
 import { exchangeRateForDocumentDate,
   missingDatedRateMessage } from "./currency-rates";
+import {
+  clampDocumentDate,
+  dueDateAfterDocumentDateChange,
+  initialInvoiceDateFields,
+  invoiceDateToday,
+  pendingCreationDateDefaults,
+} from "./invoice-date-defaults";
 import { exchangeRateForCurrency,
   formatMoney,
   statusLabel,
@@ -57,13 +66,13 @@ import { Button,
 } from "./ui";
 
 type Notice = (message: string, tone?: "success" | "error") => void;
-type Section = "invoices" | "aging" | "taxes";
+type Section = DocumentTab;
 type InvoiceType = "PURCHASE_INVOICE" | "PURCHASE_DEBIT_NOTE";
 type References = { periods: FiscalPeriod[]; currencies: Currency[] };
 const emptyReferences: References = { periods: [], currencies: [] };
 
 export function PurchaseInvoicesPage({ notify }: { notify: Notice }) {
-  const { permissionSet } = useAuthorization();
+  const { permissionSet, selectedCompany } = useAuthorization();
   const permissions = actionPermissionPolicies.purchaseInvoices;
   const [section, setSection] = useState<Section>("invoices");
   const [items, setItems] = useState<PurchaseInvoice[]>([]);
@@ -78,6 +87,8 @@ export function PurchaseInvoicesPage({ notify }: { notify: Notice }) {
   const [selected, setSelected] = useState<PurchaseInvoice | null>(null);
   const [form, setForm] = useState<{ type: InvoiceType; invoice: PurchaseInvoice | null } | null>(null);
   const [references, setReferences] = useState<References>(emptyReferences);
+  const availableSections = availableDocumentTabs(allows(permissionSet, endpointPermissionPolicies.payablesAging));
+  const activeSection = resolveDocumentTab(section, availableSections);
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
@@ -109,10 +120,21 @@ export function PurchaseInvoicesPage({ notify }: { notify: Notice }) {
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { void loadReferences(); }, [loadReferences]);
   useEffect(() => {
-    if (section === "aging" && !allows(permissionSet, endpointPermissionPolicies.payablesAging)) {
-      setSection("invoices");
-    }
-  }, [permissionSet, section]);
+    if (section !== activeSection) setSection(activeSection);
+  }, [activeSection, section]);
+
+  function selectSection(next: Section) {
+    if (availableSections.includes(next)) setSection(next);
+  }
+
+  function moveSection(event: React.KeyboardEvent<HTMLButtonElement>, current: Section) {
+    const direction = getComputedStyle(event.currentTarget).direction === "rtl" ? "rtl" : "ltr";
+    const next = nextDocumentTab(current, availableSections, event.key, direction);
+    if (!next) return;
+    event.preventDefault();
+    selectSection(next);
+    requestAnimationFrame(() => document.getElementById(documentTabId("purchases", next))?.focus());
+  }
 
   async function openDetails(id: string) {
     try { setSelected(await api<PurchaseInvoice>(`/purchase-invoices/${id}`)); }
@@ -125,7 +147,7 @@ export function PurchaseInvoicesPage({ notify }: { notify: Notice }) {
     if (!window.confirm(t("pages.purchase-invoices.007", { value1: action, value2: invoice.document.documentNumber }))) return;
     const reason = operation === "post" ? "" : window.prompt(t("pages.purchase-invoices.008", { value1: action }));
     if (operation !== "post" && (!reason || reason.trim().length < 3)) return;
-    const reversalDate = operation === "reverse" ? window.prompt(t("pages.purchase-invoices.009"), new Date().toISOString().slice(0, 10)) : "";
+    const reversalDate = operation === "reverse" ? window.prompt(t("pages.purchase-invoices.009"), companyCalendarDate(selectedCompany?.timezone)) : "";
     if (operation === "reverse" && !reversalDate) return;
     try {
       await api(`/purchase-invoices/${invoice.id}/${operation}`, { method: "POST", idempotencyKey: operation === "cancel" ? undefined : idempotencyKey(operation, invoice.id), body: JSON.stringify({ version: invoice.document.version, ...(reason ? { reason: reason.trim() } : {}), ...(reversalDate ? { reversalDate } : {}) }) });
@@ -134,18 +156,18 @@ export function PurchaseInvoicesPage({ notify }: { notify: Notice }) {
   }
 
   return <section className="workspace-page sales-workspace">
-    <PageHeader kicker={t("pages.purchase-invoices.012")} title={t("pages.purchase-invoices.013")} description={t("pages.purchase-invoices.014")} actions={section === "invoices" && <Can policy={permissions.create}><div className="page-actions"><Button variant="secondary" icon="reverse" onClick={() => setForm({ type: "PURCHASE_DEBIT_NOTE", invoice: null })}>{t("pages.purchase-invoices.015")}</Button><Button icon="plus" onClick={() => setForm({ type: "PURCHASE_INVOICE", invoice: null })}>{t("pages.purchase-invoices.016")}</Button></div></Can>} />
-    <div className="section-tabs sales-tabs" role="tablist">
-      <button className={section === "invoices" ? "active" : ""} onClick={() => setSection("invoices")}>{t("pages.purchase-invoices.017")}</button>
-      <Can policy={endpointPermissionPolicies.payablesAging}><button className={section === "aging" ? "active" : ""} onClick={() => setSection("aging")}>{t("pages.purchase-invoices.018")}</button></Can>
-      <button className={section === "taxes" ? "active" : ""} onClick={() => setSection("taxes")}>{t("pages.purchase-invoices.019")}</button>
+    <PageHeader kicker={t("pages.purchase-invoices.012")} title={t("pages.purchase-invoices.013")} description={t("pages.purchase-invoices.014")} actions={activeSection === "invoices" && <Can policy={permissions.create}><div className="page-actions"><Button variant="secondary" icon="reverse" onClick={() => setForm({ type: "PURCHASE_DEBIT_NOTE", invoice: null })}>{t("pages.purchase-invoices.015")}</Button><Button icon="plus" onClick={() => setForm({ type: "PURCHASE_INVOICE", invoice: null })}>{t("pages.purchase-invoices.016")}</Button></div></Can>} />
+    <div className="section-tabs sales-tabs" role="tablist" aria-label={t("pages.purchase-invoices.013")}>
+      {availableSections.map((item) => <button key={item} type="button" id={documentTabId("purchases", item)} role="tab" aria-selected={activeSection === item} aria-controls={documentPanelId("purchases")} tabIndex={activeSection === item ? 0 : -1} className={activeSection === item ? "active" : ""} onClick={() => selectSection(item)} onKeyDown={(event) => moveSection(event, item)}>{t(item === "invoices" ? "pages.purchase-invoices.017" : item === "aging" ? "pages.purchase-invoices.018" : "pages.purchase-invoices.019")}</button>)}
     </div>
-    {section === "invoices" && <>
+    <div id={documentPanelId("purchases")} role="tabpanel" aria-labelledby={documentTabId("purchases", activeSection)}>
+    {activeSection === "invoices" && <>
       <div className="toolbar sales-filters"><form className="search-box" onSubmit={(event) => { event.preventDefault(); setPage(1); setSubmittedSearch(search.trim()); }}><input aria-label={t("pages.purchase-invoices.020")} value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("pages.purchase-invoices.021")} /><button type="submit">{t("pages.accounts.026")}</button></form><select aria-label={t("pages.purchase-invoices.023")} value={documentType} onChange={(event) => { setPage(1); setDocumentType(event.target.value); }}><option value="">{t("pages.purchase-invoices.024")}</option><option value="PURCHASE_INVOICE">{t("pages.purchase-invoices.025")}</option><option value="PURCHASE_DEBIT_NOTE">{t("pages.purchase-invoices.015")}</option></select><select aria-label={t("pages.purchase-invoices.026")} value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }}><option value="">{t("pages.accounts.027")}</option><option value="DRAFT">{t("pages.dashboard.044")}</option><option value="POSTED">{t("pages.dashboard.045")}</option><option value="CANCELLED">{t("pages.dashboard.046")}</option><option value="REVERSED">{t("pages.dashboard.047")}</option></select></div>
       {error ? <div className="error-panel" role="alert"><p>{error}</p><Button variant="secondary" onClick={() => void load()}>{t("pages.accounts.030")}</Button></div> : loading ? <Spinner label={t("pages.purchase-invoices.033")} /> : !items.length ? <EmptyState title={t("pages.purchase-invoices.034")} description={t("pages.purchase-invoices.035")} action={<Can policy={permissions.create}><Button icon="plus" onClick={() => setForm({ type: "PURCHASE_INVOICE", invoice: null })}>{t("pages.purchase-invoices.036")}</Button></Can>} /> : <><div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table sales-invoices-table"><thead><tr><th>{t("pages.purchase-invoices.037")}</th><th>{t("pages.accounts.040")}</th><th>{t("pages.purchase-invoices.039")}</th><th>{t("pages.purchase-invoices.040")}</th><th>{t("pages.purchase-invoices.041")}</th><th>{t("pages.purchase-invoices.042")}</th><th>{t("pages.accounts.043")}</th><th></th></tr></thead><tbody>{items.map((invoice) => <tr key={invoice.id}><td><button className="text-link strong" dir="ltr" onClick={() => void openDetails(invoice.id)}>{invoice.document.documentNumber}</button></td><td>{invoice.document.documentType === "PURCHASE_INVOICE" ? t("pages.purchase-invoices.044") : t("pages.purchase-invoices.015")}</td><td>{invoice.supplierNameSnapshot}</td><td>{invoice.document.documentDate}<small>{t("pages.purchase-invoices.045")}{invoice.dueDate}</small></td><td className="money-cell">{formatMoney(invoice.total)}</td><td className="money-cell">{invoice.document.documentType === "PURCHASE_INVOICE" ? formatMoney(invoice.outstandingAmount) : "—"}</td><td><span className={`status-chip ${invoice.document.status.toLowerCase()}`}>{statusLabel(invoice.document.status)}</span>{invoice.document.status === "POSTED" && invoice.document.documentType === "PURCHASE_INVOICE" && <small>{settlementLabel(invoice.settlementStatus)}</small>}</td><td><Button variant="ghost" onClick={() => void openDetails(invoice.id)}>{t("pages.payments.040")}</Button></td></tr>)}</tbody></table></div><Pagination {...meta} page={page} onChange={setPage} /></>}
     </>}
-    {section === "aging" && allows(permissionSet, endpointPermissionPolicies.payablesAging) && <AgingReport />}
-    {section === "taxes" && <TaxRatesPanel notify={notify} />}
+    {activeSection === "aging" && <AgingReport />}
+    {activeSection === "taxes" && <TaxRatesPanel notify={notify} />}
+    </div>
     {form && allows(permissionSet, form.invoice ? permissions.update : permissions.create) && <InvoiceForm type={form.type} invoice={form.invoice} references={references} onClose={() => setForm(null)} onSaved={async (invoice) => { setForm(null); setSelected(invoice); notify(form.invoice ? t("pages.purchase-invoices.047") : form.type === "PURCHASE_INVOICE" ? t("pages.purchase-invoices.048") : t("pages.purchase-invoices.049")); await Promise.all([load(), loadReferences()]); }} />}
     {selected && !form && <InvoiceDetails invoice={selected} onClose={() => setSelected(null)} onEdit={() => { if (allows(permissionSet, permissions.update)) setForm({ type: selected.document.documentType as InvoiceType, invoice: selected }); }} onCommand={(operation) => void command(operation, selected)} onPrint={() => { if (allows(permissionSet, permissions.print)) void downloadPdf(`/purchase-invoices/${selected.id}/pdf`).catch((cause) => notify(cause instanceof Error ? cause.message : t("pages.purchase-invoices.050"), "error")); }} />}
   </section>;
@@ -155,7 +177,7 @@ type DraftLine = { inventoryItemId: string; inventoryItemLabel: string; descript
 const blankLine = (): DraftLine => ({ inventoryItemId: "", inventoryItemLabel: "", description: "", quantity: "1", unitPrice: "", discountAmount: "0.0000", debitAccountId: "", debitAccountLabel: "", costCenterId: "", costCenterLabel: "", taxRateId: "", taxRateLabel: "", taxRateRate: "0" });
 
 function InvoiceForm({ type, invoice, references, onClose, onSaved }: { type: InvoiceType; invoice: PurchaseInvoice | null; references: References; onClose: () => void; onSaved: (value: PurchaseInvoice) => void }) {
-  const { permissionSet } = useAuthorization();
+  const { permissionSet, selectedCompany } = useAuthorization();
   const operationPolicy = invoice
     ? actionPermissionPolicies.purchaseInvoices.update
     : actionPermissionPolicies.purchaseInvoices.create;
@@ -166,12 +188,26 @@ function InvoiceForm({ type, invoice, references, onClose, onSaved }: { type: In
   const canReadWarehouses = allows(permissionSet, endpointPermissionPolicies.warehouses);
   const [supplierId, setSupplierId] = useState(invoice?.supplierId ?? "");
   const [warehouseId, setWarehouseId] = useState(invoice?.warehouseId ?? "");
+  const today = useMemo(() => invoiceDateToday(selectedCompany?.timezone), [selectedCompany?.timezone]);
+  const initialDateFields = useMemo(
+    () => initialInvoiceDateFields(references.periods, today, invoice ? {
+      fiscalPeriodId: invoice.document.fiscalPeriodId,
+      documentDate: invoice.document.documentDate,
+      dueDate: invoice.dueDate,
+    } : undefined),
+    [invoice, references.periods, today],
+  );
   const [currencyId, setCurrencyId] = useState(invoice?.currencyId ?? references.currencies[0]?.id ?? "");
   const [exchangeRate, setExchangeRate] = useState(invoice?.exchangeRate ?? exchangeRateForCurrency(references.currencies[0]));
-  const [documentDate, setDocumentDate] = useState(invoice?.document.documentDate ?? new Date().toISOString().slice(0, 10));
+  const [fiscalPeriodId, setFiscalPeriodId] = useState(initialDateFields.fiscalPeriodId);
+  const [documentDate, setDocumentDate] = useState(initialDateFields.documentDate);
+  const [dueDate, setDueDate] = useState(initialDateFields.dueDate);
   const [sourceInvoiceId, setSourceInvoiceId] = useState(invoice?.sourceInvoiceId ?? "");
   const [lines, setLines] = useState<DraftLine[]>(invoice?.lines.map(lineDraft) ?? [blankLine()]);
   const linesRef = useRef(lines);
+  const periodDefaultsAppliedRef = useRef(Boolean(invoice));
+  const dateFieldsTouchedRef = useRef(false);
+  const dueDateWasEditedRef = useRef(Boolean(invoice));
   const barcodeScannerRef = useRef<InventoryBarcodeScannerHandle>(null);
   const [barcodePendingCount, setBarcodePendingCount] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -179,8 +215,31 @@ function InvoiceForm({ type, invoice, references, onClose, onSaved }: { type: In
   const totals = useMemo(() => lines.reduce((value, line) => { const gross = Number(line.quantity || 0) * Number(line.unitPrice || 0); const discount = Number(line.discountAmount || 0); const net = Math.max(0, gross - discount); const tax = net * Number(line.taxRateRate || 0) / 100; return { subtotal: value.subtotal + gross, discount: value.discount + discount, tax: value.tax + tax, total: value.total + net + tax }; }, { subtotal: 0, discount: 0, tax: 0, total: 0 }), [lines]);
 
   useEffect(() => { if (!currencyId && references.currencies[0]) { setCurrencyId(references.currencies[0].id); setExchangeRate(exchangeRateForCurrency(references.currencies[0])); } }, [currencyId, references.currencies]);
+  useEffect(() => {
+    if (periodDefaultsAppliedRef.current) return;
+    const defaults = pendingCreationDateDefaults(references.periods, today, {
+      existingInvoice: Boolean(invoice),
+      userTouchedDateFields: dateFieldsTouchedRef.current,
+    });
+    if (!defaults) return;
+    setFiscalPeriodId(defaults.fiscalPeriodId);
+    setDocumentDate(defaults.documentDate);
+    setDueDate(defaults.documentDate);
+    periodDefaultsAppliedRef.current = true;
+  }, [invoice, references.periods, today]);
   async function selectCurrency(id: string, date = documentDate) { const selected = references.currencies.find((currency) => currency.id === id); setCurrencyId(id); try { setExchangeRate(await exchangeRateForDocumentDate(selected, date)); setErrors((current) => current.filter((message) => message !== missingDatedRateMessage())); } catch { setExchangeRate(""); setErrors([missingDatedRateMessage()]); } }
-  function changeDocumentDate(value: string) { setDocumentDate(value); if (currencyId) void selectCurrency(currencyId, value); }
+  function changeDocumentDate(value: string) {
+    dateFieldsTouchedRef.current = true;
+    setDocumentDate(value);
+    setDueDate((current) => dueDateAfterDocumentDateChange(current, value, dueDateWasEditedRef.current));
+    if (currencyId) void selectCurrency(currencyId, value);
+  }
+  function changeFiscalPeriod(value: string) {
+    dateFieldsTouchedRef.current = true;
+    setFiscalPeriodId(value);
+    const period = references.periods.find((candidate) => candidate.id === value && candidate.status !== "CLOSED");
+    if (period) changeDocumentDate(clampDocumentDate(documentDate, period));
+  }
   function updateLines(update: (current: readonly DraftLine[]) => DraftLine[]) {
     const next = update(linesRef.current);
     linesRef.current = next;
@@ -219,9 +278,9 @@ function InvoiceForm({ type, invoice, references, onClose, onSaved }: { type: In
   }
 
   return <Modal title={invoice ? t("pages.payments.046", { value1: invoice.document.documentNumber }) : type === "PURCHASE_INVOICE" ? t("pages.purchase-invoices.057") : t("pages.purchase-invoices.058")} description={t("pages.purchase-invoices.059")} onClose={onClose} wide><form className="form-grid sales-invoice-form" onSubmit={submit}>{errors.length > 0 && <div className="form-error full" role="alert">{errors.map((error) => <p key={error}>{error}</p>)}</div>}
-    <label><span>{t("pages.payments.049")}</span><select name="fiscalPeriodId" defaultValue={invoice?.document.fiscalPeriodId} disabled={!canReadFiscalPeriods} required><option value="">{t("pages.manual-journals.047")}</option>{references.periods.map((period) => <option key={period.id} value={period.id}>{period.name} — {period.startDate}{t("pages.payments.051")}{period.endDate}</option>)}</select></label>
+    <label><span>{t("pages.payments.049")}</span><select name="fiscalPeriodId" value={fiscalPeriodId} onChange={(event) => changeFiscalPeriod(event.target.value)} disabled={!canReadFiscalPeriods} required><option value="">{t("pages.manual-journals.047")}</option>{references.periods.map((period) => <option key={period.id} value={period.id}>{period.name} — {period.startDate}{t("pages.payments.051")}{period.endDate}</option>)}</select></label>
     <label><span>{t("pages.purchase-invoices.063")}</span><input name="documentDate" type="date" value={documentDate} onChange={(event) => changeDocumentDate(event.target.value)} required /></label>
-    <label><span>{t("pages.purchase-invoices.064")}</span><input name="dueDate" type="date" defaultValue={invoice?.dueDate ?? new Date().toISOString().slice(0, 10)} required /></label>
+    <label><span>{t("pages.purchase-invoices.064")}</span><input name="dueDate" type="date" value={dueDate} onChange={(event) => { dueDateWasEditedRef.current = true; dateFieldsTouchedRef.current = true; setDueDate(event.target.value); }} required /></label>
     <label><span>{t("pages.payments.057")}</span><ReferenceCombobox<Supplier> endpoint="/suppliers?active=true" value={supplierId} selectedLabel={invoice?.supplier ? `${invoice.supplier.code} — ${localizedReferenceName(invoice.supplier)}` : invoice?.supplierNameSnapshot ?? ""} onChange={(supplier) => { setSupplierId(supplier?.id ?? ""); setSourceInvoiceId(""); }} optionLabel={(supplier) => `${supplier.code} — ${localizedReferenceName(supplier)}`} placeholder={t("pages.payments.058")} searchLabel={t("pages.suppliers.014")} required disabled={!canReadSuppliers} /></label>
     <label><span>{t("pages.purchase-invoices.067")}</span><input name="supplierInvoiceNumber" defaultValue={invoice?.supplierInvoiceNumber ?? ""} maxLength={100} dir="ltr" /></label>
     {type === "PURCHASE_DEBIT_NOTE" && <label className="full"><span>{t("pages.purchase-invoices.068")}</span><ReferenceCombobox<PurchaseInvoice> endpoint={`/purchase-invoices?documentType=PURCHASE_INVOICE&status=POSTED${supplierId ? `&supplierId=${supplierId}` : ""}`} value={sourceInvoiceId} selectedLabel={invoice?.sourceInvoiceNumber ?? ""} onChange={(source) => setSourceInvoiceId(source?.id ?? "")} optionLabel={(source) => `${source.document.documentNumber}${t("pages.purchase-invoices.070")}${formatMoney(source.total)}${t("pages.payments.082")}${formatMoney(source.outstandingAmount)}`} optionDisabled={(source) => Number(source.total) <= Number(source.debitedAmount)} placeholder={t("pages.purchase-invoices.069")} searchLabel={t("pages.purchase-invoices.068")} required disabled={!supplierId} /></label>}

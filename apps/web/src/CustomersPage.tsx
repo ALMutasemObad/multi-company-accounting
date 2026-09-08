@@ -439,7 +439,7 @@ function CustomerDetails({
         </Can>}
       </div>
       <dl className="detail-grid">
-        <div><dt>{t("pages.customers.062")}</dt><dd>{account ? `${account.code} — ${localizedReferenceName(account)}` : customer.receivableAccountId}</dd></div>
+        <div><dt>{t("pages.customers.062")}</dt><dd>{account ? `${account.code} — ${localizedReferenceName(account)}` : "—"}</dd></div>
         <div><dt>{t("pages.accounts.043")}</dt><dd>{customer.isActive ? t("pages.accounts.028") : t("pages.customers.034")}</dd></div>
         <div><dt>{t("pages.customers.063")}</dt><dd>{customer.phone || t("pages.customers.064")}</dd></div>
         <div><dt>{t("pages.customers.065")}</dt><dd>{customer.email || t("pages.customers.064")}</dd></div>

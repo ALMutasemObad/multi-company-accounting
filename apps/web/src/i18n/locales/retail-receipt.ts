@@ -1,3 +1,5 @@
+import { localizedCopyMap } from '../locale-definition';
+
 const ar = {
   open: 'معاينة إيصال البيع', title: 'إيصال البيع', preview: 'معاينة فقط', width: 'عرض المعاينة',
   paper58: '58 mm', paper80: '80 mm', download: 'تنزيل الفاتورة المؤرشفة PDF (A4)', downloading: 'جارٍ تنزيل PDF (A4)…',
@@ -51,5 +53,5 @@ const ur: Copy = {
   subtotal: 'ذیلی کل', discountTotal: 'کل رعایت', taxTotal: 'کل ٹیکس', total: 'انوائس کا کل',
   archive: 'محفوظ ریکارڈ کا حوالہ', archivedAt: 'محفوظ کرنے کی تاریخ', hash: 'محفوظ ریکارڈ کا ہیش', details: 'تاریخی ماخذ کا حوالہ',
 };
-export const retailReceiptCopy = { ar, en, hi, ur } as const;
+export const retailReceiptCopy = localizedCopyMap({ ar, en, hi, ur }, 'ar');
 export type RetailReceiptLocale = keyof typeof retailReceiptCopy;

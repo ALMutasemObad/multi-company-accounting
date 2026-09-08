@@ -6,17 +6,23 @@ import { FormEvent,
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState } from "react";
 import { api,
   downloadPdf,
   idempotencyKey } from "./api";
-import { firstRequestFailure,
+import { actionPermissionPolicies } from "./action-permissions";
+import { allows,
+  firstRequestFailure,
   requestIfAllowed,
   requestValue } from "./authorization";
-import { useAuthorization } from "./authorization-context";
+import { Can, useAuthorization } from "./authorization-context";
 import { endpointPermissionPolicies } from "./endpoint-permissions";
 import { exchangeRateForDocumentDate,
   missingDatedRateMessage } from "./currency-rates";
+import { defaultManualJournalPeriod,
+  manualJournalCalendarDate,
+  pendingManualJournalDefaults } from "./manual-journal-date-defaults";
 import {
   exchangeRateForCurrency,
   formatMoney,
@@ -77,15 +83,16 @@ const line = (number: number, currencyId = "", exchangeRate = "1.00000000"): Jou
   debitAmount: "",
   creditAmount: "",
 });
-const entry = (number: number, currencyId = "", exchangeRate = "1.00000000"): JournalEntry => ({
+const entry = (number: number, currencyId = "", exchangeRate = "1.00000000", entryDate = today()): JournalEntry => ({
   entryNumber: number,
-  entryDate: today(),
+  entryDate,
   description: "",
   lines: [line(1, currencyId, exchangeRate), line(2, currencyId, exchangeRate)],
 });
 
 export function ManualJournalsPage({ notify }: { notify: Notice }) {
-  const { permissionSet } = useAuthorization();
+  const { permissionSet, selectedCompany } = useAuthorization();
+  const permissions = actionPermissionPolicies.manualJournals;
   const [items, setItems] = useState<ManualJournal[]>([]);
   const [meta, setMeta] = useState({
     page: 1,
@@ -183,6 +190,7 @@ export function ManualJournalsPage({ notify }: { notify: Notice }) {
     operation: "post" | "cancel" | "reverse",
     journal: ManualJournal,
   ) {
+    if (!allows(permissionSet, permissions[operation])) return;
     const label = { post: t("pages.manual-journals.004"), cancel: t("pages.accounts.065"), reverse: t("pages.manual-journals.006") }[operation];
     if (
       !window.confirm(
@@ -226,7 +234,7 @@ export function ManualJournalsPage({ notify }: { notify: Notice }) {
   }
   return (
     <section className="workspace-page">
-      <PageHeader kicker={t("pages.manual-journals.012")} title={t("pages.manual-journals.013")} description={t("pages.manual-journals.014")} actions={<Button icon="plus" onClick={() => setForm("create")}>{t("pages.manual-journals.015")}</Button>} />
+      <PageHeader kicker={t("pages.manual-journals.012")} title={t("pages.manual-journals.013")} description={t("pages.manual-journals.014")} actions={<Can policy={permissions.create}><Button icon="plus" onClick={() => { if (allows(permissionSet, permissions.create)) setForm("create"); }}>{t("pages.manual-journals.015")}</Button></Can>} />
       <div className="toolbar journal-filters">
         <form
           className="search-box"
@@ -294,7 +302,7 @@ export function ManualJournalsPage({ notify }: { notify: Notice }) {
           title={t("pages.manual-journals.027")}
           description={t("pages.manual-journals.028")}
           action={
-            <Button icon="plus" onClick={() => setForm("create")}>{t("pages.manual-journals.029")}</Button>
+            <Can policy={permissions.create}><Button icon="plus" onClick={() => { if (allows(permissionSet, permissions.create)) setForm("create"); }}>{t("pages.manual-journals.029")}</Button></Can>
           }
         />
       ) : (
@@ -360,10 +368,12 @@ export function ManualJournalsPage({ notify }: { notify: Notice }) {
           <Pagination {...meta} page={page} onChange={setPage} />
         </>
       )}
-      {form && (
+      {form && allows(permissionSet, form === "edit" ? permissions.update : permissions.create) && (
         <JournalForm
           journal={form === "edit" ? selected : null}
           references={references}
+          policy={form === "edit" ? permissions.update : permissions.create}
+          companyTimeZone={selectedCompany?.timezone}
           onClose={() => setForm(null)}
           onSaved={async (journal) => {
             setForm(null);
@@ -382,9 +392,10 @@ export function ManualJournalsPage({ notify }: { notify: Notice }) {
           journal={selected}
           references={references}
           onClose={() => setSelected(null)}
-          onEdit={() => setForm("edit")}
+          onEdit={() => { if (allows(permissionSet, permissions.update)) setForm("edit"); }}
           onCommand={(op) => void command(op, selected)}
-          onPrint={() =>
+          onPrint={() => {
+            if (!allows(permissionSet, permissions.print)) return;
             void downloadPdf(
               `/manual-journals/${selected.document.id}/pdf`,
             ).catch((cause) =>
@@ -394,8 +405,8 @@ export function ManualJournalsPage({ notify }: { notify: Notice }) {
                   : t("pages.manual-journals.039"),
                 "error",
               ),
-            )
-          }
+            );
+          }}
         />
       )}
     </section>
@@ -405,31 +416,53 @@ export function ManualJournalsPage({ notify }: { notify: Notice }) {
 function JournalForm({
   journal,
   references,
+  policy,
+  companyTimeZone,
   onClose,
   onSaved,
 }: {
   journal: ManualJournal | null;
   references: References;
+  policy: typeof actionPermissionPolicies.manualJournals.create | typeof actionPermissionPolicies.manualJournals.update;
+  companyTimeZone?: string;
   onClose: () => void;
   onSaved: (value: ManualJournal) => void;
 }) {
+  const { permissionSet } = useAuthorization();
   const defaultCurrency = references.currencies.find((currency) => currency.isBase) ?? references.currencies[0];
   const defaultCurrencyId = defaultCurrency?.id ?? "";
   const defaultExchangeRate = exchangeRateForCurrency(defaultCurrency);
+  const [companyDate] = useState(() => manualJournalCalendarDate(companyTimeZone));
+  const [initialDefaults] = useState(() => defaultManualJournalPeriod(references.periods, companyDate));
+  const touched = useRef({ period: false, documentDate: false, entryDates: false });
   const [periodId, setPeriodId] = useState(
-    journal?.document.fiscalPeriodId ?? "",
+    journal?.document.fiscalPeriodId ?? initialDefaults?.fiscalPeriodId ?? "",
   );
   const [documentDate, setDocumentDate] = useState(
-    journal?.document.documentDate ?? today(),
+    journal?.document.documentDate ?? initialDefaults?.documentDate ?? companyDate,
   );
   const [description, setDescription] = useState(
     journal?.document.description ?? "",
   );
   const [entries, setEntries] = useState<JournalEntry[]>(
-    journal?.entries ?? [entry(1, defaultCurrencyId, defaultExchangeRate)],
+    journal?.entries ?? [entry(1, defaultCurrencyId, defaultExchangeRate, initialDefaults?.documentDate ?? companyDate)],
   );
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    const defaults = pendingManualJournalDefaults(references.periods, companyDate, documentDate, {
+      persistedDraft: Boolean(journal),
+      userTouchedPeriod: touched.current.period,
+      userTouchedDocumentDate: touched.current.documentDate,
+      userTouchedEntryDate: touched.current.entryDates,
+    });
+    if (!defaults) return;
+    if (defaults.fiscalPeriodId !== null) setPeriodId(defaults.fiscalPeriodId);
+    if (defaults.documentDate !== null) setDocumentDate(defaults.documentDate);
+    const entryDate = defaults.entryDate;
+    if (entryDate !== null)
+      setEntries((items) => items.map((item) => ({ ...item, entryDate })));
+  }, [companyDate, documentDate, journal, references.periods]);
   useEffect(() => {
     if (!journal && defaultCurrencyId)
       setEntries((items) =>
@@ -496,6 +529,7 @@ function JournalForm({
   const totals = useMemo(() => journalTotals(entries), [entries]);
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (!allows(permissionSet, policy)) return;
     const errors = validateJournalDraft(entries);
     if (!periodId) errors.unshift(t("pages.manual-journals.040"));
     if (!description.trim()) errors.unshift(t("pages.manual-journals.041"));
@@ -563,7 +597,10 @@ function JournalForm({
             <span>{t("pages.manual-journals.046")}</span>
             <select
               value={periodId}
-              onChange={(e) => setPeriodId(e.target.value)}
+              onChange={(e) => {
+                touched.current.period = true;
+                setPeriodId(e.target.value);
+              }}
               required
             >
               <option value="">{t("pages.manual-journals.047")}</option>
@@ -579,7 +616,10 @@ function JournalForm({
             <input
               type="date"
               value={documentDate}
-              onChange={(e) => setDocumentDate(e.target.value)}
+              onChange={(e) => {
+                touched.current.documentDate = true;
+                setDocumentDate(e.target.value);
+              }}
               required
             />
           </label>
@@ -617,7 +657,10 @@ function JournalForm({
                   <input
                     type="date"
                     value={item.entryDate}
-                    onChange={(e) => void changeEntryDate(entryIndex, e.target.value)}
+                    onChange={(e) => {
+                      touched.current.entryDates = true;
+                      void changeEntryDate(entryIndex, e.target.value);
+                    }}
                   />
                 </label>
                 <label>
@@ -826,12 +869,13 @@ function JournalForm({
             type="button"
             variant="secondary"
             icon="plus"
-            onClick={() =>
+            onClick={() => {
+              touched.current.entryDates = true;
               setEntries((items) => [
                 ...items,
-                entry(items.length + 1, defaultCurrencyId, defaultExchangeRate),
-              ])
-            }
+                entry(items.length + 1, defaultCurrencyId, defaultExchangeRate, documentDate),
+              ]);
+            }}
           >{t("pages.manual-journals.074")}</Button>
           <span className="form-spacer" />
           <Button type="button" variant="ghost" onClick={onClose}>{t("pages.manual-journals.075")}</Button>
@@ -864,7 +908,7 @@ function JournalDetails({
   const printAction =
     journal.document.status === "POSTED" ||
     journal.document.status === "REVERSED" ? (
-      <Button variant="secondary" icon="print" onClick={onPrint}>{t("pages.manual-journals.078")}</Button>
+      <Can policy={actionPermissionPolicies.manualJournals.print}><Button variant="secondary" icon="print" onClick={onPrint}>{t("pages.manual-journals.078")}</Button></Can>
     ) : null;
   return (
     <Modal
@@ -877,21 +921,21 @@ function JournalDetails({
         {printAction}
         {journal.document.status === "DRAFT" && (
           <>
-            <Button variant="secondary" icon="edit" onClick={onEdit}>{t("pages.manual-journals.080")}</Button>
-            <Button icon="check" onClick={() => onCommand("post")}>{t("pages.manual-journals.081")}</Button>
-            <Button
+            <Can policy={actionPermissionPolicies.manualJournals.update}><Button variant="secondary" icon="edit" onClick={onEdit}>{t("pages.manual-journals.080")}</Button></Can>
+            <Can policy={actionPermissionPolicies.manualJournals.post}><Button icon="check" onClick={() => onCommand("post")}>{t("pages.manual-journals.081")}</Button></Can>
+            <Can policy={actionPermissionPolicies.manualJournals.cancel}><Button
               variant="danger"
               icon="ban"
               onClick={() => onCommand("cancel")}
-            >{t("pages.manual-journals.075")}</Button>
+            >{t("pages.manual-journals.075")}</Button></Can>
           </>
         )}
         {journal.document.status === "POSTED" && (
-          <Button
+          <Can policy={actionPermissionPolicies.manualJournals.reverse}><Button
             variant="danger"
             icon="reverse"
             onClick={() => onCommand("reverse")}
-          >{t("pages.manual-journals.082")}</Button>
+          >{t("pages.manual-journals.082")}</Button></Can>
         )}
       </div>
       <dl className="detail-grid">

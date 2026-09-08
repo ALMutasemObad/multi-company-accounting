@@ -3,6 +3,7 @@ import {
   localizedReferenceName,
   translate as t } from "./i18n";
 import { Fragment,
+  type KeyboardEvent,
   useCallback,
   useEffect,
   useState } from "react";
@@ -41,6 +42,10 @@ import { Button,
 } from "./ui";
 
 type Tab = "cash" | "tax" | "costCenters" | "trial" | "journal" | "ledger" | "position" | "income";
+
+const reportTabOrder: readonly Tab[] = ["cash", "tax", "costCenters", "trial", "journal", "ledger", "position", "income"];
+const reportTabId = (tab: Tab) => `reports-tab-${tab}`;
+const reportPanelId = "reports-panel";
 
 export function ReportsPage() {
   const initial = currentYearRange();
@@ -179,21 +184,51 @@ export function ReportsPage() {
     await downloadFile(`/reports/cost-centers/export/${format}?${parameters}`, `cost-center-activity-${applied.dateFrom}-${applied.dateTo}.${format}`);
   }
 
+  function moveTabFocus(event: KeyboardEvent<HTMLButtonElement>, current: Tab) {
+    const currentIndex = reportTabOrder.indexOf(current);
+    const rtl = getComputedStyle(event.currentTarget).direction === "rtl";
+    let nextIndex: number | null = null;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = reportTabOrder.length - 1;
+    if (event.key === "ArrowRight") nextIndex = (currentIndex + (rtl ? -1 : 1) + reportTabOrder.length) % reportTabOrder.length;
+    if (event.key === "ArrowLeft") nextIndex = (currentIndex + (rtl ? 1 : -1) + reportTabOrder.length) % reportTabOrder.length;
+    if (nextIndex == null) return;
+    event.preventDefault();
+    const nextTab = reportTabOrder[nextIndex]!;
+    setTab(nextTab);
+    requestAnimationFrame(() => document.getElementById(reportTabId(nextTab))?.focus());
+  }
+
   const comparisonInvalid = (tab === "position" || tab === "income") && compareEnabled && (!compareDateFrom || !compareDateTo || compareDateFrom > compareDateTo);
   const invalid = !dateFrom || !dateTo || dateFrom > dateTo || comparisonInvalid || (tab === "ledger" && !statementSubjectId);
   const hasData = tab === "cash" ? cashFlow : tab === "tax" ? taxSummary : tab === "costCenters" ? costCenterActivity : tab === "trial" ? trial : tab === "journal" ? journal : tab === "ledger" ? ledger : tab === "position" ? position : income;
+  const reportTabs: Array<{ tab: Tab; label: string }> = [
+    { tab: "cash", label: t("pages.reports.006") },
+    { tab: "tax", label: t("taxSummary.tab") },
+    { tab: "costCenters", label: t("costCenterActivity.tab") },
+    { tab: "trial", label: t("pages.reports.007") },
+    { tab: "journal", label: t("pages.reports.008") },
+    { tab: "ledger", label: t("accountStatement.tab") },
+    { tab: "position", label: t("pages.reports.009") },
+    { tab: "income", label: t("pages.reports.010") },
+  ];
   return <section className="workspace-page reports-page">
     <PageHeader kicker={t("pages.reports.003")} title={t("pages.reports.004")} description={t("pages.reports.005")} />
-    <div className="section-tabs report-tabs" role="tablist">
-      <button className={tab === "cash" ? "active" : ""} onClick={() => setTab("cash")}>{t("pages.reports.006")}</button>
-      <button className={tab === "tax" ? "active" : ""} onClick={() => setTab("tax")}>{t("taxSummary.tab")}</button>
-      <button className={tab === "costCenters" ? "active" : ""} onClick={() => setTab("costCenters")}>{t("costCenterActivity.tab")}</button>
-      <button className={tab === "trial" ? "active" : ""} onClick={() => setTab("trial")}>{t("pages.reports.007")}</button>
-      <button className={tab === "journal" ? "active" : ""} onClick={() => setTab("journal")}>{t("pages.reports.008")}</button>
-      <button className={tab === "ledger" ? "active" : ""} onClick={() => setTab("ledger")}>{t("accountStatement.tab")}</button>
-      <button className={tab === "position" ? "active" : ""} onClick={() => setTab("position")}>{t("pages.reports.009")}</button>
-      <button className={tab === "income" ? "active" : ""} onClick={() => setTab("income")}>{t("pages.reports.010")}</button>
+    <div className="section-tabs report-tabs" role="tablist" aria-label={t("pages.reports.004")}>
+      {reportTabs.map((item) => <button
+        key={item.tab}
+        type="button"
+        id={reportTabId(item.tab)}
+        role="tab"
+        aria-selected={tab === item.tab}
+        aria-controls={reportPanelId}
+        tabIndex={tab === item.tab ? 0 : -1}
+        className={tab === item.tab ? "active" : ""}
+        onClick={() => setTab(item.tab)}
+        onKeyDown={(event) => moveTabFocus(event, item.tab)}
+      >{item.label}</button>)}
     </div>
+    <div id={reportPanelId} role="tabpanel" aria-labelledby={reportTabId(tab)}>
     <div className="report-toolbar">
       {tab !== "position" && <label><span>{t("pages.audit-logs.018")}</span><input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label>}
       <label><span>{tab === "position" ? t("pages.purchase-invoices.112") : t("pages.audit-logs.019")}</span><input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label>
@@ -232,6 +267,7 @@ export function ReportsPage() {
       {ledgerLoading && <Spinner label={t("pages.reports.037")} />}
       {tab !== "ledger" && ledger && <LedgerView report={ledger} onClose={() => setLedger(null)} />}
     </>}
+    </div>
     {mappingOpen && <CashFlowMappingModal onClose={() => setMappingOpen(false)} onChanged={() => void load()} />}
   </section>;
 }

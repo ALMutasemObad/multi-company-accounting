@@ -2,9 +2,10 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { localeManifestPlugin } from './apps/web/vite.config';
 
 export default defineConfig({
-  root: resolve('apps/web'), plugins: [react()],
+  root: resolve('apps/web'), plugins: [localeManifestPlugin(), react()],
   cacheDir: resolve('apps/web/node_modules/.cache-grocery-integration'),
   build: { outDir: resolve('tmp/agent/grocery-build'), emptyOutDir: false },
   server: {

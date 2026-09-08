@@ -36,6 +36,19 @@ export const actionPermissionPolicies = {
     reverse: permission("payments.reverse"),
     print: permission("payments.print"),
   },
+  manualJournals: {
+    create: permission("manual_journals.create"),
+    update: permission("manual_journals.update"),
+    post: permission("manual_journals.post"),
+    cancel: permission("manual_journals.cancel"),
+    reverse: permission("manual_journals.reverse"),
+    print: permission("manual_journals.print"),
+  },
+  fiscalPeriods: {
+    manage: permission("fiscal_periods.manage"),
+    close: permission("fiscal_periods.close"),
+    reopen: permission("fiscal_periods.reopen"),
+  },
   pos: {
     checkout: permission("pos.checkout"),
   },

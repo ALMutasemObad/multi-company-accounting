@@ -5,7 +5,9 @@ import { useCallback,
   useEffect,
   useState } from "react";
 import { api } from "./api";
-import { companyQuickStarts, type View } from "./app-navigation";
+import type { NavigationAccess, View } from "./app-navigation";
+import { useAuthorization } from "./authorization-context";
+import { deriveDashboardNavigation, type DashboardOverviewView } from "./dashboard-navigation";
 import { formatMoney } from "./domain";
 import { currentYearRange,
   monthLabel } from "./reporting";
@@ -18,6 +20,17 @@ import { Button,
 } from "./ui";
 
 export function DashboardPage({ onNavigate }: { onNavigate: (view: View) => void }) {
+  const { moduleSet, permissionSet, selectedCompany } = useAuthorization();
+  const navigationAccess: NavigationAccess = {
+    moduleSet,
+    permissionSet,
+    hasSelectedCompany: Boolean(selectedCompany),
+    platformOperations: false,
+  };
+  const navigation = deriveDashboardNavigation(navigationAccess);
+  const navigate = (view: View) => {
+    if (navigation.allowedViews.has(view)) onNavigate(view);
+  };
   const initial = currentYearRange();
   const [dateFrom, setDateFrom] = useState(initial.dateFrom);
   const [dateTo, setDateTo] = useState(initial.dateTo);
@@ -59,29 +72,27 @@ export function DashboardPage({ onNavigate }: { onNavigate: (view: View) => void
           <Button disabled={!dateFrom || !dateTo || dateFrom > dateTo} onClick={() => setApplied({ dateFrom, dateTo })}>{t("pages.dashboard.015")}</Button>
         </div>} />
       {error && <div className="inline-notice">{t("pages.dashboard.016")}</div>}
-      <nav className="dashboard-quick-actions" aria-label={t("dashboard.quick.aria")}>
+      {navigation.quickStarts.length > 0 && <nav className="dashboard-quick-actions" aria-label={t("dashboard.quick.aria")}>
         <div><strong>{t("dashboard.quick.title")}</strong><span>{t("dashboard.quick.description")}</span></div>
-        {companyQuickStarts.slice(0, 3).map((item) => <button type="button" key={item.view} onClick={() => onNavigate(item.view)}>
+        {navigation.quickStarts.map((item) => <button type="button" key={item.view} onClick={() => navigate(item.view)}>
           <Icon name={item.icon} size={18} /><span>{t(item.title)}</span><Icon name="back" size={15} />
         </button>)}
-      </nav>
+      </nav>}
       <div className="metric-grid">
         {cards.map((card) => <article className={`metric-card ${card.tone}`} key={card.label}><div className="metric-icon"><Icon name={card.icon} /></div><span>{card.label}</span><strong>{card.value}</strong><small>{card.suffix}</small></article>)}
       </div>
       <div className="dashboard-grid">
         <article className="panel cashflow-panel">
-          <header><div><h2>{t("pages.dashboard.017")}</h2><p>{t("pages.dashboard.018")}</p></div><button className="text-link strong" onClick={() => onNavigate("reports")}>{t("pages.dashboard.019")}</button></header>
+          <header><div><h2>{t("pages.dashboard.017")}</h2><p>{t("pages.dashboard.018")}</p></div>{navigation.canOpenReports && <button className="text-link strong" onClick={() => navigate("reports")}>{t("pages.dashboard.019")}</button>}</header>
           {report.cashFlow.length ? <div className="cashflow-chart" role="img" aria-label={t("pages.dashboard.020")}>
             {report.cashFlow.map((item) => <div className="chart-month" key={item.month}><div className="bar-pair"><span className="bar receipt" style={{ height: `${Math.max(4, Math.abs(Number(item.receipts)) / maxMovement * 100)}%` }} title={t("pages.dashboard.021", { value1: formatMoney(item.receipts) })} /><span className="bar payment" style={{ height: `${Math.max(4, Math.abs(Number(item.payments)) / maxMovement * 100)}%` }} title={t("pages.dashboard.022", { value1: formatMoney(item.payments) })} /></div><small>{monthLabel(item.month)}</small></div>)}
           </div> : <EmptyState title={t("pages.dashboard.023")} description={t("pages.dashboard.024")} />}
           <div className="chart-legend"><span><i className="receipt" />{t("pages.dashboard.025")}</span><span><i className="payment" />{t("pages.dashboard.026")}</span></div>
         </article>
-        <article className="panel overview-panel">
+        {navigation.overviewViews.length > 0 && <article className="panel overview-panel">
           <header><div><h2>{t("pages.dashboard.027")}</h2><p>{t("pages.dashboard.028")}</p></div></header>
-          <button onClick={() => onNavigate("suppliers")}><span>{t("pages.dashboard.029")}</span><strong>{report.metrics.activeSuppliers.toLocaleString(activeIntlLocale())}</strong><Icon name="back" /></button>
-          <button onClick={() => onNavigate("customers")}><span>{t("pages.dashboard.030")}</span><strong>{report.metrics.activeCustomers.toLocaleString(activeIntlLocale())}</strong><Icon name="back" /></button>
-          <button onClick={() => onNavigate("payments")}><span>{t("pages.dashboard.031")}</span><strong>{report.metrics.draftDocuments.toLocaleString(activeIntlLocale())}</strong><Icon name="back" /></button>
-        </article>
+          {navigation.overviewViews.map((view) => <DashboardOverviewButton key={view} view={view} report={report} onNavigate={navigate} />)}
+        </article>}
       </div>
       <article className="panel activity-panel">
         <header><div><h2>{t("pages.dashboard.032")}</h2><p>{t("pages.dashboard.033")}</p></div></header>
@@ -89,6 +100,15 @@ export function DashboardPage({ onNavigate }: { onNavigate: (view: View) => void
       </article>
     </section>
   );
+}
+
+function DashboardOverviewButton({ view, report, onNavigate }: { view: DashboardOverviewView; report: DashboardReport; onNavigate: (view: DashboardOverviewView) => void }) {
+  const content = {
+    suppliers: { label: t("pages.dashboard.029"), value: report.metrics.activeSuppliers },
+    customers: { label: t("pages.dashboard.030"), value: report.metrics.activeCustomers },
+    payments: { label: t("pages.dashboard.031"), value: report.metrics.draftDocuments },
+  }[view];
+  return <button onClick={() => onNavigate(view)}><span>{content.label}</span><strong>{content.value.toLocaleString(activeIntlLocale())}</strong><Icon name="back" /></button>;
 }
 
 const statusLabel = (status: string) => ({ DRAFT: t("pages.dashboard.044"), POSTED: t("pages.dashboard.045"), CANCELLED: t("pages.dashboard.046"), REVERSED: t("pages.dashboard.047") }[status] ?? status);

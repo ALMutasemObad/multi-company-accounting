@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { api } from "./api";
 import { formatCurrencyDecimal } from "./decimal-format";
 import { useI18n } from "./i18n";
@@ -32,6 +32,7 @@ export function OrganizationOwnerPage({
   const [error, setError] = useState("");
   const [switchingId, setSwitchingId] = useState("");
   const [companyCreationPending, setCompanyCreationPending] = useState(false);
+  const dashboardGeneration = useRef(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -50,24 +51,27 @@ export function OrganizationOwnerPage({
   }, [t]);
 
   const loadDashboard = useCallback(async (signal?: AbortSignal) => {
-    if (!organizationId) return;
+    if (!organizationId) return null;
+    const generation = ++dashboardGeneration.current;
     setLoading(true);
     setError("");
     try {
       const result = await api<OrganizationDashboard>(`/organizations/${organizationId}/dashboard?days=${days}`, { signal });
-      if (signal?.aborted) return;
-      setDashboard(result);
+      if (signal?.aborted || generation !== dashboardGeneration.current) return null;
+      let nextMembers: OrganizationMember[] | null = null;
       if (result.organization.canManageMembers) {
         const memberResult = await api<{ data: OrganizationMember[] }>(`/organizations/${organizationId}/members`, { signal });
-        if (signal?.aborted) return;
-        setMembers(memberResult.data);
-      } else {
-        setMembers(null);
+        if (signal?.aborted || generation !== dashboardGeneration.current) return null;
+        nextMembers = memberResult.data;
       }
+      setDashboard(result);
+      setMembers(nextMembers);
+      return result;
     } catch (cause) {
-      if (!signal?.aborted) setError(cause instanceof Error ? cause.message : t("organization.loadError"));
+      if (!signal?.aborted && generation === dashboardGeneration.current) setError(cause instanceof Error ? cause.message : t("organization.loadError"));
+      return null;
     } finally {
-      if (!signal?.aborted) setLoading(false);
+      if (!signal?.aborted && generation === dashboardGeneration.current) setLoading(false);
     }
   }, [days, organizationId, t]);
 
@@ -77,7 +81,7 @@ export function OrganizationOwnerPage({
     setDashboard(null);
     setMembers(null);
     void loadDashboard(controller.signal);
-    return () => controller.abort();
+    return () => { dashboardGeneration.current += 1; controller.abort(); };
   }, [loadDashboard, organizationId]);
 
   const totals = useMemo(() => ({
@@ -93,18 +97,34 @@ export function OrganizationOwnerPage({
       kicker={t("organization.kicker")}
       title={t("organization.title")}
       description={t("organization.description")}
-      actions={<div className="organization-filters">
-        <label><span>{t("organization.select")}</span><select disabled={companyCreationPending} value={organizationId} onChange={(event) => setOrganizationId(event.target.value)}>
-          {(workspaces ?? []).map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}
-        </select></label>
-        <label><span>{t("organization.window")}</span><select disabled={companyCreationPending} value={days} onChange={(event) => setDays(Number(event.target.value) as 30 | 90 | 365)}>
-          {[30, 90, 365].map((value) => <option key={value} value={value}>{t("organization.days", { days: value })}</option>)}
-        </select></label>
+      actions={<div className="organization-header-actions">
+        <div className="organization-filters">
+          <label><span>{t("organization.select")}</span><select disabled={companyCreationPending} value={organizationId} onChange={(event) => setOrganizationId(event.target.value)}>
+            {(workspaces ?? []).map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}
+          </select></label>
+          <label><span>{t("organization.window")}</span><select disabled={companyCreationPending} value={days} onChange={(event) => setDays(Number(event.target.value) as 30 | 90 | 365)}>
+            {[30, 90, 365].map((value) => <option key={value} value={value}>{t("organization.days", { days: value })}</option>)}
+          </select></label>
+        </div>
+        {workspaces?.some(workspace => workspace.id === organizationId && workspace.role === "OWNER") && <Button disabled={companyCreationPending} onClick={() => {
+          document.getElementById("group-company-create")?.scrollIntoView({ behavior: "smooth", block: "center" });
+          document.querySelector<HTMLInputElement>('#group-company-create input[name="companyName"]')?.focus({ preventScroll: true });
+        }}>{t("organization.create.cta")}</Button>}
       </div>}
     />
 
     {error && <div className="form-error" role="alert">{error} <Button variant="ghost" onClick={() => void loadDashboard()}>{t("common.retry")}</Button></div>}
-    {workspaces?.some(workspace => workspace.id === organizationId && workspace.role === "OWNER") && <CreateGroupCompany key={organizationId} organizationId={organizationId} onCreated={() => loadDashboard()} onPendingChange={setCompanyCreationPending} />}
+    {workspaces?.some(workspace => workspace.id === organizationId && workspace.role === "OWNER") && <CreateGroupCompany
+      key={organizationId}
+      organizationId={organizationId}
+      onCreated={async created => {
+        const refreshed = await loadDashboard();
+        if (!refreshed || refreshed.organization.id !== created.organizationId) return null;
+        return refreshed.companies.find(company => company.id === created.company.id && company.canSwitch) ?? null;
+      }}
+      onOpenCreated={onSwitchCompany}
+      onPendingChange={setCompanyCreationPending}
+    />}
     {loading && !dashboard ? <Spinner label={t("organization.loading")} /> : dashboard && <>
       <div className="organization-summary" aria-label={t("organization.title")}>
         <Summary icon="building" label={t("organization.summary.companies")} value={formatNumber(totals.companies)} />

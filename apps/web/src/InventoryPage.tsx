@@ -1,5 +1,6 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { api, downloadFile, idempotencyKey } from "./api";
+import { allows, type PermissionPolicy } from "./authorization";
 import { Can, useAuthorization } from "./authorization-context";
 import {
   barcodePermissionPolicies,
@@ -9,7 +10,8 @@ import {
   inventoryBarcodeLabelFilename,
   inventoryBarcodeSymbologies,
 } from "./barcode";
-import { activeIntlLocale, localizedReferenceName, translate as t, useI18n } from "./i18n";
+import { activeIntlLocale, localizedCopyFor, localizedReferenceName, translate as t, useI18n } from "./i18n";
+import { inventoryPermissionPolicies } from "./inventory-permission-policies";
 import { ItemSellingProfileWorkspace } from "./ItemSellingProfileWorkspace";
 import { sellingWorkspace } from "./i18n/locales/selling-profile-workspace";
 import type { InventoryBalance, InventoryBarcodeSymbology, InventoryItem, InventoryItemBarcode, InventoryMovement, InventoryMovementType, ListResponse, UnitOfMeasure, Warehouse } from "./types";
@@ -48,6 +50,8 @@ const movementTypeLabel = (value: InventoryMovementType) => t(`inventory.movemen
 const quantityLabel = (value: string) => Number(value).toLocaleString(activeIntlLocale(), { maximumFractionDigits: 6 });
 
 function BalancesPanel({ notify }: { notify: Notice }) {
+  const { permissionSet } = useAuthorization();
+  const canInitializeValuation = allows(permissionSet, inventoryPermissionPolicies.createMovement);
   const [balances, setBalances] = useState<InventoryBalance[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [catalog, setCatalog] = useState<InventoryItem[]>([]);
@@ -82,19 +86,23 @@ function BalancesPanel({ notify }: { notify: Notice }) {
   }, [inventoryItemId, nonZero, page, warehouseId]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (!canInitializeValuation) setValuationBalance(null);
+  }, [canInitializeValuation]);
   return <>
     <div className="toolbar treasury-filters inventory-catalog-toolbar">
       <select aria-label={t("inventory.balances.warehouse")} value={warehouseId} onChange={(event) => { setPage(1); setWarehouseId(event.target.value); }}><option value="">{t("inventory.balances.allWarehouses")}</option>{warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.code} — {localizedReferenceName(warehouse)}</option>)}</select>
       <select aria-label={t("inventory.balances.item")} value={inventoryItemId} onChange={(event) => { setPage(1); setInventoryItemId(event.target.value); }}><option value="">{t("inventory.balances.allItems")}</option>{catalog.map((item) => <option key={item.id} value={item.id}>{item.code} — {localizedReferenceName(item)}</option>)}</select>
       <label className="checkbox-line"><input type="checkbox" checked={nonZero} onChange={(event) => { setPage(1); setNonZero(event.target.checked); }} />{t("inventory.balances.nonZero")}</label>
     </div>
-    {error ? <ErrorPanel error={error} retry={load} /> : loading ? <Spinner label={t("inventory.balances.loading")} /> : !balances.length ? <EmptyState title={t("inventory.balances.emptyTitle")} description={t("inventory.balances.emptyDescription")} /> : <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("inventory.balances.warehouse")}</th><th>{t("inventory.balances.item")}</th><th>{t("inventory.balances.onHand")}</th><th>{t("inventory.balances.value")}</th><th>{t("inventory.balances.averageCost")}</th><th>{t("inventory.balances.valuationStatus")}</th><th>{t("inventory.actions")}</th></tr></thead><tbody>{balances.map((balance) => <tr key={balance.id}><td><strong>{localizedReferenceName(balance.warehouse)}</strong><small dir="ltr">{balance.warehouse.code}</small></td><td><strong>{localizedReferenceName(balance.inventoryItem)}</strong><small dir="ltr">{balance.inventoryItem.code}</small></td><td><strong dir="ltr">{quantityLabel(balance.onHand)}</strong> <span className="code-pill" dir="ltr">{balance.inventoryItem.unitOfMeasure.code}</span></td><td dir="ltr">{balance.isValuationInitialized ? Number(balance.inventoryValueBase).toLocaleString(activeIntlLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : "—"}</td><td dir="ltr">{balance.isValuationInitialized ? Number(balance.averageUnitCostBase).toLocaleString(activeIntlLocale(), { maximumFractionDigits: 8 }) : "—"}</td><td><span className={`status-chip ${balance.isValuationInitialized ? "active" : "inactive"}`}>{t(balance.isValuationInitialized ? "inventory.balances.valued" : "inventory.balances.requiresValuation")}</span></td><td>{!balance.isValuationInitialized && <Button variant="ghost" onClick={() => setValuationBalance(balance)}>{t("inventory.balances.initializeValuation")}</Button>}</td></tr>)}</tbody></table></div>}
+    {error ? <ErrorPanel error={error} retry={load} /> : loading ? <Spinner label={t("inventory.balances.loading")} /> : !balances.length ? <EmptyState title={t("inventory.balances.emptyTitle")} description={t("inventory.balances.emptyDescription")} /> : <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("inventory.balances.warehouse")}</th><th>{t("inventory.balances.item")}</th><th>{t("inventory.balances.onHand")}</th><th>{t("inventory.balances.value")}</th><th>{t("inventory.balances.averageCost")}</th><th>{t("inventory.balances.valuationStatus")}</th><th>{t("inventory.actions")}</th></tr></thead><tbody>{balances.map((balance) => <tr key={balance.id}><td><strong>{localizedReferenceName(balance.warehouse)}</strong><small dir="ltr">{balance.warehouse.code}</small></td><td><strong>{localizedReferenceName(balance.inventoryItem)}</strong><small dir="ltr">{balance.inventoryItem.code}</small></td><td><strong dir="ltr">{quantityLabel(balance.onHand)}</strong> <span className="code-pill" dir="ltr">{balance.inventoryItem.unitOfMeasure.code}</span></td><td dir="ltr">{balance.isValuationInitialized ? Number(balance.inventoryValueBase).toLocaleString(activeIntlLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : "—"}</td><td dir="ltr">{balance.isValuationInitialized ? Number(balance.averageUnitCostBase).toLocaleString(activeIntlLocale(), { maximumFractionDigits: 8 }) : "—"}</td><td><span className={`status-chip ${balance.isValuationInitialized ? "active" : "inactive"}`}>{t(balance.isValuationInitialized ? "inventory.balances.valued" : "inventory.balances.requiresValuation")}</span></td><td>{!balance.isValuationInitialized && <Can policy={inventoryPermissionPolicies.createMovement}><Button variant="ghost" onClick={() => { if (canInitializeValuation) setValuationBalance(balance); }}>{t("inventory.balances.initializeValuation")}</Button></Can>}</td></tr>)}</tbody></table></div>}
     <Pagination {...meta} page={page} onChange={setPage} />
-    {valuationBalance && <ValuationInitializationForm balance={valuationBalance} onClose={() => setValuationBalance(null)} onSaved={async () => { setValuationBalance(null); notify(t("inventory.balances.valuationInitialized")); await load(); }} />}
+    {valuationBalance && canInitializeValuation && <ValuationInitializationForm balance={valuationBalance} onClose={() => setValuationBalance(null)} onSaved={async () => { setValuationBalance(null); notify(t("inventory.balances.valuationInitialized")); await load(); }} />}
   </>;
 }
 
 function ValuationInitializationForm({ balance, onClose, onSaved }: { balance: InventoryBalance; onClose: () => void; onSaved: () => void }) {
+  const { permissionSet } = useAuthorization();
   const [unitCostBase, setUnitCostBase] = useState("");
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
@@ -102,6 +110,7 @@ function ValuationInitializationForm({ balance, onClose, onSaved }: { balance: I
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (!allows(permissionSet, inventoryPermissionPolicies.createMovement)) return;
     setSaving(true);
     setError("");
     try {
@@ -122,6 +131,9 @@ function ValuationInitializationForm({ balance, onClose, onSaved }: { balance: I
 }
 
 function MovementsPanel({ notify }: { notify: Notice }) {
+  const { permissionSet } = useAuthorization();
+  const canCreateMovement = allows(permissionSet, inventoryPermissionPolicies.createMovement);
+  const canReverseMovement = allows(permissionSet, inventoryPermissionPolicies.reverseMovement);
   const [movements, setMovements] = useState<InventoryMovement[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [catalog, setCatalog] = useState<InventoryItem[]>([]);
@@ -158,6 +170,10 @@ function MovementsPanel({ notify }: { notify: Notice }) {
   }, [page, submittedSearch, typeFilter]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (!canCreateMovement) setCreating(false);
+    if (!canReverseMovement) setReversing(null);
+  }, [canCreateMovement, canReverseMovement]);
   async function showDetail(id: string) {
     try { setDetail(await api<InventoryMovement>(`/inventory-movements/${id}`)); }
     catch (cause) { notify(cause instanceof Error ? cause.message : t("inventory.movements.loadError"), "error"); }
@@ -167,14 +183,14 @@ function MovementsPanel({ notify }: { notify: Notice }) {
     <div className="toolbar treasury-filters inventory-catalog-toolbar">
       <SearchBox value={search} label={t("inventory.movements.search")} onChange={setSearch} onSubmit={() => { setPage(1); setSubmittedSearch(search.trim()); }} />
       <select aria-label={t("inventory.movements.type")} value={typeFilter} onChange={(event) => { setPage(1); setTypeFilter(event.target.value); }}><option value="">{t("inventory.movements.allTypes")}</option>{movementTypes.map((value) => <option key={value} value={value}>{movementTypeLabel(value)}</option>)}</select>
-      <Button icon="plus" disabled={!warehouses.length || !catalog.length} onClick={() => setCreating(true)}>{t("inventory.movements.create")}</Button>
+      <Can policy={inventoryPermissionPolicies.createMovement}><Button icon="plus" disabled={!warehouses.length || !catalog.length} onClick={() => { if (canCreateMovement) setCreating(true); }}>{t("inventory.movements.create")}</Button></Can>
     </div>
     {!loading && (!warehouses.length || !catalog.length) && <div className="inline-notice neutral">{t("inventory.movements.referencesRequired")}</div>}
-    {error ? <ErrorPanel error={error} retry={load} /> : loading ? <Spinner label={t("inventory.movements.loading")} /> : !movements.length ? <EmptyState title={t("inventory.movements.emptyTitle")} description={t("inventory.movements.emptyDescription")} action={warehouses.length && catalog.length ? <Button icon="plus" onClick={() => setCreating(true)}>{t("inventory.movements.create")}</Button> : undefined} /> : <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("inventory.movements.number")}</th><th>{t("inventory.movements.date")}</th><th>{t("inventory.movements.type")}</th><th>{t("inventory.movements.description")}</th><th>{t("inventory.movements.lineCount")}</th><th>{t("inventory.actions")}</th></tr></thead><tbody>{movements.map((movement) => <tr key={movement.id}><td><strong dir="ltr">{movement.movementNumber}</strong>{movement.externalReference && <small dir="ltr">{movement.externalReference}</small>}</td><td dir="ltr">{movement.movementDate}</td><td><span className="status-chip active">{movementTypeLabel(movement.movementType)}</span></td><td>{movement.description}</td><td>{movement.lineCount}</td><td><Button variant="ghost" onClick={() => void showDetail(movement.id)}>{t("inventory.movements.view")}</Button></td></tr>)}</tbody></table></div>}
+    {error ? <ErrorPanel error={error} retry={load} /> : loading ? <Spinner label={t("inventory.movements.loading")} /> : !movements.length ? <EmptyState title={t("inventory.movements.emptyTitle")} description={t("inventory.movements.emptyDescription")} action={warehouses.length && catalog.length ? <Can policy={inventoryPermissionPolicies.createMovement}><Button icon="plus" onClick={() => { if (canCreateMovement) setCreating(true); }}>{t("inventory.movements.create")}</Button></Can> : undefined} /> : <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("inventory.movements.number")}</th><th>{t("inventory.movements.date")}</th><th>{t("inventory.movements.type")}</th><th>{t("inventory.movements.description")}</th><th>{t("inventory.movements.lineCount")}</th><th>{t("inventory.actions")}</th></tr></thead><tbody>{movements.map((movement) => <tr key={movement.id}><td><strong dir="ltr">{movement.movementNumber}</strong>{movement.externalReference && <small dir="ltr">{movement.externalReference}</small>}</td><td dir="ltr">{movement.movementDate}</td><td><span className="status-chip active">{movementTypeLabel(movement.movementType)}</span></td><td>{movement.description}</td><td>{movement.lineCount}</td><td><Button variant="ghost" onClick={() => void showDetail(movement.id)}>{t("inventory.movements.view")}</Button></td></tr>)}</tbody></table></div>}
     <Pagination {...meta} page={page} onChange={setPage} />
-    {creating && <MovementForm warehouses={warehouses} catalog={catalog} onClose={() => setCreating(false)} onSaved={async () => { setCreating(false); notify(t("inventory.movements.created")); await load(); }} />}
-    {detail && <MovementDetail movement={detail} onClose={() => setDetail(null)} onReverse={() => { setDetail(null); setReversing(detail); }} />}
-    {reversing && <MovementReversalForm movement={reversing} onClose={() => setReversing(null)} onSaved={async () => { setReversing(null); notify(t("inventory.movements.reversed")); await load(); }} />}
+    {creating && canCreateMovement && <MovementForm warehouses={warehouses} catalog={catalog} onClose={() => setCreating(false)} onSaved={async () => { setCreating(false); notify(t("inventory.movements.created")); await load(); }} />}
+    {detail && <MovementDetail movement={detail} onClose={() => setDetail(null)} onReverse={() => { if (!canReverseMovement) return; setDetail(null); setReversing(detail); }} />}
+    {reversing && canReverseMovement && <MovementReversalForm movement={reversing} onClose={() => setReversing(null)} onSaved={async () => { setReversing(null); notify(t("inventory.movements.reversed")); await load(); }} />}
   </>;
 }
 
@@ -182,6 +198,7 @@ type MovementLineDraft = { inventoryItemId: string; fromWarehouseId: string; toW
 const emptyMovementLine = (): MovementLineDraft => ({ inventoryItemId: "", fromWarehouseId: "", toWarehouseId: "", quantity: "", unitCostBase: "" });
 
 function MovementForm({ warehouses, catalog, onClose, onSaved }: { warehouses: Warehouse[]; catalog: InventoryItem[]; onClose: () => void; onSaved: () => void }) {
+  const { permissionSet } = useAuthorization();
   const [movementType, setMovementType] = useState<InventoryMovementType>("RECEIPT");
   const [movementDate, setMovementDate] = useState(new Date().toISOString().slice(0, 10));
   const [description, setDescription] = useState("");
@@ -195,6 +212,7 @@ function MovementForm({ warehouses, catalog, onClose, onSaved }: { warehouses: W
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (!allows(permissionSet, inventoryPermissionPolicies.createMovement)) return;
     setSaving(true);
     setError("");
     try {
@@ -225,16 +243,18 @@ function MovementForm({ warehouses, catalog, onClose, onSaved }: { warehouses: W
 
 function MovementDetail({ movement, onClose, onReverse }: { movement: InventoryMovement; onClose: () => void; onReverse: () => void }) {
   const canReverse = movement.source === null && movement.reversalOf === null && movement.status === "POSTED";
-  return <Modal title={movement.movementNumber} description={`${movementTypeLabel(movement.movementType)} · ${movement.movementDate}`} onClose={onClose}><div className="detail-grid"><div><span>{t("inventory.movements.description")}</span><strong>{movement.description}</strong></div><div><span>{t("inventory.movements.status")}</span><strong>{t(`inventory.movements.statuses.${movement.status}`)}</strong></div><div><span>{t("inventory.movements.externalReference")}</span><strong dir="ltr">{movement.externalReference || "—"}</strong></div><div><span>{t("inventory.movements.createdBy")}</span><strong>{movement.createdByName}</strong></div>{movement.accounting && <><div><span>{t("inventory.movements.accountingDocument")}</span><strong dir="ltr">{movement.accounting.documentNumber}</strong></div><div><span>{t("inventory.movements.offsetAccount")}</span><strong>{movement.accounting.offsetAccount ? `${movement.accounting.offsetAccount.code} — ${movement.accounting.offsetAccount.nameAr}` : "—"}</strong></div></>}{movement.reversalOf && <div><span>{t("inventory.movements.reversalOf")}</span><strong dir="ltr">{movement.reversalOf.movementNumber}</strong></div>}{movement.reversedBy && <div><span>{t("inventory.movements.reversedBy")}</span><strong dir="ltr">{movement.reversedBy.movementNumber}</strong></div>}</div><div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>#</th><th>{t("inventory.balances.item")}</th><th>{t("inventory.movements.route")}</th><th>{t("inventory.movements.quantity")}</th><th>{t("inventory.movements.unitCostBase")}</th><th>{t("inventory.movements.totalCostBase")}</th></tr></thead><tbody>{movement.lines?.map((line) => <tr key={line.id}><td>{line.lineNumber}</td><td><strong>{line.inventoryItemName}</strong><small dir="ltr">{line.inventoryItemCode}</small></td><td>{line.fromWarehouseName || t("inventory.movements.externalSource")} → {line.toWarehouseName || t("inventory.movements.externalDestination")}</td><td><strong dir="ltr">{quantityLabel(line.quantity)}</strong> <span className="code-pill" dir="ltr">{line.unitOfMeasureCode}</span></td><td dir="ltr">{line.isCostInitialized ? Number(line.unitCostBase).toLocaleString(activeIntlLocale(), { maximumFractionDigits: 8 }) : "—"}</td><td dir="ltr">{line.isCostInitialized ? Number(line.totalCostBase).toLocaleString(activeIntlLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : "—"}</td></tr>)}</tbody></table></div><div className="form-actions">{canReverse && <Button variant="danger" icon="reverse" onClick={onReverse}>{t("inventory.movements.reverse")}</Button>}<Button onClick={onClose}>{t("inventory.cancel")}</Button></div></Modal>;
+  return <Modal title={movement.movementNumber} description={`${movementTypeLabel(movement.movementType)} · ${movement.movementDate}`} onClose={onClose}><div className="detail-grid"><div><span>{t("inventory.movements.description")}</span><strong>{movement.description}</strong></div><div><span>{t("inventory.movements.status")}</span><strong>{t(`inventory.movements.statuses.${movement.status}`)}</strong></div><div><span>{t("inventory.movements.externalReference")}</span><strong dir="ltr">{movement.externalReference || "—"}</strong></div><div><span>{t("inventory.movements.createdBy")}</span><strong>{movement.createdByName}</strong></div>{movement.accounting && <><div><span>{t("inventory.movements.accountingDocument")}</span><strong dir="ltr">{movement.accounting.documentNumber}</strong></div><div><span>{t("inventory.movements.offsetAccount")}</span><strong>{movement.accounting.offsetAccount ? `${movement.accounting.offsetAccount.code} — ${movement.accounting.offsetAccount.nameAr}` : "—"}</strong></div></>}{movement.reversalOf && <div><span>{t("inventory.movements.reversalOf")}</span><strong dir="ltr">{movement.reversalOf.movementNumber}</strong></div>}{movement.reversedBy && <div><span>{t("inventory.movements.reversedBy")}</span><strong dir="ltr">{movement.reversedBy.movementNumber}</strong></div>}</div><div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>#</th><th>{t("inventory.balances.item")}</th><th>{t("inventory.movements.route")}</th><th>{t("inventory.movements.quantity")}</th><th>{t("inventory.movements.unitCostBase")}</th><th>{t("inventory.movements.totalCostBase")}</th></tr></thead><tbody>{movement.lines?.map((line) => <tr key={line.id}><td>{line.lineNumber}</td><td><strong>{line.inventoryItemName}</strong><small dir="ltr">{line.inventoryItemCode}</small></td><td>{line.fromWarehouseName || t("inventory.movements.externalSource")} → {line.toWarehouseName || t("inventory.movements.externalDestination")}</td><td><strong dir="ltr">{quantityLabel(line.quantity)}</strong> <span className="code-pill" dir="ltr">{line.unitOfMeasureCode}</span></td><td dir="ltr">{line.isCostInitialized ? Number(line.unitCostBase).toLocaleString(activeIntlLocale(), { maximumFractionDigits: 8 }) : "—"}</td><td dir="ltr">{line.isCostInitialized ? Number(line.totalCostBase).toLocaleString(activeIntlLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : "—"}</td></tr>)}</tbody></table></div><div className="form-actions">{canReverse && <Can policy={inventoryPermissionPolicies.reverseMovement}><Button variant="danger" icon="reverse" onClick={onReverse}>{t("inventory.movements.reverse")}</Button></Can>}<Button onClick={onClose}>{t("inventory.cancel")}</Button></div></Modal>;
 }
 
 function MovementReversalForm({ movement, onClose, onSaved }: { movement: InventoryMovement; onClose: () => void; onSaved: () => void }) {
+  const { permissionSet } = useAuthorization();
   const [reversalDate, setReversalDate] = useState(new Date().toISOString().slice(0, 10));
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (!allows(permissionSet, inventoryPermissionPolicies.reverseMovement)) return;
     setSaving(true);
     setError("");
     try {
@@ -254,6 +274,8 @@ function MovementReversalForm({ movement, onClose, onSaved }: { movement: Invent
 }
 
 function WarehousesPanel({ notify }: { notify: Notice }) {
+  const { permissionSet } = useAuthorization();
+  const canManage = allows(permissionSet, inventoryPermissionPolicies.manageWarehouses);
   const [items, setItems] = useState<Warehouse[]>([]);
   const [meta, setMeta] = useState<PageMeta>(emptyMeta);
   const [page, setPage] = useState(1);
@@ -279,8 +301,12 @@ function WarehousesPanel({ notify }: { notify: Notice }) {
   }, [page, status, submittedSearch]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (!canManage) setForm(null);
+  }, [canManage]);
 
   async function deactivate(item: Warehouse) {
+    if (!canManage) return;
     const reason = window.prompt(t("inventory.deactivatePrompt", { name: localizedReferenceName(item) }));
     if (!reason || reason.trim().length < 3) return;
     try {
@@ -293,14 +319,16 @@ function WarehousesPanel({ notify }: { notify: Notice }) {
   }
 
   return <>
-    <CatalogToolbar search={search} status={status} searchLabel={t("inventory.search")} createLabel={t("inventory.create")} onSearch={setSearch} onSubmit={() => { setPage(1); setSubmittedSearch(search.trim()); }} onStatus={(value) => { setPage(1); setStatus(value); }} onCreate={() => setForm("new")} />
-    {error ? <ErrorPanel error={error} retry={load} /> : loading ? <Spinner label={t("inventory.loading")} /> : !items.length ? <EmptyState title={t("inventory.emptyTitle")} description={t("inventory.emptyDescription")} action={<Button icon="plus" onClick={() => setForm("new")}>{t("inventory.create")}</Button>} /> : <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("inventory.code")}</th><th>{t("inventory.name")}</th><th>{t("inventory.address")}</th><th>{t("inventory.status")}</th><th>{t("inventory.actions")}</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong dir="ltr">{item.code}</strong></td><td><strong>{localizedReferenceName(item)}</strong>{item.nameEn && <small dir="ltr">{item.nameEn}</small>}</td><td>{item.address || "—"}</td><td><Status active={item.isActive} /></td><td><div className="inline-actions"><Button variant="ghost" icon="edit" onClick={() => setForm(item)}>{t("inventory.edit")}</Button>{item.isActive && <Button variant="ghost" icon="ban" onClick={() => void deactivate(item)}>{t("inventory.deactivate")}</Button>}</div></td></tr>)}</tbody></table></div>}
+    <CatalogToolbar createPolicy={inventoryPermissionPolicies.manageWarehouses} search={search} status={status} searchLabel={t("inventory.search")} createLabel={t("inventory.create")} onSearch={setSearch} onSubmit={() => { setPage(1); setSubmittedSearch(search.trim()); }} onStatus={(value) => { setPage(1); setStatus(value); }} onCreate={() => { if (canManage) setForm("new"); }} />
+    {error ? <ErrorPanel error={error} retry={load} /> : loading ? <Spinner label={t("inventory.loading")} /> : !items.length ? <EmptyState title={t("inventory.emptyTitle")} description={t("inventory.emptyDescription")} action={<Can policy={inventoryPermissionPolicies.manageWarehouses}><Button icon="plus" onClick={() => { if (canManage) setForm("new"); }}>{t("inventory.create")}</Button></Can>} /> : <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("inventory.code")}</th><th>{t("inventory.name")}</th><th>{t("inventory.address")}</th><th>{t("inventory.status")}</th><th>{t("inventory.actions")}</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong dir="ltr">{item.code}</strong></td><td><strong>{localizedReferenceName(item)}</strong>{item.nameEn && <small dir="ltr">{item.nameEn}</small>}</td><td>{item.address || "—"}</td><td><Status active={item.isActive} /></td><td><div className="inline-actions"><Can policy={inventoryPermissionPolicies.manageWarehouses}><Button variant="ghost" icon="edit" onClick={() => { if (canManage) setForm(item); }}>{t("inventory.edit")}</Button>{item.isActive && <Button variant="ghost" icon="ban" onClick={() => void deactivate(item)}>{t("inventory.deactivate")}</Button>}</Can></div></td></tr>)}</tbody></table></div>}
     <Pagination {...meta} page={page} onChange={setPage} />
-    {form && <WarehouseForm warehouse={form === "new" ? null : form} onClose={() => setForm(null)} onSaved={async () => { const created = form === "new"; setForm(null); notify(t(created ? "inventory.created" : "inventory.updated")); await load(); }} />}
+    {form && canManage && <WarehouseForm warehouse={form === "new" ? null : form} onClose={() => setForm(null)} onSaved={async () => { const created = form === "new"; setForm(null); notify(t(created ? "inventory.created" : "inventory.updated")); await load(); }} />}
   </>;
 }
 
 function UnitsPanel({ notify }: { notify: Notice }) {
+  const { permissionSet } = useAuthorization();
+  const canManage = allows(permissionSet, inventoryPermissionPolicies.manageCatalog);
   const [items, setItems] = useState<UnitOfMeasure[]>([]);
   const [meta, setMeta] = useState<PageMeta>(emptyMeta);
   const [page, setPage] = useState(1);
@@ -326,8 +354,12 @@ function UnitsPanel({ notify }: { notify: Notice }) {
   }, [page, status, submittedSearch]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (!canManage) setForm(null);
+  }, [canManage]);
 
   async function deactivate(item: UnitOfMeasure) {
+    if (!canManage) return;
     const reason = window.prompt(t("inventory.units.deactivatePrompt", { name: localizedReferenceName(item) }));
     if (!reason || reason.trim().length < 3) return;
     try {
@@ -340,16 +372,17 @@ function UnitsPanel({ notify }: { notify: Notice }) {
   }
 
   return <>
-    <CatalogToolbar search={search} status={status} searchLabel={t("inventory.units.search")} createLabel={t("inventory.units.create")} onSearch={setSearch} onSubmit={() => { setPage(1); setSubmittedSearch(search.trim()); }} onStatus={(value) => { setPage(1); setStatus(value); }} onCreate={() => setForm("new")} />
-    {error ? <ErrorPanel error={error} retry={load} /> : loading ? <Spinner label={t("inventory.units.loading")} /> : !items.length ? <EmptyState title={t("inventory.units.emptyTitle")} description={t("inventory.units.emptyDescription")} action={<Button icon="plus" onClick={() => setForm("new")}>{t("inventory.units.create")}</Button>} /> : <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("inventory.code")}</th><th>{t("inventory.units.name")}</th><th>{t("inventory.units.decimals")}</th><th>{t("inventory.status")}</th><th>{t("inventory.actions")}</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong dir="ltr">{item.code}</strong></td><td><strong>{localizedReferenceName(item)}</strong>{item.nameEn && <small dir="ltr">{item.nameEn}</small>}</td><td>{item.decimalPlaces}</td><td><Status active={item.isActive} /></td><td><div className="inline-actions"><Button variant="ghost" icon="edit" onClick={() => setForm(item)}>{t("inventory.edit")}</Button>{item.isActive && <Button variant="ghost" icon="ban" onClick={() => void deactivate(item)}>{t("inventory.deactivate")}</Button>}</div></td></tr>)}</tbody></table></div>}
+    <CatalogToolbar createPolicy={inventoryPermissionPolicies.manageCatalog} search={search} status={status} searchLabel={t("inventory.units.search")} createLabel={t("inventory.units.create")} onSearch={setSearch} onSubmit={() => { setPage(1); setSubmittedSearch(search.trim()); }} onStatus={(value) => { setPage(1); setStatus(value); }} onCreate={() => { if (canManage) setForm("new"); }} />
+    {error ? <ErrorPanel error={error} retry={load} /> : loading ? <Spinner label={t("inventory.units.loading")} /> : !items.length ? <EmptyState title={t("inventory.units.emptyTitle")} description={t("inventory.units.emptyDescription")} action={<Can policy={inventoryPermissionPolicies.manageCatalog}><Button icon="plus" onClick={() => { if (canManage) setForm("new"); }}>{t("inventory.units.create")}</Button></Can>} /> : <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("inventory.code")}</th><th>{t("inventory.units.name")}</th><th>{t("inventory.units.decimals")}</th><th>{t("inventory.status")}</th><th>{t("inventory.actions")}</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong dir="ltr">{item.code}</strong></td><td><strong>{localizedReferenceName(item)}</strong>{item.nameEn && <small dir="ltr">{item.nameEn}</small>}</td><td>{item.decimalPlaces}</td><td><Status active={item.isActive} /></td><td><div className="inline-actions"><Can policy={inventoryPermissionPolicies.manageCatalog}><Button variant="ghost" icon="edit" onClick={() => { if (canManage) setForm(item); }}>{t("inventory.edit")}</Button>{item.isActive && <Button variant="ghost" icon="ban" onClick={() => void deactivate(item)}>{t("inventory.deactivate")}</Button>}</Can></div></td></tr>)}</tbody></table></div>}
     <Pagination {...meta} page={page} onChange={setPage} />
-    {form && <UnitForm unit={form === "new" ? null : form} onClose={() => setForm(null)} onSaved={async () => { const created = form === "new"; setForm(null); notify(t(created ? "inventory.units.created" : "inventory.units.updated")); await load(); }} />}
+    {form && canManage && <UnitForm unit={form === "new" ? null : form} onClose={() => setForm(null)} onSaved={async () => { const created = form === "new"; setForm(null); notify(t(created ? "inventory.units.created" : "inventory.units.updated")); await load(); }} />}
   </>;
 }
 
 function ItemsPanel({ notify }: { notify: Notice }) {
   const { permissionSet } = useAuthorization();
   const { locale } = useI18n();
+  const canManageCatalog = allows(permissionSet, inventoryPermissionPolicies.manageCatalog);
   const canViewSelling = permissionSet.has("sales_catalog.view");
   const [sellingItem, setSellingItem] = useState<InventoryItem | null>(null);
   const canViewBarcodes = canViewInventoryBarcodes(permissionSet);
@@ -390,8 +423,12 @@ function ItemsPanel({ notify }: { notify: Notice }) {
   useEffect(() => {
     if (!canViewBarcodes) setBarcodeItem(null);
   }, [canViewBarcodes]);
+  useEffect(() => {
+    if (!canManageCatalog) setForm(null);
+  }, [canManageCatalog]);
 
   async function deactivate(item: InventoryItem) {
+    if (!canManageCatalog) return;
     const reason = window.prompt(t("inventory.items.deactivatePrompt", { name: localizedReferenceName(item) }));
     if (!reason || reason.trim().length < 3) return;
     try {
@@ -408,12 +445,12 @@ function ItemsPanel({ notify }: { notify: Notice }) {
       <SearchBox value={search} label={t("inventory.items.search")} onChange={setSearch} onSubmit={() => { setPage(1); setSubmittedSearch(search.trim()); }} />
       <select aria-label={t("inventory.status")} value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }}><option value="">{t("inventory.status")}</option><option value="true">{t("inventory.active")}</option><option value="false">{t("inventory.inactive")}</option></select>
       <select aria-label={t("inventory.items.unitFilter")} value={unitFilter} onChange={(event) => { setPage(1); setUnitFilter(event.target.value); }}><option value="">{t("inventory.items.allUnits")}</option>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.code} — {localizedReferenceName(unit)}</option>)}</select>
-      <Button icon="plus" disabled={!units.length} onClick={() => setForm("new")}>{t("inventory.items.create")}</Button>
+      <Can policy={inventoryPermissionPolicies.manageCatalog}><Button icon="plus" disabled={!units.length} onClick={() => { if (canManageCatalog) setForm("new"); }}>{t("inventory.items.create")}</Button></Can>
     </div>
     {!loading && !units.length && <div className="inline-notice neutral">{t("inventory.items.unitRequired")}</div>}
-    {error ? <ErrorPanel error={error} retry={load} /> : loading ? <Spinner label={t("inventory.items.loading")} /> : !items.length ? <EmptyState title={t("inventory.items.emptyTitle")} description={t("inventory.items.emptyDescription")} action={units.length ? <Button icon="plus" onClick={() => setForm("new")}>{t("inventory.items.create")}</Button> : undefined} /> : <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("inventory.code")}</th><th>{t("inventory.items.name")}</th><th>{t("inventory.items.unit")}</th><th>{t("inventory.items.description")}</th><th>{t("inventory.status")}</th><th>{t("inventory.actions")}</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong dir="ltr">{item.code}</strong></td><td><strong>{localizedReferenceName(item)}</strong>{item.nameEn && <small dir="ltr">{item.nameEn}</small>}</td><td><span className="code-pill" dir="ltr">{item.unitOfMeasure.code}</span><small>{localizedReferenceName(item.unitOfMeasure)}</small></td><td>{item.description || "—"}</td><td><Status active={item.isActive} /></td><td><div className="inline-actions"><Button variant="ghost" icon="edit" onClick={() => setForm(item)}>{t("inventory.edit")}</Button>{canViewSelling && <Button variant="ghost" onClick={() => setSellingItem(item)}>{sellingWorkspace[locale].open}</Button>}<Can policy={barcodePermissionPolicies.view}><Button variant="ghost" icon="inventory" onClick={() => setBarcodeItem(item)}>{t("inventory.barcodes.manage")}</Button></Can>{item.isActive && <Button variant="ghost" icon="ban" onClick={() => void deactivate(item)}>{t("inventory.deactivate")}</Button>}</div></td></tr>)}</tbody></table></div>}
+    {error ? <ErrorPanel error={error} retry={load} /> : loading ? <Spinner label={t("inventory.items.loading")} /> : !items.length ? <EmptyState title={t("inventory.items.emptyTitle")} description={t("inventory.items.emptyDescription")} action={units.length ? <Can policy={inventoryPermissionPolicies.manageCatalog}><Button icon="plus" onClick={() => { if (canManageCatalog) setForm("new"); }}>{t("inventory.items.create")}</Button></Can> : undefined} /> : <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("inventory.code")}</th><th>{t("inventory.items.name")}</th><th>{t("inventory.items.unit")}</th><th>{t("inventory.items.description")}</th><th>{t("inventory.status")}</th><th>{t("inventory.actions")}</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong dir="ltr">{item.code}</strong></td><td><strong>{localizedReferenceName(item)}</strong>{item.nameEn && <small dir="ltr">{item.nameEn}</small>}</td><td><span className="code-pill" dir="ltr">{item.unitOfMeasure.code}</span><small>{localizedReferenceName(item.unitOfMeasure)}</small></td><td>{item.description || "—"}</td><td><Status active={item.isActive} /></td><td><div className="inline-actions"><Can policy={inventoryPermissionPolicies.manageCatalog}><Button variant="ghost" icon="edit" onClick={() => { if (canManageCatalog) setForm(item); }}>{t("inventory.edit")}</Button></Can>{canViewSelling && <Button variant="ghost" onClick={() => setSellingItem(item)}>{localizedCopyFor(sellingWorkspace, locale, "ar").open}</Button>}<Can policy={barcodePermissionPolicies.view}><Button variant="ghost" icon="inventory" onClick={() => setBarcodeItem(item)}>{t("inventory.barcodes.manage")}</Button></Can>{item.isActive && <Can policy={inventoryPermissionPolicies.manageCatalog}><Button variant="ghost" icon="ban" onClick={() => void deactivate(item)}>{t("inventory.deactivate")}</Button></Can>}</div></td></tr>)}</tbody></table></div>}
     <Pagination {...meta} page={page} onChange={setPage} />
-    {form && <ItemForm item={form === "new" ? null : form} units={units} onClose={() => setForm(null)} onSaved={async () => { const created = form === "new"; setForm(null); notify(t(created ? "inventory.items.created" : "inventory.items.updated")); await load(); }} />}
+    {form && canManageCatalog && <ItemForm item={form === "new" ? null : form} units={units} onClose={() => setForm(null)} onSaved={async () => { const created = form === "new"; setForm(null); notify(t(created ? "inventory.items.created" : "inventory.items.updated")); await load(); }} />}
     {barcodeItem && canViewBarcodes && <BarcodeManager item={barcodeItem} notify={notify} onClose={() => setBarcodeItem(null)} />}
     {sellingItem && canViewSelling && <ItemSellingProfileWorkspace item={sellingItem} onClose={() => setSellingItem(null)} />}
   </>;
@@ -571,8 +608,8 @@ function BarcodeCreateForm({ itemId, canManage, onCancel, onCreated }: { itemId:
   </form>;
 }
 
-function CatalogToolbar({ search, status, searchLabel, createLabel, onSearch, onSubmit, onStatus, onCreate }: { search: string; status: string; searchLabel: string; createLabel: string; onSearch: (value: string) => void; onSubmit: () => void; onStatus: (value: string) => void; onCreate: () => void }) {
-  return <div className="toolbar treasury-filters inventory-catalog-toolbar"><SearchBox value={search} label={searchLabel} onChange={onSearch} onSubmit={onSubmit} /><select aria-label={t("inventory.status")} value={status} onChange={(event) => onStatus(event.target.value)}><option value="">{t("inventory.status")}</option><option value="true">{t("inventory.active")}</option><option value="false">{t("inventory.inactive")}</option></select><Button icon="plus" onClick={onCreate}>{createLabel}</Button></div>;
+function CatalogToolbar({ createPolicy, search, status, searchLabel, createLabel, onSearch, onSubmit, onStatus, onCreate }: { createPolicy: PermissionPolicy; search: string; status: string; searchLabel: string; createLabel: string; onSearch: (value: string) => void; onSubmit: () => void; onStatus: (value: string) => void; onCreate: () => void }) {
+  return <div className="toolbar treasury-filters inventory-catalog-toolbar"><SearchBox value={search} label={searchLabel} onChange={onSearch} onSubmit={onSubmit} /><select aria-label={t("inventory.status")} value={status} onChange={(event) => onStatus(event.target.value)}><option value="">{t("inventory.status")}</option><option value="true">{t("inventory.active")}</option><option value="false">{t("inventory.inactive")}</option></select><Can policy={createPolicy}><Button icon="plus" onClick={onCreate}>{createLabel}</Button></Can></div>;
 }
 
 function SearchBox({ value, label, onChange, onSubmit }: { value: string; label: string; onChange: (value: string) => void; onSubmit: () => void }) {
@@ -592,6 +629,7 @@ function listQuery(page: number, search: string, status: string) {
 }
 
 function WarehouseForm({ warehouse, onClose, onSaved }: { warehouse: Warehouse | null; onClose: () => void; onSaved: () => void }) {
+  const { permissionSet } = useAuthorization();
   const [nameAr, setNameAr] = useState(warehouse?.nameAr ?? "");
   const [nameEn, setNameEn] = useState(warehouse?.nameEn ?? "");
   const [address, setAddress] = useState(warehouse?.address ?? "");
@@ -600,6 +638,7 @@ function WarehouseForm({ warehouse, onClose, onSaved }: { warehouse: Warehouse |
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (!allows(permissionSet, inventoryPermissionPolicies.manageWarehouses)) return;
     setSaving(true);
     setError("");
     try {
@@ -616,6 +655,7 @@ function WarehouseForm({ warehouse, onClose, onSaved }: { warehouse: Warehouse |
 }
 
 function UnitForm({ unit, onClose, onSaved }: { unit: UnitOfMeasure | null; onClose: () => void; onSaved: () => void }) {
+  const { permissionSet } = useAuthorization();
   const [code, setCode] = useState(unit?.code ?? "");
   const [nameAr, setNameAr] = useState(unit?.nameAr ?? "");
   const [nameEn, setNameEn] = useState(unit?.nameEn ?? "");
@@ -625,6 +665,7 @@ function UnitForm({ unit, onClose, onSaved }: { unit: UnitOfMeasure | null; onCl
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (!allows(permissionSet, inventoryPermissionPolicies.manageCatalog)) return;
     setSaving(true);
     setError("");
     try {
@@ -641,6 +682,7 @@ function UnitForm({ unit, onClose, onSaved }: { unit: UnitOfMeasure | null; onCl
 }
 
 function ItemForm({ item, units, onClose, onSaved }: { item: InventoryItem | null; units: UnitOfMeasure[]; onClose: () => void; onSaved: () => void }) {
+  const { permissionSet } = useAuthorization();
   const choices = item && !units.some(({ id }) => id === item.unitOfMeasure.id) ? [item.unitOfMeasure, ...units] : units;
   const [unitOfMeasureId, setUnitOfMeasureId] = useState(item?.unitOfMeasure.id ?? units[0]?.id ?? "");
   const [nameAr, setNameAr] = useState(item?.nameAr ?? "");
@@ -651,6 +693,7 @@ function ItemForm({ item, units, onClose, onSaved }: { item: InventoryItem | nul
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (!allows(permissionSet, inventoryPermissionPolicies.manageCatalog)) return;
     setSaving(true);
     setError("");
     try {

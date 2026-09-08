@@ -1,3 +1,5 @@
+import { localizedCopyMap } from "../locale-definition";
+
 export const arSellingProfile = {
   capacity: "توجد محاولات حفظ غير محسومة كثيرة. احسم محاولة سابقة قبل بدء طلب جديد.",
   title: "إعداد بيع الصنف", description: "احفظ السعر والعملة وحساب الإيراد والضريبة الافتراضية مرة واحدة. يعيد الخادم التحقق عند البيع.",
@@ -47,4 +49,7 @@ export const urSellingProfile: SellingProfileDictionary = {
   priceHelp: "چار اعشاری ہندسوں تک غیر منفی قیمت درج کریں۔ صفر واضح قیمت ہے؛ خالی چھوڑنے سے قیمت نہیں بنتی۔",
   currencyHelp: "یہ قیمت صرف اس کرنسی میں ہے؛ POS کی کرنسی میں خودکار تبدیلی نہیں ہوتی۔",
 };
-export const sellingProfileDictionaries = { ar: arSellingProfile, en: enSellingProfile, hi: hiSellingProfile, ur: urSellingProfile };
+export const sellingProfileDictionaries = localizedCopyMap(
+  { ar: arSellingProfile, en: enSellingProfile, hi: hiSellingProfile, ur: urSellingProfile },
+  "ar",
+);

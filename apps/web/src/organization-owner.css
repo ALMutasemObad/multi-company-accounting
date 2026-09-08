@@ -9,6 +9,7 @@
 .organization-owner-page > .page-heading h1 { margin: 4px 0; font-size: var(--organization-heading); letter-spacing: 0; }
 .organization-owner-page > .page-heading p,
 .organization-owner-page .section-kicker { font-size: var(--organization-copy); }
+.organization-header-actions { display: flex; align-items: end; flex-wrap: wrap; justify-content: end; gap: 10px; }
 .organization-filters { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; }
 .organization-filters label,
 .organization-member-add label { display: grid; gap: 6px; color: var(--muted); font-size: var(--organization-copy); font-weight: 700; }
@@ -62,6 +63,8 @@
 
 @media (max-width: 640px) {
   .organization-owner-page > .page-heading { align-items: stretch; flex-direction: column; }
+  .organization-header-actions { display: grid; grid-template-columns: 1fr; }
+  .organization-header-actions > .button { width: 100%; justify-content: center; }
   .organization-filters { display: grid; grid-template-columns: 1fr; }
   .organization-filters select { width: 100%; min-width: 0; }
   .organization-summary { grid-template-columns: 1fr; }
@@ -83,3 +86,12 @@
 .group-company-create label { display: grid; gap: 0.5rem; }
 .group-company-create label span { font-size: var(--organization-copy, 1rem); }
 .group-company-create input, .group-company-create select, .group-company-create button { min-width: 0; max-width: 100%; font-size: var(--organization-copy, 1rem); }
+.group-company-boundary { padding: 12px 14px; border: 1px solid #dccb95; border-radius: 12px; background: #fffaf0; color: var(--green-900); }
+.group-company-result { display: grid; gap: 8px; }
+.group-company-result > strong { font-size: var(--organization-heading, 1.25rem); color: var(--green-900); }
+.group-company-result-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+
+@media (max-width: 640px) {
+  .group-company-result-actions { display: grid; grid-template-columns: 1fr; }
+  .group-company-result-actions .button { width: 100%; justify-content: center; }
+}

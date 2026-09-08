@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Request, type Response } from '@playwright/test';
 import { arPos, enPos, hiPos, urPos } from '../../apps/web/src/i18n/locales/pos';
+import type { CurrentAuthorization } from '../../apps/web/src/types';
 
 type Locale = 'ar' | 'en' | 'ur' | 'hi';
 
@@ -61,6 +62,14 @@ async function configureLocale(page: Page, locale: Locale) {
   await page.addInitScript((selectedLocale) => {
     window.localStorage.setItem('mcap.locale', selectedLocale);
   }, locale);
+}
+
+async function configureAuthorizedLocale(page: Page, locale: Locale, permissions: readonly string[]) {
+  await configureLocale(page, locale);
+  const authorization = await (await page.request.get('/api/v1/auth/me')).json() as CurrentAuthorization;
+  await page.route('**/api/v1/auth/me', (route) => route.fulfill({
+    json: { ...authorization, permissions: [...new Set([...authorization.permissions, ...permissions])] },
+  }));
 }
 
 async function waitForStableInterface(page: Page, screen: Screen) {
@@ -281,7 +290,7 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
   test(`${locale}: inventory catalog tabs and editors stay responsive`, async ({ page }) => {
     const runtimeErrors: string[] = [];
     page.on('pageerror', (error) => runtimeErrors.push(error.message));
-    await configureLocale(page, locale);
+    await configureAuthorizedLocale(page, locale, ['inventory_catalog.manage', 'inventory_movements.create']);
     await page.goto('/?qa=inventory#inventory');
     await waitForStableInterface(page, { name: 'inventory', path: '', ready: '.workspace-page', kind: 'workspace' });
 
@@ -343,7 +352,7 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
   test(`${locale}: financial close checklist stays responsive and accessible`, async ({ page }) => {
     const runtimeErrors: string[] = [];
     page.on('pageerror', (error) => runtimeErrors.push(error.message));
-    await configureLocale(page, locale);
+    await configureAuthorizedLocale(page, locale, ['fiscal_periods.close']);
     await page.goto('/?qa=fiscal#fiscal');
     await waitForStableInterface(page, { name: 'fiscal', path: '', ready: '.workspace-page', kind: 'workspace' });
 

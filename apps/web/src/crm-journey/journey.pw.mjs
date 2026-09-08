@@ -123,6 +123,18 @@ test("view-only permissions expose no write controls", async ({ page }) => {
   expect(await writes(page)).toHaveLength(0);
 });
 
+test("management-only permission cannot add activities or convert a qualified lead", async ({ page }) => {
+  await open(page, "?permissions=crm.view,crm.manage");
+  await page.evaluate(() => { window.crmTest.lead.status = "QUALIFIED"; });
+  await page.getByRole("searchbox").fill("qualified");
+  await page.getByRole("button", { name: "بحث", exact: true }).click();
+  await expect(page.getByRole("button", { name: "عميل محتمل جديد", exact: true })).toBeVisible();
+  await expect(page.locator(".crm-stage-select")).toBeVisible();
+  await expect(page.getByRole("button", { name: "إضافة متابعة", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "تحويل إلى عميل", exact: true })).toHaveCount(0);
+  expect(await writes(page)).toHaveLength(0);
+});
+
 test("qualification requires currency with amount and posts exact decimal text", async ({ page }) => {
   await open(page);
   await page.getByRole("button", { name: "تأهيل", exact: true }).click();

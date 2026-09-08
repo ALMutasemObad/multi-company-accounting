@@ -1,14 +1,15 @@
 import {
   activeIntlLocale,
-  hasTranslation,
-  translate as t,
-  type TranslationKey } from "./i18n";
+  translate as t } from "./i18n";
 import { FormEvent,
   useCallback,
   useEffect,
   useState } from "react";
 import { api,
   downloadFile } from "./api";
+import { Can, useAuthorization } from "./authorization-context";
+import { canUseControlAction, controlActionPermissionPolicies } from "./control-action-permission-policies";
+import { auditFilterLabel } from "./audit-filter-labels";
 import type { AuditLog,
   AuditOptions,
   ListResponse } from "./types";
@@ -25,15 +26,12 @@ type Filters = { search: string; userId: string; action: string; entityType: str
 type TargetView = "admin" | "settings" | "customers" | "suppliers" | "receipts" | "payments" | "journals" | "fiscal" | "accounts" | "treasury" | "inventory";
 const emptyFilters: Filters = { search: "", userId: "", action: "", entityType: "", dateFrom: "", dateTo: "" };
 
-function codedLabel(scope: "action" | "entity", code: string) {
-  const key = `audit.${scope}.${code}`;
-  return hasTranslation(key) ? t(key) : code;
-}
-const actionLabel = (code: string) => codedLabel("action", code);
-const entityLabel = (code: string) => codedLabel("entity", code);
+const actionLabel = (code: string) => auditFilterLabel("action", code);
+const entityLabel = (code: string) => auditFilterLabel("entity", code);
 const targetFor = (entityType: string): TargetView | null => ({ USER: "admin", ROLE: "admin", COMPANY: "settings", CUSTOMER: "customers", SUPPLIER: "suppliers", RECEIPT: "receipts", PAYMENT: "payments", MANUAL_JOURNAL: "journals", FISCAL_YEAR: "fiscal", FISCAL_PERIOD: "fiscal", ACCOUNT: "accounts", COST_CENTER: "accounts", CASH_BANK_ACCOUNT: "treasury", PAYMENT_METHOD: "treasury", WAREHOUSE: "inventory", UNIT_OF_MEASURE: "inventory", INVENTORY_ITEM: "inventory", INVENTORY_MOVEMENT: "inventory", INVENTORY_BALANCE: "inventory" } as Record<string, TargetView>)[entityType] ?? null;
 
 export function AuditLogsPage({ notify, onNavigate }: { notify: Notice; onNavigate: (view: TargetView) => void }) {
+  const { permissionSet } = useAuthorization();
   const [rows, setRows] = useState<AuditLog[]>([]);
   const [meta, setMeta] = useState({ page: 1, pageSize: 25, total: 0, totalPages: 0 });
   const [page, setPage] = useState(1);
@@ -62,6 +60,7 @@ export function AuditLogsPage({ notify, onNavigate }: { notify: Notice; onNaviga
   function submit(event: FormEvent) { event.preventDefault(); if (draft.dateFrom && draft.dateTo && draft.dateFrom > draft.dateTo) { notify(t("pages.audit-logs.002"), "error"); return; } setPage(1); setApplied(draft); }
   function clear() { setDraft(emptyFilters); setApplied(emptyFilters); setPage(1); }
   async function exportCsv() {
+    if (!canUseControlAction(permissionSet, "auditExport")) return;
     setExporting(true);
     try { await downloadFile(`/audit-logs/export.csv?${queryFor(false)}`, "audit-logs.csv"); notify(t("pages.audit-logs.003")); await load(); }
     catch (cause) { notify(cause instanceof Error ? cause.message : t("pages.audit-logs.004"), "error"); }
@@ -69,7 +68,7 @@ export function AuditLogsPage({ notify, onNavigate }: { notify: Notice; onNaviga
   }
 
   return <section className="workspace-page audit-page">
-    <PageHeader kicker={t("pages.audit-logs.005")} title={t("pages.audit-logs.006")} description={t("pages.audit-logs.007")} actions={<Button variant="secondary" icon="arrowDown" disabled={exporting} onClick={() => void exportCsv()}>{exporting ? t("pages.audit-logs.008") : t("pages.audit-logs.009")}</Button>} />
+    <PageHeader kicker={t("pages.audit-logs.005")} title={t("pages.audit-logs.006")} description={t("pages.audit-logs.007")} actions={<Can policy={controlActionPermissionPolicies.auditExport}><Button variant="secondary" icon="arrowDown" disabled={exporting} onClick={() => void exportCsv()}>{exporting ? t("pages.audit-logs.008") : t("pages.audit-logs.009")}</Button></Can>} />
     <form className="audit-filters" onSubmit={submit}>
       <label className="audit-search"><span>{t("pages.accounts.026")}</span><input value={draft.search} onChange={(event) => setDraft({ ...draft, search: event.target.value })} placeholder={t("pages.audit-logs.011")} /></label>
       <label><span>{t("pages.admin.021")}</span><select value={draft.userId} onChange={(event) => setDraft({ ...draft, userId: event.target.value })}><option value="">{t("pages.audit-logs.013")}</option>{options.users.map((user) => <option key={user.id} value={user.id}>{user.name} — {user.email}</option>)}</select></label>

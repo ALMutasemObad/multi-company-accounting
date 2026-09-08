@@ -1,32 +1,41 @@
+import { localeManifest } from "virtual:locale-manifest";
+import type { LocaleDefinition } from "./locale-definition";
 import { localeRegistry, type Locale } from "./locales/registry";
-import type { ar } from "./locales/ar";
+import type { localeDictionary as arabicDictionary } from "./locales/ar.locale";
 
 export type { Locale } from "./locales/registry";
-export type TranslationKey = keyof typeof ar;
+export type TranslationKey = keyof typeof arabicDictionary;
 export type TranslationValues = Record<string, string | number>;
 type Dictionary = Record<TranslationKey, string>;
 
-export const supportedLocales = Object.keys(localeRegistry) as Locale[];
+export const supportedLocales = localeManifest.map(({ code }) => code);
 export const localeDetails = Object.fromEntries(supportedLocales.map((locale) => [locale, {
   nativeName: localeRegistry[locale].nativeName,
   dir: localeRegistry[locale].dir,
   intl: localeRegistry[locale].intl,
-}])) as Record<Locale, { nativeName: string; dir: "rtl" | "ltr"; intl: string }>;
+}])) as Readonly<Record<Locale, { nativeName: string; dir: "rtl" | "ltr"; intl: string }>>;
 
-const dictionaryLoaders: Record<Locale, () => Promise<Dictionary>> = {
-  ar: async () => (await import("./locales/ar")).ar,
-  en: async () => (await import("./locales/en")).en,
-  ur: async () => (await import("./locales/ur")).ur,
-  hi: async () => (await import("./locales/hi")).hi,
-};
+type LocaleModule = { default: LocaleDefinition<Dictionary> };
+const discoveredLocaleModules = import.meta.glob<LocaleModule>("./locales/*.locale.ts");
+const dictionaryLoaders = Object.fromEntries(localeManifest.map(({ code, modulePath }) => {
+  const loadModule = discoveredLocaleModules[modulePath];
+  if (!loadModule) throw new Error(`Locale manifest points to a missing module: ${modulePath}`);
+  return [code, async () => {
+    const definition = (await loadModule()).default;
+    if (definition.metadata.code !== code) throw new Error(`Locale module metadata changed after build: ${code}`);
+    return definition.dictionary;
+  }];
+})) as Record<Locale, () => Promise<Dictionary>>;
 const dictionaries: Partial<Record<Locale, Dictionary>> = {};
 const dictionaryLoads = new Map<Locale, Promise<void>>();
 
 export async function loadLocale(locale: Locale) {
   if (dictionaries[locale]) return;
+  const loader = dictionaryLoaders[locale];
+  if (!loader) throw new Error(`Locale is not available: ${locale}`);
   const existing = dictionaryLoads.get(locale);
   if (existing) return existing;
-  const pending = dictionaryLoaders[locale]().then((dictionary) => {
+  const pending = loader().then((dictionary) => {
     dictionaries[locale] = dictionary;
   }).finally(() => {
     dictionaryLoads.delete(locale);
@@ -48,7 +57,13 @@ export function hasTranslation(key: string): key is TranslationKey {
 let activeLocale: Locale = "ar";
 
 export function resolveLocale(value: string | null | undefined): Locale {
-  return value && Object.hasOwn(localeRegistry, value) ? value as Locale : "ar";
+  if (!value) return "ar";
+  try {
+    const [canonical] = Intl.getCanonicalLocales(value);
+    return canonical && Object.hasOwn(localeRegistry, canonical) ? canonical : "ar";
+  } catch {
+    return "ar";
+  }
 }
 
 export function createTranslator(locale: Locale) {
