@@ -1,3 +1,5 @@
+import { localizedCopyMap } from "../locale-definition";
+
 export const arCashierContext = {
   expired: "انتهت مهلة التحقق؛ أعد التحقق ثم راجع السياق قبل البيع.",
   title: "سياق البيع", help: "راجع القيم ومصادرها قبل اعتمادها. يعيد الخادم التحقق عند إتمام البيع.",
@@ -67,4 +69,7 @@ export const urCashierContext: CashierContextDictionary = {
   locked: "اسکین یا فروخت کی کوشش کے دوران سیاق مقفل ہے۔ بدلنے یا لاگو کرنے سے پہلے کوشش کا نتیجہ واضح کریں۔", scopeChanged: "صارف، کمپنی یا اجازت بدلی؛ نیا سیاق ضروری ہے۔",
   pickerUnavailable: "حوالے کا انتخاب ابھی منسلک نہیں؛ کوئی قدر فرض نہیں کی جا سکتی۔", noExchangeRate: "فروخت میں شرح مبادلہ کا جائزہ لیں؛ یہ پینل اسے فرض نہیں کرتا۔",
 };
-export const cashierContextDictionaries = { ar: arCashierContext, en: enCashierContext, hi: hiCashierContext, ur: urCashierContext };
+export const cashierContextDictionaries = localizedCopyMap(
+  { ar: arCashierContext, en: enCashierContext, hi: hiCashierContext, ur: urCashierContext },
+  "ar",
+);

@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activeIntlLocale, createTranslator, dictionaryFor, loadLocale, localeDetails, localizedReferenceName, resolveLocale, supportedLocales } from "./index";
+import { activeIntlLocale, createTranslator, dictionaryFor, loadLocale, localeDetails, localizedCopyFor, localizedReferenceName, resolveLocale, resolveLocalizedCopyLocale, supportedLocales } from "./index";
 import { setActiveLocale } from "./core";
 
 beforeAll(async () => Promise.all(supportedLocales.map(loadLocale)));
@@ -51,6 +51,14 @@ describe("translation dictionaries", () => {
     expect(resolveLocale("hi")).toBe("hi");
     expect(resolveLocale("unknown-locale")).toBe("ar");
     expect(resolveLocale(null)).toBe("ar");
+  });
+
+  it("uses exact, base-language, then explicit fallback for legacy localized copy maps", () => {
+    const copies = { ar: { label: "Arabic" }, en: { label: "English" } };
+    expect(resolveLocalizedCopyLocale(copies, "en-GB", "ar")).toBe("en");
+    expect(resolveLocalizedCopyLocale(copies, "de-DE", "ar")).toBe("ar");
+    expect(localizedCopyFor(copies, "en-GB", "ar")).toBe(copies.en);
+    expect(localizedCopyFor(copies, "invalid_locale", "ar")).toBe(copies.ar);
   });
 
   it("uses localized reference names and falls back safely when English is unavailable", () => {

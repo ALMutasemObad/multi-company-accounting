@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from './api';
 import { useAuthorization } from './authorization-context';
-import { localizedReferenceName, useI18n } from './i18n';
+import { localizedReferenceName, resolveLocalizedCopyLocale, useI18n } from './i18n';
 import { sellingWorkspace } from './i18n/locales/selling-profile-workspace';
 import { ItemSellingProfileEditor } from './ItemSellingProfileEditor';
 import { readSellingProfile, saveSellingProfile } from './selling-profile-integration';
@@ -65,10 +65,11 @@ export function ItemSellingProfileWorkspace({ item, onClose }: { item: Inventory
 }
 
 function Workspace({ item, onClose, scope, locale }: {
-  item: InventoryItem; onClose: () => void; scope: string; locale: keyof typeof sellingWorkspace;
+  item: InventoryItem; onClose: () => void; scope: string; locale: string;
 }) {
   const { permissionSet } = useAuthorization();
-  const copy = sellingWorkspace[locale];
+  const copyLocale = resolveLocalizedCopyLocale(sellingWorkspace, locale, 'ar');
+  const copy = sellingWorkspace[copyLocale];
   const canManage = permissionSet.has('sales_catalog.manage');
   const lifetime = useRef<AbortController | null>(null);
   const [epoch, setEpoch] = useState(0);
@@ -123,7 +124,7 @@ function Workspace({ item, onClose, scope, locale }: {
         {canManage && <details><summary>{copy.references}</summary><p>{copy.limited}</p>
           <div className="selling-workspace-references">{controls('currencies', currencies)}{controls('accounts', accounts)}{controls('taxes', taxes)}</div>
         </details>}
-        <ItemSellingProfileEditor scopeKey={scope} itemId={item.id} itemName={localizedReferenceName(item)} locale={locale}
+        <ItemSellingProfileEditor scopeKey={scope} itemId={item.id} itemName={localizedReferenceName(item)} locale={copyLocale}
           profile={value.profile} canManage={canManage} currencies={options('currencies', currencies)} accounts={options('accounts', accounts)} taxes={options('taxes', taxes)}
           onSave={onSave} onReload={() => setEpoch(current => current + 1)} />
       </>}

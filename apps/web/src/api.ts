@@ -143,7 +143,7 @@ export async function startSocialSignIn(provider: 'google' | 'apple', options: R
 
 export type SocialOnboardingOptions = {
   currencies: Array<{ code: string; nameAr: string; decimals: number }>;
-  locales: Array<'ar' | 'en' | 'ur' | 'hi'>;
+  locales: string[];
   timezones: string[];
   chartTemplates: Array<{ code: string; nameAr: string; nameEn: string }>;
 };
@@ -157,7 +157,7 @@ export async function completeSocialOnboarding(input: {
   companyName: string;
   timezone: string;
   baseCurrencyCode: string;
-  locale: 'ar' | 'en' | 'ur' | 'hi';
+  locale: string;
   chartTemplateCode: string;
   consent: true;
 }, options: RequestPolicy = {}) {

@@ -1,6 +1,6 @@
 import { appendFile } from 'node:fs/promises';
 import { logEvent } from '../operations/logger.js';
-import type { SupportedLocale } from './supported-locales.js';
+import { resolveEmailTemplateLocale, type EmailTemplateLocale, type SupportedLocale } from './supported-locales.js';
 
 export type RegistrationVerificationMessage = {
   to: string;
@@ -89,14 +89,14 @@ const emailCopy = {
       notice: (date: string) => `यह लिंक ${date} (UTC) पर समाप्त होगा। यदि आपने यह अनुरोध नहीं किया है, तो इस संदेश को अनदेखा करें।`,
     },
   },
-} as const satisfies Record<SupportedLocale, {
+} as const satisfies Record<EmailTemplateLocale, {
   dir: 'rtl' | 'ltr';
   intl: string;
   verification: { subject: string; heading: string; action: string; notice: (date: string) => string };
   passwordReset: { subject: string; heading: string; action: string; notice: (date: string) => string };
 }>;
 
-function formatExpiry(expiresAt: Date, locale: SupportedLocale) {
+function formatExpiry(expiresAt: Date, locale: EmailTemplateLocale) {
   return expiresAt.toLocaleString(emailCopy[locale].intl, { timeZone: 'UTC', timeZoneName: 'short' });
 }
 
@@ -104,8 +104,9 @@ export class ResendRegistrationMailer implements RegistrationMailer, PasswordRes
   constructor(private readonly apiKey: string, private readonly from: string) {}
 
   async sendVerification(message: RegistrationVerificationMessage, signal?: AbortSignal) {
-    const copy = emailCopy[message.locale];
-    const notice = copy.verification.notice(formatExpiry(message.expiresAt, message.locale));
+    const templateLocale = resolveEmailTemplateLocale(message.locale);
+    const copy = emailCopy[templateLocale];
+    const notice = copy.verification.notice(formatExpiry(message.expiresAt, templateLocale));
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
@@ -121,8 +122,9 @@ export class ResendRegistrationMailer implements RegistrationMailer, PasswordRes
   }
 
   async sendPasswordReset(message: PasswordResetMessage, signal?: AbortSignal) {
-    const copy = emailCopy[message.locale];
-    const notice = copy.passwordReset.notice(formatExpiry(message.expiresAt, message.locale));
+    const templateLocale = resolveEmailTemplateLocale(message.locale);
+    const copy = emailCopy[templateLocale];
+    const notice = copy.passwordReset.notice(formatExpiry(message.expiresAt, templateLocale));
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },

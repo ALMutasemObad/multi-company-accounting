@@ -76,4 +76,25 @@ describe('registration mailers', () => {
     expect(hindiBody.html).toContain('dir="ltr"');
     expect(hindiBody.html).toContain('नया पासवर्ड बनाएँ');
   });
+
+  it('matches a regional base-language template and falls back explicitly to Arabic for an untranslated locale', async () => {
+    const provider = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', provider);
+    const mailer = new ResendRegistrationMailer('test-key', 'Accounting Platform <no-reply@example.com>');
+    const expiresAt = new Date('2026-08-22T01:00:00.000Z');
+
+    await mailer.sendVerification({
+      to: 'british@example.com', locale: 'en-GB', verificationUrl: 'https://example.com/#register?token=en', expiresAt,
+    });
+    await mailer.sendPasswordReset({
+      to: 'german@example.com', locale: 'de-DE', resetUrl: 'https://example.com/#reset-password?token=de', expiresAt,
+    });
+
+    const englishBody = JSON.parse(String(provider.mock.calls[0]?.[1]?.body));
+    const fallbackBody = JSON.parse(String(provider.mock.calls[1]?.[1]?.body));
+    expect(englishBody.subject).toBe('Verify your email to create your company');
+    expect(englishBody.html).toContain('dir="ltr"');
+    expect(fallbackBody.subject).toBe('استعادة كلمة المرور');
+    expect(fallbackBody.html).toContain('dir="rtl"');
+  });
 });

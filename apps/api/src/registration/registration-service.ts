@@ -17,7 +17,7 @@ import {
 } from '../platform/transaction-executor.js';
 import { RegistrationEventRecorder, type RegistrationMetadata } from './registration-event-recorder.js';
 import { assertRequestActive, ClientDisconnectedError, sleepWithinRequest } from '../operations/request-context.js';
-import { supportedLocales, type SupportedLocale } from './supported-locales.js';
+import { emailTemplateLocales, normalizeSupportedLocale, type SupportedLocale } from './supported-locales.js';
 import type { RegistrationOwnerPorts } from './registration-owner-ports.js';
 
 export type { RegistrationMetadata } from './registration-event-recorder.js';
@@ -71,7 +71,7 @@ export class RegistrationService {
     const timezones = [...new Set(['UTC', ...Intl.supportedValuesOf('timeZone')])];
     return {
       currencies,
-      locales: supportedLocales,
+      locales: emailTemplateLocales,
       timezones,
       chartTemplates: this.owners.accounting.listChartTemplates(),
       passwordPolicy: { minLength: 12, maxLength: 1024 },
@@ -88,6 +88,8 @@ export class RegistrationService {
   async start(input: StartRegistrationInput, metadata: RegistrationMetadata = {}) {
     await this.cleanupExpired();
     try { new Intl.DateTimeFormat('en-US', { timeZone: input.timezone }).format(); } catch { throw new RegistrationError('INVALID_OPTION'); }
+    const locale = normalizeSupportedLocale(input.locale);
+    if (!locale) throw new RegistrationError('INVALID_OPTION');
     const emailNormalized = input.email.trim().toLocaleLowerCase('en-US');
     const baseCurrencyCode = input.baseCurrencyCode.trim().toUpperCase();
     const passwordHash = await this.passwordHasher(input.password);
@@ -125,7 +127,7 @@ export class RegistrationService {
           companyName: input.companyName,
           timezone: input.timezone,
           baseCurrencyCode,
-          locale: input.locale,
+          locale,
           chartTemplateCode: input.chartTemplateCode,
           verificationTokenHash,
           verificationExpiresAt: expiresAt,
@@ -150,7 +152,7 @@ export class RegistrationService {
           companyName: input.companyName,
           timezone: input.timezone,
           baseCurrencyCode,
-          locale: input.locale,
+          locale,
           chartTemplateCode: input.chartTemplateCode,
           verificationTokenHash,
           verificationExpiresAt: expiresAt,

@@ -1,3 +1,5 @@
+import { localizedCopyMap } from "../locale-definition";
+
 export const arPosRecovery = {
   title: "استرجاع نتيجة البيع", unknown: "قد يكون الخادم أتم البيع. تبقى السلة مقفلة حتى تصل نتيجة مؤكدة؛ لا تنشئ بيعًا بديلًا.",
   check: "التحقق من نتيجة البيع", checking: "جارٍ التحقق من النتيجة…", pending: "جارٍ إرسال البيع…",
@@ -47,4 +49,7 @@ export const urPosRecovery: PosRecoveryDictionary = {
   permission: "نتیجہ دکھانے کے لیے مجاز صارف اور کمپنی درکار ہیں۔ سیاق بدلنے سے پچھلی کوشش کا نتیجہ واضح نہیں ہوتا۔",
   invoice: "انوائس", receipt: "رسید", total: "سرور کا کل", newSale: "نئی فروخت شروع کریں", initializing: "بحالی کا نشان دیکھا جا رہا ہے…",
 };
-export const posRecoveryDictionaries = { ar: arPosRecovery, en: enPosRecovery, hi: hiPosRecovery, ur: urPosRecovery };
+export const posRecoveryDictionaries = localizedCopyMap(
+  { ar: arPosRecovery, en: enPosRecovery, hi: hiPosRecovery, ur: urPosRecovery },
+  "ar",
+);
