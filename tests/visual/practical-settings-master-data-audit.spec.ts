@@ -70,14 +70,14 @@ test("Arabic settings, master-data, inventory and import entry points render at 
   expect(pageErrors).toEqual([]);
 });
 
-test.fixme("P1: account creation actions are hidden without accounts.create", async ({ page }) => {
+test("P1: account creation actions are hidden without accounts.create", async ({ page }) => {
   await openFixture(page, "accounts");
 
   await expect(page.getByRole("button", { name: "حساب جديد", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "إنشاء حساب", exact: true })).toHaveCount(0);
 });
 
-test.fixme("P1: accounts.view alone can open the chart without cost-center management", async ({ page }) => {
+test("P1: accounts.view alone can open the chart without cost-center management", async ({ page }) => {
   await overridePermissions(page, ["accounts.view"]);
   await openFixture(page, "accounts");
 

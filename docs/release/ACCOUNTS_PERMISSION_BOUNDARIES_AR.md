@@ -30,7 +30,7 @@
 - نُفذ `npm ci` مستقلًا باستخدام Node المعتمد وnpm 12.0.2 ومخزن `E:/DevelopmentCaches/npm`: أضيفت 361 حزمة دون مشاركة `node_modules` قابل للكتابة.
 - `apps/web/src/authorization.test.ts`: `16/16` ناجحة.
 - `npm run typecheck -w @mcap/web`: ناجح بعد آخر تعديل.
-- `npm run build -w @mcap/web`: ناجح بعد آخر تعديل. بقي تحذير Vite القائم عن chunk يتجاوز 500KB خارج نطاق المهمة.
+- `npm run build -w @mcap/web`: ناجح بعد دمج منصة اللغات. اختفى تحذير chunk القديم؛ بقي `EmployeeExpensesPage` عند `11.33 kB` وفُصلت قواميس اللغات في chunks كسولة لا يتجاوز أي منها `500 KiB`.
 - `node scripts/check-web-ui.mjs`: ناجح (`31` رأس صفحة و`68` منطقة جدول).
 - `git diff --check`: ناجح، ونطاق الملفات مطابق للمهمة.
 
