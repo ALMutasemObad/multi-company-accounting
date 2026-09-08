@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { chromium, expect as browserExpect, type Browser, type Page } from "@playwright/test";
 import { createServer, type ViteDevServer } from "vite";
 import { fileURLToPath } from "node:url";
+import { localeManifestPlugin } from "../../vite.config";
 
 const enabled = process.env.RUN_ACCOUNT_ACCESS_BROWSER_TESTS === "true";
 const localeTitles = {
@@ -20,8 +21,10 @@ describe.runIf(enabled)("account access browser integration", () => {
     server = await createServer({
       configFile: false,
       root: fileURLToPath(new URL("../..", import.meta.url)),
+      cacheDir: fileURLToPath(new URL("../../node_modules/.vite/account-access", import.meta.url)),
       server: { host: "127.0.0.1", port: 0 },
       optimizeDeps: { entries: [], include: ["react", "react-dom/client", "react/jsx-runtime"] },
+      plugins: [localeManifestPlugin()],
     });
     await server.listen();
     const address = server.httpServer!.address();

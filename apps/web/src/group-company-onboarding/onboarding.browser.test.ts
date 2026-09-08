@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { chromium, expect as browserExpect, type Browser } from "@playwright/test";
 import { createServer, type ViteDevServer } from "vite";
+import { fileURLToPath } from "node:url";
+import { localeManifestPlugin } from "../../vite.config";
 
 // Real React and Chromium; only HTTP responses are simulated in these UI tests.
 describe.runIf(process.env.RUN_GROUP_ONBOARDING_BROWSER_TESTS === "true")("group onboarding browser behavior", () => {
@@ -8,7 +10,7 @@ describe.runIf(process.env.RUN_GROUP_ONBOARDING_BROWSER_TESTS === "true")("group
   let browser: Browser;
   let origin: string;
   beforeAll(async () => {
-    server = await createServer({ configFile: false, root: process.cwd(), server: { host: "127.0.0.1", port: 0 }, optimizeDeps: { entries: [], include: ["react", "react-dom/client", "react/jsx-runtime"] }, esbuild: { jsx: "automatic" }, plugins: [{ name: "onboarding-test-harness", configureServer(vite) {
+    server = await createServer({ configFile: false, root: process.cwd(), cacheDir: fileURLToPath(new URL("../../node_modules/.vite/group-company-onboarding", import.meta.url)), server: { host: "127.0.0.1", port: 0 }, optimizeDeps: { entries: [], include: ["react", "react-dom/client", "react/jsx-runtime"] }, esbuild: { jsx: "automatic" }, plugins: [localeManifestPlugin(), { name: "onboarding-test-harness", configureServer(vite) {
     vite.middlewares.use("/__group-company-test", async (request, response, next) => {
       // Vite serves the transformed inline module through its html-proxy middleware.
       if (request.url?.includes("html-proxy")) { next(); return; }

@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { chromium, expect as browserExpect, type Browser } from "@playwright/test";
 import { createServer, type ViteDevServer } from "vite";
+import { fileURLToPath } from "node:url";
+import { localeManifestPlugin } from "../../vite.config";
 import copy from "./copy.json";
 
 const enabled = process.env.RUN_REGISTRATION_EMAIL_BROWSER_TESTS === "true";
@@ -14,11 +16,12 @@ describe.runIf(enabled)("registration email browser journey", () => {
   beforeAll(async () => {
     server = await createServer({
       configFile: false,
-      root: process.cwd(),
+      root: fileURLToPath(new URL("../..", import.meta.url)),
+      cacheDir: fileURLToPath(new URL("../../node_modules/.vite/registration-email-delivery", import.meta.url)),
       server: { host: "127.0.0.1", port: 0 },
       optimizeDeps: { entries: [], include: ["react", "react-dom/client", "react/jsx-runtime"] },
       esbuild: { jsx: "automatic" },
-      plugins: [{
+      plugins: [localeManifestPlugin(), {
         name: "registration-email-test-harness",
         configureServer(vite) {
           vite.middlewares.use("/__registration-email-test", async (request, response, next) => {
@@ -27,9 +30,9 @@ describe.runIf(enabled)("registration email browser journey", () => {
             response.end(await vite.transformIndexHtml("/__registration-email-test", `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="root"></div><script type="module">
               import React from 'react';
               import { createRoot } from 'react-dom/client';
-              import { I18nProvider, loadLocale } from '/apps/web/src/i18n/index.ts';
-              import { RegistrationPage } from '/apps/web/src/RegistrationPage.tsx';
-              import '/apps/web/src/styles.css';
+              import { I18nProvider, loadLocale } from '/src/i18n/index.ts';
+              import { RegistrationPage } from '/src/RegistrationPage.tsx';
+              import '/src/styles.css';
               const locale = new URLSearchParams(location.search).get('locale') || 'en';
               await Promise.all(['ar', 'en', 'ur', 'hi'].map(loadLocale));
               createRoot(document.getElementById('root')).render(React.createElement(I18nProvider, {initialLocale: locale}, React.createElement(RegistrationPage, {onBackToLogin: () => {document.body.dataset.login = 'true'}})));

@@ -59,7 +59,7 @@ function discoverLocales() {
   return entries;
 }
 
-function localeManifestPlugin(): Plugin {
+export function localeManifestPlugin(): Plugin {
   return {
     name: "locale-file-manifest",
     resolveId(id) {
