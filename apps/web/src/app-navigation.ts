@@ -1,5 +1,6 @@
 import type { TranslationKey } from "./i18n";
 import type { IconName } from "./ui";
+import { accountPermissionPolicies } from "./account-permission-policies";
 import { allows, type PermissionPolicy } from "./authorization";
 import type { PlatformModuleCode } from './types';
 
@@ -70,7 +71,7 @@ export const viewPermissionPolicies: Record<TenantProtectedView, PermissionPolic
   journals: { permission: "manual_journals.view" },
   fiscal: { permission: "fiscal_periods.view" },
   approvals: { permission: "approvals.view" },
-  accounts: { allOf: ["accounts.view", "cost_centers.manage"] },
+  accounts: accountPermissionPolicies.workspace,
   treasury: { permission: "cash_bank_accounts.view" },
   inventory: { permission: "warehouses.view" },
   reports: { permission: "reports.cash_flow.view" },
