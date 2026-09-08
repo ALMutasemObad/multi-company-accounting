@@ -71,7 +71,6 @@ test("P1: new sales and purchase documents start inside the selected open period
 });
 
 test("P2: treasury shows a business-readable ledger account instead of an opaque id", async ({ page }) => {
-  test.fixme(true, "Known gap: an unresolved ledger option is rendered as the raw internal identifier.");
   await openArabicFixture(page, "/?qa=treasury#treasury", ".workspace-page");
   const row = page.locator(".data-table tbody tr").filter({ hasText: "CB-000001" });
   await expect(row).toHaveCount(1);

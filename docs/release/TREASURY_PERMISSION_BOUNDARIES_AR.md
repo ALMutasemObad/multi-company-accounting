@@ -24,7 +24,7 @@
 - قبل `npm ci`: المساحة الحرة `21.97 GB` على C و`26.95 GB` على E. ثُبتت 361 حزمة مستقلة باستخدام Node المعتمد وnpm 12.0.2 وcache `E:/DevelopmentCaches/npm`.
 - `npm run typecheck -w @mcap/web`: ناجح بعد آخر تعديل.
 - `npm run e2e:typecheck`: ناجح.
-- `npm run build -w @mcap/web`: ناجح بعد آخر تعديل، مع تحذير Vite القائم عن chunk يتجاوز 500KB خارج نطاق المهمة.
+- `npm run build -w @mcap/web`: ناجح بعد دمج منصة اللغات، بلا تحذير chunk يتجاوز `500 KiB`؛ بقي `EmployeeExpensesPage` عند `11.33 kB` والقواميس في chunks كسولة منفصلة.
 - `node scripts/check-web-ui.mjs`: ناجح (`31` رأس صفحة و`68` منطقة جدول).
 - `git diff --check`: ناجح، ونطاق الملفات مطابق للمهمة.
 
