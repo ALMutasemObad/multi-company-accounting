@@ -1,6 +1,10 @@
 declare module "virtual:locale-manifest" {
-  import type { LocaleMetadata } from "./locale-definition";
-
-  export type LocaleManifestEntry = LocaleMetadata & { modulePath: string };
+  export type LocaleManifestEntry = {
+    code: string;
+    nativeName: string;
+    dir: "rtl" | "ltr";
+    intl: string;
+    modulePath: string;
+  };
   export const localeManifest: readonly LocaleManifestEntry[];
 }
