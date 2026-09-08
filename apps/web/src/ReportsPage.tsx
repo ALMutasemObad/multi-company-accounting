@@ -45,7 +45,7 @@ type Tab = "cash" | "tax" | "costCenters" | "trial" | "journal" | "ledger" | "po
 
 const reportTabOrder: readonly Tab[] = ["cash", "tax", "costCenters", "trial", "journal", "ledger", "position", "income"];
 const reportTabId = (tab: Tab) => `reports-tab-${tab}`;
-const reportPanelId = (tab: Tab) => `reports-panel-${tab}`;
+const reportPanelId = "reports-panel";
 
 export function ReportsPage() {
   const initial = currentYearRange();
@@ -221,14 +221,14 @@ export function ReportsPage() {
         id={reportTabId(item.tab)}
         role="tab"
         aria-selected={tab === item.tab}
-        aria-controls={reportPanelId(item.tab)}
+        aria-controls={reportPanelId}
         tabIndex={tab === item.tab ? 0 : -1}
         className={tab === item.tab ? "active" : ""}
         onClick={() => setTab(item.tab)}
         onKeyDown={(event) => moveTabFocus(event, item.tab)}
       >{item.label}</button>)}
     </div>
-    <div id={reportPanelId(tab)} role="tabpanel" aria-labelledby={reportTabId(tab)}>
+    <div id={reportPanelId} role="tabpanel" aria-labelledby={reportTabId(tab)}>
     <div className="report-toolbar">
       {tab !== "position" && <label><span>{t("pages.audit-logs.018")}</span><input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label>}
       <label><span>{tab === "position" ? t("pages.purchase-invoices.112") : t("pages.audit-logs.019")}</span><input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label>

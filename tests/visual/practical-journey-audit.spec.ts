@@ -9,14 +9,17 @@ async function expectSelectedTab(page: Page, selectedIndex: number) {
   for (const [index, tabId] of tabIds.entries()) {
     const item = tabs.nth(index);
     await expect(item).toHaveAttribute("id", `reports-tab-${tabId}`);
-    await expect(item).toHaveAttribute("aria-controls", `reports-panel-${tabId}`);
+    await expect(item).toHaveAttribute("aria-controls", "reports-panel");
+    const controls = await item.getAttribute("aria-controls");
+    expect(controls).toBeTruthy();
+    await expect(page.locator(`#${controls}`)).toHaveCount(1);
     await expect(item).toHaveAttribute("aria-selected", String(index === selectedIndex));
     await expect(item).toHaveAttribute("tabindex", index === selectedIndex ? "0" : "-1");
   }
   const activeId = tabIds[selectedIndex]!;
   const panel = page.getByRole("tabpanel");
   await expect(panel).toHaveCount(1);
-  await expect(panel).toHaveAttribute("id", `reports-panel-${activeId}`);
+  await expect(panel).toHaveAttribute("id", "reports-panel");
   await expect(panel).toHaveAttribute("aria-labelledby", `reports-tab-${activeId}`);
 }
 
