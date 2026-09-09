@@ -1,0 +1,428 @@
+---
+title: "ADR-023 — Central Accounting Default Mappings"
+status: "proposed for acceptance; implementation not started"
+version: "1.0"
+date: "2026-09-09"
+decision_owner: "Core Accounting"
+related:
+  - "ARCHITECTURE_GUARDRAILS_AR.md"
+  - "BOUNDED_CONTEXT_MAP_AR.md"
+  - "ADR-003-domain-boundaries-and-eventing.md"
+  - "ADR-018-business-profile-and-progressive-compliance.md"
+  - "CONCURRENCY_DEADLOCK_DEADLINE_POLICY_AR.md"
+  - "CENTRAL_ACCOUNTING_MAPPINGS_SLICE_AR.md"
+---
+
+# ADR-023: مركز تعيين الحسابات التشغيلية الافتراضية
+
+## السياق
+
+تحتاج الوحدات التشغيلية إلى حسابات دفتر الأستاذ لأغراض مختلفة. التنفيذ الحالي لا
+يملك مصدرًا واحدًا لهذه الافتراضات، بل يجمع بين ثلاثة أنماط مختلفة:
+
+1. مراجع محفوظة تمثل حقيقة خاصة بكيان أو مستند، مثل حساب ذمم العميل أو المورد،
+   وحساب إيراد ملف بيع الصنف، وحسابات بنود الفواتير.
+2. إعدادات يملكها سياق آخر، مثل حساب دفتر الصندوق/البنك وحسابي معدل الضريبة.
+3. استدلال وقت التشغيل داخل Inventory وFX وFinancial Close من
+   `sourceTemplateKey` أو من رقم الحساب `3300`.
+
+النمط الثالث يربط صحة الأوامر المالية بالقالب الأولي، ويكرر قواعد الأهلية، ولا يسمح
+للمنشأة بتغيير حساب تشغيلي واحد من مكان واضح. أما جمع الأنماط الثلاثة كلها في جدول
+واحد فسيكسر ملكية السياقات واللقطات التاريخية. لذلك يلزم فصل **افتراض الشركة** عن
+**الحقيقة الخاصة بالكيان أو المستند**.
+
+## جرد التنفيذ الحالي الذي يحكم القرار
+
+| الاستعمال الحالي | مصدر الحساب | الدلالة التي يجب الحفاظ عليها |
+|---|---|---|
+| `Customer.receivableAccountId` | يرسله إنشاء/تعديل العميل، ويستخدمه Sales وTreasury لاحقًا | حقيقة خاصة بالطرف؛ لا تتغير عند تغيير الافتراض |
+| `Supplier.payableAccountId` | يرسله إنشاء/تعديل المورد | حقيقة خاصة بالطرف؛ لا تتغير عند تغيير الافتراض |
+| `SalesItemSellingProfile.revenueAccountId` | يضبط لكل صنف | حقيقة ملف بيع الصنف؛ الافتراض يملأ الجديد فقط |
+| `SalesInvoiceLine.revenueAccountId` | يحفظ مع بند الفاتورة | لقطة مستند لا يعاد تفسيرها |
+| `PurchaseInvoiceLine.debitAccountId` | يحفظ مع بند الفاتورة | لقطة مستند، وقد يكون أصلًا أو مصروفًا باختيار صريح |
+| Inventory: أصل المخزون وCOGS | بحث وقت التشغيل عن `inventory` و`purchases` تحت `SMALL_BUSINESS_GENERAL` | افتراض شركة حقيقي يجب نقله إلى المركز |
+| Inventory: الزيادة/النقص/الافتتاحي | بحث عن `misc-income` أو `misc-expense` أو `retained-earnings`، ثم حفظ `offsetAccountId` على الحركة | يحل المركز الحساب قبل الترحيل، وتبقى الحركة لقطة تاريخية |
+| FX المحقق | `RealizedFxAccountService` يبحث عن `realized-fx-gain/loss` تحت القالب القديم | افتراض شركة حقيقي يجب نقله إلى المركز |
+| الإقفال السنوي | `FinancialCloseService` يبحث مباشرة عن الحساب ذي الرمز `3300` | دين تقني يجب إزالته عبر Port مركزي |
+| `TaxRate.outputTaxAccountId/inputTaxAccountId` | يملكه Tax لكل معدل | إعداد خاص بمعدل الضريبة؛ لا ينقل إلى المركز |
+| `CashBankAccount.ledgerAccountId` | يملكه Treasury لكل أداة | حقيقة خاصة بالصندوق/البنك؛ لا ينقل إلى المركز |
+| `Receipt/Payment.counterAccountId` | اختيار خاص بالحركة | حقيقة مستند؛ لا ينقل إلى المركز |
+| القيد اليدوي ومراكز التكلفة | اختيار صريح في المستند | خارج مفهوم default mapping |
+
+المراجع التنفيذية لهذا الجرد هي `apps/api/prisma/schema.prisma`،
+`apps/api/src/accounts/default-chart-template.ts`،
+`apps/api/src/core-accounting/realized-fx-account-service.ts`،
+`apps/api/src/inventory/inventory-movement-service.ts`،
+`apps/api/src/fiscal/financial-close-service.ts`، وخدمات العملاء والموردين والفواتير.
+
+## القرار
+
+### 1. المالك والحد
+
+يملك **Core Accounting** سجل `CompanyAccountingDefaultMapping` وقاموس مفاتيحه وقواعد
+أهلية الحساب وحل الحسابات للمستهلكين. السبب أن المرجع النهائي هو `Account` وأن صحة
+الحساب للتسجيل في Ledger قاعدة محاسبية، لا حقيقة تخص Sales أو Inventory.
+
+لا يملك المركز العميل أو المورد أو الصنف أو معدل الضريبة أو أداة الخزينة أو بند
+الفاتورة. لا يكتب أي مستهلك في جدول التعيينات أو `Account` مباشرة؛ يستدعي منفذًا
+صغيرًا يقدمه Core Accounting.
+
+### 2. قاموس المفاتيح الأولي المغلق
+
+تكون المفاتيح Enum في Prisma وTypeScript وOpenAPI، وليست نصوصًا حرة:
+
+| المفتاح | الفئة المؤهلة | الاستعمال الأول |
+|---|---|---|
+| `CUSTOMER_RECEIVABLE_DEFAULT` | `ASSET`، حساب ترحيل نشط، Control | ملء حساب عميل جديد عند عدم إرسال override |
+| `SUPPLIER_PAYABLE_DEFAULT` | `LIABILITY`، حساب ترحيل نشط، Control | ملء حساب مورد جديد عند عدم إرسال override |
+| `SALES_REVENUE_DEFAULT` | `REVENUE`، حساب ترحيل نشط | ملء الإيراد العام الجديد |
+| `SERVICE_REVENUE_DEFAULT` | `REVENUE`، حساب ترحيل نشط | ملء خدمة/فوترة مهنية جديدة دون تغيير عقد قائم |
+| `PURCHASE_EXPENSE_DEFAULT` | `EXPENSE`، حساب ترحيل نشط | ملء بند مصروف مشتريات جديد؛ لا يستبدل اختيار أصل صريحًا |
+| `INVENTORY_ASSET` | `ASSET`، حساب ترحيل نشط، Control | أصل المخزون في الحركات والفواتير المستقبلية |
+| `INVENTORY_COGS` | `EXPENSE`، حساب ترحيل نشط | تكلفة البضاعة المباعة |
+| `INVENTORY_GAIN` | `REVENUE`، حساب ترحيل نشط | زيادة/تسوية مخزون دائنة |
+| `INVENTORY_LOSS` | `EXPENSE`، حساب ترحيل نشط | نقص/هالك/تسوية مخزون مدينة |
+| `INVENTORY_OPENING_EQUITY` | `EQUITY`، حساب ترحيل نشط | الطرف المقابل لرصيد افتتاحي للمخزون |
+| `REALIZED_FX_GAIN` | `REVENUE`، حساب ترحيل نشط | ربح فرق عملة محقق |
+| `REALIZED_FX_LOSS` | `EXPENSE`، حساب ترحيل نشط | خسارة فرق عملة محققة |
+| `RETAINED_EARNINGS` | `EQUITY`، حساب ترحيل نشط | قيد الإقفال السنوي |
+
+الأهلية المشتركة لكل المفاتيح: الحساب من الشركة نفسها، نشط، `allowsPosting=true`،
+ولا يملك أطفالًا. لا يكفي تطابق الفئة وحده. يفحص قاموس واحد هذه القاعدة عند الكتابة
+وعند الحل وعند محاولة تغيير الحساب المرجعي.
+
+لا تضاف مفاتيح Payroll أو Fixed Assets أو Employee Expenses قبل وجود مسار مالي
+مقبول يحدد invariant والمستهلك. وجود حساب باسم مناسب في القالب لا يصنع عقد تشغيل.
+
+### 3. معنى default وعدم إعادة كتابة التاريخ
+
+المركز يحدد افتراضًا للمستقبل، وليس علاقة ديناميكية بكل كيان:
+
+- إنشاء عميل أو مورد بلا `accountId` صريح يحل الافتراض ثم **يحفظ** الحساب على الطرف.
+- إذا سمح العقد بـoverride صريح، يتحقق Sales/Purchases من أهليته ويحفظه؛ لا يغير
+  override تعيين الشركة.
+- إنشاء ملف بيع صنف أو خدمة جديدة يمكن أن يعرض/يستخدم الافتراض، ثم يحفظ الحساب على
+  الملف. تعديل التعيين لاحقًا لا يغير الملفات الموجودة.
+- تحفظ بنود الفواتير والحركات والقيود الحساب الذي استخدم فعليًا. لا يعاد تفسير
+  مستند POSTED ولا لقطة تاريخية.
+- حسابات Inventory النظامية وFX والإقفال تحل في معاملة الأمر للحركة الجديدة. العكس
+  يستخدم الأثر الأصلي ولا يعيد حل التعيين الحالي.
+
+لا توجد cascade أو bulk rewrite عند تغيير mapping. أي إعادة تصنيف لكيانات قائمة
+تحتاج أمرًا منفصلًا، preview، نطاقًا صريحًا، صلاحية، version، تدقيقًا وخطة أثر؛ وهي
+خارج الشرائح الأولى.
+
+### 4. النموذج المستهدف
+
+ينشأ جدول مملوك لـCore Accounting بالحد الأدنى التالي:
+
+```text
+CompanyAccountingDefaultMapping
+  companyId       BIGINT UNSIGNED
+  key             AccountingDefaultMappingKey
+  accountId       BIGINT UNSIGNED
+  version         INT UNSIGNED
+  source          TEMPLATE_SEED | LEGACY_BACKFILL | MANUAL
+  createdById     BIGINT UNSIGNED NULL
+  updatedById     BIGINT UNSIGNED NULL
+  createdAt       DATETIME
+  updatedAt       DATETIME
+  PRIMARY KEY (companyId, key)
+  FK (accountId, companyId) -> Account(id, companyId) RESTRICT
+```
+
+يجوز أن تكون هوية الفاعل `NULL` فقط لصف أنشأه Migration أو تجهيز نظامي موثق؛ كل
+تغيير تفاعلي يحمل المستخدم ويكتب Audit. لا يستخدم المفتاح كرمز يختاره المستخدم،
+ولا يحتاج `MasterDataCodeSequence`.
+
+`source` أصل إنشاء الصف لا أولوية حل. بعد التعديل اليدوي يصبح `MANUAL`. لا يغير
+تطبيق القالب أو إعادة تشغيل Seed صفًا موجودًا، وبخاصة الصف اليدوي.
+
+### 5. التوافق مع القوالب و`sourceTemplateKey`
+
+تحتفظ القوالب الثلاثة الجديدة في مسار Company Profile بالأكواد:
+
+- `PROFESSIONAL_SERVICES`.
+- `RETAIL_INVENTORY`.
+- `MANUFACTURING`.
+
+لكن الحسابات الأساسية المشتركة تبقى موسومة حاليًا بـ
+`sourceTemplateCode=SMALL_BUSINESS_GENERAL`، بينما تحمل الإضافات فقط كود القالب
+المختار. لذلك يمنع افتراض أن `sourceTemplateCode` لكل حساب يساوي قالب الشركة.
+
+ترتيب seed/backfill الحتمي هو:
+
+1. صف mapping موجود وصالح؛ لا يلمس.
+2. مرشح overlay دقيق للقالب المختار، إن كان للمفتاح مرشح خاص.
+3. مرشح الأساس الدقيق `(SMALL_BUSINESS_GENERAL, sourceTemplateKey)`.
+4. أثناء backfill فقط: حساب صالح وحيد يحمل `sourceTemplateKey` نفسه عبر أي كود؛
+   التعدد Conflict ولا يختار أول صف.
+5. للحساب المحتجز فقط، يدعم تقرير الترحيل اكتشاف `3300` كدين legacy إذا لم يوجد
+   مفتاح قالب وكان المرشح وحيدًا ومؤهلًا. يسجل provenance ولا يبقى بحث الرقم في
+   Runtime.
+6. إذا لم يوجد مرشح وحيد صالح يترك المفتاح `UNMAPPED` للمراجعة؛ لا تخمين بالاسم.
+
+خريطة المرشحين الأولية:
+
+| المفتاح | `sourceTemplateKey` الأساسي | overlay المفضل |
+|---|---|---|
+| `CUSTOMER_RECEIVABLE_DEFAULT` | `receivables` | لا يوجد |
+| `SUPPLIER_PAYABLE_DEFAULT` | `payables` | لا يوجد |
+| `SALES_REVENUE_DEFAULT` | `sales-revenue` | لا يوجد؛ لا تخلط بيعًا عامًا بخدمة مهنية |
+| `SERVICE_REVENUE_DEFAULT` | `service-revenue` | `PROFESSIONAL_SERVICES:professional-services-revenue` |
+| `PURCHASE_EXPENSE_DEFAULT` | `purchases` | لا يوجد |
+| `INVENTORY_ASSET` | `inventory` | لا يختار raw/WIP/finished تخمينيًا |
+| `INVENTORY_COGS` | `purchases` | لا يوجد في الشريحة الأولى |
+| `INVENTORY_GAIN` | `misc-income` | لا يوجد |
+| `INVENTORY_LOSS` | `misc-expense` | `RETAIL_INVENTORY:inventory-shrinkage` للشركة المختارة حديثًا |
+| `INVENTORY_OPENING_EQUITY` | `retained-earnings` | لا يوجد |
+| `REALIZED_FX_GAIN` | `realized-fx-gain` | لا يوجد |
+| `REALIZED_FX_LOSS` | `realized-fx-loss` | لا يوجد |
+| `RETAINED_EARNINGS` | `retained-earnings` | لا يوجد |
+
+يسمح لعدة مفاتيح بأن تشير إلى الحساب نفسه. لا يعني وجود حسابات تصنيع تفصيلية أن
+النظام الحالي يعرف تصنيف كل صنف إلى خام/WIP/تام؛ اعتماد ذلك يحتاج نموذجًا وقرارًا
+من Inventory، لا تخمينًا في المركز.
+
+تنسيق التنفيذ مع Company Profile مؤقت لأن Schema وOpenAPI وملف القالب ملفات مشتركة.
+بعد تطبيق القالب يمرر Onboarding قيمة `chartTemplateCode` إلى Accounting Setup Port
+كي ينشئ Core Accounting التعيينات الناقصة في المعاملة نفسها. لا يستورد Core
+Accounting نموذج `CompanyProfile` ولا يقرأ readiness/امتثال المنشأة وقت التشغيل.
+غياب `CompanyProfile` في شركة قديمة لا يمنع استخدام التعيينات.
+
+### 6. الحل وPorts
+
+يكشف Core Accounting عقود Application صريحة، لا Prisma models:
+
+```text
+AccountingDefaultMappingQueryPort.resolveRequired(tx, companyId, keys)
+AccountingDefaultMappingQueryPort.resolveOptional(tx, companyId, key)
+AccountingDefaultMappingSetupPort.seedMissing(tx, companyId, templateCode, actor)
+```
+
+تعيد القراءة مرجعًا محدودًا: `key/accountId/accountClass/version/source`. لا يسمح
+للمستهلك بطلب مفتاح نصي خارج Enum، ولا تعيد DTO الحساب أو Prisma record كاملًا.
+
+اتجاهات الاعتماد:
+
+- Sales وPurchases وInventory وProfessional Billing تستهلك Query Port.
+- `RealizedFxAccountService` وFinancial Close يصبحان Adapter/مستهلكين داخل Core
+  Accounting نفسه، من دون بحث قالب أو رقم حساب.
+- Registration/Onboarding يستهلك Setup Port بصفته Process Manager.
+- Reporting يقرأ readiness عبر Query API أو Read Port فقط.
+
+لا يكتب أي Port في Customer/Supplier/Inventory/Tax/Treasury. يقرر كل مالك متى ينسخ
+default إلى كيانه داخل معاملته.
+
+### 7. سياسة الحل والـfallback
+
+الأولوية وقت التشغيل:
+
+1. الحساب الصريح الخاص بالأمر أو الكيان، إذا كان العقد يسمح به، ثم التحقق والحفظ.
+2. صف mapping صريح صالح.
+3. خلال نافذة الانتقال فقط، legacy fallback من مفاتيح القالب الأساسية التي يملكها
+   Core Accounting.
+4. خطأ أعمال واضح مع المفتاح ورابط الإعدادات؛ لا fallback إلى رقم أو اسم أو حساب
+   من فئة مماثلة.
+
+إذا وجد صف mapping لكنه أصبح غير صالح، يفشل المسار مغلقًا؛ لا يتجاوزه إلى القالب.
+هذا يكشف خطأ الإدارة بدل ترحيل عملية على حساب لم يختره المستخدم.
+
+يعمل legacy fallback في وضعي `SHADOW/READ_ONLY` فقط، ويسجل metric حسب المفتاح من دون
+اسم الحساب أو Payload مالي. يزال بعد تحقق الشروط كلها:
+
+- لكل شركة نشطة صف صالح لكل مفتاح تحتاجه قدراتها المفعلة.
+- صفر Conflict في تقرير backfill.
+- صفر استعمال fallback في نافذة مراقبة متفق عليها.
+- اجتياز مقارنة Shadow على MariaDB وMySQL ومسارات Inventory/FX/Close.
+- وجود Binary رجوع يعرف الجدول ويستطيع إبقاء الكتابات المالية آمنة.
+
+لا تعتمد إزالة fallback على تاريخ تقويمي وحده.
+
+### 8. Readiness حسب القدرة
+
+لا يوجد علم واحد يجعل المنشأة كلها «غير جاهزة» بسبب مفتاح لا تستخدمه. يعيد المركز
+لكل مفتاح `CONFIGURED/LEGACY_FALLBACK/UNMAPPED/INVALID`، ويجمع readiness حسب القدرة:
+
+| القدرة | المفاتيح الحاكمة | أثر الغياب |
+|---|---|---|
+| إنشاء عميل بلا override | `CUSTOMER_RECEIVABLE_DEFAULT` | يمنع default فقط؛ يبقى override الصريح ممكنًا إذا سمح العقد |
+| إنشاء مورد بلا override | `SUPPLIER_PAYABLE_DEFAULT` | السلوك نفسه |
+| ملف بيع/خدمة بلا override | `SALES_REVENUE_DEFAULT` أو `SERVICE_REVENUE_DEFAULT` | يطلب اختيارًا صريحًا أو الإعداد |
+| بند مشتريات غير مخزني بلا override | `PURCHASE_EXPENSE_DEFAULT` | يطلب اختيارًا صريحًا أو الإعداد |
+| ترحيل مخزون | `INVENTORY_ASSET` و`INVENTORY_COGS` وما يلزم لنوع الحركة | يمنع الأمر المالي قبل أي أثر |
+| تسوية متعددة العملة ذات فرق محقق | `REALIZED_FX_GAIN/LOSS` | يمنع التسوية ذات الفرق فقط |
+| إقفال سنوي | `RETAINED_EARNINGS` | `RETAINED_EARNINGS_READY=BLOCKED`؛ الإقفال الشهري لا يتأثر |
+
+لا تعتبر الحسابات القديمة على العملاء والموردين غير صالحة لمجرد اختلافها عن default.
+Readiness المركز لا يعيد التحقق الجماعي من كل تاريخ المستندات.
+
+### 9. دورة حياة الحساب المرجعي
+
+لا يوجد DELETE/DEACTIVATE للتعيين. يمكن استبدال `accountId` فقط مع CAS وسبب اختياري
+منقح. ويبقى حذف أو تعطيل الحساب نفسه ممنوعًا ما دام مستخدمًا في mapping.
+
+يجب أن تستدعي أوامر Account في Core Accounting حارس الاستعمال قبل:
+
+- التعطيل أو الحذف.
+- تغيير `accountTypeId` إلى فئة غير مؤهلة.
+- جعل `allowsPosting=false`.
+- إزالة `isControlAccount` عن حساب مربوط بمفتاح يتطلب Control.
+- أي تغيير يجعله غير صالح للمفتاح.
+
+يعيد الرفض `ACCOUNT_USED_BY_DEFAULT_MAPPING` مع قائمة مفاتيح فقط ورابط إعدادات آمن.
+الإجراء الصحيح: استبدال mapping أولًا، ثم إعادة محاولة تعديل الحساب. لا cascade ولا
+تعطيل mapping تلقائيًا.
+
+### 10. التزامن والمعاملة
+
+تغيير تعيين تفاعلي أمر idempotent ويحمل `expectedVersion`. يكون ترتيب القفل الموحد:
+
+```text
+Idempotency record
+-> Account rows المطلوبة بترتيب id تصاعديًا
+-> CompanyAccountingDefaultMapping rows بترتيب key
+-> conditional update/insert
+-> Audit
+-> Outbox فقط عند وجود مستهلك مقبول
+```
+
+تستخدم أوامر تعطيل/حذف/تحوير Account الترتيب نفسه: تقفل الحساب أولًا ثم صفوف
+التعيين التي تشير إليه قبل CAS. عند إنشاء mapping مفقود يقفل الحساب الهدف قبل
+الإدراج، فيتسلسل مع التعطيل. عند استبدال mapping تقرأ النسخة، ثم تقفل الحسابين
+القديم والجديد تصاعديًا، ثم صف المفتاح، وتعاد قراءة النسخة قبل التغيير.
+
+إذا تغير الصف بين القراءة والقفل يعاد `VERSION_CONFLICT` ولا يعاد خطأ الأعمال
+تلقائيًا. يعاد فقط خطأ قاعدة transient عبر `TransactionExecutor` ضمن deadline واحد.
+لا Network I/O ولا sleep داخل المعاملة.
+
+يكتب تغيير mapping وAudit وسجل Idempotency في المعاملة نفسها. يعيد replay بالمفتاح
+والجسم نفسيهما النتيجة نفسها بلا Audit ثانٍ، والجسم المختلف
+`IDEMPOTENCY_MISMATCH`.
+
+### 11. الأحداث والـOutbox
+
+لا تنشئ الشريحة الأولى حدثًا؛ كل المستهلكين يحتاجون الحساب قبل commit ويقرؤونه عبر
+Port متزامن، ولا يوجد cache أو مستهلك لاحق مقبول. `AuditLog` ليس Outbox.
+
+إذا ظهر مستهلك حقيقي لاحقًا، يعتمد العقد `AccountingDefaultMappingChanged` بصيغة
+past tense و`schemaVersion`، ويحمل `eventId/companyId/key/version/occurredAt` فقط دون
+اسم حساب أو Prisma record. يكتب Outbox في معاملة mapping نفسها، ويكون المستهلك
+idempotent. لا يضاف الحدث لمجرد احتمال إرسال تنبيه.
+
+### 12. HTTP وRBAC وواجهة الإعدادات
+
+العقد المستهدف:
+
+- `GET /api/v1/accounting/default-mappings` بصلاحية
+  `accounting_default_mappings.view`.
+- `PUT /api/v1/accounting/default-mappings/{mappingKey}` بصلاحية
+  `accounting_default_mappings.manage` وCSRF و`Idempotency-Key`.
+
+يحمل PUT `accountId` و`expectedVersion`؛ تكون النسخة `null` للإنشاء فقط ورقمًا
+للاستبدال. كل JSON تحت `/api/v1` يحمل `Cache-Control: no-store`. تبقى BIGINT نصًا،
+ويولد حارس الجسم من OpenAPI.
+
+تندرج الصلاحيتان تحت موديول `CORE_ACCOUNTING`، وتستلزم الإدارة العرض و
+`accounts.view`. لا تمنح `settings.manage` الحسابات تلقائيًا، ولا يكفي
+`accounts.update` لتغيير mapping. تمنح الأدوار المخصصة الصلاحية صراحة.
+
+توجد الصفحة تحت «الإعدادات > الحسابات الافتراضية»، لا داخل العملاء أو الموردين أو
+شاشة البيع اليومية. يعرض كل صف الغرض والحساب والحالة والوحدات المستهلكة وأثر
+التغيير «على العمليات الجديدة فقط». لا يعرض زر حذف.
+
+الرابط المحلي المعتمد:
+
+```text
+#settings?section=accounting-default-mappings&focus=RETAINED_EARNINGS
+```
+
+يوسع parser قائمته البيضاء بـ`section` و`focus` من Enum فقط؛ لا يقبل URL أو
+`companyId` أو Account ID. يفحص التنقل الاستحقاق والصلاحية قبل تركيب الصفحة، ولا
+يكشف الرابط وجود حساب في شركة أخرى. مستخدم بلا صلاحية يعود لمسار مسموح ولا يرسل
+طلب mapping.
+
+### 13. النشر والرجوع
+
+ينفذ الانتقال توسعيًا:
+
+1. إضافة الجدول والقاموس والصلاحيات وقراءات readiness مع backfill حتمي، دون تغيير
+   أي مستهلك.
+2. وضع `SHADOW`: مقارنة النتيجة المركزية بالاستدلال القديم بلا تغيير Posting.
+3. نقل المستهلكين واحدًا واحدًا، مع fallback للمفقود فقط.
+4. فتح واجهة الكتابة بعد أن يصبح Binary الرجوع واعيًا بالجدول.
+5. جعل المركز authoritative وإزالة بحث `SMALL_BUSINESS_GENERAL` والرمز `3300` من
+   Inventory/FX/Close بعد بوابة القياس.
+
+قبل فتح الكتابة اليدوية يمكن الرجوع إلى Binary سابق مع إبقاء الجدول لأنه توسعي.
+بعد أول تغيير يدوي لا يجوز الرجوع إلى Binary يتجاهل الجدول؛ قد يرحل إلى حساب القالب
+القديم بصمت. الرجوع الآمن حينها هو تعطيل mutations، إبقاء GET/readiness، وإيقاف
+الأوامر المتأثرة أو استخدام Binary واعٍ بالمركز حتى الإصلاح forward.
+
+يرفض `rollback.sql` إسقاط الجدول إذا احتوى صفًا يدويًا أو استهلكه أي إصدار
+authoritative. لا يحذف Audit ولا يعيد كتابة source template tags أو حقائق الأطراف.
+
+## البدائل المرفوضة
+
+### إبقاء البحث من القالب في كل خدمة
+
+مرفوض لأنه يكرر قواعد الأهلية، ويربط Runtime بالقالب الأولي، ولا يوفر إدارة واضحة
+أو CAS أو readiness موحدًا.
+
+### نقل كل `accountId` إلى جدول مركزي
+
+مرفوض لأن حساب الطرف والصنف والضريبة والبنك وبند المستند حقائق مملوكة لسياقاتها،
+ولأن التغيير الرجعي سيكسر اللقطات والتدقيق.
+
+### تخزين المفاتيح كنص قابل للتوسع بلا Migration
+
+مرفوض لأن الخطأ الإملائي يصبح إعدادًا ماليًا صالحًا ظاهريًا. التوسع المقصود يحتاج
+تحديث Enum والقاموس وOpenAPI والاختبارات في تغيير واحد.
+
+### الاعتماد على رقم الحساب
+
+مرفوض لأن الرمز دلالي قابل لاختلاف دليل المنشأة. يبقى `3300` أداة backfill legacy
+ضيقة، ولا يعبر عقد Runtime.
+
+### Eventual propagation عبر حدث
+
+مرفوض لحل الحساب الحاكم؛ يحتاج المستهلك الحساب الصحيح قبل الترحيل في المعاملة.
+يجوز الحدث فقط لأثر لاحق غير حاكم.
+
+### موديول ERP أو rules engine خارجي
+
+لم يعتمد. الحالة Aggregate إعداد صغير شديد الارتباط بـAccount eligibility وRBAC
+ومعاملات Ledger. إدخال موديول عام سيكرر دليل الحسابات أو يكشف مخططًا خارجيًا بين
+السياقات، ويزيد مخاطر الرخصة والترقية دون قيمة مثبتة. يعاد تقييم Adapter خارجي فقط
+إذا ظهر تكامل محاسبي مستقل بعقد واسترداد واضحين.
+
+## النتائج
+
+### إيجابية
+
+- مصدر واحد واضح للحسابات التشغيلية الافتراضية.
+- إزالة الاعتماد الدائم على قالب أو رقم حساب في الأوامر المالية.
+- بقاء حقائق الأطراف والأصناف والمستندات مستقرة تاريخيًا.
+- readiness وأخطاء علاجية موحدة، مع عزل وCAS وتدقيق.
+- إضافة قالب جديد لا تتطلب تعديل كل مستهلك.
+
+### تكاليف ومخاطر
+
+- Migration وbackfill محروسان، وفترة dual-read/shadow.
+- ضرورة تسلسل تغييرات Schema/OpenAPI مع Company Profile مؤقتًا.
+- ضرورة تحديث Account lifecycle كي لا يصبح mapping صالح ظاهريًا إلى حساب معطل.
+- خطر رجوع Binary قديم بعد تغيير يدوي؛ لذلك تؤخر الكتابة حتى اكتمال بوابة الرجوع.
+
+## أثر الباركود وقنوات الهاتف
+
+لا يغير القرار هوية الصنف أو الباركود أو parser أو lookup أو الطباعة. عند ملء
+`SALES_REVENUE_DEFAULT` لملف بيع صنف جديد يجب أن يبقى resolve الباركود المملوك
+لـInventory كما هو، ثم يحفظ Sales الحساب على الملف؛ لا يحمل الباركود مفتاح mapping
+ولا يتجاوز RBAC أو تأكيد المستخدم. تختبر رحلة POS/الهاتف مع ملف موجود وآخر جديد كي
+لا يصبح default بديلًا عن تحقق الصنف.
+
+## حالة التطبيق
+
+هذه المهمة توثيقية فقط. لم يضف جدول أو Enum أو API أو صلاحية أو واجهة، ولم يتغير
+سلوك Runtime أو القوالب أو الإقفال. خطة الشرائح وبوابات التنفيذ في
+[خطة مركز تعيين الحسابات](CENTRAL_ACCOUNTING_MAPPINGS_SLICE_AR.md).
