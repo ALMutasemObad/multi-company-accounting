@@ -75,6 +75,13 @@ last_updated: "2026-09-04"
 60. [عضوية Organization ومساحة مالك المجموعة](ORGANIZATION_MEMBERSHIP_OWNER_WORKSPACE_AR.md): أدوار المجموعة المستقلة، تقاطع عضوية الشركة، حدود المقارنة غير الموحدة، والتدقيق والتزامن.
 61. [ADR-020 لمطالبات مصروفات الموظفين](ADR-020-employee-expense-claims.md): ملكية المطالبة وبنودها، وربط HR ومراكز التكلفة والعملة وApprovals، وحد `READY_FOR_PAYMENT` الصريح بلا كتابة Treasury أو Ledger.
 62. [شريحة مطالبات المصروفات W2-P3](EMPLOYEE_EXPENSE_CLAIMS_SLICE_AR.md): رحلة الموظف وMaker/Checker وRBAC والعزل وOpenAPI والتزامن والترحيل وأدلة الواجهة.
+63. [أساس الرواتب](PAYROLL_FOUNDATION_SLICE_AR.md): حدود دورة الرواتب القادمة وملكية الحقائق المالية وتسلسل الشرائح والاختبارات، دون ادعاء تنفيذ الرواتب في هذه الدفعة.
+64. [ADR-021 لإدارة المشاريع العامة](ADR-021-general-project-delivery-context.md): سياق مستقل للمشاريع والمراحل والمهام والاعتماديات، منفصل عن تسليم المشاريع المهنية.
+65. [شريحة إدارة المشاريع العامة](GENERAL_PROJECT_MANAGEMENT_SLICE_AR.md): دورة الحياة والصلاحيات والعقود والتزامن وخطة التنفيذ المرحلية.
+66. [ADR-022 لدليل الخدمات](ADR-022-service-catalog-context.md): ملكية عروض الخدمات ودفاتر الأسعار وحدود Sales وCRM والمشاريع والمحاسبة.
+67. [شريحة دليل الخدمات](SERVICE_CATALOG_SLICE_AR.md): عقود الأسعار المؤرخة وCAS وRBAC والتفعيل والترحيل والاختبارات.
+68. [ADR-023 لمركز الحسابات التشغيلية](ADR-023-central-accounting-mappings.md): مفاتيح الحسابات الافتراضية المملوكة للمحاسبة وحدود استعمالها وتعطيلها والرجوع الآمن.
+69. [شريحة مركز الحسابات التشغيلية](CENTRAL_ACCOUNTING_MAPPINGS_SLICE_AR.md): materialization والحراس والمنافذ ونسخ الإقفال وتسلسل التحويل والاختبارات.
 
 التقرير [ARCHITECTURE_AUDIT_DDD_EVENT_DRIVEN_AR.md](../ARCHITECTURE_AUDIT_DDD_EVENT_DRIVEN_AR.md) وثيقة تقييم وأدلة، وليس بديلًا عن القرارات الحاكمة أعلاه.
 

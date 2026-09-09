@@ -27,7 +27,10 @@ vi.mock('./pos-recovery-browser', () => ({ createBrowserPosRecovery: () => ({
 vi.mock('./cashier-context-controller', () => ({ createCashierContextController: () => ({
   subscribe: () => () => {}, getSnapshot: () => ({ fields: { currencyId: { reference: null } } }),
 }) }));
-vi.mock('./pos-experience-preferences', () => ({ readPosDisplayMode: () => 'cards', savePosDisplayMode: vi.fn() }));
+vi.mock('./pos-experience-preferences', () => ({
+  readPosDisplayMode: () => 'cards', savePosDisplayMode: vi.fn(),
+  readPosContextPanelMode: () => 'expanded', savePosContextPanelMode: vi.fn(),
+}));
 vi.mock('./retail-receipt-transport', () => ({ createRetailReceiptTransport: () => ({
   readPreview: ports.readPreview, downloadA4: ports.downloadA4,
 }) }));

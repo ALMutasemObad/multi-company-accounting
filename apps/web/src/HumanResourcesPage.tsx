@@ -1,6 +1,10 @@
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { type FormEvent, type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, idempotencyKey } from "./api";
+import { allows } from "./authorization";
+import { useAuthorization } from "./authorization-context";
 import { localizedReferenceName, useI18n } from "./i18n";
+import { arHumanResources, enHumanResources, hiHumanResources, urHumanResources } from "./i18n/locales/human-resources";
+import { createLatestRequestLane } from "./human-resources/latest-request";
 import type {
   Employee,
   EmploymentContract,
@@ -11,88 +15,210 @@ import type {
   ListResponse,
 } from "./types";
 import { Button, EmptyState, Modal, PageHeader, Pagination, Spinner } from "./ui";
+import "./human-resources-experience.css";
 
 type Notice = (message: string, tone?: "success" | "error") => void;
+type Tab = "employees" | "structure";
+
 const today = () => new Date().toISOString().slice(0, 10);
+const employeePermissions = {
+  view: { permission: "hr.employees.view" },
+  manage: { permission: "hr.employees.manage" },
+  viewContracts: { permission: "hr.contracts.view" },
+  manageContracts: { permission: "hr.contracts.manage" },
+  viewStructure: { permission: "hr.structure.view" },
+  manageStructure: { permission: "hr.structure.manage" },
+} as const;
+type HrCopyKey = keyof typeof arHumanResources;
+const hrCopyByLocale: Record<string, Record<HrCopyKey, string>> = {
+  ar: arHumanResources,
+  en: enHumanResources,
+  hi: hiHumanResources,
+  ur: urHumanResources,
+};
+
+function employeePath(input: {
+  page: number;
+  pageSize: number;
+  search?: string;
+  status?: HrEmploymentStatus;
+  departmentId?: string;
+}) {
+  const query = new URLSearchParams({ page: String(input.page), pageSize: String(input.pageSize) });
+  if (input.search) query.set("search", input.search);
+  if (input.status) query.set("status", input.status);
+  if (input.departmentId) query.set("departmentId", input.departmentId);
+  return `/hr/employees?${query}`;
+}
+
+function dateLabel(value: string, locale: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return value;
+  return new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })
+    .format(new Date(Date.UTC(year, month - 1, day)));
+}
 
 export function HumanResourcesPage({ notify }: { notify: Notice }) {
-  const { t } = useI18n();
-  const [tab, setTab] = useState<"employees" | "structure">("employees");
+  const { permissionSet } = useAuthorization();
+  const { dir, formatNumber, intlLocale, locale, t } = useI18n();
+  const hrCopy = hrCopyByLocale[locale] ?? arHumanResources;
+  const canViewEmployees = allows(permissionSet, employeePermissions.view);
+  const canManageEmployees = allows(permissionSet, employeePermissions.manage);
+  const canViewContracts = allows(permissionSet, employeePermissions.viewContracts);
+  const canManageContracts = allows(permissionSet, employeePermissions.manageContracts);
+  const canViewStructure = allows(permissionSet, employeePermissions.viewStructure);
+  const canManageStructure = allows(permissionSet, employeePermissions.manageStructure);
+  const [tab, setTab] = useState<Tab>(() => canViewEmployees ? "employees" : "structure");
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [meta, setMeta] = useState({ page: 1, pageSize: 10, total: 0, totalPages: 0 });
+  const [meta, setMeta] = useState({ page: 1, pageSize: 12, total: 0, totalPages: 0 });
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState<HrEmploymentStatus | "">("");
+  const [departmentId, setDepartmentId] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState("");
+  const selectedIdRef = useRef("");
   const [selected, setSelected] = useState<Employee | null>(null);
   const [contracts, setContracts] = useState<EmploymentContract[]>([]);
   const [departments, setDepartments] = useState<HrStructureReference[]>([]);
   const [positions, setPositions] = useState<HrStructureReference[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(canViewEmployees);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [structureLoading, setStructureLoading] = useState(canViewStructure);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
+  const [detailError, setDetailError] = useState("");
+  const [structureError, setStructureError] = useState("");
   const [createEmployeeOpen, setCreateEmployeeOpen] = useState(false);
   const [editEmployeeOpen, setEditEmployeeOpen] = useState(false);
   const [contractOpen, setContractOpen] = useState(false);
+  const requestLanes = useRef({
+    employees: createLatestRequestLane(),
+    detail: createLatestRequestLane(),
+    structure: createLatestRequestLane(),
+  }).current;
+  const selectEmployeeId = useCallback((next: string) => {
+    selectedIdRef.current = next;
+    setSelectedId(next);
+  }, []);
+
+  useEffect(() => {
+    if (tab === "employees" && !canViewEmployees && canViewStructure) setTab("structure");
+    if (tab === "structure" && !canViewStructure && canViewEmployees) setTab("employees");
+  }, [canViewEmployees, canViewStructure, tab]);
 
   const loadEmployees = useCallback(async () => {
+    const request = requestLanes.employees.begin();
+    if (!canViewEmployees) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError("");
     try {
-      const query = new URLSearchParams({ page: String(page), pageSize: "10" });
-      if (status) query.set("status", status);
-      const result = await api<ListResponse<Employee>>(`/hr/employees?${query}`);
+      const result = await api<ListResponse<Employee>>(employeePath({
+        page,
+        pageSize: 12,
+        search: search || undefined,
+        status: status || undefined,
+        departmentId: departmentId || undefined,
+      }), { signal: request.signal });
+      if (!request.isCurrent()) return;
       setEmployees(result.data);
       setMeta(result.meta);
-      setSelectedId((current) => result.data.some((employee) => employee.id === current) ? current : result.data[0]?.id ?? "");
+      const current = selectedIdRef.current;
+      selectEmployeeId(result.data.some((employee) => employee.id === current) ? current : result.data[0]?.id ?? "");
     } catch (cause) {
+      if (!request.isCurrent()) return;
       setError(cause instanceof Error ? cause.message : t("hr.loadError"));
     } finally {
-      setLoading(false);
+      if (request.isCurrent()) setLoading(false);
     }
-  }, [page, status, t]);
+  }, [canViewEmployees, departmentId, page, requestLanes.employees, search, selectEmployeeId, status, t]);
 
   const loadStructure = useCallback(async () => {
+    const request = requestLanes.structure.begin();
+    if (!canViewStructure) {
+      setDepartments([]);
+      setPositions([]);
+      setStructureLoading(false);
+      return;
+    }
+    setStructureLoading(true);
+    setStructureError("");
     try {
       const [departmentResult, positionResult] = await Promise.all([
-        api<{ data: HrStructureReference[] }>("/hr/departments"),
-        api<{ data: HrStructureReference[] }>("/hr/positions"),
+        api<{ data: HrStructureReference[] }>("/hr/departments", { signal: request.signal }),
+        api<{ data: HrStructureReference[] }>("/hr/positions", { signal: request.signal }),
       ]);
+      if (!request.isCurrent()) return;
       setDepartments(departmentResult.data);
       setPositions(positionResult.data);
     } catch (cause) {
-      notify(cause instanceof Error ? cause.message : t("hr.optionsError"), "error");
+      if (!request.isCurrent()) return;
+      setStructureError(cause instanceof Error ? cause.message : t("hr.optionsError"));
+    } finally {
+      if (request.isCurrent()) setStructureLoading(false);
     }
-  }, [notify, t]);
+  }, [canViewStructure, requestLanes.structure, t]);
 
-  const loadSelected = useCallback(async () => {
-    if (!selectedId) {
+  const loadSelected = useCallback(async (employeeId: string) => {
+    if (employeeId !== selectedIdRef.current) return;
+    const request = requestLanes.detail.begin();
+    if (!employeeId || !canViewEmployees) {
       setSelected(null);
       setContracts([]);
+      setDetailLoading(false);
       return;
     }
+    setDetailLoading(true);
+    setDetailError("");
     try {
       const [employeeResult, contractResult] = await Promise.all([
-        api<{ employee: Employee }>(`/hr/employees/${selectedId}`),
-        api<{ data: EmploymentContract[] }>(`/hr/employees/${selectedId}/contracts`),
+        api<{ employee: Employee }>(`/hr/employees/${employeeId}`, { signal: request.signal }),
+        canViewContracts
+          ? api<{ data: EmploymentContract[] }>(`/hr/employees/${employeeId}/contracts`, { signal: request.signal })
+          : Promise.resolve({ data: [] }),
       ]);
+      if (!request.isCurrent() || selectedIdRef.current !== employeeId) return;
       setSelected(employeeResult.employee);
       setContracts(contractResult.data);
     } catch (cause) {
-      notify(cause instanceof Error ? cause.message : t("hr.detailError"), "error");
+      if (!request.isCurrent() || selectedIdRef.current !== employeeId) return;
+      setDetailError(cause instanceof Error ? cause.message : t("hr.detailError"));
+    } finally {
+      if (request.isCurrent() && selectedIdRef.current === employeeId) setDetailLoading(false);
     }
-  }, [notify, selectedId, t]);
+  }, [canViewContracts, canViewEmployees, requestLanes.detail, t]);
 
-  useEffect(() => { void loadEmployees(); }, [loadEmployees]);
-  useEffect(() => { void loadStructure(); }, [loadStructure]);
-  useEffect(() => { void loadSelected(); }, [loadSelected]);
+  useEffect(() => {
+    void loadEmployees();
+    return requestLanes.employees.cancel;
+  }, [loadEmployees, requestLanes.employees]);
+  useEffect(() => {
+    void loadStructure();
+    return requestLanes.structure.cancel;
+  }, [loadStructure, requestLanes.structure]);
+  useEffect(() => {
+    void loadSelected(selectedId);
+    return requestLanes.detail.cancel;
+  }, [loadSelected, requestLanes.detail, selectedId]);
 
   async function refresh() {
     await Promise.all([loadEmployees(), loadStructure()]);
-    await loadSelected();
+    await loadSelected(selectedIdRef.current);
+  }
+
+  function submitSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    selectEmployeeId("");
+    setSearch(searchInput.trim());
+    setPage(1);
   }
 
   async function createEmployee(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canManageEmployees) return;
     const data = new FormData(event.currentTarget);
     setWorking(true);
     try {
@@ -111,7 +237,12 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
         }),
       });
       setCreateEmployeeOpen(false);
-      setSelectedId(result.employee.id);
+      setSearchInput("");
+      setSearch("");
+      setStatus("");
+      setDepartmentId("");
+      setPage(1);
+      selectEmployeeId(result.employee.id);
       notify(t("hr.employeeCreated"));
       await refresh();
     } catch (cause) {
@@ -123,7 +254,7 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
 
   async function editEmployee(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selected) return;
+    if (!selected || selected.id !== selectedId || !canManageEmployees) return;
     const data = new FormData(event.currentTarget);
     setWorking(true);
     try {
@@ -152,7 +283,7 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
   }
 
   async function transition(next: HrEmploymentStatus) {
-    if (!selected) return;
+    if (!selected || selected.id !== selectedId || !canManageEmployees) return;
     const reason = window.prompt(t("hr.transitionReason"))?.trim();
     if (!reason || reason.length < 3) return;
     const effectiveDate = next === "TERMINATED" ? window.prompt(t("hr.terminationDatePrompt"), today())?.trim() : null;
@@ -175,7 +306,7 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
 
   async function createContract(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selected) return;
+    if (!selected || selected.id !== selectedId || !canManageContracts) return;
     const data = new FormData(event.currentTarget);
     setWorking(true);
     try {
@@ -202,7 +333,7 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
   }
 
   async function endContract(contract: EmploymentContract) {
-    if (!selected) return;
+    if (!selected || selected.id !== selectedId || !canManageContracts) return;
     const reason = window.prompt(t("hr.endContractReason"))?.trim();
     if (!reason || reason.length < 3) return;
     const endDate = window.prompt(t("hr.endContractDate"), today())?.trim();
@@ -225,6 +356,7 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
 
   async function createStructure(kind: "departments" | "positions", event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canManageStructure) return;
     const form = event.currentTarget;
     const data = new FormData(form);
     setWorking(true);
@@ -249,6 +381,7 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
   }
 
   async function deactivateStructure(kind: "departments" | "positions", reference: HrStructureReference) {
+    if (!canManageStructure) return;
     const reason = window.prompt(t("hr.deactivatePrompt"))?.trim();
     if (!reason || reason.length < 3) return;
     setWorking(true);
@@ -266,69 +399,143 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
     }
   }
 
-  const activeDepartments = departments.filter((item) => item.isActive);
-  const activePositions = positions.filter((item) => item.isActive);
+  const activeDepartments = useMemo(() => departments.filter((item) => item.isActive), [departments]);
+  const activePositions = useMemo(() => positions.filter((item) => item.isActive), [positions]);
   const availableManagers = employees.filter((item) => item.status !== "TERMINATED");
   const managerOptions = availableManagers.filter((item) => item.id !== selected?.id);
+  const filtered = Boolean(search || status || departmentId);
+  const selectedIsCurrent = selected?.id === selectedId;
+  const visibleTabs = [
+    ...(canViewEmployees ? [{ id: "employees" as const, label: t("hr.tab.employees") }] : []),
+    ...(canViewStructure ? [{ id: "structure" as const, label: t("hr.tab.structure") }] : []),
+  ];
 
-  return <section className="workspace-page hr-workspace">
-    <PageHeader kicker={t("hr.kicker")} title={t("hr.title")} description={t("hr.description")}
-      actions={<Button icon="plus" onClick={() => setCreateEmployeeOpen(true)}>{t("hr.newEmployee")}</Button>} />
-    <div className="section-tabs hr-tabs" role="tablist">
-      <button type="button" className={tab === "employees" ? "active" : ""} onClick={() => setTab("employees")}>{t("hr.tab.employees")}</button>
-      <button type="button" className={tab === "structure" ? "active" : ""} onClick={() => setTab("structure")}>{t("hr.tab.structure")}</button>
+  function focusTab(next: Tab) {
+    setTab(next);
+    queueMicrotask(() => document.getElementById(`hr-${next}-tab`)?.focus());
+  }
+
+  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, current: Tab) {
+    if (!visibleTabs.length || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const currentIndex = Math.max(0, visibleTabs.findIndex((item) => item.id === current));
+    let nextIndex: number;
+    if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = visibleTabs.length - 1;
+    else {
+      const visualStep = event.key === "ArrowRight" ? 1 : -1;
+      const step = dir === "rtl" ? -visualStep : visualStep;
+      nextIndex = (currentIndex + step + visibleTabs.length) % visibleTabs.length;
+    }
+    focusTab(visibleTabs[nextIndex]!.id);
+  }
+
+  return <section className="workspace-page hr-workspace hr-experience">
+    <PageHeader
+      kicker={t("hr.kicker")}
+      title={hrCopy["hr.experienceTitle"]}
+      description={hrCopy["hr.experienceDescription"]}
+      actions={canManageEmployees ? <Button icon="plus" onClick={() => setCreateEmployeeOpen(true)}>{t("hr.newEmployee")}</Button> : undefined}
+    />
+
+    <div className="section-tabs hr-tabs" role="tablist" aria-label={t("view.humanResources")} aria-orientation="horizontal">
+      {visibleTabs.map((item) => <button type="button" id={`hr-${item.id}-tab`} key={item.id} role="tab" aria-selected={tab === item.id} aria-controls={`hr-${item.id}-panel`} tabIndex={tab === item.id ? 0 : -1} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)} onKeyDown={(event) => handleTabKeyDown(event, item.id)}>{item.label}</button>)}
     </div>
 
-    {tab === "employees" && <>
-      <div className="toolbar hr-toolbar"><label><span>{t("hr.statusFilter")}</span><select value={status} onChange={(event) => { setStatus(event.target.value as HrEmploymentStatus | ""); setPage(1); }}>
-        <option value="">{t("hr.status.ALL")}</option>
-        {(["ACTIVE", "ON_LEAVE", "TERMINATED"] as HrEmploymentStatus[]).map((value) => <option key={value} value={value}>{t(`hr.status.${value}`)}</option>)}
-      </select></label></div>
+    {tab === "employees" && canViewEmployees && <div id="hr-employees-panel" role="tabpanel" aria-labelledby="hr-employees-tab" className="hr-tab-panel">
+      <div className="hr-status-bar" aria-busy={loading} aria-label={t("hr.statusFilter")}>
+        <div className="hr-status-filters">
+          <StatusFilter label={t("hr.status.ALL")} selected={!status} onClick={() => { selectEmployeeId(""); setStatus(""); setPage(1); }} />
+          <StatusFilter label={t("hr.status.ACTIVE")} selected={status === "ACTIVE"} onClick={() => { selectEmployeeId(""); setStatus("ACTIVE"); setPage(1); }} />
+          <StatusFilter label={t("hr.status.ON_LEAVE")} selected={status === "ON_LEAVE"} onClick={() => { selectEmployeeId(""); setStatus("ON_LEAVE"); setPage(1); }} />
+          <StatusFilter label={t("hr.status.TERMINATED")} selected={status === "TERMINATED"} onClick={() => { selectEmployeeId(""); setStatus("TERMINATED"); setPage(1); }} />
+        </div>
+        <span className={`hr-current-total${error ? " error" : ""}`} role="status">{loading ? t("hr.loading") : error || t("common.results", { total: formatNumber(meta.total) })}</span>
+      </div>
+
+      <form className={`panel hr-filter-bar${canViewStructure ? "" : " without-department"}`} role="search" onSubmit={submitSearch}>
+        <label className="hr-search-field"><span>{t("common.search")}</span><input name="employeeSearch" type="search" placeholder={hrCopy["hr.searchPlaceholder"]} value={searchInput} onChange={(event) => setSearchInput(event.target.value)} autoComplete="off" /></label>
+        <label><span>{t("hr.statusFilter")}</span><select value={status} onChange={(event) => { selectEmployeeId(""); setStatus(event.target.value as HrEmploymentStatus | ""); setPage(1); }}>
+          <option value="">{t("hr.status.ALL")}</option>
+          {(["ACTIVE", "ON_LEAVE", "TERMINATED"] as HrEmploymentStatus[]).map((value) => <option key={value} value={value}>{t(`hr.status.${value}`)}</option>)}
+        </select></label>
+        {canViewStructure && <label><span>{t("hr.department")}</span><select value={departmentId} onChange={(event) => { selectEmployeeId(""); setDepartmentId(event.target.value); setPage(1); }}>
+          <option value="">{hrCopy["hr.allDepartments"]}</option>
+          {departments.map((item) => <option key={item.id} value={item.id}>{item.code} — {localizedReferenceName(item)}</option>)}
+        </select></label>}
+        <Button type="submit" disabled={loading}>{t("common.search")}</Button>
+      </form>
+
       {error ? <div className="error-panel" role="alert"><p>{error}</p><Button variant="secondary" onClick={() => void loadEmployees()}>{t("common.retry")}</Button></div>
         : loading ? <Spinner label={t("hr.loading")} />
-        : employees.length === 0 ? <EmptyState title={t("hr.emptyTitle")} description={t("hr.emptyDescription")} action={<Button icon="plus" onClick={() => setCreateEmployeeOpen(true)}>{t("hr.newEmployee")}</Button>} />
+        : employees.length === 0 && !filtered ? <EmptyState title={t("hr.emptyTitle")} description={t("hr.emptyDescription")} action={canManageEmployees ? <Button icon="plus" onClick={() => setCreateEmployeeOpen(true)}>{t("hr.newEmployee")}</Button> : undefined} />
         : <div className="hr-layout">
-          <article className="panel hr-employee-list"><header><div><h2>{t("hr.employees")}</h2><p>{t("hr.emptyDescription")}</p></div></header>
-            <div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("hr.employee")}</th><th>{t("hr.department")}</th><th>{t("hr.position")}</th><th>{t("hr.statusLabel")}</th><th>{t("hr.contracts")}</th></tr></thead><tbody>
-              {employees.map((employee) => <tr key={employee.id} className={selectedId === employee.id ? "selected-row" : ""}>
-                <td><button type="button" className="hr-employee-select" onClick={() => setSelectedId(employee.id)}><strong>{employee.employeeNumber}</strong><small>{localizedReferenceName(employee)}</small></button></td>
-                <td>{employee.department ? localizedReferenceName(employee.department) : t("hr.notAssigned")}</td>
-                <td>{employee.position ? localizedReferenceName(employee.position) : t("hr.notAssigned")}</td>
-                <td><span className={`status-chip ${employee.status.toLowerCase()}`}>{t(`hr.status.${employee.status}`)}</span></td>
-                <td>{employee.hasActiveContract ? t("hr.activeContract") : t("hr.noActiveContract")}</td>
-              </tr>)}
-            </tbody></table></div><Pagination {...meta} page={page} onChange={setPage} />
+          <article className="panel hr-employee-list">
+            <header><div><h2>{t("hr.employees")}</h2><p>{hrCopy["hr.rosterDescription"]}</p></div></header>
+            <div className="data-table-wrap hr-list-region" role="region" tabIndex={0} aria-label={t("hr.employees")}>
+              {employees.length === 0 ? <div className="hr-no-results" role="status"><strong>{hrCopy["hr.filteredEmptyTitle"]}</strong><p>{hrCopy["hr.filteredEmptyDescription"]}</p></div> : <ul className="hr-person-list">
+                {employees.map((employee) => <li key={employee.id}>
+                  <button type="button" className="hr-person-card" aria-pressed={selectedId === employee.id} onClick={() => selectEmployeeId(employee.id)}>
+                    <span className="hr-person-heading"><strong>{localizedReferenceName(employee)}</strong><span dir="ltr">{employee.employeeNumber}</span></span>
+                    <span className="hr-person-assignment">{employee.department ? localizedReferenceName(employee.department) : t("hr.notAssigned")} · {employee.position ? localizedReferenceName(employee.position) : t("hr.notAssigned")}</span>
+                    <span className="hr-person-state"><span className={`status-chip ${employee.status.toLowerCase()}`}>{t(`hr.status.${employee.status}`)}</span><span>{employee.hasActiveContract ? t("hr.activeContract") : t("hr.noActiveContract")}</span></span>
+                  </button>
+                </li>)}
+              </ul>}
+            </div>
+            <Pagination {...meta} page={page} onChange={(nextPage) => { selectEmployeeId(""); setPage(nextPage); }} />
           </article>
-          {selected && <aside className="panel hr-detail"><header><div><h2>{localizedReferenceName(selected)}</h2><p>{selected.employeeNumber}</p></div><span className={`status-chip ${selected.status.toLowerCase()}`}>{t(`hr.status.${selected.status}`)}</span></header>
-            <dl className="detail-list">
-              <div><dt>{t("hr.typeLabel")}</dt><dd>{t(`hr.employmentType.${selected.employmentType}`)}</dd></div>
-              <div><dt>{t("hr.hireDate")}</dt><dd>{selected.hireDate}</dd></div>
-              <div><dt>{t("hr.manager")}</dt><dd>{selected.manager ? localizedReferenceName(selected.manager) : t("hr.notAssigned")}</dd></div>
-              <div><dt>{t("hr.workLocation")}</dt><dd>{selected.workLocation ?? t("hr.notAssigned")}</dd></div>
-              <div><dt>{t("hr.linkedUser")}</dt><dd>{selected.linkedUser?.displayName ?? t("hr.notLinked")}</dd></div>
-            </dl>
-            {selected.status !== "TERMINATED" && <div className="row-actions hr-actions"><Button variant="secondary" onClick={() => setEditEmployeeOpen(true)} disabled={working}>{t("hr.editEmployee")}</Button>
-              {selected.status === "ACTIVE" ? <Button variant="secondary" disabled={working} onClick={() => void transition("ON_LEAVE")}>{t("hr.onLeave")}</Button> : <Button disabled={working} onClick={() => void transition("ACTIVE")}>{t("hr.activate")}</Button>}
-              <Button variant="danger" disabled={working} onClick={() => void transition("TERMINATED")}>{t("hr.terminate")}</Button>
-            </div>}
-          </aside>}
-        </div>}
-      {selected && <article className="panel hr-contracts"><header><div><h2>{t("hr.contracts")}</h2><p>{t("hr.contractsDescription")}</p></div>
-        {selected.status !== "TERMINATED" && !selected.hasActiveContract && <Button icon="plus" onClick={() => setContractOpen(true)}>{t("hr.newContract")}</Button>}</header>
-        {contracts.length === 0 ? <p className="muted">{t("hr.noContracts")}</p> : <div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("hr.contractTitle")}</th><th>{t("hr.contractType")}</th><th>{t("hr.startDate")}</th><th>{t("hr.endDate")}</th><th>{t("hr.statusLabel")}</th><th /></tr></thead><tbody>
-          {contracts.map((contract) => <tr key={contract.id}><td>{localizedReferenceName({ nameAr: contract.titleAr, nameEn: contract.titleEn })}</td><td>{t(`hr.contractType.${contract.contractType}`)}</td><td>{contract.startDate}</td><td>{contract.endDate ?? "—"}</td><td><span className={`status-chip ${contract.status.toLowerCase()}`}>{t(`hr.contractStatus.${contract.status}`)}</span></td><td>{contract.status === "ACTIVE" && <Button variant="ghost" disabled={working} onClick={() => void endContract(contract)}>{t("hr.endContract")}</Button>}</td></tr>)}
-        </tbody></table></div>}
-      </article>}
-    </>}
 
-    {tab === "structure" && <div className="hr-structure-grid">
-      <StructurePanel title={t("hr.departments")} addLabel={t("hr.addDepartment")} items={departments} working={working} onCreate={(event) => void createStructure("departments", event)} onDeactivate={(item) => void deactivateStructure("departments", item)} />
-      <StructurePanel title={t("hr.positions")} addLabel={t("hr.addPosition")} items={positions} working={working} onCreate={(event) => void createStructure("positions", event)} onDeactivate={(item) => void deactivateStructure("positions", item)} />
+          <div className="hr-person-workspace">
+            {detailError ? <div className="error-panel" role="alert"><p>{detailError}</p><Button variant="secondary" onClick={() => void loadSelected(selectedIdRef.current)}>{t("common.retry")}</Button></div>
+              : detailLoading ? <Spinner label={t("hr.loading")} />
+              : selectedIsCurrent && selected && <>
+                <article className="panel hr-detail" aria-label={localizedReferenceName(selected)}>
+                  <header><div><h2>{localizedReferenceName(selected)}</h2><p dir="ltr">{selected.employeeNumber}</p></div><span className={`status-chip ${selected.status.toLowerCase()}`}>{t(`hr.status.${selected.status}`)}</span></header>
+                  <div className="hr-identity-strip"><span><strong>{selected.department ? localizedReferenceName(selected.department) : t("hr.notAssigned")}</strong><small>{t("hr.department")}</small></span><span><strong>{selected.position ? localizedReferenceName(selected.position) : t("hr.notAssigned")}</strong><small>{t("hr.position")}</small></span></div>
+                  <dl className="detail-list">
+                    <div><dt>{t("hr.typeLabel")}</dt><dd>{t(`hr.employmentType.${selected.employmentType}`)}</dd></div>
+                    <div><dt>{t("hr.hireDate")}</dt><dd>{dateLabel(selected.hireDate, intlLocale)}</dd></div>
+                    <div><dt>{t("hr.manager")}</dt><dd>{selected.manager ? localizedReferenceName(selected.manager) : t("hr.notAssigned")}</dd></div>
+                    <div><dt>{t("hr.workLocation")}</dt><dd>{selected.workLocation ?? t("hr.notAssigned")}</dd></div>
+                    <div><dt>{t("hr.linkedUser")}</dt><dd>{selected.linkedUser?.displayName ?? t("hr.notLinked")}</dd></div>
+                  </dl>
+                  {selected.status !== "TERMINATED" && canManageEmployees && <div className="row-actions hr-actions"><Button variant="secondary" onClick={() => setEditEmployeeOpen(true)} disabled={working}>{t("hr.editEmployee")}</Button>
+                    {selected.status === "ACTIVE" ? <Button variant="secondary" disabled={working} onClick={() => void transition("ON_LEAVE")}>{t("hr.onLeave")}</Button> : <Button disabled={working} onClick={() => void transition("ACTIVE")}>{t("hr.activate")}</Button>}
+                    <Button variant="danger" disabled={working} onClick={() => void transition("TERMINATED")}>{t("hr.terminate")}</Button>
+                  </div>}
+                </article>
+
+                {canViewContracts && <article className="panel hr-contracts"><header><div><h2>{t("hr.contracts")}</h2><p>{t("hr.contractsDescription")}</p></div>
+                  {canManageContracts && selected.status !== "TERMINATED" && !selected.hasActiveContract && <Button icon="plus" onClick={() => setContractOpen(true)}>{t("hr.newContract")}</Button>}</header>
+                  {contracts.length === 0 ? <p className="muted">{t("hr.noContracts")}</p> : <div className="data-table-wrap hr-card-region" role="region" tabIndex={0} aria-label={t("hr.contracts")}><ul className="hr-contract-list">
+                      {contracts.map((contract) => <li key={contract.id}>
+                        <div><strong>{localizedReferenceName({ nameAr: contract.titleAr, nameEn: contract.titleEn })}</strong><span>{t(`hr.contractType.${contract.contractType}`)}</span></div>
+                        <dl><div><dt>{t("hr.startDate")}</dt><dd>{dateLabel(contract.startDate, intlLocale)}</dd></div><div><dt>{t("hr.endDate")}</dt><dd>{contract.endDate ? dateLabel(contract.endDate, intlLocale) : "—"}</dd></div></dl>
+                        <div className="hr-contract-state"><span className={`status-chip ${contract.status.toLowerCase()}`}>{t(`hr.contractStatus.${contract.status}`)}</span>{contract.status === "ACTIVE" && canManageContracts && <Button variant="ghost" disabled={working} onClick={() => void endContract(contract)}>{t("hr.endContract")}</Button>}</div>
+                      </li>)}
+                    </ul></div>}
+                </article>}
+              </>}
+          </div>
+        </div>}
     </div>}
 
-    {createEmployeeOpen && <EmployeeModal title={t("hr.createTitle")} description={t("hr.createDescription")} employees={availableManagers} departments={activeDepartments} positions={activePositions} working={working} onClose={() => setCreateEmployeeOpen(false)} onSubmit={createEmployee} />}
-    {editEmployeeOpen && selected && <EmployeeModal key={selected.id} title={t("hr.editEmployee")} description={t("hr.editDescription")} employee={selected} employees={managerOptions} departments={activeDepartments} positions={activePositions} working={working} onClose={() => setEditEmployeeOpen(false)} onSubmit={editEmployee} />}
-    {contractOpen && <Modal title={t("hr.newContract")} description={t("hr.contractsDescription")} onClose={() => setContractOpen(false)} wide><form className="modal-form form-grid" onSubmit={createContract}>
+    {tab === "structure" && canViewStructure && <div id="hr-structure-panel" role="tabpanel" aria-labelledby="hr-structure-tab" className="hr-tab-panel">
+      {structureError ? <div className="error-panel" role="alert"><p>{structureError}</p><Button variant="secondary" onClick={() => void loadStructure()}>{t("common.retry")}</Button></div> : structureLoading ? <Spinner label={t("hr.loading")} /> : <>
+        <div className="hr-structure-summary" aria-live="polite"><div><span>{t("hr.departments")}</span><strong>{formatNumber(activeDepartments.length)}</strong><small>{t("hr.active")}</small></div><div><span>{t("hr.positions")}</span><strong>{formatNumber(activePositions.length)}</strong><small>{t("hr.active")}</small></div></div>
+        <div className="hr-structure-grid">
+          <StructurePanel title={t("hr.departments")} description={hrCopy["hr.structurePracticalDescription"]} addLabel={t("hr.addDepartment")} items={departments} working={working} canManage={canManageStructure} onCreate={(event) => void createStructure("departments", event)} onDeactivate={(item) => void deactivateStructure("departments", item)} />
+          <StructurePanel title={t("hr.positions")} description={hrCopy["hr.structurePracticalDescription"]} addLabel={t("hr.addPosition")} items={positions} working={working} canManage={canManageStructure} onCreate={(event) => void createStructure("positions", event)} onDeactivate={(item) => void deactivateStructure("positions", item)} />
+        </div>
+      </>}
+    </div>}
+
+    {!canViewEmployees && !canViewStructure && <div className="error-panel" role="alert"><p>{t("hr.loadError")}</p></div>}
+
+    {createEmployeeOpen && canManageEmployees && <EmployeeModal title={t("hr.createTitle")} description={t("hr.createDescription")} employees={availableManagers} departments={activeDepartments} positions={activePositions} working={working} onClose={() => setCreateEmployeeOpen(false)} onSubmit={createEmployee} />}
+    {editEmployeeOpen && selectedIsCurrent && selected && canManageEmployees && <EmployeeModal key={selected.id} title={t("hr.editEmployee")} description={t("hr.editDescription")} employee={selected} employees={managerOptions} departments={activeDepartments} positions={activePositions} working={working} onClose={() => setEditEmployeeOpen(false)} onSubmit={editEmployee} />}
+    {contractOpen && selectedIsCurrent && canManageContracts && <Modal title={t("hr.newContract")} description={t("hr.contractsDescription")} onClose={() => setContractOpen(false)} wide><form className="modal-form form-grid" onSubmit={createContract}>
       <label><span>{t("hr.contractTitle")}</span><input name="titleAr" maxLength={200} required /></label>
       <label><span>{t("hr.nameEn")}</span><input name="titleEn" maxLength={200} dir="ltr" /></label>
       <label><span>{t("hr.contractType")}</span><select name="contractType" defaultValue="PERMANENT">{(["PERMANENT", "FIXED_TERM", "CONSULTANT", "INTERNSHIP"] as HrContractType[]).map((value) => <option key={value} value={value}>{t(`hr.contractType.${value}`)}</option>)}</select></label>
@@ -340,25 +547,31 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
   </section>;
 }
 
-function StructurePanel({ title, addLabel, items, working, onCreate, onDeactivate }: {
+function StatusFilter({ label, selected, onClick }: { label: string; selected: boolean; onClick: () => void }) {
+  return <button type="button" className={selected ? "active" : ""} aria-pressed={selected} onClick={onClick}>{label}</button>;
+}
+
+function StructurePanel({ title, description, addLabel, items, working, canManage, onCreate, onDeactivate }: {
   title: string;
+  description: string;
   addLabel: string;
   items: HrStructureReference[];
   working: boolean;
+  canManage: boolean;
   onCreate: (event: FormEvent<HTMLFormElement>) => void;
   onDeactivate: (item: HrStructureReference) => void;
 }) {
   const { t } = useI18n();
-  return <article className="panel hr-structure-panel"><header><div><h2>{title}</h2><p>{t("hr.structureDescription")}</p></div></header>
-    <form className="compact-form hr-structure-form" onSubmit={onCreate}>
+  return <article className="panel hr-structure-panel"><header><div><h2>{title}</h2><p>{description}</p></div></header>
+    {canManage && <form className="compact-form hr-structure-form" onSubmit={onCreate}>
       <label><span>{t("hr.nameAr")}</span><input name="nameAr" maxLength={160} required /></label>
       <label><span>{t("hr.nameEn")}</span><input name="nameEn" maxLength={160} dir="ltr" /></label>
       <label><span>{t("hr.referenceDescription")}</span><input name="description" maxLength={500} /></label>
       <Button type="submit" icon="plus" disabled={working}>{addLabel}</Button>
-    </form>
-    <div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("hr.code")}</th><th>{t("hr.nameAr")}</th><th>{t("hr.statusLabel")}</th><th /></tr></thead><tbody>
-      {items.map((item) => <tr key={item.id}><td>{item.code}</td><td>{localizedReferenceName(item)}</td><td>{item.isActive ? t("hr.active") : t("hr.inactive")}</td><td>{item.isActive && <Button variant="ghost" disabled={working} onClick={() => onDeactivate(item)}>{t("hr.deactivate")}</Button>}</td></tr>)}
-    </tbody></table></div>
+    </form>}
+    <div className="data-table-wrap hr-card-region" role="region" tabIndex={0} aria-label={title}><ul className="hr-reference-list">
+        {items.map((item) => <li key={item.id}><div><strong>{localizedReferenceName(item)}</strong><span dir="ltr">{item.code}</span></div><div><span className={`status-chip ${item.isActive ? "active" : "inactive"}`}>{item.isActive ? t("hr.active") : t("hr.inactive")}</span>{item.isActive && canManage && <Button variant="ghost" disabled={working} onClick={() => onDeactivate(item)}>{t("hr.deactivate")}</Button>}</div></li>)}
+      </ul></div>
   </article>;
 }
 

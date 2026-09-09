@@ -22,11 +22,14 @@ const form = {
   displayName: 'Social owner',
   organizationName: 'Social group',
   companyName: 'Social company',
+  phone: '+966500000000',
+  countryCode: 'SA',
+  primaryBusinessActivityCode: 'PROFESSIONAL_SERVICES',
   timezone: 'Asia/Riyadh',
   baseCurrencyCode: 'SAR',
   locale: 'en' as const,
-  chartTemplateCode: 'SMALL_BUSINESS_GENERAL',
-  consent: true,
+  chartTemplateCode: 'PROFESSIONAL_SERVICES',
+  consent: true as const,
 };
 
 describe.runIf(enabled)('social signup onboarding on a real database', () => {
@@ -136,6 +139,11 @@ describe.runIf(enabled)('social signup onboarding on a real database', () => {
       where: { organizationId_userId: { organizationId: assignment.company.organizationId, userId: identity.userId } },
     })).toMatchObject({ role: 'OWNER', isActive: true });
     expect(await db!.account.count({ where: { companyId: assignment.companyId } })).toBeGreaterThan(0);
+    expect(await db!.account.count({ where: { companyId: assignment.companyId, sourceTemplateCode: 'PROFESSIONAL_SERVICES' } })).toBe(4);
+    expect(await db!.companyProfile.findUnique({ where: { companyId: assignment.companyId } })).toMatchObject({
+      tradeName: 'Social company', countryCode: 'SA', phone: '+966500000000',
+      initialChartTemplateCode: 'PROFESSIONAL_SERVICES', grandfatheredAt: null,
+    });
     expect(await db!.platformSubscription.findUnique({ where: { companyId: assignment.companyId } })).toMatchObject({ planVersionId: startPlan.version.id });
     expect(await db!.session.count({ where: { userId: identity.userId, revokedAt: null } })).toBe(1);
     expect(await db!.company.count({ where: { organizationId: assignment.company.organizationId } })).toBe(1);
@@ -196,6 +204,24 @@ describe.runIf(enabled)('social signup onboarding on a real database', () => {
       browserBinding: started.browserBinding,
       form,
     })).rejects.toEqual(new SocialAuthError('ONBOARDING_INVALID'));
+    expect(await db!.user.count({ where: { emailNormalized: profile.email!.value } })).toBe(0);
+  });
+
+  it('rejects the supported legacy chart for a new social onboarding', async () => {
+    const suffix = randomUUID();
+    const profile: VerifiedProviderProfile = {
+      identity: { provider: 'GOOGLE', issuer: 'https://accounts.google.com', subject: `legacy-chart-${suffix}` },
+      email: { value: `legacy-chart-${suffix}@example.test`, verified: true, privateRelay: false },
+      displayName: null,
+    };
+    const started = await begin(profile);
+    await expect(started.auth.completeOnboarding({
+      sid: started.sid,
+      csrfToken: started.csrf,
+      continuation: started.callback.continuation,
+      browserBinding: started.browserBinding,
+      form: { ...form, chartTemplateCode: 'SMALL_BUSINESS_GENERAL' },
+    })).rejects.toEqual(new SocialAuthError('INVALID_REQUEST'));
     expect(await db!.user.count({ where: { emailNormalized: profile.email!.value } })).toBe(0);
   });
 

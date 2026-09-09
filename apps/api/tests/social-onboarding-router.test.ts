@@ -6,10 +6,13 @@ const body = {
   displayName: 'Owner',
   organizationName: 'Group',
   companyName: 'Company',
+  phone: '+966500000000',
+  countryCode: 'SA',
+  primaryBusinessActivityCode: 'PROFESSIONAL_SERVICES',
   timezone: 'Asia/Riyadh',
   baseCurrencyCode: 'SAR',
   locale: 'en',
-  chartTemplateCode: 'SMALL_BUSINESS_GENERAL',
+  chartTemplateCode: 'PROFESSIONAL_SERVICES',
   consent: true,
 };
 

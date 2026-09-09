@@ -1,6 +1,9 @@
 import type { Prisma } from "@prisma/client";
 
-export type GroupCompanyInput = { companyName: string; timezone: string; baseCurrencyCode: string };
+export type GroupCompanyInput = {
+  companyName: string; timezone: string; baseCurrencyCode: string;
+  phone: string; countryCode: string; primaryBusinessActivityCode: string; chartTemplateCode: string;
+};
 export type GroupCompanyResult = { organizationId: string; company: {
   id: string; code: string; name: string; timezone: string; baseCurrencyCode: string;
 } };
@@ -16,4 +19,6 @@ export interface GroupCompanyTenantPort {
     id: bigint; code: string; name: string; timezone: string; baseCurrencyCode: string; createdAt: Date;
   }>;
   currencies(): Promise<Array<{ code: string; nameAr: string }>>;
+  countries(): readonly { code: string; nameAr: string; nameEn: string }[];
+  businessActivities(): Promise<Array<{ code: string; nameAr: string; nameEn: string }>>;
 }

@@ -153,6 +153,16 @@ describe("permission-aware navigation", () => {
     expect(visibleNavigationItems(subscriptionAccess).map((item) => item.view)).toEqual(["home", "subscription", "accountSecurity"]);
     expect(resolveAuthorizedView("subscription", subscriptionAccess)).toBe("subscription");
   });
+
+  it("makes company profile settings discoverable without exposing unrelated settings permissions", () => {
+    for (const permission of ["companies.profile.view", "companies.compliance.view"]) {
+      const partial = access([permission]);
+      expect(visibleNavigationItems(partial).map((item) => item.view)).toContain("settings");
+      expect(allows(partial.permissionSet, viewPermissionPolicies.settings)).toBe(false);
+      expect(partial.permissionSet.has("settings.manage")).toBe(false);
+      expect(partial.permissionSet.has("currencies.view")).toBe(false);
+    }
+  });
 });
 
 describe("high-risk action policies", () => {

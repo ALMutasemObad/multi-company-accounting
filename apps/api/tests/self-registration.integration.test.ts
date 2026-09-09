@@ -13,6 +13,7 @@ import type { RegistrationMailer, RegistrationVerificationMessage } from '../src
 import { RegistrationService } from '../src/registration/registration-service.js';
 import { RegistrationVerificationHandler } from '../src/registration/registration-verification-handler.js';
 import { createStartPlanFixture } from './subscription-start-plan-fixture.js';
+import { hashToken } from '../src/auth/session-tokens.js';
 
 const enabled = process.env.RUN_DB_TESTS === 'true' && Boolean(process.env.DATABASE_URL);
 
@@ -43,6 +44,8 @@ describe.runIf(enabled)('self-registration with MariaDB', () => {
     'it.registration.rollback@mcap.local',
     'it.registration.policy@mcap.local',
     'it.registration.policy-write@mcap.local',
+    'it.registration.migration-missing@mcap.local',
+    'it.registration.migration-template@mcap.local',
   ];
   const auditPepper = 'integration-registration-audit-pepper-123456';
   const tokenSecret = 'integration-registration-token-secret-123456';
@@ -54,10 +57,13 @@ describe.runIf(enabled)('self-registration with MariaDB', () => {
     displayName: 'مدير التسجيل',
     organizationName: 'مجموعة التسجيل',
     companyName: 'شركة التسجيل',
+    phone: '+9671000000',
+    countryCode: 'YE',
+    primaryBusinessActivityCode: 'PROFESSIONAL_SERVICES',
     timezone: 'Asia/Aden',
     baseCurrencyCode: 'YER',
     locale: 'ar' as const,
-    chartTemplateCode: 'SMALL_BUSINESS_GENERAL',
+    chartTemplateCode: 'PROFESSIONAL_SERVICES',
   });
 
   async function cleanup() {
@@ -99,6 +105,10 @@ describe.runIf(enabled)('self-registration with MariaDB', () => {
       await prisma.rolePermission.deleteMany({ where: { roleId: { in: roles.map(({ id }) => id) } } });
       await prisma.role.deleteMany({ where: { companyId: { in: companyIds } } });
       await prisma.userCompany.deleteMany({ where: { companyId: { in: companyIds } } });
+      await prisma.companyAddress.deleteMany({ where: { companyId: { in: companyIds } } });
+      await prisma.companyTaxRegistration.deleteMany({ where: { companyId: { in: companyIds } } });
+      await prisma.companyRegistration.deleteMany({ where: { companyId: { in: companyIds } } });
+      await prisma.companyProfile.deleteMany({ where: { companyId: { in: companyIds } } });
       await prisma.companyCurrency.deleteMany({ where: { companyId: { in: companyIds } } });
       await prisma.account.updateMany({ where: { companyId: { in: companyIds } }, data: { parentAccountId: null } });
       await prisma.account.deleteMany({ where: { companyId: { in: companyIds } } });
@@ -204,9 +214,56 @@ describe.runIf(enabled)('self-registration with MariaDB', () => {
     const role = await prisma.role.findUniqueOrThrow({ where: { companyId_code: { companyId, code: 'ADMINISTRATOR' } }, include: { _count: { select: { permissions: true } } } });
     expect(role._count.permissions).toBe(permissionDefinitions.length);
     expect(await prisma.account.count({ where: { companyId, sourceTemplateCode: 'SMALL_BUSINESS_GENERAL' } })).toBe(defaultChartDefinitions.length);
+    expect(await prisma.account.count({ where: { companyId, sourceTemplateCode: 'PROFESSIONAL_SERVICES' } })).toBe(4);
+    expect(await prisma.companyProfile.findUnique({ where: { companyId } })).toMatchObject({
+      tradeName: 'شركة التسجيل', countryCode: 'YE', phone: '+9671000000',
+      initialChartTemplateCode: 'PROFESSIONAL_SERVICES', grandfatheredAt: null,
+    });
     expect(await prisma.securityEvent.count({ where: { companyId, eventType: 'SELF_REGISTRATION_COMPLETED' } })).toBe(1);
     await expect(service.verify(token)).resolves.toEqual(first);
     expect(await prisma.company.count({ where: { id: companyId } })).toBe(1);
+  }, 60_000);
+
+  it.each([
+    ['missing business profile', 8, { phone: null }],
+    ['legacy onboarding template', 9, { chartTemplateCode: 'SMALL_BUSINESS_GENERAL' }],
+  ] as const)('rejects a migration-era pending request with %s before tenant mutation', async (_case, emailIndex, overrides) => {
+    const email = emails[emailIndex]!;
+    const token = `migration-era-${emailIndex}`;
+    await prisma.registrationRequest.create({ data: {
+      emailNormalized: email,
+      passwordHash: '$argon2id$prepared-but-never-used',
+      displayName: 'Migration owner',
+      organizationName: 'Migration organization',
+      companyName: 'Migration company',
+      timezone: 'Asia/Aden',
+      baseCurrencyCode: 'YER',
+      locale: 'ar',
+      chartTemplateCode: 'PROFESSIONAL_SERVICES',
+      phone: '+9671000000',
+      countryCode: 'YE',
+      primaryBusinessActivityCode: 'PROFESSIONAL_SERVICES',
+      verificationTokenHash: hashToken(token),
+      verificationExpiresAt: new Date('2030-01-01T00:00:00.000Z'),
+      ...overrides,
+    } });
+    const before = await Promise.all([
+      prisma.organization.count(), prisma.company.count(), prisma.companyProfile.count(), prisma.user.count(),
+    ]);
+
+    await expect(service.verify(token)).rejects.toMatchObject({ reason: 'INVALID_OR_EXPIRED_TOKEN' });
+
+    expect(await Promise.all([
+      prisma.organization.count(), prisma.company.count(), prisma.companyProfile.count(), prisma.user.count(),
+    ])).toEqual(before);
+    expect(await prisma.registrationRequest.findUniqueOrThrow({ where: { emailNormalized: email } })).toMatchObject({
+      status: 'PENDING_EMAIL', verifiedAt: null, provisioningStartedAt: null,
+      provisionedOrganizationId: null, provisionedCompanyId: null, provisionedUserId: null,
+    });
+    expect(await prisma.registrationEvent.findFirstOrThrow({
+      where: { emailHash: emailHash(email), eventType: 'REGISTRATION_TOKEN_REJECTED' },
+      orderBy: { id: 'desc' },
+    })).toMatchObject({ details: { reason: 'BUSINESS_PROFILE_RESTART_REQUIRED' } });
   }, 60_000);
 
   it('fails closed without configuration or with an invalid plan, then retries the same token after repair', async () => {

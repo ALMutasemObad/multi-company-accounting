@@ -62,7 +62,7 @@ export const viewPermissionPolicies: Record<TenantProtectedView, PermissionPolic
   customers: { permission: "customers.view" },
   crm: { permission: "crm.view" },
   professionalProjects: { permission: "professional_projects.view" },
-  humanResources: { allOf: ["hr.employees.view", "hr.structure.view", "hr.contracts.view"] },
+  humanResources: { anyOf: ["hr.employees.view", "hr.structure.view"] },
   employeeExpenses: { anyOf: ["employee_expenses.view", "employee_expenses.review"] },
   sales: { permission: "sales_invoices.view" },
   receipts: { permission: "receipts.view" },
@@ -135,6 +135,11 @@ export function isNavigationItemVisible(
   if (item.view === "home") return true;
   if (item.view === "accountSecurity") return true;
   if (item.module && !access.moduleSet.has(item.module)) return false;
+  if (item.view === "settings") {
+    return allows(access.permissionSet, viewPermissionPolicies.settings)
+      || ["companies.profile.view", "companies.compliance.view"]
+        .some((permission) => access.permissionSet.has(permission));
+  }
   return allows(access.permissionSet, viewPermissionPolicies[item.view]);
 }
 

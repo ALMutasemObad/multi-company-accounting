@@ -26,6 +26,13 @@ export const companyProvisioningSchema = z.object({
     try { new Intl.DateTimeFormat('en-US', { timeZone: value }).format(); return true; } catch { return false; }
   }, 'A valid IANA timezone is required'),
   baseCurrencyCode: z.string().trim().length(3).transform((value) => value.toUpperCase()),
+  businessProfile: z.object({
+    phone: z.string().trim().min(5).max(40),
+    countryCode: z.string().trim().regex(/^[A-Za-z]{2}$/u).transform((value) => value.toUpperCase()),
+    primaryBusinessActivityCode: z.string().trim().min(1).max(80),
+    preferredLocale: z.string().trim().min(2).max(35),
+    initialChartTemplateCode: z.string().trim().min(1).max(80),
+  }).strict().optional(),
   adminEmail: z.string().trim().email().max(320).transform((value) => value.toLocaleLowerCase('en-US')),
   adminDisplayName: z.string().trim().min(1).max(160),
   adminPassword: z.string().min(12).max(1024),
@@ -87,6 +94,7 @@ export class CompanyProvisioningService {
       tx,
       tenant.company.id,
       tenant.created,
+      input.businessProfile?.initialChartTemplateCode,
     );
     await this.treasury.provisionTreasury(tx);
     if (tenant.created) {
@@ -110,6 +118,7 @@ export class CompanyProvisioningService {
           defaultChartTemplate: defaultChart.templateCode,
           defaultChartAccountsCreated: defaultChart.accountsCreated,
         } : {}),
+        businessProfileProvided: Boolean(input.businessProfile),
       },
     });
     await this.audit.append(tx, {

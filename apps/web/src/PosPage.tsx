@@ -16,7 +16,12 @@ import { posCatalogPolicy, createPosCatalogReader, type PosCatalogItem } from ".
 import { createBrowserPosRecovery } from "./pos-recovery-browser";
 import { PosRecoveryPanel } from "./PosRecoveryPanel";
 import { posDecimal, posMoneyText, posSubtotal } from "./pos-experience-money";
-import { readPosDisplayMode, savePosDisplayMode } from "./pos-experience-preferences";
+import {
+  readPosContextPanelMode,
+  readPosDisplayMode,
+  savePosContextPanelMode,
+  savePosDisplayMode,
+} from "./pos-experience-preferences";
 import { createPosScopeController } from "./pos-scope-controller";
 import { PosScopePanel } from "./PosScopePanel";
 import { createCashierContextController, type CashierContextReviewed } from "./cashier-context-controller";
@@ -82,6 +87,7 @@ function PosExperience({ notify }: { notify: Notice }) {
   const [lines, setLines] = useState<PosDraftLine[]>([]);
   const linesRef = useRef(lines);
   const [mode, setMode] = useState(() => readPosDisplayMode(user.id, selectedCompany?.id ?? ""));
+  const [contextPanelMode, setContextPanelMode] = useState(() => readPosContextPanelMode(user.id, selectedCompany?.id ?? ""));
   const scanner = useRef<InventoryBarcodeScannerHandle>(null);
   const [barcodePending, setBarcodePending] = useState(0);
   const barcodePendingRef = useRef(0);
@@ -300,6 +306,10 @@ function PosExperience({ notify }: { notify: Notice }) {
   }
 
   const contextComplete = hasPosContext(context);
+  const contextExpanded = contextPanelMode === "expanded";
+  const historyPanel = permissionSet.has("pos.view") ? <details className="panel pos-experience-history"><summary>{t("pos.recentSales")}</summary><p>{t("pos.recentDescription")}</p>
+    {historyError ? <div role="alert"><p>{t("pos.loadError")}</p><Button variant="secondary" onClick={() => setHistoryRevision((value) => value + 1)}>{t("common.retry")}</Button></div> : historyLoading ? <Spinner label={t("common.loading")} /> : sales.length === 0 ? <p>{t("pos.emptyDescription")}</p> : <><div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("pos.invoice")}</th><th>{t("pos.receipt")}</th><th>{t("pos.customer")}</th><th>{t("pos.total")}</th><th>{t("pos.completedAt")}</th><th>{t("pos.status")}</th></tr></thead><tbody>{sales.map((sale) => <tr key={sale.id}><td><bdi>{sale.invoice.documentNumber}</bdi></td><td><bdi>{sale.receipt.documentNumber}</bdi></td><td>{sale.invoice.customerName}</td><td><bdi>{posMoneyText(sale.invoice.total)}</bdi></td><td>{new Date(sale.completedAt).toLocaleString(activeIntlLocale())}</td><td>{t("pos.invoice")}: {statusLabel(sale.invoice.status)} · {t("pos.receipt")}: {statusLabel(sale.receipt.status)}</td></tr>)}</tbody></table></div><Pagination {...meta} page={page} onChange={setPage} /></>}
+  </details> : null;
   if (scopeState.status !== "ready") return <section className="workspace-page pos-experience">
     <PageHeader kicker={t("pos.kicker")} title={t("pos.title")} description={t("pos.cashierDescription")} />
     <PosScopePanel state={scopeState} locale={copyLocale} canVerify={canAccess} onVerify={() => {
@@ -307,16 +317,13 @@ function PosExperience({ notify }: { notify: Notice }) {
     }} />
   </section>;
   return <section className="workspace-page pos-experience">
-    <PageHeader kicker={t("pos.kicker")} title={t("pos.title")} description={t("pos.cashierDescription")} />
+    <PageHeader kicker={t("pos.kicker")} title={t("pos.title")} description={t("pos.cashierDescription")}
+      actions={canCheckout ? <Button type="button" variant="secondary" icon="settings" className="pos-experience-context-toggle"
+        aria-expanded={contextExpanded} aria-controls="pos-context-sidebar" onClick={() => {
+          const next = contextExpanded ? "collapsed" : "expanded";
+          setContextPanelMode(next); savePosContextPanelMode(user.id, selectedCompany?.id ?? "", next);
+        }}>{t(contextExpanded ? "common.close" : "pos.contextReview")}</Button> : undefined} />
     {canCheckout && <form onSubmit={submit} className="pos-experience-form">
-      {!result && <><CashierContextPanel controller={cashier} currentScopeKey={currentCashierKey} locale={copyLocale} onReviewed={applyReviewed} blocked={blocked} canInteract={canEdit}
-        onDateChange={(documentDate) => patchContext({ documentDate, periodId: "" })}
-        renderPicker={(picker) => <ReferenceCombobox<PosContextOption> endpoint={posContextOptionsPath(picker.field)} reader={scopeGate.request}
-          value={picker.id ?? ""} selectedLabel={picker.label} disabled={picker.disabled || blocked}
-          optionLabel={(row) => row.label} optionDisabled={(row) => row.isAvailable !== true}
-          onChange={(row) => { if (canEdit() && (!row || row.isAvailable === true)) picker.onSelect(row?.id ?? null); }}
-          placeholder={cashierContextDictionaries[copyLocale][picker.field]} searchLabel={cashierContextDictionaries[copyLocale][picker.field]} />} />
-      <PosOperatingContext value={context} blocked={blocked} onChange={patchContext} reader={scopeGate.request} /></>}
       <PosRecoveryPanel locale={copyLocale} state={recoveryState} canCheckout={canCheckout}
         barcodePending={pending > 0 || profileRequests.current.size > 0 || Boolean(scanner.current?.hasPending())}
         rejectionMessage={recoveryState.status === "rejected" ? messageForError(recoveryState.rejection.code, recoveryState.rejection.reason) : undefined}
@@ -325,7 +332,19 @@ function PosExperience({ notify }: { notify: Notice }) {
       {result && <div className="pos-experience-document-links">{permissionSet.has("sales_invoices.view") && <a href="#sales">{t("pos.openSalesList")}</a>}{permissionSet.has("receipts.view") && <a href="#receipts">{t("pos.openReceiptsList")}</a>}</div>}
       {result && <RetailReceiptOutput access={{ userId: user.id, companyId: selectedCompany?.id ?? null, permissionSet, moduleSet: new Set(modules) }}
         confirmedSalesInvoiceId={result.invoice.id} locale={copyLocale} readPreview={receiptOutput.readPreview} downloadA4={receiptOutput.downloadA4} />}
-      <div className="pos-experience-workspace"><div className="panel pos-experience-selection">
+      <div className={`pos-experience-workspace${contextExpanded ? "" : " context-collapsed"}`}>
+        <aside id="pos-context-sidebar" className="pos-experience-settings" aria-label={t("pos.operatingContext")} hidden={!contextExpanded}>
+          {!result && <><CashierContextPanel controller={cashier} currentScopeKey={currentCashierKey} locale={copyLocale} onReviewed={applyReviewed} blocked={blocked} canInteract={canEdit}
+            onDateChange={(documentDate) => patchContext({ documentDate, periodId: "" })}
+            renderPicker={(picker) => <ReferenceCombobox<PosContextOption> endpoint={posContextOptionsPath(picker.field)} reader={scopeGate.request}
+              value={picker.id ?? ""} selectedLabel={picker.label} disabled={picker.disabled || blocked}
+              optionLabel={(row) => row.label} optionDisabled={(row) => row.isAvailable !== true}
+              onChange={(row) => { if (canEdit() && (!row || row.isAvailable === true)) picker.onSelect(row?.id ?? null); }}
+              placeholder={cashierContextDictionaries[copyLocale][picker.field]} searchLabel={cashierContextDictionaries[copyLocale][picker.field]} />} />
+            <PosOperatingContext value={context} blocked={blocked} onChange={patchContext} reader={scopeGate.request} /></>}
+          {historyPanel}
+        </aside>
+        <div className="panel pos-experience-selection">
         <fieldset disabled={blocked} className="pos-experience-scanner-guard">
           <InventoryBarcodeScanner ref={scanner} reader={scopeGate.request} enabled={canScan} blocked={blocked} autoFocus maxLines={50} onPendingChange={(count) => { if (mounted.current) { barcodePendingRef.current = count; setBarcodePending(count); syncCashierLock(); } }} onResolved={(resolved) => addItem({ id: resolved.inventoryItem.id, label: `${resolved.inventoryItem.code} — ${localizedReferenceName(resolved.inventoryItem)} (${resolved.inventoryItem.unitOfMeasure.code})`, description: localizedReferenceName(resolved.inventoryItem) })} />
         </fieldset>
@@ -341,8 +360,6 @@ function PosExperience({ notify }: { notify: Notice }) {
         {canCheckout && <Button type="submit" className="pos-experience-checkout" icon="check" disabled={blocked || pending > 0 || !cashierState.reviewed || !contextComplete || lines.length === 0 || posSubtotal(lines) === null || lines.some((line) => !line.revenueAccountId)}>{recoveryState.status === "pending" || preparing ? t("pos.checkingOut") : t("pos.checkout")}</Button>}
       </div></div>
     </form>}
-    {permissionSet.has("pos.view") && <details className="panel pos-experience-history"><summary>{t("pos.recentSales")}</summary><p>{t("pos.recentDescription")}</p>
-      {historyError ? <div role="alert"><p>{t("pos.loadError")}</p><Button variant="secondary" onClick={() => setHistoryRevision((value) => value + 1)}>{t("common.retry")}</Button></div> : historyLoading ? <Spinner label={t("common.loading")} /> : sales.length === 0 ? <p>{t("pos.emptyDescription")}</p> : <><div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("pos.invoice")}</th><th>{t("pos.receipt")}</th><th>{t("pos.customer")}</th><th>{t("pos.total")}</th><th>{t("pos.completedAt")}</th><th>{t("pos.status")}</th></tr></thead><tbody>{sales.map((sale) => <tr key={sale.id}><td><bdi>{sale.invoice.documentNumber}</bdi></td><td><bdi>{sale.receipt.documentNumber}</bdi></td><td>{sale.invoice.customerName}</td><td><bdi>{posMoneyText(sale.invoice.total)}</bdi></td><td>{new Date(sale.completedAt).toLocaleString(activeIntlLocale())}</td><td>{t("pos.invoice")}: {statusLabel(sale.invoice.status)} · {t("pos.receipt")}: {statusLabel(sale.receipt.status)}</td></tr>)}</tbody></table></div><Pagination {...meta} page={page} onChange={setPage} /></>}
-    </details>}
+    {!canCheckout && historyPanel}
   </section>;
 }

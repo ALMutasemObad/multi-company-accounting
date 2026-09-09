@@ -586,6 +586,19 @@ export function responseFor(url, method, headers = {}) {
   if (pathname === "/organizations/501/members") return { data: organizationMembers };
   if (pathname === "/organizations/501/company-options") return {
     currencies: [{ code: "SAR", nameAr: "ريال سعودي" }, { code: "USD", nameAr: "دولار أمريكي" }],
+    countries: [
+      { code: "YE", nameAr: "اليمن", nameEn: "Yemen" },
+      { code: "SA", nameAr: "المملكة العربية السعودية", nameEn: "Saudi Arabia" },
+    ],
+    businessActivities: [
+      { code: "PROFESSIONAL_SERVICES", nameAr: "الخدمات المهنية", nameEn: "Professional services" },
+      { code: "RETAIL_INVENTORY", nameAr: "التجزئة والمخزون", nameEn: "Retail and inventory" },
+    ],
+    chartTemplates: [
+      { code: "PROFESSIONAL_SERVICES", nameAr: "دليل الخدمات المهنية", nameEn: "Professional services chart" },
+      { code: "RETAIL_INVENTORY", nameAr: "دليل التجزئة والمخزون", nameEn: "Retail and inventory chart" },
+      { code: "MANUFACTURING", nameAr: "دليل الإنتاج والتصنيع", nameEn: "Manufacturing chart" },
+    ],
     timezones: ["Asia/Riyadh", "UTC"],
   };
   if (pathname === "/platform/overview") return platformOverview;
@@ -689,9 +702,21 @@ export function responseFor(url, method, headers = {}) {
   if (pathname === "/settings") return { data: [{ key: "accounting.manual_journal_maker_checker_enabled", value: true }] };
   if (pathname === "/auth/register/options") return {
     currencies: [currency, { id: "currency-yer", code: "YER", nameAr: "ريال يمني", nameEn: "Yemeni Rial", decimals: 2 }],
+    countries: [
+      { code: "YE", nameAr: "اليمن", nameEn: "Yemen" },
+      { code: "SA", nameAr: "المملكة العربية السعودية", nameEn: "Saudi Arabia" },
+    ],
+    businessActivities: [
+      { code: "PROFESSIONAL_SERVICES", nameAr: "الخدمات المهنية", nameEn: "Professional services" },
+      { code: "RETAIL_INVENTORY", nameAr: "التجزئة والمخزون", nameEn: "Retail and inventory" },
+    ],
     locales: ["ar", "en", "ur", "hi"],
     timezones: ["Asia/Riyadh", "Asia/Aden"],
-    chartTemplates: [{ code: "STANDARD_TRADING", nameAr: "الدليل التجاري القياسي", nameEn: "Standard trading chart" }],
+    chartTemplates: [
+      { code: "PROFESSIONAL_SERVICES", nameAr: "دليل الخدمات المهنية", nameEn: "Professional services chart" },
+      { code: "RETAIL_INVENTORY", nameAr: "دليل التجزئة والمخزون", nameEn: "Retail and inventory chart" },
+      { code: "MANUFACTURING", nameAr: "دليل الإنتاج والتصنيع", nameEn: "Manufacturing chart" },
+    ],
     passwordPolicy: { minLength: 12, maxLength: 128 },
   };
   if (pathname === "/accounts/default-template") return { templateCode: "STANDARD_TRADING", version: 1, nameAr: "الدليل التجاري القياسي", nameEn: "Standard trading chart", total: 42, matched: 42, missing: 0, inactive: 0, conflicts: 0, canApply: true };

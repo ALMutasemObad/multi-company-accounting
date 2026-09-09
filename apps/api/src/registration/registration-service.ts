@@ -32,6 +32,9 @@ export type StartRegistrationInput = {
   baseCurrencyCode: string;
   locale: SupportedLocale;
   chartTemplateCode: string;
+  phone: string;
+  countryCode: string;
+  primaryBusinessActivityCode: string;
 };
 
 type RegistrationOptions = {
@@ -67,13 +70,18 @@ export class RegistrationService {
   }
 
   async options() {
-    const currencies = await this.owners.tenant.listGlobalCurrencies();
+    const [currencies, businessActivities] = await Promise.all([
+      this.owners.tenant.listGlobalCurrencies(),
+      this.owners.tenant.listBusinessActivities(),
+    ]);
     const timezones = [...new Set(['UTC', ...Intl.supportedValuesOf('timeZone')])];
     return {
       currencies,
       locales: emailTemplateLocales,
       timezones,
       chartTemplates: this.owners.accounting.listChartTemplates(),
+      countries: this.owners.tenant.listCompanyCountries(),
+      businessActivities,
       passwordPolicy: { minLength: 12, maxLength: 1024 },
     };
   }
@@ -92,6 +100,12 @@ export class RegistrationService {
     if (!locale) throw new RegistrationError('INVALID_OPTION');
     const emailNormalized = input.email.trim().toLocaleLowerCase('en-US');
     const baseCurrencyCode = input.baseCurrencyCode.trim().toUpperCase();
+    const countryCode = input.countryCode.trim().toUpperCase();
+    const phone = input.phone.trim();
+    const primaryBusinessActivityCode = input.primaryBusinessActivityCode.trim();
+    if (!this.owners.tenant.isSupportedCompanyCountry(countryCode) || phone.length < 5 || phone.length > 40) {
+      throw new RegistrationError('INVALID_OPTION');
+    }
     const passwordHash = await this.passwordHasher(input.password);
     const verificationTokenHash = hashToken(createOpaqueToken());
     const expiresAt = this.now();
@@ -106,7 +120,10 @@ export class RegistrationService {
       if (!(await this.owners.tenant.isActiveGlobalCurrency(tx, baseCurrencyCode))) {
         throw new RegistrationError('INVALID_OPTION');
       }
-      if (!this.owners.accounting.isSupportedChartTemplate(input.chartTemplateCode)) {
+      if (!this.owners.accounting.isAllowedOnboardingChartTemplate(input.chartTemplateCode)) {
+        throw new RegistrationError('INVALID_OPTION');
+      }
+      if (!(await this.owners.tenant.isActiveBusinessActivity(tx, primaryBusinessActivityCode))) {
         throw new RegistrationError('INVALID_OPTION');
       }
       if (await this.owners.identity.identityExists(tx, emailNormalized)) {
@@ -129,6 +146,9 @@ export class RegistrationService {
           baseCurrencyCode,
           locale,
           chartTemplateCode: input.chartTemplateCode,
+          phone,
+          countryCode,
+          primaryBusinessActivityCode,
           verificationTokenHash,
           verificationExpiresAt: expiresAt,
           status: 'PENDING_EMAIL',
@@ -154,6 +174,9 @@ export class RegistrationService {
           baseCurrencyCode,
           locale,
           chartTemplateCode: input.chartTemplateCode,
+          phone,
+          countryCode,
+          primaryBusinessActivityCode,
           verificationTokenHash,
           verificationExpiresAt: expiresAt,
           deliveryAttempts: 0,
@@ -246,6 +269,26 @@ export class RegistrationService {
         await this.recordEvent(tx, { registrationRequestId: request.id, emailNormalized: request.emailNormalized, eventType: 'REGISTRATION_TOKEN_REJECTED', severity: 'WARNING', metadata });
         return { kind: 'invalid' as const };
       }
+      const phone = request.phone?.trim() ?? '';
+      const countryCode = request.countryCode?.trim().toUpperCase() ?? '';
+      const activityCode = request.primaryBusinessActivityCode?.trim() ?? '';
+      const businessProfileAllowed = phone.length >= 5
+        && phone.length <= 40
+        && this.owners.tenant.isSupportedCompanyCountry(countryCode)
+        && activityCode.length > 0
+        && this.owners.accounting.isAllowedOnboardingChartTemplate(request.chartTemplateCode)
+        && await this.owners.tenant.isActiveBusinessActivity(tx, activityCode);
+      if (!businessProfileAllowed) {
+        await this.recordEvent(tx, {
+          registrationRequestId: request.id,
+          emailNormalized: request.emailNormalized,
+          eventType: 'REGISTRATION_TOKEN_REJECTED',
+          severity: 'WARNING',
+          metadata,
+          details: { reason: 'BUSINESS_PROFILE_RESTART_REQUIRED' },
+        });
+        return { kind: 'invalid' as const };
+      }
       const startedAt = this.now();
       const claimed = await tx.registrationRequest.updateMany({
         where: {
@@ -282,6 +325,13 @@ export class RegistrationService {
           baseCurrencyCode: request.baseCurrencyCode,
           adminEmail: request.emailNormalized,
           adminDisplayName: request.displayName,
+          businessProfile: {
+            phone: request.phone!,
+            countryCode: request.countryCode!,
+            primaryBusinessActivityCode: request.primaryBusinessActivityCode!,
+            preferredLocale: request.locale,
+            initialChartTemplateCode: request.chartTemplateCode,
+          },
         }, request.passwordHash, { requireNewAdminIdentity: true });
         const completedAt = this.now();
         await tx.registrationRequest.update({

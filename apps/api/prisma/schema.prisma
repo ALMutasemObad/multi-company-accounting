@@ -135,6 +135,20 @@ enum AddressType {
   OTHER
 }
 
+enum CompanyRegistrationStatus {
+  DECLARED
+  VERIFIED
+  REJECTED
+  EXPIRED
+}
+
+enum CompanyAddressType {
+  REGISTERED
+  NATIONAL
+  OPERATING
+  BILLING
+}
+
 enum CashBankAccountType {
   CASH
   BANK
@@ -648,10 +662,113 @@ model Company {
   platformSubscription              PlatformSubscription?
   platformSubscriptionEntitlements  PlatformSubscriptionEntitlement[]
   platformSubscriptionChanges       PlatformSubscriptionChange[]
+  profile                           CompanyProfile?
+  registrations                     CompanyRegistration[]
+  taxRegistrations                  CompanyTaxRegistration[]
+  profileAddresses                  CompanyAddress[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
   @@map("companies")
+}
+
+model BusinessActivity {
+  id               BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
+  code             String           @unique @db.VarChar(80)
+  nameAr           String           @map("name_ar") @db.VarChar(160)
+  nameEn           String           @map("name_en") @db.VarChar(160)
+  isActive         Boolean          @default(true) @map("is_active")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+  primaryCompanies CompanyProfile[]
+
+  @@index([isActive, code])
+  @@map("business_activities")
+}
+
+model CompanyProfile {
+  companyId                 BigInt            @id @map("company_id") @db.UnsignedBigInt
+  tradeName                 String?           @map("trade_name") @db.VarChar(200)
+  legalName                 String?           @map("legal_name") @db.VarChar(200)
+  countryCode               String?           @map("country_code") @db.Char(2)
+  legalForm                 String?           @map("legal_form") @db.VarChar(100)
+  preferredLocale           String?           @map("preferred_locale") @db.VarChar(35)
+  phone                     String?           @db.VarChar(40)
+  email                     String?           @db.VarChar(320)
+  website                   String?           @db.VarChar(500)
+  primaryContactName        String?           @map("primary_contact_name") @db.VarChar(160)
+  primaryBusinessActivityId BigInt?           @map("primary_business_activity_id") @db.UnsignedBigInt
+  initialChartTemplateCode  String?           @map("initial_chart_template_code") @db.VarChar(80)
+  grandfatheredAt           DateTime?         @map("grandfathered_at")
+  version                   Int               @default(0) @db.UnsignedInt
+  complianceVersion         Int               @default(0) @map("compliance_version") @db.UnsignedInt
+  createdAt                 DateTime          @default(now()) @map("created_at")
+  updatedAt                 DateTime          @updatedAt @map("updated_at")
+  company                   Company           @relation(fields: [companyId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  primaryBusinessActivity   BusinessActivity? @relation(fields: [primaryBusinessActivityId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([primaryBusinessActivityId])
+  @@index([countryCode])
+  @@map("company_profiles")
+}
+
+model CompanyRegistration {
+  id               BigInt                    @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId        BigInt                    @map("company_id") @db.UnsignedBigInt
+  documentType     String                    @map("document_type") @db.VarChar(80)
+  numberLast4      String?                   @map("number_last4") @db.VarChar(4)
+  issuingAuthority String?                   @map("issuing_authority") @db.VarChar(200)
+  issuedAt         DateTime?                 @map("issued_at") @db.Date
+  expiresAt        DateTime?                 @map("expires_at") @db.Date
+  status           CompanyRegistrationStatus @default(DECLARED)
+  verifiedAt       DateTime?                 @map("verified_at")
+  createdAt        DateTime                  @default(now()) @map("created_at")
+  updatedAt        DateTime                  @updatedAt @map("updated_at")
+  company          Company                   @relation(fields: [companyId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+
+  @@unique([companyId, documentType])
+  @@index([companyId, expiresAt])
+  @@map("company_registrations")
+}
+
+model CompanyTaxRegistration {
+  id               BigInt                    @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId        BigInt                    @map("company_id") @db.UnsignedBigInt
+  registrationType String                    @map("registration_type") @db.VarChar(80)
+  countryCode      String                    @map("country_code") @db.Char(2)
+  numberLast4      String?                   @map("number_last4") @db.VarChar(4)
+  issuedAt         DateTime?                 @map("issued_at") @db.Date
+  expiresAt        DateTime?                 @map("expires_at") @db.Date
+  status           CompanyRegistrationStatus @default(DECLARED)
+  verifiedAt       DateTime?                 @map("verified_at")
+  createdAt        DateTime                  @default(now()) @map("created_at")
+  updatedAt        DateTime                  @updatedAt @map("updated_at")
+  company          Company                   @relation(fields: [companyId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+
+  @@unique([companyId, registrationType, countryCode])
+  @@index([companyId, expiresAt])
+  @@map("company_tax_registrations")
+}
+
+model CompanyAddress {
+  id             BigInt             @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId      BigInt             @map("company_id") @db.UnsignedBigInt
+  type           CompanyAddressType
+  line1          String?            @db.VarChar(200)
+  line2          String?            @db.VarChar(200)
+  district       String?            @db.VarChar(120)
+  city           String?            @db.VarChar(120)
+  subdivision    String?            @db.VarChar(120)
+  postalCode     String?            @map("postal_code") @db.VarChar(40)
+  countryCode    String             @map("country_code") @db.Char(2)
+  displayAddress String?            @map("display_address") @db.VarChar(500)
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+  company        Company            @relation(fields: [companyId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+
+  @@unique([companyId, type])
+  @@index([companyId, countryCode])
+  @@map("company_addresses")
 }
 
 model User {
@@ -773,6 +890,9 @@ model RegistrationRequest {
   baseCurrencyCode          String                     @map("base_currency_code") @db.Char(3)
   locale                    String                     @default("ar") @db.VarChar(10)
   chartTemplateCode         String                     @default("SMALL_BUSINESS_GENERAL") @map("chart_template_code") @db.VarChar(80)
+  phone                     String?                    @db.VarChar(40)
+  countryCode               String?                    @map("country_code") @db.Char(2)
+  primaryBusinessActivityCode String?                  @map("primary_business_activity_code") @db.VarChar(80)
   verificationTokenHash     Bytes                      @unique @map("verification_token_hash") @db.Binary(32)
   verificationExpiresAt     DateTime                   @map("verification_expires_at")
   status                    RegistrationStatus         @default(PENDING_EMAIL)

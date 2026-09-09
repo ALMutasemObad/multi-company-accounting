@@ -15,6 +15,8 @@ import { Button,
   Spinner,
   PageHeader,
 } from "./ui";
+import { CompanyProfilePanel } from "./company-profile/CompanyProfilePanel";
+import { useAuthorization } from "./authorization-context";
 
 type Notice = (message: string, tone?: "success" | "error") => void;
 
@@ -22,8 +24,25 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
+export function companySettingsSectionAccess(permissionSet: ReadonlySet<string>) {
+  const canViewCompanyConfiguration = permissionSet.has("companies.view") && permissionSet.has("settings.manage");
+  const canViewCurrencies = permissionSet.has("currencies.view");
+  return {
+    canViewCompanyConfiguration,
+    canManageCompanyConfiguration: canViewCompanyConfiguration && permissionSet.has("companies.update"),
+    canViewCurrencies,
+    canCreateCurrencies: canViewCurrencies && permissionSet.has("currencies.create"),
+    canManageCurrencies: canViewCurrencies && permissionSet.has("currencies.manage"),
+  };
+}
+
 export function CompanySettingsPage({ notify }: { notify: Notice }) {
   const { formatDateTime, formatNumber, t } = useI18n();
+  const { permissionSet } = useAuthorization();
+  const {
+    canViewCompanyConfiguration, canManageCompanyConfiguration, canViewCurrencies,
+    canCreateCurrencies, canManageCurrencies,
+  } = companySettingsSectionAccess(permissionSet);
   const [company, setCompany] = useState<CompanyDetails | null>(null);
   const [name, setName] = useState("");
   const [timezone, setTimezone] = useState("");
@@ -70,23 +89,25 @@ export function CompanySettingsPage({ notify }: { notify: Notice }) {
   }
 
   useEffect(() => {
-    void Promise.all([
+    const loads: Promise<unknown>[] = [];
+    if (canViewCompanyConfiguration) loads.push(Promise.all([
       api<CompanyDetails>("/companies/current"),
       api<{ data: Array<{ key: string; value: boolean }> }>("/settings"),
-      loadCurrencyData(),
-    ])
-      .then(([details, settings]) => {
-        setCompany(details);
-        setName(details.name);
-        setTimezone(details.timezone);
-        setMakerChecker(settings?.data?.[0]?.value ?? details.manualJournalMakerCheckerEnabled ?? true);
-      })
+    ]).then(([details, settings]) => {
+      setCompany(details);
+      setName(details.name);
+      setTimezone(details.timezone);
+      setMakerChecker(settings.data[0]?.value ?? details.manualJournalMakerCheckerEnabled ?? true);
+    }));
+    if (canViewCurrencies) loads.push(loadCurrencyData());
+    void Promise.all(loads)
       .catch((cause) => setError(cause instanceof Error ? cause.message : t("settings.loadError")))
       .finally(() => setLoading(false));
-  }, []);
+  }, [canViewCompanyConfiguration, canViewCurrencies]);
 
   async function submitCompany(event: FormEvent) {
     event.preventDefault();
+    if (!canManageCompanyConfiguration) return;
     setSaving(true);
     setError("");
     try {
@@ -205,40 +226,42 @@ export function CompanySettingsPage({ notify }: { notify: Notice }) {
 
       {error && <div className="form-error" role="alert">{error}</div>}
 
-      <form className="settings-card" onSubmit={submitCompany}>
+      <CompanyProfilePanel notify={notify} />
+
+      {canViewCompanyConfiguration && company && <form className="settings-card" onSubmit={submitCompany}>
         <div className="form-grid">
           <label>
             <span>{t("settings.companyName")}</span>
-            <input value={name} onChange={(event) => setName(event.target.value)} required />
+            <input value={name} onChange={(event) => setName(event.target.value)} disabled={!canManageCompanyConfiguration} required />
           </label>
           <label>
             <span>{t("settings.timezone")}</span>
-            <input dir="ltr" value={timezone} onChange={(event) => setTimezone(event.target.value)} placeholder="Asia/Riyadh" required />
+            <input dir="ltr" value={timezone} onChange={(event) => setTimezone(event.target.value)} disabled={!canManageCompanyConfiguration} placeholder="Asia/Riyadh" required />
           </label>
           <label>
             <span>{t("settings.baseCurrency")}</span>
             <input value={`${company?.baseCurrency.code} — ${localizedReferenceName(company?.baseCurrency)}`} disabled />
           </label>
           <label className="check-field full setting-switch">
-            <input type="checkbox" checked={makerChecker} onChange={(event) => setMakerChecker(event.target.checked)} />
+            <input type="checkbox" checked={makerChecker} onChange={(event) => setMakerChecker(event.target.checked)} disabled={!canManageCompanyConfiguration} />
             <span>
               <strong>{t("settings.makerChecker")}</strong>
               <small>{t("settings.makerCheckerDescription")}</small>
             </span>
           </label>
         </div>
-        <div className="form-actions">
+        {canManageCompanyConfiguration && <div className="form-actions">
           <Button type="submit" disabled={saving}>{saving ? t("common.saving") : t("settings.save")}</Button>
-        </div>
-      </form>
+        </div>}
+      </form>}
 
-      <section className="settings-card currency-settings-card">
+      {canViewCurrencies && <section className="settings-card currency-settings-card">
         <div className="card-heading">
           <div>
             <h2>{t("settings.companyCurrencies")}</h2>
             <p>{t("settings.companyCurrenciesDescription")}</p>
           </div>
-          <Button
+          {canCreateCurrencies && <Button
             type="button"
             variant="secondary"
             icon="plus"
@@ -246,7 +269,7 @@ export function CompanySettingsPage({ notify }: { notify: Notice }) {
             onClick={() => setShowCurrencyForm((current) => !current)}
           >
             {t("settings.createCurrency")}
-          </Button>
+          </Button>}
         </div>
         {showCurrencyForm && (
           <form className="currency-create-form" onSubmit={createCurrency}>
@@ -285,7 +308,7 @@ export function CompanySettingsPage({ notify }: { notify: Notice }) {
             const checked = selectedCurrencyIds.includes(currency.id) || currency.isBase;
             return (
               <label className={`currency-option${currency.isBase ? " base" : ""}`} key={currency.id}>
-                <input type="checkbox" checked={checked} disabled={currency.isBase} onChange={() => toggleCurrency(currency)} />
+                <input type="checkbox" checked={checked} disabled={currency.isBase || !canManageCurrencies} onChange={() => toggleCurrency(currency)} />
                 <span>
                   <strong dir="ltr">{currency.code}</strong>
                   <small>{localizedReferenceName(currency)}{currency.isBase ? ` — ${t("settings.baseCurrencySuffix")}` : ""}</small>
@@ -298,14 +321,14 @@ export function CompanySettingsPage({ notify }: { notify: Notice }) {
             );
           })}
         </div>
-        <div className="form-actions">
+        {canManageCurrencies && <div className="form-actions">
           <Button type="button" disabled={savingCurrencies} onClick={() => void saveCurrencies()}>
             {savingCurrencies ? t("common.saving") : t("settings.saveCurrencies")}
           </Button>
-        </div>
-      </section>
+        </div>}
+      </section>}
 
-      <section className="settings-card currency-settings-card">
+      {canViewCurrencies && <section className="settings-card currency-settings-card">
         <div className="card-heading">
           <div>
             <h2>{t("settings.exchangeRates")}</h2>
@@ -314,7 +337,7 @@ export function CompanySettingsPage({ notify }: { notify: Notice }) {
         </div>
         {enabledForeignCurrencies.length === 0 ? (
           <p className="currency-empty">{t("settings.enableForeignCurrency")}</p>
-        ) : (
+        ) : canManageCurrencies ? (
           <form className="exchange-rate-form" onSubmit={saveRate}>
             <label>
               <span>{t("settings.currency")}</span>
@@ -336,7 +359,7 @@ export function CompanySettingsPage({ notify }: { notify: Notice }) {
             </label>
             <Button type="submit" disabled={savingRate}>{savingRate ? t("common.saving") : t("settings.saveRate")}</Button>
           </form>
-        )}
+        ) : null}
 
         <div className="data-table-wrap currency-rates-table" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}>
           <table className="data-table">
@@ -362,7 +385,7 @@ export function CompanySettingsPage({ notify }: { notify: Notice }) {
             <Button type="button" variant="secondary" disabled={rateMeta.page >= rateMeta.totalPages} onClick={() => void loadCurrencyData(rateMeta.page + 1)}>{t("common.next")}</Button>
           </div>
         )}
-      </section>
+      </section>}
     </section>
   );
 }

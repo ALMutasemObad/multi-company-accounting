@@ -10,7 +10,7 @@ describe('social onboarding migration', () => {
       readFile(new URL('migration.sql', migrationRoot), 'utf8'),
       readFile(new URL('../prisma/schema.prisma', import.meta.url), 'utf8'),
     ]);
-    expect(directories.filter((entry) => entry.isDirectory())).toHaveLength(74);
+    expect(directories.filter((entry) => entry.isDirectory())).toHaveLength(75);
     expect(migration).toContain('`token_hash` BINARY(32) NOT NULL');
     expect(migration).toContain('`protected_profile` VARBINARY(2048) NOT NULL');
     expect(migration).toContain('`browser_binding_hash` BINARY(32) NOT NULL');

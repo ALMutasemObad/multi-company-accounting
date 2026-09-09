@@ -52,7 +52,7 @@ async function openLogin(page: Page) {
 }
 
 async function fillRegistration(page: Page) {
-  for (const [name, value] of Object.entries({ displayName: "Test Owner", email: "fixture@example.test", password, passwordConfirmation: password, organizationName: "Test Organization", companyName: "Test Company" })) {
+  for (const [name, value] of Object.entries({ displayName: "Test Owner", email: "fixture@example.test", password, passwordConfirmation: password, organizationName: "Test Organization", companyName: "Test Company", phone: "+967700000000" })) {
     await page.locator(`input[name=${name}]`).fill(value);
   }
 }

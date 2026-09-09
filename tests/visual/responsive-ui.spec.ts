@@ -72,6 +72,77 @@ async function configureAuthorizedLocale(page: Page, locale: Locale, permissions
   }));
 }
 
+async function configureCashierShell(page: Page) {
+  const baseline = await (await page.request.get('/api/v1/auth/me')).json() as CurrentAuthorization;
+  const identity = { userId: '1', companyId: '1' };
+  const contextRows = {
+    warehouseId: { id: '1', label: 'WH-TEST — Test warehouse', revision: '1', code: 'WH-TEST', nameAr: 'مستودع تجريبي', nameEn: 'Test warehouse', isAvailable: true },
+    cashBankAccountId: { id: '1', label: 'CB-TEST — Test cash', revision: '1', code: 'CB-TEST', nameAr: 'صندوق تجريبي', nameEn: 'Test cash', isAvailable: true },
+    paymentMethodId: { id: '1', label: 'CASH — Test cash payment', revision: '1', code: 'CASH', nameAr: 'نقد تجريبي', nameEn: 'Test cash payment', requiresReference: false, isAvailable: true },
+    currencyId: { id: '1', label: 'SAR — Saudi riyal', revision: '1', code: 'SAR', nameAr: 'ريال سعودي', nameEn: 'Saudi riyal', isBase: true, isAvailable: true },
+  };
+  const products = Array.from({ length: 12 }, (_, index) => ({
+    inventoryItemId: String(index + 1), code: `ITM-TEST-${index + 1}`, nameAr: `صنف تجريبي ${index + 1}`, nameEn: `Test item ${index + 1}`,
+    description: null, unitOfMeasure: { id: '1', code: 'EA', nameAr: 'حبة', nameEn: 'Each', decimalPlaces: 0, isActive: true, version: 1 },
+    price: '2.1000', currency: { id: '1', code: 'SAR', nameAr: 'ريال سعودي', nameEn: 'Saudi riyal', isBase: true },
+    revenueAccount: { id: '41', code: '4100', nameAr: 'إيراد تجريبي', nameEn: 'Test revenue' }, taxRate: null,
+    isReady: true, readinessReason: null,
+  }));
+  const list = (data: unknown[], pageSize = 24) => ({ data, meta: { page: 1, pageSize, total: data.length, totalPages: data.length ? 1 : 0 } });
+  const requests: Array<{ path: string; userId?: string; companyId?: string }> = [];
+  await page.route('**/api/v1/**', async (route) => {
+    const url = new URL(route.request().url());
+    const path = url.pathname.replace('/api/v1', '');
+    if (path === '/auth/me') return route.fulfill({ json: {
+      ...baseline,
+      user: { id: identity.userId, displayName: `Cashier ${identity.userId}` },
+      selectedCompany: { ...baseline.selectedCompany!, id: identity.companyId, name: `Company ${identity.companyId}` },
+      permissions: [...new Set([...baseline.permissions, 'pos.checkout', 'sales_catalog.view'])],
+    } });
+    const headers = route.request().headers();
+    if (path.startsWith('/pos/') || path === '/sales/catalog') {
+      requests.push({ path, userId: headers['x-pos-expected-user-id'], companyId: headers['x-pos-expected-company-id'] });
+    }
+    const scoped = (body: Record<string, unknown>) => ({ ...body, posContext: { ...identity } });
+    if (path === '/pos/context/identity') return route.fulfill({ json: scoped({}) });
+    if (path === '/pos/context/period') {
+      const documentDate = url.searchParams.get('documentDate');
+      return route.fulfill({ json: scoped({ documentDate, status: 'RESOLVED', period: { id: '1', name: 'Test open period', startDate: documentDate, endDate: documentDate, status: 'OPEN', version: 1 } }) });
+    }
+    if (path.startsWith('/pos/context/options/')) {
+      const field = path.split('/').at(-1) as keyof typeof contextRows;
+      return route.fulfill({ json: scoped(list(field in contextRows ? [contextRows[field]] : [], 20)) });
+    }
+    if (path === '/pos/sales') return route.fulfill({ json: scoped(list([], 10)) });
+    if (path === '/sales/catalog') return route.fulfill({ json: scoped(list(products)) });
+    return route.fallback();
+  });
+  return { requests };
+}
+
+async function cashierShellGeometry(page: Page) {
+  return page.evaluate(() => {
+    const sidebar = document.querySelector<HTMLElement>('#app-sidebar')!;
+    const main = document.querySelector<HTMLElement>('.app-main')!;
+    const content = document.querySelector<HTMLElement>('.content')!;
+    const workspace = document.querySelector<HTMLElement>('.pos-experience-workspace')!;
+    const settings = document.querySelector<HTMLElement>('.pos-experience-settings')!;
+    const selection = document.querySelector<HTMLElement>('.pos-experience-selection')!;
+    const basket = document.querySelector<HTMLElement>('.pos-experience-basket-panel')!;
+    const sidebarStyle = getComputedStyle(sidebar);
+    return {
+      viewportWidth: document.body.getBoundingClientRect().width,
+      sidebarWidth: sidebarStyle.display === 'none' ? 0 : sidebar.getBoundingClientRect().width,
+      mainWidth: main.getBoundingClientRect().width,
+      contentWidth: content.getBoundingClientRect().width,
+      documentFits: document.documentElement.scrollHeight <= innerHeight + 1 && document.documentElement.scrollWidth <= innerWidth + 1,
+      workspaceFits: workspace.getBoundingClientRect().bottom <= innerHeight + 1,
+      columnsFit: [settings, selection, basket].every((column) => column.scrollWidth <= column.clientWidth + 1),
+      settingsScrollsInternally: settings.scrollHeight > settings.clientHeight && getComputedStyle(settings).overflowY === 'auto',
+    };
+  });
+}
+
 async function waitForStableInterface(page: Page, screen: Screen) {
   await expect(page.locator(screen.ready).first()).toBeVisible();
   if (screen.kind === 'workspace') {
@@ -199,6 +270,85 @@ async function auditCurrentInterface(page: Page, locale: Locale, label: string) 
   }
   expect.soft(await interfaceFailures(page), `${locale}/${label} responsive interface contract`).toEqual([]);
 }
+
+test('Arabic POS uses the real production shell and keeps sidebar preferences isolated by exact user/company scope', async ({ page }, testInfo) => {
+  await configureLocale(page, 'ar');
+  const userOneCompanyOneKey = `mcap.app-sidebar.v1.${encodeURIComponent(JSON.stringify(['1', '1']))}`;
+  const userTwoCompanyOneKey = `mcap.app-sidebar.v1.${encodeURIComponent(JSON.stringify(['2', '1']))}`;
+  const userOneCompanyTwoKey = `mcap.app-sidebar.v1.${encodeURIComponent(JSON.stringify(['1', '2']))}`;
+  await page.addInitScript(([otherUserKey, otherCompanyKey]) => {
+    localStorage.setItem(otherUserKey, 'collapsed');
+    localStorage.setItem(otherCompanyKey, 'collapsed');
+  }, [userTwoCompanyOneKey, userOneCompanyTwoKey]);
+  const fixture = await configureCashierShell(page);
+  await page.goto('/?qa=pos#pos');
+  await expect(page.locator('.pos-experience-product')).toHaveCount(12);
+  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+  expect(await page.evaluate(([currentKey, otherUserKey, otherCompanyKey]) => [
+    localStorage.getItem(currentKey), localStorage.getItem(otherUserKey), localStorage.getItem(otherCompanyKey),
+  ], [userOneCompanyOneKey, userTwoCompanyOneKey, userOneCompanyTwoKey])).toEqual([null, 'collapsed', 'collapsed']);
+  const width = page.viewportSize()!.width;
+  const sidebar = page.locator('#app-sidebar');
+  const desktopToggle = page.locator('.sidebar-collapse-button');
+
+  if (width <= 780) {
+    await expect(desktopToggle).toBeHidden();
+    const mobileToggle = page.locator('.menu-button');
+    await expect(mobileToggle).toBeVisible();
+    await expect(mobileToggle).toHaveAttribute('aria-expanded', 'false');
+    await mobileToggle.focus();
+    await page.keyboard.press('Enter');
+    await expect(sidebar).toHaveClass(/\bopen\b/);
+    await expect(mobileToggle).toHaveAttribute('aria-expanded', 'true');
+    const scrim = page.locator('.nav-scrim');
+    await scrim.focus();
+    await page.keyboard.press('Enter');
+    await expect(sidebar).not.toHaveClass(/\bopen\b/);
+    await expect(mobileToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    return;
+  }
+
+  await expect(sidebar).toBeVisible();
+  await expect(desktopToggle).toBeVisible();
+  await expect(desktopToggle).toHaveAttribute('aria-expanded', 'true');
+  const expanded = await cashierShellGeometry(page);
+  expect(expanded.sidebarWidth).toBeGreaterThan(200);
+  await desktopToggle.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.app-shell')).toHaveClass(/\bsidebar-collapsed\b/);
+  await expect(sidebar).toBeHidden();
+  await expect(desktopToggle).toHaveAttribute('aria-expanded', 'false');
+
+  const collapsed = await cashierShellGeometry(page);
+  expect(collapsed.mainWidth).toBeGreaterThanOrEqual(expanded.mainWidth + expanded.sidebarWidth - 1);
+  expect(collapsed.contentWidth).toBeGreaterThan(expanded.contentWidth);
+  expect(Math.abs(collapsed.mainWidth - collapsed.viewportWidth)).toBeLessThanOrEqual(1);
+  expect(collapsed).toMatchObject({ documentFits: true, workspaceFits: true, columnsFit: true, settingsScrollsInternally: true });
+  await page.screenshot({ path: testInfo.outputPath(`arabic-pos-production-shell-${width}.png`), fullPage: false });
+  const language = page.locator('.topbar .language-switcher select');
+  await language.selectOption('en');
+  await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+  expect(await cashierShellGeometry(page)).toMatchObject({ documentFits: true, workspaceFits: true, columnsFit: true });
+  await language.selectOption('ar');
+  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+
+  expect(await page.evaluate((key) => localStorage.getItem(key), userOneCompanyOneKey)).toBe('collapsed');
+  expect((await page.evaluate(() => Object.keys(localStorage).filter((key) => key.startsWith('mcap.app-sidebar.')))).sort())
+    .toEqual([userOneCompanyOneKey, userTwoCompanyOneKey, userOneCompanyTwoKey].sort());
+
+  await page.evaluate(() => { location.hash = '#home'; });
+  await expect(page).toHaveURL(/#home$/);
+  await expect(page.locator('.workspace-page').first()).toBeVisible();
+  await expect(desktopToggle).toHaveAttribute('aria-expanded', 'false');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+
+  await page.goto('/?qa=pos#pos');
+  await expect(page.locator('.pos-experience-product')).toHaveCount(12);
+  await expect(desktopToggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(sidebar).toBeHidden();
+  expect(fixture.requests.filter(({ path }) => path === '/pos/context/identity').every(({ userId, companyId }) => userId === '1' && companyId === '1')).toBe(true);
+});
 
 for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
   test(`${locale}: all 33 screens satisfy the responsive interface contract`, async ({ page }) => {

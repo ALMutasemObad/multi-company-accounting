@@ -2,6 +2,18 @@ import type { Prisma } from '@prisma/client';
 
 export const DEFAULT_CHART_TEMPLATE_CODE = 'SMALL_BUSINESS_GENERAL';
 export const DEFAULT_CHART_TEMPLATE_VERSION = 2;
+export const PROFESSIONAL_CHART_TEMPLATE_CODE = 'PROFESSIONAL_SERVICES';
+export const RETAIL_INVENTORY_CHART_TEMPLATE_CODE = 'RETAIL_INVENTORY';
+export const MANUFACTURING_CHART_TEMPLATE_CODE = 'MANUFACTURING';
+
+export const chartTemplateCatalog = [
+  { code: PROFESSIONAL_CHART_TEMPLATE_CODE, nameAr: 'دليل الخدمات المهنية', nameEn: 'Professional services chart', availableForOnboarding: true },
+  { code: RETAIL_INVENTORY_CHART_TEMPLATE_CODE, nameAr: 'دليل التجزئة والمخزون', nameEn: 'Retail and inventory chart', availableForOnboarding: true },
+  { code: MANUFACTURING_CHART_TEMPLATE_CODE, nameAr: 'دليل الإنتاج والتصنيع', nameEn: 'Manufacturing chart', availableForOnboarding: true },
+  { code: DEFAULT_CHART_TEMPLATE_CODE, nameAr: 'الدليل العام القديم', nameEn: 'Legacy general chart', availableForOnboarding: false },
+] as const;
+
+export type ChartTemplateCode = (typeof chartTemplateCatalog)[number]['code'];
 
 export type DefaultChartDefinition = {
   key: string;
@@ -83,6 +95,47 @@ export const defaultChartDefinitions: readonly DefaultChartDefinition[] = [
   { key: 'realized-fx-loss', parentKey: 'other-expenses', code: '5520', nameAr: 'خسائر فروق العملة المحققة', nameEn: 'Realized foreign exchange losses', accountTypeCode: 'EXPENSE', allowsPosting: true },
 ] as const;
 
+const professionalOverlay: readonly DefaultChartDefinition[] = [
+  { key: 'unbilled-professional-services', parentKey: 'current-assets', code: '1180', nameAr: 'خدمات مهنية غير مفوترة', nameEn: 'Unbilled professional services', accountTypeCode: 'ASSET', allowsPosting: true },
+  { key: 'client-retainers', parentKey: 'current-liabilities', code: '2160', nameAr: 'دفعات وأتعاب مقدمة من العملاء', nameEn: 'Client retainers', accountTypeCode: 'LIABILITY', allowsPosting: true },
+  { key: 'professional-services-revenue', parentKey: 'operating-revenue', code: '4140', nameAr: 'إيرادات الخدمات المهنية', nameEn: 'Professional services revenue', accountTypeCode: 'REVENUE', allowsPosting: true },
+  { key: 'professional-subcontractors', parentKey: 'cost-of-revenue', code: '5240', nameAr: 'تكلفة الخبراء والمتعاقدين', nameEn: 'Professional subcontractor costs', accountTypeCode: 'EXPENSE', allowsPosting: true },
+];
+
+const retailOverlay: readonly DefaultChartDefinition[] = [
+  { key: 'inventory-shrinkage', parentKey: 'cost-of-revenue', code: '5240', nameAr: 'فروقات وهالك المخزون', nameEn: 'Inventory shrinkage', accountTypeCode: 'EXPENSE', allowsPosting: true },
+  { key: 'ecommerce-fees', parentKey: 'sales-marketing', code: '5330', nameAr: 'رسوم منصات البيع', nameEn: 'Commerce platform fees', accountTypeCode: 'EXPENSE', allowsPosting: true },
+];
+
+const manufacturingOverlay: readonly DefaultChartDefinition[] = [
+  { key: 'raw-materials', parentKey: 'current-assets', code: '1180', nameAr: 'مخزون المواد الخام', nameEn: 'Raw materials inventory', accountTypeCode: 'ASSET', allowsPosting: true },
+  { key: 'work-in-progress', parentKey: 'current-assets', code: '1181', nameAr: 'إنتاج تحت التشغيل', nameEn: 'Work in progress', accountTypeCode: 'ASSET', allowsPosting: true },
+  { key: 'finished-goods', parentKey: 'current-assets', code: '1182', nameAr: 'مخزون الإنتاج التام', nameEn: 'Finished goods inventory', accountTypeCode: 'ASSET', allowsPosting: true },
+  { key: 'manufacturing-overhead', parentKey: 'cost-of-revenue', code: '5240', nameAr: 'تكاليف صناعية غير مباشرة', nameEn: 'Manufacturing overhead', accountTypeCode: 'EXPENSE', allowsPosting: true },
+  { key: 'direct-labor', parentKey: 'cost-of-revenue', code: '5250', nameAr: 'أجور إنتاج مباشرة', nameEn: 'Direct manufacturing labor', accountTypeCode: 'EXPENSE', allowsPosting: true },
+];
+
+function overlayFor(code: ChartTemplateCode) {
+  if (code === PROFESSIONAL_CHART_TEMPLATE_CODE) return professionalOverlay;
+  if (code === RETAIL_INVENTORY_CHART_TEMPLATE_CODE) return retailOverlay;
+  if (code === MANUFACTURING_CHART_TEMPLATE_CODE) return manufacturingOverlay;
+  return [];
+}
+
+export function isSupportedChartTemplate(code: string): code is ChartTemplateCode {
+  return chartTemplateCatalog.some((template) => template.code === code);
+}
+
+export function isAllowedOnboardingChartTemplate(code: string): code is ChartTemplateCode {
+  return chartTemplateCatalog.some((template) => template.code === code && template.availableForOnboarding);
+}
+
+export function onboardingChartTemplates() {
+  return chartTemplateCatalog
+    .filter(({ code }) => isAllowedOnboardingChartTemplate(code))
+    .map(({ code, nameAr, nameEn }) => ({ code, nameAr, nameEn }));
+}
+
 type TemplateAccount = {
   id: bigint;
   code: string;
@@ -95,7 +148,7 @@ type TemplateAccount = {
 };
 
 export type DefaultChartTemplateStatus = {
-  templateCode: typeof DEFAULT_CHART_TEMPLATE_CODE;
+  templateCode: ChartTemplateCode;
   version: number;
   nameAr: string;
   total: number;
@@ -106,33 +159,40 @@ export type DefaultChartTemplateStatus = {
   canApply: boolean;
 };
 
-function findMatches(accounts: TemplateAccount[], definition: DefaultChartDefinition) {
-  const marked = accounts.find((account) => account.sourceTemplateCode === DEFAULT_CHART_TEMPLATE_CODE && account.sourceTemplateKey === definition.key);
+function findMatches(accounts: TemplateAccount[], definition: DefaultChartDefinition, sourceTemplateCode = DEFAULT_CHART_TEMPLATE_CODE) {
+  const marked = accounts.find((account) => account.sourceTemplateCode === sourceTemplateCode && account.sourceTemplateKey === definition.key);
   const byCode = accounts.find((account) => account.code === definition.code);
   return { marked, byCode, selected: marked ?? byCode };
 }
 
-export async function inspectDefaultChartTemplate(tx: Prisma.TransactionClient, companyId: bigint): Promise<DefaultChartTemplateStatus> {
+export async function inspectDefaultChartTemplate(tx: Prisma.TransactionClient, companyId: bigint, templateCode: ChartTemplateCode = DEFAULT_CHART_TEMPLATE_CODE): Promise<DefaultChartTemplateStatus> {
   const accounts = await tx.account.findMany({
     where: { companyId },
     select: { id: true, code: true, parentAccountId: true, level: true, allowsPosting: true, isActive: true, sourceTemplateCode: true, sourceTemplateKey: true },
   });
   let matched = 0; let inactive = 0; let conflicts = 0;
-  for (const definition of defaultChartDefinitions) {
-    const { marked, byCode, selected } = findMatches(accounts, definition);
+  const definitions = [
+    ...defaultChartDefinitions.map((definition) => ({ definition, sourceTemplateCode: DEFAULT_CHART_TEMPLATE_CODE })),
+    ...overlayFor(templateCode).map((definition) => ({ definition, sourceTemplateCode: templateCode })),
+  ];
+  for (const { definition, sourceTemplateCode } of definitions) {
+    const { marked, byCode, selected } = findMatches(accounts, definition, sourceTemplateCode);
     if (marked && byCode && marked.id !== byCode.id) conflicts += 1;
     if (selected) { matched += 1; if (!selected.isActive) inactive += 1; }
     else if (definition.parentKey) {
-      const parentDefinition = defaultChartDefinitions.find(({ key }) => key === definition.parentKey)!;
-      const parent = findMatches(accounts, parentDefinition).selected;
+      const parentDefinition = definitions.find(({ definition: candidate }) => candidate.key === definition.parentKey)!;
+      const parent = findMatches(accounts, parentDefinition.definition, parentDefinition.sourceTemplateCode).selected;
       if (parent && (!parent.isActive || parent.allowsPosting)) conflicts += 1;
     }
   }
-  const missing = defaultChartDefinitions.length - matched;
-  return { templateCode: DEFAULT_CHART_TEMPLATE_CODE, version: DEFAULT_CHART_TEMPLATE_VERSION, nameAr: 'الدليل الافتراضي للمنشآت الصغيرة', total: defaultChartDefinitions.length, matched, missing, inactive, conflicts, canApply: conflicts === 0 };
+  const missing = definitions.length - matched;
+  const template = chartTemplateCatalog.find(({ code }) => code === templateCode)!;
+  return { templateCode, version: DEFAULT_CHART_TEMPLATE_VERSION, nameAr: template.nameAr, total: definitions.length, matched, missing, inactive, conflicts, canApply: conflicts === 0 };
 }
 
-export async function applyDefaultChartTemplate(tx: Prisma.TransactionClient, companyId: bigint) {
+export async function applyDefaultChartTemplate(tx: Prisma.TransactionClient, companyId: bigint, requestedTemplateCode: string = DEFAULT_CHART_TEMPLATE_CODE) {
+  if (!isSupportedChartTemplate(requestedTemplateCode)) throw new Error(`DEFAULT_CHART_UNSUPPORTED:${requestedTemplateCode}`);
+  const templateCode = requestedTemplateCode;
   const types = new Map((await tx.accountType.findMany({ select: { id: true, code: true } })).map((type) => [type.code, type.id]));
   const accounts: TemplateAccount[] = await tx.account.findMany({
     where: { companyId },
@@ -141,15 +201,19 @@ export async function applyDefaultChartTemplate(tx: Prisma.TransactionClient, co
   const resolved = new Map<string, TemplateAccount>();
   let created = 0; let linked = 0; let existing = 0;
 
-  for (const definition of defaultChartDefinitions) {
-    const { marked, byCode } = findMatches(accounts, definition);
+  const definitions = [
+    ...defaultChartDefinitions.map((definition) => ({ definition, sourceTemplateCode: DEFAULT_CHART_TEMPLATE_CODE })),
+    ...overlayFor(templateCode).map((definition) => ({ definition, sourceTemplateCode: templateCode })),
+  ];
+  for (const { definition, sourceTemplateCode } of definitions) {
+    const { marked, byCode } = findMatches(accounts, definition, sourceTemplateCode);
     if (marked && byCode && marked.id !== byCode.id) throw new Error(`DEFAULT_CHART_CONFLICT:${definition.key}:CODE`);
     let account = marked ?? byCode;
     if (account) {
       if (!marked) {
         account = await tx.account.update({
           where: { id: account.id },
-          data: { sourceTemplateCode: DEFAULT_CHART_TEMPLATE_CODE, sourceTemplateKey: definition.key },
+          data: { sourceTemplateCode, sourceTemplateKey: definition.key },
           select: { id: true, code: true, parentAccountId: true, level: true, allowsPosting: true, isActive: true, sourceTemplateCode: true, sourceTemplateKey: true },
         });
         const index = accounts.findIndex((item) => item.id === account!.id); accounts[index] = account; linked += 1;
@@ -173,7 +237,7 @@ export async function applyDefaultChartTemplate(tx: Prisma.TransactionClient, co
         level: parent ? parent.level + 1 : 1,
         allowsPosting: definition.allowsPosting,
         isControlAccount: definition.isControlAccount ?? false,
-        sourceTemplateCode: DEFAULT_CHART_TEMPLATE_CODE,
+        sourceTemplateCode,
         sourceTemplateKey: definition.key,
       },
       select: { id: true, code: true, parentAccountId: true, level: true, allowsPosting: true, isActive: true, sourceTemplateCode: true, sourceTemplateKey: true },
@@ -181,6 +245,6 @@ export async function applyDefaultChartTemplate(tx: Prisma.TransactionClient, co
     accounts.push(account); resolved.set(definition.key, account); created += 1;
   }
 
-  const status = await inspectDefaultChartTemplate(tx, companyId);
+  const status = await inspectDefaultChartTemplate(tx, companyId, templateCode);
   return { ...status, created, linked, existing };
 }

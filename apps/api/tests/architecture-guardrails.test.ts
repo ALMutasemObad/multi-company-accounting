@@ -751,7 +751,7 @@ describe("Application kernel and onboarding boundary guardrails", () => {
     expect(registration).not.toContain("platform/company-provisioning-service.js");
     expect(registration).toContain("this.owners.tenant.isActiveGlobalCurrency");
     expect(registration).toContain("this.owners.identity.identityExists");
-    expect(registration).toContain("this.owners.accounting.isSupportedChartTemplate");
+    expect(registration).toContain("this.owners.accounting.isAllowedOnboardingChartTemplate");
     expect(registration).toContain("this.owners.security.recordCompletion");
     expect(composition).toContain("new RegistrationTenantAdapter(prisma)");
     expect(composition).toContain("new RegistrationIdentityAdapter()");

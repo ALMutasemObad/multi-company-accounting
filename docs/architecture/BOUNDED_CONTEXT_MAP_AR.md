@@ -1,8 +1,8 @@
 ---
 title: "Bounded Context Map"
 status: "accepted target architecture"
-version: "3.3"
-last_updated: "2026-09-06"
+version: "3.5"
+last_updated: "2026-09-09"
 ---
 
 # خريطة الـBounded Contexts وملكية البيانات
@@ -22,7 +22,7 @@ last_updated: "2026-09-06"
 | Identity & Access | الهوية والجلسات ووسائل الدخول الاجتماعية وعضويات الشركات والمجموعات والأدوار والصلاحيات واستعادة كلمة المرور | `User`, `Session`, `ExternalIdentity`, `SocialAuthorizationTransaction`, `SocialOnboardingContinuation`, `PasswordResetRequest`, `UserCompany`, `OrganizationMembership`, `Role`, `Permission`, `RolePermission`, `UserCompanyRole` | دور `OrganizationMembership` مستقل عن RBAC الشركة وعن مشغل المنصة، ولا يمنح وصول شركة؛ يقدم السياق منافذ الهوية، و`ActorContext` نوع محايد في Application Kernel. هوية المزود لا تعبر العقد العام ولا تستخدم للمطابقة بالبريد، وتفاصيل ربطها وفكها في [قرار أمان الحساب](SOCIAL_ACCOUNT_LINKING_AR.md) |
 | Tenant & Company Configuration | المؤسسة والشركة والعملات والإعدادات | `Organization`, `Company`, `Currency`, `CompanyCurrency`, `CompanyExchangeRate` | `Organization` تجمع الشركات، بينما عضويتها يملكها Identity. لا تجميع مالي أو Intercompany؛ فحص الاستخدام عبر Ports لا عبر معرفة كل جداول المستندات |
 | Registration & Onboarding | دورة التسجيل والتحقق والتنسيق | `RegistrationRequest`, `RegistrationEvent` | Process Manager؛ لا يملك User/Company/Account |
-| Core Accounting | السنة والفترة والدليل والمستند والدفتر والترحيل وحسابات فروقات العملة | `FiscalYear`, `FiscalPeriod`, `DocumentSequence`, `AccountingDocument`, `JournalEntry`, `JournalLine`, `AccountType`, `Account`, `CostCenter` | المالك الوحيد للـPosting Engine ويحل حسابي ربح/خسارة فرق العملة عبر منفذ صغير |
+| Core Accounting | السنة والفترة والدليل والمستند والدفتر والترحيل وتعيينات الحسابات التشغيلية الافتراضية | `FiscalYear`, `FiscalPeriod`, `DocumentSequence`, `AccountingDocument`, `JournalEntry`, `JournalLine`, `AccountType`, `Account`, `CostCenter`, `CompanyAccountingDefaultMapping` (مستهدف) | المالك الوحيد للـPosting Engine وقاموس أهلية mapping؛ يركب `AccountUsageGuard` من Query Ports المالكين ولا يقرأ جداولهم أو يكتبها مباشرة. التفاصيل في [ADR-023](ADR-023-central-accounting-mappings.md) |
 | Sales & Accounts Receivable | العميل والفاتورة والذمة وسياسة تسوية التحصيل وافتراضات بيع الصنف | `Customer`, `CustomerAddress`, `SalesInvoice`, `SalesInvoiceLine`, `ReceivableItem`, `SalesItemSellingProfile` | يكشف `ReceivableSettlementPort` وكتالوج بيع محدود؛ يقرأ هوية الصنف والعملة والحساب والضريبة عبر Ports ولا ينشئ Journal Lines مباشرة |
 | Purchases & Accounts Payable | المورد والفاتورة والذمة وسياسة تسوية السداد | `Supplier`, `SupplierAddress`, `PurchaseInvoice`, `PurchaseInvoiceLine`, `PayableItem` | يكشف `PayableSettlementPort` ولا ينشئ Journal Lines مباشرة |
 | Treasury | النقد والبنوك وطرق الدفع وحركات القبض والصرف وتخصيصاتها ولقطات التسوية واستيراد كشوف البنك والمطابقة 1:1 | `CashBankAccount`, `PaymentMethod`, `Receipt`, `ReceiptAllocation`, `Payment`, `PaymentAllocation`, `BankStatementImport`, `BankStatementLine`, `BankReconciliationSession`, `BankReconciliationMatch` | تستخدم التخصيصات منافذ AR/AP و`PostingEngine`؛ وتقرأ المطابقة الحركات المرحلة عبر Query Port فقط ولا تكتب Ledger |
@@ -36,7 +36,7 @@ last_updated: "2026-09-06"
 | Employee Expenses | مطالبة الموظف وبنودها ولقطتها ودورة جاهزيتها للصرف | `EmployeeExpenseClaim`, `EmployeeExpenseLine` | يقرأ الموظف ومركز التكلفة والعملة عبر Ports ويرسل قراره إلى Approvals؛ لا يملك فاتورة مورد أو دفعًا أو ذمة أو Ledger، وينتهي حاليًا عند `READY_FOR_PAYMENT` وفق ADR-020 |
 | Tax | معدلات الضرائب وربط حساباتها والحساب والتقريب | `TaxRate` | يكشف `TaxQuotePort` للمبيعات والمشتريات ويملك النسخ المتفائلة |
 | Printing & Document Output | اللقطات التاريخية والتوليد | `DocumentPrintArchive` | يقرأ عبر Document Snapshot Port |
-| Reporting | التقارير والقوائم وRead Models | لا يملك حقائق مالية تشغيلية | قراءة فقط، ويمكنه امتلاك projections مستقبلًا |
+| Reporting | التقارير والقوائم وتصنيفات العرض وRead Models | `CashFlowAccountMapping`، ويمكنه امتلاك projections مستقبلًا | يملك تصنيف حساب التقرير ونسخته وفق [عقد التدفق النقدي](INDIRECT_CASH_FLOW_REPORT_AR.md)، لا الرصيد أو الحساب أو القيد؛ يقرأ Ledger عبر Port ويكشف `ReportingAccountUsageQueryPort` لدورة Account |
 | Platform Operations & Billing | مؤشرات تبني وصحة المنصة وملف الشركة، وحساب الفوترة وفاتورتها وسدادها ودورة الدفع الإلكتروني | `PlatformBillingAccount`, `PlatformBillingInvoice`, `PlatformBillingInvoiceLine`, `PlatformBillingPayment`, `PlatformPaymentAttempt`, `PlatformCheckoutSession`, `PlatformPaymentTransition`, `PlatformWebhookReceipt`, `PlatformBillingRefund` | يقرأ الاستخدام ولقطة الاشتراك عبر Query Ports، ويملك `PlatformPaymentProviderPort`؛ لا يكتب حالة الاشتراك أو Sales/AR أو Treasury أو Ledger للشركة العميلة |
 | Platform Subscriptions & Entitlements | كتالوج الخطط والموديولات واشتراك الشركة واستحقاقاتها وتغييراتها المؤرخة | `PlatformModule`, `PlatformModuleDependency`, `PlatformPlan`, `PlatformPlanVersion`, `PlatformPlanEntitlement`, `PlatformSubscription`, `PlatformSubscriptionEntitlement`, `PlatformSubscriptionChange`, `PlatformSubscriptionChangeModule` | يستهلك حالة الفوترة عبر Port عند الحاجة ولا يكتب جداول الدفع؛ الاستحقاق التجاري مستقل عن RBAC ولا يتغير بمجرد Webhook دفع |
 | Data Import | تنسيق القوالب والمعاينة والاعتماد الجماعي | `DataImportBatch` فقط | Process Manager؛ يستدعي منافذ المالكين ولا يخزن الملف أو يرحّل الفواتير |
@@ -57,6 +57,8 @@ Registration/Onboarding
 Sales/AR ─────────────> Core Accounting posting port
 Purchases/AP ─────────> Core Accounting posting port
 Treasury ─────────────> Core Accounting posting port
+Sales/Purchases/Inventory/Professional Projects ──> Core Accounting default-mapping command/read ports
+Core Accounting account lifecycle ──> Sales/Purchases/Tax/Treasury/Inventory/Reporting account-usage query ports
 Treasury ─────────────> AR/AP settlement ports
 Treasury reconciliation ──> Core Accounting ledger query port (read-only)
 Registration/Onboarding ──> Treasury setup port
@@ -107,6 +109,20 @@ Platform Subscriptions & Entitlements وفق [ADR-019](ADR-019-public-subscripti
 - حجز رقم المستند.
 
 يتم عبر Application/Domain Port صغير. عند الحاجة إلى نفس المعاملة، يجب تمرير `Prisma.TransactionClient` إلى Adapter، لا استخدام Prisma global داخل helper.
+
+تعيين الحسابات الافتراضية مثال ملزم: يملك Core Accounting
+`CompanyAccountingDefaultMapping` ويكشف resolver مقفلًا، بينما يحفظ Sales/Purchases
+وInventory/Projects account facts واللقطات عندهم. وبالعكس، ينسق Core Accounting
+`AccountUsageGuard` عند تعديل/تعطيل/حذف Account، لكنه يسأل كل مالك عبر usage query
+port محدود داخل المعاملة. لا يمنح الحارس Core Accounting حق كتابة Customer أو
+Supplier أو Selling Profile أو TaxRate أو CashBankAccount أو مستند/حركة، ولا يسمح
+للمستهلك بكتابة mapping أو Account. يجب أن يقفل كل أمر ينشئ Account reference صف
+Account قبل الحفظ كي يتسلسل مع lifecycle guard.
+
+يملك Reporting جدول `CashFlowAccountMapping` وفق عقد التدفق النقدي، ولذلك يفحصه
+`ReportingAccountUsageQueryPort` داخل `AccountUsageGuard`. لا يقرأ Core Accounting
+هذا الجدول أو يستورد Prisma model الخاص به. غياب أو فشل المنفذ يفشل Account lifecycle
+مغلقًا ويرجع المعاملة، ولا يفسر «لا نتيجة» على أنه «لا استعمال».
 
 ### الاتصال غير المتزامن
 
@@ -204,5 +220,7 @@ Intercompany. تحفظ تغييرات العضوية في `OrganizationAuditLog`
 | `Employee` | الهوية الوظيفية داخل الشركة، الإسناد التنظيمي، سلسلة المدير، حالة العمل والعقد النشط الواحد |
 | `EmployeeExpenseClaim` | ملكية الموظف للمسودة، بنود Decimal ومراكز تكلفتها، ثبات snapshot أثناء المراجعة، وانتقالًا واحدًا صادقًا إلى جاهزية الصرف |
 | `ChartOfAccounts`/`Account` | صلاحية الترحيل والبنية الهرمية |
+| `CompanyAccountingDefaultMapping` | تعيين `(companyId,key)` واحد، أهلية الحساب، النسخة، ومنع الحذف/التعطيل؛ لا يملك مراجع الطرف أو المستند |
+| `CashFlowAccountMapping` | تصنيف Reporting الصريح لحساب واحد ونسخته؛ لا يملك Account أو أرصدة Ledger |
 
 لا يشترط أن تتحول جميعها إلى Classes كبيرة؛ المطلوب أن تكون invariants والملكية ومداخل التغيير واضحة ومختبرة.

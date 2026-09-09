@@ -16,6 +16,8 @@ type RegistrationOptions = {
   locales: Locale[];
   timezones: string[];
   chartTemplates: Array<{ code: string; nameAr: string; nameEn: string }>;
+  countries: Array<{ code: string; nameAr: string; nameEn: string }>;
+  businessActivities: Array<{ code: string; nameAr: string; nameEn: string }>;
   passwordPolicy: { minLength: number; maxLength: number };
 };
 
@@ -88,6 +90,9 @@ export function RegistrationPage({ onBackToLogin }: { onBackToLogin: () => void 
           displayName: String(form.get("displayName")),
           organizationName: String(form.get("organizationName")),
           companyName: String(form.get("companyName")),
+          phone: String(form.get("phone")),
+          countryCode: String(form.get("countryCode")),
+          primaryBusinessActivityCode: String(form.get("primaryBusinessActivityCode")),
           timezone: String(form.get("timezone")),
           baseCurrencyCode: String(form.get("baseCurrencyCode")),
           locale,
@@ -109,6 +114,8 @@ export function RegistrationPage({ onBackToLogin }: { onBackToLogin: () => void 
   const defaultTimezone = options?.timezones.includes(browserTimezone) ? browserTimezone : options?.timezones.includes("Asia/Aden") ? "Asia/Aden" : "UTC";
   const defaultCurrency = options?.currencies.find((currency) => currency.code === "YER")?.code ?? options?.currencies[0]?.code;
   const defaultChart = options?.chartTemplates[0]?.code;
+  const defaultCountry = options?.countries.find((country) => country.code === "YE")?.code ?? options?.countries[0]?.code;
+  const defaultActivity = options?.businessActivities.find((activity) => activity.code === "PROFESSIONAL_SERVICES")?.code ?? options?.businessActivities[0]?.code;
 
   if (recoverExistingAccount) return <PasswordResetPage onBackToLogin={onBackToLogin} />;
 
@@ -147,6 +154,9 @@ export function RegistrationPage({ onBackToLogin }: { onBackToLogin: () => void 
                   <label><span>{t("registration.passwordConfirmation")}</span><input name="passwordConfirmation" type="password" dir="ltr" autoComplete="new-password" minLength={options.passwordPolicy.minLength} required /></label>
                   <label><span>{t("registration.organizationName")}</span><input name="organizationName" maxLength={200} required /></label>
                   <label><span>{t("registration.companyName")}</span><input name="companyName" maxLength={200} required /></label>
+                  <label><span>{t("companyProfile.phone")}</span><input name="phone" type="tel" dir="ltr" autoComplete="tel" minLength={5} maxLength={40} required /></label>
+                  <label><span>{t("companyProfile.country")}</span><select name="countryCode" defaultValue={defaultCountry}>{options.countries.map((country) => <option key={country.code} value={country.code}>{country.code} — {localizedReferenceName(country)}</option>)}</select></label>
+                  <label><span>{t("companyProfile.primaryActivity")}</span><select name="primaryBusinessActivityCode" defaultValue={defaultActivity}>{options.businessActivities.map((activity) => <option key={activity.code} value={activity.code}>{localizedReferenceName(activity)}</option>)}</select></label>
                   <label><span>{t("registration.timezone")}</span><select name="timezone" defaultValue={defaultTimezone}>{options.timezones.map((timezone) => <option key={timezone} value={timezone}>{timezone}</option>)}</select></label>
                   <label><span>{t("registration.baseCurrency")}</span><select name="baseCurrencyCode" defaultValue={defaultCurrency}>{options.currencies.map((currency) => <option key={currency.code} value={currency.code}>{currency.code} — {localizedReferenceName(currency)}</option>)}</select></label>
                   <label><span>{t("registration.interfaceLanguage")}</span><select value={locale} onChange={(event) => setLocale(resolveLocale(event.target.value))}>{supportedLocales.map((item) => <option key={item} value={item}>{localeDetails[item].nativeName}</option>)}</select></label>
