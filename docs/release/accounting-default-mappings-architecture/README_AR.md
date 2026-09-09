@@ -40,8 +40,9 @@
   والعكس legacy يستخدم الحساب الأصلي المعطل في مسار ضيق فقط.
 - `resolveForCommand` يقفل Account ثم mapping ويعيد القراءة حتى لإنشاء عميل أو مورد
   أو ملف بيع، ولا يعيد نتيجة بلا materialized row/version.
-- تثبيت key/accountId/mappingVersion للأرباح المبقاة في close pack/hash وإعادة
-  التحقق في approve/close مع `CHECKLIST_CHANGED`.
+- لقطة close discriminated: السنوي فقط يثبت key/accountId/mappingVersion للأرباح
+  المبقاة ويعيد التحقق مع `CHECKLIST_CHANGED`؛ غير السنوي يحمل `kind=NON_ANNUAL`
+  بلا مرجع ولا يتأثر بتغييره أو بطلانه.
 - بوابة 13/13 قبل `READ_ONLY_AUTHORITATIVE` وقبل نقل أي مستهلك؛ legacy lookup أداة
   preview/diagnostic فقط ولا يغذي readiness أو resolve أو close.
 - `ReportingAccountUsageQueryPort` يحرس Cash Flow ownership، وفشله يمنع أمر دورة
@@ -52,10 +53,15 @@
 - لا Outbox في الشريحة الأولى لعدم وجود مستهلك؛ المنافذ الحاكمة متزامنة.
 - ترتيب rollout هو schema/backfill والإكمال، ثم completeness، ثم dual-read تشخيصي،
   ثم تحويل المستهلكين إلى الصفوف فقط، ثم إزالة lookup القديم.
-- rollback يعيد المستهلك كاملًا إلى التطبيق القديم ويحتفظ بالصفوف؛ لا يمزج مصدرين
-  ولا يحذف mapping أو Audit.
-- لا تفتح الكتابة اليدوية قبل اعتماد rollback artifact/drill؛ وأثناء الرجوع تجمد
-  mapping writes وتعود الدفعة كاملة إلى التطبيق القديم بلا مزج.
+- قبل فتح PUT، ومع غياب `MANUAL/DIFFERENT`، يجوز rollback كامل إلى التطبيق القديم
+  row-unaware بشرط بقائه ADM-1-safe مع Account CAS/Usage Guard. فتح PUT مرة واحدة أو
+  وجود `MANUAL` أو رصد `DIFFERENT` يرفع أرضية الرجوع بلا خفض إلى last-known-good
+  mapping-aware يقرأ الصفوف ونسخها.
+- لا يفتح PUT قبل تثبيت artifact digest وrelease/SHA وتوافق schema/Registry/13 keys
+  وAccount guards، ونجاح drill على MariaDB/MySQL. إذا غاب الأثر أو لم يتوافق تفشل
+  أوامر consumers المتأثرة مغلقًا؛ لا legacy fallback صامت.
+- يحتفظ rollback بالصفوف والنسخ وAudit ويجمد mapping writes أثناء التبديل؛ لا يمزج
+  المصدرين ولا ينفذ DDL down.
 
 ## التحقق المنفذ
 

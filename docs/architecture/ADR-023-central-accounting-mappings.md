@@ -1,7 +1,7 @@
 ---
 title: "ADR-023 — Central Accounting Default Mappings"
 status: "proposed for acceptance; implementation not started"
-version: "1.2"
+version: "1.3"
 date: "2026-09-09"
 decision_owner: "Core Accounting"
 related:
@@ -10,6 +10,7 @@ related:
   - "ADR-003-domain-boundaries-and-eventing.md"
   - "ADR-018-business-profile-and-progressive-compliance.md"
   - "CONCURRENCY_DEADLOCK_DEADLINE_POLICY_AR.md"
+  - "FINANCIAL_CLOSE_WORKFLOW_AR.md"
   - "CENTRAL_ACCOUNTING_MAPPINGS_SLICE_AR.md"
 ---
 
@@ -281,27 +282,42 @@ LegacyMappingDiagnosticPort.compare(companyId, keys) // rollout only
 | بند مشتريات غير مخزني بلا override | `PURCHASE_EXPENSE_DEFAULT` | يطلب اختيارًا صريحًا أو الإعداد |
 | ترحيل مخزون | `INVENTORY_ASSET` و`INVENTORY_COGS` وما يلزم لنوع الحركة | يمنع الأمر المالي قبل أي أثر |
 | تسوية متعددة العملة ذات فرق محقق | `REALIZED_FX_GAIN/LOSS` | يمنع التسوية ذات الفرق فقط |
-| كل close pack؛ والقيد في الإقفال السنوي | `RETAINED_EARNINGS` | يمنع بناء/اعتماد pack إذا غاب أو بطل؛ غير السنوي يثبت المرجع ولا ينشئ به قيدًا |
+| إقفال آخر فترة في السنة فقط | `RETAINED_EARNINGS` | يمنع بناء/اعتماد الإقفال السنوي إذا غاب أو بطل؛ لا تعتمد عليه الفترات غير السنوية |
 
 لا تعتبر الحسابات القديمة على العملاء والموردين غير صالحة لمجرد اختلافها عن default.
 Readiness المركز لا يعيد التحقق الجماعي من كل تاريخ المستندات.
 
-لكل حزمة إقفال لا تكفي مساواة readiness لحظة العرض. تحفظ لقطة checklist/close pack
-القيمة الدقيقة، ويستخدمها القيد نفسه في الإقفال السنوي فقط:
+تبقى بوابة 13/13 شرط rollout لكل شركة قبل `READ_ONLY_AUTHORITATIVE` أو نقل أي
+consumer، ومن ضمن الصفوف الثلاثة عشر صف `RETAINED_EARNINGS`. لكنها ليست اعتمادًا
+تشغيليًا لكل إقفال بعد التحويل: يحكم
+[عقد الإقفال المالي](FINANCIAL_CLOSE_WORKFLOW_AR.md) كون الفترة آخر فترة في السنة،
+ويضيف هذا القرار عقد اختيار الحساب ولا يغير دورة الإقفال نفسها.
+
+تحفظ checklist/close pack لقطة discriminated تدخل في الـcanonical hash وفي approval
+subject snapshot. الشكلان الوحيدان هما:
 
 ```json
-{"key":"RETAINED_EARNINGS","accountId":"42","mappingVersion":3}
+{"kind":"ANNUAL","retainedEarnings":{"key":"RETAINED_EARNINGS","accountId":"42","mappingVersion":3}}
 ```
 
-تدخل القيمة دائمًا في الـcanonical checklist/pack hash وفي approval subject
-snapshot، حتى إذا لم ينشئ الإقفال غير السنوي قيد أرباح مبقاة. لذلك يكون
-`accountId/mappingVersion` دائمًا قابلين للقفل ولا توجد حالة `null`. عند approve وعند close
-النهائي، وبعد أقفال
-`FiscalPeriod/FinancialCloseRun` الحاكمة، يقفل الأمر Account الملتقط ثم mapping،
-ويعيد حل المفتاح والتحقق من `accountId/mappingVersion` والأهلية. أي اختلاف يعيد
-`CHECKLIST_CHANGED` ويحتاج تحديث الحزمة وموافقة جديدة؛ لا يستخدم mapping الأحدث أو
-أي lookup قديم بصمت. يتلقى منشئ مستند الإقفال `accountId` الملتقط الذي تم التحقق منه، ولا
-يبحث عن `3300` ولا ينفذ resolve جديدًا بعد المقارنة.
+```json
+{"kind":"NON_ANNUAL"}
+```
+
+العقد مغلق (`additionalProperties:false`): فرع `ANNUAL` يوجب
+`retainedEarnings.key/accountId/mappingVersion` ولا يقبل `null`، وفرع
+`NON_ANNUAL` يمنع حقل `retainedEarnings` وأي مرجع بديل له. عند approve وعند close
+النهائي للإقفال السنوي فقط، وبعد أقفال `FiscalPeriod/FinancialCloseRun` الحاكمة،
+يقفل الأمر Account الملتقط ثم mapping ويعيد حل المفتاح والتحقق من
+`accountId/mappingVersion` والأهلية. أي اختلاف يعيد `CHECKLIST_CHANGED` ويحتاج تحديث
+الحزمة وموافقة جديدة؛ لا يستخدم mapping الأحدث أو أي lookup قديم بصمت. يتلقى منشئ
+مستند الإقفال السنوي `accountId` الملتقط الذي تم التحقق منه، ولا يبحث عن `3300` ولا
+ينفذ resolve جديدًا بعد المقارنة.
+
+لا يستدعي فرع `NON_ANNUAL` resolver لهذا المفتاح ولا يقفل صفه ولا يتحقق منه. لذلك
+لا يحجب غياب/بطلان/تغيير `RETAINED_EARNINGS` بناء أو اعتماد أو إغلاق الفترة الشهرية،
+ولا يبطل hash أو موافقة قائمة لها. شرط 13/13 المذكور أعلاه يبقى بوابة rollout عامة
+فقط، لا precondition لكل أمر إقفال غير سنوي.
 
 ### 9. دورة حياة الحساب المرجعي
 
@@ -454,15 +470,40 @@ Company/Currencies/Compliance. يكون القسم الافتراضي أول ق�
    `SMALL_BUSINESS_GENERAL/sourceTemplateKey/3300` من Runtime، وإبقاء دلالة القالب في
    Migration/template فقط.
 
-الرجوع موحد عند حد الإصدار/الدفعة: يعاد المستهلك كاملًا إلى التطبيق القديم، لا إلى
-lookup بديل داخل resolver المركزي، وتبقى rows وversions وAudit من دون حذف أو إعادة
-كتابة. تجمد mapping mutations أثناء الرجوع، ويسجل تقرير الفرق، ثم تعاد completeness
-وdiagnostic gates قبل محاولة forward جديدة. لا يكون «الصف إن وجد وإلا القديم»
-مرشح rollback مقبولًا.
+للرجوع أرضية monotonic لكل دفعة، تحفظها أداة الإصدار في سجل rollout قابل للتدقيق:
+
+| المرحلة | شرطها | أقدم Binary مسموح |
+|---|---|---|
+| `PRE_PUT` | لم يفتح PUT قط، ولا يوجد صف `source=MANUAL`، ولم تسجل المقارنة `DIFFERENT` | يجوز الرجوع الكامل إلى منطق المستهلك القديم row-unaware، مع بقاء الصفوف غير حاكمة واستمرار سلامة Account |
+| `MAPPING_AWARE_REQUIRED` | فتح PUT مرة واحدة **أو** وجد `MANUAL` **أو** سجل `DIFFERENT` | لا يجوز إلا last-known-good mapping-aware يقرأ الصفوف المادية ونسخها |
+
+فتح PUT يرفع الأرضية قبل إتاحة أول طلب ولا يمكن خفضها بإغلاق feature flag أو حذف
+metric. كذلك يرفعها اكتشاف `MANUAL/DIFFERENT` دفاعيًا حتى إن كان سجل فتح PUT ناقصًا.
+بعد الأرضية الثانية لا يجوز تشغيل Binary يتجاهل rows؛ لأن ذلك قد يحوّل اختيارًا
+إداريًا صحيحًا إلى lookup قديم مختلف بصمت.
+
+السماح في `PRE_PUT` يخص منطق تعيين المستهلك فقط؛ بعد ADM-1 يجب أن يكون الأثر القديم
+نفسه متوافقًا مع schema ويحافظ على `Account.version` وUsage Guard، ولا يعيد دورة
+الحساب إلى writer غير محمي.
+
+قبل فتح PUT تثبت بوابة compatibility أثر last-known-good غير قابل للالتباس: release
+id وsource SHA وartifact digest، نطاق schema/migration المقروء، إصدار Registry وعدد
+المفاتيح 13، دعم `Account.version/expectedVersion` وUsage Guard، وفهم مصادر الصفوف
+ومنها `MANUAL`. يثبت drill على MariaDB وMySQL أن الأثر يستطيع قراءة الصفوف الحالية
+و`mappingVersion`، وأن `resolveForCommand` فيه يعتمد الصف فقط، وأن عقد الإقفال
+discriminated متوافق. ترفض أداة النشر artifact مفقودًا أو checksum/schema/Registry
+غير مطابق، ولا تعد الوسمة المتحركة مثل `latest` دليلًا.
+
+في `MAPPING_AWARE_REQUIRED` يعاد المستهلك كاملًا إلى ذلك الأثر المثبت، لا إلى lookup
+قديم ولا إلى مزج «الصف إن وجد وإلا القديم». تبقى rows وversions وAudit من دون حذف أو
+إعادة كتابة، وتجمد mapping mutations أثناء التبديل. إذا تعذر جلب الأثر أو فشل فحص
+توافقه، يبقى الإصدار الآمن الجاري إن أمكن وتفشل الأوامر المتأثرة مغلقًا بخطأ
+readiness/configuration؛ تبقى GET/التشخيص الإداري متاحة، ولا يسمح fallback صامت.
+يسجل تقرير الفرق، ثم تعاد completeness وdiagnostic gates قبل محاولة forward جديدة.
 
 لا يسقط `rollback.sql` جدول mapping في هذا المسار؛ الرجوع تطبيقي ويحفظ الصفوف حتى
-يستخدمها forward retry. لا يحذف Audit ولا يعيد كتابة source template tags أو حقائق
-الأطراف.
+يقرأها الأثر mapping-aware أو يستخدمها forward retry. لا يحذف Audit ولا يعيد كتابة
+source template tags أو حقائق الأطراف.
 يبقى عمود `Account.version` بعد cutover لأن إسقاطه يعيد فتح lost updates؛ لا يرجع
 إصدارًا لا يرسل `expectedVersion` إلا في rollback مخطط يوقف كتابات Account ويستبدل
 الحماية بقفل متشائم مكافئ خلال كامل النافذة.

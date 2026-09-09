@@ -1,13 +1,14 @@
 ---
 title: "خطة شرائح مركز تعيين الحسابات الافتراضية"
 status: "planned; documentation only"
-version: "1.2"
+version: "1.3"
 date: "2026-09-09"
 related:
   - "ADR-023-central-accounting-mappings.md"
   - "ARCHITECTURE_GUARDRAILS_AR.md"
   - "CONCURRENCY_DEADLOCK_DEADLINE_POLICY_AR.md"
   - "OPENAPI_EXECUTABLE_CONTRACTS_AR.md"
+  - "FINANCIAL_CLOSE_WORKFLOW_AR.md"
 ---
 
 # خطة شريحة مركز تعيين الحسابات التشغيلية الافتراضية
@@ -418,8 +419,10 @@ loader جامع يستدعي `/companies/current` و`/settings` و`/currencies` 
 
 تنشئ Enum/table/composite FK وRegistry/Eligibility وRead/Setup/Command Ports، ثم
 تعرف الصلاحيات والمنح والبادئات وOpenAPI GET/PUT وSettings section-aware. يسبق فتح
-PUT وجود Binary rollback مختبر، وتستخدم الإدارة لإكمال الصفوف التي لم يستطع backfill
-الحتمي حسمها. التنسيق مع Company Profile مؤقت للملفات المشتركة فقط.
+PUT وجود last-known-good mapping-aware rollback artifact مثبت الـdigest ومجتاز بوابة
+التوافق في §11؛ يرفع فتح PUT أرضية الرجوع قبل أول طلب. تستخدم الإدارة لإكمال الصفوف
+التي لم يستطع backfill الحتمي حسمها. التنسيق مع Company Profile مؤقت للملفات
+المشتركة فقط.
 
 قبل البوابة يعمل GET بوضع `MIGRATION_PREVIEW`: يعرض
 `CONFIGURED/UNMAPPED/INVALID` ومرشح diagnostic منفصلًا إن وجد، لكنه يعيد
@@ -465,11 +468,19 @@ accountId/mappingVersion أو يعيد Conflict عند commit.
    `offsetAccountId`; العكس يستخدم الحركة الأصلية.
 2. **ADM-5B FX:** يحل gain/loss عند وجود فرق فقط؛ Receipt/Payment reverse يستخدم
    القيد الأصلي.
-3. **ADM-5C Close:** يثبت كل close pack
-   `{key:"RETAINED_EARNINGS",accountId,mappingVersion}` في canonical hash وapproval
-   snapshot، حتى لغير نهاية السنة التي لا تنشئ به قيدًا. يعاد قفله والتحقق منه في
-   approve/close، وأي تغير يعيد `CHECKLIST_CHANGED`. يتلقى
-   `createAnnualCloseDocument` الحساب المثبت ولا يبحث عن `3300`.
+3. **ADM-5C Close:** يثبت close pack لقطة discriminated مغلقة: آخر فترة في السنة
+   تحمل
+   `{kind:"ANNUAL",retainedEarnings:{key:"RETAINED_EARNINGS",accountId,mappingVersion}}`،
+   وغير السنوية تحمل `{kind:"NON_ANNUAL"}` بلا مرجع retained. يدخل discriminator
+   وفروعه في canonical hash وapproval snapshot. يعاد قفل Account ثم mapping والتحقق
+   في approve/close للفرع السنوي فقط؛ وأي تغير يعيد `CHECKLIST_CHANGED`. لا يحل أو
+   يقفل الفرع غير السنوي هذا المفتاح، فلا يحجبه غيابه أو بطلانه ولا يبطله تغييره.
+   يتلقى `createAnnualCloseDocument` الحساب المثبت ولا يبحث عن `3300`. تبقى دورة
+   الفترة محكومة بـ[عقد الإقفال المالي](FINANCIAL_CLOSE_WORKFLOW_AR.md).
+
+يمثل OpenAPI الفرعين بـ`oneOf` و`discriminator=kind` مع
+`additionalProperties:false` إن عبرت اللقطة HTTP، وتطبق القيمة المحفوظة parser
+مغلقًا والعقد TypeScript المولد نفسه؛ لا يقبل persisted JSON فرعًا ملتبسًا أو ناقصًا.
 
 كل `resolveForCommand` في هذه الشرائح يفشل قبل الأثر عند missing/invalid، ولا يستدعي
 قالبًا أو رقمًا. تختبر posting/reversal/races على المحركين، ويمنع source guard أي
@@ -481,9 +492,10 @@ legacy lookup داخل consumers.
 بحث Runtime عن `SMALL_BUSINESS_GENERAL/sourceTemplateKey/3300`. يجوز بقاء القيم في
 template وMigration/backfill ودليل تاريخي فقط.
 
-بوابة القبول: كل شركة محولة اجتازت 13/13، لا استدعاء diagnostic خلال النافذة، لا
-query قديم داخل مستهلك أو close، ونجاح drill يعيد المستهلك كاملًا إلى التطبيق القديم
-مع بقاء mapping rows؛ لا يختبر أو يقبل lookup بديلًا داخل resolver المركزي.
+بوابة القبول: كل شركة محولة اجتازت 13/13، لا استدعاء diagnostic خلال النافذة، ولا
+query قديم داخل مستهلك أو close. ينجح rollback drill بعد فتح PUT إلى artifact
+mapping-aware يقرأ mapping rows الباقية؛ لا يختبر أو يقبل تطبيقًا يتجاهلها أو lookup
+بديلًا داخل resolver المركزي.
 
 ## 8. backfill مفصل
 
@@ -617,10 +629,11 @@ create، لا الأوامر المالية وحدها. للحفاظ على تر
 التزامن عند التنفيذ ويختبر post-vs-mapping-change. لا يخلط الأمر حسابين من نسختين
 مختلفتين.
 
-في كل close تكون القراءة التمهيدية هي اللقطة المثبتة في checklist/pack hash.
-يعاد فحص id/version/eligibility في approve وclose؛ أي فرق يساوي
-`CHECKLIST_CHANGED` لا retry أعمالي ولا lookup قديم. وفي override الصريح يقفل Account ويفحصه
-ولا يقفل mapping لأنه لم يعتمد عليه.
+في close ذي `kind=ANNUAL` تكون القراءة التمهيدية هي لقطة retained المثبتة في
+checklist/pack hash. يعاد فحص id/version/eligibility في approve وclose؛ أي فرق يساوي
+`CHECKLIST_CHANGED` لا retry أعمالي ولا lookup قديم. أما `kind=NON_ANNUAL` فلا يحمل
+المرجع ولا ينفذ هذا القفل أو الفحص؛ تغيير retained لا يغير hash ولا يعيد الموافقة.
+وفي override الصريح يقفل Account ويفحصه ولا يقفل mapping لأنه لم يعتمد عليه.
 
 ## 10. Audit والرصد والـOutbox
 
@@ -658,8 +671,10 @@ versioned وhandler duplicate test في شريحة مستقلة؛ لا يستخ�
 
 ### Forward
 
-1. ADM-1 تضيف `Account.version` وUsage Ports/handshake، بما فيها Reporting، وتثبت
-   Binary rollback بهذه السلامة لكن بمنطق المستهلك القديم.
+1. ADM-1 تضيف `Account.version` وUsage Ports/handshake، بما فيها Reporting. يجوز قبل
+   فتح PUT فقط تثبيت rollback row-unaware بمنطق المستهلك القديم لكنه ADM-1-safe
+   ويحافظ على Account CAS/Usage Guard. تبني في الوقت نفسه artifact mapping-aware
+   مرشحًا ليصبح last-known-good قبل فتح PUT.
 2. ADM-2 تنشئ Enum/table/FK/indexes والصلاحيات وGET/PUT، ثم backfill والإكمال اليدوي؛
    تظل readiness `PREVIEW_ONLY` حتى نجاح 13/13.
 3. بعد البوابة تصبح readiness `READ_ONLY_AUTHORITATIVE` وتشغل ADM-3 dual-read
@@ -679,6 +694,11 @@ versioned وhandler duplicate test في شريحة مستقلة؛ لا يستخ�
 - صفر/12/13 صفًا وحالة Registry/DB enum drift: لا ينجح completeness إلا 13 Enum rows
   فريدة صالحة بنسخ.
 - diagnostic candidate بلا صف لا يحسب configured ولا يفتح readiness.
+- rollback قبل فتح PUT فقط يقبل الأثر row-unaware مع بقاء rows؛ فتح PUT ولو بلا
+  mutation، أو وجود `MANUAL`، أو رصد `DIFFERENT` يرفضه نهائيًا.
+- last-known-good mapping-aware يقرأ الصفوف ونسخها الحالية على المحركين؛ artifact
+  مفقود/فاسد/غير متوافق يجعل أوامر consumers المتأثرة fail-closed ويثبت عدم وجود
+  legacy query، مع عدم حذف rows/Audit.
 - ترقية Accounts قائمة تجعل `version=0`، ثم update/deactivate/delete بنسخة صحيحة
   ونسخة stale على المحركين.
 - تقرير الحسابات المعطلة المرتبطة بتاريخ لا يعدلها ولا يحذفها.
@@ -689,11 +709,26 @@ versioned وhandler duplicate test في شريحة مستقلة؛ لا يستخ�
   بدل الرجوع إلى كاتب بلا version.
 - بعد تفعيل Usage Guard لا يعطل إلى السلوك القديم. فشل Adapter يجعل
   update/deactivate/delete المتأثرة read-only حتى الإصلاح أو Binary يضم الحارس كاملًا.
-- Mapping rollback يعيد الدفعة/المستهلك كاملًا إلى Binary ADM-1 ذي منطق التطبيق
-  القديم، ويوقف `ACCOUNTING_DEFAULT_MAPPING_WRITES_ENABLED` خلال الرجوع. لا يستدعي
-  resolver مركزيًا ثم lookup قديمًا عند missing.
+- تسجل أداة rollout لكل دفعة أرضية monotonic: `PRE_PUT` فقط إذا لم يفتح PUT قط ولا
+  يوجد `source=MANUAL` ولم تسجل نتيجة `DIFFERENT`. في هذه المرحلة وحدها يجوز الرجوع
+  الكامل إلى Binary row-unaware بمنطق المستهلك القديم، بشرط بقائه ADM-1-safe
+  ومتوافقًا مع schema وAccount CAS/Usage Guard.
+- قبل فتح PUT تعتمد بوابة التوافق last-known-good mapping-aware مثبتًا بـrelease id
+  وsource SHA وartifact digest. تطابق schema/migration range وRegistry version/13
+  keys، وتثبت دعم Account CAS/Usage Guard ومصادر الصفوف ومنها `MANUAL`، وقراءة
+  `accountId/mappingVersion` من الصفوف فقط، وعقد close discriminated. يجتاز الأثر
+  smoke/rollback drill على MariaDB 10.11 وMySQL 8.4؛ لا تقبل `latest` أو أثرًا غير
+  قابل للجلب والتحقق.
+- يرفع فتح PUT قبل أول request، أو وجود `MANUAL`، أو رصد `DIFFERENT`، الأرضية إلى
+  `MAPPING_AWARE_REQUIRED` بلا خفض لاحق. عندها يرجع كل consumer إلى last-known-good
+  mapping-aware ويوقف `ACCOUNTING_DEFAULT_MAPPING_WRITES_ENABLED` خلال التبديل؛ لا
+  يجوز Binary يتجاهل rows ولا resolver ثم lookup قديم عند missing.
+- إذا غاب artifact المثبت أو لم يطابق compatibility gate، لا ينشر القديم: يبقى
+  الإصدار الآمن الجاري إن أمكن، وتفشل أوامر consumers المتأثرة مغلقًا بخطأ
+  readiness/configuration مع بقاء GET/diagnostic الإداري، ومن دون fallback صامت.
 - تبقى كل mapping rows/versions وAudit؛ لا DDL rollback ولا retagging ولا إعادة كتابة
-  أطراف أو مستندات. يسجل الفرق ويعاد 13/13 ثم diagnostic قبل forward retry.
+  أطراف أو مستندات. يقرأها الأثر mapping-aware، ويسجل الفرق ويعاد 13/13 ثم diagnostic
+  قبل forward retry.
 - rollback لكل مستهلك منفصل؛ لا يعطل Sales لأن Inventory فشل إذا كانت حدوده مستقلة،
   لكنه لا يمزج المصدرين داخل أمر واحد.
 - لا يسقط `Account.version` بعد cutover ولا يعاد تشغيل Binary لا يرسل
@@ -739,9 +774,12 @@ versioned وhandler duplicate test في شريحة مستقلة؛ لا يستخ�
 - Sales/Purchase invoice وPOST/REVERSE تحفظ الحساب التاريخي.
 - كل أنواع حركة Inventory وinvoice stock/return/reverse.
 - Receipt/Payment FX gain/loss وreverse.
-- annual close/readiness وعدم بحث `3300`.
-- close pack hash يتغير مع retained accountId أو mappingVersion؛ approve/close بعد
-  تبديلهما يعيدان `CHECKLIST_CHANGED`، وكل close يثبت القيمتين ولا يثبت `null`.
+- annual close/readiness وعدم بحث `3300`؛ لقطة `ANNUAL` توجب key/accountId/version
+  بلا `null`، وتبديل id أو version يغير hash ويعيد `CHECKLIST_CHANGED` في
+  approve/close.
+- monthly/non-annual close يحفظ `{kind:"NON_ANNUAL"}` فقط؛ يرفض parser/OpenAPI خلط
+  الفرعين أو حقولًا زائدة، ولا يستدعي retained resolver. تغيير/غياب/بطلان retained
+  لا يغير hash أو الموافقة ولا يمنع الإقفال غير السنوي، مع بقاء 13/13 بوابة rollout.
 - missing row في أي consumer يعيد config/readiness error ولو وجد legacy diagnostic
   candidate؛ لا ينشأ كيان أو قيد.
 - Account deactivate/delete/reclassify مقابل mapping update، وكل استعمال من
