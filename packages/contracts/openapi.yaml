@@ -13570,9 +13570,11 @@ components:
     CompanyProfileReadiness:
       type: object
       additionalProperties: false
-      required: [policyVersion, enforcementMode, grandfathered, completedRequirements, totalRequirements, missingRequirements, requirements]
+      required: [policyVersion, policySource, effectiveAt, enforcementMode, grandfathered, completedRequirements, totalRequirements, missingRequirements, requirements]
       properties:
         policyVersion: { type: string }
+        policySource: { type: string }
+        effectiveAt: { type: string, format: date-time }
         enforcementMode: { type: string, enum: [ADVISORY] }
         grandfathered: { type: boolean }
         completedRequirements: { type: integer, minimum: 0 }
@@ -13726,9 +13728,10 @@ components:
     CompanyComplianceResponse:
       type: object
       additionalProperties: false
-      required: [version, legalName, legalForm, commercialRegistration, taxRegistration, nationalAddress, readiness, brandingAssets]
+      required: [version, countryCode, legalName, legalForm, commercialRegistration, taxRegistration, nationalAddress, readiness, brandingAssets]
       properties:
         version: { type: integer, minimum: 0 }
+        countryCode: { type: [string, 'null'], pattern: '^[A-Z]{2}$' }
         legalName: { type: [string, 'null'], maxLength: 200 }
         legalForm: { type: [string, 'null'], maxLength: 100 }
         commercialRegistration:

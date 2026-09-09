@@ -207,6 +207,24 @@ describe.runIf(enabled)('social signup onboarding on a real database', () => {
     expect(await db!.user.count({ where: { emailNormalized: profile.email!.value } })).toBe(0);
   });
 
+  it('rejects the supported legacy chart for a new social onboarding', async () => {
+    const suffix = randomUUID();
+    const profile: VerifiedProviderProfile = {
+      identity: { provider: 'GOOGLE', issuer: 'https://accounts.google.com', subject: `legacy-chart-${suffix}` },
+      email: { value: `legacy-chart-${suffix}@example.test`, verified: true, privateRelay: false },
+      displayName: null,
+    };
+    const started = await begin(profile);
+    await expect(started.auth.completeOnboarding({
+      sid: started.sid,
+      csrfToken: started.csrf,
+      continuation: started.callback.continuation,
+      browserBinding: started.browserBinding,
+      form: { ...form, chartTemplateCode: 'SMALL_BUSINESS_GENERAL' },
+    })).rejects.toEqual(new SocialAuthError('INVALID_REQUEST'));
+    expect(await db!.user.count({ where: { emailNormalized: profile.email!.value } })).toBe(0);
+  });
+
   it('supports a verified Apple private relay address as the new account contact without changing identity semantics', async () => {
     const suffix = randomUUID();
     const profile: VerifiedProviderProfile = {

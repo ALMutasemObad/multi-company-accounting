@@ -240,6 +240,8 @@ export type SubscriptionCatalog = { plans: SubscriptionPlanVersion[]; meta: Page
 export type CompanyDetails = { id: string; name: string; baseCurrencyId: string; baseCurrency: { code: string; nameAr: string }; timezone: string; isActive: boolean; manualJournalMakerCheckerEnabled: boolean; updatedAt: string };
 export type CompanyProfileReadiness = {
   policyVersion: string;
+  policySource: string;
+  effectiveAt: string;
   enforcementMode: "ADVISORY";
   grandfathered: boolean;
   completedRequirements: number;
@@ -275,6 +277,7 @@ export type CompanyProfileResponse = {
 };
 export type CompanyComplianceResponse = {
   version: number;
+  countryCode: string | null;
   legalName: string | null;
   legalForm: string | null;
   commercialRegistration: null | {

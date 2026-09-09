@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   BUSINESS_PROFILE_POLICY_VERSION,
+  BUSINESS_PROFILE_POLICY_EFFECTIVE_AT,
+  BUSINESS_PROFILE_POLICY_SOURCE,
   companyBrandingAssetCapabilities,
   evaluateCompanyProfileReadiness,
   renewalStatus,
@@ -21,6 +23,8 @@ describe('company business profile policy', () => {
     });
     expect(readiness).toMatchObject({
       policyVersion: BUSINESS_PROFILE_POLICY_VERSION,
+      policySource: BUSINESS_PROFILE_POLICY_SOURCE,
+      effectiveAt: BUSINESS_PROFILE_POLICY_EFFECTIVE_AT,
       enforcementMode: 'ADVISORY',
       grandfathered: true,
       completedRequirements: 7,
@@ -33,6 +37,24 @@ describe('company business profile policy', () => {
       expect.objectContaining({ code: 'SA_NATIONAL_ADDRESS', status: 'NOT_APPLICABLE', blocking: false }),
     ]);
     expect(readiness.requirements.every(({ blocking }) => blocking === false)).toBe(true);
+  });
+
+  it.each([
+    ['YE', 'NOT_APPLICABLE'],
+    ['SA', 'OPTIONAL'],
+    ['US', 'OPTIONAL'],
+  ] as const)('does not invent unverified compliance requirements for %s', (countryCode, expectedStatus) => {
+    const readiness = evaluateCompanyProfileReadiness({
+      ...completeProfile,
+      countryCode,
+      hasCommercialRegistration: false,
+      hasTaxRegistration: false,
+      hasNationalAddress: false,
+    });
+    for (const code of ['COMMERCIAL_REGISTRATION', 'TAX_REGISTRATION', 'NATIONAL_ADDRESS']) {
+      expect(readiness.requirements.find((item) => item.code === code)).toMatchObject({ status: expectedStatus, blocking: false });
+      expect(readiness.missingRequirements).not.toContain(code);
+    }
   });
 
   it('reports current, due-soon, expired, and untracked renewal states at date boundaries', () => {

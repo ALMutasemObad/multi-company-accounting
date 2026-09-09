@@ -1,4 +1,6 @@
 export const BUSINESS_PROFILE_POLICY_VERSION = "BP1_GLOBAL_2026_09";
+export const BUSINESS_PROFILE_POLICY_SOURCE = "ADR-018";
+export const BUSINESS_PROFILE_POLICY_EFFECTIVE_AT = "2026-08-29T00:00:00.000Z";
 
 export const companyCountryOptions = [
   { code: "YE", nameAr: "اليمن", nameEn: "Yemen" },
@@ -48,6 +50,19 @@ function requiredRequirement(code: string, level: ProfileRequirementLevel, compl
   };
 }
 
+function unverifiedJurisdictionRequirement(
+  code: string,
+  level: ProfileRequirementLevel,
+  complete: boolean,
+  countryCode: string | null,
+): ProfileRequirement {
+  if (complete) return { code, level, status: "COMPLETE", blocking: false, reason: "RECORDED" };
+  if (countryCode === "YE") {
+    return { code, level, status: "NOT_APPLICABLE", blocking: false, reason: "YEMEN_POLICY_EXCLUSION" };
+  }
+  return { code, level, status: "OPTIONAL", blocking: false, reason: "NO_VERIFIED_JURISDICTION_REQUIREMENT" };
+}
+
 export function evaluateCompanyProfileReadiness(input: ProfileReadinessInput) {
   const requirements: ProfileRequirement[] = [
     requiredRequirement("TRADE_NAME", "BASIC", Boolean(input.tradeName)),
@@ -55,9 +70,9 @@ export function evaluateCompanyProfileReadiness(input: ProfileReadinessInput) {
     requiredRequirement("PRIMARY_BUSINESS_ACTIVITY", "BASIC", Boolean(input.primaryBusinessActivityCode)),
     requiredRequirement("BUSINESS_PHONE", "OPERATIONAL", Boolean(input.phone)),
     requiredRequirement("LEGAL_NAME", "COMMERCIAL", Boolean(input.legalName)),
-    requiredRequirement("COMMERCIAL_REGISTRATION", "COMMERCIAL", input.hasCommercialRegistration),
-    requiredRequirement("NATIONAL_ADDRESS", "COMMERCIAL", input.hasNationalAddress),
-    requiredRequirement("TAX_REGISTRATION", "REGULATED", input.hasTaxRegistration),
+    unverifiedJurisdictionRequirement("COMMERCIAL_REGISTRATION", "COMMERCIAL", input.hasCommercialRegistration, input.countryCode),
+    unverifiedJurisdictionRequirement("NATIONAL_ADDRESS", "COMMERCIAL", input.hasNationalAddress, input.countryCode),
+    unverifiedJurisdictionRequirement("TAX_REGISTRATION", "REGULATED", input.hasTaxRegistration, input.countryCode),
   ];
 
   for (const code of ["SA_COMMERCIAL_REGISTRATION", "SA_VAT_REGISTRATION", "SA_NATIONAL_ADDRESS"]) {
@@ -73,6 +88,8 @@ export function evaluateCompanyProfileReadiness(input: ProfileReadinessInput) {
   const tracked = requirements.filter(({ status }) => status === "COMPLETE" || status === "MISSING");
   return {
     policyVersion: BUSINESS_PROFILE_POLICY_VERSION,
+    policySource: BUSINESS_PROFILE_POLICY_SOURCE,
+    effectiveAt: BUSINESS_PROFILE_POLICY_EFFECTIVE_AT,
     enforcementMode: "ADVISORY" as const,
     grandfathered: input.grandfatheredAt !== null,
     completedRequirements: tracked.filter(({ status }) => status === "COMPLETE").length,

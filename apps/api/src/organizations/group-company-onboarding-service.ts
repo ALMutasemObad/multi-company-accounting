@@ -34,7 +34,7 @@ export class GroupCompanyOnboardingService {
   create(userId: bigint, organizationId: bigint, key: string, input: GroupCompanyInput): Promise<GroupCompanyResult> {
     if (!input.companyName.trim() || input.companyName.length > 200 || !/^[A-Z]{3}$/.test(input.baseCurrencyCode)
       || input.phone.trim().length < 5 || input.phone.trim().length > 40
-      || !this.ports.accountingOptions.isSupportedChartTemplate(input.chartTemplateCode)) throw new GroupCompanyOnboardingError("INVALID_COMPANY_OPTION");
+      || !this.ports.accountingOptions.isAllowedOnboardingChartTemplate(input.chartTemplateCode)) throw new GroupCompanyOnboardingError("INVALID_COMPANY_OPTION");
     try { new Intl.DateTimeFormat("en", { timeZone: input.timezone }).format(); } catch { throw new GroupCompanyOnboardingError("INVALID_COMPANY_OPTION"); }
     const normalized = {
       companyName: input.companyName.trim(), timezone: input.timezone, baseCurrencyCode: input.baseCurrencyCode,

@@ -6,10 +6,11 @@ const context = { userId: 7n, companyId: 19n };
 
 describe('CompanyProfileService write boundaries', () => {
   it('scopes optimistic profile updates and audit records to the actor company', async () => {
-    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const update = vi.fn().mockResolvedValue({});
     const auditCreate = vi.fn().mockResolvedValue({});
     const tx = {
-      companyProfile: { findUnique: vi.fn().mockResolvedValue({ countryCode: 'YE' }), updateMany },
+      $queryRaw: vi.fn().mockResolvedValue([{ countryCode: 'YE', version: 3, complianceVersion: 3 }]),
+      companyProfile: { update },
       companyRegistration: { count: vi.fn().mockResolvedValue(0) },
       companyTaxRegistration: { count: vi.fn().mockResolvedValue(0) },
       companyAddress: { count: vi.fn().mockResolvedValue(0) },
@@ -27,11 +28,11 @@ describe('CompanyProfileService write boundaries', () => {
       primaryBusinessActivityCode: 'professional_services', phone: ' +9671000000 ',
     });
 
-    expect(updateMany).toHaveBeenCalledWith({
-      where: { companyId: 19n, version: 3 },
+    expect(update).toHaveBeenCalledWith({
+      where: { companyId: 19n },
       data: expect.objectContaining({
         tradeName: 'Juwar', countryCode: 'YE', primaryBusinessActivityId: 4n,
-        phone: '+9671000000', version: { increment: 1 },
+        phone: '+9671000000', version: { increment: 1 }, complianceVersion: { increment: 1 },
       }),
     });
     expect(auditCreate).toHaveBeenCalledWith({ data: expect.objectContaining({
@@ -40,15 +41,16 @@ describe('CompanyProfileService write boundaries', () => {
   });
 
   it('persists only last-four registration suffixes, normalizes country codes, and excludes full numbers from audit', async () => {
-    const registrationUpsert = vi.fn().mockResolvedValue({});
-    const taxUpsert = vi.fn().mockResolvedValue({});
-    const addressUpsert = vi.fn().mockResolvedValue({});
+    const registrationCreate = vi.fn().mockResolvedValue({});
+    const taxCreate = vi.fn().mockResolvedValue({});
+    const addressCreate = vi.fn().mockResolvedValue({});
     const auditCreate = vi.fn().mockResolvedValue({});
     const tx = {
-      companyProfile: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
-      companyRegistration: { upsert: registrationUpsert },
-      companyTaxRegistration: { upsert: taxUpsert },
-      companyAddress: { upsert: addressUpsert },
+      $queryRaw: vi.fn().mockResolvedValue([{ countryCode: 'YE', version: 2, complianceVersion: 2 }]),
+      companyProfile: { update: vi.fn().mockResolvedValue({}) },
+      companyRegistration: { findUnique: vi.fn().mockResolvedValue(null), create: registrationCreate },
+      companyTaxRegistration: { findUnique: vi.fn().mockResolvedValue(null), create: taxCreate },
+      companyAddress: { findUnique: vi.fn().mockResolvedValue(null), create: addressCreate },
       auditLog: { create: auditCreate },
     };
     const prisma = { $transaction: vi.fn(async (work: (client: typeof tx) => unknown) => work(tx)) } as unknown as PrismaClient;
@@ -67,24 +69,80 @@ describe('CompanyProfileService write boundaries', () => {
       nationalAddress: { countryCode: 'ye', city: 'Sana’a' },
     });
 
-    expect(registrationUpsert).toHaveBeenCalledWith(expect.objectContaining({
-      where: { companyId_documentType: { companyId: 19n, documentType: 'COMMERCIAL_REGISTRATION' } },
-      create: expect.objectContaining({ companyId: 19n, numberLast4: '7890' }),
-    }));
-    expect(taxUpsert).toHaveBeenCalledWith(expect.objectContaining({
-      where: { companyId_registrationType_countryCode: { companyId: 19n, registrationType: 'VAT', countryCode: 'YE' } },
-      create: expect.objectContaining({ companyId: 19n, countryCode: 'YE', numberLast4: '4321' }),
-    }));
-    expect(addressUpsert).toHaveBeenCalledWith(expect.objectContaining({
-      where: { companyId_type: { companyId: 19n, type: 'NATIONAL' } },
-      create: expect.objectContaining({ companyId: 19n, countryCode: 'YE' }),
-    }));
+    expect(registrationCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ companyId: 19n, numberLast4: '7890' }) });
+    expect(taxCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ companyId: 19n, countryCode: 'YE', numberLast4: '4321' }) });
+    expect(addressCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ companyId: 19n, countryCode: 'YE' }) });
     const persistedArguments = JSON.stringify({
-      registration: registrationUpsert.mock.calls,
-      tax: taxUpsert.mock.calls,
+      registration: registrationCreate.mock.calls,
+      tax: taxCreate.mock.calls,
       audit: auditCreate.mock.calls,
     }, (_key, value) => typeof value === 'bigint' ? value.toString() : value);
     expect(persistedArguments).not.toContain('CR-1234567890');
     expect(persistedArguments).not.toContain('VAT-0987654321');
+  });
+
+  it('applies true nested patches and preserves verification unless evidence changes', async () => {
+    const verifiedAt = new Date('2026-03-01T12:00:00.000Z');
+    const existing = {
+      numberLast4: '7890', issuingAuthority: 'Registry', issuedAt: new Date('2026-01-01T00:00:00.000Z'),
+      expiresAt: new Date('2027-01-01T00:00:00.000Z'), status: 'VERIFIED', verifiedAt,
+    };
+    const registrationUpdate = vi.fn().mockResolvedValue({});
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ countryCode: 'YE', version: 4, complianceVersion: 4 }]),
+      companyProfile: { update: vi.fn().mockResolvedValue({}) },
+      companyRegistration: { findUnique: vi.fn().mockResolvedValue(existing), update: registrationUpdate },
+      companyTaxRegistration: { findUnique: vi.fn(), update: vi.fn() },
+      companyAddress: { findUnique: vi.fn(), update: vi.fn() },
+      auditLog: { create: vi.fn().mockResolvedValue({}) },
+    };
+    const prisma = { $transaction: vi.fn(async (work: (client: typeof tx) => unknown) => work(tx)) } as unknown as PrismaClient;
+    const service = new CompanyProfileService(prisma);
+    vi.spyOn(service, 'getCompliance').mockResolvedValue({} as never);
+
+    await service.updateCompliance(context, {
+      version: 4,
+      commercialRegistration: { documentType: 'COMMERCIAL_REGISTRATION', expiresAt: '2027-01-01' },
+    });
+    expect(registrationUpdate).toHaveBeenLastCalledWith({
+      where: { companyId_documentType: { companyId: 19n, documentType: 'COMMERCIAL_REGISTRATION' } },
+      data: { expiresAt: new Date('2027-01-01T00:00:00.000Z') },
+    });
+
+    await service.updateCompliance(context, {
+      version: 4,
+      commercialRegistration: { documentType: 'COMMERCIAL_REGISTRATION', number: 'CR-1234567890' },
+    });
+    expect(registrationUpdate).toHaveBeenLastCalledWith({
+      where: { companyId_documentType: { companyId: 19n, documentType: 'COMMERCIAL_REGISTRATION' } },
+      data: { numberLast4: '7890' },
+    });
+
+    await service.updateCompliance(context, {
+      version: 4,
+      commercialRegistration: { documentType: 'COMMERCIAL_REGISTRATION', number: 'CR-00001234' },
+    });
+    expect(registrationUpdate).toHaveBeenLastCalledWith({
+      where: { companyId_documentType: { companyId: 19n, documentType: 'COMMERCIAL_REGISTRATION' } },
+      data: { numberLast4: '1234', status: 'DECLARED', verifiedAt: null },
+    });
+  });
+
+  it('does not touch compliance records when only the legal name changes', async () => {
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ countryCode: 'YE', version: 5, complianceVersion: 5 }]),
+      companyProfile: { update: vi.fn().mockResolvedValue({}) },
+      companyRegistration: { findUnique: vi.fn(), update: vi.fn(), create: vi.fn() },
+      companyTaxRegistration: { findUnique: vi.fn(), update: vi.fn(), create: vi.fn() },
+      companyAddress: { findUnique: vi.fn(), update: vi.fn(), create: vi.fn() },
+      auditLog: { create: vi.fn().mockResolvedValue({}) },
+    };
+    const prisma = { $transaction: vi.fn(async (work: (client: typeof tx) => unknown) => work(tx)) } as unknown as PrismaClient;
+    const service = new CompanyProfileService(prisma);
+    vi.spyOn(service, 'getCompliance').mockResolvedValue({} as never);
+    await service.updateCompliance(context, { version: 5, legalName: 'Updated legal name' });
+    expect(tx.companyRegistration.findUnique).not.toHaveBeenCalled();
+    expect(tx.companyTaxRegistration.findUnique).not.toHaveBeenCalled();
+    expect(tx.companyAddress.findUnique).not.toHaveBeenCalled();
   });
 });

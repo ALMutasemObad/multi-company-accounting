@@ -120,7 +120,7 @@ export class RegistrationService {
       if (!(await this.owners.tenant.isActiveGlobalCurrency(tx, baseCurrencyCode))) {
         throw new RegistrationError('INVALID_OPTION');
       }
-      if (!this.owners.accounting.isSupportedChartTemplate(input.chartTemplateCode)) {
+      if (!this.owners.accounting.isAllowedOnboardingChartTemplate(input.chartTemplateCode)) {
         throw new RegistrationError('INVALID_OPTION');
       }
       if (!(await this.owners.tenant.isActiveBusinessActivity(tx, primaryBusinessActivityCode))) {

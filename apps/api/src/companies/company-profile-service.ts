@@ -1,4 +1,4 @@
-import type { CompanyAddressType, CompanyRegistrationStatus, Prisma, PrismaClient } from "@prisma/client";
+import { Prisma, type CompanyAddressType, type CompanyRegistrationStatus, type PrismaClient } from "@prisma/client";
 import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import type { ActorContext } from "../platform/actor-context.js";
 import {
@@ -14,6 +14,7 @@ export type CompanyProfileErrorReason =
   | "INVALID_COUNTRY"
   | "INVALID_ACTIVITY"
   | "INVALID_DATE_RANGE"
+  | "COUNTRY_MISMATCH"
   | "COUNTRY_CHANGE_REQUIRES_WORKFLOW"
   | "VERSION_CONFLICT";
 
@@ -115,9 +116,11 @@ export class CompanyProfileService {
     if (input.primaryBusinessActivityCode && !activity) throw new CompanyProfileError("INVALID_ACTIVITY");
 
     await this.prisma.$transaction(async (tx) => {
-      const current = await tx.companyProfile.findUnique({ where: { companyId: context.companyId }, select: { countryCode: true } });
-      if (!current) throw new CompanyProfileError("PROFILE_NOT_FOUND");
-      if (countryCode !== undefined && current.countryCode && countryCode !== current.countryCode) {
+      const current = await this.lockProfile(tx, context.companyId);
+      if (current.version !== input.version || current.complianceVersion !== input.version) {
+        throw new CompanyProfileError("VERSION_CONFLICT");
+      }
+      if (countryCode !== undefined && countryCode !== current.countryCode) {
         const [registrations, taxes, addresses] = await Promise.all([
           tx.companyRegistration.count({ where: { companyId: context.companyId } }),
           tx.companyTaxRegistration.count({ where: { companyId: context.companyId } }),
@@ -135,9 +138,9 @@ export class CompanyProfileService {
         ...(input.primaryContactName !== undefined ? { primaryContactName: this.optionalText(input.primaryContactName) } : {}),
         ...(activity !== undefined ? { primaryBusinessActivityId: activity?.id ?? null } : {}),
         version: { increment: 1 },
+        complianceVersion: { increment: 1 },
       };
-      const updated = await tx.companyProfile.updateMany({ where: { companyId: context.companyId, version: input.version }, data });
-      if (updated.count !== 1) throw new CompanyProfileError("VERSION_CONFLICT");
+      await tx.companyProfile.update({ where: { companyId: context.companyId }, data });
       await appendAudit(tx, { data: {
         companyId: context.companyId,
         actorUserId: context.userId,
@@ -150,7 +153,7 @@ export class CompanyProfileService {
           ...(activity ? { primaryBusinessActivityCode: activity.code } : {}),
         },
       } });
-    }, { maxWait: 2_000, timeout: 8_000 });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 2_000, timeout: 8_000 });
     return this.getProfile(context);
   }
 
@@ -161,66 +164,97 @@ export class CompanyProfileService {
   }
 
   async updateCompliance(context: ActorContext, input: CompanyComplianceUpdateInput) {
-    this.assertDates(input.commercialRegistration?.issuedAt, input.commercialRegistration?.expiresAt);
-    this.assertDates(input.taxRegistration?.issuedAt, input.taxRegistration?.expiresAt);
     const taxCountryCode = input.taxRegistration ? this.country(input.taxRegistration.countryCode)! : undefined;
     const nationalAddress = input.nationalAddress
       ? { ...input.nationalAddress, countryCode: this.country(input.nationalAddress.countryCode)! }
       : undefined;
 
     await this.prisma.$transaction(async (tx) => {
-      const profile = await tx.companyProfile.updateMany({
-        where: { companyId: context.companyId, complianceVersion: input.version },
+      const currentProfile = await this.lockProfile(tx, context.companyId);
+      if (currentProfile.version !== input.version || currentProfile.complianceVersion !== input.version) {
+        throw new CompanyProfileError("VERSION_CONFLICT");
+      }
+      if ((taxCountryCode !== undefined && taxCountryCode !== currentProfile.countryCode)
+        || (nationalAddress && nationalAddress.countryCode !== currentProfile.countryCode)) {
+        throw new CompanyProfileError("COUNTRY_MISMATCH");
+      }
+
+      await tx.companyProfile.update({
+        where: { companyId: context.companyId },
         data: {
           ...(input.legalName !== undefined ? { legalName: this.optionalText(input.legalName) } : {}),
           ...(input.legalForm !== undefined ? { legalForm: this.optionalText(input.legalForm) } : {}),
+          version: { increment: 1 },
           complianceVersion: { increment: 1 },
         },
       });
-      if (profile.count !== 1) throw new CompanyProfileError("VERSION_CONFLICT");
 
       if (input.commercialRegistration) {
         const value = input.commercialRegistration;
-        await tx.companyRegistration.upsert({
-          where: { companyId_documentType: { companyId: context.companyId, documentType: value.documentType } },
-          update: {
-            ...(value.number !== undefined ? { numberLast4: this.last4(value.number) } : {}),
-            issuingAuthority: this.optionalText(value.issuingAuthority),
-            issuedAt: this.date(value.issuedAt),
-            expiresAt: this.date(value.expiresAt),
-            status: "DECLARED",
-            verifiedAt: null,
-          },
-          create: {
+        const where = { companyId_documentType: { companyId: context.companyId, documentType: value.documentType } };
+        const existing = await tx.companyRegistration.findUnique({ where });
+        if (existing) {
+          const numberLast4 = value.number === undefined ? existing.numberLast4 : this.last4(value.number);
+          const issuingAuthority = value.issuingAuthority === undefined ? existing.issuingAuthority : this.optionalText(value.issuingAuthority);
+          const issuedAt = value.issuedAt === undefined ? existing.issuedAt : this.date(value.issuedAt);
+          const expiresAt = value.expiresAt === undefined ? existing.expiresAt : this.date(value.expiresAt);
+          this.assertDateRange(issuedAt, expiresAt);
+          const verificationChanged = numberLast4 !== existing.numberLast4
+            || issuingAuthority !== existing.issuingAuthority
+            || !this.sameDate(issuedAt, existing.issuedAt)
+            || !this.sameDate(expiresAt, existing.expiresAt);
+          await tx.companyRegistration.update({ where, data: {
+            ...(value.number !== undefined ? { numberLast4 } : {}),
+            ...(value.issuingAuthority !== undefined ? { issuingAuthority } : {}),
+            ...(value.issuedAt !== undefined ? { issuedAt } : {}),
+            ...(value.expiresAt !== undefined ? { expiresAt } : {}),
+            ...(verificationChanged ? { status: "DECLARED", verifiedAt: null } : {}),
+          } });
+        } else {
+          const issuedAt = this.date(value.issuedAt);
+          const expiresAt = this.date(value.expiresAt);
+          this.assertDateRange(issuedAt, expiresAt);
+          await tx.companyRegistration.create({ data: {
             companyId: context.companyId,
             documentType: value.documentType,
             numberLast4: this.last4(value.number),
             issuingAuthority: this.optionalText(value.issuingAuthority),
-            issuedAt: this.date(value.issuedAt),
-            expiresAt: this.date(value.expiresAt),
-          },
-        });
+            issuedAt,
+            expiresAt,
+          } });
+        }
       }
       if (input.taxRegistration) {
         const value = input.taxRegistration;
-        await tx.companyTaxRegistration.upsert({
-          where: { companyId_registrationType_countryCode: { companyId: context.companyId, registrationType: value.registrationType, countryCode: taxCountryCode! } },
-          update: {
-            ...(value.number !== undefined ? { numberLast4: this.last4(value.number) } : {}),
-            issuedAt: this.date(value.issuedAt),
-            expiresAt: this.date(value.expiresAt),
-            status: "DECLARED",
-            verifiedAt: null,
-          },
-          create: {
+        const where = { companyId_registrationType_countryCode: { companyId: context.companyId, registrationType: value.registrationType, countryCode: taxCountryCode! } };
+        const existing = await tx.companyTaxRegistration.findUnique({ where });
+        if (existing) {
+          const numberLast4 = value.number === undefined ? existing.numberLast4 : this.last4(value.number);
+          const issuedAt = value.issuedAt === undefined ? existing.issuedAt : this.date(value.issuedAt);
+          const expiresAt = value.expiresAt === undefined ? existing.expiresAt : this.date(value.expiresAt);
+          this.assertDateRange(issuedAt, expiresAt);
+          const verificationChanged = numberLast4 !== existing.numberLast4
+            || !this.sameDate(issuedAt, existing.issuedAt)
+            || !this.sameDate(expiresAt, existing.expiresAt);
+          await tx.companyTaxRegistration.update({ where, data: {
+            ...(value.number !== undefined ? { numberLast4 } : {}),
+            ...(value.issuedAt !== undefined ? { issuedAt } : {}),
+            ...(value.expiresAt !== undefined ? { expiresAt } : {}),
+            ...(verificationChanged ? { status: "DECLARED", verifiedAt: null } : {}),
+          } });
+        } else {
+          const issuedAt = this.date(value.issuedAt);
+          const expiresAt = this.date(value.expiresAt);
+          this.assertDateRange(issuedAt, expiresAt);
+          await tx.companyTaxRegistration.create({ data: {
             companyId: context.companyId,
             registrationType: value.registrationType,
             countryCode: taxCountryCode!,
             numberLast4: this.last4(value.number),
-            issuedAt: this.date(value.issuedAt),
-            expiresAt: this.date(value.expiresAt),
-          },
-        });
+            issuedAt,
+            expiresAt,
+          } });
+        }
       }
       if (nationalAddress) {
         await this.upsertAddress(tx, context.companyId, "NATIONAL", nationalAddress);
@@ -237,22 +271,33 @@ export class CompanyProfileService {
           taxNumberStored: input.taxRegistration?.number !== undefined,
         },
       } });
-    }, { maxWait: 2_000, timeout: 8_000 });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 2_000, timeout: 8_000 });
     return this.getCompliance(context);
   }
 
   private async upsertAddress(tx: Prisma.TransactionClient, companyId: bigint, type: CompanyAddressType, value: AddressInput) {
-    const data = {
+    const where = { companyId_type: { companyId, type } };
+    const existing = await tx.companyAddress.findUnique({ where });
+    if (existing) {
+      await tx.companyAddress.update({ where, data: {
+        ...(value.line1 !== undefined ? { line1: this.optionalText(value.line1) } : {}),
+        ...(value.line2 !== undefined ? { line2: this.optionalText(value.line2) } : {}),
+        ...(value.district !== undefined ? { district: this.optionalText(value.district) } : {}),
+        ...(value.city !== undefined ? { city: this.optionalText(value.city) } : {}),
+        ...(value.subdivision !== undefined ? { subdivision: this.optionalText(value.subdivision) } : {}),
+        ...(value.postalCode !== undefined ? { postalCode: this.optionalText(value.postalCode) } : {}),
+        countryCode: value.countryCode,
+        ...(value.displayAddress !== undefined ? { displayAddress: this.optionalText(value.displayAddress) } : {}),
+      } });
+      return;
+    }
+    await tx.companyAddress.create({ data: {
+      companyId, type,
       line1: this.optionalText(value.line1), line2: this.optionalText(value.line2),
       district: this.optionalText(value.district), city: this.optionalText(value.city),
       subdivision: this.optionalText(value.subdivision), postalCode: this.optionalText(value.postalCode),
       countryCode: value.countryCode, displayAddress: this.optionalText(value.displayAddress),
-    };
-    await tx.companyAddress.upsert({
-      where: { companyId_type: { companyId, type } },
-      update: data,
-      create: { companyId, type, ...data },
-    });
+    } });
   }
 
   private async readiness(companyId: bigint, profile: {
@@ -260,9 +305,12 @@ export class CompanyProfileService {
     grandfatheredAt: Date | null; primaryBusinessActivity: { code: string } | null;
   }) {
     const [hasCommercialRegistration, hasTaxRegistration, hasNationalAddress] = await Promise.all([
-      this.prisma.companyRegistration.count({ where: { companyId } }).then(Boolean),
-      this.prisma.companyTaxRegistration.count({ where: { companyId } }).then(Boolean),
-      this.prisma.companyAddress.count({ where: { companyId, type: "NATIONAL" } }).then(Boolean),
+      this.prisma.companyRegistration.count({ where: { companyId, numberLast4: { not: null } } }).then(Boolean),
+      this.prisma.companyTaxRegistration.count({ where: { companyId, numberLast4: { not: null } } }).then(Boolean),
+      this.prisma.companyAddress.count({ where: { companyId, type: "NATIONAL", OR: [
+        { line1: { not: null } }, { district: { not: null } }, { city: { not: null } },
+        { subdivision: { not: null } }, { postalCode: { not: null } }, { displayAddress: { not: null } },
+      ] } }).then(Boolean),
     ]);
     return evaluateCompanyProfileReadiness({
       tradeName: profile.tradeName, countryCode: profile.countryCode, phone: profile.phone, legalName: profile.legalName,
@@ -311,7 +359,31 @@ export class CompanyProfileService {
     return value ? new Date(`${value}T00:00:00.000Z`) : null;
   }
 
-  private assertDates(issuedAt?: string | null, expiresAt?: string | null) {
+  private sameDate(left: Date | null, right: Date | null) {
+    return left?.getTime() === right?.getTime();
+  }
+
+  private assertDateRange(issuedAt: Date | null, expiresAt: Date | null) {
     if (issuedAt && expiresAt && issuedAt > expiresAt) throw new CompanyProfileError("INVALID_DATE_RANGE");
+  }
+
+  private async lockProfile(tx: Prisma.TransactionClient, companyId: bigint) {
+    const rows = await tx.$queryRaw<Array<{
+      countryCode: string | null;
+      version: number | bigint;
+      complianceVersion: number | bigint;
+    }>>(Prisma.sql`
+      SELECT country_code AS countryCode, version, compliance_version AS complianceVersion
+      FROM company_profiles
+      WHERE company_id = ${companyId}
+      FOR UPDATE
+    `);
+    const profile = rows[0];
+    if (!profile) throw new CompanyProfileError("PROFILE_NOT_FOUND");
+    return {
+      countryCode: profile.countryCode,
+      version: Number(profile.version),
+      complianceVersion: Number(profile.complianceVersion),
+    };
   }
 }

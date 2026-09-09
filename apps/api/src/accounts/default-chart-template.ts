@@ -126,9 +126,13 @@ export function isSupportedChartTemplate(code: string): code is ChartTemplateCod
   return chartTemplateCatalog.some((template) => template.code === code);
 }
 
+export function isAllowedOnboardingChartTemplate(code: string): code is ChartTemplateCode {
+  return chartTemplateCatalog.some((template) => template.code === code && template.availableForOnboarding);
+}
+
 export function onboardingChartTemplates() {
   return chartTemplateCatalog
-    .filter(({ availableForOnboarding }) => availableForOnboarding)
+    .filter(({ code }) => isAllowedOnboardingChartTemplate(code))
     .map(({ code, nameAr, nameEn }) => ({ code, nameAr, nameEn }));
 }
 

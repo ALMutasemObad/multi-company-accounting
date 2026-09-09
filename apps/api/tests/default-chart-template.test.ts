@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   chartTemplateCatalog,
   defaultChartDefinitions,
+  isAllowedOnboardingChartTemplate,
   isSupportedChartTemplate,
   onboardingChartTemplates,
 } from '../src/accounts/default-chart-template.js';
@@ -41,6 +42,8 @@ describe('default chart template contract', () => {
     for (const code of ['PROFESSIONAL_SERVICES', 'RETAIL_INVENTORY', 'MANUFACTURING', 'SMALL_BUSINESS_GENERAL']) {
       expect(isSupportedChartTemplate(code)).toBe(true);
     }
+    expect(isAllowedOnboardingChartTemplate('PROFESSIONAL_SERVICES')).toBe(true);
+    expect(isAllowedOnboardingChartTemplate('SMALL_BUSINESS_GENERAL')).toBe(false);
     expect(isSupportedChartTemplate('UNVERIFIED_TEMPLATE')).toBe(false);
   });
 });

@@ -30,7 +30,7 @@ export interface RegistrationIdentityPort {
 
 export interface RegistrationAccountingPort {
   listChartTemplates(): readonly RegistrationChartTemplateOption[];
-  isSupportedChartTemplate(code: string): boolean;
+  isAllowedOnboardingChartTemplate(code: string): boolean;
 }
 
 export type RegistrationSecurityCompletionInput = {

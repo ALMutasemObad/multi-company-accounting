@@ -58,6 +58,7 @@ const complianceJson = (value: Awaited<ReturnType<CompanyProfileService['getComp
   const nationalAddress = value.addresses.find(({ type }) => type === 'NATIONAL') ?? null;
   return {
     version: value.profile.complianceVersion,
+    countryCode: value.profile.countryCode,
     legalName: value.profile.legalName,
     legalForm: value.profile.legalForm,
     commercialRegistration: registration ? {

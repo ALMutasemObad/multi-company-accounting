@@ -2,7 +2,11 @@ import type { Prisma } from "@prisma/client";
 import { DEFAULT_CHART_TEMPLATE_CODE } from "../accounts/default-chart-template.js";
 import { isSupportedCompanyCountry } from "./company-profile-policy.js";
 
-export class BusinessProfileProvisioningError extends Error {}
+export class BusinessProfileProvisioningError extends Error {
+  constructor(public readonly reason: "INVALID_COUNTRY" | "INVALID_ACTIVITY") {
+    super(reason);
+  }
+}
 
 export type InitialBusinessProfileInput = {
   phone: string;

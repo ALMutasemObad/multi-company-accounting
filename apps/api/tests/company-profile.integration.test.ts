@@ -18,8 +18,10 @@ const db = enabled ? createDatabase(process.env.DATABASE_URL!) : null;
 describe.runIf(enabled)('company profile API on a real database', () => {
   let plan: Awaited<ReturnType<typeof createStartPlanFixture>>;
   let email: string;
+  let userId: bigint;
   let companyId: bigint;
   let otherCompanyId: bigint;
+  let emptyCompanyId: bigint;
   let app: ReturnType<typeof createApp>;
 
   beforeAll(async () => {
@@ -39,6 +41,7 @@ describe.runIf(enabled)('company profile API on a real database', () => {
     const user = await db!.user.create({
       data: { emailNormalized: email, passwordHash: await hash('test-only-profile-password'), displayName: 'Profile owner' },
     });
+    userId = user.id;
     await db!.organizationMembership.create({ data: { organizationId: organization.id, userId: user.id, role: 'OWNER' } });
     const onboarding = createGroupCompanyOnboardingService(db!, plan.version.id.toString());
     const first = await onboarding.create(user.id, organization.id, randomUUID(), {
@@ -51,8 +54,14 @@ describe.runIf(enabled)('company profile API on a real database', () => {
       primaryBusinessActivityCode: 'MANUFACTURING', chartTemplateCode: 'MANUFACTURING',
       timezone: 'Asia/Aden', baseCurrencyCode: 'YER',
     });
+    const empty = await onboarding.create(user.id, organization.id, randomUUID(), {
+      companyName: 'Empty compliance company', phone: '+12025550123', countryCode: 'US',
+      primaryBusinessActivityCode: 'PROFESSIONAL_SERVICES', chartTemplateCode: 'PROFESSIONAL_SERVICES',
+      timezone: 'UTC', baseCurrencyCode: 'YER',
+    });
     companyId = BigInt(first.company.id);
     otherCompanyId = BigInt(second.company.id);
+    emptyCompanyId = BigInt(empty.company.id);
     const auth = new AuthService(new PrismaAuthStore(db!), { verify }, testAuthOptions(db!));
     app = createApp({
       NODE_ENV: 'test', PORT: 3000, WEB_ORIGIN: 'http://localhost:5173', SESSION_COOKIE_SECURE: false,
@@ -120,7 +129,7 @@ describe.runIf(enabled)('company profile API on a real database', () => {
     const compliance = await agent.patch('/api/v1/company-compliance')
       .set('X-CSRF-Token', login.body.csrfToken)
       .send({
-        version: 0, legalName: 'First Company Legal', legalForm: 'LLC',
+        version: 1, legalName: 'First Company Legal', legalForm: 'LLC',
         commercialRegistration: {
           documentType: 'COMMERCIAL_REGISTRATION', number: 'CR-1234567890', issuingAuthority: 'Registry',
           issuedAt: '2026-01-01', expiresAt: '2026-09-30',
@@ -134,7 +143,8 @@ describe.runIf(enabled)('company profile API on a real database', () => {
       .expect(200);
 
     expect(compliance.body).toMatchObject({
-      version: 1,
+      version: 2,
+      countryCode: 'YE',
       commercialRegistration: { numberLast4: '7890', renewalStatus: 'DUE_SOON' },
       taxRegistration: { countryCode: 'YE', numberLast4: '4321', renewalStatus: 'CURRENT' },
       nationalAddress: { countryCode: 'YE', city: 'Sana’a' },
@@ -150,6 +160,87 @@ describe.runIf(enabled)('company profile API on a real database', () => {
     expect(JSON.stringify(audit.details)).not.toContain('VAT-0987654321');
     expect(await db!.companyRegistration.findFirstOrThrow({ where: { companyId } })).toMatchObject({ numberLast4: '7890' });
     expect(await db!.companyTaxRegistration.findFirstOrThrow({ where: { companyId } })).toMatchObject({ numberLast4: '4321', countryCode: 'YE' });
+  }, 60_000);
+
+  it('preserves verified nested fields on partial patches and resets verification only for changed evidence', async () => {
+    const verifiedAt = new Date('2026-09-01T12:00:00.000Z');
+    await db!.companyRegistration.updateMany({ where: { companyId }, data: { status: 'VERIFIED', verifiedAt } });
+    await db!.companyTaxRegistration.updateMany({ where: { companyId }, data: { status: 'VERIFIED', verifiedAt } });
+    const profiles = createCompanyService(db!).profiles;
+    const context = { companyId, userId };
+
+    await profiles.updateCompliance(context, { version: 2, legalName: 'Legal name only' });
+    expect(await db!.companyRegistration.findFirstOrThrow({ where: { companyId } })).toMatchObject({
+      numberLast4: '7890', issuingAuthority: 'Registry', status: 'VERIFIED', verifiedAt,
+    });
+    expect(await db!.companyTaxRegistration.findFirstOrThrow({ where: { companyId } })).toMatchObject({
+      numberLast4: '4321', status: 'VERIFIED', verifiedAt,
+    });
+
+    await profiles.updateCompliance(context, {
+      version: 3,
+      commercialRegistration: { documentType: 'COMMERCIAL_REGISTRATION', expiresAt: '2026-09-30' },
+      taxRegistration: { registrationType: 'VAT', countryCode: 'YE', expiresAt: '2030-01-01' },
+      nationalAddress: { countryCode: 'YE', city: 'Aden' },
+    });
+    expect(await db!.companyRegistration.findFirstOrThrow({ where: { companyId } })).toMatchObject({
+      numberLast4: '7890', issuingAuthority: 'Registry', issuedAt: new Date('2026-01-01T00:00:00.000Z'),
+      expiresAt: new Date('2026-09-30T00:00:00.000Z'), status: 'VERIFIED', verifiedAt,
+    });
+    expect(await db!.companyTaxRegistration.findFirstOrThrow({ where: { companyId } })).toMatchObject({
+      numberLast4: '4321', issuedAt: new Date('2026-01-01T00:00:00.000Z'),
+      expiresAt: new Date('2030-01-01T00:00:00.000Z'), status: 'VERIFIED', verifiedAt,
+    });
+    expect(await db!.companyAddress.findFirstOrThrow({ where: { companyId, type: 'NATIONAL' } })).toMatchObject({
+      district: 'Old City', city: 'Aden', countryCode: 'YE',
+    });
+
+    await profiles.updateCompliance(context, {
+      version: 4,
+      commercialRegistration: { documentType: 'COMMERCIAL_REGISTRATION', number: 'CR-00001234' },
+    });
+    expect(await db!.companyRegistration.findFirstOrThrow({ where: { companyId } })).toMatchObject({
+      numberLast4: '1234', issuingAuthority: 'Registry', status: 'DECLARED', verifiedAt: null,
+    });
+    expect(await db!.companyTaxRegistration.findFirstOrThrow({ where: { companyId } })).toMatchObject({ status: 'VERIFIED', verifiedAt });
+  }, 60_000);
+
+  it('serializes country and compliance writes and rejects mismatched compliance countries', async () => {
+    const profiles = createCompanyService(db!).profiles;
+    const context = { companyId: otherCompanyId, userId };
+    await expect(profiles.updateCompliance(context, {
+      version: 0,
+      taxRegistration: { registrationType: 'VAT', countryCode: 'SA', number: 'VAT-1234' },
+    })).rejects.toMatchObject({ reason: 'COUNTRY_MISMATCH' });
+    await expect(profiles.updateCompliance(context, {
+      version: 0,
+      nationalAddress: { countryCode: 'SA', city: 'Riyadh' },
+    })).rejects.toMatchObject({ reason: 'COUNTRY_MISMATCH' });
+
+    const outcomes = await Promise.allSettled([
+      profiles.updateProfile(context, { version: 0, countryCode: 'SA' }),
+      profiles.updateCompliance(context, { version: 0, nationalAddress: { countryCode: 'YE', city: 'Aden' } }),
+    ]);
+    expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1);
+    expect(outcomes.filter((outcome) => outcome.status === 'rejected')).toHaveLength(1);
+    const stored = await db!.companyProfile.findUniqueOrThrow({ where: { companyId: otherCompanyId } });
+    expect(stored.version).toBe(1);
+    expect(stored.complianceVersion).toBe(1);
+    const address = await db!.companyAddress.findUnique({ where: { companyId_type: { companyId: otherCompanyId, type: 'NATIONAL' } } });
+    expect(address ? { profileCountry: stored.countryCode, addressCountry: address.countryCode } : { profileCountry: stored.countryCode, addressCountry: null })
+      .toEqual(address
+        ? { profileCountry: 'YE', addressCountry: 'YE' }
+        : { profileCountry: 'SA', addressCountry: null });
+  }, 60_000);
+
+  it('does not count structurally empty compliance rows as completed requirements', async () => {
+    await db!.companyRegistration.create({ data: { companyId: emptyCompanyId, documentType: 'EMPTY_REGISTRATION' } });
+    await db!.companyTaxRegistration.create({ data: { companyId: emptyCompanyId, registrationType: 'EMPTY_TAX', countryCode: 'US' } });
+    await db!.companyAddress.create({ data: { companyId: emptyCompanyId, type: 'NATIONAL', countryCode: 'US' } });
+    const result = await createCompanyService(db!).profiles.getProfile({ companyId: emptyCompanyId, userId });
+    for (const code of ['COMMERCIAL_REGISTRATION', 'TAX_REGISTRATION', 'NATIONAL_ADDRESS']) {
+      expect(result.readiness.requirements.find((item) => item.code === code)).toMatchObject({ status: 'OPTIONAL' });
+    }
   }, 60_000);
 
   it('keeps grandfathered accounts usable when the progressive profile is incomplete', async () => {

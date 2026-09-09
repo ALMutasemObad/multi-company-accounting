@@ -19,10 +19,10 @@ const input = {
   timezone: 'Asia/Aden',
   baseCurrencyCode: 'YER',
   locale: 'ar' as const,
-  chartTemplateCode: 'SMALL_BUSINESS_GENERAL',
+  chartTemplateCode: 'PROFESSIONAL_SERVICES',
 };
 
-function fixture(existingUser = false) {
+function fixture(existingUser = false, onboardingTemplateAllowed = true) {
   const events: unknown[] = [];
   const upsert = vi.fn().mockResolvedValue({ id: 9n, publicId: 'registration-public-id', deliveryGeneration: 4 });
   const tx = {
@@ -46,7 +46,7 @@ function fixture(existingUser = false) {
     identity: { identityExists: vi.fn().mockResolvedValue(existingUser) },
     accounting: {
       listChartTemplates: vi.fn().mockReturnValue([]),
-      isSupportedChartTemplate: vi.fn().mockReturnValue(true),
+      isAllowedOnboardingChartTemplate: vi.fn().mockReturnValue(onboardingTemplateAllowed),
     },
     security: { recordCompletion: vi.fn().mockResolvedValue(undefined) },
   };
@@ -105,6 +105,13 @@ describe('RegistrationService anonymous boundary', () => {
     const { service, upsert } = fixture();
     await expect(service.start({ ...input, locale: 'de_DE' })).rejects.toMatchObject({ reason: 'INVALID_OPTION' });
     await expect(service.start({ ...input, locale: `en-${'x'.repeat(36)}` })).rejects.toMatchObject({ reason: 'INVALID_OPTION' });
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it('rejects a supported legacy chart that is not allowed for new onboarding', async () => {
+    const { service, upsert } = fixture(false, false);
+    await expect(service.start({ ...input, chartTemplateCode: 'SMALL_BUSINESS_GENERAL' }))
+      .rejects.toMatchObject({ reason: 'INVALID_OPTION' });
     expect(upsert).not.toHaveBeenCalled();
   });
 });

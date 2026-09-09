@@ -135,6 +135,11 @@ export function isNavigationItemVisible(
   if (item.view === "home") return true;
   if (item.view === "accountSecurity") return true;
   if (item.module && !access.moduleSet.has(item.module)) return false;
+  if (item.view === "settings") {
+    return allows(access.permissionSet, viewPermissionPolicies.settings)
+      || ["companies.profile.view", "companies.compliance.view"]
+        .some((permission) => access.permissionSet.has(permission));
+  }
   return allows(access.permissionSet, viewPermissionPolicies[item.view]);
 }
 

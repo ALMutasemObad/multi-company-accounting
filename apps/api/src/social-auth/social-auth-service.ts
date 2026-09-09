@@ -326,7 +326,7 @@ export class SocialAuthService {
         if (linkedIdentity || emailAccount) return { kind: 'account_proof_required' as const };
         if (!validCurrency || !validActivity
           || !onboarding.owners.tenant.isSupportedCompanyCountry(form.countryCode)
-          || !onboarding.owners.accounting.isSupportedChartTemplate(form.chartTemplateCode)) {
+          || !onboarding.owners.accounting.isAllowedOnboardingChartTemplate(form.chartTemplateCode)) {
           throw new SocialAuthError('INVALID_REQUEST');
         }
 

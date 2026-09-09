@@ -89,6 +89,15 @@ describe.runIf(enabled)("group company creation on a real database", () => {
     expect(await db!.company.count({ where: { organizationId: organization.id } })).toBe(1);
   }, 60_000);
 
+  it("rejects the supported legacy chart for a newly onboarded group company", async () => {
+    const { organization, user } = await fixture();
+    expect(() => service().create(user.id, organization.id, randomUUID(), {
+      ...input,
+      chartTemplateCode: "SMALL_BUSINESS_GENERAL",
+    })).toThrow(expect.objectContaining({ reason: "INVALID_COMPANY_OPTION" }));
+    expect(await db!.company.count({ where: { organizationId: organization.id } })).toBe(0);
+  });
+
   it("isolates keys by user and group, and denies a foreign group before returning a saved result", async () => {
     const a = await fixture(); const b = await fixture(); const key = randomUUID();
     const first = await service().create(a.user.id, a.organization.id, key, input);

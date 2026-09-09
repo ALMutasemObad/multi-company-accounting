@@ -25,6 +25,15 @@ export class TenantCompanyProvisioningAdapter implements TenantCompanyProvisioni
     if (existingCompany && existingCompany.baseCurrencyId !== currency.id) {
       throw new CompanyProvisioningError("COMPANY_CURRENCY_MISMATCH");
     }
+    if (existingCompany && input.businessProfile) {
+      const existingProfile = await tx.companyProfile.findUnique({
+        where: { companyId: existingCompany.id },
+        select: { initialChartTemplateCode: true },
+      });
+      if (!existingProfile || existingProfile.initialChartTemplateCode !== input.businessProfile.initialChartTemplateCode) {
+        throw new CompanyProvisioningError("INVALID_BUSINESS_PROFILE");
+      }
+    }
     const company = existingCompany
       ? await tx.company.update({
           where: { id: existingCompany.id },

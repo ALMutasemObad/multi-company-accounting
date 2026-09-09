@@ -17,7 +17,7 @@ describe("registration remains non-enumerating when directing users to sign in",
           listGlobalCurrencies: async () => [], listCompanyCountries: () => [], listBusinessActivities: async () => [],
           isActiveGlobalCurrency: async () => true, isSupportedCompanyCountry: () => true, isActiveBusinessActivity: async () => true,
         },
-        accounting: { listChartTemplates: () => [], isSupportedChartTemplate: () => true }, security: { recordCompletion: async () => undefined },
+        accounting: { listChartTemplates: () => [], isAllowedOnboardingChartTemplate: () => true }, security: { recordCompletion: async () => undefined },
       }, { passwordHasher: async () => "prepared-test-hash" });
       responses.push(await service.start(input));
       expect(append).toHaveBeenCalledTimes(exists ? 0 : 1);
