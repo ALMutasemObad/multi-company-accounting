@@ -1,0 +1,447 @@
+.hr-experience,
+.hr-experience * {
+  min-width: 0;
+}
+
+.hr-tab-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.hr-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.hr-summary > button {
+  display: grid;
+  gap: 10px;
+  min-height: 94px;
+  padding: 15px 17px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.hr-summary > button:hover {
+  border-color: #9fbdb0;
+  transform: translateY(-1px);
+}
+
+.hr-summary > button:focus-visible,
+.hr-person-card:focus-visible {
+  outline: 3px solid rgba(48, 121, 87, .25);
+  outline-offset: 2px;
+}
+
+.hr-summary > button.active {
+  border-color: #8fb8a5;
+  background: #f1f8f4;
+  box-shadow: 0 5px 18px rgba(35, 83, 62, .08);
+}
+
+.hr-summary span,
+.hr-summary small,
+.hr-identity-strip small,
+.hr-contract-list span,
+.hr-reference-list span,
+.hr-structure-summary span,
+.hr-structure-summary small {
+  color: var(--muted);
+  font-size: .79rem;
+}
+
+.hr-summary strong,
+.hr-structure-summary strong {
+  color: var(--green-800);
+  font-size: 1.25rem;
+}
+
+.hr-filter-bar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.5fr) repeat(2, minmax(170px, .75fr)) auto;
+  align-items: end;
+  gap: 12px;
+  padding: 16px;
+}
+
+.hr-filter-bar label,
+.hr-structure-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.hr-filter-bar label > span,
+.hr-structure-form label > span {
+  color: var(--muted);
+  font-size: .79rem;
+  font-weight: 700;
+}
+
+.hr-filter-bar .button {
+  min-height: 42px;
+  white-space: nowrap;
+}
+
+.hr-layout {
+  display: grid;
+  grid-template-columns: minmax(300px, .72fr) minmax(0, 1.35fr);
+  align-items: start;
+  gap: 18px;
+}
+
+.hr-employee-list,
+.hr-detail,
+.hr-contracts,
+.hr-structure-panel {
+  overflow: hidden;
+}
+
+.hr-person-workspace {
+  display: grid;
+  gap: 18px;
+}
+
+.hr-list-region,
+.hr-card-region {
+  overflow-x: clip;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+:root[dir="rtl"] .data-table-wrap.hr-list-region,
+:root[dir="rtl"] .data-table-wrap.hr-card-region {
+  direction: rtl;
+}
+
+.hr-person-list,
+.hr-contract-list,
+.hr-reference-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hr-person-list li + li,
+.hr-reference-list li + li {
+  border-top: 1px solid var(--line);
+}
+
+.hr-person-card {
+  display: grid;
+  gap: 9px;
+  width: 100%;
+  padding: 15px 18px;
+  border: 0;
+  border-inline-start: 4px solid transparent;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.hr-person-card:hover {
+  background: var(--surface-soft);
+}
+
+.hr-person-card[aria-pressed="true"] {
+  border-inline-start-color: var(--green-700);
+  background: #f1f8f4;
+}
+
+.hr-person-heading,
+.hr-person-state,
+.hr-reference-list li,
+.hr-reference-list li > div,
+.hr-contract-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.hr-person-heading > span,
+.hr-person-assignment,
+.hr-person-state > span:last-child {
+  color: var(--muted);
+  font-size: .79rem;
+}
+
+.hr-person-assignment {
+  overflow-wrap: anywhere;
+}
+
+.hr-person-state {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.hr-no-results {
+  padding: 28px 18px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.hr-identity-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 18px 24px 0;
+}
+
+.hr-identity-strip > span {
+  display: grid;
+  gap: 5px;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.hr-detail .detail-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 12px 24px 18px;
+}
+
+.hr-detail .detail-list > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.hr-detail .detail-list > div:last-child {
+  border-bottom: 0;
+}
+
+.hr-detail dt {
+  color: var(--muted);
+  font-size: .79rem;
+}
+
+.hr-detail dd {
+  margin: 0;
+  font-weight: 700;
+  text-align: end;
+  overflow-wrap: anywhere;
+}
+
+.hr-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 24px 20px;
+}
+
+.hr-contracts > .muted {
+  display: block;
+  padding: 20px 24px;
+}
+
+.hr-contract-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 18px 24px 22px;
+}
+
+.hr-contract-list > li {
+  display: grid;
+  gap: 14px;
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface-soft);
+}
+
+.hr-contract-list > li > div:first-child {
+  display: grid;
+  gap: 5px;
+}
+
+.hr-contract-list dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.hr-contract-list dl > div {
+  display: grid;
+  gap: 4px;
+}
+
+.hr-contract-list dt {
+  color: var(--muted);
+  font-size: .79rem;
+}
+
+.hr-contract-list dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.hr-structure-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.hr-structure-summary > div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 5px 12px;
+  padding: 15px 17px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.hr-structure-summary small {
+  grid-column: 1 / -1;
+}
+
+.hr-structure-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 18px;
+}
+
+.hr-structure-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
+  gap: 10px;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-soft);
+}
+
+.hr-structure-form label:nth-child(3) {
+  grid-column: 1 / -1;
+}
+
+.hr-reference-list li {
+  padding: 14px 18px;
+}
+
+.hr-reference-list li > div:first-child {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hr-reference-list li > div:last-child {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 1180px) {
+  .hr-layout,
+  .hr-structure-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hr-person-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hr-person-list li:nth-child(even) {
+    border-inline-start: 1px solid var(--line);
+  }
+
+  .hr-person-list li:nth-child(2) {
+    border-top: 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .hr-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hr-filter-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hr-search-field {
+    grid-column: 1 / -1;
+  }
+
+  .hr-filter-bar .button {
+    align-self: end;
+  }
+}
+
+@media (max-width: 680px) {
+  .hr-summary,
+  .hr-filter-bar,
+  .hr-person-list,
+  .hr-contract-list,
+  .hr-structure-summary,
+  .hr-structure-form,
+  .hr-identity-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .hr-search-field,
+  .hr-structure-form label:nth-child(3) {
+    grid-column: auto;
+  }
+
+  .hr-filter-bar .button,
+  .hr-actions .button,
+  .hr-structure-form .button {
+    width: 100%;
+  }
+
+  .hr-person-list li:nth-child(even) {
+    border-inline-start: 0;
+  }
+
+  .hr-person-list li:nth-child(2) {
+    border-top: 1px solid var(--line);
+  }
+
+  .hr-detail .detail-list > div,
+  .hr-reference-list li {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .hr-detail dd {
+    text-align: start;
+  }
+
+  .hr-identity-strip,
+  .hr-detail .detail-list,
+  .hr-actions,
+  .hr-contract-list,
+  .hr-structure-form {
+    padding-inline: 16px;
+  }
+
+  .hr-contract-state {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hr-summary > button {
+    transition: none;
+  }
+}

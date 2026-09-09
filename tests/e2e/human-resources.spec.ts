@@ -59,7 +59,8 @@ test("creates an independent employee record and a non-financial contract", asyn
   await page.addInitScript(() => localStorage.setItem("mcap.locale", "en"));
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
-    const path = new URL(request.url()).pathname.replace(/^\/api\/v1/u, "");
+    const url = new URL(request.url());
+    const path = url.pathname.replace(/^\/api\/v1/u, "");
     const method = request.method();
     const json = (body: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 
@@ -72,7 +73,14 @@ test("creates an independent employee record and a non-financial contract", asyn
       employeeCreated = true;
       return json({ employee: employee() }, 201);
     }
-    if (path === "/hr/employees") return json({ data: employeeCreated ? [employee()] : [], meta: meta(employeeCreated ? 1 : 0) });
+    if (path === "/hr/employees") {
+      const search = url.searchParams.get("search")?.toLocaleLowerCase() ?? "";
+      const status = url.searchParams.get("status");
+      const departmentFilter = url.searchParams.get("departmentId");
+      const rows = employeeCreated && (!search || ["EMP-000001", "ليان المستشار", "Layan Counsel"].some((value) => value.toLocaleLowerCase().includes(search)))
+        && (!status || status === "ACTIVE") && (!departmentFilter || departmentFilter === departmentId) ? [employee()] : [];
+      return json({ data: rows, meta: meta(rows.length) });
+    }
     if (path === `/hr/employees/${employeeId}`) return json({ employee: employee() });
     if (path === `/hr/employees/${employeeId}/contracts` && method === "POST") {
       contractCreated = true;
@@ -84,7 +92,8 @@ test("creates an independent employee record and a non-financial contract", asyn
   });
 
   await page.goto("/#humanResources");
-  await expect(page.getByRole("heading", { name: "Human resources foundation" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Human resources workspace" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Employees and contracts" })).toHaveAttribute("aria-selected", "true");
   await page.getByRole("button", { name: "New employee" }).first().click();
 
   const employeeDialog = page.getByRole("dialog", { name: "Create employee" });
@@ -107,4 +116,18 @@ test("creates an independent employee record and a non-financial contract", asyn
 
   await expect(page.getByText("Legal counsel contract")).toBeVisible();
   await expect(page.getByText("Active contract").first()).toBeVisible();
+
+  const search = page.getByRole("search");
+  await search.getByRole("searchbox", { name: "Search" }).fill("not present");
+  await search.getByRole("button", { name: "Search" }).click();
+  await expect(page.locator(".hr-no-results")).toContainText("No matching employees");
+
+  await search.getByRole("searchbox", { name: "Search" }).fill("EMP-000001");
+  await search.getByRole("button", { name: "Search" }).click();
+  await expect(page.getByRole("button", { name: /Layan Counsel EMP-000001/u })).toBeVisible();
+
+  await page.getByRole("tab", { name: "Organization structure" }).click();
+  await expect(page.getByRole("tab", { name: "Organization structure" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { name: "Departments" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Positions" })).toBeVisible();
 });
