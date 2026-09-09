@@ -49,6 +49,7 @@ for (const locale of ['ar', 'en', 'ur', 'hi']) {
     for (const [name, value] of Object.entries({
       displayName: 'Integration owner', email: 'owner@example.test', password: 'Synthetic-Password-123!',
       passwordConfirmation: 'Synthetic-Password-123!', organizationName: 'Integration organization', companyName: 'Integration business',
+      phone: '+967700000000',
     })) await page.locator(`input[name=${name}]`).fill(value);
     await page.locator('.registration-form button[type=submit]').click();
     await expect(page.locator('.registration-result')).toBeVisible();
