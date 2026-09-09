@@ -60,38 +60,61 @@ related:
 
 | الشريحة | نتيجة مستخدم واحدة | المالك/المستهلك | تغييرات مشتركة | لا يدخل فيها |
 |---|---|---|---|---|
-| `SC-0` | ربط الموديول وقدرة مظلمة قابلة للإنفاذ | Subscriptions + Auth | module mapping وقرار rollout | Permission seed أو جداول خدمات أو واجهة عامة |
+| `SC-0A` | ربط صلاحيات مبكر ومظلم | Platform Auth | module mapping في الخادم والواجهة | Permission seed أو activation أو grant أو جداول خدمة |
 | `SC-1A` | إعداد عرض وبديل وتوفره | Service Catalog | Schema/OpenAPI وPermission seed مستقل | أسعار، Sales، Projects، CRM |
 | `SC-1B` | إعداد دفتر وسعر مؤرخ واختياره | Service Catalog | Schema/OpenAPI إضافيان | فاتورة أو عقد مشروع |
+| `SC-0B` | rollout تجريبي بعد جاهزية الكتالوج | Platform Subscriptions | module activation وentitlement grant مؤرخ | Permission seed أو Schema خدمة أو منح عام |
 | `SC-2` | اختيار خدمة في فاتورة Sales مع لقطة ثابتة | Sales مستهلكًا | SalesInvoiceLine/OpenAPI | إعادة تسعير تلقائي أو مخزون |
 | `SC-3` | ربط خدمات بنطاق مشروع | Professional Projects مستهلكًا | Schema/OpenAPI لدى Projects | تغيير سعر العضو أو الفوترة |
 | `SC-4` | إضافة خدمات إلى فرصة تجارية | CRM مستهلكًا | Schema/OpenAPI لدى CRM | إنشاء مشروع/فاتورة أو تجاوز F2 |
 
-لا تدمج `SC-2/3/4` في PR واحد. ويمكن إطلاق `SC-1A/1B` لشركات تجريبية قبل المستهلكين
-كي تنشئ بيانات إعداد فقط.
+لا تدمج `SC-2/3/4` في PR واحد. وبعد SC-0B يمكن إتاحة `SC-1A/1B` لشركات تجريبية قبل
+المستهلكين كي تنشئ بيانات إعداد فقط.
 
-## 4. SC-0 — ربط الموديول والتركيب المظلم
+```text
+SC-0A module mapping ───────────────┐
+                                    ├─> SC-0B rollout/activation/grant ─> SC-2/SC-3/SC-4
+SC-1A offerings ─> SC-1B pricing ──┘
+```
 
-هذه شريحة تنسيق صغيرة لدى ملاك Platform Subscriptions/Auth. تملك ربط الصلاحية
-بالموديول وتفعيله ومنح استحقاقه فقط؛ لا تكتب Service Catalog في جداولهم، ولا تملك
-SC-0 إنشاء Permission rows.
+`SC-0A` و`SC-1A` لا تعتمد إحداهما على الأخرى ويمكن تسلسلهما بحسب تعارض الملفات؛
+`SC-1B` تعتمد `SC-1A`. ولا تبدأ `SC-0B` قبل نجاح `SC-0A` و`SC-1A` و`SC-1B`، ثم يعتمد
+كل مستهلك لاحق `SC-0B` وشريحته المالكة.
 
-### التغيير
+## 4. SC-0A وSC-0B — الربط المبكر والإطلاق المتأخر
+
+### 4.1 SC-0A — module mapping مظلم
+
+هذه شريحة تنسيق صغيرة لدى Platform Auth تملك ربط الصلاحية بالموديول فقط. لا تكتب
+Service Catalog في جداول Auth/Subscriptions، ولا تنشئ Permission rows.
+
+#### التغيير
 
 - ربط prefix `services.` بـ`SERVICE_CATALOG` في
   `CompanyCapabilityService` و`module-entitlements.ts` مع اختبارات التكافؤ.
-- إبقاء `PlatformModule.isActive = false` حتى نجاح SC-1A وSC-1B.
-- تفعيل صف الموديول ومنح الاستحقاق لاحقًا بMigration/أمر يملكه Platform
-  Subscriptions بعد جاهزية SC-1A/SC-1B؛ لا Schema خدمة ولا Permission seed في SC-0.
+- إبقاء `PlatformModule.isActive = false`، وعدم إنشاء entitlement أو grant أو route
+  مكشوف في هذه العقدة.
 
-### القبول
+#### القبول المستقل
+
+- الربط متطابق خادميًا وفي الواجهة، والكود المجهول يفشل مغلقًا.
+- `sales_catalog.view/manage -> SALES` لم يتغير.
+- لا Permission seed ولا Schema خدمة ولا module activation ولا grant في diff العقدة.
+- لا شركة قائمة أو جديدة ترى route أو تحصل على `SERVICE_CATALOG` بسبب SC-0A.
+
+### 4.2 SC-0B — activation/grant متأخر
+
+لا تبدأ هذه العقدة لدى Platform Subscriptions إلا بعد دليل نجاح SC-0A وSC-1A وSC-1B
+واختبارات OpenAPI وقاعدتي البيانات والواجهة. تفعّل صف `PlatformModule` ثم تمنح
+استحقاقًا مؤرخًا لشركة أو خطة تجريبية محددة؛ لا تنشئ Permission rows أو جداول خدمة.
+
+#### القبول المستقل
 
 - RBAC خام بلا استحقاق يعيد `403` ولا يصل إلى خدمة المجال.
 - الاستحقاق بلا RBAC لا يعرض route أو فعلًا.
-- `sales_catalog.view/manage` ما زالا يتطلبان `SALES` فقط.
-- لا يوجد تعريف مكرر لـ`services.*` في Migration أو Seed تابع لـSC-0؛ تملك SC-1A
-  هذه الصفوف والمنح وحدها.
-- لا تمنح الشركات القائمة أو الجديدة `SERVICE_CATALOG` تلقائيًا في هذه الخطوة.
+- الشركة التجريبية المحددة ذات RBAC ترى `#services`، بينما لا تتغير بقية الشركات.
+- grant مؤرخ وقابل للإبطال تشغيليًا، ولا Grandfathering أو منح عام ضمني.
+- لا يوجد تعريف مكرر لـ`services.*`؛ يظل Permission seed مملوكًا حصريًا لـSC-1A.
 
 ## 5. SC-1A — تعريف الخدمة والبديل والتوفر
 
@@ -116,8 +139,8 @@ SC-0 إنشاء Permission rows.
 
 لا تنشئ Migration الجداول أي Permission rows. ينفذ SC-1A Artifact تهيئة مستقلًا
 idempotent لصفوف `services.view/manage/prices.manage` ومنحها للدور النظامي الإداري؛
-SC-1A/Service Catalog هي المالك الوحيد لهذا Permission seed، ولا تعيد SC-0 أو SC-1B
-إنشاءه ولا تخلطه بـmodule mapping.
+SC-1A/Service Catalog هي المالك الوحيد لهذا Permission seed، ولا تعيد SC-0A أو SC-0B
+أو SC-1B إنشاءه ولا تخلطه بـmodule mapping.
 
 تستخدم الخدمة الاسمين الثابتين `ServiceCatalogRevenueAccountQueryPort` و
 `ServiceCatalogOutputTaxQueryPort` للتحقق من المرجعين، إضافة إلى
@@ -172,6 +195,24 @@ SC-1A/Service Catalog هي المالك الوحيد لهذا Permission seed، 
 - تقاعد العرض نهائي، ويحجب الاختيار الجديد ويحفظ الروابط التاريخية.
 - لا hard delete لأي عرض/بديل بعد الإنشاء.
 
+PATCH لا يقبل `status`، وتكون mutability الحقلية كما يلي:
+
+| الكيان/الحالة | حقول PATCH | الممنوع دائمًا أو في الحالة |
+|---|---|---|
+| العرض `DRAFT` | `nameAr/nameEn/description/categoryId?` | `code/id/publicId/companyId/status` |
+| العرض `ACTIVE` | الأسماء والوصف والتصنيف النشط/الفارغ | الثوابت والحالة؛ لا أثر رجعي في اللقطات |
+| العرض `INACTIVE` | الأسماء والوصف والتصنيف النشط/الفارغ | الثوابت والحالة؛ لا اختيار |
+| العرض `RETIRED` | لا شيء | كل PATCH وإعادة التنشيط أو إسناد تصنيف |
+| البديل `DRAFT` قبل أول تنشيط | الأسماء و`pricingUnit` وحدا التوفر ومرجعا Account/Tax | `offeringId/id/publicId/companyId/status` |
+| البديل `ACTIVE` | الأسماء والمرجعان وحدود التوفر المستقبلية | `pricingUnit` و`offeringId` والثوابت والحالة |
+| البديل `INACTIVE` | الأسماء والمرجعان وحدود التوفر المستقبلية | `pricingUnit` يبقى مقفولًا بعد أول تنشيط؛ الثوابت والحالة |
+| البديل `RETIRED` | لا شيء | كل PATCH وإعادة التنشيط |
+
+قبل بدء نافذة البديل يمكن تعديل الحدين. بعد دخولها تثبت `availableFrom`، ولا يقبل
+`availableUntil` جديد قبل تاريخ العمل الحالي. كل create/PATCH/transition للتصنيف أو
+العرض أو البديل يكتب Audit وIdempotency مع أثر المجال في معاملة واحدة؛ فشل Audit
+يلغي الأثر كله.
+
 ## 6. SC-1B — دفاتر الأسعار والأسعار المؤرخة
 
 ### 6.1 نتيجة الإغلاق
@@ -195,19 +236,40 @@ SC-1A/Service Catalog هي المالك الوحيد لهذا Permission seed، 
 
 | العملية | الصلاحية | قاعدة أساسية |
 |---|---|---|
-| `GET /service-catalog/price-books` | `services.view` | Pagination حسب العملة/الحالة |
-| `POST /service-catalog/price-books` | `services.prices.manage` | دفتر `DRAFT` ومفتاح تكرار |
-| `PATCH /service-catalog/price-books/{priceBookId}` | `services.prices.manage` | نسخة؛ عقد PATCH لا يقبل العملة لأنها immutable منذ الإنشاء |
-| `POST /service-catalog/price-books/{priceBookId}/transition` | `services.prices.manage` | تفعيل/تعطيل/تقاعد مسبب |
-| `POST /service-catalog/price-books/{priceBookId}/make-default` | `services.prices.manage` | CAS صريح على نسخة الدفتر والمؤشر المتوقع |
-| `POST /service-catalog/price-books/{priceBookId}/prices` | `services.prices.manage` | سعر مسودة Decimal نصي |
-| `PATCH /service-catalog/prices/{priceId}` | `services.prices.manage` | للمسودة فقط وبنسخة |
-| `POST /service-catalog/prices/{priceId}/publish` | `services.prices.manage` | قفل وفحص تداخل وIdempotency |
-| `POST /service-catalog/prices/{priceId}/end` | `services.prices.manage` | `REPLACE` بخلف ذري أو `LEAVE_GAP` مقصود، لا خلف اختياري مبهم |
-| `POST /service-catalog/prices/{priceId}/cancel` | `services.prices.manage` | قبل بداية النفاذ فقط، بسبب |
+| `GET /service-catalog/price-books` | `services.view` | Pagination حسب العملة/الحالة؛ كل صف يعيد `id/currencyId/status/version` لـCAS الهدف |
+| `GET /service-catalog/default-price-book?currencyId={uuid}` | `services.view` | مورد واحد يعيد `ABSENT/PRESENT` وCAS token؛ لا list ولا inference |
+| `GET /service-catalog/price-books/{priceBookId}/prices` | `services.view` | `view` إجباري وPagination لتبويبات السعر والتاريخ |
+| `GET /service-catalog/prices/{priceId}` | `services.view` | سجل شركة واحد مع `version` أو 404 موحد |
+| `POST /service-catalog/price-books` | `services.prices.manage` | دفتر `DRAFT` و`Idempotency-Key` |
+| `PATCH /service-catalog/price-books/{priceBookId}` | `services.prices.manage` | `expectedVersion` والمفتاح؛ لا يقبل العملة |
+| `POST /service-catalog/price-books/{priceBookId}/transition` | `services.prices.manage` | `targetStatus/expectedVersion/reason` والمفتاح |
+| `POST /service-catalog/price-books/{priceBookId}/make-default` | `services.prices.manage` | نسختا الدفتر والمؤشر المتوقع والمفتاح |
+| `POST /service-catalog/price-books/{priceBookId}/prices` | `services.prices.manage` | سعر مسودة Decimal نصي والمفتاح |
+| `PATCH /service-catalog/prices/{priceId}` | `services.prices.manage` | للمسودة فقط بـ`expectedVersion` والمفتاح |
+| `POST /service-catalog/prices/{priceId}/publish` | `services.prices.manage` | `expectedVersion` والمفتاح وقفل التداخل |
+| `POST /service-catalog/prices/{priceId}/end` | `services.prices.manage` | النسخة والسبب والمفتاح؛ `REPLACE` أو `LEAVE_GAP` |
+| `POST /service-catalog/prices/{priceId}/cancel` | `services.prices.manage` | قبل بداية النفاذ فقط بالنسخة والسبب والمفتاح |
 
 كل مبلغ في النقل نص ثابت بأربع منازل. لا يقبل Number عائم، ولا `MAX()+1`، ولا query
 غير محدودة لفحص التداخل.
+
+عقد قراءة المؤشر يتطلب `currencyId` واحدة ويعيد أحد الشكلين فقط:
+
+- `{state: "ABSENT", currencyId, expectedDefault: {kind: "ABSENT"}}`.
+- `{state: "PRESENT", currencyId, priceBookId, version, priceBookVersion,
+  priceBookStatus, expectedDefault: {kind: "PRESENT", priceBookId, version}}`.
+
+`version` هي نسخة المؤشر و`priceBookVersion` نسخة الدفتر الحالي. يعاد
+`expectedDefault` نفسه في الأمر، وبعد 409 تعيد الواجهة GET بدل تركيب شرط جديد محليًا.
+تكون `ABSENT` قانونية قبل أول تعيين فقط. لا يوجد `clear-default` أو DELETE للمؤشر؛ بعد
+أول نجاح يصبح المؤشر دائمًا ويستبدل فقط إلى دفتر `ACTIVE` من العملة نفسها.
+
+قائمة الأسعار تتطلب `view=DRAFT|CURRENT|UPCOMING|HISTORY|CANCELLED`، و`asOf` في
+`CURRENT/UPCOMING/HISTORY`، مع `page=1..10000`, `pageSize=1..100` و
+`serviceVariantId?`. ترتب بـ`effectiveFrom DESC, id DESC` وتعيد معرف السعر والبديل
+والمبلغ النصي والحدود والحالة و`version`. `CURRENT` منشور يغطي `asOf`، و`UPCOMING`
+منشور يبدأ بعده، و`HISTORY` منشور انتهى عنده أو قبله، و`DRAFT/CANCELLED` مطابقان
+للحالة. لا يوجد `view=ALL` أو تصدير غير محدود.
 
 عقد `make-default` يحمل `priceBookVersion`، ثم واحدًا من:
 
@@ -224,6 +286,23 @@ blind overwrite. اختلاف `priceBookVersion` يعيد `409 VERSION_CONFLICT`
 من العملة نفسها. ولا يوجد مسار لتغيير عملة الدفتر، لذلك لا ينتقل مؤشر افتراضي بين
 العملات ضمنيًا.
 
+لا يقبل PATCH الدفتر `status` أو `currencyId`. الحقول المسموحة على مستوى الحالة:
+
+| الحالة | حقول PATCH للدفتر | أوامر السعر المسموحة |
+|---|---|---|
+| `DRAFT` | `nameAr/nameEn` | create/PATCH لسعر `DRAFT`؛ لا publish |
+| `ACTIVE` | `nameAr/nameEn` | create/PATCH للمسودة وpublish/end/cancel حسب حالة السعر |
+| `INACTIVE` | `nameAr/nameEn` | لا create ولا publish؛ قراءة التاريخ فقط |
+| `RETIRED` | لا شيء | لا كتابة؛ قراءة تاريخية فقط |
+
+`id/publicId/companyId/currencyId` ثابتة دائمًا، والحالة تتغير بـ`transition` فقط.
+الدفتر الافتراضي لا ينتقل إلى `INACTIVE/RETIRED` قبل CAS ناجح إلى بديل فعال.
+
+سعر `DRAFT` يقبل PATCH لـ`amount/effectiveFrom/effectiveUntil` فقط؛
+`priceBookId/serviceVariantId/id/publicId/companyId/status` ثابتة من الإنشاء. السعر
+`PUBLISHED` لا يقبل PATCH: المجدول يمكن إلغاؤه قبل بدايته، والجاري ينتهي فقط بـ
+`REPLACE/LEAVE_GAP`، والمنتهي قراءة فقط. `CANCELLED` قراءة فقط.
+
 عقد `end` مميز بـ`mode`:
 
 - `REPLACE`: يطلب `effectiveUntil`, `reason`, `version` وبيانات سعر خلف؛ يجب أن تكون
@@ -234,6 +313,10 @@ blind overwrite. اختلاف `priceBookVersion` يعيد `409 VERSION_CONFLICT`
 
 يرفض الجسم الذي لا يحدد أحد النمطين، أو يرسل خلفًا مع `LEAVE_GAP`، أو يرسل
 `REPLACE` بلا خلف. لا تعدل الحدود بأثر رجعي.
+
+كل create/PATCH/transition لدفتر السعر، و`make-default`، وكل create/PATCH/publish/end/
+cancel للسعر يسجل Audit داخل معاملة كتابة المجال وIdempotency نفسها. يحفظ نوع العملية
+ونسختي قبل/بعد وdiff حقول منقحًا والسبب، وفشل Audit يلغي الأمر كله؛ GET لا يكتب Audit.
 
 ### 6.4 مصفوفة الفعالية
 
@@ -354,10 +437,16 @@ blind overwrite. اختلاف `priceBookVersion` يعيد `409 VERSION_CONFLICT`
 2. بحث وفلاتر وعروض/بدائل مع حالة التوفر.
 3. مساحة دفاتر الأسعار تظهر لمن يملك العرض، وأفعالها فقط لمن يملك
    `services.prices.manage`.
-4. سجل التاريخ/الحالة والمرجعيات بأسماء مقروءة، لا IDs خام.
+4. تبويبات `مسودة/حالي/قادم/سجل/ملغى` تحمل صفحة bounded من عقد prices حسب الحاجة، لا
+   تجمع التاريخ كله في المتصفح.
+5. سجل التاريخ/الحالة والمرجعيات بأسماء مقروءة، لا IDs خام.
 
 لا يظهر زر إدارة بناء على اسم الدور. عدم اكتمال Account/Tax يظهر كتحذير قابل للإصلاح
 برابط مسموح فقط، ولا يمنح `services.manage` صلاحيات الحسابات أو الضرائب.
+تقرأ مساحة الدفاتر عقد `default-price-book` لكل عملة معروضة، وتحفظ CAS token في حالة
+النموذج فقط. بعد 409 تعيد الجلب وتطلب من المستخدم إعادة القرار. لا تعرض فعل
+`clear-default`؛ وعند تعطيل/تقاعد الدفتر الافتراضي تطلب اختيار دفتر `ACTIVE` بديلًا
+وتنفذ `make-default` أولًا، ولا تخفي فشل أي من الأمرين.
 
 ### 10.2 الاستخدام اليومي
 
@@ -380,11 +469,18 @@ blind overwrite. اختلاف `priceBookVersion` يعيد `409 VERSION_CONFLICT`
 - جميع انتقالات العرض والبديل والدفتر والسعر الصحيحة والمرفوضة.
 - دورة التصنيف كاملة: يبدأ `ACTIVE`، تعديل `ACTIVE/INACTIVE`، الأسباب والتدقيق، منع
   تعديل/إسناد `RETIRED`، وبقاء توفر العرض مستقلًا عن حالة تصنيفه.
+- جدول mutability لكل حالة عرض/بديل/دفتر: قبول الحقول المعلنة، رفض `status` في PATCH،
+  قفل الوحدة بعد أول تنشيط، منع إعادة كتابة توفر ماضٍ، وقراءة `RETIRED` فقط.
 - نافذة نصف مفتوحة عند البداية والنهاية، والتاريخ قبل/داخل/بعد النافذة.
 - صفر صريح، عدد موجب، سالب مرفوض، ودقة أكثر من أربع منازل حسب OpenAPI.
 - عدم تداخل السعر، وعدم fallback لدفتر/عملة/سعر مفقود.
 - `end/REPLACE` يثبت تلاصق الحد وذرية الخلف، و`end/LEAVE_GAP` يتطلب `allowGap: true`
   ويعيد `SERVICE_PRICE_NOT_FOUND` داخل الفجوة؛ كل الأجسام الملتبسة ترفض.
+- قراءة المؤشر تعيد الشكلين `ABSENT/PRESENT` ونسختي المؤشر/الدفتر كما يلزم، ويقبل CAS
+  token المقروء ويرفض القديم. لا route أو method لمسح المؤشر، وبعد أول تعيين لا يعود
+  إلى `ABSENT`.
+- مناظير الأسعار الخمسة تفصل المسودة والحالي والقادم والتاريخ والملغى عند حدود
+  `asOf`، مع Pagination وترتيب ثابت ومنع `ALL` والاستعلام غير المحدود.
 - حساب/ضريبة/عملة من شركة أخرى أو معطلة، وغياب المرجع الاختياري.
 - Pagination/search/filter bounded وترتيب حتمي بلا N+1.
 - UUID/BigInt/Decimal/date serialization، وأكواد أخطاء معلنة ومدققة.
@@ -399,7 +495,9 @@ blind overwrite. اختلاف `priceBookVersion` يعيد `409 VERSION_CONFLICT`
   reorder أو سباق حجز خاص بها.
 - سباقات النشر وCAS الدفتر الافتراضي بنوعي `ABSENT/PRESENT`، والنسخة القديمة، ومنع
   تغيير العملة والتعديل/التعطيل كما في مصفوفة SC-1B.
-- Idempotency replay/mismatch/in-progress، وrollback عند فشل Audit أو مرجع خارجي.
+- Idempotency replay/mismatch/in-progress، وإثبات rollback عند فشل Audit لكل عائلة:
+  create/PATCH/transition للتصنيف والعرض والبديل والدفتر، `make-default`، و
+  create/PATCH/publish/end/cancel للسعر.
 - Retry deadlock والـdeadline والـtransaction timeout من الغلاف المركزي.
 - عند وجود مستهلك Outbox لاحقًا فقط: duplicate delivery وlease/retry/dead-letter.
 
@@ -414,7 +512,10 @@ blind overwrite. اختلاف `priceBookVersion` يعيد `409 VERSION_CONFLICT`
 - إثبات أن `sales_catalog.*` لم ينتقل من `SALES` وأن `services.*` يتطلب
   `SERVICE_CATALOG`.
 - إثبات أن Permission seed المستقل في SC-1A وحده ينشئ الصفوف ومنح الدور، وأن Migration
-  الجداول لا تنشئها، وأن SC-0 يملك module mapping/activation فقط ولا يكرر الـSeed.
+  الجداول لا تنشئها؛ SC-0A يملك mapping فقط وSC-0B يملك activation/grant فقط، ولا
+  يكرر أي منهما الـSeed.
+- اختبار DAG يمنع SC-0B قبل أدلة SC-0A وSC-1A/1B، ويفصل قبول mapping المظلم عن قبول
+  rollout التجريبي وعدم منح الشركات الأخرى.
 - منع `InventoryItem` و`ProfessionalServiceRate` و`SalesInvoiceLine` من الظهور في DTO
   الكتالوج الدائم.
 
@@ -433,8 +534,10 @@ blind overwrite. اختلاف `priceBookVersion` يعيد `409 VERSION_CONFLICT`
 - جميع Migrations من قاعدة فارغة مع Seed.
 - ترقية نسخة من Schema أساس الإنتاج مع بيانات Inventory/Sales/Projects حقيقية تثبت
   عدم تحويلها أو تغيير عددها.
-- القيود المركبة وChecks والفهارس وخطة استعلام القائمة والاختيار.
-- اختبارات التزامن والـdeadlock وتداخل المدى والدفتر الافتراضي.
+- القيود المركبة وChecks والفهارس وخطط استعلام القائمة والاختيار ومناظير الأسعار
+  الخمسة وقراءة مؤشر عملة واحدة.
+- اختبارات التزامن والـdeadlock وتداخل المدى وCAS الدفتر الافتراضي واستحالة مسحه بعد
+  أول تعيين.
 - rollback على قاعدة فارغة/غير مستخدمة، ورفضه بعد عرض أو سعر أو رابط مستهلك.
 
 ### 11.6 RTL والإتاحة والمصفوفة المرئية
@@ -446,6 +549,8 @@ blind overwrite. اختلاف `priceBookVersion` يعيد `409 VERSION_CONFLICT`
 - تنقل كامل بلوحة المفاتيح، focus ظاهر، إغلاق Modal يعيد التركيز، وlabels وdescriptions
   مرتبطة بالمدخلات.
 - قارئ الشاشة يعلن التحميل والنجاح والخطأ والتعارض، والحالة لا تعتمد على اللون وحده.
+- تبويبات السعر تعلن الحالة المختارة والعدد/الصفحة، وتعيد رسالة 409 التركيز إلى اختيار
+  الدفتر البديل بعد إعادة جلب CAS token.
 - تباين وأهداف لمس مناسبة، ومقاسان أساسيان متسقان للخط بلا عناوين ضخمة أو نص صغير.
 - رابط hash مباشر غير مصرح به يعيد إلى وجهة مسموحة قبل تركيب الصفحة.
 
@@ -453,9 +558,10 @@ blind overwrite. اختلاف `priceBookVersion` يعيد `409 VERSION_CONFLICT`
 
 | المرحلة | الرجوع البنيوي المسموح | الرجوع التشغيلي بعد الاستخدام |
 |---|---|---|
-| SC-0 | عكس policy مع الواجهة في Artifact واحد قبل المنح | تعطيل الموديول مع إبقاء الاستحقاقات المؤرخة؛ لا حذف |
+| SC-0A | عكس mapping الخادم والواجهة معًا قبل SC-0B | إعادة الموديول إلى غير نشط عبر SC-0B ثم عكس mapping؛ لا نصف Artifact |
 | SC-1A | إسقاط الجداول/التسلسل وعكس Permission seed المستقل إذا كانت كلها غير مستخدمة | تعطيل routes والموديول، إبقاء التعريف والصلاحيات والتدقيق |
 | SC-1B | إسقاط جداول السعر إذا خلت ولم توجد مراجع | إبقاء الأسعار والدفاتر، تعطيل الكتابة والاختيار |
+| SC-0B | عكس activation/grant قبل أي استعمال | إبطال الاستحقاق وتعطيل الموديول مع إبقاء grant history والبيانات |
 | SC-2 | إزالة أعمدة nullable فقط قبل أي لقطة خدمة | نشر Binary متوافق يخفي الاختيار ويحفظ لقطة الفاتورة |
 | SC-3 | إزالة جدول الربط فقط قبل أي سجل | إخفاء الفعل مع حفظ نطاق المشروع |
 | SC-4 | إزالة جدول البنود فقط قبل أي سجل | إخفاء الفعل مع حفظ لقطة الفرصة |
@@ -465,11 +571,12 @@ blind overwrite. اختلاف `priceBookVersion` يعيد `409 VERSION_CONFLICT`
 
 الإطلاق:
 
-1. نشر Schema/API مظلمين مع `SERVICE_CATALOG` غير نشط.
-2. تشغيل اختبارات العقد وقاعدتي البيانات والواجهة.
-3. تفعيل الموديول ومنحه لشركة تجريبية من Platform Subscriptions.
-4. مراقبة 403/409 والـdeadlocks وزمن query وفشل المرجعيات، من دون payload أسعار.
-5. توسيع الاستحقاق بقرار منتج. لا يعني نجاح Staging نشرًا أو منحًا عامًا.
+1. نشر SC-0A mapping مبكرًا مع `SERVICE_CATALOG` غير نشط ومن دون منح.
+2. نشر SC-1A ثم SC-1B Schema/API/UI مظلمة.
+3. تشغيل اختبارات العقد وقاعدتي البيانات والواجهة وتسجيل أدلة قبول العقد الثلاث.
+4. تنفيذ SC-0B: تفعيل الموديول ومنحه لشركة تجريبية محددة من Platform Subscriptions.
+5. مراقبة 403/409 والـdeadlocks وزمن query وفشل المرجعيات، من دون payload أسعار.
+6. توسيع الاستحقاق بقرار منتج. لا يعني نجاح Staging نشرًا أو منحًا عامًا.
 
 ## 13. مخاطر مؤجلة بمالك واضح
 
