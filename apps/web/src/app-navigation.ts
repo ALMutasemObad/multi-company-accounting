@@ -62,7 +62,7 @@ export const viewPermissionPolicies: Record<TenantProtectedView, PermissionPolic
   customers: { permission: "customers.view" },
   crm: { permission: "crm.view" },
   professionalProjects: { permission: "professional_projects.view" },
-  humanResources: { allOf: ["hr.employees.view", "hr.structure.view", "hr.contracts.view"] },
+  humanResources: { anyOf: ["hr.employees.view", "hr.structure.view"] },
   employeeExpenses: { anyOf: ["employee_expenses.view", "employee_expenses.review"] },
   sales: { permission: "sales_invoices.view" },
   receipts: { permission: "receipts.view" },

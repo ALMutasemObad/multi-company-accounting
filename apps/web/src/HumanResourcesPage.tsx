@@ -1,9 +1,10 @@
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { type FormEvent, type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, idempotencyKey } from "./api";
 import { allows } from "./authorization";
 import { useAuthorization } from "./authorization-context";
 import { localizedReferenceName, useI18n } from "./i18n";
 import { arHumanResources, enHumanResources, hiHumanResources, urHumanResources } from "./i18n/locales/human-resources";
+import { createLatestRequestLane } from "./human-resources/latest-request";
 import type {
   Employee,
   EmploymentContract,
@@ -60,7 +61,7 @@ function dateLabel(value: string, locale: string) {
 
 export function HumanResourcesPage({ notify }: { notify: Notice }) {
   const { permissionSet } = useAuthorization();
-  const { formatNumber, intlLocale, locale, t } = useI18n();
+  const { dir, formatNumber, intlLocale, locale, t } = useI18n();
   const hrCopy = hrCopyByLocale[locale] ?? arHumanResources;
   const canViewEmployees = allows(permissionSet, employeePermissions.view);
   const canManageEmployees = allows(permissionSet, employeePermissions.manage);
@@ -70,7 +71,7 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
   const canManageStructure = allows(permissionSet, employeePermissions.manageStructure);
   const [tab, setTab] = useState<Tab>(() => canViewEmployees ? "employees" : "structure");
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [summary, setSummary] = useState<EmployeeSummary>({ ACTIVE: 0, ON_LEAVE: 0, TERMINATED: 0 });
+  const [summary, setSummary] = useState<EmployeeSummary | null>(null);
   const [meta, setMeta] = useState({ page: 1, pageSize: 12, total: 0, totalPages: 0 });
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState<HrEmploymentStatus | "">("");
@@ -83,21 +84,31 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
   const [departments, setDepartments] = useState<HrStructureReference[]>([]);
   const [positions, setPositions] = useState<HrStructureReference[]>([]);
   const [loading, setLoading] = useState(canViewEmployees);
+  const [summaryLoading, setSummaryLoading] = useState(canViewEmployees);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [structureLoading, setStructureLoading] = useState(canViewStructure);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
+  const [summaryError, setSummaryError] = useState("");
   const [detailError, setDetailError] = useState("");
   const [structureError, setStructureError] = useState("");
   const [createEmployeeOpen, setCreateEmployeeOpen] = useState(false);
   const [editEmployeeOpen, setEditEmployeeOpen] = useState(false);
   const [contractOpen, setContractOpen] = useState(false);
+  const requestLanes = useRef({
+    employees: createLatestRequestLane(),
+    summary: createLatestRequestLane(),
+    detail: createLatestRequestLane(),
+    structure: createLatestRequestLane(),
+  }).current;
 
   useEffect(() => {
     if (tab === "employees" && !canViewEmployees && canViewStructure) setTab("structure");
     if (tab === "structure" && !canViewStructure && canViewEmployees) setTab("employees");
   }, [canViewEmployees, canViewStructure, tab]);
 
-  const loadEmployees = useCallback(async (signal?: AbortSignal) => {
+  const loadEmployees = useCallback(async () => {
+    const request = requestLanes.employees.begin();
     if (!canViewEmployees) {
       setLoading(false);
       return;
@@ -105,92 +116,130 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
     setLoading(true);
     setError("");
     try {
-      const shared = { search: search || undefined, departmentId: departmentId || undefined };
-      const [result, active, onLeave, terminated] = await Promise.all([
-        api<ListResponse<Employee>>(employeePath({ ...shared, page, pageSize: 12, status: status || undefined }), { signal }),
-        api<ListResponse<Employee>>(employeePath({ ...shared, page: 1, pageSize: 1, status: "ACTIVE" }), { signal }),
-        api<ListResponse<Employee>>(employeePath({ ...shared, page: 1, pageSize: 1, status: "ON_LEAVE" }), { signal }),
-        api<ListResponse<Employee>>(employeePath({ ...shared, page: 1, pageSize: 1, status: "TERMINATED" }), { signal }),
-      ]);
-      if (signal?.aborted) return;
+      const result = await api<ListResponse<Employee>>(employeePath({
+        page,
+        pageSize: 12,
+        search: search || undefined,
+        status: status || undefined,
+        departmentId: departmentId || undefined,
+      }), { signal: request.signal });
+      if (!request.isCurrent()) return;
       setEmployees(result.data);
       setMeta(result.meta);
-      setSummary({ ACTIVE: active.meta.total, ON_LEAVE: onLeave.meta.total, TERMINATED: terminated.meta.total });
       setSelectedId((current) => result.data.some((employee) => employee.id === current) ? current : result.data[0]?.id ?? "");
     } catch (cause) {
-      if (signal?.aborted) return;
+      if (!request.isCurrent()) return;
       setError(cause instanceof Error ? cause.message : t("hr.loadError"));
     } finally {
-      if (!signal?.aborted) setLoading(false);
+      if (request.isCurrent()) setLoading(false);
     }
-  }, [canViewEmployees, departmentId, page, search, status, t]);
+  }, [canViewEmployees, departmentId, page, requestLanes.employees, search, status, t]);
 
-  const loadStructure = useCallback(async (signal?: AbortSignal) => {
-    if (!canViewStructure) return;
+  const loadSummary = useCallback(async () => {
+    const request = requestLanes.summary.begin();
+    if (!canViewEmployees) {
+      setSummary(null);
+      setSummaryLoading(false);
+      return;
+    }
+    setSummary(null);
+    setSummaryLoading(true);
+    setSummaryError("");
+    try {
+      const shared = { search: search || undefined, departmentId: departmentId || undefined };
+      const [active, onLeave, terminated] = await Promise.all([
+        api<ListResponse<Employee>>(employeePath({ ...shared, page: 1, pageSize: 1, status: "ACTIVE" }), { signal: request.signal }),
+        api<ListResponse<Employee>>(employeePath({ ...shared, page: 1, pageSize: 1, status: "ON_LEAVE" }), { signal: request.signal }),
+        api<ListResponse<Employee>>(employeePath({ ...shared, page: 1, pageSize: 1, status: "TERMINATED" }), { signal: request.signal }),
+      ]);
+      if (!request.isCurrent()) return;
+      setSummary({ ACTIVE: active.meta.total, ON_LEAVE: onLeave.meta.total, TERMINATED: terminated.meta.total });
+    } catch {
+      if (!request.isCurrent()) return;
+      setSummaryError(hrCopy["hr.summaryUnavailable"]);
+    } finally {
+      if (request.isCurrent()) setSummaryLoading(false);
+    }
+  }, [canViewEmployees, departmentId, hrCopy, requestLanes.summary, search]);
+
+  const loadStructure = useCallback(async () => {
+    const request = requestLanes.structure.begin();
+    if (!canViewStructure) {
+      setDepartments([]);
+      setPositions([]);
+      setStructureLoading(false);
+      return;
+    }
+    setStructureLoading(true);
     setStructureError("");
     try {
       const [departmentResult, positionResult] = await Promise.all([
-        api<{ data: HrStructureReference[] }>("/hr/departments", { signal }),
-        api<{ data: HrStructureReference[] }>("/hr/positions", { signal }),
+        api<{ data: HrStructureReference[] }>("/hr/departments", { signal: request.signal }),
+        api<{ data: HrStructureReference[] }>("/hr/positions", { signal: request.signal }),
       ]);
-      if (signal?.aborted) return;
+      if (!request.isCurrent()) return;
       setDepartments(departmentResult.data);
       setPositions(positionResult.data);
     } catch (cause) {
-      if (signal?.aborted) return;
+      if (!request.isCurrent()) return;
       setStructureError(cause instanceof Error ? cause.message : t("hr.optionsError"));
+    } finally {
+      if (request.isCurrent()) setStructureLoading(false);
     }
-  }, [canViewStructure, t]);
+  }, [canViewStructure, requestLanes.structure, t]);
 
-  const loadSelected = useCallback(async (signal?: AbortSignal) => {
-    if (!selectedId || !canViewEmployees) {
+  const loadSelected = useCallback(async (employeeId = selectedId) => {
+    const request = requestLanes.detail.begin();
+    if (!employeeId || !canViewEmployees) {
       setSelected(null);
       setContracts([]);
+      setDetailLoading(false);
       return;
     }
     setDetailLoading(true);
     setDetailError("");
     try {
       const [employeeResult, contractResult] = await Promise.all([
-        api<{ employee: Employee }>(`/hr/employees/${selectedId}`, { signal }),
+        api<{ employee: Employee }>(`/hr/employees/${employeeId}`, { signal: request.signal }),
         canViewContracts
-          ? api<{ data: EmploymentContract[] }>(`/hr/employees/${selectedId}/contracts`, { signal })
+          ? api<{ data: EmploymentContract[] }>(`/hr/employees/${employeeId}/contracts`, { signal: request.signal })
           : Promise.resolve({ data: [] }),
       ]);
-      if (signal?.aborted) return;
+      if (!request.isCurrent()) return;
       setSelected(employeeResult.employee);
       setContracts(contractResult.data);
     } catch (cause) {
-      if (signal?.aborted) return;
+      if (!request.isCurrent()) return;
       setDetailError(cause instanceof Error ? cause.message : t("hr.detailError"));
     } finally {
-      if (!signal?.aborted) setDetailLoading(false);
+      if (request.isCurrent()) setDetailLoading(false);
     }
-  }, [canViewContracts, canViewEmployees, selectedId, t]);
+  }, [canViewContracts, canViewEmployees, requestLanes.detail, selectedId, t]);
 
   useEffect(() => {
-    const controller = new AbortController();
-    void loadEmployees(controller.signal);
-    return () => controller.abort();
-  }, [loadEmployees]);
+    void loadEmployees();
+    return requestLanes.employees.cancel;
+  }, [loadEmployees, requestLanes.employees]);
   useEffect(() => {
-    const controller = new AbortController();
-    void loadStructure(controller.signal);
-    return () => controller.abort();
-  }, [loadStructure]);
+    void loadSummary();
+    return requestLanes.summary.cancel;
+  }, [loadSummary, requestLanes.summary]);
   useEffect(() => {
-    const controller = new AbortController();
-    void loadSelected(controller.signal);
-    return () => controller.abort();
-  }, [loadSelected]);
+    void loadStructure();
+    return requestLanes.structure.cancel;
+  }, [loadStructure, requestLanes.structure]);
+  useEffect(() => {
+    void loadSelected();
+    return requestLanes.detail.cancel;
+  }, [loadSelected, requestLanes.detail]);
 
-  async function refresh() {
-    await Promise.all([loadEmployees(), loadStructure()]);
-    await loadSelected();
+  async function refresh(employeeId = selectedId) {
+    await Promise.all([loadEmployees(), loadSummary(), loadStructure(), loadSelected(employeeId)]);
   }
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setSelectedId("");
     setSearch(searchInput.trim());
     setPage(1);
   }
@@ -223,7 +272,7 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
       setPage(1);
       setSelectedId(result.employee.id);
       notify(t("hr.employeeCreated"));
-      await refresh();
+      await refresh(result.employee.id);
     } catch (cause) {
       notify(cause instanceof Error ? cause.message : t("hr.employeeError"), "error");
     } finally {
@@ -233,7 +282,7 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
 
   async function editEmployee(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selected || !canManageEmployees) return;
+    if (!selected || selected.id !== selectedId || !canManageEmployees) return;
     const data = new FormData(event.currentTarget);
     setWorking(true);
     try {
@@ -262,7 +311,7 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
   }
 
   async function transition(next: HrEmploymentStatus) {
-    if (!selected || !canManageEmployees) return;
+    if (!selected || selected.id !== selectedId || !canManageEmployees) return;
     const reason = window.prompt(t("hr.transitionReason"))?.trim();
     if (!reason || reason.length < 3) return;
     const effectiveDate = next === "TERMINATED" ? window.prompt(t("hr.terminationDatePrompt"), today())?.trim() : null;
@@ -285,7 +334,7 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
 
   async function createContract(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selected || !canManageContracts) return;
+    if (!selected || selected.id !== selectedId || !canManageContracts) return;
     const data = new FormData(event.currentTarget);
     setWorking(true);
     try {
@@ -312,7 +361,7 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
   }
 
   async function endContract(contract: EmploymentContract) {
-    if (!selected || !canManageContracts) return;
+    if (!selected || selected.id !== selectedId || !canManageContracts) return;
     const reason = window.prompt(t("hr.endContractReason"))?.trim();
     if (!reason || reason.length < 3) return;
     const endDate = window.prompt(t("hr.endContractDate"), today())?.trim();
@@ -382,8 +431,33 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
   const activePositions = useMemo(() => positions.filter((item) => item.isActive), [positions]);
   const availableManagers = employees.filter((item) => item.status !== "TERMINATED");
   const managerOptions = availableManagers.filter((item) => item.id !== selected?.id);
-  const totalEmployees = summary.ACTIVE + summary.ON_LEAVE + summary.TERMINATED;
+  const totalEmployees = summary ? summary.ACTIVE + summary.ON_LEAVE + summary.TERMINATED : 0;
   const filtered = Boolean(search || status || departmentId);
+  const selectedIsCurrent = selected?.id === selectedId;
+  const visibleTabs = [
+    ...(canViewEmployees ? [{ id: "employees" as const, label: t("hr.tab.employees") }] : []),
+    ...(canViewStructure ? [{ id: "structure" as const, label: t("hr.tab.structure") }] : []),
+  ];
+
+  function focusTab(next: Tab) {
+    setTab(next);
+    queueMicrotask(() => document.getElementById(`hr-${next}-tab`)?.focus());
+  }
+
+  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, current: Tab) {
+    if (!visibleTabs.length || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const currentIndex = Math.max(0, visibleTabs.findIndex((item) => item.id === current));
+    let nextIndex: number;
+    if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = visibleTabs.length - 1;
+    else {
+      const visualStep = event.key === "ArrowRight" ? 1 : -1;
+      const step = dir === "rtl" ? -visualStep : visualStep;
+      nextIndex = (currentIndex + step + visibleTabs.length) % visibleTabs.length;
+    }
+    focusTab(visibleTabs[nextIndex]!.id);
+  }
 
   return <section className="workspace-page hr-workspace hr-experience">
     <PageHeader
@@ -393,29 +467,30 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
       actions={canManageEmployees ? <Button icon="plus" onClick={() => setCreateEmployeeOpen(true)}>{t("hr.newEmployee")}</Button> : undefined}
     />
 
-    <div className="section-tabs hr-tabs" role="tablist" aria-label={t("view.humanResources")}>
-      {canViewEmployees && <button type="button" role="tab" aria-selected={tab === "employees"} aria-controls="hr-employees-panel" className={tab === "employees" ? "active" : ""} onClick={() => setTab("employees")}>{t("hr.tab.employees")}</button>}
-      {canViewStructure && <button type="button" role="tab" aria-selected={tab === "structure"} aria-controls="hr-structure-panel" className={tab === "structure" ? "active" : ""} onClick={() => setTab("structure")}>{t("hr.tab.structure")}</button>}
+    <div className="section-tabs hr-tabs" role="tablist" aria-label={t("view.humanResources")} aria-orientation="horizontal">
+      {visibleTabs.map((item) => <button type="button" id={`hr-${item.id}-tab`} key={item.id} role="tab" aria-selected={tab === item.id} aria-controls={`hr-${item.id}-panel`} tabIndex={tab === item.id ? 0 : -1} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)} onKeyDown={(event) => handleTabKeyDown(event, item.id)}>{item.label}</button>)}
     </div>
 
-    {tab === "employees" && canViewEmployees && <div id="hr-employees-panel" role="tabpanel" className="hr-tab-panel">
-      <div className="hr-summary" aria-live="polite" aria-label={hrCopy["hr.summaryLabel"]}>
-        <SummaryButton label={t("hr.employees")} value={totalEmployees} selected={!status} onClick={() => { setStatus(""); setPage(1); }} />
-        <SummaryButton label={t("hr.status.ACTIVE")} value={summary.ACTIVE} selected={status === "ACTIVE"} onClick={() => { setStatus("ACTIVE"); setPage(1); }} />
-        <SummaryButton label={t("hr.status.ON_LEAVE")} value={summary.ON_LEAVE} selected={status === "ON_LEAVE"} onClick={() => { setStatus("ON_LEAVE"); setPage(1); }} />
-        <SummaryButton label={t("hr.status.TERMINATED")} value={summary.TERMINATED} selected={status === "TERMINATED"} onClick={() => { setStatus("TERMINATED"); setPage(1); }} />
+    {tab === "employees" && canViewEmployees && <div id="hr-employees-panel" role="tabpanel" aria-labelledby="hr-employees-tab" className="hr-tab-panel">
+      <div className="hr-summary" aria-live="polite" aria-busy={summaryLoading} aria-label={hrCopy["hr.summaryLabel"]}>
+        {summaryLoading && !summary ? <Spinner label={t("hr.loading")} /> : summaryError ? <div className="hr-summary-error" role="status"><span>{summaryError}</span><Button variant="secondary" onClick={() => void loadSummary()}>{t("common.retry")}</Button></div> : summary && <>
+          <SummaryButton label={t("hr.employees")} value={totalEmployees} selected={!status} onClick={() => { setSelectedId(""); setStatus(""); setPage(1); }} />
+          <SummaryButton label={t("hr.status.ACTIVE")} value={summary.ACTIVE} selected={status === "ACTIVE"} onClick={() => { setSelectedId(""); setStatus("ACTIVE"); setPage(1); }} />
+          <SummaryButton label={t("hr.status.ON_LEAVE")} value={summary.ON_LEAVE} selected={status === "ON_LEAVE"} onClick={() => { setSelectedId(""); setStatus("ON_LEAVE"); setPage(1); }} />
+          <SummaryButton label={t("hr.status.TERMINATED")} value={summary.TERMINATED} selected={status === "TERMINATED"} onClick={() => { setSelectedId(""); setStatus("TERMINATED"); setPage(1); }} />
+        </>}
       </div>
 
-      <form className="panel hr-filter-bar" role="search" onSubmit={submitSearch}>
+      <form className={`panel hr-filter-bar${canViewStructure ? "" : " without-department"}`} role="search" onSubmit={submitSearch}>
         <label className="hr-search-field"><span>{t("common.search")}</span><input name="employeeSearch" type="search" placeholder={hrCopy["hr.searchPlaceholder"]} value={searchInput} onChange={(event) => setSearchInput(event.target.value)} autoComplete="off" /></label>
-        <label><span>{t("hr.statusFilter")}</span><select value={status} onChange={(event) => { setStatus(event.target.value as HrEmploymentStatus | ""); setPage(1); }}>
+        <label><span>{t("hr.statusFilter")}</span><select value={status} onChange={(event) => { setSelectedId(""); setStatus(event.target.value as HrEmploymentStatus | ""); setPage(1); }}>
           <option value="">{t("hr.status.ALL")}</option>
           {(["ACTIVE", "ON_LEAVE", "TERMINATED"] as HrEmploymentStatus[]).map((value) => <option key={value} value={value}>{t(`hr.status.${value}`)}</option>)}
         </select></label>
-        <label><span>{t("hr.department")}</span><select value={departmentId} onChange={(event) => { setDepartmentId(event.target.value); setPage(1); }}>
+        {canViewStructure && <label><span>{t("hr.department")}</span><select value={departmentId} onChange={(event) => { setSelectedId(""); setDepartmentId(event.target.value); setPage(1); }}>
           <option value="">{hrCopy["hr.allDepartments"]}</option>
           {departments.map((item) => <option key={item.id} value={item.id}>{item.code} — {localizedReferenceName(item)}</option>)}
-        </select></label>
+        </select></label>}
         <Button type="submit" disabled={loading}>{t("common.search")}</Button>
       </form>
 
@@ -436,13 +511,13 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
                 </li>)}
               </ul>}
             </div>
-            <Pagination {...meta} page={page} onChange={setPage} />
+            <Pagination {...meta} page={page} onChange={(nextPage) => { setSelectedId(""); setPage(nextPage); }} />
           </article>
 
           <div className="hr-person-workspace">
             {detailError ? <div className="error-panel" role="alert"><p>{detailError}</p><Button variant="secondary" onClick={() => void loadSelected()}>{t("common.retry")}</Button></div>
               : detailLoading ? <Spinner label={t("hr.loading")} />
-              : selected && <>
+              : selectedIsCurrent && selected && <>
                 <article className="panel hr-detail" aria-label={localizedReferenceName(selected)}>
                   <header><div><h2>{localizedReferenceName(selected)}</h2><p dir="ltr">{selected.employeeNumber}</p></div><span className={`status-chip ${selected.status.toLowerCase()}`}>{t(`hr.status.${selected.status}`)}</span></header>
                   <div className="hr-identity-strip"><span><strong>{selected.department ? localizedReferenceName(selected.department) : t("hr.notAssigned")}</strong><small>{t("hr.department")}</small></span><span><strong>{selected.position ? localizedReferenceName(selected.position) : t("hr.notAssigned")}</strong><small>{t("hr.position")}</small></span></div>
@@ -474,8 +549,8 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
         </div>}
     </div>}
 
-    {tab === "structure" && canViewStructure && <div id="hr-structure-panel" role="tabpanel" className="hr-tab-panel">
-      {structureError ? <div className="error-panel" role="alert"><p>{structureError}</p><Button variant="secondary" onClick={() => void loadStructure()}>{t("common.retry")}</Button></div> : <>
+    {tab === "structure" && canViewStructure && <div id="hr-structure-panel" role="tabpanel" aria-labelledby="hr-structure-tab" className="hr-tab-panel">
+      {structureError ? <div className="error-panel" role="alert"><p>{structureError}</p><Button variant="secondary" onClick={() => void loadStructure()}>{t("common.retry")}</Button></div> : structureLoading ? <Spinner label={t("hr.loading")} /> : <>
         <div className="hr-structure-summary" aria-live="polite"><div><span>{t("hr.departments")}</span><strong>{formatNumber(activeDepartments.length)}</strong><small>{t("hr.active")}</small></div><div><span>{t("hr.positions")}</span><strong>{formatNumber(activePositions.length)}</strong><small>{t("hr.active")}</small></div></div>
         <div className="hr-structure-grid">
           <StructurePanel title={t("hr.departments")} description={hrCopy["hr.structurePracticalDescription"]} addLabel={t("hr.addDepartment")} items={departments} working={working} canManage={canManageStructure} onCreate={(event) => void createStructure("departments", event)} onDeactivate={(item) => void deactivateStructure("departments", item)} />
@@ -487,8 +562,8 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
     {!canViewEmployees && !canViewStructure && <div className="error-panel" role="alert"><p>{t("hr.loadError")}</p></div>}
 
     {createEmployeeOpen && canManageEmployees && <EmployeeModal title={t("hr.createTitle")} description={t("hr.createDescription")} employees={availableManagers} departments={activeDepartments} positions={activePositions} working={working} onClose={() => setCreateEmployeeOpen(false)} onSubmit={createEmployee} />}
-    {editEmployeeOpen && selected && canManageEmployees && <EmployeeModal key={selected.id} title={t("hr.editEmployee")} description={t("hr.editDescription")} employee={selected} employees={managerOptions} departments={activeDepartments} positions={activePositions} working={working} onClose={() => setEditEmployeeOpen(false)} onSubmit={editEmployee} />}
-    {contractOpen && canManageContracts && <Modal title={t("hr.newContract")} description={t("hr.contractsDescription")} onClose={() => setContractOpen(false)} wide><form className="modal-form form-grid" onSubmit={createContract}>
+    {editEmployeeOpen && selectedIsCurrent && selected && canManageEmployees && <EmployeeModal key={selected.id} title={t("hr.editEmployee")} description={t("hr.editDescription")} employee={selected} employees={managerOptions} departments={activeDepartments} positions={activePositions} working={working} onClose={() => setEditEmployeeOpen(false)} onSubmit={editEmployee} />}
+    {contractOpen && selectedIsCurrent && canManageContracts && <Modal title={t("hr.newContract")} description={t("hr.contractsDescription")} onClose={() => setContractOpen(false)} wide><form className="modal-form form-grid" onSubmit={createContract}>
       <label><span>{t("hr.contractTitle")}</span><input name="titleAr" maxLength={200} required /></label>
       <label><span>{t("hr.nameEn")}</span><input name="titleEn" maxLength={200} dir="ltr" /></label>
       <label><span>{t("hr.contractType")}</span><select name="contractType" defaultValue="PERMANENT">{(["PERMANENT", "FIXED_TERM", "CONSULTANT", "INTERNSHIP"] as HrContractType[]).map((value) => <option key={value} value={value}>{t(`hr.contractType.${value}`)}</option>)}</select></label>

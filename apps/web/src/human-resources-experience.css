@@ -54,13 +54,30 @@
 .hr-structure-summary span,
 .hr-structure-summary small {
   color: var(--muted);
-  font-size: .79rem;
+  font-size: .9rem;
 }
 
 .hr-summary strong,
 .hr-structure-summary strong {
   color: var(--green-800);
   font-size: 1.25rem;
+}
+
+.hr-summary > .spinner,
+.hr-summary-error {
+  grid-column: 1 / -1;
+}
+
+.hr-summary-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px 18px;
+  border: 1px solid #ead6a2;
+  border-radius: 14px;
+  background: #fffaf0;
+  color: #765a14;
 }
 
 .hr-filter-bar {
@@ -80,13 +97,17 @@
 .hr-filter-bar label > span,
 .hr-structure-form label > span {
   color: var(--muted);
-  font-size: .79rem;
+  font-size: .9rem;
   font-weight: 700;
 }
 
 .hr-filter-bar .button {
   min-height: 42px;
   white-space: nowrap;
+}
+
+.hr-filter-bar.without-department {
+  grid-template-columns: minmax(220px, 1.5fr) minmax(170px, .75fr) auto;
 }
 
 .hr-layout {
@@ -174,7 +195,7 @@
 .hr-person-assignment,
 .hr-person-state > span:last-child {
   color: var(--muted);
-  font-size: .79rem;
+  font-size: .9rem;
 }
 
 .hr-person-assignment {
@@ -229,7 +250,7 @@
 
 .hr-detail dt {
   color: var(--muted);
-  font-size: .79rem;
+  font-size: .9rem;
 }
 
 .hr-detail dd {
@@ -285,7 +306,7 @@
 
 .hr-contract-list dt {
   color: var(--muted);
-  font-size: .79rem;
+  font-size: .9rem;
 }
 
 .hr-contract-list dd {
@@ -377,6 +398,10 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .hr-filter-bar.without-department {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .hr-search-field {
     grid-column: 1 / -1;
   }
@@ -394,6 +419,10 @@
   .hr-structure-summary,
   .hr-structure-form,
   .hr-identity-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .hr-filter-bar.without-department {
     grid-template-columns: 1fr;
   }
 
@@ -436,6 +465,11 @@
 
   .hr-contract-state {
     align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .hr-summary-error {
+    align-items: stretch;
     flex-direction: column;
   }
 }

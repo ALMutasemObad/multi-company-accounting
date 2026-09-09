@@ -13,6 +13,13 @@
 - أضيفت حالات تحميل وخطأ ولا نتائج، وتبويبات وأغلفة قوائم قابلة للوصول بلوحة
   المفاتيح، مع دعم RTL/LTR والعروض 390/768/1440/1920 ومن دون إخفاء overflow على
   مستوى المستند.
+- تقبل بوابة الشاشة صلاحية عرض الموظفين أو عرض الهيكل، وتعرض التبويب المسموح وحده؛
+  لا تكفي صلاحية العقود وحدها لأن العقد تابع لسجل موظف.
+- تستخدم جميع قراءات القائمة والملخص والتفاصيل والهيكل قناة latest-request مستقلة
+  تجمع AbortController ورقم جيل. يشمل ذلك effects وإعادة المحاولة والتحديث بعد
+  الكتابة، وتمنع الشاشة إجراءات موظف لا يطابق الاختيار الحالي.
+- فشل ملخص الحالات مستقل عن سجل الموظفين؛ يظهر تنبيه إعادة محاولة للملخص من دون
+  حجب القائمة الناجحة.
 - لم يتغير Prisma schema أو Migration أو OpenAPI أو API، ولم تنفذ رواتب. التصميم
   المقترح فقط موثق في `docs/architecture/PAYROLL_FOUNDATION_SLICE_AR.md`.
 - لم يحدث نشر أو Push أو PR.
@@ -27,8 +34,9 @@
 | `npm run build -w @mcap/api` | ناجح بعد توليد Prisma Client المحلي |
 | `npm run i18n:check` | ناجح؛ أربع لغات مكتملة وقابلة للاكتشاف |
 | `npm run ui:check` | ناجح؛ 31 رأس صفحة و68 منطقة محتوى قابلة للوصول |
-| `npm run test -w @mcap/web` | ناجح؛ 777 اختبارًا، و34 اختبارًا متجاوزًا |
-| `playwright test --config docs/release/hr-experience/playwright.hr.config.ts` | ناجح؛ 1/1 لمسار HR المعزول |
+| `npm run test -w @mcap/web` | ناجح؛ 784 اختبارًا، و34 اختبارًا متجاوزًا |
+| اختبارات وحدات `human-resources` المستهدفة | ناجحة؛ 7/7 لبوابة التنقل وأجيال الطلب |
+| `playwright test --config docs/release/hr-experience/playwright.hr.config.ts` | ناجح؛ 7/7 للصلاحيات و403 والتأخير والمسار الوظيفي |
 | اختبار `human-resources-workspace.spec.ts` بإعداد Visual | ناجح؛ 16/16 (أربع لغات × أربعة عروض) |
 | `git diff --check` | ناجح |
 
@@ -62,6 +70,7 @@ MySQL محلية متاحة لعنوان الاختبار، لذلك انتهى 
 | `hr.rosterDescription` | اختر موظفًا لمراجعة ملفه وعقوده وإجراءاته المتاحة. | Choose an employee to review their record, contracts, and available actions. | रिकॉर्ड, अनुबंध और उपलब्ध कार्रवाइयाँ देखने के लिए कर्मचारी चुनें। | ریکارڈ، معاہدے اور دستیاب کارروائیاں دیکھنے کے لیے ملازم منتخب کریں۔ |
 | `hr.structurePracticalDescription` | نظّم المراجع المستخدمة في ملفات الموظفين، وعطّل ما لم يعد متاحًا للإسناد. | Organize references used in employee records and disable those no longer available for assignment. | कर्मचारी रिकॉर्ड में उपयोग होने वाले संदर्भ व्यवस्थित करें और अनुपलब्ध संदर्भ निष्क्रिय करें। | ملازم ریکارڈ میں استعمال ہونے والے حوالے منظم کریں اور غیر دستیاب حوالوں کو غیر فعال کریں۔ |
 | `hr.summaryLabel` | ملخص القوى العاملة | Workforce summary | कार्यबल सारांश | افرادی قوت کا خلاصہ |
+| `hr.summaryUnavailable` | تعذر تحميل ملخص الحالات. ما زال سجل الموظفين متاحًا أدناه. | Status totals could not be loaded. The employee register remains available below. | स्थिति का सारांश लोड नहीं हुआ। कर्मचारी सूची नीचे उपलब्ध है। | حالتوں کا خلاصہ لوڈ نہیں ہوا۔ ملازمین کا رجسٹر نیچے دستیاب ہے۔ |
 
 ## القيود المقصودة
 

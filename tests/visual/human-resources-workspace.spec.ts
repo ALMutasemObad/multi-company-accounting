@@ -70,8 +70,16 @@ for (const locale of locales) {
     await page.evaluate(async () => { await document.fonts.ready; });
     await page.screenshot({ path: testInfo.outputPath(`employees-${locale}-${testInfo.project.name}.png`), fullPage: true });
 
-    await page.locator('[role="tab"]').nth(1).click();
+    const employeeTab = page.locator("#hr-employees-tab");
+    const structureTab = page.locator("#hr-structure-tab");
+    await expect(employeeTab).toHaveAttribute("tabindex", "0");
+    await expect(structureTab).toHaveAttribute("tabindex", "-1");
+    await employeeTab.focus();
+    await page.keyboard.press(locale === "ar" || locale === "ur" ? "ArrowLeft" : "ArrowRight");
+    await expect(structureTab).toBeFocused();
+    await expect(structureTab).toHaveAttribute("aria-selected", "true");
     await expect(page.locator(".hr-structure-grid")).toBeVisible();
+    await expect(page.locator("#hr-structure-panel")).toHaveAttribute("aria-labelledby", "hr-structure-tab");
     await expect(page.locator(".hr-reference-list").first().locator("li")).toHaveCount(2);
     await expectNoOverflow(page);
     await page.screenshot({ path: testInfo.outputPath(`structure-${locale}-${testInfo.project.name}.png`), fullPage: true });
