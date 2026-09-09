@@ -8,6 +8,7 @@ export class AccountingCompanyProvisioningAdapter implements AccountingCompanyPr
     tx: Prisma.TransactionClient,
     companyId: bigint,
     initializeDefaultChart: boolean,
+    chartTemplateCode?: string,
   ) {
     for (const definition of accountTypeDefinitions) {
       await tx.accountType.upsert({
@@ -17,7 +18,7 @@ export class AccountingCompanyProvisioningAdapter implements AccountingCompanyPr
       });
     }
     if (!initializeDefaultChart) return null;
-    const chart = await applyDefaultChartTemplate(tx, companyId);
+    const chart = await applyDefaultChartTemplate(tx, companyId, chartTemplateCode);
     return {
       templateCode: chart.templateCode,
       version: chart.version,

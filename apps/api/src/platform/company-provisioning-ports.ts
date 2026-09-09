@@ -5,7 +5,8 @@ export type CompanyProvisioningErrorReason =
   | "COMPANY_CURRENCY_MISMATCH"
   | "ADMIN_USER_DISABLED"
   | "ADMIN_USER_EXISTS"
-  | "EXTERNAL_IDENTITY_EXISTS";
+  | "EXTERNAL_IDENTITY_EXISTS"
+  | "INVALID_BUSINESS_PROFILE";
 
 export class CompanyProvisioningError extends Error {
   constructor(public readonly reason: CompanyProvisioningErrorReason) {
@@ -20,6 +21,13 @@ export type TenantProvisioningInput = {
   companyName: string;
   timezone: string;
   baseCurrencyCode: string;
+  businessProfile?: {
+    phone: string;
+    countryCode: string;
+    primaryBusinessActivityCode: string;
+    preferredLocale: string;
+    initialChartTemplateCode: string;
+  } | undefined;
 };
 
 export type TenantProvisioningResult = {
@@ -77,6 +85,7 @@ export interface AccountingCompanyProvisioningPort {
     tx: Prisma.TransactionClient,
     companyId: bigint,
     initializeDefaultChart: boolean,
+    chartTemplateCode?: string,
   ): Promise<DefaultChartProvisioningResult | null>;
 }
 

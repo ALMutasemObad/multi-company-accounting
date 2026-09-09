@@ -11,6 +11,7 @@ import { GroupCompanyOnboardingService } from "../src/organizations/group-compan
 import { GroupCompanyOnboardingIdentityAdapter } from "../src/users/group-company-onboarding-identity-adapter.js";
 import { GroupCompanyOnboardingTenantAdapter } from "../src/companies/group-company-onboarding-tenant-adapter.js";
 import { AccountingCompanyProvisioningAdapter } from "../src/accounts/company-provisioning-adapter.js";
+import { RegistrationAccountingAdapter } from "../src/accounts/registration-accounting-adapter.js";
 import { TreasuryCompanyProvisioningAdapter } from "../src/treasury/company-provisioning-adapter.js";
 import { PrismaNewCompanySubscriptionProvisioningAdapter } from "../src/platform-subscriptions/prisma-new-company-subscription-provisioning-adapter.js";
 import { PrismaAuditAppendAdapter } from "../src/audit/prisma-audit-append-adapter.js";
@@ -21,7 +22,11 @@ import { createApp } from "../src/app.js";
 
 const enabled = process.env.RUN_DB_TESTS === "true" && Boolean(process.env.DATABASE_URL);
 const db = enabled ? createDatabase(process.env.DATABASE_URL!) : null;
-const input = { companyName: "New company", timezone: "Asia/Riyadh", baseCurrencyCode: "SAR" };
+const input = {
+  companyName: "New company", phone: "+966500000000", countryCode: "SA",
+  primaryBusinessActivityCode: "RETAIL_TRADE", chartTemplateCode: "RETAIL_INVENTORY",
+  timezone: "Asia/Riyadh", baseCurrencyCode: "SAR",
+};
 
 describe.runIf(enabled)("group company creation on a real database", () => {
   let plan: Awaited<ReturnType<typeof createStartPlanFixture>>;
@@ -29,7 +34,7 @@ describe.runIf(enabled)("group company creation on a real database", () => {
   const service = () => createGroupCompanyOnboardingService(db!, plan.version.id.toString());
   const ports = () => ({
     identity: new GroupCompanyOnboardingIdentityAdapter(), tenant: new GroupCompanyOnboardingTenantAdapter(db!),
-    accounting: new AccountingCompanyProvisioningAdapter(), treasury: new TreasuryCompanyProvisioningAdapter(),
+    accounting: new AccountingCompanyProvisioningAdapter(), accountingOptions: new RegistrationAccountingAdapter(), treasury: new TreasuryCompanyProvisioningAdapter(),
     subscriptions: new PrismaNewCompanySubscriptionProvisioningAdapter(plan.version.id.toString()), audit: new PrismaAuditAppendAdapter(),
   });
   async function fixture(role: "OWNER" | "ADMIN" | "VIEWER" = "OWNER") {
@@ -58,6 +63,11 @@ describe.runIf(enabled)("group company creation on a real database", () => {
     expect(await db!.userCompany.count({ where: { userId: user.id } })).toBe(1);
     expect(await db!.userCompanyRole.findFirst({ where: { userId: user.id, companyId }, include: { role: true } })).toMatchObject({ role: { code: "ADMINISTRATOR" } });
     expect(await db!.account.count({ where: { companyId } })).toBeGreaterThan(0);
+    expect(await db!.account.count({ where: { companyId, sourceTemplateCode: "RETAIL_INVENTORY" } })).toBe(2);
+    expect(await db!.companyProfile.findUnique({ where: { companyId } })).toMatchObject({
+      tradeName: "New company", countryCode: "SA", phone: "+966500000000",
+      initialChartTemplateCode: "RETAIL_INVENTORY", grandfatheredAt: null,
+    });
     expect(await db!.platformSubscription.findUnique({ where: { companyId } })).toMatchObject({ planVersionId: plan.version.id, status: "ACTIVE" });
     expect(await db!.platformSubscriptionEntitlement.findMany({ where: { companyId } })).toMatchObject([{ moduleId: plan.core.id }]);
     expect(await db!.organizationAuditLog.count({ where: { organizationId: organization.id, action: "ORGANIZATION_COMPANY_CREATED" } })).toBe(1);

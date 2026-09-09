@@ -54,10 +54,13 @@ describe.runIf(enabled)('self-registration with MariaDB', () => {
     displayName: 'مدير التسجيل',
     organizationName: 'مجموعة التسجيل',
     companyName: 'شركة التسجيل',
+    phone: '+9671000000',
+    countryCode: 'YE',
+    primaryBusinessActivityCode: 'PROFESSIONAL_SERVICES',
     timezone: 'Asia/Aden',
     baseCurrencyCode: 'YER',
     locale: 'ar' as const,
-    chartTemplateCode: 'SMALL_BUSINESS_GENERAL',
+    chartTemplateCode: 'PROFESSIONAL_SERVICES',
   });
 
   async function cleanup() {
@@ -99,6 +102,10 @@ describe.runIf(enabled)('self-registration with MariaDB', () => {
       await prisma.rolePermission.deleteMany({ where: { roleId: { in: roles.map(({ id }) => id) } } });
       await prisma.role.deleteMany({ where: { companyId: { in: companyIds } } });
       await prisma.userCompany.deleteMany({ where: { companyId: { in: companyIds } } });
+      await prisma.companyAddress.deleteMany({ where: { companyId: { in: companyIds } } });
+      await prisma.companyTaxRegistration.deleteMany({ where: { companyId: { in: companyIds } } });
+      await prisma.companyRegistration.deleteMany({ where: { companyId: { in: companyIds } } });
+      await prisma.companyProfile.deleteMany({ where: { companyId: { in: companyIds } } });
       await prisma.companyCurrency.deleteMany({ where: { companyId: { in: companyIds } } });
       await prisma.account.updateMany({ where: { companyId: { in: companyIds } }, data: { parentAccountId: null } });
       await prisma.account.deleteMany({ where: { companyId: { in: companyIds } } });
@@ -204,6 +211,11 @@ describe.runIf(enabled)('self-registration with MariaDB', () => {
     const role = await prisma.role.findUniqueOrThrow({ where: { companyId_code: { companyId, code: 'ADMINISTRATOR' } }, include: { _count: { select: { permissions: true } } } });
     expect(role._count.permissions).toBe(permissionDefinitions.length);
     expect(await prisma.account.count({ where: { companyId, sourceTemplateCode: 'SMALL_BUSINESS_GENERAL' } })).toBe(defaultChartDefinitions.length);
+    expect(await prisma.account.count({ where: { companyId, sourceTemplateCode: 'PROFESSIONAL_SERVICES' } })).toBe(4);
+    expect(await prisma.companyProfile.findUnique({ where: { companyId } })).toMatchObject({
+      tradeName: 'شركة التسجيل', countryCode: 'YE', phone: '+9671000000',
+      initialChartTemplateCode: 'PROFESSIONAL_SERVICES', grandfatheredAt: null,
+    });
     expect(await prisma.securityEvent.count({ where: { companyId, eventType: 'SELF_REGISTRATION_COMPLETED' } })).toBe(1);
     await expect(service.verify(token)).resolves.toEqual(first);
     expect(await prisma.company.count({ where: { id: companyId } })).toBe(1);

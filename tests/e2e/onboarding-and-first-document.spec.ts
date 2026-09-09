@@ -72,9 +72,12 @@ test('self-registers, switches locale, configures currency, and creates the firs
   await registration.locator('[name="passwordConfirmation"]').fill(password);
   await registration.locator('[name="organizationName"]').fill(`E2E Organization ${runSuffix}`);
   await registration.locator('[name="companyName"]').fill(companyName);
+  await registration.locator('[name="phone"]').fill('+9671000000');
+  await registration.locator('[name="countryCode"]').selectOption('YE');
+  await registration.locator('[name="primaryBusinessActivityCode"]').selectOption('PROFESSIONAL_SERVICES');
   await registration.locator('[name="timezone"]').selectOption('Asia/Aden');
   await registration.locator('[name="baseCurrencyCode"]').selectOption('YER');
-  await registration.locator('[name="chartTemplateCode"]').selectOption({ index: 0 });
+  await registration.locator('[name="chartTemplateCode"]').selectOption('PROFESSIONAL_SERVICES');
   await registration.getByRole('button', { name: 'Send verification link' }).click();
   await expect(page.getByRole('heading', { name: 'Request received' })).toBeVisible();
 

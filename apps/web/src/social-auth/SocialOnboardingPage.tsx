@@ -20,20 +20,25 @@ import { Button, Spinner } from '../ui';
 import { useAuthAction } from '../use-auth-action';
 import './social-auth.css';
 
+type ExtendedSocialOnboardingOptions = SocialOnboardingOptions & {
+  countries: Array<{ code: string; nameAr: string; nameEn: string }>;
+  businessActivities: Array<{ code: string; nameAr: string; nameEn: string }>;
+};
+
 export function SocialOnboardingPage({ onCompleted, onBackToLogin }: {
   onCompleted: () => void;
   onBackToLogin: () => void;
 }) {
   const { dir, locale, setLocale, t } = useI18n();
   const brand = localizedBrand(t);
-  const [options, setOptions] = useState<SocialOnboardingOptions | null>(null);
+  const [options, setOptions] = useState<ExtendedSocialOnboardingOptions | null>(null);
   const [completed, setCompleted] = useState(false);
   const optionsAction = useAuthAction();
   const action = useAuthAction();
   const runOptions = optionsAction.run;
 
   const loadOptions = useCallback(() => {
-    void runOptions((signal) => socialOnboardingOptions({ signal }), { onSuccess: setOptions });
+    void runOptions((signal) => socialOnboardingOptions({ signal }), { onSuccess: (value) => setOptions(value as ExtendedSocialOnboardingOptions) });
   }, [runOptions]);
 
   useEffect(() => { loadOptions(); }, [loadOptions]);
@@ -42,16 +47,20 @@ export function SocialOnboardingPage({ onCompleted, onBackToLogin }: {
     event.preventDefault();
     if (!options || action.busy) return;
     const form = new FormData(event.currentTarget);
-    void action.run((signal) => completeSocialOnboarding({
+    const onboardingForm = {
       displayName: String(form.get('displayName')),
       organizationName: String(form.get('organizationName')),
       companyName: String(form.get('companyName')),
+      phone: String(form.get('phone')),
+      countryCode: String(form.get('countryCode')),
+      primaryBusinessActivityCode: String(form.get('primaryBusinessActivityCode')),
       timezone: String(form.get('timezone')),
       baseCurrencyCode: String(form.get('baseCurrencyCode')),
       locale,
       chartTemplateCode: String(form.get('chartTemplateCode')),
-      consent: true,
-    }, { signal, timeoutMs: 65_000 }), {
+      consent: true as const,
+    };
+    void action.run((signal) => completeSocialOnboarding(onboardingForm, { signal, timeoutMs: 65_000 }), {
       timeoutMs: 66_000,
       onSuccess: () => {
         setCompleted(true);
@@ -73,6 +82,8 @@ export function SocialOnboardingPage({ onCompleted, onBackToLogin }: {
   const defaultCurrency = options?.currencies.find((currency) => currency.code === 'SAR')?.code
     ?? options?.currencies[0]?.code;
   const defaultChart = options?.chartTemplates[0]?.code;
+  const defaultCountry = options?.countries.find((country) => country.code === 'YE')?.code ?? options?.countries[0]?.code;
+  const defaultActivity = options?.businessActivities.find((activity) => activity.code === 'PROFESSIONAL_SERVICES')?.code ?? options?.businessActivities[0]?.code;
   const optionExpired = optionsAction.error instanceof ApiError && optionsAction.error.status === 410;
   const actionCode = action.error instanceof ApiError ? action.error.code : undefined;
 
@@ -110,6 +121,9 @@ export function SocialOnboardingPage({ onCompleted, onBackToLogin }: {
               <label><span>{t('registration.displayName')}</span><input name="displayName" autoComplete="name" maxLength={160} required disabled={action.busy} /></label>
               <label><span>{t('registration.organizationName')}</span><input name="organizationName" maxLength={200} required disabled={action.busy} /></label>
               <label><span>{t('registration.companyName')}</span><input name="companyName" maxLength={200} required disabled={action.busy} /></label>
+              <label><span>{t('companyProfile.phone')}</span><input name="phone" type="tel" dir="ltr" autoComplete="tel" minLength={5} maxLength={40} required disabled={action.busy} /></label>
+              <label><span>{t('companyProfile.country')}</span><select name="countryCode" defaultValue={defaultCountry} disabled={action.busy}>{options.countries.map((country) => <option key={country.code} value={country.code}>{country.code} — {localizedReferenceName(country)}</option>)}</select></label>
+              <label><span>{t('companyProfile.primaryActivity')}</span><select name="primaryBusinessActivityCode" defaultValue={defaultActivity} disabled={action.busy}>{options.businessActivities.map((activity) => <option key={activity.code} value={activity.code}>{localizedReferenceName(activity)}</option>)}</select></label>
               <label><span>{t('registration.timezone')}</span><select name="timezone" defaultValue={defaultTimezone} disabled={action.busy}>{options.timezones.map((timezone) => <option key={timezone} value={timezone}>{timezone}</option>)}</select></label>
               <label><span>{t('registration.baseCurrency')}</span><select name="baseCurrencyCode" defaultValue={defaultCurrency} disabled={action.busy}>{options.currencies.map((currency) => <option key={currency.code} value={currency.code}>{currency.code} — {localizedReferenceName(currency)}</option>)}</select></label>
               <label><span>{t('registration.interfaceLanguage')}</span><select value={locale} onChange={(event) => setLocale(resolveLocale(event.target.value))} disabled={action.busy}>{supportedLocales.map((item) => <option key={item} value={item}>{localeDetails[item].nativeName}</option>)}</select></label>

@@ -4,6 +4,7 @@ import {
   type TenantCompanyProvisioningPort,
   type TenantProvisioningInput,
 } from "../platform/company-provisioning-ports.js";
+import { BusinessProfileProvisioningError, provisionCompanyBusinessProfile } from "./business-profile-provisioning.js";
 
 export class TenantCompanyProvisioningAdapter implements TenantCompanyProvisioningPort {
   async provisionTenant(tx: Prisma.TransactionClient, input: TenantProvisioningInput) {
@@ -38,6 +39,12 @@ export class TenantCompanyProvisioningAdapter implements TenantCompanyProvisioni
             timezone: input.timezone,
           },
         });
+    try {
+      await provisionCompanyBusinessProfile(tx, company.id, company.name, input.businessProfile);
+    } catch (error) {
+      if (error instanceof BusinessProfileProvisioningError) throw new CompanyProvisioningError("INVALID_BUSINESS_PROFILE");
+      throw error;
+    }
     await tx.companyCurrency.upsert({
       where: { companyId_currencyId: { companyId: company.id, currencyId: currency.id } },
       update: { isActive: true },

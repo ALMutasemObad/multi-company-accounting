@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { appendAudit } from '../audit/prisma-audit-append-adapter.js';
 import type { ActorContext } from '../platform/actor-context.js';
 import type { CompanyCurrencyUsageQueryPort } from './company-currency-usage-port.js';
+import { CompanyProfileService } from './company-profile-service.js';
 
 export type CompanyCurrencyErrorReason = 'CURRENCY_NOT_FOUND' | 'CURRENCY_NOT_ENABLED' | 'CURRENCY_CODE_EXISTS' | 'CURRENCY_IN_USE' | 'BASE_CURRENCY_RATE' | 'RATE_NOT_FOUND';
 
@@ -22,6 +23,8 @@ export const enabledCurrencyOptionsQuerySchema = z.object({
 export type EnabledCurrencyOptionsQuery = z.output<typeof enabledCurrencyOptionsQuerySchema>;
 
 export class CompanyService {
+  readonly profiles: CompanyProfileService;
+
   constructor(
     private readonly prisma: PrismaClient,
     private readonly currencyUsage: readonly CompanyCurrencyUsageQueryPort[],
@@ -29,6 +32,7 @@ export class CompanyService {
     if (currencyUsage.length === 0) {
       throw new TypeError('CompanyService requires at least one currency usage owner port');
     }
+    this.profiles = new CompanyProfileService(prisma);
   }
 
   get(context: ActorContext) {

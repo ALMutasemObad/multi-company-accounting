@@ -23,7 +23,7 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 360, requestBodies: 185, responseBodies: 2366 });
+    expect(openApiContractCoverage).toEqual({ operations: 364, requestBodies: 187, responseBodies: 2396 });
     expect(openApiOperationRoutes).toMatchObject({
       'GET /pos/context/identity': 'getPosContextIdentity',
       'GET /auth/social/accounts': 'getCurrentSocialAccounts',
@@ -35,13 +35,18 @@ describe('generated OpenAPI request guards', () => {
       'GET /organizations/{organizationId}/dashboard': 'getOrganizationDashboard',
       'GET /organizations/{organizationId}/company-options': 'getOrganizationCompanyOptions',
       'POST /organizations/{organizationId}/companies': 'createOrganizationCompany',
+      'GET /company-profile': 'getCompanyProfile',
+      'PATCH /company-profile': 'updateCompanyProfile',
+      'GET /company-compliance': 'getCompanyCompliance',
+      'PATCH /company-compliance': 'updateCompanyCompliance',
       'POST /auth/social/onboarding': 'completeSocialOnboarding',
       'DELETE /auth/social/onboarding': 'cancelSocialOnboarding',
     });
-    expect(guardedOpenApiOperations).toHaveLength(185);
+    expect(guardedOpenApiOperations).toHaveLength(187);
     expect(guardedOpenApiOperations).toContain('unlinkCurrentSocialAccount');
     expect(guardedOpenApiOperations).toContain('completeSocialOnboarding');
     expect(guardedOpenApiOperations).toContain('createOrganizationCompany');
+    expect(guardedOpenApiOperations).toEqual(expect.arrayContaining(['updateCompanyProfile', 'updateCompanyCompliance']));
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining(['createItemSellingProfile', 'updateItemSellingProfile']));
     expect(guardedOpenApiOperations).toContain("setPlatformSubscriptionPublicListing");
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining(["createOrganizationMember", "updateOrganizationMember"]));
@@ -496,8 +501,9 @@ describe('generated OpenAPI request guards', () => {
   it('enforces the public registration boundary from OpenAPI', () => {
     const registration = {
       email: ' owner@example.com ', password: 'a secure password', displayName: '  Owner  ',
-      organizationName: '  Group  ', companyName: '  Company  ', timezone: ' Asia/Aden ',
-      baseCurrencyCode: 'YER', locale: 'ar', chartTemplateCode: 'SMALL_BUSINESS_GENERAL',
+      organizationName: '  Group  ', companyName: '  Company  ', phone: ' +9671000000 ',
+      countryCode: 'ye', primaryBusinessActivityCode: ' PROFESSIONAL_SERVICES ', timezone: ' Asia/Aden ',
+      baseCurrencyCode: 'YER', locale: 'ar', chartTemplateCode: 'PROFESSIONAL_SERVICES',
     } as const;
     expect(startSelfRegistrationRequestSchema.parse(registration)).toMatchObject({ email: 'owner@example.com', displayName: 'Owner', timezone: 'Asia/Aden' });
     expect(startSelfRegistrationRequestSchema.safeParse({ ...registration, locale: 'ur' }).success).toBe(true);
@@ -508,6 +514,33 @@ describe('generated OpenAPI request guards', () => {
     expect(resendSelfRegistrationVerificationRequestSchema.parse({ email: ' owner@example.com ' })).toEqual({ email: 'owner@example.com' });
     expect(verifySelfRegistrationRequestSchema.safeParse({ token: 'x'.repeat(43) }).success).toBe(true);
     expect(verifySelfRegistrationRequestSchema.safeParse({ token: 'bad token' }).success).toBe(false);
+  });
+
+  it('strictly guards company profile and compliance updates without accepting binary branding data', () => {
+    expect(openApiRequestBodySchemas.updateCompanyProfile.parse({
+      version: 2, tradeName: '  Juwar  ', countryCode: 'ye', primaryBusinessActivityCode: ' PROFESSIONAL_SERVICES ',
+      phone: ' +9671000000 ', website: 'https://juwar.example',
+    })).toMatchObject({
+      version: 2, tradeName: 'Juwar', countryCode: 'ye',
+      primaryBusinessActivityCode: 'PROFESSIONAL_SERVICES', phone: '+9671000000',
+    });
+    expect(openApiRequestBodySchemas.updateCompanyProfile.safeParse({ version: 2, logoBase64: 'secret-binary' }).success).toBe(false);
+    expect(openApiRequestBodySchemas.updateCompanyCompliance.parse({
+      version: 1,
+      legalName: '  Juwar LLC  ',
+      commercialRegistration: {
+        documentType: 'COMMERCIAL_REGISTRATION', number: ' 1234567890 ', issuedAt: '2026-01-01', expiresAt: '2027-01-01',
+      },
+      nationalAddress: { countryCode: 'ye', city: '  Sana’a  ' },
+    })).toMatchObject({
+      version: 1, legalName: 'Juwar LLC',
+      commercialRegistration: { number: '1234567890' },
+      nationalAddress: { countryCode: 'ye', city: 'Sana’a' },
+    });
+    expect(openApiRequestBodySchemas.updateCompanyCompliance.safeParse({ version: 0 }).success).toBe(false);
+    expect(openApiRequestBodySchemas.updateCompanyCompliance.safeParse({
+      version: 0, commercialRegistration: { documentType: 'COMMERCIAL_REGISTRATION', scannedDocument: 'binary' },
+    }).success).toBe(false);
   });
 
   it('validates login with the compatibility limits declared in OpenAPI', () => {

@@ -37,6 +37,9 @@ export type SocialOnboardingInput = {
   baseCurrencyCode: string;
   locale: SupportedLocale;
   chartTemplateCode: string;
+  phone: string;
+  countryCode: string;
+  primaryBusinessActivityCode: string;
   consent: boolean;
 };
 
@@ -249,11 +252,16 @@ export class SocialAuthService {
     this.requireOnboarding();
     await this.validContinuation(input);
     const owners = this.options.onboarding!.owners;
+    const [currencies, businessActivities] = await Promise.all([
+      owners.tenant.listGlobalCurrencies(), owners.tenant.listBusinessActivities(),
+    ]);
     return {
-      currencies: await owners.tenant.listGlobalCurrencies(),
+      currencies,
       locales: emailTemplateLocales,
       timezones: [...new Set(['UTC', ...Intl.supportedValuesOf('timeZone')])],
       chartTemplates: owners.accounting.listChartTemplates(),
+      countries: owners.tenant.listCompanyCountries(),
+      businessActivities,
     };
   }
 
@@ -306,16 +314,19 @@ export class SocialAuthService {
           throw new SocialAuthError('ONBOARDING_INVALID');
         }
         const emailNormalized = profile.email!.value.trim().toLocaleLowerCase('en-US');
-        const [linkedIdentity, emailAccount, validCurrency] = await Promise.all([
+        const [linkedIdentity, emailAccount, validCurrency, validActivity] = await Promise.all([
           tx.externalIdentity.findUnique({
             where: { issuer_subject: { issuer: profile.identity.issuer, subject: profile.identity.subject } },
             select: { id: true },
           }),
           tx.user.findUnique({ where: { emailNormalized }, select: { id: true } }),
           onboarding.owners.tenant.isActiveGlobalCurrency(tx, form.baseCurrencyCode),
+          onboarding.owners.tenant.isActiveBusinessActivity(tx, form.primaryBusinessActivityCode),
         ]);
         if (linkedIdentity || emailAccount) return { kind: 'account_proof_required' as const };
-        if (!validCurrency || !onboarding.owners.accounting.isSupportedChartTemplate(form.chartTemplateCode)) {
+        if (!validCurrency || !validActivity
+          || !onboarding.owners.tenant.isSupportedCompanyCountry(form.countryCode)
+          || !onboarding.owners.accounting.isSupportedChartTemplate(form.chartTemplateCode)) {
           throw new SocialAuthError('INVALID_REQUEST');
         }
 
@@ -328,6 +339,13 @@ export class SocialAuthService {
           baseCurrencyCode: form.baseCurrencyCode,
           adminEmail: emailNormalized,
           adminDisplayName: form.displayName,
+          businessProfile: {
+            phone: form.phone,
+            countryCode: form.countryCode,
+            primaryBusinessActivityCode: form.primaryBusinessActivityCode,
+            preferredLocale: form.locale,
+            initialChartTemplateCode: form.chartTemplateCode,
+          },
         }, null, {
           requireNewAdminIdentity: true,
           externalIdentity: {
@@ -612,6 +630,9 @@ export class SocialAuthService {
       timezone: input.timezone.trim(),
       baseCurrencyCode: input.baseCurrencyCode.trim().toUpperCase(),
       chartTemplateCode: input.chartTemplateCode.trim(),
+      phone: input.phone.trim(),
+      countryCode: input.countryCode.trim().toUpperCase(),
+      primaryBusinessActivityCode: input.primaryBusinessActivityCode.trim(),
       locale: locale ?? input.locale,
     };
     let timezoneValid = true;
@@ -627,6 +648,9 @@ export class SocialAuthService {
       || !timezoneValid
       || !/^[A-Z]{3}$/u.test(normalized.baseCurrencyCode)
       || normalized.chartTemplateCode.length < 1 || normalized.chartTemplateCode.length > 80
+      || normalized.phone.length < 5 || normalized.phone.length > 40
+      || !/^[A-Z]{2}$/u.test(normalized.countryCode)
+      || normalized.primaryBusinessActivityCode.length < 1 || normalized.primaryBusinessActivityCode.length > 80
       || !locale) {
       throw new SocialAuthError('INVALID_REQUEST');
     }

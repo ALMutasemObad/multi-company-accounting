@@ -22,11 +22,14 @@ const form = {
   displayName: 'Social owner',
   organizationName: 'Social group',
   companyName: 'Social company',
+  phone: '+966500000000',
+  countryCode: 'SA',
+  primaryBusinessActivityCode: 'PROFESSIONAL_SERVICES',
   timezone: 'Asia/Riyadh',
   baseCurrencyCode: 'SAR',
   locale: 'en' as const,
-  chartTemplateCode: 'SMALL_BUSINESS_GENERAL',
-  consent: true,
+  chartTemplateCode: 'PROFESSIONAL_SERVICES',
+  consent: true as const,
 };
 
 describe.runIf(enabled)('social signup onboarding on a real database', () => {
@@ -136,6 +139,11 @@ describe.runIf(enabled)('social signup onboarding on a real database', () => {
       where: { organizationId_userId: { organizationId: assignment.company.organizationId, userId: identity.userId } },
     })).toMatchObject({ role: 'OWNER', isActive: true });
     expect(await db!.account.count({ where: { companyId: assignment.companyId } })).toBeGreaterThan(0);
+    expect(await db!.account.count({ where: { companyId: assignment.companyId, sourceTemplateCode: 'PROFESSIONAL_SERVICES' } })).toBe(4);
+    expect(await db!.companyProfile.findUnique({ where: { companyId: assignment.companyId } })).toMatchObject({
+      tradeName: 'Social company', countryCode: 'SA', phone: '+966500000000',
+      initialChartTemplateCode: 'PROFESSIONAL_SERVICES', grandfatheredAt: null,
+    });
     expect(await db!.platformSubscription.findUnique({ where: { companyId: assignment.companyId } })).toMatchObject({ planVersionId: startPlan.version.id });
     expect(await db!.session.count({ where: { userId: identity.userId, revokedAt: null } })).toBe(1);
     expect(await db!.company.count({ where: { organizationId: assignment.company.organizationId } })).toBe(1);

@@ -6,11 +6,12 @@ import { GroupCompanyOnboardingService } from "../organizations/group-company-on
 import { PrismaNewCompanySubscriptionProvisioningAdapter } from "../platform-subscriptions/prisma-new-company-subscription-provisioning-adapter.js";
 import { TreasuryCompanyProvisioningAdapter } from "../treasury/company-provisioning-adapter.js";
 import { GroupCompanyOnboardingIdentityAdapter } from "../users/group-company-onboarding-identity-adapter.js";
+import { RegistrationAccountingAdapter } from "../accounts/registration-accounting-adapter.js";
 
 export function createGroupCompanyOnboardingService(prisma: PrismaClient, startPlanVersionId = process.env.PLATFORM_SUBSCRIPTION_START_PLAN_VERSION_ID) {
   return new GroupCompanyOnboardingService(prisma, {
     tenant: new GroupCompanyOnboardingTenantAdapter(prisma), identity: new GroupCompanyOnboardingIdentityAdapter(),
-    accounting: new AccountingCompanyProvisioningAdapter(), treasury: new TreasuryCompanyProvisioningAdapter(),
+    accounting: new AccountingCompanyProvisioningAdapter(), accountingOptions: new RegistrationAccountingAdapter(), treasury: new TreasuryCompanyProvisioningAdapter(),
     subscriptions: new PrismaNewCompanySubscriptionProvisioningAdapter(startPlanVersionId), audit: new PrismaAuditAppendAdapter(),
   });
 }

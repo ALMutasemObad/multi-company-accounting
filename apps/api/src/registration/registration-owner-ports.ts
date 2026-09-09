@@ -6,6 +6,9 @@ export type RegistrationCurrencyOption = {
   decimals: number;
 };
 
+export type RegistrationCountryOption = { code: string; nameAr: string; nameEn: string };
+export type RegistrationBusinessActivityOption = { code: string; nameAr: string; nameEn: string };
+
 export type RegistrationChartTemplateOption = {
   code: string;
   nameAr: string;
@@ -14,7 +17,11 @@ export type RegistrationChartTemplateOption = {
 
 export interface RegistrationTenantPort {
   listGlobalCurrencies(): Promise<RegistrationCurrencyOption[]>;
+  listCompanyCountries(): readonly RegistrationCountryOption[];
+  listBusinessActivities(): Promise<RegistrationBusinessActivityOption[]>;
   isActiveGlobalCurrency(tx: Prisma.TransactionClient, code: string): Promise<boolean>;
+  isSupportedCompanyCountry(code: string): boolean;
+  isActiveBusinessActivity(tx: Prisma.TransactionClient, code: string): Promise<boolean>;
 }
 
 export interface RegistrationIdentityPort {

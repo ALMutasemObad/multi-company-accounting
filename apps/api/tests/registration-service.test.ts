@@ -13,6 +13,9 @@ const input = {
   displayName: 'Owner',
   organizationName: 'Owner Group',
   companyName: 'Owner Company',
+  phone: '+9671000000',
+  countryCode: 'YE',
+  primaryBusinessActivityCode: 'PROFESSIONAL_SERVICES',
   timezone: 'Asia/Aden',
   baseCurrencyCode: 'YER',
   locale: 'ar' as const,
@@ -34,7 +37,11 @@ function fixture(existingUser = false) {
   const owners: RegistrationOwnerPorts = {
     tenant: {
       listGlobalCurrencies: vi.fn().mockResolvedValue([]),
+      listCompanyCountries: vi.fn().mockResolvedValue([]),
+      listBusinessActivities: vi.fn().mockResolvedValue([]),
       isActiveGlobalCurrency: vi.fn().mockResolvedValue(true),
+      isSupportedCompanyCountry: vi.fn().mockResolvedValue(true),
+      isActiveBusinessActivity: vi.fn().mockResolvedValue(true),
     },
     identity: { identityExists: vi.fn().mockResolvedValue(existingUser) },
     accounting: {

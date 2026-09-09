@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { defaultChartDefinitions } from '../src/accounts/default-chart-template.js';
+import {
+  chartTemplateCatalog,
+  defaultChartDefinitions,
+  isSupportedChartTemplate,
+  onboardingChartTemplates,
+} from '../src/accounts/default-chart-template.js';
 
 describe('default chart template contract', () => {
   it('has stable unique keys and codes with parents declared before children', () => {
@@ -24,5 +29,18 @@ describe('default chart template contract', () => {
       if (parentKeys.has(definition.key)) expect(definition.allowsPosting).toBe(false);
       if (definition.isControlAccount) expect(definition.allowsPosting).toBe(true);
     }
+  });
+
+  it('offers the three business-specific onboarding templates while preserving the legacy code', () => {
+    expect(onboardingChartTemplates().map(({ code }) => code)).toEqual([
+      'PROFESSIONAL_SERVICES',
+      'RETAIL_INVENTORY',
+      'MANUFACTURING',
+    ]);
+    expect(chartTemplateCatalog.find(({ code }) => code === 'SMALL_BUSINESS_GENERAL')).toMatchObject({ availableForOnboarding: false });
+    for (const code of ['PROFESSIONAL_SERVICES', 'RETAIL_INVENTORY', 'MANUFACTURING', 'SMALL_BUSINESS_GENERAL']) {
+      expect(isSupportedChartTemplate(code)).toBe(true);
+    }
+    expect(isSupportedChartTemplate('UNVERIFIED_TEMPLATE')).toBe(false);
   });
 });

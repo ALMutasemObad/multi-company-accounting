@@ -10,7 +10,7 @@ describe('social account linking migration', () => {
       readFile(new URL('migration.sql', migrationRoot), 'utf8'),
       readFile(new URL('../prisma/schema.prisma', import.meta.url), 'utf8'),
     ]);
-    expect(directories.filter((entry) => entry.isDirectory())).toHaveLength(74);
+    expect(directories.filter((entry) => entry.isDirectory())).toHaveLength(75);
     expect(migration).toContain('ADD UNIQUE INDEX `ext_identity_user_provider_key` (`user_id`, `provider`)');
     expect(migration).not.toMatch(/\b(?:DELETE|UPDATE|REPLACE)\b/iu);
     expect(schema).toContain('@@unique([userId, provider], map: "ext_identity_user_provider_key")');

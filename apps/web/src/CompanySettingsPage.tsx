@@ -15,6 +15,7 @@ import { Button,
   Spinner,
   PageHeader,
 } from "./ui";
+import { CompanyProfilePanel } from "./company-profile/CompanyProfilePanel";
 
 type Notice = (message: string, tone?: "success" | "error") => void;
 
@@ -204,6 +205,8 @@ export function CompanySettingsPage({ notify }: { notify: Notice }) {
       <PageHeader kicker={t("settings.kicker")} title={t("settings.title")} description={t("settings.description")} />
 
       {error && <div className="form-error" role="alert">{error}</div>}
+
+      <CompanyProfilePanel notify={notify} />
 
       <form className="settings-card" onSubmit={submitCompany}>
         <div className="form-grid">

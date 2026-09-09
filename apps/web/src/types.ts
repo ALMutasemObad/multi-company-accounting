@@ -238,6 +238,62 @@ export type SubscriptionSnapshot = {
 };
 export type SubscriptionCatalog = { plans: SubscriptionPlanVersion[]; meta: PageMeta };
 export type CompanyDetails = { id: string; name: string; baseCurrencyId: string; baseCurrency: { code: string; nameAr: string }; timezone: string; isActive: boolean; manualJournalMakerCheckerEnabled: boolean; updatedAt: string };
+export type CompanyProfileReadiness = {
+  policyVersion: string;
+  enforcementMode: "ADVISORY";
+  grandfathered: boolean;
+  completedRequirements: number;
+  totalRequirements: number;
+  missingRequirements: string[];
+  requirements: Array<{
+    code: string;
+    level: "BASIC" | "OPERATIONAL" | "COMMERCIAL" | "REGULATED";
+    status: "COMPLETE" | "MISSING" | "OPTIONAL" | "NOT_APPLICABLE";
+    blocking: false;
+    reason: string;
+  }>;
+};
+export type CompanyBrandingAssetCapability = {
+  kind: "LOGO" | "LETTERHEAD";
+  status: "STORAGE_POLICY_REQUIRED";
+  uploadSupported: false;
+  metadataAccepted: false;
+};
+export type CompanyProfileResponse = {
+  profile: {
+    companyId: string; tradeName: string | null; countryCode: string | null; preferredLocale: string | null;
+    phone: string | null; email: string | null; website: string | null; primaryContactName: string | null;
+    primaryBusinessActivity: { code: string; nameAr: string; nameEn: string } | null;
+    initialChartTemplateCode: string | null; grandfatheredAt: string | null; version: number; updatedAt: string;
+  };
+  readiness: CompanyProfileReadiness;
+  brandingAssets: CompanyBrandingAssetCapability[];
+  options: {
+    countries: Array<{ code: string; nameAr: string; nameEn: string }>;
+    activities: Array<{ code: string; nameAr: string; nameEn: string }>;
+  };
+};
+export type CompanyComplianceResponse = {
+  version: number;
+  legalName: string | null;
+  legalForm: string | null;
+  commercialRegistration: null | {
+    id: string; documentType: string; numberLast4: string | null; issuingAuthority: string | null;
+    issuedAt: string | null; expiresAt: string | null; status: "DECLARED" | "VERIFIED" | "REJECTED" | "EXPIRED";
+    renewalStatus: "NOT_APPLICABLE" | "CURRENT" | "DUE_SOON" | "EXPIRED"; verifiedAt: string | null; updatedAt: string;
+  };
+  taxRegistration: null | {
+    id: string; registrationType: string; countryCode: string; numberLast4: string | null;
+    issuedAt: string | null; expiresAt: string | null; status: "DECLARED" | "VERIFIED" | "REJECTED" | "EXPIRED";
+    renewalStatus: "NOT_APPLICABLE" | "CURRENT" | "DUE_SOON" | "EXPIRED"; verifiedAt: string | null; updatedAt: string;
+  };
+  nationalAddress: null | {
+    id: string; line1: string | null; line2: string | null; district: string | null; city: string | null;
+    subdivision: string | null; postalCode: string | null; countryCode: string; displayAddress: string | null; updatedAt: string;
+  };
+  readiness: CompanyProfileReadiness;
+  brandingAssets: CompanyBrandingAssetCapability[];
+};
 export type AuditLog = { id: string; actor: { id: string; name: string; email: string }; action: string; entityType: string; entityId: string; details: Record<string, unknown> | null; createdAt: string };
 export type AuditOptions = { actions: string[]; entityTypes: string[]; users: Array<{ id: string; name: string; email: string }> };
 export type SecuritySeverity = "INFO" | "WARNING" | "HIGH" | "CRITICAL";

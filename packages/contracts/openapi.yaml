@@ -2508,6 +2508,84 @@ paths:
         CsrfToken: []
       parameters:
       - $ref: '#/components/parameters/RequestId'
+  /company-profile:
+    get:
+      tags: [Companies]
+      summary: عرض الملف التجاري والجاهزية الإرشادية للشركة الحالية
+      operationId: getCompanyProfile
+      x-permission: companies.profile.view
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200': { description: الملف التجاري, content: { application/json: { schema: { $ref: '#/components/schemas/CompanyProfileResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    patch:
+      tags: [Companies]
+      summary: تعديل الملف التجاري بنسخة تفاؤلية
+      operationId: updateCompanyProfile
+      x-permission: companies.profile.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompanyProfileUpdateRequest' }
+      responses:
+        '200': { description: الملف التجاري بعد التعديل, content: { application/json: { schema: { $ref: '#/components/schemas/CompanyProfileResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /company-compliance:
+    get:
+      tags: [Companies]
+      summary: عرض البيانات النظامية المقيدة للشركة الحالية
+      operationId: getCompanyCompliance
+      x-permission: companies.compliance.view
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200': { description: البيانات النظامية مع الأرقام المقنعة, content: { application/json: { schema: { $ref: '#/components/schemas/CompanyComplianceResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    patch:
+      tags: [Companies]
+      summary: تعديل البيانات النظامية بنسخة تفاؤلية وتدقيق منقح
+      operationId: updateCompanyCompliance
+      x-permission: companies.compliance.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompanyComplianceUpdateRequest' }
+      responses:
+        '200': { description: البيانات النظامية بعد التعديل, content: { application/json: { schema: { $ref: '#/components/schemas/CompanyComplianceResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
   /settings:
     get:
       tags:
@@ -11270,11 +11348,14 @@ components:
     SocialOnboardingCompleteRequest:
       type: object
       additionalProperties: false
-      required: [displayName, organizationName, companyName, timezone, baseCurrencyCode, locale, chartTemplateCode, consent]
+      required: [displayName, organizationName, companyName, phone, countryCode, primaryBusinessActivityCode, timezone, baseCurrencyCode, locale, chartTemplateCode, consent]
       properties:
         displayName: { type: string, minLength: 1, maxLength: 160, x-trim: true }
         organizationName: { type: string, minLength: 1, maxLength: 200, x-trim: true }
         companyName: { type: string, minLength: 1, maxLength: 200, x-trim: true }
+        phone: { type: string, minLength: 5, maxLength: 40, x-trim: true }
+        countryCode: { type: string, pattern: '^[A-Za-z]{2}$', x-trim: true }
+        primaryBusinessActivityCode: { type: string, minLength: 1, maxLength: 80, x-trim: true }
         timezone: { type: string, minLength: 1, maxLength: 64, x-trim: true }
         baseCurrencyCode: { type: string, pattern: '^[A-Z]{3}$', x-trim: true }
         locale: { type: string, minLength: 2, maxLength: 35, pattern: '^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$' }
@@ -11283,7 +11364,7 @@ components:
     SocialOnboardingOptionsResponse:
       type: object
       additionalProperties: false
-      required: [currencies, locales, timezones, chartTemplates]
+      required: [currencies, locales, timezones, chartTemplates, countries, businessActivities]
       properties:
         currencies:
           type: array
@@ -11303,6 +11384,26 @@ components:
           type: array
           items: { type: string }
         chartTemplates:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, nameAr, nameEn]
+            properties:
+              code: { type: string }
+              nameAr: { type: string }
+              nameEn: { type: string }
+        countries:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, nameAr, nameEn]
+            properties:
+              code: { type: string, pattern: '^[A-Z]{2}$' }
+              nameAr: { type: string }
+              nameEn: { type: string }
+        businessActivities:
           type: array
           items:
             type: object
@@ -11350,13 +11451,16 @@ components:
     RegistrationStartRequest:
       type: object
       additionalProperties: false
-      required: [email, password, displayName, organizationName, companyName, timezone, baseCurrencyCode, locale, chartTemplateCode]
+      required: [email, password, displayName, organizationName, companyName, phone, countryCode, primaryBusinessActivityCode, timezone, baseCurrencyCode, locale, chartTemplateCode]
       properties:
         email: { type: string, format: email, maxLength: 320, x-trim: true }
         password: { type: string, minLength: 12, maxLength: 1024 }
         displayName: { type: string, minLength: 1, maxLength: 160, x-trim: true }
         organizationName: { type: string, minLength: 1, maxLength: 200, x-trim: true }
         companyName: { type: string, minLength: 1, maxLength: 200, x-trim: true }
+        phone: { type: string, minLength: 5, maxLength: 40, x-trim: true }
+        countryCode: { type: string, pattern: '^[A-Za-z]{2}$', x-trim: true }
+        primaryBusinessActivityCode: { type: string, minLength: 1, maxLength: 80, x-trim: true }
         timezone: { type: string, minLength: 1, maxLength: 64, x-trim: true }
         baseCurrencyCode: { type: string, pattern: '^[A-Z]{3}$', x-trim: true }
         locale: { type: string, minLength: 2, maxLength: 35, pattern: '^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$' }
@@ -11396,7 +11500,7 @@ components:
     RegistrationOptionsResponse:
       type: object
       additionalProperties: false
-      required: [currencies, locales, timezones, chartTemplates, passwordPolicy]
+      required: [currencies, locales, timezones, chartTemplates, countries, businessActivities, passwordPolicy]
       properties:
         currencies:
           type: array
@@ -11416,6 +11520,26 @@ components:
           type: array
           items: { type: string }
         chartTemplates:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, nameAr, nameEn]
+            properties:
+              code: { type: string }
+              nameAr: { type: string }
+              nameEn: { type: string }
+        countries:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, nameAr, nameEn]
+            properties:
+              code: { type: string, pattern: '^[A-Z]{2}$' }
+              nameAr: { type: string }
+              nameEn: { type: string }
+        businessActivities:
           type: array
           items:
             type: object
@@ -13232,9 +13356,13 @@ components:
     OrganizationCompanyCreateRequest:
       type: object
       additionalProperties: false
-      required: [companyName, timezone, baseCurrencyCode]
+      required: [companyName, phone, countryCode, primaryBusinessActivityCode, chartTemplateCode, timezone, baseCurrencyCode]
       properties:
         companyName: { type: string, minLength: 1, maxLength: 200, x-trim: true }
+        phone: { type: string, minLength: 5, maxLength: 40, x-trim: true }
+        countryCode: { type: string, pattern: '^[A-Za-z]{2}$', x-trim: true }
+        primaryBusinessActivityCode: { type: string, minLength: 1, maxLength: 80, x-trim: true }
+        chartTemplateCode: { type: string, minLength: 1, maxLength: 80, x-trim: true }
         timezone: { type: string, minLength: 1, maxLength: 64, x-trim: true }
         baseCurrencyCode: { type: string, pattern: '^[A-Z]{3}$' }
     OrganizationCompanyCreated:
@@ -13256,7 +13384,7 @@ components:
     OrganizationCompanyOptions:
       type: object
       additionalProperties: false
-      required: [currencies, timezones]
+      required: [currencies, countries, businessActivities, chartTemplates, timezones]
       properties:
         currencies:
           type: array
@@ -13270,6 +13398,36 @@ components:
         timezones:
           type: array
           items: { type: string }
+        countries:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, nameAr, nameEn]
+            properties:
+              code: { type: string, pattern: '^[A-Z]{2}$' }
+              nameAr: { type: string }
+              nameEn: { type: string }
+        businessActivities:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, nameAr, nameEn]
+            properties:
+              code: { type: string }
+              nameAr: { type: string }
+              nameEn: { type: string }
+        chartTemplates:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, nameAr, nameEn]
+            properties:
+              code: { type: string }
+              nameAr: { type: string }
+              nameEn: { type: string }
     OrganizationDashboard:
       type: object
       additionalProperties: false
@@ -13409,6 +13567,225 @@ components:
           maxLength: 64
           example: Asia/Riyadh
           description: معرّف منطقة زمنية IANA.
+    CompanyProfileReadiness:
+      type: object
+      additionalProperties: false
+      required: [policyVersion, enforcementMode, grandfathered, completedRequirements, totalRequirements, missingRequirements, requirements]
+      properties:
+        policyVersion: { type: string }
+        enforcementMode: { type: string, enum: [ADVISORY] }
+        grandfathered: { type: boolean }
+        completedRequirements: { type: integer, minimum: 0 }
+        totalRequirements: { type: integer, minimum: 0 }
+        missingRequirements:
+          type: array
+          items: { type: string }
+        requirements:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, level, status, blocking, reason]
+            properties:
+              code: { type: string }
+              level: { type: string, enum: [BASIC, OPERATIONAL, COMMERCIAL, REGULATED] }
+              status: { type: string, enum: [COMPLETE, MISSING, OPTIONAL, NOT_APPLICABLE] }
+              blocking: { type: boolean, const: false }
+              reason: { type: string }
+    CompanyBrandingAssetCapability:
+      type: object
+      additionalProperties: false
+      required: [kind, status, uploadSupported, metadataAccepted]
+      properties:
+        kind: { type: string, enum: [LOGO, LETTERHEAD] }
+        status: { type: string, enum: [STORAGE_POLICY_REQUIRED] }
+        uploadSupported: { type: boolean, const: false }
+        metadataAccepted: { type: boolean, const: false }
+    CompanyProfileOptions:
+      type: object
+      additionalProperties: false
+      required: [countries, activities]
+      properties:
+        countries:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, nameAr, nameEn]
+            properties:
+              code: { type: string, pattern: '^[A-Z]{2}$' }
+              nameAr: { type: string }
+              nameEn: { type: string }
+        activities:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, nameAr, nameEn]
+            properties:
+              code: { type: string, minLength: 1, maxLength: 80 }
+              nameAr: { type: string }
+              nameEn: { type: string }
+    CompanyProfileResponse:
+      type: object
+      additionalProperties: false
+      required: [profile, readiness, brandingAssets, options]
+      properties:
+        profile:
+          type: object
+          additionalProperties: false
+          required: [companyId, tradeName, countryCode, preferredLocale, phone, email, website, primaryContactName, primaryBusinessActivity, initialChartTemplateCode, grandfatheredAt, version, updatedAt]
+          properties:
+            companyId: { $ref: '#/components/schemas/Id' }
+            tradeName: { type: [string, 'null'], maxLength: 200 }
+            countryCode: { type: [string, 'null'], pattern: '^[A-Z]{2}$' }
+            preferredLocale: { type: [string, 'null'], maxLength: 35 }
+            phone: { type: [string, 'null'], maxLength: 40 }
+            email: { type: [string, 'null'], maxLength: 320 }
+            website: { type: [string, 'null'], maxLength: 500 }
+            primaryContactName: { type: [string, 'null'], maxLength: 160 }
+            primaryBusinessActivity:
+              oneOf:
+              - type: object
+                additionalProperties: false
+                required: [code, nameAr, nameEn]
+                properties:
+                  code: { type: string }
+                  nameAr: { type: string }
+                  nameEn: { type: string }
+              - type: 'null'
+            initialChartTemplateCode: { type: [string, 'null'], maxLength: 80 }
+            grandfatheredAt: { type: [string, 'null'], format: date-time }
+            version: { type: integer, minimum: 0 }
+            updatedAt: { type: string, format: date-time }
+        readiness: { $ref: '#/components/schemas/CompanyProfileReadiness' }
+        brandingAssets:
+          type: array
+          items: { $ref: '#/components/schemas/CompanyBrandingAssetCapability' }
+        options: { $ref: '#/components/schemas/CompanyProfileOptions' }
+    CompanyProfileUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      minProperties: 2
+      properties:
+        version: { type: integer, minimum: 0 }
+        tradeName: { type: [string, 'null'], minLength: 1, maxLength: 200, x-trim: true }
+        countryCode: { type: [string, 'null'], pattern: '^[A-Za-z]{2}$', x-trim: true }
+        primaryBusinessActivityCode: { type: [string, 'null'], minLength: 1, maxLength: 80, x-trim: true }
+        preferredLocale: { type: [string, 'null'], minLength: 2, maxLength: 35, x-trim: true }
+        phone: { type: [string, 'null'], minLength: 5, maxLength: 40, x-trim: true }
+        email: { type: [string, 'null'], format: email, maxLength: 320, x-trim: true }
+        website: { type: [string, 'null'], pattern: '^https?://', maxLength: 500, x-trim: true }
+        primaryContactName: { type: [string, 'null'], minLength: 1, maxLength: 160, x-trim: true }
+    CompanyRegistrationRecord:
+      type: object
+      additionalProperties: false
+      required: [id, documentType, numberLast4, issuingAuthority, issuedAt, expiresAt, status, renewalStatus, verifiedAt, updatedAt]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        documentType: { type: string, maxLength: 80 }
+        numberLast4: { type: [string, 'null'], maxLength: 4 }
+        issuingAuthority: { type: [string, 'null'], maxLength: 200 }
+        issuedAt: { type: [string, 'null'], format: date }
+        expiresAt: { type: [string, 'null'], format: date }
+        status: { type: string, enum: [DECLARED, VERIFIED, REJECTED, EXPIRED] }
+        renewalStatus: { type: string, enum: [NOT_APPLICABLE, CURRENT, DUE_SOON, EXPIRED] }
+        verifiedAt: { type: [string, 'null'], format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CompanyTaxRegistrationRecord:
+      type: object
+      additionalProperties: false
+      required: [id, registrationType, countryCode, numberLast4, issuedAt, expiresAt, status, renewalStatus, verifiedAt, updatedAt]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        registrationType: { type: string, maxLength: 80 }
+        countryCode: { type: string, pattern: '^[A-Z]{2}$' }
+        numberLast4: { type: [string, 'null'], maxLength: 4 }
+        issuedAt: { type: [string, 'null'], format: date }
+        expiresAt: { type: [string, 'null'], format: date }
+        status: { type: string, enum: [DECLARED, VERIFIED, REJECTED, EXPIRED] }
+        renewalStatus: { type: string, enum: [NOT_APPLICABLE, CURRENT, DUE_SOON, EXPIRED] }
+        verifiedAt: { type: [string, 'null'], format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CompanyNationalAddress:
+      type: object
+      additionalProperties: false
+      required: [id, line1, line2, district, city, subdivision, postalCode, countryCode, displayAddress, updatedAt]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        line1: { type: [string, 'null'], maxLength: 200 }
+        line2: { type: [string, 'null'], maxLength: 200 }
+        district: { type: [string, 'null'], maxLength: 120 }
+        city: { type: [string, 'null'], maxLength: 120 }
+        subdivision: { type: [string, 'null'], maxLength: 120 }
+        postalCode: { type: [string, 'null'], maxLength: 40 }
+        countryCode: { type: string, pattern: '^[A-Z]{2}$' }
+        displayAddress: { type: [string, 'null'], maxLength: 500 }
+        updatedAt: { type: string, format: date-time }
+    CompanyComplianceResponse:
+      type: object
+      additionalProperties: false
+      required: [version, legalName, legalForm, commercialRegistration, taxRegistration, nationalAddress, readiness, brandingAssets]
+      properties:
+        version: { type: integer, minimum: 0 }
+        legalName: { type: [string, 'null'], maxLength: 200 }
+        legalForm: { type: [string, 'null'], maxLength: 100 }
+        commercialRegistration:
+          oneOf: [{ $ref: '#/components/schemas/CompanyRegistrationRecord' }, { type: 'null' }]
+        taxRegistration:
+          oneOf: [{ $ref: '#/components/schemas/CompanyTaxRegistrationRecord' }, { type: 'null' }]
+        nationalAddress:
+          oneOf: [{ $ref: '#/components/schemas/CompanyNationalAddress' }, { type: 'null' }]
+        readiness: { $ref: '#/components/schemas/CompanyProfileReadiness' }
+        brandingAssets:
+          type: array
+          items: { $ref: '#/components/schemas/CompanyBrandingAssetCapability' }
+    CompanyRegistrationUpdate:
+      type: object
+      additionalProperties: false
+      required: [documentType]
+      properties:
+        documentType: { type: string, minLength: 1, maxLength: 80, x-trim: true }
+        number: { type: [string, 'null'], minLength: 1, maxLength: 64, x-trim: true, writeOnly: true }
+        issuingAuthority: { type: [string, 'null'], maxLength: 200, x-trim: true }
+        issuedAt: { type: [string, 'null'], format: date }
+        expiresAt: { type: [string, 'null'], format: date }
+    CompanyTaxRegistrationUpdate:
+      type: object
+      additionalProperties: false
+      required: [registrationType, countryCode]
+      properties:
+        registrationType: { type: string, minLength: 1, maxLength: 80, x-trim: true }
+        countryCode: { type: string, pattern: '^[A-Za-z]{2}$', x-trim: true }
+        number: { type: [string, 'null'], minLength: 1, maxLength: 64, x-trim: true, writeOnly: true }
+        issuedAt: { type: [string, 'null'], format: date }
+        expiresAt: { type: [string, 'null'], format: date }
+    CompanyNationalAddressUpdate:
+      type: object
+      additionalProperties: false
+      required: [countryCode]
+      properties:
+        line1: { type: [string, 'null'], maxLength: 200, x-trim: true }
+        line2: { type: [string, 'null'], maxLength: 200, x-trim: true }
+        district: { type: [string, 'null'], maxLength: 120, x-trim: true }
+        city: { type: [string, 'null'], maxLength: 120, x-trim: true }
+        subdivision: { type: [string, 'null'], maxLength: 120, x-trim: true }
+        postalCode: { type: [string, 'null'], maxLength: 40, x-trim: true }
+        countryCode: { type: string, pattern: '^[A-Za-z]{2}$', x-trim: true }
+        displayAddress: { type: [string, 'null'], maxLength: 500, x-trim: true }
+    CompanyComplianceUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      minProperties: 2
+      properties:
+        version: { type: integer, minimum: 0 }
+        legalName: { type: [string, 'null'], minLength: 1, maxLength: 200, x-trim: true }
+        legalForm: { type: [string, 'null'], minLength: 1, maxLength: 100, x-trim: true }
+        commercialRegistration: { $ref: '#/components/schemas/CompanyRegistrationUpdate' }
+        taxRegistration: { $ref: '#/components/schemas/CompanyTaxRegistrationUpdate' }
+        nationalAddress: { $ref: '#/components/schemas/CompanyNationalAddressUpdate' }
     Setting:
       type: object
       required:

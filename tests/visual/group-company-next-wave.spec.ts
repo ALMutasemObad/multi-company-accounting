@@ -18,6 +18,28 @@ for (const locale of ["ar", "en", "ur", "hi"] as const) {
   test(`${locale}: group company creation is discoverable and bounded`, async ({ page }, testInfo) => {
     test.skip(!supportedProjects.has(testInfo.project.name), "Group company evidence is maintained at 390 and 1440.");
     await page.addInitScript((selectedLocale) => localStorage.setItem("mcap.locale", selectedLocale), locale);
+    await page.route("**/api/v1/organizations/501/company-options", route => route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        currencies: [
+          { code: "SAR", nameAr: "ريال سعودي", decimals: 2 },
+          { code: "USD", nameAr: "دولار أمريكي", decimals: 2 },
+        ],
+        countries: [{ code: "YE", nameAr: "اليمن", nameEn: "Yemen" }, { code: "SA", nameAr: "السعودية", nameEn: "Saudi Arabia" }],
+        businessActivities: [
+          { code: "PROFESSIONAL_SERVICES", nameAr: "خدمات مهنية", nameEn: "Professional services" },
+          { code: "RETAIL_TRADE", nameAr: "تجارة التجزئة", nameEn: "Retail trade" },
+          { code: "MANUFACTURING", nameAr: "إنتاج وتصنيع", nameEn: "Manufacturing" },
+        ],
+        chartTemplates: [
+          { code: "PROFESSIONAL_SERVICES", nameAr: "دليل الخدمات المهنية", nameEn: "Professional services chart" },
+          { code: "RETAIL_INVENTORY", nameAr: "دليل التجزئة والمخزون", nameEn: "Retail and inventory chart" },
+          { code: "MANUFACTURING", nameAr: "دليل الإنتاج والتصنيع", nameEn: "Manufacturing chart" },
+        ],
+        timezones: ["Asia/Riyadh", "UTC"],
+      }),
+    }));
     await page.goto("/?qa=organization-owner#organizationOwner");
 
     const workspace = page.locator(".organization-owner-page");
@@ -28,6 +50,10 @@ for (const locale of ["ar", "en", "ur", "hi"] as const) {
     await expect(creation.getByRole("heading", { name: dictionaries[locale]["organization.create.title"] })).toBeVisible();
     await expect(creation.locator(".group-company-boundary")).toContainText(dictionaries[locale]["organization.create.boundary"]);
     await expect(creation.locator('input[name="companyName"]')).toBeVisible();
+    await expect(creation.locator('input[name="phone"]')).toBeVisible();
+    await expect(creation.locator('select[name="countryCode"]')).toBeVisible();
+    await expect(creation.locator('select[name="primaryBusinessActivityCode"]')).toBeVisible();
+    await expect(creation.locator('select[name="chartTemplateCode"]')).toBeVisible();
     await expect(creation.locator('select[name="timezone"]')).toBeVisible();
     await expect(creation.locator('select[name="baseCurrencyCode"]')).toBeVisible();
 

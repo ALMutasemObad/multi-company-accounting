@@ -5,7 +5,7 @@ import type { CompanyProvisioningPort } from "../src/platform/company-provisioni
 
 describe("registration remains non-enumerating when directing users to sign in", () => {
   it("returns the identical accepted state without scheduling mail for an existing identity", async () => {
-    const input = { email: "owner@example.test", password: "a-long-test-password", displayName: "Owner", organizationName: "Group", companyName: "Company", timezone: "UTC", baseCurrencyCode: "SAR", locale: "ar" as const, chartTemplateCode: "SMALL_BUSINESS_GENERAL" };
+    const input = { email: "owner@example.test", password: "a-long-test-password", displayName: "Owner", organizationName: "Group", companyName: "Company", phone: "+966500000000", countryCode: "SA", primaryBusinessActivityCode: "PROFESSIONAL_SERVICES", timezone: "UTC", baseCurrencyCode: "SAR", locale: "ar" as const, chartTemplateCode: "PROFESSIONAL_SERVICES" };
     const responses: unknown[] = [];
     for (const exists of [false, true]) {
       const append = vi.fn().mockResolvedValue(undefined);
@@ -13,7 +13,10 @@ describe("registration remains non-enumerating when directing users to sign in",
       const tx = { registrationRequest: { upsert }, registrationEvent: { create: vi.fn() } };
       const prisma = { registrationRequest: { deleteMany: vi.fn() }, $transaction: async (work: (client: typeof tx) => unknown) => work(tx) } as unknown as PrismaClient;
       const service = new RegistrationService(prisma, {} as CompanyProvisioningPort, { append }, {
-        identity: { identityExists: async () => exists }, tenant: { listGlobalCurrencies: async () => [], isActiveGlobalCurrency: async () => true },
+        identity: { identityExists: async () => exists }, tenant: {
+          listGlobalCurrencies: async () => [], listCompanyCountries: () => [], listBusinessActivities: async () => [],
+          isActiveGlobalCurrency: async () => true, isSupportedCompanyCountry: () => true, isActiveBusinessActivity: async () => true,
+        },
         accounting: { listChartTemplates: () => [], isSupportedChartTemplate: () => true }, security: { recordCompletion: async () => undefined },
       }, { passwordHasher: async () => "prepared-test-hash" });
       responses.push(await service.start(input));
