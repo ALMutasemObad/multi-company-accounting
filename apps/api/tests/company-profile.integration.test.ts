@@ -11,6 +11,7 @@ import { createApp } from '../src/app.js';
 import { permissionDefinitions } from '../src/platform/reference-data.js';
 import { testAuthOptions } from './helpers/test-auth-options.js';
 import { createStartPlanFixture } from './subscription-start-plan-fixture.js';
+import { TenantCompanyProvisioningAdapter } from '../src/companies/company-provisioning-adapter.js';
 
 const enabled = process.env.RUN_DB_TESTS === 'true' && Boolean(process.env.DATABASE_URL);
 const db = enabled ? createDatabase(process.env.DATABASE_URL!) : null;
@@ -197,12 +198,15 @@ describe.runIf(enabled)('company profile API on a real database', () => {
 
     await profiles.updateCompliance(context, {
       version: 4,
-      commercialRegistration: { documentType: 'COMMERCIAL_REGISTRATION', number: 'CR-00001234' },
+      commercialRegistration: { documentType: 'COMMERCIAL_REGISTRATION', number: 'CR-1234567890' },
+      taxRegistration: { registrationType: 'VAT', countryCode: 'YE', number: 'VAT-0987654321' },
     });
     expect(await db!.companyRegistration.findFirstOrThrow({ where: { companyId } })).toMatchObject({
-      numberLast4: '1234', issuingAuthority: 'Registry', status: 'DECLARED', verifiedAt: null,
+      numberLast4: '7890', issuingAuthority: 'Registry', status: 'DECLARED', verifiedAt: null,
     });
-    expect(await db!.companyTaxRegistration.findFirstOrThrow({ where: { companyId } })).toMatchObject({ status: 'VERIFIED', verifiedAt });
+    expect(await db!.companyTaxRegistration.findFirstOrThrow({ where: { companyId } })).toMatchObject({
+      numberLast4: '4321', status: 'DECLARED', verifiedAt: null,
+    });
   }, 60_000);
 
   it('serializes country and compliance writes and rejects mismatched compliance countries', async () => {
@@ -231,6 +235,58 @@ describe.runIf(enabled)('company profile API on a real database', () => {
       .toEqual(address
         ? { profileCountry: 'YE', addressCountry: 'YE' }
         : { profileCountry: 'SA', addressCountry: null });
+    await expect(profiles.updateProfile(context, { version: 0, phone: '+9671999999' }))
+      .rejects.toMatchObject({ reason: 'VERSION_CONFLICT' });
+    await expect(profiles.updateCompliance(context, {
+      version: 0,
+      nationalAddress: { countryCode: stored.countryCode!, city: 'Stale replay' },
+    })).rejects.toMatchObject({ reason: 'VERSION_CONFLICT' });
+    expect(await db!.companyProfile.findUniqueOrThrow({ where: { companyId: otherCompanyId } })).toMatchObject({
+      version: 1,
+      complianceVersion: 1,
+    });
+  }, 60_000);
+
+  it('rejects mismatched tenant reprovisioning and leaves a versioned profile with compliance untouched', async () => {
+    const company = await db!.company.findUniqueOrThrow({
+      where: { id: emptyCompanyId },
+      include: {
+        organization: true,
+        baseCurrency: true,
+        profile: { include: { primaryBusinessActivity: true } },
+      },
+    });
+    await db!.companyRegistration.create({ data: { companyId: emptyCompanyId, documentType: 'REPLAY_GUARD' } });
+    const before = await db!.companyProfile.findUniqueOrThrow({ where: { companyId: emptyCompanyId } });
+    const adapter = new TenantCompanyProvisioningAdapter();
+    const replay = {
+      organizationCode: company.organization.code,
+      organizationName: company.organization.name,
+      companyCode: company.code,
+      companyName: company.name,
+      timezone: company.timezone,
+      baseCurrencyCode: company.baseCurrency.code,
+      businessProfile: {
+        phone: company.profile!.phone!,
+        countryCode: company.profile!.countryCode!,
+        primaryBusinessActivityCode: company.profile!.primaryBusinessActivity!.code,
+        preferredLocale: company.profile!.preferredLocale!,
+        initialChartTemplateCode: company.profile!.initialChartTemplateCode!,
+      },
+    };
+
+    await expect(db!.$transaction(tx => adapter.provisionTenant(tx, {
+      ...replay,
+      businessProfile: { ...replay.businessProfile, countryCode: 'YE' },
+    }))).rejects.toMatchObject({ reason: 'INVALID_BUSINESS_PROFILE' });
+    expect(await db!.companyProfile.findUniqueOrThrow({ where: { companyId: emptyCompanyId } })).toEqual(before);
+    expect(await db!.companyRegistration.count({ where: { companyId: emptyCompanyId } })).toBe(1);
+
+    await expect(db!.$transaction(tx => adapter.provisionTenant(tx, replay))).resolves.toMatchObject({
+      created: false,
+      company: { id: emptyCompanyId },
+    });
+    expect(await db!.companyProfile.findUniqueOrThrow({ where: { companyId: emptyCompanyId } })).toEqual(before);
   }, 60_000);
 
   it('does not count structurally empty compliance rows as completed requirements', async () => {

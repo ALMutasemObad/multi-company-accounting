@@ -269,6 +269,26 @@ export class RegistrationService {
         await this.recordEvent(tx, { registrationRequestId: request.id, emailNormalized: request.emailNormalized, eventType: 'REGISTRATION_TOKEN_REJECTED', severity: 'WARNING', metadata });
         return { kind: 'invalid' as const };
       }
+      const phone = request.phone?.trim() ?? '';
+      const countryCode = request.countryCode?.trim().toUpperCase() ?? '';
+      const activityCode = request.primaryBusinessActivityCode?.trim() ?? '';
+      const businessProfileAllowed = phone.length >= 5
+        && phone.length <= 40
+        && this.owners.tenant.isSupportedCompanyCountry(countryCode)
+        && activityCode.length > 0
+        && this.owners.accounting.isAllowedOnboardingChartTemplate(request.chartTemplateCode)
+        && await this.owners.tenant.isActiveBusinessActivity(tx, activityCode);
+      if (!businessProfileAllowed) {
+        await this.recordEvent(tx, {
+          registrationRequestId: request.id,
+          emailNormalized: request.emailNormalized,
+          eventType: 'REGISTRATION_TOKEN_REJECTED',
+          severity: 'WARNING',
+          metadata,
+          details: { reason: 'BUSINESS_PROFILE_RESTART_REQUIRED' },
+        });
+        return { kind: 'invalid' as const };
+      }
       const startedAt = this.now();
       const claimed = await tx.registrationRequest.updateMany({
         where: {
@@ -305,13 +325,13 @@ export class RegistrationService {
           baseCurrencyCode: request.baseCurrencyCode,
           adminEmail: request.emailNormalized,
           adminDisplayName: request.displayName,
-          ...(request.phone && request.countryCode && request.primaryBusinessActivityCode ? { businessProfile: {
-            phone: request.phone,
-            countryCode: request.countryCode,
-            primaryBusinessActivityCode: request.primaryBusinessActivityCode,
+          businessProfile: {
+            phone: request.phone!,
+            countryCode: request.countryCode!,
+            primaryBusinessActivityCode: request.primaryBusinessActivityCode!,
             preferredLocale: request.locale,
             initialChartTemplateCode: request.chartTemplateCode,
-          } } : {}),
+          },
         }, request.passwordHash, { requireNewAdminIdentity: true });
         const completedAt = this.now();
         await tx.registrationRequest.update({

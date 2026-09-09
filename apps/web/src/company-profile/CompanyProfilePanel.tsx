@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type KeyboardEvent } from "react";
 import { api } from "../api";
 import { useAuthorization } from "../authorization-context";
 import { localizedReferenceName, useI18n, type TranslationKey } from "../i18n";
@@ -8,6 +8,70 @@ import "./company-profile.css";
 
 type Notice = (message: string, tone?: "success" | "error") => void;
 type View = "business" | "compliance";
+
+export function companyProfileTabId(view: View) {
+  return `company-profile-${view}-tab`;
+}
+
+export function companyProfilePanelId(view: View) {
+  return `company-profile-${view}-panel`;
+}
+
+export function nextCompanyProfileTab(
+  current: View,
+  available: readonly View[],
+  key: string,
+  direction: "ltr" | "rtl",
+) {
+  if (!available.length || !available.includes(current)) return null;
+  if (key === "Home") return available[0]!;
+  if (key === "End") return available[available.length - 1]!;
+  if (key !== "ArrowLeft" && key !== "ArrowRight") return null;
+  const visualStep = key === "ArrowRight" ? 1 : -1;
+  const step = direction === "rtl" ? -visualStep : visualStep;
+  const currentIndex = available.indexOf(current);
+  return available[(currentIndex + step + available.length) % available.length]!;
+}
+
+export function CompanyProfileTabs({
+  view,
+  available,
+  label,
+  businessLabel,
+  complianceLabel,
+  onSelect,
+}: {
+  view: View;
+  available: readonly View[];
+  label: string;
+  businessLabel: string;
+  complianceLabel: string;
+  onSelect: (view: View) => void;
+}) {
+  function move(event: KeyboardEvent<HTMLButtonElement>, current: View) {
+    const direction = getComputedStyle(event.currentTarget).direction === "rtl" ? "rtl" : "ltr";
+    const next = nextCompanyProfileTab(current, available, event.key, direction);
+    if (!next) return;
+    event.preventDefault();
+    onSelect(next);
+    requestAnimationFrame(() => document.getElementById(companyProfileTabId(next))?.focus());
+  }
+
+  return <div className="company-profile-tabs" role="tablist" aria-label={label} aria-orientation="horizontal">
+    {available.map((item) => <Button
+      key={item}
+      id={companyProfileTabId(item)}
+      type="button"
+      role="tab"
+      aria-selected={view === item}
+      aria-controls={companyProfilePanelId(item)}
+      tabIndex={view === item ? 0 : -1}
+      variant={view === item ? "primary" : "secondary"}
+      onClick={() => onSelect(item)}
+      onKeyDown={(event) => move(event, item)}
+    >{item === "business" ? businessLabel : complianceLabel}</Button>)}
+  </div>;
+}
 
 function requirementKey(code: string): TranslationKey {
   const keys: Record<string, TranslationKey> = {
@@ -258,20 +322,28 @@ export function CompanyProfilePanel({ notify }: { notify: Notice }) {
   const readiness = view === "business" ? profile!.readiness : compliance!.readiness;
   const businessProfile = profile!;
   const complianceProfile = compliance!;
+  const availableViews: View[] = [
+    ...(canViewProfile ? ["business" as const] : []),
+    ...(canViewCompliance ? ["compliance" as const] : []),
+  ];
 
   return <section className="settings-card company-profile-shell">
     <div className="card-heading company-profile-heading"><div><h2>{t("companyProfile.title")}</h2><p>{t("companyProfile.description")}</p></div></div>
-    <div className="company-profile-tabs" role="tablist" aria-label={t("companyProfile.title")}>
-      {canViewProfile && <Button type="button" variant={view === "business" ? "primary" : "secondary"} onClick={() => setView("business")}>{t("companyProfile.businessTab")}</Button>}
-      {canViewCompliance && <Button type="button" variant={view === "compliance" ? "primary" : "secondary"} onClick={() => setView("compliance")}>{t("companyProfile.complianceTab")}</Button>}
-    </div>
+    <CompanyProfileTabs
+      view={view}
+      available={availableViews}
+      label={t("companyProfile.title")}
+      businessLabel={t("companyProfile.businessTab")}
+      complianceLabel={t("companyProfile.complianceTab")}
+      onSelect={setView}
+    />
     {error && <div className="form-error" role="alert">{error}</div>}
     <aside className="company-profile-readiness" aria-label={t("companyProfile.readinessTitle")}>
       <div><strong>{t("companyProfile.readinessTitle")}</strong><span>{t("companyProfile.readinessSummary", { complete: readiness.completedRequirements, total: readiness.totalRequirements })}</span></div>
       {readiness.grandfathered && <p>{t("companyProfile.grandfathered")}</p>}
       <ul>{readiness.requirements.map((item) => <li key={item.code} data-status={item.status}><span>{t(requirementKey(item.code))}</span><strong>{t(statusKey(item.status))}</strong></li>)}</ul>
     </aside>
-    {view === "business" ? <form className="company-profile-form" onSubmit={event => void saveProfile(event)}>
+    {view === "business" ? <form id={companyProfilePanelId("business")} role="tabpanel" aria-labelledby={companyProfileTabId("business")} tabIndex={0} className="company-profile-form" onSubmit={event => void saveProfile(event)}>
       <h3>{t("companyProfile.businessTitle")}</h3>
       <div className="form-grid">
         <label><span>{t("companyProfile.tradeName")}</span><input value={tradeName} onChange={event => setTradeName(event.target.value)} maxLength={200} required /></label>
@@ -284,7 +356,7 @@ export function CompanyProfilePanel({ notify }: { notify: Notice }) {
         <label><span>{t("companyProfile.chartTemplate")}</span><input value={businessProfile.profile.initialChartTemplateCode ?? "—"} disabled /></label>
       </div>
       {canManageProfile && <div className="form-actions"><Button type="submit" disabled={saving}>{saving ? t("common.saving") : t("companyProfile.save")}</Button></div>}
-    </form> : <form className="company-profile-form" onSubmit={event => void saveCompliance(event)}>
+    </form> : <form id={companyProfilePanelId("compliance")} role="tabpanel" aria-labelledby={companyProfileTabId("compliance")} tabIndex={0} className="company-profile-form" onSubmit={event => void saveCompliance(event)}>
       <h3>{t("companyProfile.complianceTitle")}</h3>
       <p>{t("companyProfile.sensitiveNumberNote")}</p>
       <div className="form-grid">

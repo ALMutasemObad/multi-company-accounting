@@ -57,6 +57,18 @@ describe('company business profile policy', () => {
     }
   });
 
+  it.each([
+    ['YE', 'NOT_APPLICABLE'],
+    ['US', 'NOT_APPLICABLE'],
+    ['GB', 'NOT_APPLICABLE'],
+    ['SA', 'OPTIONAL'],
+  ] as const)('applies Saudi-specific requirements only to SA, not %s', (countryCode, expectedStatus) => {
+    const readiness = evaluateCompanyProfileReadiness({ ...completeProfile, countryCode });
+    for (const requirement of readiness.requirements.filter(({ code }) => code.startsWith('SA_'))) {
+      expect(requirement).toMatchObject({ status: expectedStatus, blocking: false });
+    }
+  });
+
   it('reports current, due-soon, expired, and untracked renewal states at date boundaries', () => {
     const now = new Date('2026-09-09T18:30:00.000Z');
     expect(renewalStatus(null, now)).toBe('NOT_APPLICABLE');

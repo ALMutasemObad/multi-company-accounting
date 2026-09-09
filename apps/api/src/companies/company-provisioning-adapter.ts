@@ -14,31 +14,49 @@ export class TenantCompanyProvisioningAdapter implements TenantCompanyProvisioni
     });
     if (!currency?.isActive) throw new CompanyProvisioningError("CURRENCY_NOT_FOUND");
 
-    const organization = await tx.organization.upsert({
-      where: { code: input.organizationCode },
-      update: { name: input.organizationName },
-      create: { code: input.organizationCode, name: input.organizationName },
+    const existingOrganization = await tx.organization.findUnique({ where: { code: input.organizationCode } });
+    if (existingOrganization && existingOrganization.name !== input.organizationName) {
+      throw new CompanyProvisioningError("INVALID_BUSINESS_PROFILE");
+    }
+    const organization = existingOrganization ?? await tx.organization.create({
+      data: { code: input.organizationCode, name: input.organizationName },
     });
     const existingCompany = await tx.company.findUnique({
       where: { organizationId_code: { organizationId: organization.id, code: input.companyCode } },
     });
-    if (existingCompany && existingCompany.baseCurrencyId !== currency.id) {
-      throw new CompanyProvisioningError("COMPANY_CURRENCY_MISMATCH");
+    if (existingCompany) {
+      if (existingCompany.baseCurrencyId !== currency.id) {
+        throw new CompanyProvisioningError("COMPANY_CURRENCY_MISMATCH");
+      }
+      if (existingCompany.name !== input.companyName || existingCompany.timezone !== input.timezone || !existingCompany.isActive) {
+        throw new CompanyProvisioningError("INVALID_BUSINESS_PROFILE");
+      }
     }
     if (existingCompany && input.businessProfile) {
       const existingProfile = await tx.companyProfile.findUnique({
         where: { companyId: existingCompany.id },
-        select: { initialChartTemplateCode: true },
+        select: {
+          tradeName: true,
+          phone: true,
+          countryCode: true,
+          preferredLocale: true,
+          initialChartTemplateCode: true,
+          primaryBusinessActivity: { select: { code: true } },
+        },
       });
-      if (!existingProfile || existingProfile.initialChartTemplateCode !== input.businessProfile.initialChartTemplateCode) {
+      const businessProfileMatches = existingProfile
+        && existingProfile.tradeName === input.companyName
+        && existingProfile.phone === input.businessProfile.phone
+        && existingProfile.countryCode === input.businessProfile.countryCode
+        && existingProfile.preferredLocale === input.businessProfile.preferredLocale
+        && existingProfile.initialChartTemplateCode === input.businessProfile.initialChartTemplateCode
+        && existingProfile.primaryBusinessActivity?.code === input.businessProfile.primaryBusinessActivityCode;
+      if (!businessProfileMatches) {
         throw new CompanyProvisioningError("INVALID_BUSINESS_PROFILE");
       }
     }
     const company = existingCompany
-      ? await tx.company.update({
-          where: { id: existingCompany.id },
-          data: { name: input.companyName, timezone: input.timezone, isActive: true },
-        })
+      ? existingCompany
       : await tx.company.create({
           data: {
             organizationId: organization.id,
@@ -48,11 +66,13 @@ export class TenantCompanyProvisioningAdapter implements TenantCompanyProvisioni
             timezone: input.timezone,
           },
         });
-    try {
-      await provisionCompanyBusinessProfile(tx, company.id, company.name, input.businessProfile);
-    } catch (error) {
-      if (error instanceof BusinessProfileProvisioningError) throw new CompanyProvisioningError("INVALID_BUSINESS_PROFILE");
-      throw error;
+    if (!existingCompany) {
+      try {
+        await provisionCompanyBusinessProfile(tx, company.id, company.name, input.businessProfile);
+      } catch (error) {
+        if (error instanceof BusinessProfileProvisioningError) throw new CompanyProvisioningError("INVALID_BUSINESS_PROFILE");
+        throw error;
+      }
     }
     await tx.companyCurrency.upsert({
       where: { companyId_currencyId: { companyId: company.id, currencyId: currency.id } },

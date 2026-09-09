@@ -76,12 +76,15 @@ export function evaluateCompanyProfileReadiness(input: ProfileReadinessInput) {
   ];
 
   for (const code of ["SA_COMMERCIAL_REGISTRATION", "SA_VAT_REGISTRATION", "SA_NATIONAL_ADDRESS"]) {
+    const appliesToSaudiArabia = input.countryCode === "SA";
     requirements.push({
       code,
       level: code === "SA_VAT_REGISTRATION" ? "REGULATED" : "COMMERCIAL",
-      status: input.countryCode === "YE" ? "NOT_APPLICABLE" : "OPTIONAL",
+      status: appliesToSaudiArabia ? "OPTIONAL" : "NOT_APPLICABLE",
       blocking: false,
-      reason: input.countryCode === "YE" ? "YEMEN_POLICY_EXCLUSION" : "NO_VERIFIED_JURISDICTION_REQUIREMENT",
+      reason: appliesToSaudiArabia
+        ? "NO_VERIFIED_JURISDICTION_REQUIREMENT"
+        : input.countryCode === "YE" ? "YEMEN_POLICY_EXCLUSION" : "NON_SAUDI_POLICY_EXCLUSION",
     });
   }
 

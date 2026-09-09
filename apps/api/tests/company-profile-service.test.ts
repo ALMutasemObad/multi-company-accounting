@@ -115,7 +115,7 @@ describe('CompanyProfileService write boundaries', () => {
     });
     expect(registrationUpdate).toHaveBeenLastCalledWith({
       where: { companyId_documentType: { companyId: 19n, documentType: 'COMMERCIAL_REGISTRATION' } },
-      data: { numberLast4: '7890' },
+      data: { numberLast4: '7890', status: 'DECLARED', verifiedAt: null },
     });
 
     await service.updateCompliance(context, {

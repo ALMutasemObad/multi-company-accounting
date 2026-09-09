@@ -199,7 +199,7 @@ export class CompanyProfileService {
           const issuedAt = value.issuedAt === undefined ? existing.issuedAt : this.date(value.issuedAt);
           const expiresAt = value.expiresAt === undefined ? existing.expiresAt : this.date(value.expiresAt);
           this.assertDateRange(issuedAt, expiresAt);
-          const verificationChanged = numberLast4 !== existing.numberLast4
+          const verificationChanged = value.number !== undefined
             || issuingAuthority !== existing.issuingAuthority
             || !this.sameDate(issuedAt, existing.issuedAt)
             || !this.sameDate(expiresAt, existing.expiresAt);
@@ -233,7 +233,7 @@ export class CompanyProfileService {
           const issuedAt = value.issuedAt === undefined ? existing.issuedAt : this.date(value.issuedAt);
           const expiresAt = value.expiresAt === undefined ? existing.expiresAt : this.date(value.expiresAt);
           this.assertDateRange(issuedAt, expiresAt);
-          const verificationChanged = numberLast4 !== existing.numberLast4
+          const verificationChanged = value.number !== undefined
             || !this.sameDate(issuedAt, existing.issuedAt)
             || !this.sameDate(expiresAt, existing.expiresAt);
           await tx.companyTaxRegistration.update({ where, data: {

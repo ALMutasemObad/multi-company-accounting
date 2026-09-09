@@ -137,6 +137,8 @@ describe('registration start-policy failures', () => {
         verificationExpiresAt: new Date('2030-01-01T00:00:00Z'), provisioningStartedAt: null,
         verifiedAt: null, companyName: 'Test company', organizationName: 'Test organization',
         timezone: 'Asia/Riyadh', baseCurrencyCode: 'SAR', displayName: 'Owner',
+        phone: '+966500000000', countryCode: 'SA', primaryBusinessActivityCode: 'PROFESSIONAL_SERVICES',
+        chartTemplateCode: 'PROFESSIONAL_SERVICES', locale: 'ar',
       };
       const update = vi.fn().mockResolvedValue(undefined);
       const tx = {
@@ -149,7 +151,16 @@ describe('registration start-policy failures', () => {
       };
       const prisma = { $transaction: vi.fn((callback: (client: typeof tx) => unknown) => callback(tx)) } as unknown as PrismaClient;
       const provisioning = { provisionPreparedInTransaction: vi.fn().mockRejectedValue(new SubscriptionStartPolicyError(reason)) };
-      const service = new RegistrationService(prisma, provisioning, {} as OutboxAppender, {} as RegistrationOwnerPorts, {
+      const service = new RegistrationService(prisma, provisioning, {} as OutboxAppender, {
+        tenant: {
+          listGlobalCurrencies: vi.fn(), listCompanyCountries: vi.fn(), listBusinessActivities: vi.fn(),
+          isActiveGlobalCurrency: vi.fn(), isSupportedCompanyCountry: vi.fn().mockReturnValue(true),
+          isActiveBusinessActivity: vi.fn().mockResolvedValue(true),
+        },
+        identity: { identityExists: vi.fn() },
+        accounting: { listChartTemplates: vi.fn(), isAllowedOnboardingChartTemplate: vi.fn().mockReturnValue(true) },
+        security: { recordCompletion: vi.fn() },
+      }, {
         now: () => new Date('2026-08-31T12:00:00Z'), auditPepper: 'test-registration-pepper',
       });
       await expect(service.verify('synthetic-token')).rejects.toMatchObject({ reason: 'PROVISIONING_FAILED', message: 'PROVISIONING_FAILED' });
@@ -158,4 +169,58 @@ describe('registration start-policy failures', () => {
         status: 'EMAIL_VERIFIED', lastErrorCode: 'PROVISIONING_FAILED',
       } });
     });
+});
+
+describe('registration verification business-profile migration boundary', () => {
+  it.each([
+    ['missing profile field', { phone: null }],
+    ['legacy onboarding template', { chartTemplateCode: 'SMALL_BUSINESS_GENERAL' }],
+  ])('rejects a pending migration-era request with %s before provisioning', async (_case, overrides) => {
+    const request = {
+      id: 19n,
+      publicId: '11111111-1111-4111-8111-111111111119',
+      status: 'PENDING_EMAIL',
+      emailNormalized: 'legacy-pending@example.test',
+      passwordHash: '$argon2id$prepared-hash',
+      verificationExpiresAt: new Date('2030-01-01T00:00:00.000Z'),
+      provisioningStartedAt: null,
+      verifiedAt: null,
+      phone: '+9671000000',
+      countryCode: 'YE',
+      primaryBusinessActivityCode: 'PROFESSIONAL_SERVICES',
+      chartTemplateCode: 'PROFESSIONAL_SERVICES',
+      ...overrides,
+    };
+    const updateMany = vi.fn();
+    const tx = {
+      registrationRequest: { findUnique: vi.fn().mockResolvedValue(request), updateMany },
+      registrationEvent: { create: vi.fn().mockResolvedValue(undefined) },
+    };
+    const prisma = { $transaction: vi.fn((work: (client: typeof tx) => unknown) => work(tx)) } as unknown as PrismaClient;
+    const provisioning = { provisionPreparedInTransaction: vi.fn() };
+    const owners: RegistrationOwnerPorts = {
+      tenant: {
+        listGlobalCurrencies: vi.fn(), listCompanyCountries: vi.fn(), listBusinessActivities: vi.fn(),
+        isActiveGlobalCurrency: vi.fn(), isSupportedCompanyCountry: vi.fn().mockReturnValue(true),
+        isActiveBusinessActivity: vi.fn().mockResolvedValue(true),
+      },
+      identity: { identityExists: vi.fn() },
+      accounting: {
+        listChartTemplates: vi.fn(),
+        isAllowedOnboardingChartTemplate: vi.fn((code: string) => code !== 'SMALL_BUSINESS_GENERAL'),
+      },
+      security: { recordCompletion: vi.fn() },
+    };
+    const service = new RegistrationService(prisma, provisioning, {} as OutboxAppender, owners, {
+      now: () => new Date('2026-09-09T12:00:00.000Z'), auditPepper: 'test-registration-pepper',
+    });
+
+    await expect(service.verify('synthetic-token')).rejects.toMatchObject({ reason: 'INVALID_OR_EXPIRED_TOKEN' });
+    expect(updateMany).not.toHaveBeenCalled();
+    expect(provisioning.provisionPreparedInTransaction).not.toHaveBeenCalled();
+    expect(tx.registrationEvent.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      eventType: 'REGISTRATION_TOKEN_REJECTED',
+      details: { reason: 'BUSINESS_PROFILE_RESTART_REQUIRED' },
+    }) });
+  });
 });

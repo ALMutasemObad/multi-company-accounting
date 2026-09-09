@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { companySettingsSectionAccess } from "../CompanySettingsPage";
 import type { CompanyComplianceResponse, CompanyProfileReadiness, CompanyProfileResponse } from "../types";
 import {
   buildCompanyCompliancePatch,
+  CompanyProfileTabs,
   companyProfilePanelAccess,
+  nextCompanyProfileTab,
   mergeComplianceReadiness,
   mergeProfileGeneration,
   type CompanyComplianceDraft,
@@ -73,6 +77,37 @@ describe("company profile settings permissions", () => {
       canCreateCurrencies: false,
       canManageCurrencies: false,
     });
+  });
+});
+
+describe("company profile tabs", () => {
+  it("renders the complete tab and tabpanel relationship contract", () => {
+    const html = renderToStaticMarkup(createElement(CompanyProfileTabs, {
+      view: "business",
+      available: ["business", "compliance"],
+      label: "Company profile",
+      businessLabel: "Business",
+      complianceLabel: "Compliance",
+      onSelect: () => undefined,
+    }));
+    expect(html).toContain('role="tablist"');
+    expect(html).toContain('aria-orientation="horizontal"');
+    expect(html).toContain('id="company-profile-business-tab"');
+    expect(html).toContain('role="tab"');
+    expect(html).toContain('aria-selected="true"');
+    expect(html).toContain('aria-controls="company-profile-business-panel"');
+    expect(html).toContain('id="company-profile-compliance-tab"');
+    expect(html).toContain('aria-selected="false"');
+    expect(html).toContain('aria-controls="company-profile-compliance-panel"');
+  });
+
+  it("supports arrows, Home, and End in both reading directions", () => {
+    const tabs = ["business", "compliance"] as const;
+    expect(nextCompanyProfileTab("business", tabs, "ArrowRight", "ltr")).toBe("compliance");
+    expect(nextCompanyProfileTab("business", tabs, "ArrowLeft", "rtl")).toBe("compliance");
+    expect(nextCompanyProfileTab("compliance", tabs, "Home", "rtl")).toBe("business");
+    expect(nextCompanyProfileTab("business", tabs, "End", "ltr")).toBe("compliance");
+    expect(nextCompanyProfileTab("business", tabs, "Enter", "ltr")).toBeNull();
   });
 });
 

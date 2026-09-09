@@ -13,6 +13,7 @@ import type { RegistrationMailer, RegistrationVerificationMessage } from '../src
 import { RegistrationService } from '../src/registration/registration-service.js';
 import { RegistrationVerificationHandler } from '../src/registration/registration-verification-handler.js';
 import { createStartPlanFixture } from './subscription-start-plan-fixture.js';
+import { hashToken } from '../src/auth/session-tokens.js';
 
 const enabled = process.env.RUN_DB_TESTS === 'true' && Boolean(process.env.DATABASE_URL);
 
@@ -43,6 +44,8 @@ describe.runIf(enabled)('self-registration with MariaDB', () => {
     'it.registration.rollback@mcap.local',
     'it.registration.policy@mcap.local',
     'it.registration.policy-write@mcap.local',
+    'it.registration.migration-missing@mcap.local',
+    'it.registration.migration-template@mcap.local',
   ];
   const auditPepper = 'integration-registration-audit-pepper-123456';
   const tokenSecret = 'integration-registration-token-secret-123456';
@@ -219,6 +222,48 @@ describe.runIf(enabled)('self-registration with MariaDB', () => {
     expect(await prisma.securityEvent.count({ where: { companyId, eventType: 'SELF_REGISTRATION_COMPLETED' } })).toBe(1);
     await expect(service.verify(token)).resolves.toEqual(first);
     expect(await prisma.company.count({ where: { id: companyId } })).toBe(1);
+  }, 60_000);
+
+  it.each([
+    ['missing business profile', 8, { phone: null }],
+    ['legacy onboarding template', 9, { chartTemplateCode: 'SMALL_BUSINESS_GENERAL' }],
+  ] as const)('rejects a migration-era pending request with %s before tenant mutation', async (_case, emailIndex, overrides) => {
+    const email = emails[emailIndex]!;
+    const token = `migration-era-${emailIndex}`;
+    await prisma.registrationRequest.create({ data: {
+      emailNormalized: email,
+      passwordHash: '$argon2id$prepared-but-never-used',
+      displayName: 'Migration owner',
+      organizationName: 'Migration organization',
+      companyName: 'Migration company',
+      timezone: 'Asia/Aden',
+      baseCurrencyCode: 'YER',
+      locale: 'ar',
+      chartTemplateCode: 'PROFESSIONAL_SERVICES',
+      phone: '+9671000000',
+      countryCode: 'YE',
+      primaryBusinessActivityCode: 'PROFESSIONAL_SERVICES',
+      verificationTokenHash: hashToken(token),
+      verificationExpiresAt: new Date('2030-01-01T00:00:00.000Z'),
+      ...overrides,
+    } });
+    const before = await Promise.all([
+      prisma.organization.count(), prisma.company.count(), prisma.companyProfile.count(), prisma.user.count(),
+    ]);
+
+    await expect(service.verify(token)).rejects.toMatchObject({ reason: 'INVALID_OR_EXPIRED_TOKEN' });
+
+    expect(await Promise.all([
+      prisma.organization.count(), prisma.company.count(), prisma.companyProfile.count(), prisma.user.count(),
+    ])).toEqual(before);
+    expect(await prisma.registrationRequest.findUniqueOrThrow({ where: { emailNormalized: email } })).toMatchObject({
+      status: 'PENDING_EMAIL', verifiedAt: null, provisioningStartedAt: null,
+      provisionedOrganizationId: null, provisionedCompanyId: null, provisionedUserId: null,
+    });
+    expect(await prisma.registrationEvent.findFirstOrThrow({
+      where: { emailHash: emailHash(email), eventType: 'REGISTRATION_TOKEN_REJECTED' },
+      orderBy: { id: 'desc' },
+    })).toMatchObject({ details: { reason: 'BUSINESS_PROFILE_RESTART_REQUIRED' } });
   }, 60_000);
 
   it('fails closed without configuration or with an invalid plan, then retries the same token after repair', async () => {
