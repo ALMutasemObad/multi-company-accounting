@@ -1,8 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, logout } from "./api";
 import { invalidateSessionRequests, onSessionExpired, sessionRequestSignal } from "./session-safety/session";
-import { localizedBrand } from "./branding";
+import { localizedBrand, storageKey } from "./branding";
 import { LanguageSwitcher, useI18n } from "./i18n";
+import { readLocalStorageItem, writeLocalStorageItem } from "./safe-local-storage";
 import type { Company, CurrentAuthorization, OrganizationDashboardCompany, OrganizationWorkspaceReference } from "./types";
 import { Button, Icon, Spinner, Toast } from "./ui";
 import { RegistrationPage } from "./RegistrationPage";
@@ -58,6 +59,13 @@ const EmployeeExpensesPage = lazy(() => import("./EmployeeExpensesPage").then((m
 
 type PlatformCapabilities = { platformOperations: boolean };
 type ShellCapabilities = PlatformCapabilities & { organizationWorkspace: boolean };
+type SidebarMode = "expanded" | "collapsed";
+
+export const appSidebarPreferenceKey = (userId: string, companyId: string | null) =>
+  storageKey(`app-sidebar.v1.${encodeURIComponent(JSON.stringify([userId, companyId]))}`);
+
+const readSidebarMode = (key: string): SidebarMode =>
+  readLocalStorageItem(key) === "collapsed" ? "collapsed" : "expanded";
 
 const replaceHash = (view: string) => {
   const url = new URL(location.href);
@@ -74,6 +82,13 @@ export default function App() {
   const [platformOperator, setPlatformOperator] = useState<boolean | null>(null);
   const [organizationWorkspace, setOrganizationWorkspace] = useState<boolean | null>(null);
   const [mobileNav, setMobileNav] = useState(false);
+  const sidebarScopeKey = authorization
+    ? appSidebarPreferenceKey(authorization.user.id, authorization.selectedCompany?.id ?? null)
+    : null;
+  const [sidebarPreference, setSidebarPreference] = useState<{ key: string | null; mode: SidebarMode }>({ key: null, mode: "expanded" });
+  const sidebarMode = sidebarPreference.key === sidebarScopeKey
+    ? sidebarPreference.mode
+    : sidebarScopeKey ? readSidebarMode(sidebarScopeKey) : "expanded";
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
   const startup = useAuthAction();
@@ -81,6 +96,12 @@ export default function App() {
   const routeScope = useRef<string | null>(null);
   const authenticatedShell = useRef(false);
   const subscriptionDismissals = useMemo(() => createSubscriptionUpgradeDismissals(), [authorization?.user.id]);
+
+  useEffect(() => {
+    setSidebarPreference((current) => current.key === sidebarScopeKey
+      ? current
+      : { key: sidebarScopeKey, mode: sidebarScopeKey ? readSidebarMode(sidebarScopeKey) : "expanded" });
+  }, [sidebarScopeKey]);
 
   const clearShell = useCallback((preserveRequestedRoute = false) => {
     setAuthorization(null);
@@ -270,6 +291,13 @@ export default function App() {
     navigateRoute({ view: next } as PageRoute);
   }
 
+  function toggleSidebar() {
+    if (!sidebarScopeKey) return;
+    const next: SidebarMode = sidebarMode === "expanded" ? "collapsed" : "expanded";
+    setSidebarPreference({ key: sidebarScopeKey, mode: next });
+    writeLocalStorageItem(sidebarScopeKey, next);
+  }
+
   function navigateRoute(next: PageRoute) {
     const authorized = authorizedPageRoute(next, navigationAccess);
     setRoute(authorized);
@@ -380,9 +408,9 @@ export default function App() {
 
   return (
     <AuthorizationProvider authorization={authorization}>
-    <div className="app-shell" dir={dir}>
+    <div className={`app-shell${sidebarMode === "collapsed" ? " sidebar-collapsed" : ""}`} dir={dir}>
       <a className="skip-link" href="#main-content">{t("common.skipToContent")}</a>
-      <aside className={`sidebar ${mobileNav ? "open" : ""}`}>
+      <aside id="app-sidebar" className={`sidebar ${mobileNav ? "open" : ""}`}>
         <div className="brand">
           <div className="brand-mark">{brand.mark}</div>
           <div><strong>{brand.shortName}</strong><span>{t("app.trustedFinance")}</span></div>
@@ -435,7 +463,10 @@ export default function App() {
       {mobileNav && <button type="button" className="nav-scrim" aria-label={t("app.closeNavigation")} onClick={() => setMobileNav(false)} />}
       <div className="app-main">
         <header className="topbar">
-          <button type="button" className="menu-button" aria-label={t("app.openNavigation")} onClick={() => setMobileNav(true)}><Icon name="menu" /></button>
+          <button type="button" className="sidebar-collapse-button" aria-label={t(sidebarMode === "collapsed" ? "app.openNavigation" : "app.closeNavigation")}
+            title={t(sidebarMode === "collapsed" ? "app.openNavigation" : "app.closeNavigation")}
+            aria-controls="app-sidebar" aria-expanded={sidebarMode === "expanded"} onClick={toggleSidebar}><Icon name="menu" /></button>
+          <button type="button" className="menu-button" aria-label={t("app.openNavigation")} aria-controls="app-sidebar" aria-expanded={mobileNav} onClick={() => setMobileNav(true)}><Icon name="menu" /></button>
           <div className="topbar-title"><span>{t(viewTitleKey[activeView])}</span><small>{activeView === "platform" || activeView === "platformSubscriptions" ? t("app.platformScope") : activeView === "organizationOwner" ? t("app.organizationScope") : company?.name}</small></div>
           <div className="user-menu">
             <div className="avatar">{user.displayName.slice(0, 1) || brand.mark.slice(0, 1)}</div>

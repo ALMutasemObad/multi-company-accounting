@@ -320,7 +320,7 @@ h1, h2, h3, .brand strong { font-family: "Cairo", "Noto Sans Devanagari", Tahoma
 .topbar-title small { color: var(--muted); }
 .user-menu { display: flex; align-items: center; gap: 9px; }
 .user-menu > span { font-size: .85rem; }
-.user-menu > button, .menu-button {
+.user-menu > button, .menu-button, .sidebar-collapse-button {
   display: grid;
   flex: 0 0 36px;
   width: 36px;
@@ -331,9 +331,10 @@ h1, h2, h3, .brand strong { font-family: "Cairo", "Noto Sans Devanagari", Tahoma
   background: transparent;
   color: var(--muted);
 }
-.user-menu > button:hover, .menu-button:hover { background: #edf2ef; color: var(--ink); }
+.user-menu > button:hover, .menu-button:hover, .sidebar-collapse-button:hover { background: #edf2ef; color: var(--ink); }
 .avatar { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 10px; background: var(--green-100); color: var(--green-800); font-weight: 700; }
 .menu-button { display: none; }
+.sidebar-collapse-button { display: grid; }
 .content { min-width: 0; padding: 36px clamp(20px, 3.2vw, 52px) 64px; }
 .workspace-page { width: 100%; min-width: 0; max-width: var(--content-max); margin: 0 auto; }
 .workspace-page > *, .page-heading > *, .toolbar > *, .panel > *, .settings-card > * { min-width: 0; }
@@ -1036,6 +1037,11 @@ h1, h2, h3, .brand strong { font-family: "Cairo", "Noto Sans Devanagari", Tahoma
   .metric-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
+@media (min-width: 781px) {
+  .app-shell.sidebar-collapsed .sidebar { display: none; }
+  .app-shell.sidebar-collapsed .app-main { width: 100%; margin-inline-start: 0; }
+}
+
 @media (max-width: 780px) {
   .auth-layout { display: block; background: linear-gradient(160deg, var(--green-950) 0 190px, #fff 190px); }
   .auth-story { display: none; }
@@ -1051,6 +1057,7 @@ h1, h2, h3, .brand strong { font-family: "Cairo", "Noto Sans Devanagari", Tahoma
   .sidebar.open { display: flex; transform: none; }
   .nav-scrim { position: fixed; z-index: 25; inset: 0; display: block; border: 0; background: rgba(8,29,23,.5); }
   .app-main { width: 100%; margin-inline-start: 0; }
+  .sidebar-collapse-button { display: none; }
   .menu-button { display: grid; }
   .topbar-title { margin-left: auto; margin-right: 10px; }
   .content { padding-top: 25px; }

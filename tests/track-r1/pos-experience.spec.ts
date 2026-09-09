@@ -1,5 +1,7 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { arPos, enPos, hiPos, urPos } from "../../apps/web/src/i18n/locales/pos";
+import { enCashierContext } from "../../apps/web/src/i18n/locales/cashier-context";
+import { enPosRecovery } from "../../apps/web/src/i18n/locales/pos-recovery";
 
 const dictionary = { ar: arPos, en: enPos, hi: hiPos, ur: urPos };
 async function open(page: Page, locale: keyof typeof dictionary = "en") {
@@ -9,12 +11,17 @@ async function open(page: Page, locale: keyof typeof dictionary = "en") {
   await expect(page.locator(".pos-experience-product")).toHaveCount(4);
 }
 async function operatingContext(page: Page) {
-  await page.getByRole("combobox", { name: enPos["pos.period"], exact: true }).selectOption("1");
   await page.getByLabel(enPos["pos.descriptionLabel"], { exact: true }).fill("Local checkout test");
-  for (const label of [enPos["pos.customer"], enPos["pos.warehouse"], enPos["pos.cashAccount"], enPos["pos.paymentMethod"]]) {
+  await page.getByRole("combobox", { name: enPos["pos.customer"], exact: true }).click();
+  await page.getByRole("listbox", { name: enPos["pos.customer"], exact: true }).getByRole("option").first().click();
+  for (const field of ["warehouseId", "cashBankAccountId", "paymentMethodId", "currencyId"] as const) {
+    const label = enCashierContext[field];
+    await page.getByRole("button", { name: `${enCashierContext.edit} ${label}`, exact: true }).click();
     await page.getByRole("combobox", { name: label, exact: true }).click();
-    await page.getByRole("listbox").getByRole("option").first().click();
+    await page.getByRole("listbox", { name: label, exact: true }).getByRole("option").first().click();
   }
+  await page.getByRole("button", { name: enCashierContext.review, exact: true }).click();
+  await expect(page.getByText(enCashierContext.reviewed, { exact: true })).toBeVisible();
 }
 const milk = (page: Page) => page.locator(".pos-experience-product").filter({ hasText: "ITM-TEST-1" });
 const checkout = (page: Page) => page.getByRole("button", { name: enPos["pos.checkout"], exact: true });
@@ -40,7 +47,7 @@ test("typography stays at two sizes with a compact heading and readable scanner 
 });
 
 for (const locale of ["ar", "en", "hi", "ur"] as const) {
-  for (const width of [390, 768, 1440]) {
+  for (const width of [390, 768, 1440, 1920]) {
     test(`four-language retail/tiles basket, keyboard and fit: ${locale} ${width}`, async ({ page }) => {
       const errors: string[] = []; page.on("pageerror", (error) => errors.push(error.message));
       await page.setViewportSize({ width, height: 950 }); await open(page, locale);
@@ -50,7 +57,9 @@ for (const locale of ["ar", "en", "hi", "ur"] as const) {
       await expect(page.getByTestId("pos-cart-line")).toHaveCount(1);
       await page.getByRole("button", { name: t["pos.tiles"], exact: true }).click();
       await milk(page).click();
-      await expect(page.getByTestId("pos-cart-line").locator(".pos-experience-quantity input")).toHaveValue("2.000000");
+      const line = page.getByTestId("pos-cart-line");
+      await expect(line.locator(".pos-experience-quantity input")).toHaveValue("2.000000");
+      await line.locator(".pos-experience-line-main > label").nth(1).locator("input").fill("2.1");
       await expect(page.locator(".pos-experience-summary")).toContainText("4.20");
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
       expect(await page.locator("html").getAttribute("dir")).toBe(["ar", "ur"].includes(locale) ? "rtl" : "ltr");
@@ -59,6 +68,27 @@ for (const locale of ["ar", "en", "hi", "ur"] as const) {
     });
   }
 }
+
+test("context panel preference restores after remount and stays isolated by company", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page);
+  await expect(page.locator(".pos-experience-context-toggle")).toHaveAttribute("aria-expanded", "true");
+  await page.locator(".pos-experience-context-toggle").focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".pos-experience-context-toggle")).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("#pos-context-sidebar")).toBeHidden();
+  const mountToggle = page.getByRole("button", { name: "Toggle POS mount", exact: true });
+  await mountToggle.click();
+  await expect(page.locator(".pos-experience")).toHaveCount(0);
+  await mountToggle.click();
+  await expect(page.locator(".pos-experience-product")).toHaveCount(4);
+  await expect(page.locator(".pos-experience-context-toggle")).toHaveAttribute("aria-expanded", "false");
+  await page.getByLabel("Test company", { exact: true }).selectOption("2");
+  await expect(page.locator(".pos-experience-context-toggle")).toHaveAttribute("aria-expanded", "true");
+  await page.getByLabel("Test company", { exact: true }).selectOption("1");
+  await expect(page.locator(".pos-experience-context-toggle")).toHaveAttribute("aria-expanded", "false");
+  await page.evaluate(() => localStorage.clear());
+});
 
 test("FIFO scanner preserves leading zeros and waits for profile as well as resolve", async ({ page }) => {
   await open(page); await operatingContext(page);
@@ -75,6 +105,8 @@ test("FIFO scanner preserves leading zeros and waits for profile as well as reso
   await expect(checkout(page)).toBeDisabled();
   expect(scans).toEqual(["0001", "0002"]);
   release();
+  await expect(page.getByText(enPos["pos.profileApplied"], { exact: true })).toHaveCount(2);
+  await page.getByRole("button", { name: enCashierContext.review, exact: true }).click();
   await expect(checkout(page)).toBeEnabled();
   await scanner.fill("0001"); await scanner.press("Enter");
   await expect(page.getByTestId("pos-cart-line").first().locator(".pos-experience-quantity input")).toHaveValue("2.000000");
@@ -98,50 +130,69 @@ test("late profile cannot overwrite a manually edited line or leak into a change
   await expect(page.getByLabel(enPos["pos.customer"], { exact: true })).toHaveValue("");
 });
 
-test("unknown checkout locks duplicates, survives remount, retries exact key/body, and starts fresh only after confirmation", async ({ page }) => {
+test("unknown checkout locks duplicates, survives remount, checks the original attempt, and starts fresh only after confirmation", async ({ page }) => {
   await open(page); await operatingContext(page); await milk(page).click();
   const sent: { key: string; body: string }[] = [];
-  let fail = true;
   await page.route("**/pos/checkouts", async (route) => {
     sent.push({ key: route.request().headers()["idempotency-key"], body: route.request().postData()! });
     expect(route.request().headers()["x-csrf-token"]).toBe("r1-local-test-token");
-    if (fail) return route.abort("internetdisconnected");
-    return route.fallback();
+    return route.abort("internetdisconnected");
+  });
+  const recoveryChecks: { attemptKey: string }[] = [];
+  let confirmOriginalAttempt = false;
+  await page.route("**/pos/checkouts/recovery", async (route) => {
+    recoveryChecks.push(route.request().postDataJSON());
+    if (confirmOriginalAttempt) return route.fallback();
+    const headers = route.request().headers();
+    return route.fulfill({ json: { outcome: "UNKNOWN", posContext: {
+      userId: headers["x-pos-expected-user-id"], companyId: headers["x-pos-expected-company-id"],
+    } } });
   });
   await checkout(page).click();
-  await expect(page.getByText(enPos["pos.unknownTitle"], { exact: true })).toBeVisible();
+  await expect(page.getByText(enPosRecovery.unknown, { exact: true })).toBeVisible();
   expect(sent).toHaveLength(1);
   await expect(checkout(page)).toBeDisabled();
   await expect(page.getByTestId("pos-cart-line").locator("input").first()).toBeDisabled();
   await page.getByRole("button", { name: "Toggle POS mount" }).click();
   await page.getByRole("button", { name: "Toggle POS mount" }).click();
-  await expect(page.getByText(enPos["pos.unknownTitle"], { exact: true })).toBeVisible();
-  await expect(page.getByTestId("pos-cart-line")).toHaveCount(1);
+  await expect(page.getByText(enPosRecovery.unknown, { exact: true })).toBeVisible();
+  await expect(page.getByTestId("pos-cart-line")).toHaveCount(0);
+  await expect(milk(page)).toBeDisabled();
   await page.getByLabel("Test company", { exact: true }).selectOption("2");
-  await expect(page.getByText(enPos["pos.unknownTitle"], { exact: true })).toHaveCount(0);
+  await expect(page.getByText(enPosRecovery.unknown, { exact: true })).toHaveCount(0);
   await page.getByLabel("Test company", { exact: true }).selectOption("1");
-  fail = false;
-  await page.getByRole("button", { name: enPos["pos.retrySameSale"] }).click();
-  await expect(page.locator(".pos-experience-outcome.completed")).toBeVisible();
-  expect(sent).toHaveLength(2); expect(sent[1]).toEqual(sent[0]);
+  await expect(page.getByText(enPosRecovery.unknown, { exact: true })).toBeVisible();
+  expect(recoveryChecks.length).toBeGreaterThanOrEqual(2);
+  expect(recoveryChecks.every(({ attemptKey }) => attemptKey === sent[0].key)).toBe(true);
+  const checksBeforeConfirmation = recoveryChecks.length;
+  confirmOriginalAttempt = true;
+  await page.getByRole("button", { name: enPosRecovery.check, exact: true }).click();
+  await expect(page.getByText(enPosRecovery.confirmed, { exact: true })).toBeVisible();
+  expect(sent).toHaveLength(1);
+  expect(recoveryChecks).toHaveLength(checksBeforeConfirmation + 1);
+  expect(recoveryChecks.at(-1)).toEqual({ attemptKey: sent[0].key });
   const payload = JSON.parse(sent[0].body);
   expect(payload.lines[0].unitPrice).toBe("2.1000"); expect(payload.lines[0].quantity).toBe("1.000000");
   expect(payload).not.toHaveProperty("total");
   await expect(page.getByRole("link", { name: enPos["pos.openSalesList"] })).toHaveAttribute("href", "#sales");
   await expect(page.getByRole("link", { name: enPos["pos.openReceiptsList"] })).toHaveAttribute("href", "#receipts");
-  await expect(page.getByTestId("pos-cart-line")).toHaveCount(1);
-  await page.getByRole("button", { name: enPos["pos.newSale"], exact: true }).click();
   await expect(page.getByTestId("pos-cart-line")).toHaveCount(0);
+  await page.getByRole("button", { name: enPosRecovery.newSale, exact: true }).click();
+  await expect(page.getByTestId("pos-cart-line")).toHaveCount(0);
+  await expect(milk(page)).toBeEnabled();
 });
 
 test("zero price is explicit, missing profile stays blank and currency changes invalidate price", async ({ page }) => {
-  await open(page);
+  await open(page); await operatingContext(page);
   await page.locator(".pos-experience-product").filter({ hasText: "ITM-TEST-4" }).click();
   await expect(page.getByTestId("pos-cart-line").getByLabel("Unit price Explicit zero", { exact: true })).toHaveValue("0.0000");
   await page.locator(".pos-experience-product").filter({ hasText: "ITM-TEST-3" }).click();
   await expect(page.getByTestId("pos-cart-line").last().getByLabel("Unit price Missing profile", { exact: true })).toHaveValue("");
   await expect(page.getByTestId("pos-cart-line").last().locator(".pos-experience-line-fields")).toBeVisible();
-  await page.getByRole("combobox", { name: enPos["pos.currency"], exact: true }).selectOption("2");
+  await page.getByRole("button", { name: `${enCashierContext.edit} ${enCashierContext.currencyId}`, exact: true }).click();
+  await page.getByRole("combobox", { name: enCashierContext.currencyId, exact: true }).click();
+  await page.getByRole("listbox", { name: enCashierContext.currencyId, exact: true }).getByRole("option", { name: /USD/ }).click();
+  await page.getByRole("button", { name: enCashierContext.review, exact: true }).click();
   await expect(page.getByTestId("pos-cart-line").first().getByLabel("Unit price Explicit zero", { exact: true })).toHaveValue("");
   await expect(page.getByText(enPos["pos.profileCurrencyMismatch"], { exact: true })).toHaveCount(2);
 });
@@ -158,7 +209,10 @@ test("display mode is isolated by user/company and permission denial sends no ca
     const requests: string[] = [];
     await page.route("**/sales/catalog**", (route) => { requests.push(route.request().url()); return route.fallback(); });
     await page.getByLabel("Test role", { exact: true }).selectOption(role);
-    await expect(page.getByText(enPos["pos.catalogPermission"], { exact: true })).toBeVisible();
+    if (role === "viewer") {
+      await expect(page.locator(".pos-experience-product")).toHaveCount(0);
+      await expect(checkout(page)).toHaveCount(0);
+    } else await expect(page.getByText(enPos["pos.catalogPermission"], { exact: true })).toBeVisible();
     expect(requests).toEqual([]);
     await page.unroute("**/sales/catalog**");
   }
