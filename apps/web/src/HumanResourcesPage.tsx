@@ -19,7 +19,6 @@ import "./human-resources-experience.css";
 
 type Notice = (message: string, tone?: "success" | "error") => void;
 type Tab = "employees" | "structure";
-type EmployeeSummary = Record<HrEmploymentStatus, number>;
 
 const today = () => new Date().toISOString().slice(0, 10);
 const employeePermissions = {
@@ -71,7 +70,6 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
   const canManageStructure = allows(permissionSet, employeePermissions.manageStructure);
   const [tab, setTab] = useState<Tab>(() => canViewEmployees ? "employees" : "structure");
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [summary, setSummary] = useState<EmployeeSummary | null>(null);
   const [meta, setMeta] = useState({ page: 1, pageSize: 12, total: 0, totalPages: 0 });
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState<HrEmploymentStatus | "">("");
@@ -79,17 +77,16 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState("");
+  const selectedIdRef = useRef("");
   const [selected, setSelected] = useState<Employee | null>(null);
   const [contracts, setContracts] = useState<EmploymentContract[]>([]);
   const [departments, setDepartments] = useState<HrStructureReference[]>([]);
   const [positions, setPositions] = useState<HrStructureReference[]>([]);
   const [loading, setLoading] = useState(canViewEmployees);
-  const [summaryLoading, setSummaryLoading] = useState(canViewEmployees);
   const [detailLoading, setDetailLoading] = useState(false);
   const [structureLoading, setStructureLoading] = useState(canViewStructure);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
-  const [summaryError, setSummaryError] = useState("");
   const [detailError, setDetailError] = useState("");
   const [structureError, setStructureError] = useState("");
   const [createEmployeeOpen, setCreateEmployeeOpen] = useState(false);
@@ -97,10 +94,13 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
   const [contractOpen, setContractOpen] = useState(false);
   const requestLanes = useRef({
     employees: createLatestRequestLane(),
-    summary: createLatestRequestLane(),
     detail: createLatestRequestLane(),
     structure: createLatestRequestLane(),
   }).current;
+  const selectEmployeeId = useCallback((next: string) => {
+    selectedIdRef.current = next;
+    setSelectedId(next);
+  }, []);
 
   useEffect(() => {
     if (tab === "employees" && !canViewEmployees && canViewStructure) setTab("structure");
@@ -126,41 +126,15 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
       if (!request.isCurrent()) return;
       setEmployees(result.data);
       setMeta(result.meta);
-      setSelectedId((current) => result.data.some((employee) => employee.id === current) ? current : result.data[0]?.id ?? "");
+      const current = selectedIdRef.current;
+      selectEmployeeId(result.data.some((employee) => employee.id === current) ? current : result.data[0]?.id ?? "");
     } catch (cause) {
       if (!request.isCurrent()) return;
       setError(cause instanceof Error ? cause.message : t("hr.loadError"));
     } finally {
       if (request.isCurrent()) setLoading(false);
     }
-  }, [canViewEmployees, departmentId, page, requestLanes.employees, search, status, t]);
-
-  const loadSummary = useCallback(async () => {
-    const request = requestLanes.summary.begin();
-    if (!canViewEmployees) {
-      setSummary(null);
-      setSummaryLoading(false);
-      return;
-    }
-    setSummary(null);
-    setSummaryLoading(true);
-    setSummaryError("");
-    try {
-      const shared = { search: search || undefined, departmentId: departmentId || undefined };
-      const [active, onLeave, terminated] = await Promise.all([
-        api<ListResponse<Employee>>(employeePath({ ...shared, page: 1, pageSize: 1, status: "ACTIVE" }), { signal: request.signal }),
-        api<ListResponse<Employee>>(employeePath({ ...shared, page: 1, pageSize: 1, status: "ON_LEAVE" }), { signal: request.signal }),
-        api<ListResponse<Employee>>(employeePath({ ...shared, page: 1, pageSize: 1, status: "TERMINATED" }), { signal: request.signal }),
-      ]);
-      if (!request.isCurrent()) return;
-      setSummary({ ACTIVE: active.meta.total, ON_LEAVE: onLeave.meta.total, TERMINATED: terminated.meta.total });
-    } catch {
-      if (!request.isCurrent()) return;
-      setSummaryError(hrCopy["hr.summaryUnavailable"]);
-    } finally {
-      if (request.isCurrent()) setSummaryLoading(false);
-    }
-  }, [canViewEmployees, departmentId, hrCopy, requestLanes.summary, search]);
+  }, [canViewEmployees, departmentId, page, requestLanes.employees, search, selectEmployeeId, status, t]);
 
   const loadStructure = useCallback(async () => {
     const request = requestLanes.structure.begin();
@@ -188,7 +162,8 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
     }
   }, [canViewStructure, requestLanes.structure, t]);
 
-  const loadSelected = useCallback(async (employeeId = selectedId) => {
+  const loadSelected = useCallback(async (employeeId: string) => {
+    if (employeeId !== selectedIdRef.current) return;
     const request = requestLanes.detail.begin();
     if (!employeeId || !canViewEmployees) {
       setSelected(null);
@@ -205,41 +180,38 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
           ? api<{ data: EmploymentContract[] }>(`/hr/employees/${employeeId}/contracts`, { signal: request.signal })
           : Promise.resolve({ data: [] }),
       ]);
-      if (!request.isCurrent()) return;
+      if (!request.isCurrent() || selectedIdRef.current !== employeeId) return;
       setSelected(employeeResult.employee);
       setContracts(contractResult.data);
     } catch (cause) {
-      if (!request.isCurrent()) return;
+      if (!request.isCurrent() || selectedIdRef.current !== employeeId) return;
       setDetailError(cause instanceof Error ? cause.message : t("hr.detailError"));
     } finally {
-      if (request.isCurrent()) setDetailLoading(false);
+      if (request.isCurrent() && selectedIdRef.current === employeeId) setDetailLoading(false);
     }
-  }, [canViewContracts, canViewEmployees, requestLanes.detail, selectedId, t]);
+  }, [canViewContracts, canViewEmployees, requestLanes.detail, t]);
 
   useEffect(() => {
     void loadEmployees();
     return requestLanes.employees.cancel;
   }, [loadEmployees, requestLanes.employees]);
   useEffect(() => {
-    void loadSummary();
-    return requestLanes.summary.cancel;
-  }, [loadSummary, requestLanes.summary]);
-  useEffect(() => {
     void loadStructure();
     return requestLanes.structure.cancel;
   }, [loadStructure, requestLanes.structure]);
   useEffect(() => {
-    void loadSelected();
+    void loadSelected(selectedId);
     return requestLanes.detail.cancel;
-  }, [loadSelected, requestLanes.detail]);
+  }, [loadSelected, requestLanes.detail, selectedId]);
 
-  async function refresh(employeeId = selectedId) {
-    await Promise.all([loadEmployees(), loadSummary(), loadStructure(), loadSelected(employeeId)]);
+  async function refresh() {
+    await Promise.all([loadEmployees(), loadStructure()]);
+    await loadSelected(selectedIdRef.current);
   }
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setSelectedId("");
+    selectEmployeeId("");
     setSearch(searchInput.trim());
     setPage(1);
   }
@@ -270,9 +242,9 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
       setStatus("");
       setDepartmentId("");
       setPage(1);
-      setSelectedId(result.employee.id);
+      selectEmployeeId(result.employee.id);
       notify(t("hr.employeeCreated"));
-      await refresh(result.employee.id);
+      await refresh();
     } catch (cause) {
       notify(cause instanceof Error ? cause.message : t("hr.employeeError"), "error");
     } finally {
@@ -431,7 +403,6 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
   const activePositions = useMemo(() => positions.filter((item) => item.isActive), [positions]);
   const availableManagers = employees.filter((item) => item.status !== "TERMINATED");
   const managerOptions = availableManagers.filter((item) => item.id !== selected?.id);
-  const totalEmployees = summary ? summary.ACTIVE + summary.ON_LEAVE + summary.TERMINATED : 0;
   const filtered = Boolean(search || status || departmentId);
   const selectedIsCurrent = selected?.id === selectedId;
   const visibleTabs = [
@@ -472,22 +443,23 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
     </div>
 
     {tab === "employees" && canViewEmployees && <div id="hr-employees-panel" role="tabpanel" aria-labelledby="hr-employees-tab" className="hr-tab-panel">
-      <div className="hr-summary" aria-live="polite" aria-busy={summaryLoading} aria-label={hrCopy["hr.summaryLabel"]}>
-        {summaryLoading && !summary ? <Spinner label={t("hr.loading")} /> : summaryError ? <div className="hr-summary-error" role="status"><span>{summaryError}</span><Button variant="secondary" onClick={() => void loadSummary()}>{t("common.retry")}</Button></div> : summary && <>
-          <SummaryButton label={t("hr.employees")} value={totalEmployees} selected={!status} onClick={() => { setSelectedId(""); setStatus(""); setPage(1); }} />
-          <SummaryButton label={t("hr.status.ACTIVE")} value={summary.ACTIVE} selected={status === "ACTIVE"} onClick={() => { setSelectedId(""); setStatus("ACTIVE"); setPage(1); }} />
-          <SummaryButton label={t("hr.status.ON_LEAVE")} value={summary.ON_LEAVE} selected={status === "ON_LEAVE"} onClick={() => { setSelectedId(""); setStatus("ON_LEAVE"); setPage(1); }} />
-          <SummaryButton label={t("hr.status.TERMINATED")} value={summary.TERMINATED} selected={status === "TERMINATED"} onClick={() => { setSelectedId(""); setStatus("TERMINATED"); setPage(1); }} />
-        </>}
+      <div className="hr-status-bar" aria-busy={loading} aria-label={t("hr.statusFilter")}>
+        <div className="hr-status-filters">
+          <StatusFilter label={t("hr.status.ALL")} selected={!status} onClick={() => { selectEmployeeId(""); setStatus(""); setPage(1); }} />
+          <StatusFilter label={t("hr.status.ACTIVE")} selected={status === "ACTIVE"} onClick={() => { selectEmployeeId(""); setStatus("ACTIVE"); setPage(1); }} />
+          <StatusFilter label={t("hr.status.ON_LEAVE")} selected={status === "ON_LEAVE"} onClick={() => { selectEmployeeId(""); setStatus("ON_LEAVE"); setPage(1); }} />
+          <StatusFilter label={t("hr.status.TERMINATED")} selected={status === "TERMINATED"} onClick={() => { selectEmployeeId(""); setStatus("TERMINATED"); setPage(1); }} />
+        </div>
+        <span className={`hr-current-total${error ? " error" : ""}`} role="status">{loading ? t("hr.loading") : error || t("common.results", { total: formatNumber(meta.total) })}</span>
       </div>
 
       <form className={`panel hr-filter-bar${canViewStructure ? "" : " without-department"}`} role="search" onSubmit={submitSearch}>
         <label className="hr-search-field"><span>{t("common.search")}</span><input name="employeeSearch" type="search" placeholder={hrCopy["hr.searchPlaceholder"]} value={searchInput} onChange={(event) => setSearchInput(event.target.value)} autoComplete="off" /></label>
-        <label><span>{t("hr.statusFilter")}</span><select value={status} onChange={(event) => { setSelectedId(""); setStatus(event.target.value as HrEmploymentStatus | ""); setPage(1); }}>
+        <label><span>{t("hr.statusFilter")}</span><select value={status} onChange={(event) => { selectEmployeeId(""); setStatus(event.target.value as HrEmploymentStatus | ""); setPage(1); }}>
           <option value="">{t("hr.status.ALL")}</option>
           {(["ACTIVE", "ON_LEAVE", "TERMINATED"] as HrEmploymentStatus[]).map((value) => <option key={value} value={value}>{t(`hr.status.${value}`)}</option>)}
         </select></label>
-        {canViewStructure && <label><span>{t("hr.department")}</span><select value={departmentId} onChange={(event) => { setSelectedId(""); setDepartmentId(event.target.value); setPage(1); }}>
+        {canViewStructure && <label><span>{t("hr.department")}</span><select value={departmentId} onChange={(event) => { selectEmployeeId(""); setDepartmentId(event.target.value); setPage(1); }}>
           <option value="">{hrCopy["hr.allDepartments"]}</option>
           {departments.map((item) => <option key={item.id} value={item.id}>{item.code} — {localizedReferenceName(item)}</option>)}
         </select></label>}
@@ -499,11 +471,11 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
         : employees.length === 0 && !filtered ? <EmptyState title={t("hr.emptyTitle")} description={t("hr.emptyDescription")} action={canManageEmployees ? <Button icon="plus" onClick={() => setCreateEmployeeOpen(true)}>{t("hr.newEmployee")}</Button> : undefined} />
         : <div className="hr-layout">
           <article className="panel hr-employee-list">
-            <header><div><h2>{t("hr.employees")}</h2><p>{t("common.results", { total: formatNumber(meta.total) })} · {hrCopy["hr.rosterDescription"]}</p></div></header>
+            <header><div><h2>{t("hr.employees")}</h2><p>{hrCopy["hr.rosterDescription"]}</p></div></header>
             <div className="data-table-wrap hr-list-region" role="region" tabIndex={0} aria-label={t("hr.employees")}>
               {employees.length === 0 ? <div className="hr-no-results" role="status"><strong>{hrCopy["hr.filteredEmptyTitle"]}</strong><p>{hrCopy["hr.filteredEmptyDescription"]}</p></div> : <ul className="hr-person-list">
                 {employees.map((employee) => <li key={employee.id}>
-                  <button type="button" className="hr-person-card" aria-pressed={selectedId === employee.id} onClick={() => setSelectedId(employee.id)}>
+                  <button type="button" className="hr-person-card" aria-pressed={selectedId === employee.id} onClick={() => selectEmployeeId(employee.id)}>
                     <span className="hr-person-heading"><strong>{localizedReferenceName(employee)}</strong><span dir="ltr">{employee.employeeNumber}</span></span>
                     <span className="hr-person-assignment">{employee.department ? localizedReferenceName(employee.department) : t("hr.notAssigned")} · {employee.position ? localizedReferenceName(employee.position) : t("hr.notAssigned")}</span>
                     <span className="hr-person-state"><span className={`status-chip ${employee.status.toLowerCase()}`}>{t(`hr.status.${employee.status}`)}</span><span>{employee.hasActiveContract ? t("hr.activeContract") : t("hr.noActiveContract")}</span></span>
@@ -511,11 +483,11 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
                 </li>)}
               </ul>}
             </div>
-            <Pagination {...meta} page={page} onChange={(nextPage) => { setSelectedId(""); setPage(nextPage); }} />
+            <Pagination {...meta} page={page} onChange={(nextPage) => { selectEmployeeId(""); setPage(nextPage); }} />
           </article>
 
           <div className="hr-person-workspace">
-            {detailError ? <div className="error-panel" role="alert"><p>{detailError}</p><Button variant="secondary" onClick={() => void loadSelected()}>{t("common.retry")}</Button></div>
+            {detailError ? <div className="error-panel" role="alert"><p>{detailError}</p><Button variant="secondary" onClick={() => void loadSelected(selectedIdRef.current)}>{t("common.retry")}</Button></div>
               : detailLoading ? <Spinner label={t("hr.loading")} />
               : selectedIsCurrent && selected && <>
                 <article className="panel hr-detail" aria-label={localizedReferenceName(selected)}>
@@ -575,9 +547,8 @@ export function HumanResourcesPage({ notify }: { notify: Notice }) {
   </section>;
 }
 
-function SummaryButton({ label, value, selected, onClick }: { label: string; value: number; selected: boolean; onClick: () => void }) {
-  const { formatNumber } = useI18n();
-  return <button type="button" className={selected ? "active" : ""} aria-pressed={selected} onClick={onClick}><span>{label}</span><strong>{formatNumber(value)}</strong></button>;
+function StatusFilter({ label, selected, onClick }: { label: string; selected: boolean; onClick: () => void }) {
+  return <button type="button" className={selected ? "active" : ""} aria-pressed={selected} onClick={onClick}>{label}</button>;
 }
 
 function StructurePanel({ title, description, addLabel, items, working, canManage, onCreate, onDeactivate }: {

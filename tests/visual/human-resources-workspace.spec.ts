@@ -61,7 +61,8 @@ for (const locale of locales) {
 
     await page.goto("/#humanResources");
     await expect(page.locator(".hr-experience")).toBeVisible();
-    await expect(page.locator(".hr-summary > button")).toHaveCount(4);
+    await expect(page.locator(".hr-status-filters > button")).toHaveCount(4);
+    await expect(page.locator(".hr-current-total")).toContainText(/[3٣]/u);
     await expect(page.locator(".hr-person-card")).toHaveCount(3);
     await expect(page.locator(".hr-contract-list > li")).toHaveCount(1);
     await expect(page.locator("html")).toHaveAttribute("dir", locale === "ar" || locale === "ur" ? "rtl" : "ltr");

@@ -8,46 +8,57 @@
   gap: 18px;
 }
 
-.hr-summary {
+.hr-status-bar {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   gap: 12px;
-}
-
-.hr-summary > button {
-  display: grid;
-  gap: 10px;
-  min-height: 94px;
-  padding: 15px 17px;
+  padding: 12px;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: var(--surface);
+}
+
+.hr-status-filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface-soft);
+}
+
+.hr-status-filters > button {
+  min-height: 42px;
+  padding: 9px 13px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
   color: var(--ink);
   font: inherit;
-  text-align: start;
+  font-weight: 700;
+  text-align: center;
   cursor: pointer;
-  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  transition: background 160ms ease, box-shadow 160ms ease;
 }
 
-.hr-summary > button:hover {
-  border-color: #9fbdb0;
-  transform: translateY(-1px);
+.hr-status-filters > button:hover {
+  background: #f1f8f4;
 }
 
-.hr-summary > button:focus-visible,
+.hr-status-filters > button:focus-visible,
 .hr-person-card:focus-visible {
   outline: 3px solid rgba(48, 121, 87, .25);
   outline-offset: 2px;
 }
 
-.hr-summary > button.active {
-  border-color: #8fb8a5;
-  background: #f1f8f4;
+.hr-status-filters > button.active {
+  background: var(--surface);
+  color: var(--green-800);
   box-shadow: 0 5px 18px rgba(35, 83, 62, .08);
 }
 
-.hr-summary span,
-.hr-summary small,
 .hr-identity-strip small,
 .hr-contract-list span,
 .hr-reference-list span,
@@ -57,27 +68,21 @@
   font-size: .9rem;
 }
 
-.hr-summary strong,
 .hr-structure-summary strong {
   color: var(--green-800);
   font-size: 1.25rem;
 }
 
-.hr-summary > .spinner,
-.hr-summary-error {
-  grid-column: 1 / -1;
+.hr-current-total {
+  color: var(--muted);
+  font-size: .9rem;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
-.hr-summary-error {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 16px 18px;
-  border: 1px solid #ead6a2;
-  border-radius: 14px;
-  background: #fffaf0;
-  color: #765a14;
+.hr-current-total.error {
+  color: var(--danger);
+  white-space: normal;
 }
 
 .hr-filter-bar {
@@ -390,7 +395,11 @@
 }
 
 @media (max-width: 900px) {
-  .hr-summary {
+  .hr-status-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .hr-status-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -412,7 +421,6 @@
 }
 
 @media (max-width: 680px) {
-  .hr-summary,
   .hr-filter-bar,
   .hr-person-list,
   .hr-contract-list,
@@ -468,14 +476,10 @@
     flex-direction: column;
   }
 
-  .hr-summary-error {
-    align-items: stretch;
-    flex-direction: column;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hr-summary > button {
+  .hr-status-filters > button {
     transition: none;
   }
 }

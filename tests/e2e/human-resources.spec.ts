@@ -110,7 +110,7 @@ test("creates an independent employee record and a non-financial contract", asyn
   await expect(employeesTab).toBeFocused();
   await expect(page.locator("#hr-employees-panel")).toHaveAttribute("aria-labelledby", "hr-employees-tab");
   expect(requestedPageSizes).toContain(12);
-  expect(requestedPageSizes).toContain(1);
+  expect(requestedPageSizes.every((pageSize) => pageSize === 12)).toBe(true);
   await page.getByRole("button", { name: "New employee" }).first().click();
 
   const employeeDialog = page.getByRole("dialog", { name: "Create employee" });
@@ -190,28 +190,10 @@ test("no HR read permission rejects a direct HR route without making HR requests
   expect(hrRequests).toBe(0);
 });
 
-test("a 403 summary failure does not block the employee register", async ({ page }) => {
-  const employee = employeeFixture("a0a1778f-b690-49c2-b790-43a086e3ca7c", "EMP-000071", "موظف متاح", "Available Employee", "ACTIVE");
-  await installShellMocks(page, ["hr.employees.view"], async (route, url, path) => {
-    if (path === "/hr/employees" && url.searchParams.has("status")) return respond(route, { code: "FORBIDDEN" }, 403);
-    if (path === "/hr/employees") return respond(route, employeePage(url, [employee]));
-    if (path === `/hr/employees/${employee.id}`) return respond(route, { employee });
-    return respond(route, { code: "NOT_FOUND" }, 404);
-  });
-
-  await page.goto("/#humanResources");
-
-  await expect(page.getByRole("button", { name: /Available Employee EMP-000071/u })).toBeVisible();
-  await expect(page.locator(".hr-summary-error")).toContainText("Status totals could not be loaded");
-  await expect(page.locator(".hr-layout")).toBeVisible();
-  await expect(page.locator(".hr-employee-list .error-panel")).toHaveCount(0);
-});
-
 test("a 403 employee response stays retryable and exposes no stale register", async ({ page }) => {
   const recovered = employeeFixture("f201d065-f6e2-476b-80dc-d588ccb73916", "EMP-000075", "موظف مستعاد", "Recovered Employee", "ACTIVE");
   let denyListReads = true;
   await installShellMocks(page, ["hr.employees.view"], async (route, url, path) => {
-    if (path === "/hr/employees" && url.searchParams.has("status")) return respond(route, { code: "FORBIDDEN" }, 403);
     if (path === "/hr/employees" && denyListReads) return respond(route, { code: "FORBIDDEN" }, 403);
     if (path === "/hr/employees") return respond(route, employeePage(url, [recovered]));
     if (path === `/hr/employees/${recovered.id}`) return respond(route, { employee: recovered });
@@ -226,6 +208,56 @@ test("a 403 employee response stays retryable and exposes no stale register", as
   await page.locator(".hr-tab-panel > .error-panel").getByRole("button", { name: "Try again" }).click();
   await expect(page.getByRole("button", { name: /Recovered Employee EMP-000075/u })).toBeVisible();
   await expect(page.locator(".hr-person-card")).toHaveCount(1);
+  await expect(page.locator(".hr-current-total")).toContainText("1");
+});
+
+test("a completed mutation refreshes the live selection without restoring its old employee", async ({ page }) => {
+  let employeeA = employeeFixture("ab61c6d4-d844-48b2-b26c-65af7fd7f469", "EMP-000091", "موظف قيد التحديث", "Mutation Employee", "ACTIVE");
+  const employeeB = employeeFixture("d0f31fc1-f34e-45df-b42d-8c803d16ae3c", "EMP-000092", "الموظف الحالي", "Current Employee", "ON_LEAVE");
+  let mutationStarted = false;
+  let mutationCompleted = false;
+  const detailTargets: string[] = [];
+  const transitionTargets: string[] = [];
+
+  await installShellMocks(page, ["hr.employees.view", "hr.employees.manage"], async (route, url, path) => {
+    if (path === `/hr/employees/${employeeA.id}/transition`) {
+      transitionTargets.push(employeeA.id);
+      mutationStarted = true;
+      await pause(650);
+      employeeA = { ...employeeA, status: "ON_LEAVE", version: 2 };
+      mutationCompleted = true;
+      return safelyRespond(route, { employee: employeeA });
+    }
+    if (path === "/hr/employees") return respond(route, employeePage(url, [employeeA, employeeB]));
+    if (path === `/hr/employees/${employeeA.id}`) {
+      detailTargets.push(employeeA.id);
+      return respond(route, { employee: employeeA });
+    }
+    if (path === `/hr/employees/${employeeB.id}`) {
+      detailTargets.push(employeeB.id);
+      await pause(100);
+      return safelyRespond(route, { employee: employeeB });
+    }
+    return respond(route, { code: "NOT_FOUND" }, 404);
+  });
+  page.on("dialog", (dialog) => void dialog.accept("Approved leave"));
+
+  await page.goto("/#humanResources");
+  await expect(page.getByRole("heading", { name: "Mutation Employee" })).toBeVisible();
+  await page.getByRole("button", { name: "Put on leave" }).click();
+  await expect.poll(() => mutationStarted).toBe(true);
+
+  await page.getByRole("button", { name: /Current Employee EMP-000092/u }).click();
+  await expect(page.getByRole("button", { name: "Put on leave" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Current Employee" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Return to work" })).toBeVisible();
+
+  await expect.poll(() => mutationCompleted).toBe(true);
+  await expect(page.getByRole("heading", { name: "Current Employee" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Return to work" })).toBeEnabled();
+  await expect(page.getByRole("heading", { name: "Mutation Employee" })).toHaveCount(0);
+  await expect.poll(() => detailTargets.at(-1)).toBe(employeeB.id);
+  expect(transitionTargets).toEqual([employeeA.id]);
 });
 
 test("late employee and filter responses cannot restore a stale actionable record", async ({ page }) => {
@@ -267,7 +299,7 @@ test("late employee and filter responses cannot restore a stale actionable recor
   await pause(700);
   await expect(page.getByRole("heading", { name: "Leave Employee" })).toBeVisible();
 
-  const status = page.getByLabel("Employee status");
+  const status = page.getByRole("combobox", { name: "Employee status" });
   await status.selectOption("ON_LEAVE");
   await expect(page.getByRole("button", { name: "Edit employee" })).toHaveCount(0);
   await status.selectOption("ACTIVE");
