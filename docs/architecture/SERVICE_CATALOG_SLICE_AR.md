@@ -236,10 +236,10 @@ PATCH لا يقبل `status`، وتكون mutability الحقلية كما يل�
 
 | العملية | الصلاحية | قاعدة أساسية |
 |---|---|---|
-| `GET /service-catalog/price-books` | `services.view` | Pagination حسب العملة/الحالة؛ كل صف يعيد `id/currencyId/status/version` لـCAS الهدف |
-| `GET /service-catalog/default-price-book?currencyId={uuid}` | `services.view` | مورد واحد يعيد `ABSENT/PRESENT` وCAS token؛ لا list ولا inference |
-| `GET /service-catalog/price-books/{priceBookId}/prices` | `services.view` | `view` إجباري وPagination لتبويبات السعر والتاريخ |
-| `GET /service-catalog/prices/{priceId}` | `services.view` | سجل شركة واحد مع `version` أو 404 موحد |
+| `GET /service-catalog/price-books` | `services.prices.manage` | Pagination حسب العملة/الحالة؛ كل صف يعيد `id/currencyId/status/version` لـCAS الهدف |
+| `GET /service-catalog/default-price-book?currencyId={uuid}` | `services.prices.manage` | مورد إداري واحد يعيد `ABSENT/PRESENT` وCAS token |
+| `GET /service-catalog/price-books/{priceBookId}/prices` | `services.prices.manage` | `view` إجباري وPagination للمسودة/الحالي/القادم/التاريخ/الملغى |
+| `GET /service-catalog/prices/{priceId}` | `services.prices.manage` | detail إداري لشركة واحدة مع `version` أو 404 موحد |
 | `POST /service-catalog/price-books` | `services.prices.manage` | دفتر `DRAFT` و`Idempotency-Key` |
 | `PATCH /service-catalog/price-books/{priceBookId}` | `services.prices.manage` | `expectedVersion` والمفتاح؛ لا يقبل العملة |
 | `POST /service-catalog/price-books/{priceBookId}/transition` | `services.prices.manage` | `targetStatus/expectedVersion/reason` والمفتاح |
@@ -248,10 +248,16 @@ PATCH لا يقبل `status`، وتكون mutability الحقلية كما يل�
 | `PATCH /service-catalog/prices/{priceId}` | `services.prices.manage` | للمسودة فقط بـ`expectedVersion` والمفتاح |
 | `POST /service-catalog/prices/{priceId}/publish` | `services.prices.manage` | `expectedVersion` والمفتاح وقفل التداخل |
 | `POST /service-catalog/prices/{priceId}/end` | `services.prices.manage` | النسخة والسبب والمفتاح؛ `REPLACE` أو `LEAVE_GAP` |
-| `POST /service-catalog/prices/{priceId}/cancel` | `services.prices.manage` | قبل بداية النفاذ فقط بالنسخة والسبب والمفتاح |
+| `POST /service-catalog/prices/{priceId}/cancel` | `services.prices.manage` | `DRAFT` بلا شرط تاريخ؛ `PUBLISHED` فقط قبل البداية، بالنسخة والسبب والمفتاح |
 
 كل مبلغ في النقل نص ثابت بأربع منازل. لا يقبل Number عائم، ولا `MAX()+1`، ولا query
 غير محدودة لفحص التداخل.
+
+هذه GETs الأربعة إدارية، ويطبق حارس `services.prices.manage` قبل lookup؛ من لا يملكه
+يأخذ 403 ولا يعرف هل المورد كان سيعيد نجاحًا أو 404. لا تكفي `services.view` لدفتر
+بأي حالة أو مؤشره أو price detail أو أي view من القائمة.
+يبقى حامل `services.view` قادرًا على `selection-options` فقط لرؤية الكتالوج والسعر
+الفعال المنقح، ولا يرى DRAFT/UPCOMING/CANCELLED/HISTORY ولا metadata الإدارة.
 
 عقد قراءة المؤشر يتطلب `currencyId` واحدة ويعيد أحد الشكلين فقط:
 
@@ -290,9 +296,9 @@ blind overwrite. اختلاف `priceBookVersion` يعيد `409 VERSION_CONFLICT`
 
 | الحالة | حقول PATCH للدفتر | أوامر السعر المسموحة |
 |---|---|---|
-| `DRAFT` | `nameAr/nameEn` | create/PATCH لسعر `DRAFT`؛ لا publish |
-| `ACTIVE` | `nameAr/nameEn` | create/PATCH للمسودة وpublish/end/cancel حسب حالة السعر |
-| `INACTIVE` | `nameAr/nameEn` | لا create ولا publish؛ قراءة التاريخ فقط |
+| `DRAFT` | `nameAr/nameEn` | create/PATCH/cancel لسعر `DRAFT`؛ لا publish |
+| `ACTIVE` | `nameAr/nameEn` | create/PATCH للمسودة وpublish/end؛ cancel حسب حالة السعر والساعة |
+| `INACTIVE` | `nameAr/nameEn` | cancel لمسودة أو `PUBLISHED` مستقبلي فقط؛ لا create/PATCH/publish/end |
 | `RETIRED` | لا شيء | لا كتابة؛ قراءة تاريخية فقط |
 
 `id/publicId/companyId/currencyId` ثابتة دائمًا، والحالة تتغير بـ`transition` فقط.
@@ -302,6 +308,12 @@ blind overwrite. اختلاف `priceBookVersion` يعيد `409 VERSION_CONFLICT`
 `priceBookId/serviceVariantId/id/publicId/companyId/status` ثابتة من الإنشاء. السعر
 `PUBLISHED` لا يقبل PATCH: المجدول يمكن إلغاؤه قبل بدايته، والجاري ينتهي فقط بـ
 `REPLACE/LEAVE_GAP`، والمنتهي قراءة فقط. `CANCELLED` قراءة فقط.
+
+يقرر endpoint `/cancel` من الحالة المخزنة: يلغي `DRAFT` بصرف النظر عن
+`effectiveFrom` إذا كان الدفتر `DRAFT/ACTIVE/INACTIVE`؛ ويلغي `PUBLISHED` فقط عندما
+`now < effectiveFrom` ودفتره `ACTIVE/INACTIVE`. يستخدم ساعة الخادم داخل المعاملة،
+ويرفض `now >= effectiveFrom` بـ`409 SERVICE_PRICE_ALREADY_EFFECTIVE`، ويرفض دفتر
+`RETIRED` بـ`409 SERVICE_PRICE_BOOK_WRITE_BLOCKED`. لا يوجد endpoint منفصل للحالتين.
 
 عقد `end` مميز بـ`mode`:
 
@@ -435,11 +447,12 @@ cancel للسعر يسجل Audit داخل معاملة كتابة المجال �
 
 1. عنوان ووصف مختصر وإجراء إنشاء لمن يملك `services.manage`.
 2. بحث وفلاتر وعروض/بدائل مع حالة التوفر.
-3. مساحة دفاتر الأسعار تظهر لمن يملك العرض، وأفعالها فقط لمن يملك
-   `services.prices.manage`.
-4. تبويبات `مسودة/حالي/قادم/سجل/ملغى` تحمل صفحة bounded من عقد prices حسب الحاجة، لا
-   تجمع التاريخ كله في المتصفح.
-5. سجل التاريخ/الحالة والمرجعيات بأسماء مقروءة، لا IDs خام.
+3. مساحة دفاتر الأسعار ومؤشرها وكل بياناتها الإدارية لا تركب إلا لمن يملك
+   `services.prices.manage`؛ لا تكفي `services.view` لعرضها read-only.
+4. تبويبات `مسودة/حالي/قادم/سجل/ملغى` متاحة لـ`services.prices.manage` فقط، وتحمل
+   صفحة bounded من عقد prices حسب الحاجة، لا تجمع التاريخ كله في المتصفح.
+5. سجل حالة العرض/البديل والمرجعيات بأسماء مقروءة، لا IDs خام؛ يبقى تاريخ السعر داخل
+   المساحة المحمية في البند السابق.
 
 لا يظهر زر إدارة بناء على اسم الدور. عدم اكتمال Account/Tax يظهر كتحذير قابل للإصلاح
 برابط مسموح فقط، ولا يمنح `services.manage` صلاحيات الحسابات أو الضرائب.
@@ -447,6 +460,10 @@ cancel للسعر يسجل Audit داخل معاملة كتابة المجال �
 النموذج فقط. بعد 409 تعيد الجلب وتطلب من المستخدم إعادة القرار. لا تعرض فعل
 `clear-default`؛ وعند تعطيل/تقاعد الدفتر الافتراضي تطلب اختيار دفتر `ACTIVE` بديلًا
 وتنفذ `make-default` أولًا، ولا تخفي فشل أي من الأمرين.
+يظهر زر الإلغاء لمسودة في دفتر `DRAFT/ACTIVE/INACTIVE` مهما كان تاريخها، ولمنشور
+فقط إذا أعاد الخادم أنه قادم ودفتره `ACTIVE/INACTIVE`. لا تعتمد الواجهة وحدها على
+الساعة؛ يعيد 409 عند عبور الحد فتحدّث الصف وتعلن التعارض. لا يظهر الإلغاء في
+`RETIRED` أو لسعر منشور جارٍ/منتهٍ.
 
 ### 10.2 الاستخدام اليومي
 
@@ -476,11 +493,18 @@ cancel للسعر يسجل Audit داخل معاملة كتابة المجال �
 - عدم تداخل السعر، وعدم fallback لدفتر/عملة/سعر مفقود.
 - `end/REPLACE` يثبت تلاصق الحد وذرية الخلف، و`end/LEAVE_GAP` يتطلب `allowGap: true`
   ويعيد `SERVICE_PRICE_NOT_FOUND` داخل الفجوة؛ كل الأجسام الملتبسة ترفض.
+- `cancel` يلغي `DRAFT` قبل/عند/بعد `effectiveFrom` في دفتر `DRAFT/ACTIVE/INACTIVE`،
+  ويلغي `PUBLISHED` فقط عندما `now < effectiveFrom` في `ACTIVE/INACTIVE`. يرفض الحد
+  `now = effectiveFrom` وما بعده بـ`SERVICE_PRICE_ALREADY_EFFECTIVE`، وكل حالة في
+  دفتر `RETIRED` بـ`SERVICE_PRICE_BOOK_WRITE_BLOCKED`، من endpoint نفسه.
 - قراءة المؤشر تعيد الشكلين `ABSENT/PRESENT` ونسختي المؤشر/الدفتر كما يلزم، ويقبل CAS
   token المقروء ويرفض القديم. لا route أو method لمسح المؤشر، وبعد أول تعيين لا يعود
   إلى `ABSENT`.
 - مناظير الأسعار الخمسة تفصل المسودة والحالي والقادم والتاريخ والملغى عند حدود
   `asOf`، مع Pagination وترتيب ثابت ومنع `ALL` والاستعلام غير المحدود.
+- مستخدم `services.view` ينجح في الكتالوج و`selection-options` والسعر الفعال، ويأخذ
+  403 على قائمة الدفاتر والمؤشر وكل price list/detail حتى `view=CURRENT`؛ مستخدم
+  `services.prices.manage` وحده يجتاز GETs الإدارية وتظهر له مساحة الأسعار.
 - حساب/ضريبة/عملة من شركة أخرى أو معطلة، وغياب المرجع الاختياري.
 - Pagination/search/filter bounded وترتيب حتمي بلا N+1.
 - UUID/BigInt/Decimal/date serialization، وأكواد أخطاء معلنة ومدققة.
