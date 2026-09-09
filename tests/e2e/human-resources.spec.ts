@@ -213,9 +213,9 @@ test("a 403 employee response stays retryable and exposes no stale register", as
 
 test("a completed mutation refreshes the live selection without restoring its old employee", async ({ page }) => {
   let employeeA = employeeFixture("ab61c6d4-d844-48b2-b26c-65af7fd7f469", "EMP-000091", "موظف قيد التحديث", "Mutation Employee", "ACTIVE");
-  const employeeB = employeeFixture("d0f31fc1-f34e-45df-b42d-8c803d16ae3c", "EMP-000092", "الموظف الحالي", "Current Employee", "ON_LEAVE");
+  const employeeB = employeeFixture("d0f31fc1-f34e-45df-b42d-8c803d16ae3c", "EMP-000092", "الموظف الحالي", "Current Employee", "ACTIVE");
   let mutationStarted = false;
-  let mutationCompleted = false;
+  let mutationResponseFulfilled = false;
   const detailTargets: string[] = [];
   const transitionTargets: string[] = [];
 
@@ -225,8 +225,9 @@ test("a completed mutation refreshes the live selection without restoring its ol
       mutationStarted = true;
       await pause(650);
       employeeA = { ...employeeA, status: "ON_LEAVE", version: 2 };
-      mutationCompleted = true;
-      return safelyRespond(route, { employee: employeeA });
+      await respond(route, { employee: employeeA });
+      mutationResponseFulfilled = true;
+      return;
     }
     if (path === "/hr/employees") return respond(route, employeePage(url, [employeeA, employeeB]));
     if (path === `/hr/employees/${employeeA.id}`) {
@@ -248,13 +249,14 @@ test("a completed mutation refreshes the live selection without restoring its ol
   await expect.poll(() => mutationStarted).toBe(true);
 
   await page.getByRole("button", { name: /Current Employee EMP-000092/u }).click();
-  await expect(page.getByRole("button", { name: "Put on leave" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Current Employee" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Return to work" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Put on leave" })).toBeVisible();
 
-  await expect.poll(() => mutationCompleted).toBe(true);
+  await expect.poll(() => mutationResponseFulfilled).toBe(true);
+  await expect.poll(() => detailTargets.filter((id) => id === employeeB.id).length).toBe(2);
   await expect(page.getByRole("heading", { name: "Current Employee" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Return to work" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Put on leave" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Return to work" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Mutation Employee" })).toHaveCount(0);
   await expect.poll(() => detailTargets.at(-1)).toBe(employeeB.id);
   expect(transitionTargets).toEqual([employeeA.id]);
