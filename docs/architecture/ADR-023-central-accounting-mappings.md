@@ -1,7 +1,7 @@
 ---
 title: "ADR-023 — Central Accounting Default Mappings"
 status: "proposed for acceptance; implementation not started"
-version: "1.0"
+version: "1.1"
 date: "2026-09-09"
 decision_owner: "Core Accounting"
 related:
@@ -48,6 +48,7 @@ related:
 | `CashBankAccount.ledgerAccountId` | يملكه Treasury لكل أداة | حقيقة خاصة بالصندوق/البنك؛ لا ينقل إلى المركز |
 | `Receipt/Payment.counterAccountId` | اختيار خاص بالحركة | حقيقة مستند؛ لا ينقل إلى المركز |
 | القيد اليدوي ومراكز التكلفة | اختيار صريح في المستند | خارج مفهوم default mapping |
+| دورة حياة `Account` | `Account` بلا `version`، والتعطيل يفحص الأبناء النشطين فقط، بينما الحذف يعد علاقات متعددة مباشرة من Prisma ولا يشمل كل التاريخ | فجوة اتساق وحدود؛ تعالج بـCAS وحارس استعمال مركب عبر Ports المالكين |
 
 المراجع التنفيذية لهذا الجرد هي `apps/api/prisma/schema.prisma`،
 `apps/api/src/accounts/default-chart-template.ts`،
@@ -138,6 +139,15 @@ CompanyAccountingDefaultMapping
 `source` أصل إنشاء الصف لا أولوية حل. بعد التعديل اليدوي يصبح `MANUAL`. لا يغير
 تطبيق القالب أو إعادة تشغيل Seed صفًا موجودًا، وبخاصة الصف اليدوي.
 
+ويضاف إلى Aggregate `Account` الحقل `version INT UNSIGNED NOT NULL DEFAULT 0`.
+تحمل كل أوامر تحديث الحساب وتعطيله وحذفه `expectedVersion`، وتقفل صف الحساب ثم تنفذ
+CAS على `(id,companyId,version)`؛ يزيد التحديث والتعطيل النسخة مرة واحدة. هذا ليس
+جزءًا من جدول التعيينات، بل إغلاق لفجوة موجودة لأن `Account` Aggregate قابل للتغيير
+ويحكم أهلية الترحيل. يجب أن يحدث OpenAPI وWeb وكل المستهلكين في إصدار منسق؛ لا يبقى
+مسار كتابة legacy يتجاوز `expectedVersion` بعد التفعيل.
+إذا غيّر reparent مستويات descendants يقفلها حسب id ويزيد نسخة كل صف تغير، وإذا
+ربط تطبيق القالب tags بحساب قائم يمر بالعقد نفسه؛ لا توجد كتابة خلفية تتجاوز النسخة.
+
 ### 5. التوافق مع القوالب و`sourceTemplateKey`
 
 تحتفظ القوالب الثلاثة الجديدة في مسار Company Profile بالأكواد:
@@ -197,6 +207,7 @@ Accounting نموذج `CompanyProfile` ولا يقرأ readiness/امتثال ا
 ```text
 AccountingDefaultMappingQueryPort.resolveRequired(tx, companyId, keys)
 AccountingDefaultMappingQueryPort.resolveOptional(tx, companyId, key)
+AccountingDefaultMappingCommandPort.resolveForCommand(tx, companyId, keys)
 AccountingDefaultMappingSetupPort.seedMissing(tx, companyId, templateCode, actor)
 ```
 
@@ -213,6 +224,14 @@ AccountingDefaultMappingSetupPort.seedMissing(tx, companyId, templateCode, actor
 
 لا يكتب أي Port في Customer/Supplier/Inventory/Tax/Treasury. يقرر كل مالك متى ينسخ
 default إلى كيانه داخل معاملته.
+
+`resolveForCommand` ليس Query عاديًا: يثبت الحساب والنسخة والأهلية تحت الأقفال قبل
+أن يحفظ الأمر حقيقة جديدة أو يبني Posting Plan. يستخدمه إنشاء Customer وSupplier
+و`SalesItemSellingProfile` عند غياب override، كما تستخدمه Inventory وFX والإقفال.
+يقرأ `(accountId,mappingVersion)` تمهيديًا، ثم يقفل Accounts تصاعديًا قبل mappings
+معجمية، ويعيد القراءة. إذا تغير المرجع أو النسخة أو الأهلية يعيد
+`ACCOUNTING_DEFAULT_MAPPING_CHANGED` ولا يحفظ الكيان على قرار قديم. أما override
+الصريح فيقفل Account نفسه ويتحقق منه ولا يقرأ mapping.
 
 ### 7. سياسة الحل والـfallback
 
@@ -257,12 +276,41 @@ default إلى كيانه داخل معاملته.
 لا تعتبر الحسابات القديمة على العملاء والموردين غير صالحة لمجرد اختلافها عن default.
 Readiness المركز لا يعيد التحقق الجماعي من كل تاريخ المستندات.
 
+للإقفال السنوي لا تكفي مساواة readiness لحظة العرض. تحفظ لقطة checklist/close pack
+القيمة الدقيقة:
+
+```json
+{"key":"RETAINED_EARNINGS","accountId":"42","mappingVersion":3}
+```
+
+وتكون `null` صراحة للفترة غير السنوية. تدخل القيمة في الـcanonical checklist/pack
+hash وفي approval subject snapshot. عند approve وعند close النهائي، وبعد أقفال
+`FiscalPeriod/FinancialCloseRun` الحاكمة، يقفل الأمر Account الملتقط ثم mapping،
+ويعيد حل المفتاح والتحقق من `accountId/mappingVersion` والأهلية. أي اختلاف يعيد
+`CHECKLIST_CHANGED` ويحتاج تحديث الحزمة وموافقة جديدة؛ لا يستخدم mapping الأحدث أو
+fallback بصمت. يتلقى منشئ مستند الإقفال `accountId` الملتقط الذي تم التحقق منه، ولا
+يبحث عن `3300` ولا ينفذ resolve جديدًا بعد المقارنة.
+
 ### 9. دورة حياة الحساب المرجعي
 
 لا يوجد DELETE/DEACTIVATE للتعيين. يمكن استبدال `accountId` فقط مع CAS وسبب اختياري
-منقح. ويبقى حذف أو تعطيل الحساب نفسه ممنوعًا ما دام مستخدمًا في mapping.
+منقح. لكن استبدال mapping وحده لا يجعل الحساب القديم قابلًا للتعطيل أو الحذف.
 
-يجب أن تستدعي أوامر Account في Core Accounting حارس الاستعمال قبل:
+يركب Core Accounting خدمة `AccountUsageGuard` من نتائج Ports صغيرة ينفذها مالكو
+الحقائق. تتلقى كلها `tx/companyId/accountId` وتعيد فئات استعمال وأعدادًا محدودة، لا
+Prisma records:
+
+- Core Accounting يفحص الأبناء و`CompanyAccountingDefaultMapping` و
+  `CashFlowAccountMapping` و`JournalLine` وأي حقيقة دفتر يملكها.
+- `SalesAccountUsageQueryPort` يفحص Customer و`SalesItemSellingProfile` ولقطات
+  `SalesInvoiceLine` الحالية والتاريخية.
+- `PurchasesAccountUsageQueryPort` يفحص Supplier ولقطات `PurchaseInvoiceLine`.
+- `TaxAccountUsageQueryPort` يفحص حسابي `TaxRate`.
+- `TreasuryAccountUsageQueryPort` يفحص `CashBankAccount` وReceipt/Payment counter
+  snapshots.
+- `InventoryAccountUsageQueryPort` يفحص `InventoryMovement.offsetAccountId` وتاريخه.
+
+يستدعي أمر Account الحارس داخل معاملته وبعد قفل Account وقبل:
 
 - التعطيل أو الحذف.
 - تغيير `accountTypeId` إلى فئة غير مؤهلة.
@@ -270,9 +318,18 @@ Readiness المركز لا يعيد التحقق الجماعي من كل تا�
 - إزالة `isControlAccount` عن حساب مربوط بمفتاح يتطلب Control.
 - أي تغيير يجعله غير صالح للمفتاح.
 
-يعيد الرفض `ACCOUNT_USED_BY_DEFAULT_MAPPING` مع قائمة مفاتيح فقط ورابط إعدادات آمن.
-الإجراء الصحيح: استبدال mapping أولًا، ثم إعادة محاولة تعديل الحساب. لا cascade ولا
-تعطيل mapping تلقائيًا.
+التعطيل والحذف ممنوعان عند **أي** استعمال جار أو تاريخي، لا عند mapping وحده، لأن
+العكس يجب أن يستطيع استعمال الحساب الأصلي. يعيد الرفض `ACCOUNT_IN_USE` بفئات آمنة
+وأعداد محدودة، ويضيف مفاتيح mapping إن وجدت، من دون معرفات أطراف أو مستندات. يعاد
+إسناد المراجع الجارية القابلة للتعديل فقط عبر أوامر سياقاتها المالكة؛ أما اللقطات
+والقيود immutable فتبقي الحساب نشطًا ولا يوجد cascade أو تعطيل تلقائي. يمكن تصميم
+حالة أرشفة/إخفاء مستقلة مستقبلًا، لكنها لا تعيد تعريف `isActive`.
+
+لبيانات legacy التي تحتوي حسابًا معطلًا مستخدمًا تاريخيًا، يسمح Posting Engine
+بمسار ضيق للعكس فقط: يقبل الحساب المعطل إذا طابق تمامًا حساب المصدر/القيد الأصلي
+immutable وكانت العملية reversal موثقة. لا يسمح به لعملية جديدة أو override أو
+mapping. يسجل فحص Migration هذه الحالات ولا يعيد تنشيطها بصمت. الحذف يبقى ممنوعًا
+دائمًا متى وجد أي مرجع أو تاريخ.
 
 ### 10. التزامن والمعاملة
 
@@ -288,9 +345,17 @@ Idempotency record
 ```
 
 تستخدم أوامر تعطيل/حذف/تحوير Account الترتيب نفسه: تقفل الحساب أولًا ثم صفوف
-التعيين التي تشير إليه قبل CAS. عند إنشاء mapping مفقود يقفل الحساب الهدف قبل
-الإدراج، فيتسلسل مع التعطيل. عند استبدال mapping تقرأ النسخة، ثم تقفل الحسابين
-القديم والجديد تصاعديًا، ثم صف المفتاح، وتعاد قراءة النسخة قبل التغيير.
+التعيين التي تشير إليه، ثم تستدعي Usage Ports بترتيب ثابت، قبل CAS على
+`Account.expectedVersion`. عند إنشاء mapping مفقود يقفل الحساب الهدف قبل الإدراج،
+فيتسلسل مع التعطيل. عند استبدال mapping تقرأ النسخة، ثم تقفل الحسابين القديم والجديد
+تصاعديًا، ثم صف المفتاح، وتعاد قراءة النسخة والأهلية قبل التغيير.
+
+تستخدم أوامر إنشاء Customer/Supplier/Selling Profile بروتوكول
+`resolveForCommand`: بعد أقفال Aggregate المصدر إن وجدت، تقرأ mapping تمهيديًا،
+وتقفل Account ثم mapping، وتعيد فحص الأهلية والنسخة، ثم تحفظ المرجع على الكيان.
+وبذلك ينتج سباق create-vs-replace أو create-vs-deactivate إما أمرًا كاملًا على نسخة
+صالحة أو Conflict بلا إنشاء جزئي. يطبق الإقفال السنوي الترتيب نفسه على اللقطة المثبتة
+بعد أقفال الفترة/التشغيل وقبل Ledger.
 
 إذا تغير الصف بين القراءة والقفل يعاد `VERSION_CONFLICT` ولا يعاد خطأ الأعمال
 تلقائيًا. يعاد فقط خطأ قاعدة transient عبر `TransactionExecutor` ضمن deadline واحد.
@@ -319,13 +384,23 @@ idempotent. لا يضاف الحدث لمجرد احتمال إرسال تنبي
 - `PUT /api/v1/accounting/default-mappings/{mappingKey}` بصلاحية
   `accounting_default_mappings.manage` وCSRF و`Idempotency-Key`.
 
-يحمل PUT `accountId` و`expectedVersion`؛ تكون النسخة `null` للإنشاء فقط ورقمًا
-للاستبدال. كل JSON تحت `/api/v1` يحمل `Cache-Control: no-store`. تبقى BIGINT نصًا،
-ويولد حارس الجسم من OpenAPI.
+يحمل PUT `accountId` و`expectedVersion` و`reason` اختياريًا. تكون النسخة `null`
+للإنشاء فقط ورقمًا للاستبدال. إذا حضر السبب يطبقه الحارس المولد مع `x-trim` وحدود
+10..500 محرف؛ الفراغ بعد trim غير صالح. تدخل القيمة المنقحة أو `null` عند غيابها في
+بصمة Idempotency وتكتب في Audit فقط؛ لا يعيدها DTO القائمة. كل JSON تحت `/api/v1` يحمل
+`Cache-Control: no-store`. تبقى BIGINT نصًا، ويولد حارس الجسم من OpenAPI.
 
-تندرج الصلاحيتان تحت موديول `CORE_ACCOUNTING`، وتستلزم الإدارة العرض و
-`accounts.view`. لا تمنح `settings.manage` الحسابات تلقائيًا، ولا يكفي
-`accounts.update` لتغيير mapping. تمنح الأدوار المخصصة الصلاحية صراحة.
+تندرج الصلاحيتان تحت موديول `CORE_ACCOUNTING`. لا يفترض العقد implication غير
+موجود: GET يحتاج `accounting_default_mappings.view`، وPUT يحتاج
+`accounting_default_mappings.manage`، ومنتقي الحساب في الواجهة يحتاج `accounts.view`
+أيضًا. تضيف Migration/seed تعريفات الصلاحيات وتمنح Role مدير النظام كل صف مطلوب
+صراحة؛ الأدوار المخصصة لا تتوسع تلقائيًا. لا تمنح `settings.manage` أو
+`accounts.update` أيًا منها.
+
+تضاف البادئة `accounting_default_mappings.` إلى خريطة الاستحقاق في API
+`company-capability-service` وإلى نظيرتها في Web `module-entitlements` على
+`CORE_ACCOUNTING`، مع fixtures واختبارات parity في الجانبين. لا يكفي وجود permission
+إذا لم تكن قدرة الشركة مستحقة.
 
 توجد الصفحة تحت «الإعدادات > الحسابات الافتراضية»، لا داخل العملاء أو الموردين أو
 شاشة البيع اليومية. يعرض كل صف الغرض والحساب والحالة والوحدات المستهلكة وأثر
@@ -342,12 +417,19 @@ idempotent. لا يضاف الحدث لمجرد احتمال إرسال تنبي
 يكشف الرابط وجود حساب في شركة أخرى. مستخدم بلا صلاحية يعود لمسار مسموح ولا يرسل
 طلب mapping.
 
+تصبح سياسة Settings واعية بالأقسام بدل `allOf` موحد للصفحة: ظهور مدخل الإعدادات
+يستخدم `anyOf` لصلاحيات الأقسام الفعلية، ثم يحرس كل قسم وطلب بصلاحيته. يستطيع صاحب
+`mapping.view` وحدها فتح الرابط المباشر ورؤية هذا القسم، لكنه لا يركب ولا يطلب
+Company/Currencies/Compliance. يكون القسم الافتراضي أول قسم مصرح، لا Company
+بالضرورة. لا يظهر زر الاستبدال إلا مع `manage`، ولا يظهر account picker إلا مع
+`accounts.view`؛ وفقد صلاحية الرابط يعيد لأول قسم مسموح أو Home بلا request محظور.
+
 ### 13. النشر والرجوع
 
 ينفذ الانتقال توسعيًا:
 
-1. إضافة الجدول والقاموس والصلاحيات وقراءات readiness مع backfill حتمي، دون تغيير
-   أي مستهلك.
+1. إضافة الجدول والقاموس والصلاحيات و`Account.version` وقراءات readiness مع backfill
+   حتمي، وتحديث عقود Account CAS والحارس المركب، دون نقل مستهلك mapping.
 2. وضع `SHADOW`: مقارنة النتيجة المركزية بالاستدلال القديم بلا تغيير Posting.
 3. نقل المستهلكين واحدًا واحدًا، مع fallback للمفقود فقط.
 4. فتح واجهة الكتابة بعد أن يصبح Binary الرجوع واعيًا بالجدول.
@@ -361,6 +443,9 @@ idempotent. لا يضاف الحدث لمجرد احتمال إرسال تنبي
 
 يرفض `rollback.sql` إسقاط الجدول إذا احتوى صفًا يدويًا أو استهلكه أي إصدار
 authoritative. لا يحذف Audit ولا يعيد كتابة source template tags أو حقائق الأطراف.
+يبقى عمود `Account.version` بعد cutover لأن إسقاطه يعيد فتح lost updates؛ لا يرجع
+إصدارًا لا يرسل `expectedVersion` إلا في rollback مخطط يوقف كتابات Account ويستبدل
+الحماية بقفل متشائم مكافئ خلال كامل النافذة.
 
 ## البدائل المرفوضة
 

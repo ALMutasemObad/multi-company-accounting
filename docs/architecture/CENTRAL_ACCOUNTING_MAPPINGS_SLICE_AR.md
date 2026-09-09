@@ -1,7 +1,7 @@
 ---
 title: "خطة شرائح مركز تعيين الحسابات الافتراضية"
 status: "planned; documentation only"
-version: "1.0"
+version: "1.1"
 date: "2026-09-09"
 related:
   - "ADR-023-central-accounting-mappings.md"
@@ -40,6 +40,8 @@ related:
 | Inventory runtime | مفاتيح `inventory/purchases/misc-*/retained-earnings` | ينقل عبر Port |
 | FX runtime | `realized-fx-gain/loss` مقيدان بالقالب القديم | ينقل عبر Port |
 | Annual close runtime | بحث مباشر عن `code=3300` | يزال في ADM-4 |
+| `Account` concurrency | لا يحمل `version`، وأوامر update/deactivate/delete لا تحمل `expectedVersion` | يضاف CAS إلزامي في ADM-1 |
+| Account deactivate/delete | التعطيل يفحص الأبناء النشطين فقط؛ الحذف يقرأ علاقات عدة مباشرة من Prisma ولا يشمل Selling Profile أو Inventory history | يستبدل بـ`AccountUsageGuard` مركب عبر Ports المالكين |
 
 أوامر الجرد المقترحة تحفظ في دليل الشريحة ولا تغير الملفات:
 
@@ -58,7 +60,12 @@ rg -n "receivableAccountId|payableAccountId|revenueAccountId|debitAccountId" app
 
 يعرف ملف واحد داخل `apps/api/src/accounts`:
 
-- Enum المفاتيح الثلاثة عشر المعتمدة في ADR-023.
+- Enum المفاتيح الثلاثة عشر المعتمدة، صراحة:
+  `CUSTOMER_RECEIVABLE_DEFAULT`، `SUPPLIER_PAYABLE_DEFAULT`،
+  `SALES_REVENUE_DEFAULT`، `SERVICE_REVENUE_DEFAULT`،
+  `PURCHASE_EXPENSE_DEFAULT`، `INVENTORY_ASSET`، `INVENTORY_COGS`،
+  `INVENTORY_GAIN`، `INVENTORY_LOSS`، `INVENTORY_OPENING_EQUITY`،
+  `REALIZED_FX_GAIN`، `REALIZED_FX_LOSS`، `RETAINED_EARNINGS`.
 - `expectedAccountClass`.
 - `requiresControlAccount`.
 - مرشحي القالب المرتبين.
@@ -81,6 +88,11 @@ Application صريحًا مطابقًا بالعقد.
 - account يجب أن يطابق Registry عند الكتابة وعند الاستعمال.
 - لا يجري أي تغيير تلقائي على كيان مستهلك عند استبدال الحساب.
 
+`Account` Aggregate مستقل لكنه جزء من نفس شريحة السلامة: يضاف له `version` افتراضي
+صفر، وتلزم أوامر update/deactivate/delete بـ`expectedVersion`. كل mutation ناجح
+يزيد النسخة مرة واحدة، والحذف يطابقها قبل التنفيذ. لا يترك Router أو تطبيق قالب
+مسار تعديل Account يتجاوز القفل وCAS بعد cutover.
+
 ### 3.3 أوامر المجال
 
 #### `SetAccountingDefaultMapping`
@@ -92,6 +104,7 @@ accountId
 expectedVersion: number | null
 idempotencyKey
 actorUserId
+reason?: string
 ```
 
 - `expectedVersion=null` يعني «أنشئ إذا كان مفقودًا» فقط.
@@ -99,6 +112,9 @@ actorUserId
 - إرسال الحساب الحالي بنسخة صحيحة no-op يعيد التمثيل الحالي بلا زيادة نسخة أو Audit؛
   أما replay بالمفتاح نفسه فيعيد النتيجة المحفوظة كذلك.
 - لا يقبل `source` أو `accountClass` أو `companyId` من الجسم.
+- `reason` اختياري؛ عند حضوره يطبقه الحارس مع `x-trim` وحدود 10..500، ويكون الفراغ
+  بعد trim غير صالح. تدخل القيمة المنقحة أو `null` عند الغياب في fingerprint، وتدخل
+  Audit عند وجودها، ولا تعاد في DTO القائمة.
 
 #### `SeedMissingAccountingDefaultMappings`
 
@@ -111,6 +127,14 @@ actorUserId
 
 Query داخل المعاملة. يأخذ مجموعة Enum، يرتبها، ويعيد Map كاملة أو خطأ يذكر المفاتيح
 المفقودة/غير الصالحة. لا يكتب backfill ضمن أمر مالي، حتى لا يخلط migration بPosting.
+
+#### `ResolveAccountingDefaultMappingsForCommand`
+
+Command Port مقفل يستخدمه كل أمر سيحفظ accountId أو يرحل به، بما في ذلك إنشاء
+Customer وSupplier و`SalesItemSellingProfile`. يقرأ mapping تمهيديًا، ثم يقفل
+Accounts تصاعديًا فـmappings معجمية ويعيد قراءة accountId/version والأهلية. يعيد
+`ACCOUNTING_DEFAULT_MAPPING_CHANGED` عند التغير؛ لا يحفظ مرجعًا قديمًا ولا يعيد
+المحاولة الأعمالية بصمت. override الصريح يقفل Account ويتحقق منه من دون mapping.
 
 ## 4. OpenAPI وHTTP
 
@@ -163,7 +187,8 @@ X-CSRF-Token: ...
 
 {
   "accountId": "42",
-  "expectedVersion": 0
+  "expectedVersion": 0,
+  "reason": "توحيد حساب الإقفال المعتمد"
 }
 ```
 
@@ -176,6 +201,7 @@ X-CSRF-Token: ...
 | حساب غير موجود أو من شركة أخرى | `404 ACCOUNT_NOT_FOUND` غير كاشف |
 | الحساب لا يطابق الأهلية | `409 ACCOUNT_NOT_ELIGIBLE_FOR_DEFAULT_MAPPING` |
 | النسخة قديمة أو null مع صف موجود | `409 VERSION_CONFLICT` |
+| تغير mapping أثناء أمر مستهلك | `409 ACCOUNTING_DEFAULT_MAPPING_CHANGED` |
 | مفتاح Idempotency بجسم مختلف | `409 IDEMPOTENCY_MISMATCH` |
 | الأمر ما زال قيد التنفيذ | `409 IDEMPOTENCY_IN_PROGRESS` |
 | استنفاد retry | `503 CONCURRENCY_RETRY_EXHAUSTED` |
@@ -183,8 +209,24 @@ X-CSRF-Token: ...
 
 يعلن OpenAPI `x-permission` و`additionalProperties:false`، ويولد حارس الجسم. لا
 ينشئ Router مخطط Zod موازيًا. تختبر الاستجابة الفعلية بالحارس المولد.
+`reason` اختياري مع `x-trim/minLength:10/maxLength:500`، والفراغ غير صالح. يستخدم
+command القيمة المنقحة نفسها في HTTP fingerprint وAudit.
 
-### 4.3 أخطاء المستهلكين
+### 4.3 عقد CAS لدورة Account
+
+تضيف استجابات list/get/create/update/deactivate للحساب `version`. يصبح
+`expectedVersion` مطلوبًا في `PATCH /accounts/{id}` وجسمي deactivate/delete، وتعيد
+النسخة القديمة `409 VERSION_CONFLICT`. يقفل التطبيق Account في نطاق الشركة، يعيد
+القراءة، ثم ينفذ conditional mutation ويزيد النسخة. حذف الحساب يطابق النسخة ولا
+يزيدها لأنه يزيل الصف بعد نجاح الحارس.
+
+إعادة parenting التي تغير مستويات descendants تقفل كل Accounts المتأثرة بترتيب id
+وتزيد نسخة كل صف تغير فعليًا؛ expectedVersion للجذر من العميل، ونسخ descendants
+يلتقطها الخادم ويعيد التحقق منها تحت القفل. كما أن تطبيق القالب إذا ربط tags بحساب
+قائم يقفله ويزيد نسخته، ولا يكتب حقول Account خارج هذا العقد. تحدث OpenAPI/الحارس
+المولد وWeb في cutover واحد.
+
+### 4.4 أخطاء المستهلكين
 
 إذا احتاج أمر مالي mapping غير صالح يعيد Problem خاصًا بالقدرة، مثل:
 
@@ -212,11 +254,16 @@ X-CSRF-Token: ...
 | `accounting_default_mappings.view` | قراءة القائمة وreadiness والحساب المختار |
 | `accounting_default_mappings.manage` | استبدال mapping |
 
-- `manage -> view` و`view -> accounts.view` في permission implications.
-- كلاهما ضمن `CORE_ACCOUNTING` في company capability service.
-- لا implies من `settings.manage` ولا من `accounts.update` إلى `manage`.
-- يمكن منح مدير الشركة الصلاحيتين في Migration صريحة؛ الأدوار المخصصة لا توسع
-  تلقائيًا.
+- لا يفترض أي permission implication غير منفذ. GET يفحص `view`، وPUT يفحص `manage`،
+  وaccount picker يفحص `accounts.view` مستقلًا.
+- تضيف Migration/`reference-seed-service` تعريف الصلاحيتين، ويمنح seed Role مدير
+  النظام صفوف `view/manage/accounts.view` صراحة. الأدوار المخصصة لا توسع تلقائيًا.
+- لا تمنح `settings.manage` ولا `accounts.update` صلاحية mapping، ولا تمنح `manage`
+  العرض أو اختيار الحساب ضمنيًا؛ إن احتاج الدور الثلاثة تمنح له الثلاثة صراحة.
+- تضاف `accounting_default_mappings.` إلى
+  `apps/api/src/platform-subscriptions/company-capability-service.ts` وإلى
+  `apps/web/src/module-entitlements.ts` تحت `CORE_ACCOUNTING`، وتضاف fixtures واختبارات
+  parity للبادئة في API/Web. لا تكفي RBAC إذا غاب استحقاق الموديول.
 - مستهلك داخلي لا يفحص صلاحية المستخدم الخاصة بالإعدادات؛ يفحص صلاحية أمره ثم
   يستهلك Port الموثوق. لا يصبح غياب `mapping.view` مانعًا للفاتورة المصرح بها.
 
@@ -227,6 +274,30 @@ X-CSRF-Token: ...
 قسم `accounting-default-mappings` داخل `CompanySettingsPage` أو مساحة إعدادات
 محاسبية مستقلة، وليس بطاقة في شاشة العميل/المورد/الفاتورة/POS. تظهر الرحلات اليومية
 default المطبق أو زر «اختيار مختلف» فقط عند صلاحية العقد؛ لا تعرض لوحة الإدارة.
+
+يستبدل Web سياسة `settings` الحالية ذات `allOf` العام بسياسة section-aware قابلة
+للتنفيذ:
+
+- مدخل Settings مسموح إذا تحقق `anyOf` من سياسات الأقسام المعروفة، ومنها
+  `accounting_default_mappings.view` مع استحقاق `CORE_ACCOUNTING`.
+- لكل section سياسة مستقلة؛ قسم mapping لا يركب مكونات Company/Currencies/Compliance
+  ولا يرسل طلباتها ما لم توجد صلاحياتها الخاصة.
+- يبدأ Settings من القسم المطلوب المصرح، وإلا أول قسم مصرح؛ لا يفترض Company قسمًا
+  افتراضيًا. إن لم يسمح أي قسم يعود Home.
+- صاحب `view` فقط يرى الحالة. الاستبدال يحتاج `manage`، وإظهار/طلب account picker
+  يحتاج `accounts.view` أيضًا؛ غيابه لا يمنع قراءة mapping الحالية.
+
+مصفوفة الأقسام الأولية:
+
+| section | سياسة التركيب/GET | سياسة الأفعال |
+|---|---|---|
+| Company/general controls | `allOf(companies.view, settings.manage)` | `settings.manage` مع متطلبات كل route |
+| Currencies/rates | `currencies.view` | `currencies.manage/create` حسب العقد |
+| Accounting default mappings | `accounting_default_mappings.view` + استحقاق `CORE_ACCOUNTING` | `manage` للتبديل، و`accounts.view` للمنتقي |
+| Company profile/compliance | سياسة القسم التي يعتمدها BP صراحة | لا ترث mapping أو settings العام |
+
+تنتقل طلبات `CompanySettingsPage` الحالية إلى loaders مستقلة لكل section؛ يمنع
+loader جامع يستدعي `/companies/current` و`/settings` و`/currencies` عند فتح mapping.
 
 قائمة الإعدادات مجمعة إلى أربع مجموعات من دون أحجام خط عشوائية:
 
@@ -266,8 +337,10 @@ default المطبق أو زر «اختيار مختلف» فقط عند صلا�
 
 - يقبل `section/focus` مرة واحدة فقط، ويرفض أي query زائد.
 - لا يحمل hash شركة أو accountId أو redirect URL.
-- `authorizedPageRoute` يفحص module و`accounting_default_mappings.view`.
+- `authorizedPageRoute` يفحص module وسياسة القسم `accounting_default_mappings.view`،
+  لا سياسة `settings` العامة فقط.
 - إذا لم يملك المستخدم الصلاحية لا يركب React section ولا يرسل GET.
+- section غير مصرح يعاد إلى أول section مصرح أو Home، ولا يرسل طلبًا لقسم آخر.
 - عند focus موجود ينتقل العنوان إليه بعد التحميل بـfocus مرئي و`aria-live` يعلن
   سبب فتحه؛ لا ينقل focus قبل وجود العنصر.
 
@@ -292,7 +365,8 @@ default المطبق أو زر «اختيار مختلف» فقط عند صلا�
 1. قبول نتيجة `company-profile-bp1` أو نقلها إلى فرع تكامل محلي.
 2. إعادة بناء مهمة ADM من `origin/main` المحدث أو cherry-pick منسق في integration
    branch يديره المدير.
-3. تعديل `schema.prisma` وOpenAPI و`default-chart-template.ts` في مهمة واحدة فقط.
+3. تسلسل أي تعديل على `schema.prisma` وOpenAPI و`default-chart-template.ts` بحيث لا
+   تلمسها مهمتان بالتزامن؛ لا يلزم جمع كل الشرائح في مهمة ضخمة.
 
 لا يصبح Company Profile prerequisite دائمًا. إذا لم يصل، يدعم ADM الشركات القديمة
 والقالب legacy أولًا، ثم يضيف Adapter للقوالب الجديدة في integration follow-up.
@@ -308,10 +382,30 @@ default المطبق أو زر «اختيار مختلف» فقط عند صلا�
 النطاق التنفيذي المقترح:
 
 - Prisma enum/table/composite FK والـMigration والـrollback guard.
+- `Account.version` وOpenAPI/Web المتزامنان لـ`expectedVersion` في
+  update/deactivate/delete، مع CAS وعدم إبقاء مسار كتابة legacy.
 - Registry وEligibility policy وQuery/Setup Ports.
-- الصلاحيات وOpenAPI GET وقراءة settings فقط.
+- الصلاحيات والمنح الصريحة وبادئة `CORE_ACCOUNTING` في API/Web وOpenAPI GET وقراءة
+  settings section-aware فقط.
 - backfill حتمي وreadiness.
-- Account lifecycle guard لكل mapping.
+- `AccountUsageGuard` المركب وAdapters المالكة بدل relation counts المباشرة.
+
+لا تنفذ ADM-1 كـPR واحدة. ترتيبها الصغير الإلزامي:
+
+1. **ADM-1A:** إضافة `Account.version` وتحديث Account OpenAPI/Web/CAS بما فيه
+   descendants وتطبيق القالب، ثم اختبارات MariaDB/MySQL.
+2. **ADM-1B:** تعريف Usage Ports وإضافة adapters وAccount-lock handshake سياقًا
+   واحدًا في كل تغيير. يبقى enforcement غير مفعل حتى تسجل Composition Root كل
+   adapters المطلوبة؛ عند تفعيله يفشل startup/الأمر مغلقًا إن غاب Adapter، ولا يعلن
+   اكتمال الحارس جزئيًا.
+3. **ADM-1C:** إضافة mapping table/Registry/Query/Setup وbackfill، ثم إضافة mapping
+   usage adapter إلى الحارس. هذه الخطوة متسلسلة مؤقتًا مع Company Profile للملفات
+   المشتركة فقط.
+4. **ADM-1D:** تعريف الصلاحيات والمنح والبادئات، GET/readiness، ثم Settings read-only
+   section-aware. لا تعتمد أي خطوة منها Runtime على `CompanyProfile`.
+
+لكل خطوة Migration/contract tests وrollback note مستقل؛ لا تفتح التالية قبل بوابة
+سابقتها، ولا يفتح PUT أو ينقل مستهلك mapping ضمن ADM-1.
 
 لا ينقل أي مستهلك ولا يفتح PUT في هذه الشريحة. يعمل النظام القديم كما كان، ويحسب
 Shadow الفرق بين النتيجتين.
@@ -321,7 +415,11 @@ Shadow الفرق بين النتيجتين.
 - كل مفتاح يملك class/control rule واختبارًا سلبيًا.
 - mapping من شركة A إلى Account شركة B مرفوض في الخدمة وFK.
 - إعادة Migration/Seed لا تغير صفًا يدويًا ولا تكرر Permission.
-- Account deactivate/delete/type/allowsPosting/control changes مرفوضة إذا أبطلته.
+- Account update/deactivate/delete يرفض نسخة قديمة، ويزيد النسخة مرة واحدة عند
+  النجاح، وكل استعمال جار أو تاريخي يمنع deactivate/delete.
+- حارس الاستعمال يغطي Customer/Supplier/SellingProfile/Tax/Treasury ولقطات
+  Sales/Purchases/Inventory وJournalLine والتعيينات؛ لا يقرأ Core Accounting Prisma
+  models لمالك آخر مباشرة.
 - GET يعرض missing keys ولا يحتاج CompanyProfile.
 - Shadow لا يغير Posting أو source records.
 
@@ -338,6 +436,9 @@ Shadow الفرق بين النتيجتين.
   للتهيئة فقط، ثم يحفظ المرجع في كيان المالك.
 
 لا تعدل هذه الشريحة العملاء أو الموردين أو الملفات أو الفواتير الموجودة.
+كل create بلا override يستدعي `resolveForCommand` المقفل؛ لا تكفي قراءة GET أو
+resolver غير مقفل. يكون ترتيب الأقفال Account ثم mapping وإعادة القراءة/CAS قبل
+حفظ Aggregate المالك. override الصريح يقفل حسابه ويتحقق منه ولا يلمس mapping.
 
 بوابة القبول:
 
@@ -345,6 +446,8 @@ Shadow الفرق بين النتيجتين.
 - override صالح ينتصر، وغير الصالح يرفض ولا يغير mapping.
 - تغيير mapping ثم إنشاء كيانين يثبت أن الأول بقي على القديم والثاني أخذ الجديد.
 - replay لا ينشئ طرفًا/ملفًا ثانيًا.
+- create-vs-mapping-replace وcreate-vs-account-deactivate لكل من Customer وSupplier
+  وSelling Profile ينتج إنشاءً كاملًا على حساب صالح أو Conflict بلا أثر جزئي.
 - preview الاستيراد يعلن مصدر الحساب قبل commit، وcommit يستخدم snapshot قرار
   preview أو يعيد Conflict إذا تغيرت النسخة، لا يغير بصمت.
 
@@ -376,6 +479,14 @@ Posting Engine. تحفظ الحركة `offsetAccountId`، ويحفظ Ledger ال
 Receipt/Payment حسابي FX في معاملتهما القائمة. يستخدم الإقفال السنوي
 `RETAINED_EARNINGS` في readiness وفي إنشاء مستند الإقفال.
 
+يثبت readiness/close pack للإقفال السنوي اللقطة
+`{key:"RETAINED_EARNINGS",accountId,mappingVersion}`، و`null` لغير نهاية السنة،
+وتدخل اللقطة في canonical checklist hash وapproval subject snapshot. عند approve
+وعند close النهائي يعاد التحقق تحت أقفال `FiscalPeriod/FinancialCloseRun` ثم Account
+ثم mapping؛ اختلاف id/version/eligibility يعيد `CHECKLIST_CHANGED` ويتطلب refresh
+وموافقة جديدة. يمرر الحساب المثبت إلى `createAnnualCloseDocument` ولا ينفذ الأخير
+بحث `3300` أو resolve جديدًا.
+
 يمنع بعد الشريحة وجود Runtime query في `apps/api/src` يحمل:
 
 ```text
@@ -391,7 +502,8 @@ code: "3300" داخل FinancialCloseService
 - FX صفر لا يطلب حساب gain/loss بلا حاجة.
 - فرق موجب/سالب يستخدم المفتاح الصحيح ويوازن القيد Decimal.
 - Receipt/Payment reverse يستخدم القيد الأصلي.
-- readiness السنوي وclose command يحلان الحساب نفسه والنسخة نفسها داخل المعاملة.
+- readiness والـpack والـapproval والـclose السنوي تتفق على id/version الملتقطين،
+  والتبديل بين المراجعة والإقرار يعيد `CHECKLIST_CHANGED`.
 - شهر غير نهاية سنة لا يتطلب `RETAINED_EARNINGS`.
 - `rg` architecture guard يمنع عودة `3300` والبحث المباشر في الخدمات المحددة.
 
@@ -402,6 +514,9 @@ code: "3300" داخل FinancialCloseService
 بوابة القبول:
 
 - RBAC/CSRF/Idempotency/CAS/Audit كاملة.
+- `reason` المنقح اختياري في OpenAPI/command/fingerprint/Audit وبحد 10..500 عند وجوده.
+- mapping-only role يدخل قسمه ولا يحمل أقسام Settings الأخرى؛ البوادئ واختبارات
+  الاستحقاق متطابقة في API/Web.
 - account lifecycle races على MariaDB/MySQL.
 - لا تحديث لكيانات قائمة أو source template tags.
 - deep links وRTL/LTR/الأحجام والإتاحة.
@@ -473,7 +588,8 @@ Account tags أو الرموز.
 ### 9.1 Set mapping
 
 ```text
-Idempotency scope
+normalize reason -> fingerprint {key,accountId,expectedVersion,reason|null}
+-> Idempotency scope (companyId, actorUserId, operation, key)
 -> read current mapping for candidate ids
 -> lock old/new Account ids ascending
 -> lock mapping(company,key)
@@ -489,30 +605,56 @@ Idempotency scope
 
 ### 9.2 Account lifecycle
 
+ينفذ Core Accounting `AccountUsageGuard` كمنسق، ولا يكرر قائمة علاقات Prisma داخل
+`AccountService`. يستدعي بالترتيب الثابت وفي `tx` نفسها:
+
+| Port/المالك | ما يبلغه للحارس |
+|---|---|
+| Core Accounting | children، default mappings، `CashFlowAccountMapping`، `JournalLine` وحقائق الدفتر |
+| `SalesAccountUsageQueryPort` | Customer، Selling Profile، `SalesInvoiceLine` الجارية والتاريخية |
+| `PurchasesAccountUsageQueryPort` | Supplier و`PurchaseInvoiceLine` الجارية والتاريخية |
+| `TaxAccountUsageQueryPort` | input/output account على `TaxRate` |
+| `TreasuryAccountUsageQueryPort` | `CashBankAccount` وReceipt/Payment counter snapshots |
+| `InventoryAccountUsageQueryPort` | `InventoryMovement.offsetAccountId` والتاريخ |
+
+ترجع المنافذ `category/count/hasImmutableHistory` محدودة ولا تعيد DTO أو معرف مستند.
+كل أمر ينشئ مرجع Account، بما فيه overrides وTax/Treasury والمستندات والحركات، يجب أن
+يقفل Account نفسه ويتحقق من نشاطه قبل حفظ المرجع. هذا handshake هو ما يمنع phantom
+جديدًا بعد فحص الحارس؛ إضافة علاقة Account جديدة مستقبلًا لا تقبل بلا Port واختبار.
+
 ```text
 Idempotency عند وجوده
--> lock Account
+-> lock Account and compare expectedVersion
 -> lock mappings referencing it ordered by key
--> evaluate requested account change against every key
--> reject with keys, or update account
+-> query owner usage ports in fixed order
+-> re-read Account/version and mapping eligibility
+-> reject with bounded usage categories/keys, or conditional CAS mutation
 -> Audit
 ```
 
 إذا بدأ mapping create في الوقت نفسه يقفل الحساب أولًا أيضًا؛ إما يرى حسابًا صالحًا
 ويكمل قبل التعطيل، أو يرى التعطيل ويرفض. لا يبقى mapping جديد إلى حساب معطل.
 
-### 9.3 الاستهلاك المالي
+أي current أو historical usage يمنع deactivation/delete؛ استبدال mapping وحده ليس
+كافيًا. تنقل المراجع الجارية القابلة للتعديل عبر أوامر مالكها، أما snapshot/Journal
+history فيبقي الحساب نشطًا ولا يحذف. legacy history الذي يشير إلى حساب معطل يبلغ في
+preflight؛ لا يعاد تنشيطه آليًا. يسمح Posting Engine للعكس فقط باستخدام حساب معطل
+إذا طابق accountId في المصدر/القيد الأصلي immutable، ولا يسمح له كdefault أو عملية
+جديدة. بهذا تبقى قابلية reverse ولا تتحول `isActive` إلى archive غامض.
 
-لا يحتاج resolver إلى قفل طويل لمجرد شاشة قراءة، لكن الأمر المالي يجب أن يثبت أنه
-استخدم مرجعًا صالحًا في نفس المعاملة. للحفاظ على ترتيب Account ثم mapping المستخدم
-في أوامر الإدارة، يقرأ الأمر `(accountId,version)` قراءة تمهيدية، ثم:
+### 9.3 الاستهلاك داخل الأوامر
+
+لا يحتاج resolver إلى قفل طويل لمجرد شاشة قراءة، لكن كل أمر يحفظ default أو يرحل
+به يجب أن يثبت المرجع في نفس المعاملة. يشمل ذلك Customer/Supplier/Selling Profile
+create، لا الأوامر المالية وحدها. للحفاظ على ترتيب Account ثم mapping المستخدم في
+أوامر الإدارة، يقرأ الأمر `(accountId,version)` قراءة تمهيدية، ثم:
 
 ```text
 أقفال source الأعلى مثل الفترة والمستند
 -> Account ids المحلولة بترتيب تصاعدي
 -> mapping keys بترتيب معجمي
 -> إعادة قراءة accountId/version والأهلية
--> بناء Posting Plan ثم أقفال Ledger
+-> حفظ accountId في Aggregate المالك أو بناء Posting Plan ثم أقفال Ledger
 ```
 
 إذا تغير الحساب أو النسخة بين القراءتين يعاد Conflict آمن أو تعاد قراءة الأمر وفق
@@ -520,6 +662,11 @@ Idempotency عند وجوده
 لا يعكس ترتيب أمر التعديل أو Account lifecycle. يوثق الترتيب النهائي في سياسة
 التزامن عند التنفيذ ويختبر post-vs-mapping-change. لا يخلط الأمر حسابين من نسختين
 مختلفتين.
+
+في annual close تكون القراءة التمهيدية هي اللقطة المثبتة في checklist/pack hash.
+يعاد فحص id/version/eligibility في approve وclose؛ أي فرق يساوي
+`CHECKLIST_CHANGED` لا retry أو fallback. وفي override الصريح يقفل Account ويفحصه
+ولا يقفل mapping لأنه لم يعتمد عليه.
 
 ## 10. Audit والرصد والـOutbox
 
@@ -531,7 +678,7 @@ Idempotency عند وجوده
 - old/new account IDs كنصوص عند السماح وفق سياسة التدقيق.
 - old/new version.
 - source.
-- سبب منقح اختياري.
+- `reason` المنقح إذا وجد، ولا يسجل النص الخام أو الفراغ.
 
 لا يحمل أسماء حسابات أو مبلغًا أو Payload الطلب. Seed في تجهيز الشركة يدخل ضمن
 Audit التجهيز مع قائمة keys لا بيانات الحساب التفصيلية. Migration backfill يوثق
@@ -557,13 +704,18 @@ versioned وhandler duplicate test في شريحة مستقلة؛ لا يستخ�
 
 ### Forward
 
-1. إنشاء Enum/table/FK/indexes والصلاحيات.
-2. Seed permissions/idempotent implications.
-3. backfill exact candidates فقط.
-4. نشر GET/readiness وSHADOW؛ لا PUT.
-5. نقل المستهلكين تدريجيًا.
-6. نشر Binary رجوع واعٍ ثم فتح PUT.
-7. إغلاق fallback.
+1. ADM-1A Migration تضيف `Account.version NOT NULL DEFAULT 0`، ثم تنشر response
+   additive؛ يحدث Web/clients ويقطع كل update/deactivate/delete إلى
+   `expectedVersion` وCAS في إصدار منسق بلا كاتب legacy.
+2. ADM-1B تضيف Usage adapters وAccount-lock handshake تباعًا، ثم تفعل الحارس بعد
+   اكتمال Composition Root واختبارها على المحركين.
+3. ADM-1C تنشئ Enum/table/FK/indexes ثم تنفذ backfill exact candidates وpreflight
+   لحسابات historical usage المعطلة.
+4. ADM-1D تعرف الصلاحيات والمنح الصريحة لمدير النظام وبادئتي الاستحقاق؛ لا seed
+   implications افتراضية، ثم تنشر GET/readiness وSHADOW؛ لا PUT.
+5. ADM-2..4 تنقل المستهلكين تدريجيًا.
+6. تنشر Binary رجوع واعيًا ثم تفتح PUT في ADM-5.
+7. تغلق fallback في ADM-6.
 
 اختبارات Migration:
 
@@ -574,9 +726,16 @@ versioned وhandler duplicate test في شريحة مستقلة؛ لا يستخ�
 - حسابات tags مكررة عبر codes تؤدي Conflict لا اختيارًا تخمينيًا.
 - حساب `3300` مؤهل وغير مؤهل ومتعدد.
 - إعادة seed ومقاطعة migration/إعادتها وفق دعم الأداة.
+- ترقية Accounts قائمة تجعل `version=0`، ثم update/deactivate/delete بنسخة صحيحة
+  ونسخة stale على المحركين.
+- تقرير الحسابات المعطلة المرتبطة بتاريخ لا يعدلها ولا يحذفها.
 
 ### Rollback
 
+- بعد ADM-1A يترك عمود `Account.version`; إذا تعذر تشغيل CAS يوقف Account mutations
+  بدل الرجوع إلى كاتب بلا version.
+- بعد تفعيل ADM-1B لا يعطل Usage Guard إلى السلوك القديم. فشل Adapter يجعل
+  update/deactivate/delete المتأثرة read-only حتى الإصلاح أو Binary يضم الحارس كاملًا.
 - قبل PUT/الاستهلاك authoritative: يعود التطبيق ويترك الجدول؛ لا DDL مدمر مطلوب.
 - rollback DDL مسموح فقط إذا لا صفوف ولا Audit/استعمال authoritative، ويتحقق script
   ويفشل مغلقًا خلاف ذلك.
@@ -586,6 +745,9 @@ versioned وhandler duplicate test في شريحة مستقلة؛ لا يستخ�
 - لا يحذف mapping أو Audit، ولا يعاد tagging للحسابات، ولا تعاد كتابة الأطراف أو
   المستندات.
 - rollback لكل مستهلك منفصل؛ لا يعطل Sales لأن Inventory فشل إذا كانت حدوده مستقلة.
+- لا يسقط `Account.version` بعد cutover ولا يعاد تشغيل Binary لا يرسل
+  `expectedVersion`. rollback اضطراري لهذا العقد يوقف كتابات Account أولًا ويحتاج
+  قفلًا متشائمًا مكافئًا موثقًا، ولا يغير الحسابات أو التاريخ.
 
 ## 12. مصفوفة الاختبار
 
@@ -596,12 +758,19 @@ versioned وhandler duplicate test في شريحة مستقلة؛ لا يستخ�
 - عدم اختيار raw/WIP/finished تلقائيًا.
 - readiness feature-sensitive وعدم طلب FX إذا كان الفرق صفرًا.
 - explicit override precedence.
+- تطبيع `reason` وحدود 10/500 وتساوي fingerprint للقيمة المنقحة واختلافه عند تغيرها.
+- `AccountUsageGuard` يجمع كل Adapter ويعامل أي تاريخ مانعًا للتعطيل/الحذف.
 
 ### API والعقد
 
 - GET missing/configured/invalid والفلاتر.
 - PUT create/update/replay/mismatch/version conflict.
 - CSRF و`view/manage` واستحقاق `CORE_ACCOUNTING`.
+- Account responses تعرض version، وupdate/deactivate/delete ترفض missing/stale
+  `expectedVersion` وتقبل النسخة الحالية فقط.
+- role يملك mapping view وحدها يستطيع GET، وmanage وحدها يستطيع PUT فقط وفق المنح
+  الصريحة؛ لا اختبار يعتمد implication. منتقي الحساب يحتاج `accounts.view`.
+- parity لبادئة `accounting_default_mappings.` بين capability API وWeb/fixtures.
 - BIGINT strings وstrict request وroute parity وresponse validator وRedocly.
 - cross-company forged key/account يعيد 404/رفضًا غير كاشف.
 - `Cache-Control:no-store` للنجاح والخطأ و429.
@@ -614,7 +783,12 @@ versioned وhandler duplicate test في شريحة مستقلة؛ لا يستخ�
 - كل أنواع حركة Inventory وinvoice stock/return/reverse.
 - Receipt/Payment FX gain/loss وreverse.
 - annual close/readiness وعدم بحث `3300`.
-- Account deactivate/delete/reclassify مقابل mapping update.
+- close pack hash يتغير مع retained accountId أو mappingVersion؛ approve/close بعد
+  تبديلهما يعيدان `CHECKLIST_CHANGED`، وغير نهاية السنة يثبت `null`.
+- Account deactivate/delete/reclassify مقابل mapping update، وكل استعمال من
+  Customer/Supplier/SellingProfile/Tax/Treasury/Invoices/Inventory/Journal/history.
+- إعادة إسناد مرجع جار عبر command مالكه لا تمس snapshot؛ وجود أي snapshot يبقي
+  الحساب نشطًا، والعكس legacy يستخدم الحساب المعطل الأصلي فقط.
 - فشل Audit/Idempotency يسبب rollback كاملًا.
 - لا كتابة مباشرة من سياق مستهلك إلى جدول mapping عبر architecture guard.
 
@@ -626,6 +800,10 @@ versioned وhandler duplicate test في شريحة مستقلة؛ لا يستخ�
 - replay بالمفتاح نفسه: نتيجة واحدة وAudit واحد.
 - mapping create مقابل Account deactivate.
 - mapping replace مقابل Account reclassify.
+- Customer/Supplier/Selling Profile create بلا override مقابل mapping replace، ومقابل
+  Account deactivate: نتيجة كاملة أو Conflict بلا كيان جزئي.
+- create بoverride وTax/Treasury/reference snapshot مقابل Account deactivate يثبت
+  handshake قفل Account ولا يسمح بمرجع جديد إلى حساب معطل.
 - inventory post مقابل تبديل `INVENTORY_ASSET` أو `INVENTORY_COGS`.
 - FX settlement مقابل تبديل gain/loss.
 - annual close مقابل تبديل retained earnings.
@@ -636,6 +814,7 @@ versioned وhandler duplicate test في شريحة مستقلة؛ لا يستخ�
 
 - empty/upgrade/rollback guard لكل محرك.
 - composite FK والتفرد وEnum parity.
+- `Account.version` backfill=0 وCAS/rollback guard.
 - explain لفهرس `(companyId,key)` ومرجع الحساب.
 - نتائج backfill متطابقة على المحركين.
 
@@ -644,7 +823,10 @@ versioned وhandler duplicate test في شريحة مستقلة؛ لا يستخ�
 - ar/en/hi/ur، واتجاه RTL/LTR.
 - 390/768/1440/1920.
 - لوحة مفاتيح وقارئ شاشة وfocus deep-link والحوار.
-- مستخدم view-only، manage، accounts.view بلا mapping.view، وعكسها حسب implications.
+- مستخدم mapping view-only، وmanage-only، وaccounts.view-only، والتركيبات الصريحة
+  بلا أي implication مفترض.
+- mapping-only يفتح Settings إلى قسمه ولا يركب/يطلب Company/Currencies/Compliance؛
+  fallback إلى أول section مصرح أو Home.
 - لا تركيب/طلب للصفحة غير المصرح بها.
 - رسالة «العمليات الجديدة فقط» ظاهرة ولا توحي بتحديث التاريخ.
 
@@ -662,6 +844,9 @@ versioned وhandler duplicate test في شريحة مستقلة؛ لا يستخ�
 - بحث Inventory أو FX عن `sourceTemplateCode/sourceTemplateKey` بعد ADM-6.
 - بحث Financial Close عن `code: "3300"`.
 - استيراد Prisma mapping model في Sales/Purchases/Inventory/Projects.
+- relation-count مباشر من `AccountService` إلى Customer/Supplier/Tax/Treasury/
+  Inventory؛ يجب المرور عبر AccountUsage Ports.
+- حفظ أي Account FK جديد من دون Account lock/eligibility handshake وUsage Port.
 - مفتاح Mapping نصي غير موجود في Registry/OpenAPI.
 - route كتابة بلا permission/CSRF/Idempotency.
 - تعديل يدوي للملف المولد.
