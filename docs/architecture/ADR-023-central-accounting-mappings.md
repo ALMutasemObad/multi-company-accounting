@@ -1,7 +1,7 @@
 ---
 title: "ADR-023 — Central Accounting Default Mappings"
 status: "proposed for acceptance; implementation not started"
-version: "1.1"
+version: "1.2"
 date: "2026-09-09"
 decision_owner: "Core Accounting"
 related:
@@ -47,6 +47,7 @@ related:
 | `TaxRate.outputTaxAccountId/inputTaxAccountId` | يملكه Tax لكل معدل | إعداد خاص بمعدل الضريبة؛ لا ينقل إلى المركز |
 | `CashBankAccount.ledgerAccountId` | يملكه Treasury لكل أداة | حقيقة خاصة بالصندوق/البنك؛ لا ينقل إلى المركز |
 | `Receipt/Payment.counterAccountId` | اختيار خاص بالحركة | حقيقة مستند؛ لا ينقل إلى المركز |
+| `CashFlowAccountMapping.accountId` | تصنيف محفوظ تملكه Reporting | يبقى لدى Reporting؛ يفحصه Account lifecycle عبر Port المالك |
 | القيد اليدوي ومراكز التكلفة | اختيار صريح في المستند | خارج مفهوم default mapping |
 | دورة حياة `Account` | `Account` بلا `version`، والتعطيل يفحص الأبناء النشطين فقط، بينما الحذف يعد علاقات متعددة مباشرة من Prisma ولا يشمل كل التاريخ | فجوة اتساق وحدود؛ تعالج بـCAS وحارس استعمال مركب عبر Ports المالكين |
 
@@ -55,6 +56,8 @@ related:
 `apps/api/src/core-accounting/realized-fx-account-service.ts`،
 `apps/api/src/inventory/inventory-movement-service.ts`،
 `apps/api/src/fiscal/financial-close-service.ts`، وخدمات العملاء والموردين والفواتير.
+ويثبت `apps/api/src/reports/cash-flow-service.ts` أن Reporting هو كاتب تصنيف Cash
+Flow الحالي.
 
 ## القرار
 
@@ -205,25 +208,29 @@ Accounting نموذج `CompanyProfile` ولا يقرأ readiness/امتثال ا
 يكشف Core Accounting عقود Application صريحة، لا Prisma models:
 
 ```text
-AccountingDefaultMappingQueryPort.resolveRequired(tx, companyId, keys)
-AccountingDefaultMappingQueryPort.resolveOptional(tx, companyId, key)
 AccountingDefaultMappingCommandPort.resolveForCommand(tx, companyId, keys)
 AccountingDefaultMappingSetupPort.seedMissing(tx, companyId, templateCode, actor)
+AccountingDefaultMappingReadPort.inspectConfiguration(companyId)
+LegacyMappingDiagnosticPort.compare(companyId, keys) // rollout only
 ```
 
-تعيد القراءة مرجعًا محدودًا: `key/accountId/accountClass/version/source`. لا يسمح
-للمستهلك بطلب مفتاح نصي خارج Enum، ولا تعيد DTO الحساب أو Prisma record كاملًا.
+تعيد قراءة الأمر الحاكمة مرجعًا محدودًا:
+`key/accountId/accountClass/mappingVersion/source`. لا يسمح للمستهلك بطلب مفتاح نصي
+خارج Enum، ولا تعيد DTO الحساب أو Prisma record كاملًا.
 
 اتجاهات الاعتماد:
 
-- Sales وPurchases وInventory وProfessional Billing تستهلك Query Port.
+- Sales وPurchases وInventory وProfessional Billing تستهلك Command Port المقفل.
 - `RealizedFxAccountService` وFinancial Close يصبحان Adapter/مستهلكين داخل Core
   Accounting نفسه، من دون بحث قالب أو رقم حساب.
 - Registration/Onboarding يستهلك Setup Port بصفته Process Manager.
 - Reporting يقرأ readiness عبر Query API أو Read Port فقط.
+- دورة حياة Account في Core Accounting تستهلك
+  `ReportingAccountUsageQueryPort` لفحص `CashFlowAccountMapping`؛ لا يقرأ Core جدول
+  Reporting مباشرة.
 
-لا يكتب أي Port في Customer/Supplier/Inventory/Tax/Treasury. يقرر كل مالك متى ينسخ
-default إلى كيانه داخل معاملته.
+لا يكتب أي Port في Customer/Supplier/Inventory/Tax/Treasury/Reporting. يقرر كل مالك
+متى ينسخ default إلى كيانه داخل معاملته.
 
 `resolveForCommand` ليس Query عاديًا: يثبت الحساب والنسخة والأهلية تحت الأقفال قبل
 أن يحفظ الأمر حقيقة جديدة أو يبني Posting Plan. يستخدمه إنشاء Customer وSupplier
@@ -233,35 +240,38 @@ default إلى كيانه داخل معاملته.
 `ACCOUNTING_DEFAULT_MAPPING_CHANGED` ولا يحفظ الكيان على قرار قديم. أما override
 الصريح فيقفل Account نفسه ويتحقق منه ولا يقرأ mapping.
 
-### 7. سياسة الحل والـfallback
+### 7. سياسة الحل والمقارنة التشخيصية
 
 الأولوية وقت التشغيل:
 
 1. الحساب الصريح الخاص بالأمر أو الكيان، إذا كان العقد يسمح به، ثم التحقق والحفظ.
-2. صف mapping صريح صالح.
-3. خلال نافذة الانتقال فقط، legacy fallback من مفاتيح القالب الأساسية التي يملكها
-   Core Accounting.
-4. خطأ أعمال واضح مع المفتاح ورابط الإعدادات؛ لا fallback إلى رقم أو اسم أو حساب
-   من فئة مماثلة.
+2. صف mapping مادي صالح يحمل `accountId` و`mappingVersion`.
+3. خطأ `ACCOUNTING_DEFAULT_MAPPING_REQUIRED` بحالة readiness ورابط الإعدادات؛ لا
+   رجوع إلى قالب أو رقم أو اسم أو حساب من فئة مماثلة.
 
 إذا وجد صف mapping لكنه أصبح غير صالح، يفشل المسار مغلقًا؛ لا يتجاوزه إلى القالب.
 هذا يكشف خطأ الإدارة بدل ترحيل عملية على حساب لم يختره المستخدم.
 
-يعمل legacy fallback في وضعي `SHADOW/READ_ONLY` فقط، ويسجل metric حسب المفتاح من دون
-اسم الحساب أو Payload مالي. يزال بعد تحقق الشروط كلها:
+لا يعيد `resolveForCommand` نتيجة بلا صف ونسخة، في أي mode.
+تبقى قراءة القالب القديم في `LegacyMappingDiagnosticPort` منفصلة عن resolver، وتعمل
+فقط في backfill preview و`DIAGNOSTIC_SHADOW`: تقارن المرشح القديم بصف materialized
+وتسجل حالة منقحة، ولا تغذي readiness ولا Command ولا Consumer ولا close pack.
 
-- لكل شركة نشطة صف صالح لكل مفتاح تحتاجه قدراتها المفعلة.
-- صفر Conflict في تقرير backfill.
-- صفر استعمال fallback في نافذة مراقبة متفق عليها.
-- اجتياز مقارنة Shadow على MariaDB وMySQL ومسارات Inventory/FX/Close.
-- وجود Binary رجوع يعرف الجدول ويستطيع إبقاء الكتابات المالية آمنة.
+لا تنتقل شركة/دفعة rollout إلى `READ_ONLY_AUTHORITATIVE` أو إلى أي مستهلك مركزي حتى
+تجتاز completeness gate: صف صالح مادي و`mappingVersion` لكل المفاتيح الثلاثة عشر،
+صفر missing/invalid/ambiguous، ونجاح فحص العزل والأهلية. بعدها فقط يشغل dual-read
+للتشخيص مع بقاء التطبيق القديم هو السلطة، ثم ينقل المستهلك إلى resolver الصفوف
+وحدها. لا يوجد mode يجمع «صف إن وجد وإلا قالب».
 
-لا تعتمد إزالة fallback على تاريخ تقويمي وحده.
+يزال Legacy diagnostic lookup بعد اكتمال المقارنة والتحويل، ولا تعتمد إزالته على
+تاريخ تقويمي وحده.
 
 ### 8. Readiness حسب القدرة
 
-لا يوجد علم واحد يجعل المنشأة كلها «غير جاهزة» بسبب مفتاح لا تستخدمه. يعيد المركز
-لكل مفتاح `CONFIGURED/LEGACY_FALLBACK/UNMAPPED/INVALID`، ويجمع readiness حسب القدرة:
+قبل اجتياز البوابة يعيد Read Port لكل مفتاح `CONFIGURED/UNMAPPED/INVALID` ويعرض
+`configurationCompleteness=INCOMPLETE`؛ هذه **preview تشخيصية** وليست readiness
+حاكمة. تصبح readiness `READ_ONLY_AUTHORITATIVE` فقط عندما تكون المفاتيح الثلاثة عشر
+كلها `CONFIGURED` بصف ونسخة صالحين. بعد البوابة يجمع أثر أي خلل لاحق حسب القدرة:
 
 | القدرة | المفاتيح الحاكمة | أثر الغياب |
 |---|---|---|
@@ -271,24 +281,26 @@ default إلى كيانه داخل معاملته.
 | بند مشتريات غير مخزني بلا override | `PURCHASE_EXPENSE_DEFAULT` | يطلب اختيارًا صريحًا أو الإعداد |
 | ترحيل مخزون | `INVENTORY_ASSET` و`INVENTORY_COGS` وما يلزم لنوع الحركة | يمنع الأمر المالي قبل أي أثر |
 | تسوية متعددة العملة ذات فرق محقق | `REALIZED_FX_GAIN/LOSS` | يمنع التسوية ذات الفرق فقط |
-| إقفال سنوي | `RETAINED_EARNINGS` | `RETAINED_EARNINGS_READY=BLOCKED`؛ الإقفال الشهري لا يتأثر |
+| كل close pack؛ والقيد في الإقفال السنوي | `RETAINED_EARNINGS` | يمنع بناء/اعتماد pack إذا غاب أو بطل؛ غير السنوي يثبت المرجع ولا ينشئ به قيدًا |
 
 لا تعتبر الحسابات القديمة على العملاء والموردين غير صالحة لمجرد اختلافها عن default.
 Readiness المركز لا يعيد التحقق الجماعي من كل تاريخ المستندات.
 
-للإقفال السنوي لا تكفي مساواة readiness لحظة العرض. تحفظ لقطة checklist/close pack
-القيمة الدقيقة:
+لكل حزمة إقفال لا تكفي مساواة readiness لحظة العرض. تحفظ لقطة checklist/close pack
+القيمة الدقيقة، ويستخدمها القيد نفسه في الإقفال السنوي فقط:
 
 ```json
 {"key":"RETAINED_EARNINGS","accountId":"42","mappingVersion":3}
 ```
 
-وتكون `null` صراحة للفترة غير السنوية. تدخل القيمة في الـcanonical checklist/pack
-hash وفي approval subject snapshot. عند approve وعند close النهائي، وبعد أقفال
+تدخل القيمة دائمًا في الـcanonical checklist/pack hash وفي approval subject
+snapshot، حتى إذا لم ينشئ الإقفال غير السنوي قيد أرباح مبقاة. لذلك يكون
+`accountId/mappingVersion` دائمًا قابلين للقفل ولا توجد حالة `null`. عند approve وعند close
+النهائي، وبعد أقفال
 `FiscalPeriod/FinancialCloseRun` الحاكمة، يقفل الأمر Account الملتقط ثم mapping،
 ويعيد حل المفتاح والتحقق من `accountId/mappingVersion` والأهلية. أي اختلاف يعيد
 `CHECKLIST_CHANGED` ويحتاج تحديث الحزمة وموافقة جديدة؛ لا يستخدم mapping الأحدث أو
-fallback بصمت. يتلقى منشئ مستند الإقفال `accountId` الملتقط الذي تم التحقق منه، ولا
+أي lookup قديم بصمت. يتلقى منشئ مستند الإقفال `accountId` الملتقط الذي تم التحقق منه، ولا
 يبحث عن `3300` ولا ينفذ resolve جديدًا بعد المقارنة.
 
 ### 9. دورة حياة الحساب المرجعي
@@ -300,8 +312,8 @@ fallback بصمت. يتلقى منشئ مستند الإقفال `accountId` ا�
 الحقائق. تتلقى كلها `tx/companyId/accountId` وتعيد فئات استعمال وأعدادًا محدودة، لا
 Prisma records:
 
-- Core Accounting يفحص الأبناء و`CompanyAccountingDefaultMapping` و
-  `CashFlowAccountMapping` و`JournalLine` وأي حقيقة دفتر يملكها.
+- Core Accounting يفحص الأبناء و`CompanyAccountingDefaultMapping` و`JournalLine`
+  وأي حقيقة دفتر يملكها.
 - `SalesAccountUsageQueryPort` يفحص Customer و`SalesItemSellingProfile` ولقطات
   `SalesInvoiceLine` الحالية والتاريخية.
 - `PurchasesAccountUsageQueryPort` يفحص Supplier ولقطات `PurchaseInvoiceLine`.
@@ -309,6 +321,10 @@ Prisma records:
 - `TreasuryAccountUsageQueryPort` يفحص `CashBankAccount` وReceipt/Payment counter
   snapshots.
 - `InventoryAccountUsageQueryPort` يفحص `InventoryMovement.offsetAccountId` وتاريخه.
+- `ReportingAccountUsageQueryPort` يفحص `CashFlowAccountMapping` الذي يملكه Reporting.
+
+كل Port إلزامي في Composition Root. غيابه أو رميه خطأ يفشل Account lifecycle مغلقًا
+ويرجع المعاملة؛ لا يفسر الفشل كعدم استعمال، ولا يلتف Core عليه بقراءة جدول المالك.
 
 يستدعي أمر Account الحارس داخل معاملته وبعد قفل Account وقبل:
 
@@ -428,21 +444,25 @@ Company/Currencies/Compliance. يكون القسم الافتراضي أول ق�
 
 ينفذ الانتقال توسعيًا:
 
-1. إضافة الجدول والقاموس والصلاحيات و`Account.version` وقراءات readiness مع backfill
-   حتمي، وتحديث عقود Account CAS والحارس المركب، دون نقل مستهلك mapping.
-2. وضع `SHADOW`: مقارنة النتيجة المركزية بالاستدلال القديم بلا تغيير Posting.
-3. نقل المستهلكين واحدًا واحدًا، مع fallback للمفقود فقط.
-4. فتح واجهة الكتابة بعد أن يصبح Binary الرجوع واعيًا بالجدول.
-5. جعل المركز authoritative وإزالة بحث `SMALL_BUSINESS_GENERAL` والرمز `3300` من
-   Inventory/FX/Close بعد بوابة القياس.
+1. إضافة الجدول والقاموس والصلاحيات و`Account.version`، وتشغيل backfill/إكمال يدوي
+   حتى ينجح شرط 13/13 لكل شركة في الدفعة. GET قبل ذلك preview لا readiness حاكمة.
+2. تفعيل `READ_ONLY_AUTHORITATIVE` للـreadiness بعد البوابة، ثم وضع
+   `DIAGNOSTIC_SHADOW`: يقارن الصف بالبحث القديم من دون أن يعيد المرشح لأي أمر.
+3. نقل المستهلكين واحدًا واحدًا إلى `resolveForCommand` الذي يقبل صفًا ونسخة فقط؛
+   الشركة غير المجتازة تبقى كاملة على التطبيق القديم ولا تدخل مسارًا مختلطًا.
+4. بعد نجاح المقارنة والتحويل، إزالة lookup
+   `SMALL_BUSINESS_GENERAL/sourceTemplateKey/3300` من Runtime، وإبقاء دلالة القالب في
+   Migration/template فقط.
 
-قبل فتح الكتابة اليدوية يمكن الرجوع إلى Binary سابق مع إبقاء الجدول لأنه توسعي.
-بعد أول تغيير يدوي لا يجوز الرجوع إلى Binary يتجاهل الجدول؛ قد يرحل إلى حساب القالب
-القديم بصمت. الرجوع الآمن حينها هو تعطيل mutations، إبقاء GET/readiness، وإيقاف
-الأوامر المتأثرة أو استخدام Binary واعٍ بالمركز حتى الإصلاح forward.
+الرجوع موحد عند حد الإصدار/الدفعة: يعاد المستهلك كاملًا إلى التطبيق القديم، لا إلى
+lookup بديل داخل resolver المركزي، وتبقى rows وversions وAudit من دون حذف أو إعادة
+كتابة. تجمد mapping mutations أثناء الرجوع، ويسجل تقرير الفرق، ثم تعاد completeness
+وdiagnostic gates قبل محاولة forward جديدة. لا يكون «الصف إن وجد وإلا القديم»
+مرشح rollback مقبولًا.
 
-يرفض `rollback.sql` إسقاط الجدول إذا احتوى صفًا يدويًا أو استهلكه أي إصدار
-authoritative. لا يحذف Audit ولا يعيد كتابة source template tags أو حقائق الأطراف.
+لا يسقط `rollback.sql` جدول mapping في هذا المسار؛ الرجوع تطبيقي ويحفظ الصفوف حتى
+يستخدمها forward retry. لا يحذف Audit ولا يعيد كتابة source template tags أو حقائق
+الأطراف.
 يبقى عمود `Account.version` بعد cutover لأن إسقاطه يعيد فتح lost updates؛ لا يرجع
 إصدارًا لا يرسل `expectedVersion` إلا في rollback مخطط يوقف كتابات Account ويستبدل
 الحماية بقفل متشائم مكافئ خلال كامل النافذة.
@@ -493,10 +513,10 @@ authoritative. لا يحذف Audit ولا يعيد كتابة source template ta
 
 ### تكاليف ومخاطر
 
-- Migration وbackfill محروسان، وفترة dual-read/shadow.
+- Migration وbackfill محروسان، وفترة dual-read/shadow تشخيصية لا حاكمة.
 - ضرورة تسلسل تغييرات Schema/OpenAPI مع Company Profile مؤقتًا.
 - ضرورة تحديث Account lifecycle كي لا يصبح mapping صالح ظاهريًا إلى حساب معطل.
-- خطر رجوع Binary قديم بعد تغيير يدوي؛ لذلك تؤخر الكتابة حتى اكتمال بوابة الرجوع.
+- تتطلب كل دفعة completeness وdiagnostic gate، ورجوعًا كامل المسار بلا مزج مصدرين.
 
 ## أثر الباركود وقنوات الهاتف
 

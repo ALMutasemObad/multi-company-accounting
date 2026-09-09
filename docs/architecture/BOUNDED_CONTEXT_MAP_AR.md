@@ -1,7 +1,7 @@
 ---
 title: "Bounded Context Map"
 status: "accepted target architecture"
-version: "3.4"
+version: "3.5"
 last_updated: "2026-09-09"
 ---
 
@@ -36,7 +36,7 @@ last_updated: "2026-09-09"
 | Employee Expenses | مطالبة الموظف وبنودها ولقطتها ودورة جاهزيتها للصرف | `EmployeeExpenseClaim`, `EmployeeExpenseLine` | يقرأ الموظف ومركز التكلفة والعملة عبر Ports ويرسل قراره إلى Approvals؛ لا يملك فاتورة مورد أو دفعًا أو ذمة أو Ledger، وينتهي حاليًا عند `READY_FOR_PAYMENT` وفق ADR-020 |
 | Tax | معدلات الضرائب وربط حساباتها والحساب والتقريب | `TaxRate` | يكشف `TaxQuotePort` للمبيعات والمشتريات ويملك النسخ المتفائلة |
 | Printing & Document Output | اللقطات التاريخية والتوليد | `DocumentPrintArchive` | يقرأ عبر Document Snapshot Port |
-| Reporting | التقارير والقوائم وRead Models | لا يملك حقائق مالية تشغيلية | قراءة فقط، ويمكنه امتلاك projections مستقبلًا |
+| Reporting | التقارير والقوائم وتصنيفات العرض وRead Models | `CashFlowAccountMapping`، ويمكنه امتلاك projections مستقبلًا | يملك تصنيف حساب التقرير ونسخته وفق [عقد التدفق النقدي](INDIRECT_CASH_FLOW_REPORT_AR.md)، لا الرصيد أو الحساب أو القيد؛ يقرأ Ledger عبر Port ويكشف `ReportingAccountUsageQueryPort` لدورة Account |
 | Platform Operations & Billing | مؤشرات تبني وصحة المنصة وملف الشركة، وحساب الفوترة وفاتورتها وسدادها ودورة الدفع الإلكتروني | `PlatformBillingAccount`, `PlatformBillingInvoice`, `PlatformBillingInvoiceLine`, `PlatformBillingPayment`, `PlatformPaymentAttempt`, `PlatformCheckoutSession`, `PlatformPaymentTransition`, `PlatformWebhookReceipt`, `PlatformBillingRefund` | يقرأ الاستخدام ولقطة الاشتراك عبر Query Ports، ويملك `PlatformPaymentProviderPort`؛ لا يكتب حالة الاشتراك أو Sales/AR أو Treasury أو Ledger للشركة العميلة |
 | Platform Subscriptions & Entitlements | كتالوج الخطط والموديولات واشتراك الشركة واستحقاقاتها وتغييراتها المؤرخة | `PlatformModule`, `PlatformModuleDependency`, `PlatformPlan`, `PlatformPlanVersion`, `PlatformPlanEntitlement`, `PlatformSubscription`, `PlatformSubscriptionEntitlement`, `PlatformSubscriptionChange`, `PlatformSubscriptionChangeModule` | يستهلك حالة الفوترة عبر Port عند الحاجة ولا يكتب جداول الدفع؛ الاستحقاق التجاري مستقل عن RBAC ولا يتغير بمجرد Webhook دفع |
 | Data Import | تنسيق القوالب والمعاينة والاعتماد الجماعي | `DataImportBatch` فقط | Process Manager؛ يستدعي منافذ المالكين ولا يخزن الملف أو يرحّل الفواتير |
@@ -57,8 +57,8 @@ Registration/Onboarding
 Sales/AR ─────────────> Core Accounting posting port
 Purchases/AP ─────────> Core Accounting posting port
 Treasury ─────────────> Core Accounting posting port
-Sales/Purchases/Inventory/Professional Projects ──> Core Accounting default-mapping command/query ports
-Core Accounting account lifecycle ──> Sales/Purchases/Tax/Treasury/Inventory account-usage query ports
+Sales/Purchases/Inventory/Professional Projects ──> Core Accounting default-mapping command/read ports
+Core Accounting account lifecycle ──> Sales/Purchases/Tax/Treasury/Inventory/Reporting account-usage query ports
 Treasury ─────────────> AR/AP settlement ports
 Treasury reconciliation ──> Core Accounting ledger query port (read-only)
 Registration/Onboarding ──> Treasury setup port
@@ -118,6 +118,11 @@ port محدود داخل المعاملة. لا يمنح الحارس Core Accou
 Supplier أو Selling Profile أو TaxRate أو CashBankAccount أو مستند/حركة، ولا يسمح
 للمستهلك بكتابة mapping أو Account. يجب أن يقفل كل أمر ينشئ Account reference صف
 Account قبل الحفظ كي يتسلسل مع lifecycle guard.
+
+يملك Reporting جدول `CashFlowAccountMapping` وفق عقد التدفق النقدي، ولذلك يفحصه
+`ReportingAccountUsageQueryPort` داخل `AccountUsageGuard`. لا يقرأ Core Accounting
+هذا الجدول أو يستورد Prisma model الخاص به. غياب أو فشل المنفذ يفشل Account lifecycle
+مغلقًا ويرجع المعاملة، ولا يفسر «لا نتيجة» على أنه «لا استعمال».
 
 ### الاتصال غير المتزامن
 
@@ -216,5 +221,6 @@ Intercompany. تحفظ تغييرات العضوية في `OrganizationAuditLog`
 | `EmployeeExpenseClaim` | ملكية الموظف للمسودة، بنود Decimal ومراكز تكلفتها، ثبات snapshot أثناء المراجعة، وانتقالًا واحدًا صادقًا إلى جاهزية الصرف |
 | `ChartOfAccounts`/`Account` | صلاحية الترحيل والبنية الهرمية |
 | `CompanyAccountingDefaultMapping` | تعيين `(companyId,key)` واحد، أهلية الحساب، النسخة، ومنع الحذف/التعطيل؛ لا يملك مراجع الطرف أو المستند |
+| `CashFlowAccountMapping` | تصنيف Reporting الصريح لحساب واحد ونسخته؛ لا يملك Account أو أرصدة Ledger |
 
 لا يشترط أن تتحول جميعها إلى Classes كبيرة؛ المطلوب أن تكون invariants والملكية ومداخل التغيير واضحة ومختبرة.

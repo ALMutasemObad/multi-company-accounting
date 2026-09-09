@@ -22,6 +22,8 @@
 - البحث المباشر عن `3300` في Financial Close دين تقني له شريحة إزالة واختبار حارس.
 - `Account` لا يحمل version حاليًا؛ التعطيل يفحص الأبناء النشطين فقط، والحذف يقرأ
   علاقات سياقات متعددة مباشرة ولا يغطي كل الاستعمال التاريخي.
+- `CashFlowAccountMapping` يملكه Reporting وفق عقد التدفق النقدي؛ لا يجوز لـCore
+  Accounting قراءته مباشرة عند حراسة دورة Account.
 - common accounts في القوالب الثلاثة الجديدة ما زالت تحمل
   `sourceTemplateCode=SMALL_BUSINESS_GENERAL`؛ لذلك تعتمد خطة backfill مرشحين
   مرتبين ولا تساوي بين قالب الشركة ووسم كل حساب.
@@ -37,16 +39,23 @@
 - أي استعمال حالي أو تاريخي يمنع تعطيل/حذف الحساب؛ استبدال mapping وحده لا يكفي،
   والعكس legacy يستخدم الحساب الأصلي المعطل في مسار ضيق فقط.
 - `resolveForCommand` يقفل Account ثم mapping ويعيد القراءة حتى لإنشاء عميل أو مورد
-  أو ملف بيع، ويغلق سباقات create-vs-replace/deactivate.
+  أو ملف بيع، ولا يعيد نتيجة بلا materialized row/version.
 - تثبيت key/accountId/mappingVersion للأرباح المبقاة في close pack/hash وإعادة
   التحقق في approve/close مع `CHECKLIST_CHANGED`.
+- بوابة 13/13 قبل `READ_ONLY_AUTHORITATIVE` وقبل نقل أي مستهلك؛ legacy lookup أداة
+  preview/diagnostic فقط ولا يغذي readiness أو resolve أو close.
+- `ReportingAccountUsageQueryPort` يحرس Cash Flow ownership، وفشله يمنع أمر دورة
+  الحساب ويرجع المعاملة.
 - منح RBAC صريحة وبادئة `CORE_ACCOUNTING` في API/Web وسياسة Settings محروسة لكل قسم؛
   لا permission implications مفترضة.
 - لا cascade إلى كيان قائم؛ defaults للإنشاءات والعمليات المستقبلية فقط.
 - لا Outbox في الشريحة الأولى لعدم وجود مستهلك؛ المنافذ الحاكمة متزامنة.
-- legacy fallback انتقالي للمفقود فقط، ولا يتجاوز mapping موجودًا لكنه غير صالح.
-- تأخير الكتابة اليدوية حتى وجود Binary رجوع يعرف المركز، لمنع رجوع صامت إلى حساب
-  قالب مختلف.
+- ترتيب rollout هو schema/backfill والإكمال، ثم completeness، ثم dual-read تشخيصي،
+  ثم تحويل المستهلكين إلى الصفوف فقط، ثم إزالة lookup القديم.
+- rollback يعيد المستهلك كاملًا إلى التطبيق القديم ويحتفظ بالصفوف؛ لا يمزج مصدرين
+  ولا يحذف mapping أو Audit.
+- لا تفتح الكتابة اليدوية قبل اعتماد rollback artifact/drill؛ وأثناء الرجوع تجمد
+  mapping writes وتعود الدفعة كاملة إلى التطبيق القديم بلا مزج.
 
 ## التحقق المنفذ
 
