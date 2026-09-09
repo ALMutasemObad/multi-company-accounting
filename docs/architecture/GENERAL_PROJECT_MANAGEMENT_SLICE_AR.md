@@ -1,7 +1,7 @@
 ---
 title: "General Project Management — Executable Slices"
 status: "planned; temporary schema/OpenAPI coordination with company-profile-bp1"
-version: "1.1"
+version: "1.2"
 date: "2026-09-09"
 owner: "General Project Delivery"
 related:
@@ -112,9 +112,9 @@ related:
 | من | إلى | الصلاحية | الشرط/السبب |
 |---|---|---|---|
 | `PLANNED` | `IN_PROGRESS` | `general_projects.manage` | المشروع `ACTIVE` |
-| `PLANNED` | `CANCELLED` | `general_projects.manage` | مشروع غير نهائي و`reason` إلزامي |
+| `PLANNED` | `CANCELLED` | `general_projects.manage` | مشروع غير نهائي، وكل مهام المرحلة `COMPLETED/CANCELLED`، و`reason` إلزامي |
 | `IN_PROGRESS` | `COMPLETED` | `general_projects.manage` | كل مهام المرحلة نهائية |
-| `IN_PROGRESS` | `CANCELLED` | `general_projects.manage` | مشروع غير نهائي و`reason` إلزامي |
+| `IN_PROGRESS` | `CANCELLED` | `general_projects.manage` | مشروع غير نهائي، وكل مهام المرحلة `COMPLETED/CANCELLED`، و`reason` إلزامي |
 
 #### المهمة والحجب
 
@@ -138,6 +138,11 @@ PATCH/transition وإنشاء أو تعديل مرحلة/مهمة/عضوية/إ�
 تبقى GET والتاريخ، ويجوز إلغاء المتابعة الذاتية فقط. تمنع المرحلة النهائية إنشاء أو
 تعديل مهمة داخلها، وتمنع المهمة النهائية تعديلها أو إسنادها أو تغيير اعتمادياتها أو
 إضافة تعليق موجه إليها. لا reopen أو cascade ضمني في الشرائح الأولى.
+
+إلغاء المرحلة ليس cascade: يرفض ما دامت أي مهمة فيها
+`TODO/IN_PROGRESS/BLOCKED`. يكمل المدير كل مهمة أو يلغيها بأمر المهمة مع
+`general_projects.manage` وسبب الإلغاء، ثم يرسل أمر إلغاء المرحلة وسببه. بذلك لا
+تتحول المرحلة إلى حالة نهائية بينما تبقى مهام غير نهائية مجمدة داخلها.
 
 يسمح بإنشاء مرحلة في مشروع `DRAFT/ACTIVE/ON_HOLD` فقط، وتعديلها في
 `PLANNED/IN_PROGRESS`. يسمح بإنشاء مهمة داخل مرحلة `PLANNED/IN_PROGRESS` ومشروع غير
@@ -244,6 +249,8 @@ POST/PATCH/transition/assign/unassign تتطلب CSRF و`Idempotency-Key`. تح�
 - صحة حدود التواريخ وترتيبها وحالات project/phase/task والإلغاء المسبب.
 - مطابقة كل transition table، ورفض unblock بلا `resolutionReason` أو انتقال مباشر
   `BLOCKED -> IN_PROGRESS`، وعدم الخلط بين الحجب اليدوي والمشتق.
+- رفض إلغاء مرحلة `PLANNED/IN_PROGRESS` مع أي مهمة غير نهائية، ثم نجاحه بعد إكمال
+  أو إلغاء كل مهمة بأمر مستقل؛ لا cascade أو انتقال طفل ضمني.
 - منع progress في `DRAFT/ON_HOLD`، ومنع كل mutations بعد نهائية الجذر أو الطفل مع
   السماح بالقراءة وإلغاء المتابعة الذاتية فقط.
 - رفض مسؤول غير عضو أو من شركة أخرى، ومنع مهمة `IN_PROGRESS` بلا مسؤول.

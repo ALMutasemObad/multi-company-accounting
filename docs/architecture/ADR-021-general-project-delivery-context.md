@@ -1,7 +1,7 @@
 ---
 title: "ADR-021 — General Project Delivery Context"
 status: "proposed for acceptance; implementation not started"
-version: "1.1"
+version: "1.2"
 date: "2026-09-09"
 decision_owner: "Architecture"
 related:
@@ -164,12 +164,13 @@ Outbox. إذا أضيف نشاط مرئي لاحقًا فيكون Projection ص�
 | من | إلى | الصلاحية | الشروط والسبب |
 |---|---|---|---|
 | `PLANNED` | `IN_PROGRESS` | `general_projects.manage` | المشروع `ACTIVE`؛ لا تبدأ تلقائيًا مع أول مهمة |
-| `PLANNED` | `CANCELLED` | `general_projects.manage` | المشروع غير نهائي و`reason` إلزامي |
+| `PLANNED` | `CANCELLED` | `general_projects.manage` | المشروع غير نهائي، وكل مهام المرحلة `COMPLETED/CANCELLED`، و`reason` إلزامي |
 | `IN_PROGRESS` | `COMPLETED` | `general_projects.manage` | كل مهام المرحلة `COMPLETED/CANCELLED` |
-| `IN_PROGRESS` | `CANCELLED` | `general_projects.manage` | المشروع غير نهائي و`reason` إلزامي |
+| `IN_PROGRESS` | `CANCELLED` | `general_projects.manage` | المشروع غير نهائي، وكل مهام المرحلة `COMPLETED/CANCELLED`، و`reason` إلزامي |
 
 `COMPLETED/CANCELLED` حالتان نهائيتان للمرحلة؛ لا PATCH أو transition أو إنشاء مهمة
-داخلهما.
+داخلهما. الإلغاء لا يطبق cascade ولا يجمد عملًا مفتوحًا: يجب إكمال أو إلغاء كل مهمة
+غير نهائية بأمرها وصلاحيتها وسببها أولًا، ثم إلغاء المرحلة.
 
 ### انتقال المهمة و`BLOCKED`
 
@@ -208,6 +209,8 @@ transition أو إسناد أو تغيير اعتمادية أو تعليق مو
 `PLANNED/IN_PROGRESS`. يسمح بإنشاء مهمة فقط داخل مرحلة `PLANNED/IN_PROGRESS` في
 مشروع غير نهائي، وتعديلها فقط في `TODO/IN_PROGRESS/BLOCKED`. تعديل العضوية والإسناد
 والاعتمادية يتطلب أطرافًا غير نهائية و`general_projects.manage` وسببًا عند الإلغاء.
+يرفض transition إلغاء المرحلة ما دام أي طفل `TODO/IN_PROGRESS/BLOCKED`؛ لا تحول
+المهمة أو تلغى ضمنيًا مع المرحلة.
 
 - كل إلغاء مدقق ولا يحذف المراحل أو المهام أو التعليقات.
 - لا يكتمل المشروع وفيه مرحلة أو مهمة غير نهائية.
@@ -306,8 +309,8 @@ backoff+jitter وdeadline واحد. لا يعاد `VERSION_CONFLICT` أو خطأ
 ## API والتنقل
 
 العقد المستهدف يستخدم `/api/v1/general-projects` فقط. كل مورد طفل يبقى تحت معرف
-المشروع، مثل `/api/v1/general-projects/{generalProjectId}/phases/{phaseId}` و
-`/api/v1/general-projects/{generalProjectId}/tasks/{taskId}` و
+المشروع، مثل `/api/v1/general-projects/{generalProjectId}/phases/{generalProjectPhaseId}` و
+`/api/v1/general-projects/{generalProjectId}/tasks/{generalProjectTaskId}` و
 `/api/v1/general-projects/{generalProjectId}/task-dependencies/{dependencyId}`؛ يمنع
 إنشاء `/general-project-phases` أو `/general-project-tasks` أو
 `/general-project-task-dependencies` كجذور موازية. تبدأ العمليات التالية عبر شرائح
