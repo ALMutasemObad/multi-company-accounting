@@ -1,7 +1,7 @@
 ---
 title: "ADR-021 — General Project Delivery Context"
 status: "proposed for acceptance; implementation not started"
-version: "1.0"
+version: "1.1"
 date: "2026-09-09"
 decision_owner: "Architecture"
 related:
@@ -102,7 +102,7 @@ polymorphic بينهما، ولا تنقل البيانات الحالية تل�
   `PLANNED/IN_PROGRESS/COMPLETED/CANCELLED` و`version`.
 - `GeneralProjectTask`: مرحلة ومشروع وشركة، ترتيب خادمي، عنوان ووصف، أولوية، تاريخا
   بدء/استحقاق، حالة `TODO/IN_PROGRESS/BLOCKED/COMPLETED/CANCELLED` و`version`.
-- `GeneralTaskDependency`: سابقة وتابعة من المشروع والشركة نفسيهما، فعالة/ملغاة
+- `GeneralProjectTaskDependency`: سابقة وتابعة من المشروع والشركة نفسيهما، فعالة/ملغاة
   منطقيًا و`version`. تدعم الشريحة الأولى Finish-to-Start فقط.
 
 تمنع الاعتمادية الذاتية والمكررة والعابرة للمشروع والدورات المباشرة وغير المباشرة.
@@ -117,7 +117,7 @@ polymorphic بينهما، ولا تنقل البيانات الحالية تل�
 - `GeneralProjectMember` يربط موظف HR نشطًا بالمشروع بدور
   `MANAGER/CONTRIBUTOR`، ويحفظ تاريخ التعيين والإلغاء و`version` من دون نسخ اسم
   الموظف أو قسمه.
-- `GeneralTaskAssignment` يربط المهمة بعضو مشروع نشط بدور
+- `GeneralProjectTaskAssignment` يربط المهمة بعضو مشروع نشط بدور
   `RESPONSIBLE/CONTRIBUTOR`. يسمح بأكثر من مسؤول؛ لا تستخدم قائمة معرفات أو JSON
   داخل المهمة.
 - يلزم مسؤول نشط واحد على الأقل قبل نقل المهمة إلى `IN_PROGRESS`، ويمنع إلغاء عضو
@@ -143,18 +143,73 @@ polymorphic بينهما، ولا تنقل البيانات الحالية تل�
 Outbox. إذا أضيف نشاط مرئي لاحقًا فيكون Projection صريحًا بعقد وRetention، لا قراءة
 عشوائية من Audit.
 
-## حالات المشروع وقواعد التواريخ
+## الحالات والانتقالات وقابلية التعديل
 
-الانتقالات الأولية:
+### انتقال المشروع
 
-```text
-DRAFT -> ACTIVE | CANCELLED
-ACTIVE -> ON_HOLD | COMPLETED | CANCELLED
-ON_HOLD -> ACTIVE | CANCELLED
-COMPLETED/CANCELLED -> terminal
-```
+| من | إلى | الصلاحية | الشروط والسبب |
+|---|---|---|---|
+| `DRAFT` | `ACTIVE` | `general_projects.manage` | مدير نشط واحد على الأقل؛ لا سبب إلزامي |
+| `DRAFT` | `CANCELLED` | `general_projects.manage` | `reason` من 10 إلى 500 حرف |
+| `ACTIVE` | `ON_HOLD` | `general_projects.manage` | `reason` من 10 إلى 500 حرف |
+| `ACTIVE` | `COMPLETED` | `general_projects.manage` | كل المراحل والمهام نهائية، ولا مهمة `BLOCKED`؛ `completionNote` اختياري |
+| `ACTIVE` | `CANCELLED` | `general_projects.manage` | `reason` من 10 إلى 500 حرف |
+| `ON_HOLD` | `ACTIVE` | `general_projects.manage` | `reason` يوضح استئناف العمل |
+| `ON_HOLD` | `CANCELLED` | `general_projects.manage` | `reason` من 10 إلى 500 حرف |
 
-- كل إلغاء يتطلب سببًا مدققًا ولا يحذف المراحل أو المهام أو التعليقات.
+لا يوجد انتقال من `COMPLETED/CANCELLED` ولا أمر reopen في الشرائح الأولى.
+
+### انتقال المرحلة
+
+| من | إلى | الصلاحية | الشروط والسبب |
+|---|---|---|---|
+| `PLANNED` | `IN_PROGRESS` | `general_projects.manage` | المشروع `ACTIVE`؛ لا تبدأ تلقائيًا مع أول مهمة |
+| `PLANNED` | `CANCELLED` | `general_projects.manage` | المشروع غير نهائي و`reason` إلزامي |
+| `IN_PROGRESS` | `COMPLETED` | `general_projects.manage` | كل مهام المرحلة `COMPLETED/CANCELLED` |
+| `IN_PROGRESS` | `CANCELLED` | `general_projects.manage` | المشروع غير نهائي و`reason` إلزامي |
+
+`COMPLETED/CANCELLED` حالتان نهائيتان للمرحلة؛ لا PATCH أو transition أو إنشاء مهمة
+داخلهما.
+
+### انتقال المهمة و`BLOCKED`
+
+| من | إلى | الصلاحية | الشروط والسبب |
+|---|---|---|---|
+| `TODO` | `IN_PROGRESS` | `general_projects.progress` للمسؤول النشط، أو `general_projects.manage` كـoverride مدقق | المشروع والمرحلة `ACTIVE/IN_PROGRESS` على الترتيب، مسؤول نشط، وكل السابقات الفعالة `COMPLETED` |
+| `TODO` | `BLOCKED` | الصلاحية نفسها | المشروع `ACTIVE` و`blockReason` من 10 إلى 500 حرف |
+| `TODO` | `CANCELLED` | `general_projects.manage` | `reason` إلزامي |
+| `IN_PROGRESS` | `BLOCKED` | صلاحية التقدم نفسها | `blockReason` إلزامي |
+| `IN_PROGRESS` | `COMPLETED` | صلاحية التقدم نفسها | المسؤول/override و`completionNote` اختياري |
+| `IN_PROGRESS` | `CANCELLED` | `general_projects.manage` | `reason` إلزامي |
+| `BLOCKED` | `TODO` | صلاحية التقدم نفسها | أمر unblock صريح مع `resolutionReason` من 10 إلى 500 حرف؛ لا ينتقل مباشرة إلى `IN_PROGRESS` |
+| `BLOCKED` | `CANCELLED` | `general_projects.manage` | `reason` إلزامي |
+
+`BLOCKED` حالة يختارها الفاعل بسبب محفوظ، وهي مستقلة عن
+`dependencyBlocked=true` المشتقة. اكتمال السابقة لا يزيل `BLOCKED` اليدوية، وإزالة
+الحجب اليدوي لا تتجاوز سابقة غير مكتملة. `COMPLETED/CANCELLED` نهائيتان؛ لا PATCH أو
+transition أو إسناد أو تغيير اعتمادية أو تعليق موجه للمهمة بعدهما.
+
+### مصفوفة قابلية التعديل
+
+| العملية | `DRAFT` | `ACTIVE` | `ON_HOLD` | `COMPLETED/CANCELLED` |
+|---|---|---|---|---|
+| PATCH رأس المشروع | مسموح بـmanage | مسموح بـmanage | مسموح بـmanage | مرفوض |
+| إنشاء/تعديل الخطة والفريق | مسموح بـmanage | مسموح بـmanage | مسموح لإعادة التخطيط بـmanage | مرفوض |
+| انتقال تقدم مهمة | مرفوض | مسموح وفق جدول المهمة | مرفوض حتى استئناف المشروع | مرفوض |
+| متابعة جديدة أو تعليق جديد | مسموح بالصلاحية المختصة | مسموح | مسموح | مرفوض |
+| القراءة | مسموحة وفق view | مسموحة | مسموحة | مسموحة للحفاظ على التاريخ |
+
+يجوز للمستخدم إلغاء **متابعته الذاتية** بعد نهائية المشروع لأنها تفضيل شخصي لا يغير
+حقيقة المشروع؛ لا يجوز إنشاء متابعة جديدة. فيما عدا ذلك يصبح رأس المشروع وخطته
+وفريقه واعتمادياته وتعليقاته read-only بعد النهائية. لا توجد cascade transitions أو
+تصحيحات صامتة؛ أي دعم reopen أو redaction يحتاج قرارًا لاحقًا.
+
+يسمح بإنشاء مرحلة فقط في مشروع غير نهائي، وتعديل مرحلة فقط في
+`PLANNED/IN_PROGRESS`. يسمح بإنشاء مهمة فقط داخل مرحلة `PLANNED/IN_PROGRESS` في
+مشروع غير نهائي، وتعديلها فقط في `TODO/IN_PROGRESS/BLOCKED`. تعديل العضوية والإسناد
+والاعتمادية يتطلب أطرافًا غير نهائية و`general_projects.manage` وسببًا عند الإلغاء.
+
+- كل إلغاء مدقق ولا يحذف المراحل أو المهام أو التعليقات.
 - لا يكتمل المشروع وفيه مرحلة أو مهمة غير نهائية.
 - لا تكتمل المرحلة وفيها مهمة غير نهائية.
 - تقع تواريخ المهمة داخل حدود مرحلتها عند اكتمال الحدين، وتقع تواريخ المرحلة داخل
@@ -167,7 +222,7 @@ COMPLETED/CANCELLED -> terminal
 
 | العلاقة | اتجاه المنفذ | القرار |
 |---|---|---|
-| ملف المنشأة | General Projects يستهلك `GeneralProjectCompanyProfileQueryPort` من Tenant عند الحاجة إلى الاسم والمنطقة الزمنية | لا ينسخ الملف أو التسجيل أو العنوان، ولا يجعل `READY/ACTION_RECOMMENDED` شرط تشغيل للمشروع |
+| سياق المنشأة | General Projects يستهلك `GeneralProjectCompanyContextQueryPort` محدودًا من Tenant عند الحاجة إلى المنطقة الزمنية واسم العرض | لا يعتمد على `CompanyProfile` أو profile/compliance أو readiness، ولا ينسخ الملف أو التسجيل أو العنوان |
 | العميل | General Projects يستهلك `GeneralProjectCustomerQueryPort` من Sales | `customerId` اختياري؛ لا نسخ لاسم/رمز/رصيد العميل ولا كتابة إلى `Customer` |
 | الموظفون | General Projects يستهلك `GeneralProjectEmployeePort` من HR | التحقق من موظف الشركة النشط وخيارات العرض؛ لا كتابة إلى `Employee` أو العقد |
 | المتابعون والكاتب | General Projects يستهلك `GeneralProjectPeoplePort` من Identity | التحقق من عضوية الشركة وعرض مرجع محدود؛ لا دور أو صلاحية تمنحها المتابعة |
@@ -232,7 +287,7 @@ Idempotency
 -> GeneralProject
 -> GeneralProjectPhase rows ascending
 -> GeneralProjectTask rows ascending
--> GeneralTaskDependency rows ascending
+-> GeneralProjectTaskDependency rows ascending
 -> member/assignment/follower rows ascending
 -> Audit
 -> Outbox مستقبلًا
@@ -250,8 +305,13 @@ backoff+jitter وdeadline واحد. لا يعاد `VERSION_CONFLICT` أو خطأ
 
 ## API والتنقل
 
-العقد المستهدف يستخدم `/api/v1/general-projects` فقط ويبدأ بالعمليات التالية عبر
-شرائح صغيرة:
+العقد المستهدف يستخدم `/api/v1/general-projects` فقط. كل مورد طفل يبقى تحت معرف
+المشروع، مثل `/api/v1/general-projects/{generalProjectId}/phases/{phaseId}` و
+`/api/v1/general-projects/{generalProjectId}/tasks/{taskId}` و
+`/api/v1/general-projects/{generalProjectId}/task-dependencies/{dependencyId}`؛ يمنع
+إنشاء `/general-project-phases` أو `/general-project-tasks` أو
+`/general-project-task-dependencies` كجذور موازية. تبدأ العمليات التالية عبر شرائح
+صغيرة:
 
 - قائمة/إنشاء المشروع، تفاصيله وتعديله وانتقاله.
 - قراءة الخطة وإنشاء/تعديل/انتقال مرحلة أو مهمة.
@@ -269,32 +329,43 @@ OpenAPI هو مصدر الحقيقة، وأجسام JSON تستخدم الحرا
 على `#professionalProjects` مستقلًا. لا تعرض الواجهة تبويبًا مشتركًا يخفي اختلاف
 الملكية، لكن يجوز أن تعرض الصفحة الرئيسية بطاقتين وروابط عميقة منفصلة.
 
-## بوابة ملف المنشأة وترتيب التنفيذ
+## قيد التنسيق المؤقت مع ملف المنشأة
 
-لا تبدأ أول شريحة تنفيذ قبل **دمج** المهمة `company-profile-bp1` وتوافر
-`CompanyProfile` و`CompanyRegistration` و`CompanyTaxRegistration` و`CompanyAddress`
-وواجهتي profile/compliance في baseline المنطلق منه. هذه بوابة ترتيب ودمج تمنع سباق
-العقود والترحيلات، وليست شرط readiness تشغيليًا: الحسابات القديمة grandfathered،
-ولا يمنع `ACTION_RECOMMENDED` إنشاء مشروع عام.
+المهمة الجارية `company-profile-bp1` قيد **تنسيق مؤقت** فقط لأنها تلمس Schema وOpenAPI
+المشتركين. لا تعد `CompanyProfile` أو `CompanyRegistration` أو
+`CompanyTaxRegistration` أو `CompanyAddress` أو واجهتا profile/compliance
+prerequisite وظيفيًا أو dependency دائمًا للموديول.
 
-بعد تحقق البوابة، تنفذ الشرائح المحددة في
-[خطة الشريحة](GENERAL_PROJECT_MANAGEMENT_SLICE_AR.md). لا يخلط أي التزام ترحيل
-الموديول مع ترحيل ملف المنشأة أو Professional Projects.
+ما دامت المهمة الجارية غير مدمجة، لا تبدأ GPM-1 في ملفات Schema/OpenAPI نفسها إلا
+إذا سلّسل المدير الملكية صراحة. بعد دمجها أو إنهائها يبدأ فرع التنفيذ من أحدث
+`origin/main` وينتهي هذا القيد؛ ولا يبقى check أو Port أو module dependency عليها.
+تعمل المشاريع العامة مع غياب ملف موسع ومع `READY` أو `ACTION_RECOMMENDED`، ولا تسأل
+profile/compliance في أوامرها. تستخدم المنطقة الزمنية الأساسية من Tenant company
+context فقط لدلالة التاريخ.
+
+تنفذ الشرائح المحددة في [خطة الشريحة](GENERAL_PROJECT_MANAGEMENT_SLICE_AR.md) من دون
+خلط ترحيل الموديول مع ترحيل ملف المنشأة أو Professional Projects.
 
 ## الترحيل والرجوع
 
-- كل شريحة Schema عبر forward migration من آخر `origin/main` بعد بوابة ملف المنشأة؛
-  لا يحجز هذا ADR رقم timestamp مسبقًا.
+- كل شريحة Schema عبر forward migration من آخر `origin/main` بعد انتهاء قيد تعارض
+  ملفات `company-profile-bp1` أو تسلسلها صراحة؛ لا يحجز هذا ADR رقم timestamp مسبقًا.
 - الإضافة توسعية: جداول وبادئات جديدة وصلاحيات واستحقاق جديد، بلا إعادة تسمية أو
   تعديل لجداول `professional_*` وبلا backfill منها.
 - تختبر قاعدة فارغة والترقية من baseline السابق على MariaDB 10.11 وMySQL 8.4.
 - قبل أول استخدام وفي بيئة معزولة فقط يجوز rollback مدمرًا إذا أثبتت البوابة صفر
   مشاريع ومراحل ومهام وعلاقات وتعليقات ومراجع موافقة/مصروف/فوترة.
-- بعد أول سجل يكون الرجوع التشغيلي بتعطيل القدرة والمسارات والواجهة مع إبقاء الجداول
-  والرموز والتدقيق، ثم forward migration. يمنع إسقاط التعليقات أو الخطة أو إعادة
-  تخصيص رموز `GPR-`.
-- لا ينشر Binary أقدم لا يعرف module code إذا كان عقد `/auth/me` أو بيانات الخطط
-  تحتويه؛ يلزم إصدار توافق أو تعطيل الاستحقاق أولًا.
+- بعد أول سجل يكون الرجوع التشغيلي **read-only** بعقد صريح: يبقى entitlement
+  `GENERAL_PROJECTS` وصلاحية `general_projects.view` في `/auth/me`، ويستمر Binary
+  متوافق في خدمة GET والتفاصيل والتاريخ. يضبط الخادم feature flag للكتابة إلى
+  `GENERAL_PROJECTS_WRITES_ENABLED=false` فتعيد كل mutation خطأ
+  `503 FEATURE_TEMPORARILY_READ_ONLY` بلا أثر، ويضبط العميل
+  `GENERAL_PROJECTS_NAVIGATION_ENABLED=false` لإخفاء رابط التنقل والأفعال؛ يبقى
+  الرابط العميق read-only متاحًا مع تنبيه واضح.
+- يمنع إزالة entitlement أو module/permission codes أو نشر Binary أقدم لا يفهمها
+  بعد التفعيل. تبقى الجداول والرموز والتدقيق، ثم يعالج السبب بـforward migration
+  ويعاد تفعيل الكتابة والتنقل. يمنع إسقاط التعليقات أو الخطة أو إعادة تخصيص رموز
+  `GPR-`.
 
 ## البدائل المرفوضة
 

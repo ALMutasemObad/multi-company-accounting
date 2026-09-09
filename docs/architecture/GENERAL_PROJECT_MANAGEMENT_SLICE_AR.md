@@ -1,7 +1,7 @@
 ---
 title: "General Project Management — Executable Slices"
-status: "planned; gated after company-profile-bp1"
-version: "1.0"
+status: "planned; temporary schema/OpenAPI coordination with company-profile-bp1"
+version: "1.1"
 date: "2026-09-09"
 owner: "General Project Delivery"
 related:
@@ -20,16 +20,15 @@ related:
 ومسؤولين ومتابعين وتعليقات، من دون توسيع `Professional Project Delivery` أو نسخ
 حقائق HR/Sales/Approvals/Employee Expenses.
 
-الخطة **ليست تنفيذًا** ولا تعدل Schema أو OpenAPI أو الكود. يبدأ التنفيذ فقط بعد:
+الخطة **ليست تنفيذًا** ولا تعدل Schema أو OpenAPI أو الكود. قبل التنفيذ ينسق المدير
+مؤقتًا مع المهمة الجارية `company-profile-bp1` لأنها تلمس Schema وOpenAPI نفسيهما:
+ينتظر دمجها/إنهاءها أو يسلسل ملكية الملفين صراحة، ثم ينشئ worktree جديدة من أحدث
+`origin/main` المتحقق منه بنطاق وترحيل غير متداخلين.
 
-1. دمج `company-profile-bp1` في baseline المهمة الجديدة.
-2. توافر `CompanyProfile` و`CompanyRegistration` و`CompanyTaxRegistration`
-   و`CompanyAddress` وواجهتي profile/compliance.
-3. إنشاء worktree جديدة من `origin/main` المتحقق منه، وتخصيص نطاق ملفات وترحيل لا
-   يتداخل مع مهمة أخرى.
-
-لا تتطلب الرحلة حالة profile readiness معينة؛ `ACTION_RECOMMENDED` لا يمنع المشروع،
-والحسابات القديمة grandfathered. بوابة ملف المنشأة ترتيب دمج فقط.
+ينتهي هذا القيد بانتهاء تعارض الملفات. لا تتطلب General Projects وجود
+`CompanyProfile/CompanyRegistration/CompanyTaxRegistration/CompanyAddress` أو
+واجهتي profile/compliance، ولا تستدعي readiness. تعمل الرحلة عند `READY` أو
+`ACTION_RECOMMENDED` ومع الحسابات القديمة grandfathered.
 
 ## 2. حد الملكية التنفيذي
 
@@ -41,8 +40,8 @@ related:
 | `GeneralProjectMember` | موظفو HR المسندون للمشروع وأدوارهم وتاريخ الإسناد |
 | `GeneralProjectPhase` | تقسيم الخطة وترتيبها وحالتها وتواريخها |
 | `GeneralProjectTask` | العمل التنفيذي والأولوية والتواريخ والحالة |
-| `GeneralTaskAssignment` | المسؤولون والمساهمون المتعددون في المهمة |
-| `GeneralTaskDependency` | اعتماد Finish-to-Start داخل المشروع نفسه |
+| `GeneralProjectTaskAssignment` | المسؤولون والمساهمون المتعددون في المهمة |
+| `GeneralProjectTaskDependency` | اعتماد Finish-to-Start داخل المشروع نفسه |
 | `GeneralProjectFollower` | متابعة ذاتية لمستخدم الشركة من دون منح وصول |
 | `GeneralProjectComment` | تعليق نصي append-only على المشروع أو مهمة منه |
 
@@ -94,6 +93,57 @@ related:
 - إكمال المرحلة يتطلب مهام نهائية، وإكمال المشروع يتطلب مراحل ومهام نهائية.
 - الإلغاء منطقي ومسبب؛ لا حذف صلب للخطة بعد استخدامها.
 
+### جداول الانتقال الحاكمة
+
+#### المشروع
+
+| من | إلى | الصلاحية | الشرط/السبب |
+|---|---|---|---|
+| `DRAFT` | `ACTIVE` | `general_projects.manage` | مدير نشط واحد على الأقل |
+| `DRAFT` | `CANCELLED` | `general_projects.manage` | `reason` من 10 إلى 500 حرف |
+| `ACTIVE` | `ON_HOLD` | `general_projects.manage` | `reason` إلزامي |
+| `ACTIVE` | `COMPLETED` | `general_projects.manage` | كل المراحل والمهام نهائية ولا مهمة `BLOCKED` |
+| `ACTIVE` | `CANCELLED` | `general_projects.manage` | `reason` إلزامي |
+| `ON_HOLD` | `ACTIVE` | `general_projects.manage` | `reason` يوضح الاستئناف |
+| `ON_HOLD` | `CANCELLED` | `general_projects.manage` | `reason` إلزامي |
+
+#### المرحلة
+
+| من | إلى | الصلاحية | الشرط/السبب |
+|---|---|---|---|
+| `PLANNED` | `IN_PROGRESS` | `general_projects.manage` | المشروع `ACTIVE` |
+| `PLANNED` | `CANCELLED` | `general_projects.manage` | مشروع غير نهائي و`reason` إلزامي |
+| `IN_PROGRESS` | `COMPLETED` | `general_projects.manage` | كل مهام المرحلة نهائية |
+| `IN_PROGRESS` | `CANCELLED` | `general_projects.manage` | مشروع غير نهائي و`reason` إلزامي |
+
+#### المهمة والحجب
+
+| من | إلى | الصلاحية | الشرط/السبب |
+|---|---|---|---|
+| `TODO` | `IN_PROGRESS` | `general_projects.progress` لمسؤول نشط أو `general_projects.manage` كـoverride | المشروع `ACTIVE` والمرحلة `IN_PROGRESS`، وكل السابقات مكتملة |
+| `TODO` | `BLOCKED` | الصلاحية نفسها | `blockReason` من 10 إلى 500 حرف |
+| `TODO` | `CANCELLED` | `general_projects.manage` | `reason` إلزامي |
+| `IN_PROGRESS` | `BLOCKED` | صلاحية التقدم نفسها | `blockReason` إلزامي |
+| `IN_PROGRESS` | `COMPLETED` | صلاحية التقدم نفسها | مسؤول نشط أو override مدقق |
+| `IN_PROGRESS` | `CANCELLED` | `general_projects.manage` | `reason` إلزامي |
+| `BLOCKED` | `TODO` | صلاحية التقدم نفسها | unblock صريح و`resolutionReason` إلزامي؛ لا انتقال مباشر إلى `IN_PROGRESS` |
+| `BLOCKED` | `CANCELLED` | `general_projects.manage` | `reason` إلزامي |
+
+الحجب اليدوي لا يزول باكتمال السابقة، و`dependencyBlocked` المشتقة لا تزول بأمر
+unblock اليدوي. تتطلب كل انتقالات التقدم مشروعًا `ACTIVE`؛ يسمح `ON_HOLD` بإعادة
+التخطيط فقط.
+
+`COMPLETED/CANCELLED` نهائيتان في المستويات الثلاثة. بعد نهائية المشروع تمنع كل
+PATCH/transition وإنشاء أو تعديل مرحلة/مهمة/عضوية/إسناد/اعتمادية/تعليق/متابعة جديدة؛
+تبقى GET والتاريخ، ويجوز إلغاء المتابعة الذاتية فقط. تمنع المرحلة النهائية إنشاء أو
+تعديل مهمة داخلها، وتمنع المهمة النهائية تعديلها أو إسنادها أو تغيير اعتمادياتها أو
+إضافة تعليق موجه إليها. لا reopen أو cascade ضمني في الشرائح الأولى.
+
+يسمح بإنشاء مرحلة في مشروع `DRAFT/ACTIVE/ON_HOLD` فقط، وتعديلها في
+`PLANNED/IN_PROGRESS`. يسمح بإنشاء مهمة داخل مرحلة `PLANNED/IN_PROGRESS` ومشروع غير
+نهائي، وتعديلها في `TODO/IN_PROGRESS/BLOCKED`. كل إنشاء/تعديل بنيوي يتطلب
+`general_projects.manage`، وكل إلغاء/حجب/إزالة علاقة يحمل السبب المحدد أعلاه.
+
 ### الاعتماديات
 
 - زوج فريد `predecessorTaskId/successorTaskId` داخل المشروع والشركة نفسيهما.
@@ -115,7 +165,7 @@ related:
 
 | الترتيب | الشريحة | الناتج القابل للإغلاق | الاعتمادات |
 |---:|---|---|---|
-| GPM-1 | سجل المشروع العام | module/permissions، قائمة/إنشاء/تفاصيل/تعديل/حالة، رمز `GPR-`، عميل اختياري، مدير وعضوية مشروع | company-profile-bp1 + HR؛ Sales اختياري |
+| GPM-1 | سجل المشروع العام | module/permissions، قائمة/إنشاء/تفاصيل/تعديل/حالة، رمز `GPR-`، عميل اختياري، مدير وعضوية مشروع | HR؛ Sales اختياري؛ تنسيق ملفات مؤقت مع `company-profile-bp1` فقط |
 | GPM-2 | خطة العمل والمسؤولون | مراحل ومهام وأولوية وتواريخ وإسنادات متعددة وانتقالات | GPM-1 |
 | GPM-3 | اعتماديات المهام | DAG Finish-to-Start، منع الدورة والحجب و`planVersion` | GPM-2 |
 | GPM-4 | التعاون | متابعة ذاتية، مرشح following، تعليقات project/task append-only | GPM-1؛ يدمج بعد GPM-3 لتقليل تداخل الملفات |
@@ -137,13 +187,13 @@ related:
 
 ### HTTP المستهدف
 
-- `GET/POST /general-projects`.
-- `GET/PATCH /general-projects/{generalProjectId}`.
-- `POST /general-projects/{generalProjectId}/transition`.
-- `GET /general-projects/customer-options` عند توفر `SALES`.
-- `GET /general-projects/employee-options`.
-- `POST /general-projects/{generalProjectId}/members`.
-- `POST /general-projects/{generalProjectId}/members/{memberId}/unassign`.
+- `GET/POST /api/v1/general-projects`.
+- `GET/PATCH /api/v1/general-projects/{generalProjectId}`.
+- `POST /api/v1/general-projects/{generalProjectId}/transition`.
+- `GET /api/v1/general-projects/customer-options` عند توفر `SALES`.
+- `GET /api/v1/general-projects/employee-options`.
+- `POST /api/v1/general-projects/{generalProjectId}/members`.
+- `POST /api/v1/general-projects/{generalProjectId}/members/{memberId}/unassign`.
 
 POST/PATCH/transition/assign/unassign تتطلب CSRF و`Idempotency-Key`. تحمل PATCH
 وtransition النسخة المتوقعة. يعيد cross-company أو غير الموجود 404 غير كاشف، وتعود
@@ -167,21 +217,23 @@ POST/PATCH/transition/assign/unassign تتطلب CSRF و`Idempotency-Key`. تح�
 - `IDEMPOTENCY_MISMATCH` للجسم المختلف و`VERSION_CONFLICT` للنسخة القديمة.
 - رفض عميل/موظف من شركة أخرى ورفض موظف غير نشط، ومنع آخر مدير.
 - لا صف يتغير في Professional Projects أو HR/Sales/Ledger عند النجاح أو الفشل.
+- ينجح إنشاء المشروع وقراءته بلا ملف منشأة موسع ومع
+  `READY/ACTION_RECOMMENDED`، ولا يستدعي profile/compliance.
 - العقد والواجهة والترجمات والعزل واختبار migration على المحركين ناجحة.
 
 ## 6. GPM-2 — الخطة والمسؤولون
 
 ### HTTP المستهدف
 
-- `GET /general-projects/{generalProjectId}/plan`.
-- `POST /general-projects/{generalProjectId}/phases`.
-- `PATCH /general-project-phases/{generalProjectPhaseId}`.
-- `POST /general-project-phases/{generalProjectPhaseId}/transition`.
-- `POST /general-project-phases/{generalProjectPhaseId}/tasks`.
-- `PATCH /general-project-tasks/{generalProjectTaskId}`.
-- `POST /general-project-tasks/{generalProjectTaskId}/transition`.
-- `POST /general-project-tasks/{generalProjectTaskId}/assignees`.
-- `POST /general-project-tasks/{generalProjectTaskId}/assignees/{assignmentId}/unassign`.
+- `GET /api/v1/general-projects/{generalProjectId}/plan`.
+- `POST /api/v1/general-projects/{generalProjectId}/phases`.
+- `PATCH /api/v1/general-projects/{generalProjectId}/phases/{generalProjectPhaseId}`.
+- `POST /api/v1/general-projects/{generalProjectId}/phases/{generalProjectPhaseId}/transition`.
+- `POST /api/v1/general-projects/{generalProjectId}/phases/{generalProjectPhaseId}/tasks`.
+- `PATCH /api/v1/general-projects/{generalProjectId}/tasks/{generalProjectTaskId}`.
+- `POST /api/v1/general-projects/{generalProjectId}/tasks/{generalProjectTaskId}/transition`.
+- `POST /api/v1/general-projects/{generalProjectId}/tasks/{generalProjectTaskId}/assignees`.
+- `POST /api/v1/general-projects/{generalProjectId}/tasks/{generalProjectTaskId}/assignees/{assignmentId}/unassign`.
 
 تفعل الشريحة `general_projects.progress`. إدارة البنية والإسناد تتطلب
 `general_projects.manage`. نقل حالة المهمة يتطلب `general_projects.progress` مع كون
@@ -190,6 +242,10 @@ POST/PATCH/transition/assign/unassign تتطلب CSRF و`Idempotency-Key`. تح�
 ### بوابة القبول
 
 - صحة حدود التواريخ وترتيبها وحالات project/phase/task والإلغاء المسبب.
+- مطابقة كل transition table، ورفض unblock بلا `resolutionReason` أو انتقال مباشر
+  `BLOCKED -> IN_PROGRESS`، وعدم الخلط بين الحجب اليدوي والمشتق.
+- منع progress في `DRAFT/ON_HOLD`، ومنع كل mutations بعد نهائية الجذر أو الطفل مع
+  السماح بالقراءة وإلغاء المتابعة الذاتية فقط.
 - رفض مسؤول غير عضو أو من شركة أخرى، ومنع مهمة `IN_PROGRESS` بلا مسؤول.
 - صحة `planVersion` ونسخ الأطفال تحت تعديلين متزامنين.
 - عدم استخدام `MAX()+1` بلا قفل، وعدم تكرار sequence تحت الإنشاء المتزامن.
@@ -199,8 +255,8 @@ POST/PATCH/transition/assign/unassign تتطلب CSRF و`Idempotency-Key`. تح�
 
 ### HTTP المستهدف
 
-- `POST /general-project-task-dependencies`.
-- `POST /general-project-task-dependencies/{dependencyId}/remove`.
+- `POST /api/v1/general-projects/{generalProjectId}/task-dependencies`.
+- `POST /api/v1/general-projects/{generalProjectId}/task-dependencies/{dependencyId}/remove`.
 
 لا يضاف نوع اعتماد أو lag في الطلب؛ النوع الأول ثابت Finish-to-Start. تحمل الأوامر
 `planVersion` ونسخ المهام اللازمة.
@@ -216,10 +272,10 @@ POST/PATCH/transition/assign/unassign تتطلب CSRF و`Idempotency-Key`. تح�
 
 ### HTTP المستهدف
 
-- `PUT /general-projects/{generalProjectId}/followers/me`.
-- `DELETE /general-projects/{generalProjectId}/followers/me`.
-- `GET /general-projects/{generalProjectId}/comments` مع `taskId/cursor/limit`.
-- `POST /general-projects/{generalProjectId}/comments` مع `taskId` اختياري.
+- `PUT /api/v1/general-projects/{generalProjectId}/followers/me`.
+- `DELETE /api/v1/general-projects/{generalProjectId}/followers/me`.
+- `GET /api/v1/general-projects/{generalProjectId}/comments` مع `taskId/cursor/limit`.
+- `POST /api/v1/general-projects/{generalProjectId}/comments` مع `taskId` اختياري.
 
 تفعل الشريحة `general_projects.follow` و`general_projects.comment`. تتطلب القراءة
 `general_projects.view`؛ ولا يكفي follow أو comment وحده لتجاوزها.
@@ -328,12 +384,18 @@ Idempotency
 
 ### بوابة rollback المشتركة
 
-- قبل الاستخدام فقط: يتحقق script من صفر صفوف في جداول الشريحة وصفر مراجع من
-  Approvals/Expenses/Sales قبل أي DDL مدمر، ويختبر في قاعدة معزولة على المحركين.
-- بعد الاستخدام: يمنع الإسقاط أو تضييق enum أو إزالة permission/module code الذي
-  ما زال مستخدمًا. يعطل entitlement والكتابة والواجهة، وتبقى القراءة والتاريخ أو
-  يطرح Binary توافق، ثم ينفذ forward migration لاحقًا.
-- لا يعاد استخدام أرقام `GPR-`، ولا يحذف Audit أو comments أو dependency history.
+- قبل أول تفعيل في بيئة معزولة فقط: يتحقق script من صفر صفوف وصفر entitlements
+  ومراجع Approvals/Expenses/Sales قبل DDL مدمر، ويختبر على المحركين.
+- بعد التفعيل أو أول سجل يكون العقد التشغيلي read-only لا حذف القدرة: يبقى
+  `GENERAL_PROJECTS` و`general_projects.view` في `/auth/me`، وتبقى كل GET والتفاصيل
+  والتاريخ قابلة للقراءة من Binary متوافق.
+- يضبط الخادم `GENERAL_PROJECTS_WRITES_ENABLED=false`؛ كل mutation تعيد
+  `503 FEATURE_TEMPORARILY_READ_ONLY` بلا تغيير أو Audit نجاح. يضبط العميل
+  `GENERAL_PROJECTS_NAVIGATION_ENABLED=false` لإخفاء التنقل والأفعال، بينما يعمل
+  الرابط العميق read-only مع banner واضح.
+- يمنع إزالة entitlement/module/permission codes أو نشر Binary أقدم لا يعرفها. لا
+  يعاد استخدام أرقام `GPR-` ولا يحذف Audit أو comments أو dependency history؛ يكون
+  الإصلاح وإعادة التفعيل عبر forward migration/deploy.
 - رجوع GPM-5/6 يتحقق أيضًا من عدم وجود طلب موافقة معلق أو مرجع مطالبة/فاتورة؛ لا
   يكفي خلو جداول General Projects وحدها.
 
@@ -341,7 +403,10 @@ Idempotency
 
 ### المجال والعزل
 
-- حالات المشروع/المرحلة/المهمة، التواريخ، الأولويات، والمدير الأخير.
+- تغطية كل صف في transition tables للمشروع/المرحلة/المهمة، وكل انتقال غير معلن.
+- `BLOCKED/unblock` وأسبابهما، والحجب المشتق، ومنع التعديل والإنشاء داخل كل حالة
+  نهائية مع اختبار استثناء إلغاء المتابعة الذاتية.
+- التواريخ والأولويات والمدير الأخير وصلاحيات manage/progress وأسباب override.
 - كل قائمة وتفاصيل وخيارات ومجاميع وتعليقات مع شركتين واختبار معرف forged.
 - علاقات مركبة ترفض customer/employee/user/task من شركة أخرى عند قاعدة البيانات.
 - لا وصول مباشر أو كتابة إلى Professional Projects أو HR/Sales/Expenses/Approvals/
@@ -358,11 +423,16 @@ Idempotency
 
 ### Ports والعقود
 
-- Contract tests لكل Adapter: Company Profile وCustomer وEmployee وPeople.
+- Contract tests لكل Adapter: Company Context المحدود وCustomer وEmployee وPeople؛
+  لا Adapter أو call إلى Company Profile أو profile/compliance.
 - عند غياب Sales يبقى المشروع الداخلي صالحًا وتختفي خيارات العميل؛ لا fallback
   لقراءة Prisma.
 - OpenAPI route parity، الحراس المولدة، Redocly، response validation، CSRF،
   `Cache-Control: no-store`، BIGINT/UUID/date serialization.
+- حارس مسارات يثبت أن كل phase/task/assignment/dependency/comment/follower متداخل
+  تحت `/api/v1/general-projects/{generalProjectId}`، ولا توجد جذور
+  `/general-project-phases` أو `/general-project-tasks` أو
+  `/general-project-task-dependencies`.
 - module code وصلاحياته متطابقة بين API/Web/Seed/خطة الاشتراك، ولا يمنح
   `PROFESSIONAL_PROJECTS` وصولًا إلى المسارات العامة أو العكس.
 
@@ -372,6 +442,8 @@ Idempotency
   أو SQLite فقط.
 - قاعدة فارغة، ترقية baseline، replay migration/seed، rollback قبل الاستخدام ورفضه
   بعد وجود تاريخ.
+- اختبار وضع الرجوع read-only: entitlement وGET باقيان، كل mutation تعيد 503 بلا
+  أثر، التنقل والأفعال مخفية، والرابط العميق يعرض التاريخ والتنبيه.
 - فحص explain/pagination لقائمة المشاريع والخطة والتعليقات، وحدود `limit/cursor`.
 
 ### الواجهة والإتاحة وRTL
