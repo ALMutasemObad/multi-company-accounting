@@ -36,8 +36,8 @@ describe('company profile HTTP authorization boundary', () => {
 
   it('requires the separate manage permissions and CSRF for writes', async () => {
     const { app, authorize } = fixture();
-    await request(app).patch('/company-profile').set('Cookie', 'sid=session').set('X-CSRF-Token', 'csrf').send({ version: 0, tradeName: 'Juwar' }).expect(404);
-    await request(app).patch('/company-compliance').set('Cookie', 'sid=session').set('X-CSRF-Token', 'csrf').send({ version: 0, legalName: 'Juwar Legal' }).expect(404);
+    await request(app).patch('/company-profile').set('Cookie', 'sid=session').set('X-CSRF-Token', 'csrf').send({ version: 0, tradeName: 'Northstar' }).expect(404);
+    await request(app).patch('/company-compliance').set('Cookie', 'sid=session').set('X-CSRF-Token', 'csrf').send({ version: 0, legalName: 'Northstar Legal' }).expect(404);
     expect(authorize).toHaveBeenNthCalledWith(1, {
       sid: 'session', csrfToken: 'csrf', permission: 'companies.profile.manage', requireCsrf: true,
     });

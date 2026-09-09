@@ -24,14 +24,14 @@ describe('CompanyProfileService write boundaries', () => {
     vi.spyOn(service, 'getProfile').mockResolvedValue({} as never);
 
     await service.updateProfile(context, {
-      version: 3, tradeName: '  Juwar  ', countryCode: 'ye',
+      version: 3, tradeName: '  Northstar  ', countryCode: 'ye',
       primaryBusinessActivityCode: 'professional_services', phone: ' +9671000000 ',
     });
 
     expect(update).toHaveBeenCalledWith({
       where: { companyId: 19n },
       data: expect.objectContaining({
-        tradeName: 'Juwar', countryCode: 'YE', primaryBusinessActivityId: 4n,
+        tradeName: 'Northstar', countryCode: 'YE', primaryBusinessActivityId: 4n,
         phone: '+9671000000', version: { increment: 1 }, complianceVersion: { increment: 1 },
       }),
     });
@@ -59,7 +59,7 @@ describe('CompanyProfileService write boundaries', () => {
 
     await service.updateCompliance(context, {
       version: 2,
-      legalName: 'Juwar Legal',
+      legalName: 'Northstar Legal',
       commercialRegistration: {
         documentType: 'COMMERCIAL_REGISTRATION', number: 'CR-1234567890', issuedAt: '2026-01-01', expiresAt: '2027-01-01',
       },

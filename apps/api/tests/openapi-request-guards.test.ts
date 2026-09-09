@@ -518,22 +518,22 @@ describe('generated OpenAPI request guards', () => {
 
   it('strictly guards company profile and compliance updates without accepting binary branding data', () => {
     expect(openApiRequestBodySchemas.updateCompanyProfile.parse({
-      version: 2, tradeName: '  Juwar  ', countryCode: 'ye', primaryBusinessActivityCode: ' PROFESSIONAL_SERVICES ',
-      phone: ' +9671000000 ', website: 'https://juwar.example',
+      version: 2, tradeName: '  Northstar  ', countryCode: 'ye', primaryBusinessActivityCode: ' PROFESSIONAL_SERVICES ',
+      phone: ' +9671000000 ', website: 'https://northstar.example',
     })).toMatchObject({
-      version: 2, tradeName: 'Juwar', countryCode: 'ye',
+      version: 2, tradeName: 'Northstar', countryCode: 'ye',
       primaryBusinessActivityCode: 'PROFESSIONAL_SERVICES', phone: '+9671000000',
     });
     expect(openApiRequestBodySchemas.updateCompanyProfile.safeParse({ version: 2, logoBase64: 'secret-binary' }).success).toBe(false);
     expect(openApiRequestBodySchemas.updateCompanyCompliance.parse({
       version: 1,
-      legalName: '  Juwar LLC  ',
+      legalName: '  Northstar LLC  ',
       commercialRegistration: {
         documentType: 'COMMERCIAL_REGISTRATION', number: ' 1234567890 ', issuedAt: '2026-01-01', expiresAt: '2027-01-01',
       },
       nationalAddress: { countryCode: 'ye', city: '  Sana’a  ' },
     })).toMatchObject({
-      version: 1, legalName: 'Juwar LLC',
+      version: 1, legalName: 'Northstar LLC',
       commercialRegistration: { number: '1234567890' },
       nationalAddress: { countryCode: 'ye', city: 'Sana’a' },
     });

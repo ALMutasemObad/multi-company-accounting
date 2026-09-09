@@ -28,7 +28,7 @@ const readiness = (completedRequirements: number): CompanyProfileReadiness => ({
 const compliance = (): CompanyComplianceResponse => ({
   version: 4,
   countryCode: "YE",
-  legalName: "Juwar LLC",
+  legalName: "Northstar LLC",
   legalForm: "LLC",
   commercialRegistration: {
     id: "11", documentType: "COMMERCIAL_REGISTRATION", numberLast4: "6789", issuingAuthority: "Aden",
@@ -49,7 +49,7 @@ const compliance = (): CompanyComplianceResponse => ({
 });
 
 const draft = (): CompanyComplianceDraft => ({
-  legalName: "Juwar LLC", legalForm: "LLC", commercialNumber: "", issuingAuthority: "Aden",
+  legalName: "Northstar LLC", legalForm: "LLC", commercialNumber: "", issuingAuthority: "Aden",
   commercialIssuedAt: "2025-01-01", commercialExpiresAt: "2027-01-01", taxNumber: "",
   taxType: "TAX_REGISTRATION", taxIssuedAt: "2025-02-01", taxExpiresAt: "2027-02-01",
   addressLine1: "Main Road", addressLine2: "", district: "Crater", city: "Aden", subdivision: "",
@@ -127,17 +127,17 @@ describe("company compliance patch", () => {
 
   it("does not resend compliance documents when only legalName changes", () => {
     const changed = draft();
-    changed.legalName = "Juwar Trading LLC";
+    changed.legalName = "Northstar Trading LLC";
     expect(buildCompanyCompliancePatch(compliance(), changed)).toEqual({
       version: 4,
-      legalName: "Juwar Trading LLC",
+      legalName: "Northstar Trading LLC",
     });
   });
 
   it("copies refreshed readiness into an already loaded profile", () => {
     const profile = {
       profile: {
-        companyId: "1", tradeName: "Juwar", countryCode: "YE", preferredLocale: "ar", phone: "+967700000000",
+        companyId: "1", tradeName: "Northstar", countryCode: "YE", preferredLocale: "ar", phone: "+967700000000",
         email: null, website: null, primaryContactName: null, primaryBusinessActivity: null,
         initialChartTemplateCode: "PROFESSIONAL_SERVICES", grandfatheredAt: null, version: 4,
         updatedAt: "2026-01-02T00:00:00.000Z",

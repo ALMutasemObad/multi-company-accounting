@@ -9,7 +9,7 @@ import {
 } from '../src/companies/company-profile-policy.js';
 
 const completeProfile = {
-  tradeName: 'Juwar', countryCode: 'YE', phone: '+9671000000', legalName: 'Juwar LLC',
+  tradeName: 'Northstar', countryCode: 'YE', phone: '+9671000000', legalName: 'Northstar LLC',
   primaryBusinessActivityCode: 'PROFESSIONAL_SERVICES', hasCommercialRegistration: true,
   hasTaxRegistration: true, hasNationalAddress: true, grandfatheredAt: null,
 };
