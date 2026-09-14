@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "entries": [
+    {
+      "id": "ADR-023-financial-close-retained-earnings-code",
+      "owner": "Core Accounting",
+      "removalSlice": "ADM-5C",
+      "rationale": "FinancialCloseService still resolves retained earnings by the template-specific code 3300 until the central accounting-mapping port supplies the configured account.",
+      "paths": [
+        "apps/api/src/fiscal/financial-close-service.ts"
+      ],
+      "matcher": {
+        "type": "literal",
+        "value": "code: \"3300\""
+      },
+      "baseline": {
+        "occurrences": 2,
+        "locations": [
+          {
+            "path": "apps/api/src/fiscal/financial-close-service.ts",
+            "line": 518,
+            "column": 9
+          },
+          {
+            "path": "apps/api/src/fiscal/financial-close-service.ts",
+            "line": 635,
+            "column": 46
+          }
+        ]
+      },
+      "expiry": "2026-12-31",
+      "exceptions": [
+        {
+          "path": "apps/api/src/accounts/default-chart-template.ts",
+          "matcher": {
+            "type": "literal",
+            "value": "code: '3300'"
+          },
+          "rationale": "The default chart declares the semantic retained-earnings account; it is not a FinancialClose runtime lookup."
+        }
+      ]
+    }
+  ]
+}
