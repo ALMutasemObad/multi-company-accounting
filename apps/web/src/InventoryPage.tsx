@@ -702,7 +702,7 @@ function ItemForm({ item, units, onClose, onSaved }: { item: InventoryItem | nul
     try {
       const saved = await api<InventoryItem>(item ? `/inventory-items/${item.id}` : "/inventory-items", { method: item ? "PATCH" : "POST", body: JSON.stringify({ ...(item ? { version: item.version, ...(unitOfMeasureId === item.unitOfMeasure.id ? {} : { unitOfMeasureId }) } : { unitOfMeasureId }), nameAr: nameAr.trim(), nameEn: nameEn.trim() || null, description: description.trim() || null }) });
       if (pendingImage) await api(`/inventory-items/${saved.id}/image`, { method: "PUT", headers: { "Content-Type": pendingImage.type, "If-None-Match": "*" }, body: pendingImage });
-      if (removeImage && !pendingImage && item?.image) await api(`/inventory-items/${item.id}/image`, { method: "DELETE", headers: { "If-Match": String(item.image.version) } });
+      if (removeImage && !pendingImage && item?.image) await api(`/inventory-items/${item.id}/image`, { method: "DELETE", headers: { "If-Match": `product-image-v${item.image.version}` } });
       onSaved();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t("inventory.items.saveError"));
