@@ -38,6 +38,8 @@ describe("PosSessionWizard", () => {
     expect(isPosSessionDetailsComplete(snapshot, value)).toBe(true);
     expect(isPosSessionDetailsComplete(snapshot, { ...value, description: "" })).toBe(false);
     expect(isPosSessionDetailsComplete(snapshot, { ...value, exchangeRate: "0" })).toBe(false);
+    expect(isPosSessionDetailsComplete(snapshot, { ...value, exchangeRate: "1e2" })).toBe(false);
+    expect(isPosSessionDetailsComplete(snapshot, { ...value, exchangeRate: "1.123456789" })).toBe(false);
     const referenceRequired = { ...snapshot, fields: { ...snapshot.fields, paymentMethodId: { ...snapshot.fields.paymentMethodId, reference: { ...snapshot.fields.paymentMethodId.reference, requiresReference: true } } } };
     expect(isPosSessionDetailsComplete(referenceRequired, value)).toBe(false);
     expect(isPosSessionDetailsComplete(referenceRequired, { ...value, referenceNumber: "POS-1" })).toBe(true);

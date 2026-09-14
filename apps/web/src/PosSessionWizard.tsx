@@ -3,13 +3,14 @@ import type { CashierContextSnapshot } from "./cashier-context-controller";
 import type { PosSaleContext } from "./PosOperatingContext";
 import { useI18n } from "./i18n";
 import { arPos, enPos, hiPos, urPos } from "./i18n/locales/pos";
+import { posDecimal } from "./pos-experience-money";
 import { Button, Modal } from "./ui";
 import "./pos-experience-styles.css";
 
 export function isPosSessionDetailsComplete(snapshot: CashierContextSnapshot, value: PosSaleContext) {
-  const rate = Number(value.exchangeRate);
+  const rate = posDecimal(value.exchangeRate, 8, 11);
   return snapshot.canReview && Boolean(value.documentDate && value.customerId && value.customerLabel.trim() && value.description.trim()
-    && Number.isFinite(rate) && rate > 0 && (!snapshot.fields.paymentMethodId.reference?.requiresReference || value.referenceNumber.trim()));
+    && rate !== null && /[1-9]/u.test(rate) && (!snapshot.fields.paymentMethodId.reference?.requiresReference || value.referenceNumber.trim()));
 }
 
 const posCopy = { ar: arPos, en: enPos, hi: hiPos, ur: urPos };
