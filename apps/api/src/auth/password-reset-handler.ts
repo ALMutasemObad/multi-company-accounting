@@ -67,13 +67,20 @@ export class PasswordResetHandler {
     if (!delivery) return;
     try {
       if (signal.aborted) throw signal.reason;
-      await this.mailer.sendPasswordReset({
+      const acceptance = await this.mailer.sendPasswordReset({
         to: delivery.email,
         locale: delivery.locale,
         resetUrl: delivery.resetUrl,
         expiresAt: delivery.expiresAt,
       }, signal);
       if (signal.aborted) throw signal.reason;
+      if (acceptance) {
+        logEvent('info', 'password_reset_email_provider_accepted', {
+          provider: acceptance.provider,
+          providerMessageId: acceptance.messageId,
+          outboxEventId: event.eventId,
+        });
+      }
       await this.prisma.passwordResetRequest.updateMany({
         where: { id: delivery.requestId, tokenHash: delivery.tokenHash, status: 'PENDING' },
         data: { deliveryStatus: 'SENT', lastErrorCode: null },

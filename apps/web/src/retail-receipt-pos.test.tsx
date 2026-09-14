@@ -8,7 +8,8 @@ import { PosPage } from './PosPage';
 const ports = vi.hoisted(() => ({
   auth: { user: { id: '9' }, selectedCompany: { id: '1', timezone: 'Asia/Riyadh' },
     permissions: ['pos.checkout', 'pos.view', 'sales_invoices.print'],
-    permissionSet: new Set(['pos.checkout', 'pos.view', 'sales_invoices.print']), modules: ['POS', 'SALES'] },
+    permissionSet: new Set(['pos.checkout', 'pos.view', 'sales_invoices.print']),
+    modules: ['POS', 'SALES'], moduleSet: new Set(['POS', 'SALES']) },
   scope: { status: 'ready' },
   recovery: { status: 'confirmed', result: { id: '700', invoice: { id: '42' }, receipt: { id: '800' } },
     rejection: { code: 'POS_CHECKOUT_REJECTED', reason: 'INSUFFICIENT_STOCK' } },
@@ -25,7 +26,9 @@ vi.mock('./pos-recovery-browser', () => ({ createBrowserPosRecovery: () => ({
   subscribe: () => () => {}, getSnapshot: () => ports.recovery,
 }) }));
 vi.mock('./cashier-context-controller', () => ({ createCashierContextController: () => ({
-  subscribe: () => () => {}, getSnapshot: () => ({ fields: { currencyId: { reference: null } } }),
+  subscribe: () => () => {}, getSnapshot: () => ({
+    fields: { currencyId: { reference: null } }, period: { documentDate: '', status: 'UNAVAILABLE' },
+  }),
 }) }));
 vi.mock('./pos-experience-preferences', () => ({
   readPosDisplayMode: () => 'cards', savePosDisplayMode: vi.fn(),
@@ -47,6 +50,7 @@ beforeEach(() => {
   vi.clearAllMocks(); ports.scope.status = 'ready'; ports.recovery.status = 'confirmed';
   ports.auth.permissions = ['pos.checkout', 'pos.view', 'sales_invoices.print'];
   ports.auth.permissionSet = new Set(ports.auth.permissions);
+  ports.auth.moduleSet = new Set(ports.auth.modules);
 });
 const render = () => renderToStaticMarkup(<PosPage notify={vi.fn()} />);
 

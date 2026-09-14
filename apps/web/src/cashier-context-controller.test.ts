@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
+import { ApiError } from "./api";
 import { createCashierContextController, type CashierContextLock } from "./cashier-context-controller";
-import { cashierContextFields, chooseCashierContextValue, type CashierContextReadPort, type CashierContextPeriodResult, type CashierContextReferenceResult } from "./cashier-context-model";
+import { cashierContextFields, canReviewCashierContext, chooseCashierContextValue, type CashierContextReadPort, type CashierContextPeriodResult, type CashierContextReferenceResult } from "./cashier-context-model";
 import { cashierReader, cashierScope, cashierValues } from "./cashier-context-test-fixtures";
+import { RequestError } from "./request-scope";
 
 const sale = { documentDate: "2026-08-31", requiresWarehouse: true };
 const preparedSale = { ...sale, draft: { documentDate: sale.documentDate, values: cashierValues } };
@@ -115,6 +117,38 @@ describe("cashier source precedence and explicit review", () => {
 });
 
 describe("scope, server resolution, stale reads and barcode/checkout locks", () => {
+  it("follows the checkout capability independently from POS history", () => {
+    expect(canReviewCashierContext(cashierScope)).toBe(true);
+    expect(canReviewCashierContext({ ...cashierScope, permissions: cashierScope.permissions.filter((value) => value !== "pos.view") })).toBe(true);
+    expect(canReviewCashierContext({ ...cashierScope, permissions: cashierScope.permissions.filter((value) => value !== "pos.checkout") })).toBe(false);
+    expect(canReviewCashierContext({ ...cashierScope, modules: cashierScope.modules.filter((value) => value !== "POS") })).toBe(false);
+  });
+
+  it.each([
+    { cause: new ApiError("private", 403), status: "forbidden" },
+    { cause: new RequestError("timeout"), status: "timeout" },
+    { cause: new ApiError("private", 503), status: "error" },
+  ] as const)("distinguishes reference read failure as $status", async ({ cause, status }) => {
+    const c = setup({ ...cashierReader, reference: async (input) => {
+      if (input.field === "warehouseId") throw cause;
+      return cashierReader.reference(input);
+    } });
+    await c.startSale(preparedSale);
+    expect(c.getSnapshot().fields.warehouseId.status).toBe(status);
+    expect(c.review()).toBeNull();
+  });
+
+  it.each([
+    { cause: new ApiError("private", 403), status: "FORBIDDEN" },
+    { cause: new RequestError("timeout"), status: "TIMEOUT" },
+    { cause: new ApiError("private", 500), status: "ERROR" },
+  ] as const)("distinguishes period read failure as $status", async ({ cause, status }) => {
+    const c = setup({ ...cashierReader, period: async () => { throw cause; } });
+    await c.startSale(preparedSale);
+    expect(c.getSnapshot().period.status).toBe(status);
+    expect(c.review()).toBeNull();
+  });
+
   it("permits only a fresh, already reviewed proof for pending dispatch; it does not approve, edit, unlock or extend its lifetime", async () => {
     let clock = 0; const c = createCashierContextController(cashierReader, () => clock, 100); c.setScope(cashierScope);
     await c.startSale(preparedSale); const proof = c.review(); c.setLock("checkout-pending");
@@ -135,7 +169,7 @@ describe("scope, server resolution, stale reads and barcode/checkout locks", () 
   });
   it.each([
     { userId: "8" }, { companyId: "12" }, { authorizationRevision: "2" },
-    { permissions: [...cashierScope.permissions, "pos.view"] }, { modules: ["POS"] },
+    { permissions: [...cashierScope.permissions, "sales_catalog.view"] }, { modules: ["POS"] },
   ])("clears all draft, remembered values, labels and review synchronously on scope change %j", async (change) => {
     const c = setup(); await c.startSale(preparedSale); c.saveDraft(); c.review(true);
     c.setScope({ ...cashierScope, ...change });

@@ -55,15 +55,19 @@ describe('registration mailers', () => {
   });
 
   it('renders Urdu RTL verification and Hindi LTR password-reset messages', async () => {
-    const provider = vi.fn().mockResolvedValue({ ok: true });
+    const provider = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({ id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }),
+    });
     vi.stubGlobal('fetch', provider);
     const mailer = new ResendRegistrationMailer('test-key', 'Accounting Platform <no-reply@example.com>');
     const expiresAt = new Date('2026-08-22T01:00:00.000Z');
 
-    await mailer.sendVerification({
+    const verificationAcceptance = await mailer.sendVerification({
       to: 'urdu@example.com', locale: 'ur', verificationUrl: 'https://example.com/#register?token=urdu', expiresAt,
     });
-    await mailer.sendPasswordReset({
+    const resetAcceptance = await mailer.sendPasswordReset({
       to: 'hindi@example.com', locale: 'hi', resetUrl: 'https://example.com/#reset-password?token=hindi', expiresAt,
     });
 
@@ -75,10 +79,16 @@ describe('registration mailers', () => {
     expect(hindiBody).toMatchObject({ subject: 'अपना पासवर्ड रीसेट करें' });
     expect(hindiBody.html).toContain('dir="ltr"');
     expect(hindiBody.html).toContain('नया पासवर्ड बनाएँ');
+    expect(verificationAcceptance).toEqual({ provider: 'resend', messageId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' });
+    expect(resetAcceptance).toEqual(verificationAcceptance);
   });
 
   it('matches a regional base-language template and falls back explicitly to Arabic for an untranslated locale', async () => {
-    const provider = vi.fn().mockResolvedValue({ ok: true });
+    const provider = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({ id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }),
+    });
     vi.stubGlobal('fetch', provider);
     const mailer = new ResendRegistrationMailer('test-key', 'Accounting Platform <no-reply@example.com>');
     const expiresAt = new Date('2026-08-22T01:00:00.000Z');
@@ -96,5 +106,21 @@ describe('registration mailers', () => {
     expect(englishBody.html).toContain('dir="ltr"');
     expect(fallbackBody.subject).toBe('استعادة كلمة المرور');
     expect(fallbackBody.html).toContain('dir="rtl"');
+  });
+
+  it('fails safely when Resend rejects a request or accepts it without a usable message id', async () => {
+    const provider = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 403 })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: vi.fn().mockResolvedValue({ id: 'contains spaces' }) });
+    vi.stubGlobal('fetch', provider);
+    const mailer = new ResendRegistrationMailer('test-key', 'no-reply@example.com');
+    const expiresAt = new Date('2026-08-22T01:00:00.000Z');
+
+    await expect(mailer.sendVerification({
+      to: 'owner@example.com', locale: 'en', verificationUrl: 'https://example.com/#register?token=test', expiresAt,
+    })).rejects.toThrow('REGISTRATION_EMAIL_PROVIDER_403');
+    await expect(mailer.sendPasswordReset({
+      to: 'owner@example.com', locale: 'en', resetUrl: 'https://example.com/#reset-password?token=test', expiresAt,
+    })).rejects.toThrow('PASSWORD_RESET_EMAIL_PROVIDER_RESPONSE_INVALID');
   });
 });

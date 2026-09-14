@@ -27,7 +27,7 @@ touch -- "$source_release/apps/api/dist/server.js" "$target_release/apps/api/dis
 printf 'PassengerAppRoot "%s"\n' "$source_release" > "$passenger_config"
 chmod 0644 -- "$passenger_config"
 printf '%s\n' 'apps/releases/source' > "$state_root"
-printf '%s\n' '{"DATABASE_URL":"mysql://fixture","WEB_ORIGIN":"https://example.test","SESSION_COOKIE_SECURE":"true","TRUST_PROXY":"true","METRICS_ENABLED":"false"}' \
+printf '%s\n' '{"DATABASE_URL":"mysql://fixture","WEB_ORIGIN":"https://example.test","SESSION_COOKIE_SECURE":"true","TRUST_PROXY":"true","METRICS_ENABLED":"false","SELF_REGISTRATION_ENABLED":"true","PASSWORD_RESET_ENABLED":"false","REGISTRATION_EMAIL_MODE":"resend","REGISTRATION_EMAIL_FROM":"no-reply@example.test","RESEND_API_KEY":"re_fixture_12345678901234567890","REGISTRATION_TOKEN_SECRET":"fixture-registration-token-secret-1234567890","REGISTRATION_AUDIT_PEPPER":"fixture-registration-audit-pepper-1234567890"}' \
   > "$state_environment"
 printf '%s' 'fixture-metrics-token-12345678901234567890' > "$metrics_token_file"
 chmod 0600 -- "$metrics_token_file"
@@ -132,6 +132,11 @@ run_switch "$source_release" "$target_release" "$metrics_token_file"
   const environment = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
   if (environment.METRICS_ENABLED !== "true" || environment.METRICS_BEARER_TOKEN !== "fixture-metrics-token-12345678901234567890") process.exit(1);
   if (typeof environment.RATE_LIMIT_IDENTITY_SECRET !== "string" || environment.RATE_LIMIT_IDENTITY_SECRET.length < 32) process.exit(1);
+  if (environment.SELF_REGISTRATION_ENABLED !== "true" || environment.PASSWORD_RESET_ENABLED !== "true") process.exit(1);
+  if (environment.REGISTRATION_EMAIL_MODE !== "resend" || environment.REGISTRATION_EMAIL_FROM !== "no-reply@example.test") process.exit(1);
+  if (environment.RESEND_API_KEY !== "re_fixture_12345678901234567890") process.exit(1);
+  if (environment.REGISTRATION_TOKEN_SECRET !== "fixture-registration-token-secret-1234567890") process.exit(1);
+  if (environment.REGISTRATION_AUDIT_PEPPER !== "fixture-registration-audit-pepper-1234567890") process.exit(1);
 ' "$state_environment"
 [[ "$(stat -c '%a' -- "$passenger_config")" == 644 ]]
 [[ -n "$(find "$backup_directory" -maxdepth 1 -type f -name 'selector-before-target-*.json' -print -quit)" ]]
@@ -160,3 +165,25 @@ unset FAKE_FAIL_CREATE_ROOT
 [[ "$(<"$state_root")" == apps/releases/source ]]
 [[ "$(stat -c '%a' -- "$passenger_config")" == 644 ]]
 [[ "$(sha256sum -- "$passenger_config" | awk '{print $1}')" == "$config_before_failed_switch" ]]
+
+missing_email_log="$test_root/missing-email.log"
+"$FAKE_NODE_BIN" -e '
+  const fs = require("node:fs");
+  const path = process.argv[1];
+  const environment = JSON.parse(fs.readFileSync(path, "utf8"));
+  delete environment.RESEND_API_KEY;
+  fs.writeFileSync(path, JSON.stringify(environment), { mode: 0o600 });
+' "$state_environment"
+environment_before_rejected_switch=$(sha256sum -- "$state_environment" | awk '{print $1}')
+config_before_rejected_switch=$(sha256sum -- "$passenger_config" | awk '{print $1}')
+if run_switch "$source_release" "$target_release" > "$missing_email_log" 2>&1; then
+  printf 'CloudLinux switch unexpectedly enabled password reset without complete email configuration\n' >&2
+  exit 1
+fi
+[[ "$(<"$state_root")" == apps/releases/source ]]
+[[ "$(sha256sum -- "$state_environment" | awk '{print $1}')" == "$environment_before_rejected_switch" ]]
+[[ "$(sha256sum -- "$passenger_config" | awk '{print $1}')" == "$config_before_rejected_switch" ]]
+if grep -Eq 're_fixture_|no-reply@example|fixture-registration-(token|audit)' "$missing_email_log"; then
+  printf 'CloudLinux switch exposed an email credential while failing closed\n' >&2
+  exit 1
+fi

@@ -90,11 +90,11 @@ registered_root() {
 }
 
 validate_registered_environment() {
-  local expected_root=$1 expect_metrics=${2:-false} allow_missing_limiter_secret=${3:-false}
+  local expected_root=$1 expect_metrics=${2:-false} allow_missing_limiter_secret=${3:-false} expect_public_email=${4:-false}
   "$node_bin" -e '
     const fs = require("node:fs");
     const payload = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-    const [version, user, root, domain, startup, expectMetrics, allowMissingLimiterSecret] = process.argv.slice(2);
+    const [version, user, root, domain, startup, expectMetrics, allowMissingLimiterSecret, expectPublicEmail] = process.argv.slice(2);
     const app = payload.available_versions?.[version]?.users?.[user]?.applications?.[root];
     if (!app || app.domain !== domain || app.startup_file !== startup) process.exit(2);
     for (const key of ["DATABASE_URL", "WEB_ORIGIN", "SESSION_COOKIE_SECURE", "TRUST_PROXY"]) {
@@ -112,7 +112,22 @@ validate_registered_environment() {
         process.exit(4);
       }
     }
-  ' "$state_file" "$cloudlinux_version" "$cloudlinux_user" "$expected_root" "$cloudlinux_domain" "$startup_file" "$expect_metrics" "$allow_missing_limiter_secret"
+    if (expectPublicEmail === "true") {
+      const environment = app.env_vars || {};
+      const from = environment.REGISTRATION_EMAIL_FROM;
+      const apiKey = environment.RESEND_API_KEY;
+      const tokenSecret = environment.REGISTRATION_TOKEN_SECRET;
+      const auditPepper = environment.REGISTRATION_AUDIT_PEPPER;
+      if (environment.SELF_REGISTRATION_ENABLED !== "true" || environment.PASSWORD_RESET_ENABLED !== "true" ||
+          environment.REGISTRATION_EMAIL_MODE !== "resend" || typeof from !== "string" ||
+          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(from) || typeof apiKey !== "string" ||
+          !apiKey.startsWith("re_") || apiKey.length < 20 || apiKey.length > 500 ||
+          typeof tokenSecret !== "string" || tokenSecret.length < 32 || tokenSecret.length > 500 ||
+          typeof auditPepper !== "string" || auditPepper.length < 32 || auditPepper.length > 500) {
+        process.exit(6);
+      }
+    }
+  ' "$state_file" "$cloudlinux_version" "$cloudlinux_user" "$expected_root" "$cloudlinux_domain" "$startup_file" "$expect_metrics" "$allow_missing_limiter_secret" "$expect_public_email"
 }
 
 write_environment_snapshot() {
@@ -146,8 +161,21 @@ write_target_environment_snapshot() {
     } else if (typeof limiterSecret !== "string" || limiterSecret.length < 32 || limiterSecret.length > 500 || /[\r\n]/u.test(limiterSecret)) {
       process.exit(3);
     }
+    const from = environment.REGISTRATION_EMAIL_FROM;
+    const apiKey = environment.RESEND_API_KEY;
+    const tokenSecret = environment.REGISTRATION_TOKEN_SECRET;
+    const auditPepper = environment.REGISTRATION_AUDIT_PEPPER;
+    if (environment.SELF_REGISTRATION_ENABLED !== "true" ||
+        environment.REGISTRATION_EMAIL_MODE !== "resend" ||
+        typeof from !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(from) ||
+        typeof apiKey !== "string" || !apiKey.startsWith("re_") || apiKey.length < 20 || apiKey.length > 500 ||
+        typeof tokenSecret !== "string" || tokenSecret.length < 32 || tokenSecret.length > 500 ||
+        typeof auditPepper !== "string" || auditPepper.length < 32 || auditPepper.length > 500) {
+      process.exit(5);
+    }
     environment.METRICS_ENABLED = "true";
     environment.METRICS_BEARER_TOKEN = token;
+    environment.PASSWORD_RESET_ENABLED = "true";
     fs.writeFileSync(destination, JSON.stringify(environment), { mode: 0o600 });
   ' "$environment_file" "$target_environment_file" "$metrics_token_file"
 }
@@ -302,7 +330,7 @@ destroy_registration "$source_root" "$destroy_result"
 [[ -z "$(registered_root)" ]] || fail "source registration still exists after destroy"
 create_registration "$target_root" "$create_result" "$target_environment_file"
 [[ "$(registered_root)" == "$target_root" ]] || fail "target registration was not created"
-validate_registered_environment "$target_root" true
+validate_registered_environment "$target_root" true false true
 restart_registration "$target_root" "$restart_result"
 ensure_https_redirect
 rollback_required=false

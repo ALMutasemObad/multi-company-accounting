@@ -9,8 +9,13 @@ export type RegistrationVerificationMessage = {
   expiresAt: Date;
 };
 
+export type EmailProviderAcceptance = {
+  provider: 'resend';
+  messageId: string;
+};
+
 export interface RegistrationMailer {
-  sendVerification(message: RegistrationVerificationMessage, signal?: AbortSignal): Promise<void>;
+  sendVerification(message: RegistrationVerificationMessage, signal?: AbortSignal): Promise<EmailProviderAcceptance | void>;
 }
 
 export type PasswordResetMessage = {
@@ -21,7 +26,7 @@ export type PasswordResetMessage = {
 };
 
 export interface PasswordResetMailer {
-  sendPasswordReset(message: PasswordResetMessage, signal?: AbortSignal): Promise<void>;
+  sendPasswordReset(message: PasswordResetMessage, signal?: AbortSignal): Promise<EmailProviderAcceptance | void>;
 }
 
 function escapeHtml(value: string) {
@@ -100,6 +105,15 @@ function formatExpiry(expiresAt: Date, locale: EmailTemplateLocale) {
   return expiresAt.toLocaleString(emailCopy[locale].intl, { timeZone: 'UTC', timeZoneName: 'short' });
 }
 
+async function acceptedByResend(response: Response, errorPrefix: 'REGISTRATION_EMAIL' | 'PASSWORD_RESET_EMAIL') {
+  if (!response.ok) throw new Error(`${errorPrefix}_PROVIDER_${response.status}`);
+  const payload = await response.json().catch(() => null) as { id?: unknown } | null;
+  if (!payload || typeof payload.id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$/u.test(payload.id)) {
+    throw new Error(`${errorPrefix}_PROVIDER_RESPONSE_INVALID`);
+  }
+  return { provider: 'resend', messageId: payload.id } as const;
+}
+
 export class ResendRegistrationMailer implements RegistrationMailer, PasswordResetMailer {
   constructor(private readonly apiKey: string, private readonly from: string) {}
 
@@ -118,7 +132,7 @@ export class ResendRegistrationMailer implements RegistrationMailer, PasswordRes
       }),
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10_000)]) : AbortSignal.timeout(10_000),
     });
-    if (!response.ok) throw new Error(`REGISTRATION_EMAIL_PROVIDER_${response.status}`);
+    return acceptedByResend(response, 'REGISTRATION_EMAIL');
   }
 
   async sendPasswordReset(message: PasswordResetMessage, signal?: AbortSignal) {
@@ -136,7 +150,7 @@ export class ResendRegistrationMailer implements RegistrationMailer, PasswordRes
       }),
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10_000)]) : AbortSignal.timeout(10_000),
     });
-    if (!response.ok) throw new Error(`PASSWORD_RESET_EMAIL_PROVIDER_${response.status}`);
+    return acceptedByResend(response, 'PASSWORD_RESET_EMAIL');
   }
 }
 

@@ -1,3 +1,6 @@
+import { allows } from "./authorization";
+import { posPermissionPolicies } from "./app-navigation";
+
 export const cashierContextFields = ["warehouseId", "cashBankAccountId", "paymentMethodId", "currencyId"] as const;
 export type CashierContextField = typeof cashierContextFields[number];
 export type CashierContextValues = Partial<Record<CashierContextField, string | null>>;
@@ -21,7 +24,7 @@ export type CashierContextReferenceResult =
   | { status: "unavailable" | "forbidden" | "ambiguous" };
 export type CashierContextFieldState = {
   id: string | null; source: CashierContextSource;
-  status: "empty" | "loading" | "available" | "unavailable" | "forbidden" | "ambiguous" | "not-required";
+  status: "empty" | "loading" | "available" | "unavailable" | "forbidden" | "timeout" | "error" | "ambiguous" | "not-required";
   reference?: CashierContextReference;
 };
 /** Presentation DTO only; no client-side date-to-period search or calculation. */
@@ -32,7 +35,7 @@ export type CashierContextPeriodResult =
     status: "OPEN" | "REOPENED"; version: number;
   } };
 export type CashierContextPeriodState = CashierContextPeriodResult | {
-  documentDate: string; status: "LOADING" | "UNAVAILABLE" | "FORBIDDEN";
+  documentDate: string; status: "LOADING" | "UNAVAILABLE" | "FORBIDDEN" | "TIMEOUT" | "ERROR";
 };
 export interface CashierContextReadPort {
   /** Exact-id, active, authorized, current-company reference validation by the owner. Never a first-page membership check. */
@@ -46,7 +49,8 @@ export function cashierContextScopeKey(scope: CashierContextScope | null): strin
     [...new Set(scope.permissions)].sort(), [...new Set(scope.modules)].sort()]) : "";
 }
 export function canReviewCashierContext(scope: CashierContextScope | null): boolean {
-  return Boolean(scope?.userId && scope.companyId && scope.permissions.includes("pos.checkout") && scope.modules.includes("POS"));
+  return Boolean(scope?.userId && scope.companyId && allows(new Set(scope.permissions), posPermissionPolicies.checkout)
+    && scope.modules.includes("POS"));
 }
 export function canReadCashierContextField(scope: CashierContextScope | null, field: CashierContextField): boolean {
   if (!canReviewCashierContext(scope) || !scope) return false;

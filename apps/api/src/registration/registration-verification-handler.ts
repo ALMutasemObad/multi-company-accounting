@@ -72,13 +72,20 @@ export class RegistrationVerificationHandler {
 
     try {
       if (signal.aborted) throw signal.reason;
-      await this.mailer.sendVerification({
+      const acceptance = await this.mailer.sendVerification({
         to: delivery.emailNormalized,
         locale: delivery.locale,
         verificationUrl: delivery.verificationUrl,
         expiresAt: delivery.expiresAt,
       }, signal);
       if (signal.aborted) throw signal.reason;
+      if (acceptance) {
+        logEvent('info', 'registration_email_provider_accepted', {
+          provider: acceptance.provider,
+          providerMessageId: acceptance.messageId,
+          outboxEventId: event.eventId,
+        });
+      }
       await this.recordDelivered(delivery);
     } catch (error) {
       await this.recordFailed(delivery, deliveryErrorCode(error)).catch((trackingError: unknown) => {

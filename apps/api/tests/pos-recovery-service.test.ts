@@ -29,10 +29,9 @@ describe("POS recovery read service", () => {
   });
   it.each([null, { ...evidence, userId: 3n }, { ...evidence, companyId: 4n },
     { ...evidence, operation: "POST_RECEIPT" }, { ...evidence, status: "IN_PROGRESS" },
-    { ...evidence, expiresAt: new Date(1000) }, { ...evidence, expiresAt: new Date(999) },
     { ...evidence, expiresAt: new Date(NaN) }, { ...evidence, responseBody: null }, { ...evidence, responseBody: {} },
     { ...evidence, responseStatus: 422 }, { ...evidence, responseStatus: null },
-  ])("missing, foreign, expired or incomplete evidence returns the same UNKNOWN", async value => {
+  ])("missing, foreign or incomplete evidence returns the same UNKNOWN", async value => {
     const { find, authorize, service } = fixture(); find.mockResolvedValue(value);
     expect(await service.recover(authorize, attemptKey)).toEqual({ outcome: "UNKNOWN" });
   });
@@ -67,7 +66,19 @@ describe("POS recovery read service", () => {
       rejection: { code: "POS_CHECKOUT_REJECTED", reason: "INVALID_CASH_BANK_ACCOUNT" } });
     expect(authorize).toHaveBeenCalledTimes(2);
   });
-  it.each([{ expiresAt: new Date(999) }, { companyId: 8n }, { userId: 8n }, { status: "IN_PROGRESS" }, { responseStatus: 503 }])("never relaxes the evidence guards for terminal rejection", async changed => {
+  it("recovers retained completed evidence after its replay window without executing a command", async () => {
+    const { find, authorize, service } = fixture();
+    find.mockResolvedValue({ ...evidence, expiresAt: new Date(999) });
+    expect(await service.recover(authorize, attemptKey)).toEqual({ outcome: "CONFIRMED", result });
+    expect(find).toHaveBeenCalledOnce(); expect(authorize).toHaveBeenCalledTimes(2);
+
+    const rejected = classifyPosCheckoutRejection(new ReceiptError("INVALID_AMOUNT"))!;
+    find.mockClear(); authorize.mockClear(); find.mockResolvedValue({ ...evidence, ...rejected, expiresAt: new Date(999) });
+    expect(await service.recover(authorize, attemptKey)).toEqual({ outcome: "REJECTED",
+      rejection: { code: "POS_CHECKOUT_REJECTED", reason: "INVALID_AMOUNT" } });
+    expect(find).toHaveBeenCalledOnce(); expect(authorize).toHaveBeenCalledTimes(2);
+  });
+  it.each([{ companyId: 8n }, { userId: 8n }, { status: "IN_PROGRESS" }, { responseStatus: 503 }])("never relaxes the evidence guards for terminal rejection", async changed => {
     const { find, authorize, service } = fixture();
     const rejected = classifyPosCheckoutRejection(new ReceiptError("INVALID_AMOUNT"))!;
     find.mockResolvedValue({ ...evidence, ...rejected, ...changed });

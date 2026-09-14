@@ -6,6 +6,7 @@ import { createCashierContextController } from "./cashier-context-controller";
 import { cashierContextScopeKey } from "./cashier-context-model";
 import { cashierReader, cashierScope, cashierValues } from "./cashier-context-test-fixtures";
 import { cashierContextDictionaries } from "./i18n/locales/cashier-context";
+import type { NavigationAccess } from "./app-navigation";
 
 describe("CashierContextPanel static component contract (not browser/device QA)", () => {
   it.each(["ar", "en", "hi", "ur"] as const)("renders sources, server period, safe controls and reference requirement in %s", async (locale) => {
@@ -33,5 +34,25 @@ describe("CashierContextPanel static component contract (not browser/device QA)"
     const html = renderToStaticMarkup(<CashierContextPanel controller={c} currentScopeKey={cashierContextScopeKey(cashierScope)} locale="en" onReviewed={() => {}} />);
     expect(html).toContain(cashierContextDictionaries.en.locked);
     for (const control of html.match(/<(?:button|input)\b[^>]*>/g) ?? []) expect(control).toContain("disabled");
+  });
+
+  it("renders exact readiness causes and only safe authorized setup navigation", async () => {
+    const c = createCashierContextController({ ...cashierReader,
+      period: async ({ documentDate }) => ({ documentDate, status: "MISSING" }),
+    });
+    c.setScope(cashierScope); await c.startSale({ documentDate: "2026-08-31", requiresWarehouse: true });
+    const setupAccess: NavigationAccess = { hasSelectedCompany: true, platformOperations: false,
+      moduleSet: new Set(["POS", "INVENTORY", "TREASURY", "SALES", "CORE_ACCOUNTING"]),
+      permissionSet: new Set([...cashierScope.permissions, "warehouses.manage", "cash_bank_accounts.manage",
+        "fiscal_periods.view", "fiscal_periods.manage", "inventory_catalog.view", "sales_catalog.view", "sales_catalog.manage"]),
+    };
+    const html = renderToStaticMarkup(<CashierContextPanel controller={c} currentScopeKey={cashierContextScopeKey(cashierScope)} locale="en"
+      onReviewed={() => {}} readiness={{ warehouseId: "empty", cashBankAccountId: "forbidden", paymentMethodId: "timeout", currencyId: "error", catalog: "ready" }}
+      setupAccess={setupAccess} onOpenSetupTarget={() => {}} onRetryReadiness={() => {}} />);
+    const text = cashierContextDictionaries.en;
+    for (const id of ["warehouseId", "period", "cashBankAccountId", "paymentMethodId", "currencyId", "catalog"]) expect(html).toContain(`data-pos-requirement="${id}"`);
+    for (const message of [text.missingWarehouse, text.MISSING, text.readinessForbidden, text.readinessTimeout, text.readinessError, text.readinessReady]) expect(html).toContain(message);
+    expect(html.match(new RegExp(text.openSetup, "g"))).toHaveLength(2);
+    expect(html.replaceAll("&#x27;", "'")).toContain(text.readinessHelp); expect(html).toContain(text.retryReadiness);
   });
 });

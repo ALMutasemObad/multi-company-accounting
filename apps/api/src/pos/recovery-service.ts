@@ -21,7 +21,10 @@ export class PosRecoveryService {
       || !evidence || evidence.companyId !== context.companyId || evidence.userId !== context.userId
       || evidence.operation !== POS_RECOVERY_OPERATION || evidence.status !== "COMPLETED"
       || !Number.isFinite(observedAt) || !Number.isFinite(evidence.expiresAt.getTime())
-      || evidence.expiresAt.getTime() <= observedAt) return { outcome: "UNKNOWN" };
+    ) return { outcome: "UNKNOWN" };
+    // expiresAt bounds command replay/storage retention. While a sealed COMPLETED
+    // record is still retained, it remains authoritative recovery evidence; hiding
+    // it after the replay window leaves the browser marker permanently locked.
     if (evidence.responseStatus === 422) {
       const rejection = readPosCheckoutRejection(evidence.responseBody);
       return rejection ? { outcome: "REJECTED", rejection } : { outcome: "UNKNOWN" };

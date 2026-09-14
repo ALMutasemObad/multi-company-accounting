@@ -6,6 +6,8 @@ import {
   type CashierContextReadPort, type CashierContextReference, type CashierContextScope,
   type CashierContextSuggestions, type CashierContextValues,
 } from "./cashier-context-model";
+import { ApiError } from "./api";
+import { RequestError } from "./request-scope";
 
 export type CashierContextLock = "scan-pending" | "checkout-pending" | "checkout-unknown" | "checkout-completed" | null;
 export type CashierContextReviewed = {
@@ -19,6 +21,12 @@ export type CashierContextSnapshot = {
   period: CashierContextPeriodState; lock: CashierContextLock;
   canEdit: boolean; canReview: boolean; reviewed: boolean; hasSavedDraft: boolean; verificationExpired: boolean;
 };
+
+function readFailure(cause: unknown): "forbidden" | "timeout" | "error" {
+  if (cause instanceof ApiError && cause.status === 403) return "forbidden";
+  if (cause instanceof RequestError && cause.kind === "timeout") return "timeout";
+  return "error";
+}
 
 /** One instance per mounted, authenticated POS workspace. Memory only: no browser storage or global cache. */
 export function createCashierContextController(reader: CashierContextReadPort, now: () => number = () => performance.now(), reviewMaxAgeMs = 300_000) {
@@ -105,9 +113,9 @@ export function createCashierContextController(reader: CashierContextReadPort, n
             ...(value.nameEn === null || typeof value.nameEn === "string" ? { nameEn: value.nameEn } : {}) } });
         validatedAt.set(field, now());
       } else setField(field, { ...choice, status: result.status === "available" ? "unavailable" : result.status });
-    } catch {
+    } catch (cause) {
       if (controller.signal.aborted || requests.get(field) !== controller) return;
-      setField(field, { ...choice, status: "unavailable" });
+      setField(field, { ...choice, status: readFailure(cause) });
     } finally {
       if (requests.get(field) === controller) { requests.delete(field); publish(); }
     }
@@ -133,9 +141,10 @@ export function createCashierContextController(reader: CashierContextReadPort, n
           startDate: value.startDate, endDate: value.endDate, status: value.status, version: value.version } };
       } else period = { documentDate: date, status: ["MISSING", "CLOSED", "AMBIGUOUS"].includes(result.status) ? result.status : "UNAVAILABLE" };
       if (period.status === "RESOLVED") validatedAt.set("period", now());
-    } catch {
+    } catch (cause) {
       if (controller.signal.aborted || requests.get("period") !== controller) return;
-      period = { documentDate: date, status: "UNAVAILABLE" };
+      const failure = readFailure(cause);
+      period = { documentDate: date, status: failure === "forbidden" ? "FORBIDDEN" : failure === "timeout" ? "TIMEOUT" : "ERROR" };
     } finally {
       if (requests.get("period") === controller) { requests.delete("period"); publish(); }
     }
