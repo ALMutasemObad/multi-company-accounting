@@ -9,6 +9,10 @@ import { IdempotentCommandExecutor } from "../platform/idempotent-command-execut
 import { TransactionExecutor } from "../platform/transaction-executor.js";
 import type { PlatformSubscriptionPaymentEvidencePort } from "./platform-subscription-payment-evidence-port.js";
 import { readPublicPlanCatalog } from "./public-plan-catalog.js";
+import {
+  ModuleDependencyResolutionError,
+  resolveModuleDependencies,
+} from "./platform-module-dependency-resolver.js";
 
 export const SUBSCRIPTION_DEFAULT_PAGE_SIZE = 20;
 export const SUBSCRIPTION_MAX_PAGE_SIZE = 100;
@@ -148,21 +152,15 @@ function versionJson(version: PlanVersionGraph) {
 }
 
 function ownerVisibleModules(version: ReturnType<typeof versionJson>) {
-  const byId = new Map(version.modules.map((module) => [module.id, module]));
-  const resolved = new Map<string, boolean>();
-  const visiting = new Set<string>();
-  const available = (id: string): boolean => {
-    const cached = resolved.get(id);
-    if (cached !== undefined) return cached;
-    const module = byId.get(id);
-    if (!module?.active || visiting.has(id)) return false;
-    visiting.add(id);
-    const valid = module.dependencyIds.every((dependencyId) => available(dependencyId));
-    visiting.delete(id);
-    resolved.set(id, valid);
-    return valid;
-  };
-  return version.modules.filter((module) => available(module.id));
+  const resolution = resolveModuleDependencies(version.modules.map((module) => ({
+    id: module.id,
+    code: module.code,
+    isActive: module.active,
+    dependencies: module.dependencyIds.map((id) => ({ id })),
+    selectionMode: module.selectionMode,
+  })), { strict: false, deduplicate: true });
+  const validIds = new Set(resolution.valid.map((module) => module.id.toString()));
+  return version.modules.filter((module) => validIds.has(module.id));
 }
 
 async function lockPlanVersion(tx: Prisma.TransactionClient, id: bigint) {
@@ -175,20 +173,6 @@ async function lockSubscription(tx: Prisma.TransactionClient, companyId: bigint)
   await tx.$queryRaw<Array<{ id: bigint }>>`
     SELECT id FROM platform_subscriptions WHERE company_id = ${companyId} FOR UPDATE
   `;
-}
-
-function assertNoDependencyCycle(edges: Map<string, string[]>, selected: Set<string>) {
-  const visiting = new Set<string>();
-  const visited = new Set<string>();
-  const visit = (id: string) => {
-    if (visiting.has(id)) throw new PlatformSubscriptionError("MODULE_DEPENDENCY_CYCLE");
-    if (visited.has(id)) return;
-    visiting.add(id);
-    for (const dependency of edges.get(id) ?? []) if (selected.has(dependency)) visit(dependency);
-    visiting.delete(id);
-    visited.add(id);
-  };
-  for (const id of selected) visit(id);
 }
 
 async function validatePlanModules(tx: Prisma.TransactionClient, inputs: ModuleInput[]) {
@@ -204,22 +188,22 @@ async function validatePlanModules(tx: Prisma.TransactionClient, inputs: ModuleI
   if (modules.length !== inputs.length) throw new PlatformSubscriptionError("INVALID_MODULE");
   if (modules.some((module) => !module.isActive)) throw new PlatformSubscriptionError("INACTIVE_MODULE");
 
-  const inputById = new Map(inputs.map((input) => [input.moduleId.toString(), input]));
-  const selected = new Set(inputById.keys());
-  const edges = new Map<string, string[]>();
-  for (const module of modules) {
-    const source = module.id.toString();
-    const dependencies = module.dependencies.map((dependency) => dependency.dependsOnModuleId.toString());
-    edges.set(source, dependencies);
-    for (const dependency of dependencies) {
-      const dependencyInput = inputById.get(dependency);
-      if (!dependencyInput) throw new PlatformSubscriptionError("MODULE_DEPENDENCY_MISSING");
-      if (inputById.get(source)?.selectionMode === "INCLUDED" && dependencyInput.selectionMode !== "INCLUDED") {
-        throw new PlatformSubscriptionError("MODULE_DEPENDENCY_MISSING");
-      }
-    }
+  try {
+    resolveModuleDependencies(modules.map((module) => ({
+      id: module.id,
+      code: module.code,
+      isActive: module.isActive,
+      selectionMode: inputs.find((input) => input.moduleId === module.id)?.selectionMode,
+      dependencies: module.dependencies.map((dependency) => ({ id: dependency.dependsOnModuleId })),
+    })), { strict: true });
+  } catch (error) {
+    if (!(error instanceof ModuleDependencyResolutionError)) throw error;
+    const reason = error.reason === "DEPENDENCY_CYCLE" ? "MODULE_DEPENDENCY_CYCLE"
+      : error.reason === "INACTIVE_MODULE" || error.reason === "INACTIVE_DEPENDENCY" ? "INACTIVE_MODULE"
+        : error.reason === "DUPLICATE_NODE" || error.reason === "UNKNOWN_MODULE_CODE" ? "INVALID_MODULE"
+          : "MODULE_DEPENDENCY_MISSING";
+    throw new PlatformSubscriptionError(reason);
   }
-  assertNoDependencyCycle(edges, selected);
 
   return inputs.map((input) => {
     if (input.selectionMode === "INCLUDED") {
@@ -570,16 +554,22 @@ async function loadBundle(
   const selectedEntitlements = version.entitlements.filter((item) =>
     item.selectionMode === "INCLUDED" || optionalTexts.includes(item.moduleId.toString()));
   if (selectedEntitlements.some((item) => !item.module.isActive)) throw new PlatformSubscriptionError("INACTIVE_MODULE");
-  const selected = new Set(selectedEntitlements.map((item) => item.moduleId.toString()));
-  const edges = new Map<string, string[]>();
-  for (const entitlement of selectedEntitlements) {
-    const dependencies = entitlement.module.dependencies.map((item) => item.dependsOnModuleId.toString());
-    edges.set(entitlement.moduleId.toString(), dependencies);
-    if (dependencies.some((dependency) => !selected.has(dependency))) {
-      throw new PlatformSubscriptionError("MODULE_DEPENDENCY_MISSING");
-    }
+  try {
+    resolveModuleDependencies(selectedEntitlements.map((entitlement) => ({
+      id: entitlement.moduleId,
+      code: entitlement.module.code,
+      isActive: entitlement.module.isActive,
+      selectionMode: entitlement.selectionMode,
+      dependencies: entitlement.module.dependencies.map((dependency) => ({ id: dependency.dependsOnModuleId })),
+    })), { strict: true });
+  } catch (error) {
+    if (!(error instanceof ModuleDependencyResolutionError)) throw error;
+    const reason = error.reason === "DEPENDENCY_CYCLE" ? "MODULE_DEPENDENCY_CYCLE"
+      : error.reason === "INACTIVE_MODULE" || error.reason === "INACTIVE_DEPENDENCY" ? "INACTIVE_MODULE"
+        : error.reason === "DUPLICATE_NODE" || error.reason === "UNKNOWN_MODULE_CODE" ? "INVALID_MODULE"
+          : "MODULE_DEPENDENCY_MISSING";
+    throw new PlatformSubscriptionError(reason);
   }
-  assertNoDependencyCycle(edges, selected);
   const optionalFee = selectedEntitlements.reduce((sum, item) =>
     item.selectionMode === "OPTIONAL" ? sum.plus(item.additionalRecurringFee ?? decimal(0)) : sum,
   decimal(0));

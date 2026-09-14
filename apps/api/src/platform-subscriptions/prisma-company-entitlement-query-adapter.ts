@@ -4,6 +4,7 @@ import {
   type CompanyEntitlementQueryPort,
   type CompanyEntitlementSnapshot,
 } from "./platform-entitlement-ports.js";
+import { resolveModuleDependencies } from "./platform-module-dependency-resolver.js";
 
 export class PrismaCompanyEntitlementQueryAdapter implements CompanyEntitlementQueryPort {
   constructor(private readonly prisma: Pick<PrismaClient, "platformSubscription">) {}
@@ -53,10 +54,12 @@ export class PrismaCompanyEntitlementQueryAdapter implements CompanyEntitlementQ
           select: {
             module: {
               select: {
+                id: true,
                 code: true,
+                isActive: true,
                 dependencies: {
                   select: {
-                    dependsOnModule: { select: { code: true, isActive: true } },
+                    dependsOnModule: { select: { id: true, code: true, isActive: true } },
                   },
                 },
               },
@@ -70,29 +73,21 @@ export class PrismaCompanyEntitlementQueryAdapter implements CompanyEntitlementQ
     const canonicalModules = subscription.entitlements.filter(({ module }) =>
       isPlatformModuleCode(module.code),
     );
-    const entitledCodes = new Set(canonicalModules.map(({ module }) => module.code));
-    const dependencyMap = new Map(canonicalModules.map(({ module }) => [
-      module.code,
-      module.dependencies.map(({ dependsOnModule }) => dependsOnModule),
-    ]));
-    const resolved = new Map<string, boolean>();
-    const dependencyClosed = (code: string, ancestors = new Set<string>()): boolean => {
-      const cached = resolved.get(code);
-      if (cached !== undefined) return cached;
-      if (ancestors.has(code)) return false;
-      const nextAncestors = new Set(ancestors);
-      nextAncestors.add(code);
-      const allowed = (dependencyMap.get(code) ?? []).every((dependency) =>
-        dependency.isActive
-        && isPlatformModuleCode(dependency.code)
-        && entitledCodes.has(dependency.code)
-        && dependencyClosed(dependency.code, nextAncestors),
-      );
-      resolved.set(code, allowed);
-      return allowed;
-    };
-    const moduleCodes = [...entitledCodes]
-      .filter((code) => dependencyClosed(code))
+    const resolution = resolveModuleDependencies(canonicalModules.map(({ module }) => ({
+      // Older fixtures/adapters may omit the id; code remains a deterministic
+      // projection key while the Prisma selection uses the real id in runtime.
+      id: module.id ?? module.code,
+      code: module.code,
+      // The entitlement query already filters active modules; retain that
+      // invariant for older test doubles that omit the selected flag.
+      isActive: module.isActive ?? true,
+      dependencies: module.dependencies.map(({ dependsOnModule }) => ({
+        id: dependsOnModule.id,
+        code: dependsOnModule.code,
+        isActive: dependsOnModule.isActive,
+      })),
+    })), { strict: false, deduplicate: true });
+    const moduleCodes = [...new Set(resolution.valid.map((module) => module.code))]
       .filter(isPlatformModuleCode)
       .sort();
 
