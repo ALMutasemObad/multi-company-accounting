@@ -1,8 +1,12 @@
-import { api } from "./api";
-import type { NavigationAccess } from "./app-navigation";
-import { assertRequestActive } from "./request-scope";
+import { api, ApiError } from "./api";
+import { allows } from "./authorization";
+import { posPermissionPolicies, type NavigationAccess } from "./app-navigation";
+import { assertRequestActive, RequestError } from "./request-scope";
 import type { PlatformModuleCode } from "./types";
-import type { RetailFactId, RetailFacts, RetailFactState } from "./retail-onboarding-model";
+import type {
+  PosReadinessFactId, PosReadinessFacts, PosReadinessState,
+  RetailFactId, RetailFacts, RetailFactState,
+} from "./retail-onboarding-model";
 
 type FactDefinition = { id: RetailFactId; module: PlatformModuleCode; permission: string; path: string };
 export const retailFactDefinitions: readonly FactDefinition[] = [
@@ -57,4 +61,64 @@ export async function readRetailFacts(access: NavigationAccess, signal: AbortSig
   }));
   assertRequestActive(signal);
   return Object.fromEntries(pairs) as RetailFacts;
+}
+
+type PosReadinessFactDefinition = {
+  id: PosReadinessFactId;
+  module: PlatformModuleCode;
+  permission: string;
+  path: string;
+};
+
+/** These are bounded, read-only existence probes. They deliberately omit search
+ * so a user's transient picker query cannot be misreported as missing setup. */
+export const posReadinessFactDefinitions: readonly PosReadinessFactDefinition[] = [
+  { id: "warehouseId", module: "INVENTORY", permission: "warehouses.view", path: "/pos/context/options/warehouseId?page=1&pageSize=1" },
+  { id: "cashBankAccountId", module: "TREASURY", permission: "cash_bank_accounts.view", path: "/pos/context/options/cashBankAccountId?page=1&pageSize=1" },
+  { id: "paymentMethodId", module: "TREASURY", permission: "cash_bank_accounts.view", path: "/pos/context/options/paymentMethodId?page=1&pageSize=1" },
+  { id: "currencyId", module: "POS", permission: "currencies.view", path: "/pos/context/options/currencyId?page=1&pageSize=1" },
+  { id: "catalog", module: "SALES", permission: "sales_catalog.view", path: "/sales/catalog?page=1&pageSize=1" },
+];
+
+export function canReadPosReadinessFact(fact: PosReadinessFactDefinition, access: NavigationAccess) {
+  return access.hasSelectedCompany && access.moduleSet.has("POS") && access.moduleSet.has(fact.module)
+    && allows(access.permissionSet, posPermissionPolicies.checkout) && access.permissionSet.has(fact.permission);
+}
+
+export function initialPosReadinessFacts(access: NavigationAccess, pending = false): PosReadinessFacts {
+  return Object.fromEntries(posReadinessFactDefinitions.map((fact) => [fact.id,
+    canReadPosReadinessFact(fact, access) ? pending ? "loading" : "notChecked" : "forbidden",
+  ])) as PosReadinessFacts;
+}
+
+export function posReadinessEvidence(payload: unknown): "ready" | "empty" {
+  if (!record(payload) || !Array.isArray(payload.data) || !record(payload.meta)) throw new Error("Invalid POS readiness evidence");
+  const { data, meta } = payload;
+  if (meta.page !== 1 || meta.pageSize !== 1 || !Number.isSafeInteger(meta.total) || (meta.total as number) < 0
+    || !Number.isSafeInteger(meta.totalPages) || (meta.totalPages as number) < 0 || data.length > 1
+    || (data.length === 0) !== (meta.total === 0)) throw new Error("Invalid POS readiness evidence");
+  return data.length ? "ready" : "empty";
+}
+
+export function posReadinessFailure(cause: unknown): Extract<PosReadinessState, "forbidden" | "timeout" | "error"> {
+  if (cause instanceof ApiError && cause.status === 403) return "forbidden";
+  if (cause instanceof RequestError && cause.kind === "timeout") return "timeout";
+  return "error";
+}
+
+export async function readPosReadinessFacts(access: NavigationAccess, signal: AbortSignal, reader: Reader = api): Promise<PosReadinessFacts> {
+  assertRequestActive(signal);
+  const pairs = await Promise.all(posReadinessFactDefinitions.map(async (fact): Promise<[PosReadinessFactId, PosReadinessState]> => {
+    if (!canReadPosReadinessFact(fact, access)) return [fact.id, "forbidden"];
+    try {
+      const payload = await reader(fact.path, { signal, timeoutMs: 10_000 });
+      assertRequestActive(signal);
+      return [fact.id, posReadinessEvidence(payload)];
+    } catch (cause) {
+      assertRequestActive(signal);
+      return [fact.id, posReadinessFailure(cause)];
+    }
+  }));
+  assertRequestActive(signal);
+  return Object.fromEntries(pairs) as PosReadinessFacts;
 }

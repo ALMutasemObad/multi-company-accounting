@@ -10,6 +10,7 @@ import { PosRecoveryPanel, type PosRecoveryPanelProps } from "./PosRecoveryPanel
 import { type PosCatalogItem } from "./pos-experience-catalog";
 import { CashierContextPanel, type CashierContextPanelProps } from "./CashierContextPanel";
 import { PosScopePanel } from "./PosScopePanel";
+import { RetailReceiptOutput } from "./RetailReceiptOutput";
 import { type CashierContextField } from "./cashier-context-model";
 import { deferred, key1, key2, memoryStorage, recoveryResult, recoveryScope, serializedLocks } from "./pos-recovery-test-fixtures";
 import { posRecoveryKey } from "./pos-recovery-model";
@@ -21,7 +22,8 @@ import { loadLocale } from "./i18n/core";
 // native disabled controls, browser rendering, CSRF, real sessions or DB acceptance.
 const hooks = vi.hoisted(() => ({ cursor: 0, cells: [] as unknown[], effects: [] as (() => void)[], cleanups: new Map<number, () => void>() }));
 const auth = vi.hoisted(() => ({ user: { id: "1", displayName: "Cashier" }, selectedCompany: { id: "2", name: "Company", timezone: "Asia/Riyadh" },
-  permissions: [] as string[], modules: ["POS", "SALES", "INVENTORY", "TREASURY"], permissionSet: new Set<string>() }));
+  permissions: [] as string[], modules: ["POS", "SALES", "INVENTORY", "TREASURY"], permissionSet: new Set<string>(),
+  moduleSet: new Set(["POS", "SALES", "INVENTORY", "TREASURY"]) }));
 vi.mock("react", async original => ({ ...await original<typeof import("react")>(),
   useState: <T,>(initial: T | (() => T)) => {
     const slot = hooks.cursor++;
@@ -30,6 +32,11 @@ vi.mock("react", async original => ({ ...await original<typeof import("react")>(
   },
   useRef: <T,>(value: T) => { const slot = hooks.cursor++; if (!(slot in hooks.cells)) hooks.cells[slot] = { current: value }; return hooks.cells[slot]; },
   useCallback: <T,>(callback: T) => callback,
+  useMemo: <T,>(factory: () => T, dependencies: unknown[]) => {
+    const slot = hooks.cursor++; const old = hooks.cells[slot] as { dependencies: unknown[]; value: T } | undefined;
+    if (old && old.dependencies.length === dependencies.length && old.dependencies.every((value, index) => Object.is(value, dependencies[index]))) return old.value;
+    const value = factory(); hooks.cells[slot] = { dependencies, value }; return value;
+  },
   useSyncExternalStore: (_subscribe: unknown, snapshot: () => unknown) => snapshot(),
   useEffect: (effect: () => void | (() => void), dependencies: unknown[]) => {
     const slot = hooks.cursor++; const old = hooks.cells[slot] as unknown[] | undefined;
@@ -61,7 +68,7 @@ const item: PosCatalogItem = { inventoryItemId: "55", code: "ITM-55", nameAr: "I
   sellingProfile: { id: "56", unitPrice: "1.2500", currencyId: "3", currencyCode: "SAR", revenueAccountId: "57", taxRateId: null, isActive: true, version: 1 },
   isReady: true, readinessReason: null };
 const notify = vi.fn(); const transport = vi.mocked(api);
-const fullPermissions = ["pos.checkout", "sales_catalog.view", "inventory_barcodes.resolve", "warehouses.view", "cash_bank_accounts.view", "currencies.view"];
+const fullPermissions = ["pos.view", "pos.checkout", "sales_catalog.view", "inventory_barcodes.resolve", "warehouses.view", "cash_bank_accounts.view", "currencies.view"];
 const contextIds: Record<CashierContextField, string> = { warehouseId: "6", cashBankAccountId: "7", paymentMethodId: "8", currencyId: "3" };
 let checkoutReply: () => Promise<object>; let recoveryReply: () => Promise<object>;
 let identityReply: (() => Promise<object>) | undefined;
@@ -77,6 +84,8 @@ async function route(path: string): Promise<object> {
     return echo({ status: "available", reference: { id, label: `Owner ${id}`, revision: "1", code: "SAR", nameAr: "Owner", nameEn: "Owner",
       ...(field === "paymentMethodId" ? { requiresReference: false } : {}), ...(field === "currencyId" ? { isBase: id === "3" } : {}) } });
   }
+  if (path.startsWith("/pos/context/options/")) return echo({ data: [{ id: "1" }], meta: { page: 1, pageSize: 1, total: 1, totalPages: 1 } });
+  if (path === "/sales/catalog?page=1&pageSize=1") return echo({ data: [item], meta: { page: 1, pageSize: 1, total: 1, totalPages: 1 } });
   if (path === "/pos/checkouts") return checkoutReply();
   if (path === "/pos/checkouts/recovery") return recoveryReply();
   if (path.startsWith("/pos/sales?")) return echo({ data: [], meta: { page: 1, pageSize: 10, total: 0, totalPages: 0 } });
@@ -156,7 +165,7 @@ describe("PosPage recovery wiring via hook and child-port harness", () => {
 
     expect(recovery().state).toEqual({ status: "confirmed", result: recoveryResult });
     expect(() => cashier()).toThrow("Missing child port"); expect(() => context()).toThrow("Missing child port");
-    expect(transport.mock.calls.map(([path]) => path)).toEqual(["/pos/context/identity", "/pos/checkouts/recovery"]);
+    expect(transport.mock.calls.map(([path]) => path)).toEqual(["/pos/context/identity", "/pos/checkouts/recovery", "/pos/sales?page=1&pageSize=10"]);
     expect(recoveryReads()[0]![1]).toMatchObject({ method: "POST", body: JSON.stringify({ attemptKey: key1 }) });
     expect(recoveryReads()[0]![1]).not.toHaveProperty("idempotencyKey");
     expect(window.localStorage.getItem(markerKey)).toBe(marker); expect(removeMarker).not.toHaveBeenCalled();
@@ -213,8 +222,9 @@ describe("PosPage recovery wiring via hook and child-port harness", () => {
     expect(marker).not.toContain("Sale"); unmount(); render(); await settle(); submit(); await settle();
     expect(cart().lines).toEqual([]); expect(commands()).toHaveLength(1); expect(recoveryReads()).toHaveLength(1);
     recoveryReply = async () => echo({ outcome: "CONFIRMED", result: recoveryResult }); recovery().onCheck(); await settle();
-    expect(transport).toHaveBeenLastCalledWith("/pos/checkouts/recovery", expect.objectContaining({ method: "POST", body: JSON.stringify({ attemptKey: key1 }), signal: expect.any(AbortSignal), timeoutMs: 10_000 }));
-    expect(transport.mock.calls.at(-1)![1]).not.toHaveProperty("idempotencyKey");
+    const recovered = recoveryReads().at(-1)!;
+    expect(recovered).toEqual(["/pos/checkouts/recovery", expect.objectContaining({ method: "POST", body: JSON.stringify({ attemptKey: key1 }), signal: expect.any(AbortSignal), timeoutMs: 10_000 })]);
+    expect(recovered[1]).not.toHaveProperty("idempotencyKey");
     const confirmed = recovery().state;
     expect(confirmed).toEqual({ status: "confirmed", result: recoveryResult }); expect(confirmed.status === "confirmed" && confirmed.result.invoice.id).toBe("8");
     expect(recovery()).not.toHaveProperty("currencyCode");
@@ -350,13 +360,18 @@ describe("PosPage recovery wiring via hook and child-port harness", () => {
     expect(transport.mock.calls.some(([path]) => path === "/currencies" || path.startsWith("/fiscal-periods"))).toBe(false);
   });
 
-  it("preserves prices when the reviewed currency is unchanged and clears only prices when it changes", async () => {
-    await prepareCart(); const original = cart().lines[0]!;
+  it("restores the known selling profile after matching currency review and clears stale financial references on mismatch", async () => {
+    context().onChange({ description: "Sale", customerId: "5" }); render(); catalog().onAdd(item); render();
+    const pending = cart().lines[0]!;
+    expect(pending).toMatchObject({ unitPrice: "", revenueAccountId: "", priceSource: "currency-mismatch" });
+    await reviewContext();
+    const original = cart().lines[0]!;
+    expect(original).toMatchObject({ unitPrice: "1.2500", revenueAccountId: "57", priceSource: "profile", profileCurrencyId: "3", profileVersion: 1 });
     await reviewContext(); expect(cart().lines[0]!.unitPrice).toBe(original.unitPrice);
     const controller = cashier().controller; await controller.select("currencyId", "9"); render();
     cashier().onReviewed(controller.review()!); render();
     expect(context().value.exchangeRate).toBe("");
-    expect(cart().lines[0]).toMatchObject({ key: original.key, inventoryItemId: original.inventoryItemId, quantity: original.quantity, revenueAccountId: original.revenueAccountId,
+    expect(cart().lines[0]).toMatchObject({ key: original.key, inventoryItemId: original.inventoryItemId, quantity: original.quantity, revenueAccountId: "",
       unitPrice: "", priceSource: "currency-mismatch", profileCurrencyId: null, profileVersion: null });
     expect(commands()).toHaveLength(0);
   });
@@ -414,6 +429,15 @@ describe("PosPage recovery wiring via hook and child-port harness", () => {
     expect(transport.mock.calls.map(([path]) => path)).toEqual(["/pos/context/identity?purpose=history", "/pos/sales?page=1&pageSize=10"]);
     expect(() => cashier()).toThrow("Missing child port"); expect(() => recovery()).toThrow("Missing child port"); expect(() => context()).toThrow("Missing child port");
     expect(element<React.HTMLAttributes<HTMLElement>>(tree, "details")).toBeDefined();
+  });
+
+  it("opens checkout and recovery for pos.checkout-only without reading history or mounting receipt output", async () => {
+    unmount(); transport.mockClear(); auth.permissions = fullPermissions.filter((permission) => permission !== "pos.view"); auth.permissionSet = new Set(auth.permissions);
+    const markerKey = posRecoveryKey(recoveryScope); window.localStorage.setItem(markerKey, JSON.stringify({ version: 1, attemptKey: key1, startedAt: Date.now() }));
+    recoveryReply = async () => echo({ outcome: "CONFIRMED", result: recoveryResult }); render(); await settle();
+    expect(recovery().state.status).toBe("confirmed"); expect(recoveryReads()).toHaveLength(1);
+    expect(transport.mock.calls.some(([path]) => path.startsWith("/pos/sales?"))).toBe(false);
+    expect(() => element(tree, RetailReceiptOutput)).toThrow("Missing child port");
   });
 
   it("makes no requests when both POS capabilities are absent", async () => {

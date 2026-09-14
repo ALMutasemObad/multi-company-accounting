@@ -1,4 +1,5 @@
 import { visibleNavigationItems, type NavigationAccess, type View } from "./app-navigation";
+import type { CashierContextField } from "./cashier-context-model";
 import type { TranslationKey } from "./i18n";
 import type { PlatformModuleCode } from "./types";
 
@@ -12,6 +13,10 @@ export type RetailSetupTarget =
 export type RetailFactId = "warehouses" | "units" | "items" | "stock" | "cash";
 export type RetailFactState = "notChecked" | "unavailable" | "loading" | "found" | "empty" | "error";
 export type RetailFacts = Record<RetailFactId, RetailFactState>;
+export type PosRequirementId = CashierContextField | "period" | "catalog";
+export type PosReadinessFactId = Exclude<PosRequirementId, "period">;
+export type PosReadinessState = "notChecked" | "loading" | "ready" | "empty" | "forbidden" | "timeout" | "error";
+export type PosReadinessFacts = Record<PosReadinessFactId, PosReadinessState>;
 export type RetailStepId = "business" | "catalog" | "stock" | "cash" | "checkout" | "results";
 export type RetailOutputCapabilityId = "barcodeLabel" | "receiptArchive";
 export type RetailOutputCapability = {
@@ -116,4 +121,30 @@ export function retailOutputCapabilities(access: NavigationAccess): readonly Ret
 
 export function initialRetailStep(access: NavigationAccess): RetailStepId {
   return retailSteps.find((step) => retailActions(step, access).length)?.id ?? "business";
+}
+
+type PosSetupDefinition = {
+  id: PosRequirementId;
+  target: RetailSetupTarget;
+  modules: readonly PlatformModuleCode[];
+  permissions: readonly string[];
+};
+
+/** Setup links are navigation only. Requiring the owner's manage permission
+ * avoids presenting a cashier with an action that cannot correct the problem. */
+const posSetupDefinitions: readonly PosSetupDefinition[] = [
+  { id: "warehouseId", target: { view: "inventory", section: "warehouses" }, modules: ["INVENTORY"], permissions: ["warehouses.view", "warehouses.manage"] },
+  { id: "period", target: { view: "fiscal" }, modules: ["CORE_ACCOUNTING"], permissions: ["fiscal_periods.view", "fiscal_periods.manage"] },
+  { id: "cashBankAccountId", target: { view: "treasury", section: "accounts" }, modules: ["TREASURY"], permissions: ["cash_bank_accounts.view", "cash_bank_accounts.manage"] },
+  { id: "paymentMethodId", target: { view: "treasury", section: "methods" }, modules: ["TREASURY"], permissions: ["cash_bank_accounts.view", "cash_bank_accounts.manage"] },
+  { id: "currencyId", target: { view: "settings" }, modules: [], permissions: ["companies.view", "settings.manage", "currencies.view", "currencies.manage"] },
+  { id: "catalog", target: { view: "inventory", section: "items" }, modules: ["INVENTORY", "SALES"], permissions: ["warehouses.view", "inventory_catalog.view", "sales_catalog.view", "sales_catalog.manage"] },
+];
+
+export function posSetupTarget(id: PosRequirementId, access: NavigationAccess): RetailSetupTarget | null {
+  if (!access.hasSelectedCompany) return null;
+  const definition = posSetupDefinitions.find((item) => item.id === id);
+  if (!definition || !definition.modules.every((module) => access.moduleSet.has(module))
+    || !definition.permissions.every((permission) => access.permissionSet.has(permission))) return null;
+  return visibleNavigationItems(access).some((item) => item.view === definition.target.view) ? definition.target : null;
 }

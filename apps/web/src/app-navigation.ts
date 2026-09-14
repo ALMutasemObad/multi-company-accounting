@@ -56,9 +56,17 @@ export type NavigationAccess = {
 
 type TenantProtectedView = Exclude<View, "home" | "organizationOwner" | "platform" | "platformSubscriptions" | "accountSecurity">;
 
+/** Route access accepts either server capability. History and checkout remain
+ * independently guarded because the API deliberately authorizes them separately. */
+export const posPermissionPolicies = {
+  access: { anyOf: ["pos.view", "pos.checkout"] },
+  history: { permission: "pos.view" },
+  checkout: { permission: "pos.checkout" },
+} as const satisfies Record<"access" | "history" | "checkout", PermissionPolicy>;
+
 export const viewPermissionPolicies: Record<TenantProtectedView, PermissionPolicy> = {
   dashboard: { permission: "dashboard.view" },
-  pos: { permission: "pos.view" },
+  pos: posPermissionPolicies.access,
   customers: { permission: "customers.view" },
   crm: { permission: "crm.view" },
   professionalProjects: { permission: "professional_projects.view" },

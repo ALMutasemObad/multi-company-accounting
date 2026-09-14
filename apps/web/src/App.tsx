@@ -502,7 +502,7 @@ export default function App() {
             {activeView === "platform" && platformOperator && <PlatformOperationsPage onNavigate={navigate} />}
             {activeView === "platformSubscriptions" && platformOperator && <PlatformSubscriptionsPage notify={notify} />}
             {activeView === "subscription" && <CompanySubscriptionPage notify={notify} onAuthorizationRead={acceptSubscriptionAuthorization} />}
-            {activeView === "pos" && <PosPage notify={notify} />}
+            {activeView === "pos" && <PosPage notify={notify} onOpenSetupTarget={navigateRoute} />}
             {activeView === "customers" && <CustomersPage notify={notify} />}
             {activeView === "crm" && <CrmPage notify={notify} />}
             {activeView === "professionalProjects" && <ProfessionalProjectsPage notify={notify} />}

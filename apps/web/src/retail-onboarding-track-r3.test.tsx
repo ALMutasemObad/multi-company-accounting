@@ -1,14 +1,16 @@
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+import { ApiError } from "./api";
 import type { NavigationAccess } from "./app-navigation";
 import { AuthorizationProvider } from "./authorization-context";
 import { I18nProvider, loadLocale } from "./i18n";
 import { SystemHomePage } from "./SystemHomePage";
 import { RetailOnboardingGuide } from "./RetailOnboardingGuide";
-import { initialRetailStep, retailActions, retailOutputCapabilities, retailSteps, showRetailGuide } from "./retail-onboarding-model";
-import { initialRetailFacts, readRetailFacts, retailEvidence, retailFactDefinitions } from "./retail-onboarding-read";
+import { initialRetailStep, posSetupTarget, retailActions, retailOutputCapabilities, retailSteps, showRetailGuide } from "./retail-onboarding-model";
+import { initialPosReadinessFacts, initialRetailFacts, posReadinessEvidence, posReadinessFactDefinitions, readPosReadinessFacts, readRetailFacts, retailEvidence, retailFactDefinitions } from "./retail-onboarding-read";
 import { effectivePermissionSet } from "./module-entitlements";
+import { RequestError } from "./request-scope";
 import type { CurrentAuthorization, PlatformModuleCode } from "./types";
 
 const modules: PlatformModuleCode[] = ["SALES", "INVENTORY", "TREASURY", "POS", "REPORTING", "CORE_ACCOUNTING", "PURCHASES"];
@@ -24,7 +26,7 @@ describe("R3 real navigation and isolated evidence", () => {
   it("keeps the workflow ordered and opens only authorized real screens", () => {
     expect(retailSteps.map((step) => step.id)).toEqual(["business", "catalog", "stock", "cash", "checkout", "results"]);
     expect(initialRetailStep(access())).toBe("business");
-    const cashier = access(["pos.view", "pos.checkout"]);
+    const cashier = access(["pos.checkout"]);
     expect(initialRetailStep(cashier)).toBe("checkout");
     expect(retailActions(retailSteps[1]!, cashier)).toEqual([]);
     expect(retailActions(retailSteps[4]!, access(["pos.view"]))).toEqual([]);
@@ -54,6 +56,18 @@ describe("R3 real navigation and isolated evidence", () => {
     expect(showRetailGuide(access([], ["PROFESSIONAL_PROJECTS"]))).toBe(false);
     expect(showRetailGuide(access([], modules, false))).toBe(false);
     expect(showRetailGuide(access())).toBe(true);
+  });
+
+  it("offers setup destinations only to users who can manage the owning screen", () => {
+    const manager = access([...permissions, "warehouses.manage", "fiscal_periods.manage", "cash_bank_accounts.manage",
+      "currencies.manage", "inventory_catalog.view", "sales_catalog.view", "sales_catalog.manage"]);
+    expect(posSetupTarget("warehouseId", manager)).toEqual({ view: "inventory", section: "warehouses" });
+    expect(posSetupTarget("period", manager)).toEqual({ view: "fiscal" });
+    expect(posSetupTarget("cashBankAccountId", manager)).toEqual({ view: "treasury", section: "accounts" });
+    expect(posSetupTarget("paymentMethodId", manager)).toEqual({ view: "treasury", section: "methods" });
+    expect(posSetupTarget("currencyId", manager)).toEqual({ view: "settings" });
+    expect(posSetupTarget("catalog", manager)).toEqual({ view: "inventory", section: "items" });
+    expect(posSetupTarget("warehouseId", access(["pos.view", "pos.checkout", "warehouses.view"]))).toBeNull();
   });
 
   it("shows only output tools that are implemented and authorized, with explicit device boundaries", async () => {
@@ -125,6 +139,54 @@ describe("R3 real navigation and isolated evidence", () => {
     await expect(pending).rejects.toThrow();
     await expect(readRetailFacts(access(), controller.signal, reader)).rejects.toThrow();
     expect(reader).toHaveBeenCalledTimes(1);
+  });
+
+  it("checks each authorized POS prerequisite with an unfiltered bounded read", async () => {
+    const reader = vi.fn(async () => list([active]));
+    const states = await readPosReadinessFacts(access([...permissions, "sales_catalog.view"]), new AbortController().signal, reader);
+    expect(Object.values(states)).toEqual(Array(5).fill("ready"));
+    expect(reader).toHaveBeenCalledTimes(5);
+    for (const [path, options] of reader.mock.calls as unknown as [string, { timeoutMs: number }][]) {
+      expect(path).toContain("pageSize=1"); expect(path).not.toContain("search=");
+      expect(options).toMatchObject({ timeoutMs: 10_000, signal: expect.any(AbortSignal) });
+      expect(options).not.toHaveProperty("method");
+    }
+  });
+
+  it("distinguishes genuine empty, forbidden, timeout and server failure without retrying", async () => {
+    const reader = vi.fn(async (path: string) => {
+      if (path.includes("warehouseId")) return list([]);
+      if (path.includes("cashBankAccountId")) throw new ApiError("private", 403);
+      if (path.includes("paymentMethodId")) throw new RequestError("timeout");
+      if (path.includes("currencyId")) throw new ApiError("private", 503);
+      return list([active]);
+    });
+    expect(await readPosReadinessFacts(access([...permissions, "sales_catalog.view"]), new AbortController().signal, reader)).toEqual({
+      warehouseId: "empty", cashBankAccountId: "forbidden", paymentMethodId: "timeout", currencyId: "error", catalog: "ready",
+    });
+    expect(reader).toHaveBeenCalledTimes(5);
+  });
+
+  it("skips unauthorized POS readiness reads and discards late results after cancellation", async () => {
+    const skipped = vi.fn(async () => list([active]));
+    expect(Object.values(await readPosReadinessFacts(access(["pos.checkout"]), new AbortController().signal, skipped))).toEqual(Array(5).fill("forbidden"));
+    expect(skipped).not.toHaveBeenCalled();
+    expect(Object.values(initialPosReadinessFacts(access(["pos.checkout", "warehouses.view"]))).filter((state) => state === "notChecked")).toHaveLength(1);
+
+    const controller = new AbortController(); let complete!: (value: unknown) => void;
+    const reader = vi.fn(() => new Promise((resolve) => { complete = resolve; }));
+    const pending = readPosReadinessFacts(access(["pos.checkout", "warehouses.view"]), controller.signal, reader);
+    controller.abort(); complete(list([active]));
+    await expect(pending).rejects.toThrow(); expect(reader).toHaveBeenCalledOnce();
+  });
+
+  it("rejects malformed POS readiness evidence instead of calling it empty", () => {
+    expect(posReadinessFactDefinitions).toHaveLength(5);
+    expect(posReadinessEvidence(list([]))).toBe("empty");
+    expect(posReadinessEvidence(list([active]))).toBe("ready");
+    for (const payload of [{}, list([], 2), list([active], 0), { data: [], meta: { page: 1, pageSize: 1, total: 0, totalPages: -1 } }]) {
+      expect(() => posReadinessEvidence(payload)).toThrow();
+    }
   });
 
   it("starts fresh, without deriving completion from visits or facts", async () => {
