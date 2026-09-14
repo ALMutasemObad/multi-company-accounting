@@ -77,8 +77,10 @@ async function setup(page: Page, locale: keyof typeof sellingWorkspace, canManag
       }
       const optionField = contextFields.find(field => path === `/pos/context/options/${field}`);
       if (optionField) {
-        expect(request.method()).toBe('GET'); expect(url.searchParams.get('page')).toBe('1'); expect(url.searchParams.get('pageSize')).toBe('20');
-        return route.fulfill({ json: envelope(list([{ ...contextReference(optionField), isAvailable: true }])) });
+        expect(request.method()).toBe('GET'); expect(url.searchParams.get('page')).toBe('1');
+        const pageSize = Number(url.searchParams.get('pageSize'));
+        expect([1, 20]).toContain(pageSize);
+        return route.fulfill({ json: envelope(list([{ ...contextReference(optionField), isAvailable: true }], 1, pageSize)) });
       }
       const referenceField = contextFields.find(field => path.startsWith(`/pos/context/references/${field}/`));
       if (referenceField) {

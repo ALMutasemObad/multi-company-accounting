@@ -63,7 +63,8 @@
 .pos-experience-settings {
   position: absolute;
   z-index: 8;
-  inset-block: 0;
+  inset-block-start: 0;
+  inset-block-end: 96px;
   inset-inline-end: 0;
   display: grid;
   width: min(360px, calc(100% - 24px));
