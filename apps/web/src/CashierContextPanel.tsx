@@ -24,6 +24,8 @@ export type CashierContextPanelProps = {
   setupAccess?: NavigationAccess | undefined;
   onRetryReadiness?: (() => void) | undefined;
   onOpenSetupTarget?: ((target: RetailSetupTarget) => void) | undefined;
+  /** The POS wizard supplies the visible heading, so the controller section avoids repeating it. */
+  compact?: boolean;
 };
 
 export function CashierContextPanel(props: CashierContextPanelProps) {
@@ -34,7 +36,7 @@ export function CashierContextPanel(props: CashierContextPanelProps) {
 }
 
 function CashierContextContent({ controller, currentScopeKey, locale, renderPicker, onReviewed, onDateChange, blocked = false, canInteract,
-  readiness, setupAccess, onRetryReadiness, onOpenSetupTarget }: CashierContextPanelProps) {
+  readiness, setupAccess, onRetryReadiness, onOpenSetupTarget, compact = false }: CashierContextPanelProps) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const text = cashierContextDictionaries[locale];
   const [editing, setEditing] = useState<CashierContextField | null>(null);
@@ -47,9 +49,9 @@ function CashierContextContent({ controller, currentScopeKey, locale, renderPick
   }, [controller, state]);
   const canEdit = state.canEdit && !blocked;
   const canAct = () => !blocked && (canInteract?.() ?? true) && controller.getSnapshot().scopeKey === currentScopeKey && controller.getSnapshot().canEdit;
-  return <section className="cashier-context-panel" dir={locale === "ar" || locale === "ur" ? "rtl" : "ltr"} lang={locale} aria-labelledby={titleId}
+  return <section className="cashier-context-panel" dir={locale === "ar" || locale === "ur" ? "rtl" : "ltr"} lang={locale} aria-labelledby={compact ? undefined : titleId}
     onKeyDown={(event) => { if (event.key === "Enter" && event.target instanceof HTMLInputElement) event.preventDefault(); }}>
-    <h2 id={titleId}>{text.title}</h2><p>{text.help}</p>
+    {!compact && <><h2 id={titleId}>{text.title}</h2><p>{text.help}</p></>}
     {state.lock && <p role="status">{text.locked}</p>}
     {state.verificationExpired && <p role="status">{text.expired}</p>}
     <div className="cashier-context-date">
