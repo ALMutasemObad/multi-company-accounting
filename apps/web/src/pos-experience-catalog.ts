@@ -5,6 +5,7 @@ import type { ListResponse } from "./types";
 export type PosCatalogItem = {
   inventoryItemId: string; code: string; nameAr: string; nameEn: string | null;
   description: string | null; isActive: boolean;
+  image?: null | { thumbnailUrl: string };
   unitOfMeasure: { id: string; code: string; nameAr: string; nameEn: string | null; decimalPlaces: number; isActive: boolean };
   sellingProfile: null | { id: string; unitPrice: string; currencyId: string; currencyCode: string | null; revenueAccountId: string; taxRateId: string | null; isActive: boolean; version: number };
   isReady: boolean; readinessReason: string | null;

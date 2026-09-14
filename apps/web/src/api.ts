@@ -32,7 +32,7 @@ export async function api<T>(
   options: RequestInit & { idempotencyKey?: string; timeoutMs?: number } = {},
 ): Promise<T> {
   const headers = new Headers(options.headers);
-  if (options.body) headers.set("Content-Type", "application/json");
+  if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (options.method && options.method !== "GET" && csrfToken)
     headers.set("X-CSRF-Token", csrfToken);
   if (options.idempotencyKey)

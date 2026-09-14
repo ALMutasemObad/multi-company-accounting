@@ -55,6 +55,7 @@ export function PosCatalog({ enabled, blocked, mode, onMode, onAdd, reader = pos
       : <><div className={`pos-experience-products ${mode}`} aria-live="polite">
         {items.length === 0 ? <p>{t("pos.catalogEmpty")}</p> : items.map((item) => <button key={item.inventoryItemId} type="button"
           className="pos-experience-product" disabled={blocked || !item.isActive || !item.unitOfMeasure.isActive} onClick={() => onAdd(item)}>
+          <span className="pos-product-thumbnail">{item.image?.thumbnailUrl ? <img src={item.image.thumbnailUrl} alt="" width={96} height={96} loading="lazy" decoding="async" /> : <span aria-hidden="true" />}</span>
           <span className="pos-experience-product-name"><strong>{localizedReferenceName(item)}</strong><span>{item.code} · {item.unitOfMeasure.code}</span></span>
           <span className="pos-experience-product-price">{item.isReady && item.sellingProfile ? <><bdi>{posMoneyText(item.sellingProfile.unitPrice)}</bdi> <bdi>{item.sellingProfile.currencyCode}</bdi></> : t("pos.needsSetup")}</span>
           <span className="pos-experience-product-action">{t("pos.addItem")}</span>
