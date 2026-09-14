@@ -1,9 +1,8 @@
-import { createRequire } from "node:module";
-import PDFDocument from "pdfkit";
 import {
   csvEscape,
   type TabularCell,
 } from "../platform/tabular-file-exporter.js";
+import { renderTabularReportPdf } from "../document-output-kernel/pdf-profile.js";
 import type { StatementRow } from "./financial-statement-calculator.js";
 
 export { tableToCsv, tableToXlsx } from "../platform/tabular-file-exporter.js";
@@ -14,15 +13,6 @@ type ExportReport = {
   baseCurrency: { code: string; nameAr: string };
   sections: Record<string, { rows: StatementRow[]; total: string; comparisonTotal: string | null; variance: string | null; variancePercent: string | null }>;
 };
-
-const require = createRequire(import.meta.url);
-const arabicFont = require.resolve("@fontsource/noto-sans-arabic/files/noto-sans-arabic-arabic-400-normal.woff");
-const arabicBoldFont = require.resolve("@fontsource/noto-sans-arabic/files/noto-sans-arabic-arabic-700-normal.woff");
-const money = (value: string | null) => value == null ? "" : Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
-const arabicSafe = (value: string) => value
-  .replace(/[0-9]+/g, (digits) => [...digits].reverse().map((digit) => "٠١٢٣٤٥٦٧٨٩"[Number(digit)]!).join(""))
-  .replaceAll("%", "بالمائة")
-  .replace(/[—:-]/g, "،");
 
 function flatten(rows: StatementRow[], depth = 0): Array<{ row: StatementRow; depth: number }> {
   return rows.flatMap((row) => [{ row, depth }, ...flatten(row.children, depth + 1)]);
@@ -221,29 +211,5 @@ export function journalReportToCsv(rows: Array<{ documentNumber: string; documen
 }
 
 export function tableToPdf(rows: Cell[][], title: string, companyName: string): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const pdf = new PDFDocument({ size: "A4", layout: "landscape", margin: 36, bufferPages: true, info: { Title: title, Author: companyName } });
-    const chunks: Buffer[] = [];
-    pdf.on("data", (chunk) => chunks.push(Buffer.from(chunk))); pdf.on("error", reject); pdf.on("end", () => resolve(Buffer.concat(chunks)));
-    pdf.registerFont("Arabic", arabicFont).registerFont("ArabicBold", arabicBoldFont);
-    const pageHeader = () => { pdf.rect(0, 0, 842, 75).fill("#173f34"); pdf.font("ArabicBold").fontSize(17).fillColor("#ffffff").text(arabicSafe(companyName), 36, 18, { width: 770, align: "right", features: ["rtla"] }); pdf.font("Arabic").fontSize(10).fillColor("#d6e7df").text(arabicSafe(title), 36, 47, { width: 770, align: "right", features: ["rtla"] }); pdf.y = 92; };
-    pageHeader();
-    const columnCount = Math.max(1, ...rows.map((row) => row.length));
-    const widths = columnCount === 8 ? [70, 115, 65, 140, 65, 65, 125, 125] : columnCount === 7 ? [80, 100, 250, 80, 80, 90, 90] : columnCount === 2 ? [600, 170] : [370, 100, 100, 100, 100];
-    for (let rowIndex = 3; rowIndex < rows.length; rowIndex += 1) {
-      if (pdf.y > 530) { pdf.addPage(); pageHeader(); }
-      const row = rows[rowIndex]!; const y = pdf.y; const isHeader = row.length > 0 && row.every((cell) => cell.style === 2); const isSection = row[0]?.style === 3;
-      if (isHeader) pdf.rect(36, y, 770, 24).fill("#173f34"); else if (isSection) pdf.rect(36, y, 770, 24).fill("#e8f1ed");
-      let x = 36;
-      for (let index = 0; index < widths.length; index += 1) {
-        const cell = row[index]; const value = cell?.value ?? ""; const arabic = /[\u0600-\u06ff]/.test(value); const display = arabic ? arabicSafe(value) : cell?.numeric ? money(value) : value;
-        const font = arabic ? (isHeader || isSection ? "ArabicBold" : "Arabic") : (isHeader || isSection ? "Helvetica-Bold" : "Helvetica");
-        pdf.font(font).fontSize(8).fillColor(isHeader ? "#ffffff" : "#263f37").text(display, x + 4, y + 7, { width: widths[index]! - 8, height: 14, align: index === 0 ? "right" : "center", features: arabic ? ["rtla"] : [], lineBreak: false });
-        if (!isHeader) pdf.rect(x, y, widths[index]!, 24).stroke("#dce6e1"); x += widths[index]!;
-      }
-      pdf.y = y + 24;
-    }
-    const range = pdf.bufferedPageRange(); for (let index = 0; index < range.count; index += 1) { pdf.switchToPage(index); pdf.font("Arabic").fontSize(7).fillColor("#71827b").text(arabicSafe(`صفحة ${index + 1} من ${range.count}`), 36, 525, { width: 770, align: "center", features: ["rtla"], lineBreak: false }); }
-    pdf.end();
-  });
+  return renderTabularReportPdf({ rows, title, companyName, direction: "RTL" });
 }
