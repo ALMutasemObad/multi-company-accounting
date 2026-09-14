@@ -340,12 +340,16 @@ export function Modal({
   children,
   onClose,
   wide = false,
+  className = "",
+  size = "default",
 }: {
   title: string;
   description?: string;
   children: ReactNode;
   onClose: () => void;
   wide?: boolean;
+  className?: string;
+  size?: "default" | "wide" | "large";
 }) {
   const { t } = useI18n();
   const titleId = useId();
@@ -400,7 +404,7 @@ export function Modal({
     }}>
       <section
         ref={modalRef}
-        className={`modal ${wide ? "wide" : ""}`}
+        className={`modal ${wide || size === "wide" ? "wide" : ""} ${size === "large" ? "large" : ""} ${className}`.trim()}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

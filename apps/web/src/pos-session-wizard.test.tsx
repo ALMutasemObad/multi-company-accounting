@@ -6,8 +6,9 @@ vi.mock("./ui", () => ({
   Modal: ({ children, title }: { children: React.ReactNode; title: string }) => <section role="dialog" aria-label={title}>{children}</section>,
   Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props}>{children}</button>,
 }));
+vi.mock("./i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 
-import { PosSessionWizard } from "./PosSessionWizard";
+import { isPosSessionDetailsComplete, PosSessionWizard } from "./PosSessionWizard";
 
 const snapshot = {
   scopeKey: "scope", documentDate: "2026-09-15", requiresWarehouse: true, lock: null, canEdit: true, canReview: true,
@@ -22,7 +23,7 @@ const snapshot = {
 };
 
 describe("PosSessionWizard", () => {
-  it("renders a focused first step and does not expose checkout controls", () => {
+  it("renders the first navigable step and never exposes checkout", () => {
     const html = renderToStaticMarkup(<PosSessionWizard locale="en" onClose={vi.fn()} onReview={() => false} blocked={false}
       snapshot={snapshot} value={{ periodId: "1", currencyId: "4", exchangeRate: "1", documentDate: "2026-09-15", description: "Counter sale", customerId: "5", customerLabel: "Walk-in", warehouseId: "1", warehouseLabel: "Main warehouse", cashAccountId: "2", cashAccountLabel: "Cash", paymentMethod: { id: "3", label: "Cash", requiresReference: false }, referenceNumber: "", notes: "" }}
       sessionContext={<div data-testid="session-context">Context controller</div>} saleDetails={<div>Sale details</div>} />);
@@ -31,5 +32,14 @@ describe("PosSessionWizard", () => {
     expect(html).toContain('aria-current="step"');
     expect(html).toContain("Close and return to basket");
     expect(html).not.toContain("Complete sale and receipt");
+  });
+  it("requires every sale detail and a required payment reference before activation", () => {
+    const value = { periodId: "", currencyId: "", exchangeRate: "1", documentDate: "2026-09-15", description: "Counter sale", customerId: "5", customerLabel: "Walk-in", warehouseId: "", warehouseLabel: "", cashAccountId: "", cashAccountLabel: "", paymentMethod: null, referenceNumber: "", notes: "" };
+    expect(isPosSessionDetailsComplete(snapshot, value)).toBe(true);
+    expect(isPosSessionDetailsComplete(snapshot, { ...value, description: "" })).toBe(false);
+    expect(isPosSessionDetailsComplete(snapshot, { ...value, exchangeRate: "0" })).toBe(false);
+    const referenceRequired = { ...snapshot, fields: { ...snapshot.fields, paymentMethodId: { ...snapshot.fields.paymentMethodId, reference: { ...snapshot.fields.paymentMethodId.reference, requiresReference: true } } } };
+    expect(isPosSessionDetailsComplete(referenceRequired, value)).toBe(false);
+    expect(isPosSessionDetailsComplete(referenceRequired, { ...value, referenceNumber: "POS-1" })).toBe(true);
   });
 });

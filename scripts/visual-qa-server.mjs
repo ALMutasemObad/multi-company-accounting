@@ -42,6 +42,7 @@ const visualQaPermissions = [
   "inventory_barcodes.resolve",
   "manual_journals.view",
   "payments.view",
+  "pos.checkout",
   "pos.view",
   "professional_projects.view",
   "crm.view",
@@ -55,6 +56,7 @@ const visualQaPermissions = [
   "roles.view",
   "sales_invoices.create",
   "sales_invoices.view",
+  "sales_catalog.view",
   "security_events.view",
   "settings.manage",
   "subscriptions.manage",
@@ -534,11 +536,8 @@ export function responseFor(url, method, headers = {}) {
   const pathname = url.pathname.replace(/^\/api\/v1/, "");
   // Visual test data only: this server is never part of an application release.
   if (pathname.startsWith("/pos/")) {
-    // This actor can view history only. Never reflect request headers as identity,
-    // or enable checkout/recovery/cashier reads to make a visual test pass.
-    const historyIdentity = pathname === "/pos/context/identity"
-      && url.searchParams.getAll("purpose").length === 1 && url.searchParams.get("purpose") === "history";
-    if (method !== "GET" || (!historyIdentity && pathname !== "/pos/sales")) return { status: 403, code: "FORBIDDEN" };
+    // Read-only POS fixture. It exposes the smallest coherent session context for visual QA;
+    // checkout/recovery commands remain rejected and cannot create financial documents.
     const userId = headers["x-pos-expected-user-id"];
     const companyId = headers["x-pos-expected-company-id"];
     const canonical = value => typeof value === "string" && value.length >= 1 && value.length <= 20
@@ -546,7 +545,34 @@ export function responseFor(url, method, headers = {}) {
     if (!canonical(userId) || !canonical(companyId)) return { status: 400, code: "POS_CONTEXT_REQUIRED" };
     const posContext = { userId: currentAuthorization.user.id, companyId: currentAuthorization.selectedCompany.id };
     if (userId !== posContext.userId || companyId !== posContext.companyId) return { status: 409, code: "POS_CONTEXT_CHANGED" };
-    return { ...(historyIdentity ? {} : list()), posContext };
+    const response = (body) => ({ ...body, posContext });
+    const posList = (data) => ({ data, meta: { page: 1, pageSize: Number(url.searchParams.get("pageSize") ?? 20), total: data.length, totalPages: data.length ? 1 : 0 } });
+    if (pathname === "/pos/context/identity" && method === "GET") return response({});
+    if (pathname === "/pos/context/period" && method === "GET") return response({ documentDate: url.searchParams.get("documentDate"), status: "RESOLVED", period: { id: "1001", name: "ديسمبر 2026", startDate: "2026-12-01", endDate: "2026-12-31", status: "OPEN", version: 0 } });
+    const options = {
+      warehouseId: { id: "101", code: "WH-000001", nameAr: "المستودع الرئيسي", nameEn: "Main warehouse" },
+      cashBankAccountId: { id: "102", code: "CB-000001", nameAr: "صندوق المبيعات", nameEn: "Sales cash" },
+      paymentMethodId: { id: "103", code: "CASH", nameAr: "نقدي", nameEn: "Cash", requiresReference: false },
+      currencyId: { id: "104", code: "SAR", nameAr: "ريال سعودي", nameEn: "Saudi Riyal", isBase: true },
+    };
+    const optionMatch = pathname.match(/^\/pos\/context\/options\/(warehouseId|cashBankAccountId|paymentMethodId|currencyId)$/u);
+    if (optionMatch && method === "GET") {
+      const value = options[optionMatch[1]];
+      return response(posList([{ ...value, label: `${value.code} — ${value.nameAr}`, isAvailable: true, revision: "1" }]));
+    }
+    const referenceMatch = pathname.match(/^\/pos\/context\/references\/(warehouseId|cashBankAccountId|paymentMethodId|currencyId)\/([1-9][0-9]*)$/u);
+    if (referenceMatch && method === "GET") {
+      const value = options[referenceMatch[1]];
+      return response({ status: referenceMatch[2] === value.id ? "available" : "unavailable", ...(referenceMatch[2] === value.id ? { reference: { id: value.id, label: `${value.code} — ${value.nameAr}`, revision: "1", ...(value.requiresReference === undefined ? {} : { requiresReference: value.requiresReference }), ...(value.isBase === undefined ? {} : { isBase: value.isBase }), code: value.code, nameAr: value.nameAr, nameEn: value.nameEn } } : {}) });
+    }
+    if (pathname === "/pos/sales" && method === "GET") return response(posList([]));
+    return { status: 405, code: "VISUAL_QA_POS_WRITE_DISABLED" };
+  }
+  if (pathname === "/sales/catalog") {
+    const posContext = { userId: currentAuthorization.user.id, companyId: currentAuthorization.selectedCompany.id };
+    if (headers["x-pos-expected-user-id"] !== posContext.userId || headers["x-pos-expected-company-id"] !== posContext.companyId) return { status: 409, code: "POS_CONTEXT_CHANGED" };
+    const data = [{ inventoryItemId: "201", code: "ITM-000001", nameAr: "مياه معدنية", nameEn: "Mineral water", description: "عبوة 500 مل", isActive: true, unitOfMeasure: { id: "1", code: "EA", nameAr: "حبة", nameEn: "Each", decimalPlaces: 0, isActive: true }, sellingProfile: { id: "301", unitPrice: "5.0000", currencyId: "104", currencyCode: "SAR", revenueAccountId: "401", taxRateId: null, isActive: true, version: 0 }, isReady: true, readinessReason: null }];
+    return { data, meta: { page: 1, pageSize: Number(url.searchParams.get("pageSize") ?? 24), total: 1, totalPages: 1 }, posContext };
   }
   if (pathname === "/public/subscription-plans") return {
     plans: [
@@ -811,7 +837,11 @@ export function responseFor(url, method, headers = {}) {
     { id: "warehouse-qa", code: "WH-000001", nameAr: "المستودع الرئيسي", nameEn: "Main warehouse", address: "الرياض", isActive: true, version: 0 },
     { id: "warehouse-branch", code: "WH-000002", nameAr: "مستودع الفرع", nameEn: "Branch warehouse", address: "جدة", isActive: true, version: 0 },
   ]);
-  if (pathname === "/customers") return list([{ id: "customer-qa", receivableAccountId: "account-ar-qa", code: "CUS-000001", nameAr: "شركة الأفق", nameEn: "Horizon Company", phone: null, email: null, taxNumberMasked: null, isActive: true, addresses: [] }]);
+  if (pathname === "/customers") {
+    const customers = list([{ id: "customer-qa", receivableAccountId: "account-ar-qa", code: "CUS-000001", nameAr: "شركة الأفق", nameEn: "Horizon Company", phone: null, email: null, taxNumberMasked: null, isActive: true, addresses: [] }]);
+    const isPosRequest = headers["x-pos-expected-user-id"] === currentAuthorization.user.id && headers["x-pos-expected-company-id"] === currentAuthorization.selectedCompany.id;
+    return isPosRequest ? { ...customers, posContext: { userId: currentAuthorization.user.id, companyId: currentAuthorization.selectedCompany.id } } : customers;
+  }
   if (pathname === "/inventory-balances") return list([
     { id: "balance-qa", warehouse: { id: "warehouse-qa", code: "WH-000001", nameAr: "المستودع الرئيسي", nameEn: "Main warehouse" }, inventoryItem: { id: "item-qa", code: "ITM-000001", nameAr: "صنف تجريبي", nameEn: "Sample item", unitOfMeasure: { id: "unit-ea", code: "EA", nameAr: "حبة", nameEn: "Each", decimalPlaces: 0 } }, onHand: "125.000000", version: 3, movementCount: 4, updatedAt: "2026-08-24T12:00:00.000Z" },
   ]);

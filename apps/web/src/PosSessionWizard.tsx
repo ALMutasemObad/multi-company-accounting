@@ -1,39 +1,26 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { CashierContextSnapshot } from "./cashier-context-controller";
 import type { PosSaleContext } from "./PosOperatingContext";
+import { useI18n } from "./i18n";
+import { arPos, enPos, hiPos, urPos } from "./i18n/locales/pos";
 import { Button, Modal } from "./ui";
 import "./pos-experience-styles.css";
 
-type WizardCopy = {
-  title: string; description: string; context: string; details: string; review: string;
-  contextHelp: string; detailsHelp: string; reviewHelp: string; previous: string; next: string;
-  finish: string; close: string; ready: string; needsReview: string; customer: string; descriptionLabel: string;
-  exchangeRate: string; paymentReference: string; period: string; warehouse: string; cashAccount: string;
-  paymentMethod: string; currency: string;
-};
+export function isPosSessionDetailsComplete(snapshot: CashierContextSnapshot, value: PosSaleContext) {
+  const rate = Number(value.exchangeRate);
+  return snapshot.canReview && Boolean(value.documentDate && value.customerId && value.customerLabel.trim() && value.description.trim()
+    && Number.isFinite(rate) && rate > 0 && (!snapshot.fields.paymentMethodId.reference?.requiresReference || value.referenceNumber.trim()));
+}
 
-const copy: Record<"ar" | "en", WizardCopy> = {
-  ar: {
-    title: "إعداد جلسة البيع", description: "ثلاث خطوات قصيرة قبل البيع. لا تنشئ هذه الشاشة بيعًا أو قيدًا، ولا تمس السلة.",
-    context: "سياق البيع", details: "تفاصيل البيع والدفع", review: "مراجعة الجاهزية",
-    contextHelp: "اختر التاريخ والفترة والمستودع والصندوق وطريقة الدفع والعملة.",
-    detailsHelp: "أدخل العميل ووصف البيع وما يلزم للتحصيل.", reviewHelp: "راجع الملخص ثم فعّل الجلسة. يمكنك العودة لتعديل أي اختيار.",
-    previous: "السابق", next: "التالي", finish: "تفعيل جلسة البيع", close: "إغلاق والعودة للسلة",
-    ready: "الجلسة جاهزة للبيع", needsReview: "أكمل الاختيارات المطلوبة ثم راجع الجلسة.",
-    customer: "العميل", descriptionLabel: "وصف البيع", exchangeRate: "سعر الصرف", paymentReference: "مرجع التحصيل",
-    period: "الفترة المالية", warehouse: "المستودع", cashAccount: "الصندوق / البنك", paymentMethod: "طريقة التحصيل", currency: "العملة",
-  },
-  en: {
-    title: "Prepare sale session", description: "Three short steps before selling. This screen creates no sale or entry and never changes the basket.",
-    context: "Sale context", details: "Sale & payment details", review: "Readiness review",
-    contextHelp: "Choose the date, period, warehouse, cash account, payment method, and currency.",
-    detailsHelp: "Enter the customer, sale description, and any collection details.", reviewHelp: "Review the summary, then enable the session. You can return to any step to adjust it.",
-    previous: "Back", next: "Next", finish: "Enable selling session", close: "Close and return to basket",
-    ready: "Session is ready to sell", needsReview: "Complete the required selections, then review the session.",
-    customer: "Customer", descriptionLabel: "Sale description", exchangeRate: "Exchange rate", paymentReference: "Payment reference",
-    period: "Fiscal period", warehouse: "Warehouse", cashAccount: "Cash / bank account", paymentMethod: "Payment method", currency: "Currency",
-  },
-};
+const posCopy = { ar: arPos, en: enPos, hi: hiPos, ur: urPos };
+
+/**
+ * Session copy remains in the POS feature dictionary until the generated
+ * aggregate locale modules are refreshed by the integration owner.
+ */
+export function posSessionCopy(locale: "ar" | "en" | "hi" | "ur") {
+  return posCopy[locale];
+}
 
 export function PosSessionWizard({ locale, onClose, sessionContext, saleDetails, snapshot, value, blocked, onReview }: {
   locale: "ar" | "en" | "hi" | "ur";
@@ -43,46 +30,52 @@ export function PosSessionWizard({ locale, onClose, sessionContext, saleDetails,
   snapshot: CashierContextSnapshot;
   value: PosSaleContext;
   blocked: boolean;
-  onReview: () => boolean;
+  onReview: (rememberForNextSale: boolean) => boolean;
 }) {
-  const text = copy[locale === "ar" ? "ar" : "en"];
+  const { t } = useI18n();
+  const copy = posSessionCopy(locale);
   const [step, setStep] = useState(0);
-  const steps = useMemo(() => [text.context, text.details, text.review], [text]);
-  const field = (label: string, value: string | null | undefined) => <div><dt>{label}</dt><dd><bdi>{value?.trim() || "—"}</bdi></dd></div>;
+  const [remember, setRemember] = useState(false);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const complete = isPosSessionDetailsComplete(snapshot, value);
+  useEffect(() => { heading.current?.focus(); }, [step]);
+  const steps = [copy["pos.sessionStepContext"], copy["pos.sessionStepDetails"], copy["pos.sessionStepReview"]];
+  const field = (label: string, fieldValue: string | null | undefined) => <div><dt>{label}</dt><dd><bdi>{fieldValue?.trim() || "—"}</bdi></dd></div>;
   const closeSafely = () => onClose(); // The wizard owns no draft: all edits remain in their existing controllers and the basket is untouched.
-  const review = () => { if (onReview()) closeSafely(); };
+  const review = () => { if (complete && onReview(remember)) closeSafely(); };
 
-  return <Modal wide title={text.title} description={text.description} onClose={closeSafely}>
+  return <Modal size="large" className="pos-session-wizard-modal" title={copy["pos.sessionWizardTitle"]} description={copy["pos.sessionWizardDescription"]} onClose={closeSafely}>
     <div className="pos-session-wizard" dir={locale === "ar" || locale === "ur" ? "rtl" : "ltr"}>
-      <ol className="pos-session-wizard-steps" aria-label={text.title}>
+      <ol className="pos-session-wizard-steps" aria-label={copy["pos.sessionWizardTitle"]}>
         {steps.map((label, index) => <li key={label} className={index === step ? "active" : index < step ? "complete" : ""}>
           <button type="button" aria-current={index === step ? "step" : undefined} onClick={() => setStep(index)}><span>{index + 1}</span>{label}</button>
         </li>)}
       </ol>
-      <section className="pos-session-wizard-body" aria-live="polite">
-        {step === 0 && <><h3>{text.context}</h3><p>{text.contextHelp}</p>{sessionContext}</>}
-        {step === 1 && <><h3>{text.details}</h3><p>{text.detailsHelp}</p>{saleDetails}</>}
-        {step === 2 && <><h3>{text.review}</h3><p>{text.reviewHelp}</p>
-          <div className={`pos-session-wizard-status ${snapshot.reviewed ? "ready" : ""}`} role="status">{snapshot.reviewed ? text.ready : text.needsReview}</div>
+      <section className="pos-session-wizard-body">
+        {step === 0 && <><h3 ref={heading} tabIndex={-1}>{copy["pos.sessionStepContext"]}</h3><p>{copy["pos.sessionContextHelp"]}</p>{sessionContext}</>}
+        {step === 1 && <><h3 ref={heading} tabIndex={-1}>{copy["pos.sessionStepDetails"]}</h3><p>{copy["pos.sessionDetailsHelp"]}</p>{saleDetails}</>}
+        {step === 2 && <><h3 ref={heading} tabIndex={-1}>{copy["pos.sessionStepReview"]}</h3><p>{copy["pos.sessionReviewHelp"]}</p>
+          <div className={`pos-session-wizard-status ${complete && snapshot.reviewed ? "ready" : ""}`} role="status">{complete && snapshot.reviewed ? copy["pos.sessionReady"] : complete ? copy["pos.sessionReadyToActivate"] : copy["pos.sessionIncomplete"]}</div>
           <dl className="pos-session-wizard-summary">
-            {field(text.period, snapshot.period.status === "RESOLVED" ? snapshot.period.period.name : null)}
-            {field(text.warehouse, snapshot.fields.warehouseId.reference?.label)}
-            {field(text.cashAccount, snapshot.fields.cashBankAccountId.reference?.label)}
-            {field(text.paymentMethod, snapshot.fields.paymentMethodId.reference?.label)}
-            {field(text.currency, snapshot.fields.currencyId.reference?.label)}
-            {field(text.customer, value.customerLabel)}
-            {field(text.descriptionLabel, value.description)}
-            {field(text.exchangeRate, value.exchangeRate)}
-            {field(text.paymentReference, value.referenceNumber)}
+            {field(t("pos.period"), snapshot.period.status === "RESOLVED" ? snapshot.period.period.name : null)}
+            {field(t("pos.warehouse"), snapshot.fields.warehouseId.reference?.label)}
+            {field(t("pos.cashAccount"), snapshot.fields.cashBankAccountId.reference?.label)}
+            {field(t("pos.paymentMethod"), snapshot.fields.paymentMethodId.reference?.label)}
+            {field(t("pos.currency"), snapshot.fields.currencyId.reference?.label)}
+            {field(t("pos.customer"), value.customerLabel)}
+            {field(t("pos.descriptionLabel"), value.description)}
+            {field(t("pos.exchangeRate"), value.exchangeRate)}
+            {field(t("pos.reference"), value.referenceNumber)}
           </dl>
+          <label className="pos-session-wizard-remember"><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} disabled={blocked || !complete} /><span>{copy["pos.sessionRemember"]}</span></label>
         </>}
       </section>
       <footer className="pos-session-wizard-actions">
-        <Button variant="ghost" onClick={closeSafely}>{text.close}</Button>
+        <Button variant="ghost" onClick={closeSafely}>{copy["pos.sessionClose"]}</Button>
         <span />
-        {step > 0 && <Button variant="secondary" onClick={() => setStep(step - 1)}>{text.previous}</Button>}
-        {step < 2 ? <Button onClick={() => setStep(step + 1)}>{text.next}</Button>
-          : <Button icon="check" disabled={blocked || !snapshot.canReview} onClick={review}>{text.finish}</Button>}
+        {step > 0 && <Button variant="secondary" onClick={() => setStep(step - 1)}>{t("common.previous")}</Button>}
+        {step < 2 ? <Button onClick={() => setStep(step + 1)}>{t("common.next")}</Button>
+          : <Button icon="check" disabled={blocked || !complete} onClick={review}>{copy["pos.sessionActivate"]}</Button>}
       </footer>
     </div>
   </Modal>;

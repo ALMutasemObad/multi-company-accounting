@@ -31,7 +31,7 @@ import { RetailReceiptOutput } from "./RetailReceiptOutput";
 import { createRetailReceiptTransport } from "./retail-receipt-transport";
 import { initialPosReadinessFacts, readPosReadinessFacts } from "./retail-onboarding-read";
 import type { RetailSetupTarget } from "./retail-onboarding-model";
-import { PosSessionWizard } from "./PosSessionWizard";
+import { isPosSessionDetailsComplete, posSessionCopy, PosSessionWizard } from "./PosSessionWizard";
 import "./pos-experience-styles.css";
 
 type Notice = (message: string, tone?: "success" | "error") => void;
@@ -338,6 +338,13 @@ function PosExperience({ notify, onOpenSetupTarget }: { notify: Notice; onOpenSe
   }
 
   const contextComplete = hasPosContext(context);
+  const sessionComplete = isPosSessionDetailsComplete(cashierState, context);
+  const sessionCopy = posSessionCopy(copyLocale);
+  const sessionSummary = !result ? <section className={`pos-session-summary ${cashierState.reviewed && sessionComplete ? "ready" : ""}`} aria-label={sessionCopy["pos.sessionSummary"]}>
+    <div><strong>{sessionCopy["pos.sessionSummary"]}</strong><span>{cashierState.reviewed && sessionComplete ? sessionCopy["pos.sessionReady"] : sessionCopy["pos.sessionIncomplete"]}</span>
+      <p><bdi>{cashierState.fields.warehouseId.reference?.label ?? "—"}</bdi> · <bdi>{cashierState.fields.cashBankAccountId.reference?.label ?? "—"}</bdi> · <bdi>{context.customerLabel || "—"}</bdi></p></div>
+    <Button variant="secondary" icon="settings" aria-haspopup="dialog" onClick={() => setSessionWizardOpen(true)}>{sessionCopy["pos.sessionEdit"]}</Button>
+  </section> : null;
   const historyPanel = canHistory ? <details className="panel pos-experience-history"><summary>{t("pos.recentSales")}</summary><p>{t("pos.recentDescription")}</p>
     {historyError ? <div role="alert"><p>{t("pos.loadError")}</p><Button variant="secondary" onClick={() => setHistoryRevision((value) => value + 1)}>{t("common.retry")}</Button></div> : historyLoading ? <Spinner label={t("common.loading")} /> : sales.length === 0 ? <p>{t("pos.emptyDescription")}</p> : <><div className="data-table-wrap flat" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("pos.invoice")}</th><th>{t("pos.receipt")}</th><th>{t("pos.customer")}</th><th>{t("pos.total")}</th><th>{t("pos.completedAt")}</th><th>{t("pos.status")}</th></tr></thead><tbody>{sales.map((sale) => <tr key={sale.id}><td><bdi>{sale.invoice.documentNumber}</bdi></td><td><bdi>{sale.receipt.documentNumber}</bdi></td><td>{sale.invoice.customerName}</td><td><bdi>{posMoneyText(sale.invoice.total)}</bdi></td><td>{new Date(sale.completedAt).toLocaleString(activeIntlLocale())}</td><td>{t("pos.invoice")}: {statusLabel(sale.invoice.status)} · {t("pos.receipt")}: {statusLabel(sale.receipt.status)}</td></tr>)}</tbody></table></div><Pagination {...meta} page={page} onChange={setPage} /></>}
   </details> : null;
@@ -361,7 +368,8 @@ function PosExperience({ notify, onOpenSetupTarget }: { notify: Notice; onOpenSe
       {result && canHistory && <RetailReceiptOutput access={{ userId: user.id, companyId: selectedCompany?.id ?? null, permissionSet, moduleSet: new Set(modules) }}
         confirmedSalesInvoiceId={result.invoice.id} locale={copyLocale} readPreview={receiptOutput.readPreview} downloadA4={receiptOutput.downloadA4} />}
       {sessionWizardOpen && !result && <PosSessionWizard locale={copyLocale} snapshot={cashierState} value={context} blocked={blocked} onClose={() => setSessionWizardOpen(false)}
-        onReview={() => { if (!canEdit()) return false; const reviewed = cashier.review(true); if (!reviewed) return false; applyReviewed(reviewed); return true; }}
+        onReview={(rememberForNextSale) => { if (!canEdit() || !isPosSessionDetailsComplete(cashierState, context)) return false;
+          const reviewed = cashier.review(rememberForNextSale); if (!reviewed) return false; applyReviewed(reviewed); return true; }}
         sessionContext={<CashierContextPanel compact controller={cashier} currentScopeKey={currentCashierKey} locale={copyLocale} onReviewed={applyReviewed} blocked={blocked} canInteract={canEdit}
             readiness={readiness} setupAccess={navigationAccess} onOpenSetupTarget={onOpenSetupTarget}
             onRetryReadiness={() => { setReadinessRevision((value) => value + 1); void cashier.refresh(); }}
@@ -372,6 +380,7 @@ function PosExperience({ notify, onOpenSetupTarget }: { notify: Notice; onOpenSe
               onChange={(row) => { if (canEdit() && (!row || row.isAvailable === true)) picker.onSelect(row?.id ?? null); }}
               placeholder={cashierContextDictionaries[copyLocale][picker.field]} searchLabel={cashierContextDictionaries[copyLocale][picker.field]} />} />}
         saleDetails={<PosOperatingContext value={context} blocked={blocked} onChange={patchContext} reader={scopeGate.request} />} />}
+      {sessionSummary}
       <div className="pos-experience-workspace">
         <div className="panel pos-experience-selection">
         <fieldset disabled={blocked} className="pos-experience-scanner-guard">
