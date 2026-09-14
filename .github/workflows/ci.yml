@@ -600,6 +600,21 @@ jobs:
           const retiredDatabaseBrand = new RegExp(["j", "[aeiou]", "wa{1,2}r"].join(""), "iu");
           const sources = [];
 
+          const validateStagingEmailSource = (environment) => {
+            const from = environment.REGISTRATION_EMAIL_FROM;
+            const apiKey = environment.RESEND_API_KEY;
+            const tokenSecret = environment.REGISTRATION_TOKEN_SECRET;
+            const auditPepper = environment.REGISTRATION_AUDIT_PEPPER;
+            if (environment.SELF_REGISTRATION_ENABLED !== "true" ||
+                environment.REGISTRATION_EMAIL_MODE !== "resend" ||
+                typeof from !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(from) ||
+                typeof apiKey !== "string" || !apiKey.startsWith("re_") || apiKey.length < 20 || apiKey.length > 500 ||
+                typeof tokenSecret !== "string" || tokenSecret.length < 32 || tokenSecret.length > 500 ||
+                typeof auditPepper !== "string" || auditPepper.length < 32 || auditPepper.length > 500) {
+              throw new Error("The active Staging registration cannot safely enable public email delivery.");
+            }
+          };
+
           const unquote = (value) => {
             const trimmed = value.trim();
             if (trimmed.length >= 2 && ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
@@ -657,7 +672,9 @@ jobs:
             if (payload.result !== "success" || matches.length !== 1) {
               throw new Error("The active Staging CloudLinux registration is ambiguous or unavailable.");
             }
-            sources.push({ label: "CloudLinux registration", environment: matches[0].env_vars || {} });
+            const activeEnvironment = matches[0].env_vars || {};
+            validateStagingEmailSource(activeEnvironment);
+            sources.push({ label: "CloudLinux registration", environment: activeEnvironment });
           }
 
           const databaseSources = sources.filter(({ environment }) =>
@@ -690,7 +707,7 @@ jobs:
             }
           }
 
-          console.log(`Validated ${sources.length} Staging runtime configuration source(s) without revealing values.`);
+          console.log(`Validated ${sources.length} Staging runtime configuration source(s) and the public email activation prerequisites without revealing values.`);
           NODE
           REMOTE
       - name: Upload the immutable staging artifact
@@ -771,11 +788,47 @@ jobs:
           test "$redirect_location" = "$CPANEL_APP_URL$redirect_probe_path"
           curl --fail --silent --show-error --max-time 10 "$CPANEL_APP_URL/live"
           curl --fail --silent --show-error --max-time 10 "$CPANEL_APP_URL/ready"
+          registration_options=$(mktemp)
+          csrf_response=$(mktemp)
+          auth_cookies=$(mktemp)
+          forgot_response=$(mktemp)
+          trap 'rm -f -- "$redirect_headers" "$registration_options" "$csrf_response" "$auth_cookies" "$forgot_response"' EXIT
+          curl --fail --silent --show-error --max-time 15 --proto '=https' \
+            --output "$registration_options" "$CPANEL_APP_URL/api/v1/auth/register/options"
+          node - "$registration_options" <<'NODE'
+          const fs = require("node:fs");
+          const options = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+          if (!Array.isArray(options.currencies) || !Array.isArray(options.countries) ||
+              !Array.isArray(options.businessActivities) || !options.passwordPolicy) process.exit(1);
+          NODE
+          curl --fail --silent --show-error --max-time 15 --proto '=https' \
+            --cookie-jar "$auth_cookies" --output "$csrf_response" "$CPANEL_APP_URL/api/v1/auth/csrf"
+          csrf_token=$(node - "$csrf_response" <<'NODE'
+          const fs = require("node:fs");
+          const response = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+          if (typeof response.csrfToken !== "string" || !/^[A-Za-z0-9_-]{32,256}$/u.test(response.csrfToken)) process.exit(1);
+          process.stdout.write(response.csrfToken);
+          NODE
+          )
+          forgot_email="mcap-ci-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT@example.test"
+          forgot_body=$(node -e 'process.stdout.write(JSON.stringify({ email: process.argv[1], locale: "ar" }))' "$forgot_email")
+          forgot_status=$(curl --silent --show-error --max-time 15 --proto '=https' \
+            --cookie "$auth_cookies" --header "X-CSRF-Token: $csrf_token" \
+            --header 'Content-Type: application/json' --data "$forgot_body" \
+            --output "$forgot_response" --write-out '%{http_code}' \
+            "$CPANEL_APP_URL/api/v1/auth/password/forgot")
+          test "$forgot_status" = 202
+          node - "$forgot_response" <<'NODE'
+          const fs = require("node:fs");
+          const response = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+          if (response.status !== "ACCEPTED") process.exit(1);
+          NODE
+          unset csrf_token forgot_email forgot_body
           metrics_status=$(curl --silent --show-error --max-time 10 --output /dev/null \
             --write-out '%{http_code}' "$CPANEL_APP_URL/metrics")
           test "$metrics_status" = 401
           metrics_output=$(mktemp)
-          trap 'rm -f -- "$redirect_headers" "$metrics_output"' EXIT
+          trap 'rm -f -- "$redirect_headers" "$registration_options" "$csrf_response" "$auth_cookies" "$forgot_response" "$metrics_output"' EXIT
           curl --fail --silent --show-error --max-time 10 \
             --header "Authorization: Bearer $METRICS_BEARER_TOKEN" \
             --output "$metrics_output" "$CPANEL_APP_URL/metrics"
@@ -792,6 +845,7 @@ jobs:
             exit 1
           fi
           rm -f -- "$redirect_headers"
+          rm -f -- "$registration_options" "$csrf_response" "$auth_cookies" "$forgot_response"
           rm -f -- "$metrics_output"
           trap - EXIT
 
