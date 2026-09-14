@@ -17,7 +17,7 @@ test('release UI gate includes real application journeys and the independent bil
   assert.ok(steps.some((step) => step.run?.includes('npm run subscription-qa:typecheck')));
   for (const include of ['visual/**/*.spec.ts', 'track-b/**/*.spec.ts', 'track-d/**/*.spec.ts']) assert.ok(configuration.includes(include));
   assert.match(configuration, /retries: 0/u);
-  assert.match(configuration, /workers: 1/u);
+  assert.match(configuration, /workers: process\.env\.CI \? 2 : 1/u);
   assert.match(configuration, /reuseExistingServer: false/u);
   const artifacts = steps.filter((step) => step.uses?.startsWith('actions/upload-artifact@')).map((step) => step.with.path).join('\n');
   assert.ok(artifacts.includes('test-results/subscription-readiness-integration/'));
