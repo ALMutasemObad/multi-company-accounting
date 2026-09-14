@@ -211,5 +211,16 @@ export function journalReportToCsv(rows: Array<{ documentNumber: string; documen
 }
 
 export function tableToPdf(rows: Cell[][], title: string, companyName: string): Promise<Buffer> {
-  return renderTabularReportPdf({ rows, title, companyName, direction: "RTL" });
+  // Legacy report tables reserve their first three rows for the PDF banner.
+  // The neutral kernel receives only explicitly partitioned table content.
+  const reportRows = rows.slice(3);
+  const headerIndex = reportRows.findIndex((row) => row.length > 0 && row.every((cell) => cell.style === 2));
+  return renderTabularReportPdf({
+    title,
+    companyName,
+    direction: "RTL",
+    metadataRows: headerIndex > 0 ? reportRows.slice(0, headerIndex) : [],
+    headerRows: headerIndex >= 0 ? [reportRows[headerIndex]!] : [],
+    bodyRows: headerIndex >= 0 ? reportRows.slice(headerIndex + 1) : reportRows,
+  });
 }

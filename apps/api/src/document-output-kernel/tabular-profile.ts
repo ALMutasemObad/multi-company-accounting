@@ -1,5 +1,5 @@
 import { isCanonicalDecimal } from "./decimal.js";
-import type { TabularCell, TabularRows } from "./model.js";
+import type { OutputDirection, TabularCell, TabularRows } from "./model.js";
 
 const formulaPrefix = /^[\t\r ]*[=+\-@]/u;
 
@@ -15,7 +15,7 @@ export function tableToCsv(rows: TabularRows) {
   return Buffer.from(`\uFEFF${rows.map((row) => row.map((cell) => csvEscape(cell.value)).join(",")).join("\r\n")}`, "utf8");
 }
 
-export function tableToXlsx(rows: TabularRows, sheetName: string) {
+export function tableToXlsx(rows: TabularRows, sheetName: string, options: { direction?: OutputDirection } = {}) {
   const sheetRows = rows.map((row, rowIndex) => `<row r="${rowIndex + 1}">${row.map((cell, cellIndex) => xlsxCell(cell, `${excelColumn(cellIndex)}${rowIndex + 1}`)).join("")}</row>`).join("");
   const columnCount = Math.max(1, ...rows.map((row) => row.length));
   const columns = tabularColumnWidths(columnCount).map((width, index) => `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`).join("");
@@ -25,7 +25,7 @@ export function tableToXlsx(rows: TabularRows, sheetName: string) {
     "xl/workbook.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${xml(sheetName)}" sheetId="1" r:id="rId1"/></sheets></workbook>`,
     "xl/_rels/workbook.xml.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
     "xl/styles.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="11"/><name val="Arial"/></font><font><b/><sz val="15"/><color rgb="FF173F34"/><name val="Arial"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Arial"/></font></fonts><fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF173F34"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE8F1ED"/></patternFill></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="2" fillId="2" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="center"/></xf><xf numFmtId="0" fontId="1" fillId="3" borderId="0" xfId="0"/><xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="4" fontId="1" fillId="3" borderId="0" xfId="0"/></cellXfs></styleSheet>`,
-    "xl/worksheets/sheet1.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0" rightToLeft="1"/></sheetViews><cols>${columns}</cols><sheetData>${sheetRows}</sheetData></worksheet>`,
+    "xl/worksheets/sheet1.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0" rightToLeft="${options.direction === "LTR" ? "0" : "1"}"/></sheetViews><cols>${columns}</cols><sheetData>${sheetRows}</sheetData></worksheet>`,
   };
   return zipStore(Object.entries(files).map(([name, content]) => ({ name, data: Buffer.from(content, "utf8") })));
 }

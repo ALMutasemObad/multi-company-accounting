@@ -5,8 +5,8 @@ import type { PdfTableProfile, TabularCell } from "../src/document-output-kernel
 describe("document output kernel model", () => {
   it("stays neutral to domain and persistence models", () => {
     const cells: TabularCell[] = [{ value: "قيمة", style: 2 }, { value: "1200.5000", numeric: true }];
-    const profile: PdfTableProfile = { companyName: "شركة", title: "تقرير", rows: [cells], direction: "RTL" };
-    expect(profile.rows[0]?.[1]?.numeric).toBe(true);
+    const profile: PdfTableProfile = { companyName: "شركة", title: "تقرير", headerRows: [cells], bodyRows: [], direction: "RTL" };
+    expect(profile.headerRows?.[0]?.[1]?.numeric).toBe(true);
     expect(profile.direction).toBe("RTL");
   });
 

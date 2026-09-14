@@ -13,4 +13,9 @@ describe("document output tabular profile", () => {
     expect(xlsx).toContain('<v>9007199254740993.1234</v>');
     expect(xlsx).toContain('t="inlineStr"');
   });
+
+  it("uses an explicit LTR sheet view when requested", () => {
+    const xlsx = tableToXlsx([[{ value: "Account" }]], "Export", { direction: "LTR" }).toString("utf8");
+    expect(xlsx).toContain('rightToLeft="0"');
+  });
 });

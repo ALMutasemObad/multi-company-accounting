@@ -15,6 +15,10 @@ export type TabularRows = TabularCell[][];
 export type PdfTableProfile = {
   companyName: string;
   title: string;
-  rows: TabularRows;
+  /** Rendered on the first page only, before the repeated table header. */
+  metadataRows?: TabularRows;
+  /** Rendered before body rows on every page without consuming body capacity. */
+  headerRows?: TabularRows;
+  bodyRows: TabularRows;
   direction?: OutputDirection;
 };
