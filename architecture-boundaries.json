@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 1,
+  "description": "API import boundaries. Reserved paths are policy, not evidence that a module exists. Paths are repository-relative; /** means a directory subtree; other paths name an exact module.",
+  "scanRoots": ["apps/api/src"],
+  "extensions": [".ts", ".mts", ".cts", ".js", ".mjs", ".cjs"],
+  "ignoreDirectories": ["node_modules", ".git", "dist", "coverage"],
+  "aliases": {},
+  "contexts": [
+    {
+      "id": "general-projects",
+      "name": "General Project Delivery",
+      "status": "reserved",
+      "paths": ["apps/api/src/general-projects/**"],
+      "reference": "docs/architecture/ADR-021-general-project-delivery-context.md"
+    },
+    {
+      "id": "professional-projects",
+      "name": "Professional Project Delivery",
+      "status": "implemented",
+      "paths": ["apps/api/src/projects/**", "apps/api/src/professional-projects/**"],
+      "reference": "docs/architecture/BOUNDED_CONTEXT_MAP_AR.md"
+    },
+    {
+      "id": "service-catalog",
+      "name": "Service Catalog & Pricing",
+      "status": "reserved",
+      "paths": ["apps/api/src/service-catalog/**"],
+      "reference": "docs/architecture/ADR-022-service-catalog-context.md"
+    },
+    {
+      "id": "hr",
+      "name": "Human Resources",
+      "status": "implemented",
+      "paths": ["apps/api/src/hr/**"],
+      "reference": "docs/architecture/HR_FOUNDATION_SLICE_AR.md"
+    },
+    {
+      "id": "attendance",
+      "name": "Attendance",
+      "status": "reserved",
+      "paths": ["apps/api/src/attendance/**"],
+      "reference": "docs/architecture/PROFESSIONAL_SERVICES_HR_PROJECTS_ROADMAP_AR.md"
+    },
+    {
+      "id": "payroll",
+      "name": "Payroll",
+      "status": "reserved",
+      "paths": ["apps/api/src/payroll/**"],
+      "reference": "docs/architecture/PROFESSIONAL_SERVICES_HR_PROJECTS_ROADMAP_AR.md"
+    },
+    {
+      "id": "branch-pos",
+      "name": "Branch / Point of Sale",
+      "status": "pos-implemented-branch-reserved",
+      "paths": ["apps/api/src/pos/**", "apps/api/src/branches/**", "apps/api/src/branch/**"],
+      "reference": "docs/architecture/MULTI_BRANCH_POS_OPERATIONS_GOAL_AR.md"
+    }
+  ],
+  "compositionRoots": [
+    "apps/api/src/app.ts",
+    "apps/api/src/server.ts",
+    "apps/api/src/composition/**"
+  ],
+  "integrations": [
+    {
+      "id": "professional-reference-adapters",
+      "kind": "adapter-to-port",
+      "fromPaths": [
+        "apps/api/src/hr/professional-employee-adapter.ts",
+        "apps/api/src/sales/professional-customer-adapter.ts",
+        "apps/api/src/users/professional-people-adapter.ts",
+        "apps/api/src/companies/professional-billing-currency-adapter.ts"
+      ],
+      "toPaths": ["apps/api/src/projects/project-reference-ports.ts"],
+      "typeOnly": true,
+      "status": "implemented",
+      "reason": "Provider adapters implement the consumer-owned Professional Projects contracts."
+    },
+    {
+      "id": "hr-identity-adapter",
+      "kind": "adapter-to-port",
+      "fromPaths": ["apps/api/src/users/hr-identity-adapter.ts"],
+      "toPaths": ["apps/api/src/hr/hr-identity-port.ts"],
+      "typeOnly": true,
+      "status": "implemented",
+      "reason": "Identity implements the HR membership query contract."
+    },
+    {
+      "id": "pos-recovery-adapter",
+      "kind": "adapter-to-port",
+      "fromPaths": ["apps/api/src/platform/prisma-pos-recovery-query-adapter.ts"],
+      "toPaths": ["apps/api/src/pos/recovery-types.ts"],
+      "typeOnly": true,
+      "status": "implemented",
+      "reason": "Infrastructure implements the POS recovery query contract."
+    },
+    {
+      "id": "service-catalog-query-consumers",
+      "kind": "query-port",
+      "fromPaths": ["apps/api/src/sales/**", "apps/api/src/crm/**", "apps/api/src/general-projects/**", "apps/api/src/projects/**", "apps/api/src/professional-projects/**"],
+      "toPaths": ["apps/api/src/service-catalog/service-catalog-query-port.ts"],
+      "typeOnly": true,
+      "status": "reserved",
+      "reason": "Reserved contract entry point for ADR-022; implementation must review the actual contract."
+    },
+    {
+      "id": "general-project-employee-adapter",
+      "kind": "adapter-to-port",
+      "fromPaths": ["apps/api/src/hr/general-project-employee-adapter.ts"],
+      "toPaths": ["apps/api/src/general-projects/general-project-reference-ports.ts"],
+      "typeOnly": true,
+      "status": "reserved",
+      "reason": "Reserve a narrow HR adapter for the consumer-owned employee query port."
+    },
+    {
+      "id": "hr-workforce-query-consumers",
+      "kind": "query-port",
+      "fromPaths": ["apps/api/src/attendance/**", "apps/api/src/payroll/**"],
+      "toPaths": ["apps/api/src/hr/hr-workforce-query-port.ts"],
+      "typeOnly": true,
+      "status": "reserved",
+      "reason": "Attendance and Payroll query workforce facts through an explicit HR contract."
+    },
+    {
+      "id": "payroll-attendance-query",
+      "kind": "query-port",
+      "fromPaths": ["apps/api/src/payroll/**"],
+      "toPaths": ["apps/api/src/attendance/attendance-query-port.ts"],
+      "typeOnly": true,
+      "status": "reserved",
+      "reason": "Reserve attendance input to Payroll without importing attendance services."
+    }
+  ],
+  "forbiddenImports": [
+    {
+      "id": "domain-must-not-import-composition",
+      "fromContexts": ["general-projects", "professional-projects", "service-catalog", "hr", "attendance", "payroll", "branch-pos"],
+      "toPaths": ["apps/api/src/app.ts", "apps/api/src/server.ts", "apps/api/src/composition/**"],
+      "reason": "Composition wires adapters; domain modules must not import the composition root."
+    },
+    {
+      "id": "no-direct-ledger-posting",
+      "fromContexts": ["general-projects", "professional-projects", "service-catalog", "hr", "attendance", "payroll", "branch-pos"],
+      "toPaths": ["apps/api/src/core-accounting/posting-engine.ts", "apps/api/src/journals/journal-service.ts"],
+      "reason": "These contexts do not own financial posting. Payroll posting requires a separately reviewed contract."
+    }
+  ],
+  "forbiddenSpecifiers": []
+}
