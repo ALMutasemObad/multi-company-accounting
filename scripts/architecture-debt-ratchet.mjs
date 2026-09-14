@@ -31,14 +31,17 @@ function assertLiteralMatcher(entry, matcher, label = 'matcher') {
 }
 
 function validateExpiry(entry) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(entry.expiry) || Number.isNaN(Date.parse(`${entry.expiry}T00:00:00Z`))) {
+  const parsed = /^\d{4}-\d{2}-\d{2}$/.test(entry.expiry)
+    ? new Date(`${entry.expiry}T00:00:00Z`)
+    : null;
+  if (!parsed || Number.isNaN(parsed.valueOf()) || parsed.toISOString().slice(0, 10) !== entry.expiry) {
     fail(`${entry.id}: expiry must be an ISO date`);
   }
 }
 
 export function validateRegister(register) {
-  if (!register || register.schemaVersion !== 1 || !Array.isArray(register.entries) || register.entries.length === 0) {
-    fail('register must have schemaVersion 1 and at least one entry');
+  if (!register || register.schemaVersion !== 1 || !Array.isArray(register.entries)) {
+    fail('register must have schemaVersion 1 and an entries array');
   }
   const ids = new Set();
   for (const entry of register.entries) {

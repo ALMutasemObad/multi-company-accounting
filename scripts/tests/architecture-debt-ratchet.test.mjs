@@ -64,3 +64,9 @@ test('validates paths, ownership and Windows path normalization', async () => {
   await assert.rejects(() => evaluateRegister({ root, register: register({ owner: '', paths: ['apps\\api\\src\\fiscal\\financial-close-service.ts'] }), now: new Date('2026-09-15T00:00:00Z') }), /missing owner/);
   await assert.rejects(() => evaluateRegister({ root, register: register({ paths: ['apps/**/financial-close-service.ts'] }), now: new Date('2026-09-15T00:00:00Z') }), /non-glob/);
 });
+
+test('accepts an empty debt register after every debt is removed and rejects impossible calendar dates', async () => {
+  const root = await fixture();
+  await assert.doesNotReject(() => evaluateRegister({ root, register: { schemaVersion: 1, entries: [] }, now: new Date('2026-09-15T00:00:00Z') }));
+  await assert.rejects(() => evaluateRegister({ root, register: register({ expiry: '2026-02-31' }), now: new Date('2026-01-01T00:00:00Z') }), /expiry must be an ISO date/);
+});
