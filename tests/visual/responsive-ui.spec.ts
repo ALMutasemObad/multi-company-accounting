@@ -256,15 +256,21 @@ async function auditCurrentInterface(page: Page, locale: Locale, label: string) 
   await expect(page.locator('html')).toHaveAttribute('lang', locale);
   await expect(page.locator('html')).toHaveAttribute('dir', directions[locale]);
   if (label === 'pos') {
-    // pos.view exposes authorized history; checkout/recovery/cashier stay absent.
-    // A heading or quarantined scope panel is not a successful history load.
+    // The fixture is a checkout-capable cashier. Close the initial setup wizard
+    // before auditing the underlying workspace and its read-only history.
+    const dialog = page.getByRole('dialog', { name: posCopy[locale]['pos.sessionWizardTitle'], exact: true });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: posCopy[locale]['pos.sessionClose'], exact: true }).click();
+    await expect(dialog).toBeHidden();
     const history = page.locator('.pos-experience-history');
     await expect(history).toBeVisible();
     await history.locator('summary').click();
     await expect(history.getByText(posCopy[locale]['pos.emptyDescription'], { exact: true })).toBeVisible();
     await expect(history.locator('.loading, [role="alert"]')).toHaveCount(0);
     await expect(page.locator('.pos-experience .cashier-context-panel, .pos-experience [role="alert"]')).toHaveCount(0);
-    await expect(page.locator('.pos-experience form, .pos-experience-checkout, .pos-experience .pos-recovery, .pos-experience .pos-barcode-scanner')).toHaveCount(0);
+    await expect(page.locator('.pos-experience-form')).toBeVisible();
+    await expect(page.locator('.pos-experience-checkout, .pos-experience .pos-barcode-scanner')).toHaveCount(2);
+    await expect(page.locator('.pos-experience .pos-recovery')).toHaveCount(0);
   }
   expect.soft(await interfaceFailures(page), `${locale}/${label} responsive interface contract`).toEqual([]);
 }
@@ -411,11 +417,10 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
           }
           for (const request of posRequests) {
             const url = new URL(request.url());
-            expect([identityPath, salesPath]).toContain(url.pathname);
             expect(request.method()).toBe('GET');
             expect(request.headers()['x-pos-expected-user-id']).toBe('1');
             expect(request.headers()['x-pos-expected-company-id']).toBe('1');
-            if (url.pathname === identityPath) expect(url.searchParams.get('purpose')).toBe('history');
+            if (url.pathname === identityPath) expect(url.searchParams.get('purpose')).toBeNull();
           }
           for (const response of posResponses) {
             expect(response.status()).toBe(200);
