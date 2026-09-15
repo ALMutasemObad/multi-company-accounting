@@ -73,7 +73,11 @@ describe('N3 PosPage confirmed-result boundary', () => {
     'does not mount receipt actions for recovery state %s even if a stale result remains', state => {
       ports.recovery.status = state; render(); expect(ports.output).not.toHaveBeenCalled();
       expect(ports.readPreview).not.toHaveBeenCalled(); expect(ports.downloadA4).not.toHaveBeenCalled();
-      expect(ports.wizard).toHaveBeenCalledOnce(); expect(ports.cashierPanel).toHaveBeenCalledOnce(); expect(ports.operatingContext).toHaveBeenCalledOnce();
+      if (state === 'ready') {
+        expect(ports.wizard).toHaveBeenCalledOnce(); expect(ports.cashierPanel).toHaveBeenCalledOnce(); expect(ports.operatingContext).toHaveBeenCalledOnce();
+      } else {
+        expect(ports.wizard).not.toHaveBeenCalled(); expect(ports.cashierPanel).not.toHaveBeenCalled(); expect(ports.operatingContext).not.toHaveBeenCalled();
+      }
     });
   it.each(['initializing', 'checking', 'quarantined', 'closed'])(
     'does not mount confirmed receipt actions while scope is %s', state => {

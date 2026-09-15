@@ -193,7 +193,7 @@ describe("PosPage recovery wiring via hook and child-port harness", () => {
     expect(commands()).toHaveLength(0); expect(recoveryReads()).toHaveLength(1); expect(crypto.randomUUID).not.toHaveBeenCalled();
   });
 
-  it.each(["UNKNOWN", "REJECTED"] as const)("keeps context inputs protected for a recovered %s marker", async outcome => {
+  it.each(["UNKNOWN", "REJECTED"] as const)("keeps session setup hidden for a recovered %s marker", async outcome => {
     unmount(); transport.mockClear();
     const markerKey = posRecoveryKey(recoveryScope);
     const marker = JSON.stringify({ version: 1, attemptKey: key1, startedAt: Date.now() });
@@ -203,10 +203,10 @@ describe("PosPage recovery wiring via hook and child-port harness", () => {
     });
     render(); await settle();
     expect(recovery().state.status).toBe(outcome.toLowerCase());
-    expect(cashier().blocked).toBe(true); expect(context().blocked).toBe(true);
-    expect(cashier().controller.getSnapshot().lock).toBe(outcome === "UNKNOWN" ? "checkout-unknown" : "checkout-completed");
-    context().onChange({ notes: "must stay blocked" }); catalog().onAdd(item); submit(); recovery().onNewSale(); await settle();
-    expect(recovery().state.status).toBe(outcome.toLowerCase()); expect(context().value.notes).toBe("");
+    expect(() => cashier()).toThrow("Missing child port"); expect(() => context()).toThrow("Missing child port");
+    catalog().onAdd(item); submit(); recovery().onNewSale(); await settle();
+    expect(recovery().state.status).toBe(outcome.toLowerCase());
+    expect(() => cashier()).toThrow("Missing child port"); expect(() => context()).toThrow("Missing child port");
     expect(cart().lines).toEqual([]); expect(window.localStorage.getItem(markerKey)).toBe(marker);
     expect(commands()).toHaveLength(0); expect(recoveryReads()).toHaveLength(1);
   });
@@ -217,7 +217,7 @@ describe("PosPage recovery wiring via hook and child-port harness", () => {
     submit(); submit(); editContext({ notes: "late" }); editCart(originalKey, { quantity: "9" }); add(item); await settle();
     expect(commands()).toHaveLength(1);
     expect(transport).toHaveBeenCalledWith("/pos/checkouts", expect.objectContaining({ method: "POST", idempotencyKey: key1, signal: expect.any(AbortSignal), timeoutMs: 20_000 }));
-    expect(cart().lines[0]!.quantity).toBe("1.000000"); expect(context().value.notes).toBe("");
+    expect(cart().lines[0]!.quantity).toBe("1.000000"); expect(() => context()).toThrow("Missing child port");
     expect(cart().blocked).toBe(true); expect(catalog().blocked).toBe(true); expect(scanner().blocked).toBe(true); expect(recovery().state.status).toBe("unknown");
     const marker = window.localStorage.getItem(posRecoveryKey(recoveryScope))!;
     expect(Object.keys(JSON.parse(marker)).sort()).toEqual(["attemptKey", "startedAt", "version"]);
@@ -341,8 +341,8 @@ describe("PosPage recovery wiring via hook and child-port harness", () => {
   });
 
   it("does not apply an old callback or recovery result after the keyed user experience changes", async () => {
-    await prepareCart(); submit(); await settle(); const response = deferred<object>(); recoveryReply = () => response.promise;
-    const previousKey = PosPage({ notify }).key; const oldContext = context().onChange; recovery().onCheck();
+    await prepareCart(); const oldContext = context().onChange; submit(); await settle(); const response = deferred<object>(); recoveryReply = () => response.promise;
+    const previousKey = PosPage({ notify }).key; recovery().onCheck();
     unmount(); auth.user.id = "3"; render(); await settle(); expect(PosPage({ notify }).key).not.toBe(previousKey);
     oldContext({ notes: "old user" }); response.resolve({ outcome: "CONFIRMED", result: recoveryResult, posContext: { userId: "1", companyId: "2" } }); await settle();
     expect(recovery().state.status).toBe("ready"); expect(context().value.notes).toBe(""); expect(cart().lines).toEqual([]);
@@ -350,8 +350,9 @@ describe("PosPage recovery wiring via hook and child-port harness", () => {
   });
 
   it("uses owner references and period, scopes every request, and keeps context out of the checkout fingerprint", async () => {
-    await prepareCart(); submit(); await settle();
+    await prepareCart();
     expect(context().value.paymentMethod).toEqual({ id: "8", label: "Owner 8", requiresReference: false });
+    submit(); await settle();
     const body = JSON.parse(commands()[0]![1]!.body as string) as Record<string, unknown>;
     expect(body).toMatchObject({ fiscalPeriodId: "4", currencyId: "3", exchangeRate: "1.00000000", warehouseId: "6", cashBankAccountId: "7", paymentMethodId: "8" });
     expect(body).not.toHaveProperty("posContext"); expect(body).not.toHaveProperty("userId"); expect(body).not.toHaveProperty("companyId");

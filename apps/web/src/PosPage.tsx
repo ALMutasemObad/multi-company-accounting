@@ -367,7 +367,7 @@ function PosExperience({ notify, onOpenSetupTarget }: { notify: Notice; onOpenSe
       {result && <div className="pos-experience-document-links">{permissionSet.has("sales_invoices.view") && <a href="#sales">{t("pos.openSalesList")}</a>}{permissionSet.has("receipts.view") && <a href="#receipts">{t("pos.openReceiptsList")}</a>}</div>}
       {result && canHistory && <RetailReceiptOutput access={{ userId: user.id, companyId: selectedCompany?.id ?? null, permissionSet, moduleSet: new Set(modules) }}
         confirmedSalesInvoiceId={result.invoice.id} locale={copyLocale} readPreview={receiptOutput.readPreview} downloadA4={receiptOutput.downloadA4} />}
-      {sessionWizardOpen && !result && <PosSessionWizard locale={copyLocale} snapshot={cashierState} value={context} blocked={blocked} onClose={() => setSessionWizardOpen(false)}
+      {sessionWizardOpen && recoveryState.status === "ready" && !result && <PosSessionWizard locale={copyLocale} snapshot={cashierState} value={context} blocked={blocked} onClose={() => setSessionWizardOpen(false)}
         onReview={(rememberForNextSale) => { if (!canEdit() || !isPosSessionDetailsComplete(cashierState, context)) return false;
           const reviewed = cashier.review(rememberForNextSale); if (!reviewed) return false; applyReviewed(reviewed); return true; }}
         sessionContext={<CashierContextPanel compact controller={cashier} currentScopeKey={currentCashierKey} locale={copyLocale} onReviewed={applyReviewed} blocked={blocked} canInteract={canEdit}

@@ -207,20 +207,31 @@ for (const locale of ['ar', 'en'] as const) {
     await page.locator('.selling-workspace').getByRole('button', { name: sellingWorkspace[locale].close, exact: true }).click();
     await navigate(page, 'pos', pos['nav.pos']);
     await expect(page.locator('.pos-experience-product')).toHaveCount(1);
-    const cashier = page.locator('.cashier-context-panel').filter({ has: page.getByRole('heading', { name: cashierCopy.title, exact: true }) });
+    const dialog = page.getByRole('dialog', { name: pos['pos.sessionWizardTitle'], exact: true });
+    const cashier = dialog.locator('.cashier-context-panel');
     await expect(cashier).toBeVisible();
     await cashier.getByLabel(cashierCopy.date, { exact: true }).fill('2026-08-31');
     await expect(cashier.getByText('Open fixture period', { exact: true })).toBeVisible();
-    await expect(cashier.getByRole('button', { name: cashierCopy.review, exact: true })).toBeDisabled();
     for (const field of contextFields) {
       await cashier.getByRole('button', { name: `${cashierCopy.edit} ${cashierCopy[field]}`, exact: true }).click();
       await cashier.getByRole('combobox', { name: cashierCopy[field], exact: true }).click();
       await cashier.getByRole('listbox').getByRole('option', { name: contextReferenceLabel(locale, field), exact: true }).click();
       await expect(cashier.getByText(contextReferenceLabel(locale, field), { exact: true })).toBeVisible();
     }
-    await cashier.getByRole('button', { name: cashierCopy.review, exact: true }).click();
-    await expect(cashier.getByText(cashierCopy.reviewed, { exact: true })).toBeVisible();
-    await expect(page.getByLabel(pos['pos.exchangeRate'], { exact: true })).toHaveValue('1.00000000');
+    await dialog.getByRole('button', { name: pos['pos.sessionStepDetails'] }).click();
+    await dialog.getByLabel(pos['pos.descriptionLabel'], { exact: true }).fill('Local grocery integration fixture');
+    await dialog.getByRole('combobox', { name: pos['pos.customer'], exact: true }).click();
+    await dialog.getByRole('listbox').getByRole('option', { name: `TEST — ${locale === 'ar' ? 'مرجع اختبار' : 'Fixture reference'}`, exact: true }).click();
+    await dialog.getByLabel(pos['pos.exchangeRate'], { exact: true }).fill('1');
+    await dialog.getByRole('button', { name: pos['pos.sessionStepReview'] }).click();
+    const activate = dialog.getByRole('button', { name: pos['pos.sessionActivate'], exact: true });
+    await expect(activate).toBeEnabled(); await activate.click(); await expect(dialog).toBeHidden();
+    await expect(page.getByLabel(pos['pos.sessionSummary'], { exact: true })).toContainText(pos['pos.sessionReady']);
+    await page.getByRole('button', { name: pos['pos.sessionEdit'], exact: true }).click();
+    await dialog.getByRole('button', { name: pos['pos.sessionStepDetails'] }).click();
+    await expect(dialog.getByLabel(pos['pos.exchangeRate'], { exact: true })).toHaveValue('1.00000000');
+    await dialog.getByRole('button', { name: pos['pos.sessionClose'], exact: true }).click();
+    await expect(dialog).toBeHidden();
     expect(state.reads).toContain('/pos/context/identity');
     expect(state.reads).toContain('/pos/context/period?documentDate=2026-08-31');
     for (const field of contextFields) {
@@ -229,10 +240,6 @@ for (const locale of ['ar', 'en'] as const) {
     }
     expect(state.reads.some(path => ['/currencies', '/fiscal-periods', '/warehouses', '/cash-bank-accounts', '/payment-methods']
       .includes(new URL(path, 'http://fixture').pathname))).toBe(false);
-    await page.getByLabel(pos['pos.descriptionLabel'], { exact: true }).fill('Local grocery integration fixture');
-    await page.getByRole('combobox', { name: pos['pos.customer'], exact: true }).click();
-    await page.getByRole('listbox').getByRole('option', { name: `TEST — ${locale === 'ar' ? 'مرجع اختبار' : 'Fixture reference'}`, exact: true }).click();
-    await page.locator('.pos-experience-context > summary').click();
     const scanner = page.locator('.pos-barcode-scanner input');
     await scanner.fill('000000009'); await scanner.press('Enter');
     const line = page.getByTestId('pos-cart-line');
@@ -246,9 +253,11 @@ for (const locale of ['ar', 'en'] as const) {
     // The real scanner/profile locks invalidate the earlier N2 review. A fresh explicit
     // review of the unchanged currency must preserve the scanner's exact selling price.
     await expect(page.getByRole('button', { name: pos['pos.checkout'], exact: true })).toBeDisabled();
-    await expect(cashier.getByRole('button', { name: cashierCopy.review, exact: true })).toBeEnabled();
-    await cashier.getByRole('button', { name: cashierCopy.review, exact: true }).click();
-    await expect(cashier.getByText(cashierCopy.reviewed, { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: pos['pos.sessionEdit'], exact: true }).click();
+    const reviewDialog = page.getByRole('dialog', { name: pos['pos.sessionWizardTitle'], exact: true });
+    await reviewDialog.getByRole('button', { name: pos['pos.sessionStepReview'] }).click();
+    const reactivate = reviewDialog.getByRole('button', { name: pos['pos.sessionActivate'], exact: true });
+    await expect(reactivate).toBeEnabled(); await reactivate.click(); await expect(reviewDialog).toBeHidden();
     await expect(line.getByRole('textbox', { name: `${pos['pos.unitPrice']} ${locale === 'ar' ? item.nameAr : item.nameEn}`, exact: true })).toHaveValue('123.4500');
     await expect(page.locator('.pos-experience-summary')).toContainText('246.90');
     expect(state.recoveries).toEqual([]);
