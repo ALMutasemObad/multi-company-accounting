@@ -16,14 +16,17 @@ home_root="$test_root/home/tester"
 source_release="$home_root/apps/releases/source"
 target_release="$home_root/apps/releases/target"
 backup_directory="$home_root/apps/recovery-backups"
+media_root="$home_root/apps/shared/media"
+media_fixture="$media_root/product-images/fixture.webp"
 passenger_config="$home_root/site/.htaccess"
 fake_bin="$test_root/bin"
 state_root="$test_root/active-root"
 state_environment="$test_root/environment.json"
 metrics_token_file="$test_root/metrics-token"
 mkdir -p -- "$source_release/apps/api/dist" "$target_release/apps/api/dist" \
-  "$(dirname -- "$passenger_config")" "$fake_bin"
+  "$(dirname -- "$passenger_config")" "$(dirname -- "$media_fixture")" "$fake_bin"
 touch -- "$source_release/apps/api/dist/server.js" "$target_release/apps/api/dist/server.js"
+printf '%s' 'fixture-thumbnail' > "$media_fixture"
 printf 'PassengerAppRoot "%s"\n' "$source_release" > "$passenger_config"
 chmod 0644 -- "$passenger_config"
 printf '%s\n' 'apps/releases/source' > "$state_root"
@@ -122,8 +125,24 @@ run_switch() {
   MCAP_CLOUDLINUX_BACKUP_DIRECTORY="$backup_directory" \
   MCAP_PASSENGER_CONFIG_FILE="$passenger_config" \
   MCAP_METRICS_TOKEN_FILE="${3:-}" \
+  MCAP_MEDIA_ROOT="${4-$media_root}" \
     bash deploy/scripts/switch-cloudlinux-registration.sh "$1" "$2"
 }
+
+media_fixture_digest=$(sha256sum -- "$media_fixture" | awk '{print $1}')
+media_link="$test_root/media-link"
+ln -s -- "$media_root" "$media_link"
+environment_before_unsafe_media=$(sha256sum -- "$state_environment" | awk '{print $1}')
+config_before_unsafe_media=$(sha256sum -- "$passenger_config" | awk '{print $1}')
+for unsafe_media_root in '' "$media_link"; do
+  if run_switch "$source_release" "$target_release" "$metrics_token_file" "$unsafe_media_root"; then
+    printf 'CloudLinux switch unexpectedly accepted an unsafe media root\n' >&2
+    exit 1
+  fi
+  [[ "$(<"$state_root")" == apps/releases/source ]]
+  [[ "$(sha256sum -- "$state_environment" | awk '{print $1}')" == "$environment_before_unsafe_media" ]]
+  [[ "$(sha256sum -- "$passenger_config" | awk '{print $1}')" == "$config_before_unsafe_media" ]]
+done
 
 run_switch "$source_release" "$target_release" "$metrics_token_file"
 [[ "$(<"$state_root")" == apps/releases/target ]]
@@ -137,7 +156,9 @@ run_switch "$source_release" "$target_release" "$metrics_token_file"
   if (environment.RESEND_API_KEY !== "re_fixture_12345678901234567890") process.exit(1);
   if (environment.REGISTRATION_TOKEN_SECRET !== "fixture-registration-token-secret-1234567890") process.exit(1);
   if (environment.REGISTRATION_AUDIT_PEPPER !== "fixture-registration-audit-pepper-1234567890") process.exit(1);
-' "$state_environment"
+  if (environment.MEDIA_ROOT !== process.argv[2]) process.exit(1);
+' "$state_environment" "$media_root"
+[[ "$(sha256sum -- "$media_fixture" | awk '{print $1}')" == "$media_fixture_digest" ]]
 [[ "$(stat -c '%a' -- "$passenger_config")" == 644 ]]
 [[ -n "$(find "$backup_directory" -maxdepth 1 -type f -name 'selector-before-target-*.json' -print -quit)" ]]
 [[ "$(grep -Fc '# BEGIN MCAP HTTPS REDIRECT' "$passenger_config")" == 1 ]]
@@ -154,6 +175,7 @@ run_switch "$target_release" "$source_release"
 [[ "$(<"$state_root")" == apps/releases/source ]]
 [[ "$(stat -c '%a' -- "$passenger_config")" == 644 ]]
 [[ "$(grep -Fc '# BEGIN MCAP HTTPS REDIRECT' "$passenger_config")" == 1 ]]
+[[ "$(sha256sum -- "$media_fixture" | awk '{print $1}')" == "$media_fixture_digest" ]]
 
 export FAKE_FAIL_CREATE_ROOT=apps/releases/target
 config_before_failed_switch=$(sha256sum -- "$passenger_config" | awk '{print $1}')
@@ -165,6 +187,7 @@ unset FAKE_FAIL_CREATE_ROOT
 [[ "$(<"$state_root")" == apps/releases/source ]]
 [[ "$(stat -c '%a' -- "$passenger_config")" == 644 ]]
 [[ "$(sha256sum -- "$passenger_config" | awk '{print $1}')" == "$config_before_failed_switch" ]]
+[[ "$(sha256sum -- "$media_fixture" | awk '{print $1}')" == "$media_fixture_digest" ]]
 
 missing_email_log="$test_root/missing-email.log"
 "$FAKE_NODE_BIN" -e '
