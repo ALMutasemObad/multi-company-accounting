@@ -27,7 +27,7 @@ const barcode = { barcode: { id: "31", symbology: "EAN_13", isPrimary: true },
   inventoryItem: { id: "16", code: "ITM-16", nameAr: "صنف اختبار", nameEn: null, description: null,
     unitOfMeasure: { id: "21", code: "EA", nameAr: "حبة", decimalPlaces: 0 } } };
 const catalogItem = { inventoryItemId: "16", code: "ITM-16", nameAr: "صنف اختبار", nameEn: null,
-  description: null, isActive: true, unitOfMeasure: { id: "21", code: "EA", nameAr: "حبة", nameEn: null, decimalPlaces: 0, isActive: true },
+  description: null, isActive: true, image: null, unitOfMeasure: { id: "21", code: "EA", nameAr: "حبة", nameEn: null, decimalPlaces: 0, isActive: true },
   sellingProfile: null, isReady: false, readinessReason: "PROFILE_MISSING" };
 
 function fixture() {

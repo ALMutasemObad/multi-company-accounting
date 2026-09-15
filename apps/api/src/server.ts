@@ -106,6 +106,11 @@ import { EmployeeExpenseCostCenterAdapter } from './accounts/employee-expense-co
 import { EmployeeExpenseCurrencyAdapter } from './companies/employee-expense-currency-adapter.js';
 import { OidcProviderAdapter } from './social-auth/oidc-provider-adapter.js';
 import { SocialAuthService } from './social-auth/social-auth-service.js';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import { ProductImageFilesystem } from './media/product-image-filesystem.js';
+import { ProductImageProcessor } from './media/product-image-processor.js';
+import { ProductImageService } from './inventory/product-image-service.js';
 
 const config = loadConfig();
 if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required to start the API');
@@ -120,6 +125,19 @@ operationalMetrics.configure({
   cooldownMs: config.ALERT_COOLDOWN_MS,
 });
 const database = createDatabase(config.DATABASE_URL);
+const applicationRoot = fileURLToPath(new URL('../../../', import.meta.url));
+const productImageFilesystem = new ProductImageFilesystem({
+  root: config.MEDIA_ROOT!,
+  prohibitedRoots: [applicationRoot, path.join(applicationRoot, 'apps', 'web', 'dist')],
+});
+const productImages = new ProductImageService(
+  database,
+  new ProductImageProcessor({
+    maxUploadBytes: config.PRODUCT_IMAGE_MAX_UPLOAD_BYTES,
+    maxInputPixels: config.PRODUCT_IMAGE_MAX_INPUT_PIXELS,
+  }),
+  productImageFilesystem,
+);
 const accountQueries = new PrismaAccountingAccountQueryAdapter();
 const taxes = new TaxService(database, accountQueries);
 const treasury = new TreasuryService(database, accountQueries);
@@ -275,6 +293,7 @@ const workforceAccess = new WorkforceAccessService(
 const platformAnalytics = new PrismaPlatformAnalyticsQueryAdapter(database);
 
 async function startServer() {
+  await productImageFilesystem.initialize();
   const platformOperations = await createPlatformOperationsService(database, platformAnalytics, config);
   const platformBilling = new PlatformBillingService(
     database,
@@ -352,6 +371,7 @@ async function startServer() {
     ...(bankReconciliation ? { bankReconciliation } : {}),
     inventory: new InventoryService(database),
     inventoryCatalog,
+    productImages,
     inventoryBarcodes,
     inventoryMovements,
     receipts,

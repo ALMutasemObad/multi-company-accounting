@@ -35,7 +35,7 @@ describe("واجهة نقاط البيع", () => {
     const line: PosDraftLine = { key: "line-1", inventoryItemId: "1", inventoryItemLabel: "ITM-1", description: "Item",
       quantity: "1.000000", unitPrice: "", discountAmount: "0.0000", revenueAccountId: "", revenueAccountLabel: "",
       taxRateId: "", taxRateLabel: "", priceSource: "currency-mismatch", profileVersion: null, profileCurrencyId: null };
-    const item: PosCatalogItem = { inventoryItemId: "1", code: "ITM-1", nameAr: "صنف", nameEn: "Item", description: null, isActive: true,
+    const item: PosCatalogItem = { inventoryItemId: "1", code: "ITM-1", nameAr: "صنف", nameEn: "Item", description: null, isActive: true, image: null,
       unitOfMeasure: { id: "2", code: "EA", nameAr: "وحدة", nameEn: "Each", decimalPlaces: 0, isActive: true },
       sellingProfile: { id: "3", unitPrice: "30.0000", currencyId: "1", currencyCode: "SAR", revenueAccountId: "357", taxRateId: null, isActive: true, version: 4 },
       isReady: true, readinessReason: null };

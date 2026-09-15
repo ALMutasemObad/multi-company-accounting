@@ -29,6 +29,7 @@ import { createInventoryRouter } from '../src/inventory/inventory-router.js';
 import { createInventoryCatalogRouter } from '../src/inventory/inventory-catalog-router.js';
 import { createInventoryBarcodeRouter } from '../src/inventory/inventory-barcode-router.js';
 import { createInventoryMovementRouter } from '../src/inventory/inventory-movement-router.js';
+import { createProductImageRouter } from '../src/inventory/product-image-router.js';
 import { createBankReconciliationRouter } from '../src/treasury/reconciliation/reconciliation-router.js';
 import { createPosRouter } from '../src/pos/pos-router.js';
 import { createCashierContextRouter } from '../src/pos/cashier-context-router.js';
@@ -89,6 +90,7 @@ const routers = [
   { prefix: '', router: createInventoryCatalogRouter(stub, stub) },
   { prefix: '', router: createInventoryBarcodeRouter(stub, stub) },
   { prefix: '', router: createInventoryMovementRouter(stub, stub) },
+  { prefix: '', router: createProductImageRouter(stub, stub, 1024) },
   { prefix: '', router: createReceiptRouter(stub, stub) },
   { prefix: '', router: createSupplierRouter(stub, stub) },
   { prefix: '', router: createPaymentRouter(stub, stub) },

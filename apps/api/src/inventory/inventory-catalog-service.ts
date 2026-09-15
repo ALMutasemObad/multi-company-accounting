@@ -3,6 +3,7 @@ import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import { reserveMasterDataCode } from "../platform/master-data-code-service.js";
 import { TransactionExecutor } from "../platform/transaction-executor.js";
 import type { ActorContext } from "../platform/actor-context.js";
+import { inventoryThumbnailUrl } from "../media/product-image-types.js";
 
 export type InventoryCatalogErrorReason =
   | "NOT_FOUND"
@@ -298,7 +299,7 @@ export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
     return this.prisma.$transaction(async (tx) => ({
       data: await tx.inventoryItem.findMany({
         where,
-        include: { unitOfMeasure: true },
+        include: { unitOfMeasure: true, image: { select: { version: true } } },
         orderBy: { code: "asc" },
         skip: (input.page - 1) * input.pageSize,
         take: input.pageSize,
@@ -310,7 +311,7 @@ export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
   async getItem(context: ActorContext, id: bigint) {
     const value = await this.prisma.inventoryItem.findFirst({
       where: { id, companyId: context.companyId },
-      include: { unitOfMeasure: true },
+      include: { unitOfMeasure: true, image: { select: { version: true } } },
     });
     if (!value) throw new InventoryCatalogError("NOT_FOUND");
     return value;
@@ -429,7 +430,7 @@ export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
               nameEn: nullableTrimmed(input.nameEn) ?? null,
               description: nullableTrimmed(input.description) ?? null,
             },
-            include: { unitOfMeasure: true },
+            include: { unitOfMeasure: true, image: { select: { version: true } } },
           });
           await this.audit(tx, context, "INVENTORY_ITEM_CREATED", "INVENTORY_ITEM", value.id);
           return value;
@@ -471,7 +472,7 @@ export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
         if (changed.count !== 1) throw new InventoryCatalogError("VERSION_CONFLICT");
         const value = await tx.inventoryItem.findFirstOrThrow({
           where: { id, companyId: context.companyId },
-          include: { unitOfMeasure: true },
+          include: { unitOfMeasure: true, image: { select: { version: true } } },
         });
         await this.audit(tx, context, "INVENTORY_ITEM_UPDATED", "INVENTORY_ITEM", id, {
           fromVersion: input.version,
@@ -521,7 +522,7 @@ export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
         if (changed.count !== 1) throw new InventoryCatalogError("VERSION_CONFLICT");
         const value = await tx.inventoryItem.findFirstOrThrow({
           where: { id, companyId: context.companyId },
-          include: { unitOfMeasure: true },
+          include: { unitOfMeasure: true, image: { select: { version: true } } },
         });
         await this.audit(tx, context, "INVENTORY_ITEM_DEACTIVATED", "INVENTORY_ITEM", id, {
           reason: input.reason,
@@ -562,6 +563,7 @@ export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
     description: string | null;
     isActive: boolean;
     version: number;
+    image: { version: number } | null;
     unitOfMeasure: Parameters<typeof InventoryCatalogService.unitJson>[0];
   }) {
     return {
@@ -572,6 +574,12 @@ export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
       description: value.description,
       isActive: value.isActive,
       version: value.version,
+      image: value.image
+        ? {
+            version: value.image.version,
+            thumbnailUrl: inventoryThumbnailUrl(value.id, value.image.version),
+          }
+        : null,
       unitOfMeasure: InventoryCatalogService.unitJson(value.unitOfMeasure),
     };
   }

@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import path from 'node:path';
+import os from 'node:os';
 import { databaseUrlWithPoolOptions } from './database-pool-options.js';
 
 const booleanString = z.enum(['true', 'false']).transform((value) => value === 'true');
@@ -36,6 +38,9 @@ const configSchema = z.object({
   DATABASE_POOL_IDLE_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(86_400).default(1_800),
   WEB_ORIGIN: z.string().url().default('http://localhost:5173'),
   SERVE_WEB_ASSETS: booleanString.default(false),
+  MEDIA_ROOT: z.string().trim().min(1).refine(path.isAbsolute, 'MEDIA_ROOT must be an absolute path').optional(),
+  PRODUCT_IMAGE_MAX_UPLOAD_BYTES: z.coerce.number().int().min(64 * 1_024).max(20 * 1_024 * 1_024).default(5 * 1_024 * 1_024),
+  PRODUCT_IMAGE_MAX_INPUT_PIXELS: z.coerce.number().int().min(1_000_000).max(100_000_000).default(40_000_000),
   SESSION_COOKIE_SECURE: booleanString.default(false),
   PRE_AUTH_TTL_MINUTES: z.coerce.number().int().min(1).max(30).default(10),
   SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(168).default(12),
@@ -173,6 +178,13 @@ const configSchema = z.object({
       context.addIssue({ code: 'custom', path: ['BANK_RECONCILIATION_COMPANY_IDS'], message: 'Wildcard bank reconciliation rollout is forbidden in production' });
     }
   }
+  if (config.NODE_ENV === 'production' && !config.MEDIA_ROOT) {
+    context.addIssue({
+      code: 'custom',
+      path: ['MEDIA_ROOT'],
+      message: 'Production product media requires an explicit absolute persistent MEDIA_ROOT',
+    });
+  }
   if (config.NODE_ENV !== 'production') return;
   const requireProductionOidcEndpoints = (enabled: boolean, provider: string, redirectUri: string | undefined, endpoints: Array<[string, string, string]>) => {
     if (!enabled) return;
@@ -237,13 +249,19 @@ export type AppConfig = Pick<LoadedAppConfig,
   'NODE_ENV' | 'PORT' | 'DATABASE_URL' | 'WEB_ORIGIN' | 'SESSION_COOKIE_SECURE' | 'PRE_AUTH_TTL_MINUTES' | 'SESSION_TTL_HOURS'
 > & Partial<Pick<LoadedAppConfig,
   'DATABASE_POOL_CONNECTION_LIMIT' | 'DATABASE_POOL_MIN_IDLE' | 'DATABASE_POOL_ACQUIRE_TIMEOUT_MS' | 'DATABASE_CONNECT_TIMEOUT_MS' | 'DATABASE_POOL_IDLE_TIMEOUT_SECONDS' | 'SERVE_WEB_ASSETS' | 'TRUST_PROXY' | 'RATE_LIMIT_WINDOW_MS' | 'RATE_LIMIT_MAX' | 'AUTH_RATE_LIMIT_MAX' | 'RATE_LIMIT_NETWORK_MULTIPLIER' | 'RATE_LIMIT_IDENTITY_SECRET' | 'SELF_REGISTRATION_ENABLED' | 'REGISTRATION_RATE_LIMIT_MAX' | 'REGISTRATION_TOKEN_TTL_HOURS' | 'REGISTRATION_EMAIL_MODE' | 'REGISTRATION_EMAIL_FROM' | 'REGISTRATION_EMAIL_CAPTURE_PATH' | 'RESEND_API_KEY' | 'REGISTRATION_AUDIT_PEPPER' | 'REGISTRATION_TOKEN_SECRET' | 'PASSWORD_RESET_ENABLED' | 'PASSWORD_RESET_RATE_LIMIT_MAX' | 'PASSWORD_RESET_TOKEN_TTL_MINUTES' | 'BANK_RECONCILIATION_ENABLED' | 'BANK_RECONCILIATION_COMPANY_IDS' | 'BANK_RECONCILIATION_ROLLOUT_STAGE' | 'OUTBOX_POLL_INTERVAL_MS' | 'OUTBOX_LEASE_MS' | 'OUTBOX_BATCH_SIZE' | 'OUTBOX_MAX_ATTEMPTS' | 'OUTBOX_BASE_BACKOFF_MS' | 'OUTBOX_HANDLER_TIMEOUT_MS' | 'OUTBOX_RETENTION_DAYS' | 'READINESS_TIMEOUT_MS' | 'SHUTDOWN_TIMEOUT_MS' | 'LOG_REQUESTS' | 'HTTP_REQUEST_TIMEOUT_MS' | 'HTTP_HEADERS_TIMEOUT_MS' | 'HTTP_KEEP_ALIVE_TIMEOUT_MS' | 'API_READ_DEADLINE_MS' | 'API_WRITE_DEADLINE_MS' | 'API_REGISTRATION_WRITE_DEADLINE_MS' | 'METRICS_ENABLED' | 'METRICS_BEARER_TOKEN' | 'PLATFORM_OPERATOR_USER_IDS' | 'PLATFORM_OPERATOR_EMAILS' | 'PLATFORM_PAYMENT_PROVIDER_MODE' | 'PLATFORM_PAYMENT_DEVELOPMENT_WEBHOOK_SECRET' | 'PLATFORM_PAYMENT_WEBHOOK_TOLERANCE_SECONDS' | 'ALERT_WINDOW_MS' | 'ALERT_MIN_TRANSACTION_SAMPLES' | 'ALERT_DEADLOCK_RATIO_THRESHOLD' | 'ALERT_RETRY_EXHAUSTED_RATIO_THRESHOLD' | 'ALERT_REQUEST_DEADLINE_COUNT_THRESHOLD' | 'ALERT_OUTBOX_LAG_MS_THRESHOLD' | 'ALERT_OUTBOX_DEAD_LETTER_COUNT_THRESHOLD' | 'ALERT_COOLDOWN_MS' | 'SOCIAL_AUTH_TRANSACTION_SECRET' | 'SOCIAL_AUTH_TRANSACTION_TTL_MINUTES' | 'SOCIAL_ONBOARDING_CONTINUATION_TTL_MINUTES' | 'GOOGLE_OIDC_ENABLED' | 'GOOGLE_OIDC_CLIENT_ID' | 'GOOGLE_OIDC_CLIENT_SECRET' | 'GOOGLE_OIDC_REDIRECT_URI' | 'GOOGLE_OIDC_AUTHORIZATION_ENDPOINT' | 'GOOGLE_OIDC_TOKEN_ENDPOINT' | 'GOOGLE_OIDC_JWKS_URI' | 'APPLE_OIDC_ENABLED' | 'APPLE_OIDC_CLIENT_ID' | 'APPLE_OIDC_CLIENT_SECRET' | 'APPLE_OIDC_REDIRECT_URI' | 'APPLE_OIDC_AUTHORIZATION_ENDPOINT' | 'APPLE_OIDC_TOKEN_ENDPOINT' | 'APPLE_OIDC_JWKS_URI'
+>> & Partial<Pick<LoadedAppConfig,
+  'MEDIA_ROOT' | 'PRODUCT_IMAGE_MAX_UPLOAD_BYTES' | 'PRODUCT_IMAGE_MAX_INPUT_PIXELS'
 >>;
 
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env): LoadedAppConfig {
   const config = configSchema.parse(environment);
-  if (!config.DATABASE_URL) return config;
-  return {
+  const withMediaRoot = {
     ...config,
+    MEDIA_ROOT: config.MEDIA_ROOT ?? path.join(os.tmpdir(), 'mcap-finance-product-media'),
+  };
+  if (!config.DATABASE_URL) return withMediaRoot;
+  return {
+    ...withMediaRoot,
     DATABASE_URL: databaseUrlWithPoolOptions(config.DATABASE_URL, {
       connectionLimit: config.DATABASE_POOL_CONNECTION_LIMIT,
       minimumIdle: config.DATABASE_POOL_MIN_IDLE,

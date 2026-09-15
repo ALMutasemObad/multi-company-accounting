@@ -19,6 +19,7 @@ passenger_log_file=${MCAP_CLOUDLINUX_PASSENGER_LOG_FILE:-}
 passenger_config_file=${MCAP_PASSENGER_CONFIG_FILE:-}
 backup_directory=${MCAP_CLOUDLINUX_BACKUP_DIRECTORY:-}
 metrics_token_file=${MCAP_METRICS_TOKEN_FILE:-}
+media_root=${MCAP_MEDIA_ROOT:-}
 
 [[ "$source_release" == /* && "$target_release" == /* && "$source_release" != "$target_release" ]] \
   || fail "source and target releases must be different explicit absolute paths"
@@ -31,6 +32,8 @@ metrics_token_file=${MCAP_METRICS_TOKEN_FILE:-}
 [[ "$passenger_log_file" == /* && "$passenger_log_file" != / ]] || fail "MCAP_CLOUDLINUX_PASSENGER_LOG_FILE must be absolute"
 [[ "$passenger_config_file" == /* && "$passenger_config_file" != / ]] || fail "MCAP_PASSENGER_CONFIG_FILE must be absolute"
 [[ "$backup_directory" == /* && "$backup_directory" != / ]] || fail "MCAP_CLOUDLINUX_BACKUP_DIRECTORY must be absolute"
+[[ "$media_root" == /* && "$media_root" != / && -d "$media_root" && ! -L "$media_root" && "$(readlink -f -- "$media_root")" == "$media_root" ]] \
+  || fail "MCAP_MEDIA_ROOT must be a real absolute non-symlink directory"
 [[ -x "$selector" && -x "$node_bin" ]] || fail "CloudLinux Selector and Node must be executable"
 [[ -f "$passenger_config_file" && ! -L "$passenger_config_file" ]] || fail "Passenger configuration must be a regular file"
 [[ -d "$source_release" && ! -L "$source_release" && "$(readlink -f -- "$source_release")" == "$source_release" ]] \
@@ -90,11 +93,11 @@ registered_root() {
 }
 
 validate_registered_environment() {
-  local expected_root=$1 expect_metrics=${2:-false} allow_missing_limiter_secret=${3:-false} expect_public_email=${4:-false}
+  local expected_root=$1 expect_metrics=${2:-false} allow_missing_limiter_secret=${3:-false} expect_public_email=${4:-false} allow_missing_media=${5:-false}
   "$node_bin" -e '
     const fs = require("node:fs");
     const payload = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-    const [version, user, root, domain, startup, expectMetrics, allowMissingLimiterSecret, expectPublicEmail] = process.argv.slice(2);
+    const [version, user, root, domain, startup, expectMetrics, allowMissingLimiterSecret, expectPublicEmail, expectedMediaRoot, allowMissingMedia] = process.argv.slice(2);
     const app = payload.available_versions?.[version]?.users?.[user]?.applications?.[root];
     if (!app || app.domain !== domain || app.startup_file !== startup) process.exit(2);
     for (const key of ["DATABASE_URL", "WEB_ORIGIN", "SESSION_COOKIE_SECURE", "TRUST_PROXY"]) {
@@ -106,6 +109,9 @@ validate_registered_environment() {
     } else if (typeof limiterSecret !== "string" || limiterSecret.length < 32 || limiterSecret.length > 500) {
       process.exit(5);
     }
+    const configuredMediaRoot = app.env_vars?.MEDIA_ROOT;
+    if (configuredMediaRoot === undefined && allowMissingMedia === "true") { /* first rollout */ }
+    else if (configuredMediaRoot !== expectedMediaRoot) process.exit(7);
     if (expectMetrics === "true") {
       const token = app.env_vars?.METRICS_BEARER_TOKEN;
       if (app.env_vars?.METRICS_ENABLED !== "true" || typeof token !== "string" || token.length < 32 || token.length > 500) {
@@ -127,7 +133,7 @@ validate_registered_environment() {
         process.exit(6);
       }
     }
-  ' "$state_file" "$cloudlinux_version" "$cloudlinux_user" "$expected_root" "$cloudlinux_domain" "$startup_file" "$expect_metrics" "$allow_missing_limiter_secret" "$expect_public_email"
+  ' "$state_file" "$cloudlinux_version" "$cloudlinux_user" "$expected_root" "$cloudlinux_domain" "$startup_file" "$expect_metrics" "$allow_missing_limiter_secret" "$expect_public_email" "$media_root" "$allow_missing_media"
 }
 
 write_environment_snapshot() {
@@ -146,7 +152,7 @@ write_target_environment_snapshot() {
   "$node_bin" -e '
     const { randomBytes } = require("node:crypto");
     const fs = require("node:fs");
-    const [source, destination, tokenPath] = process.argv.slice(1);
+    const [source, destination, tokenPath, mediaRoot] = process.argv.slice(1);
     const environment = JSON.parse(fs.readFileSync(source, "utf8"));
     const legacyOperatorEmails = environment.PLATFORM_OPERATOR_EMAILS;
     if (typeof legacyOperatorEmails === "string" && legacyOperatorEmails.trim().length > 0) process.exit(4);
@@ -176,8 +182,9 @@ write_target_environment_snapshot() {
     environment.METRICS_ENABLED = "true";
     environment.METRICS_BEARER_TOKEN = token;
     environment.PASSWORD_RESET_ENABLED = "true";
+    environment.MEDIA_ROOT = mediaRoot;
     fs.writeFileSync(destination, JSON.stringify(environment), { mode: 0o600 });
-  ' "$environment_file" "$target_environment_file" "$metrics_token_file"
+  ' "$environment_file" "$target_environment_file" "$metrics_token_file" "$media_root"
 }
 
 summarize_result() {
@@ -316,7 +323,7 @@ cleanup() {
 trap 'status=$?; trap - EXIT; cleanup "$status"' EXIT
 
 [[ "$(registered_root)" == "$source_root" ]] || fail "registered production root does not match the source release"
-validate_registered_environment "$source_root" false true
+validate_registered_environment "$source_root" false true false true
 cp -p -- "$state_file" "$registry_backup"
 chmod 0600 -- "$registry_backup"
 cp -p -- "$passenger_config_file" "$config_backup"

@@ -16,11 +16,19 @@ mysqldump_bin=${MCAP_MYSQLDUMP_BIN:-/usr/bin/mysqldump}
 pipeline_lock_wait_seconds=${MCAP_PIPELINE_LOCK_WAIT_SECONDS:-900}
 script_directory=$(cd -- "$(dirname -- "$0")" && pwd -P)
 normalizer="$script_directory/normalize-cpanel-backup.mjs"
+media_backup_script="$script_directory/media-backup.mjs"
+pair_verifier="$script_directory/lib/backup-pair-verifier.mjs"
+backup_format="$script_directory/lib/backup-format.mjs"
+media_root=${MCAP_MEDIA_ROOT:-"$deploy_root/shared/media"}
 
 [[ "$deploy_root" == /* && "$deploy_root" != / ]] \
   || fail "MCAP_DEPLOY_ROOT must be an explicit absolute non-root path"
 [[ "$backup_directory" == /* && "$backup_directory" != / ]] \
   || fail "MCAP_BACKUP_DIRECTORY must be an explicit absolute non-root path"
+[[ "$media_root" == /* && "$media_root" != / ]] \
+  || fail "MCAP_MEDIA_ROOT must be an explicit absolute non-root path"
+[[ "$media_root" == "$deploy_root/shared/media" ]] \
+  || fail "MCAP_MEDIA_ROOT must equal the fixed persistent deployment media path"
 [[ "$passenger_config_file" == /* && "$passenger_config_file" != / ]] \
   || fail "MCAP_PASSENGER_CONFIG_FILE must be an explicit absolute non-root path"
 [[ -f "$passenger_config_file" && ! -L "$passenger_config_file" ]] \
@@ -29,6 +37,9 @@ normalizer="$script_directory/normalize-cpanel-backup.mjs"
 [[ -x "$mysql_bin" ]] || fail "the MySQL client is unavailable"
 [[ -x "$mysqldump_bin" ]] || fail "the MySQL dump client is unavailable"
 [[ -f "$normalizer" && ! -L "$normalizer" ]] || fail "the staged backup normalizer is unavailable"
+[[ -f "$media_backup_script" && ! -L "$media_backup_script" ]] || fail "the staged media backup helper is unavailable"
+[[ -f "$pair_verifier" && ! -L "$pair_verifier" ]] || fail "the staged backup pair verifier is unavailable"
+[[ -f "$backup_format" && ! -L "$backup_format" ]] || fail "the staged backup format helper is unavailable"
 [[ "$pipeline_lock_wait_seconds" =~ ^[1-9][0-9]{0,3}$ ]] \
   && (( pipeline_lock_wait_seconds <= 1800 )) \
   || fail "MCAP_PIPELINE_LOCK_WAIT_SECONDS must be between 1 and 1800"
@@ -104,6 +115,12 @@ backup_result=$(
   MYSQLDUMP_BIN="$mysqldump_bin" \
     "$node_bin" "$backup_script"
 )
+media_backup_result=$(
+  MEDIA_ROOT="$media_root" \
+  BACKUP_DIRECTORY="$backup_directory" \
+  BACKUP_ENCRYPTION_PASSPHRASE="$backup_passphrase" \
+    "$node_bin" "$media_backup_script"
+) || fail "the encrypted product media backup failed"
 unset backup_passphrase migration_database_url
 
 backup_path=$(
@@ -120,6 +137,15 @@ manifest_path=$(
     process.stdout.write(result.manifestPath);
   ' "$backup_result"
 ) || fail "the backup command returned an invalid manifest result"
+media_backup_path=$("$node_bin" -e 'const r=JSON.parse(process.argv[1]); if(r.status!=="created"||typeof r.backupPath!=="string")process.exit(2); process.stdout.write(r.backupPath)' "$media_backup_result") \
+  || fail "the media backup command returned an invalid result"
+media_manifest_path=$("$node_bin" -e 'const r=JSON.parse(process.argv[1]); if(r.status!=="created"||typeof r.manifestPath!=="string")process.exit(2); process.stdout.write(r.manifestPath)' "$media_backup_result") \
+  || fail "the media backup command returned an invalid manifest"
+case "$media_backup_path" in "$backup_directory"/mcap-product-media-*.tar.gz.jwb) ;; *) fail "the media backup artifact path is unsafe" ;; esac
+[[ "$media_manifest_path" == "$media_backup_path.json" && -f "$media_backup_path" && ! -L "$media_backup_path" && -f "$media_manifest_path" && ! -L "$media_manifest_path" ]] \
+  || fail "the media backup artifact or manifest is unsafe"
+[[ "$(stat -c '%a' -- "$media_backup_path")" == 600 && "$(stat -c '%a' -- "$media_manifest_path")" == 600 ]] \
+  || fail "the media backup artifact permissions are not 0600"
 
 case "$backup_path" in
   "$backup_directory"/mcap-*.sql.gz.jwb) ;;
@@ -140,5 +166,26 @@ actual_sha256=$(sha256sum --binary "$backup_path" | awk '{ print $1 }')
 safe_result=$(
   "$node_bin" "$normalizer" "$backup_path" "$manifest_path" "$actual_sha256"
 ) || fail "the completed backup failed manifest verification"
+normalized_backup_file=$("$node_bin" -e 'const r=JSON.parse(process.argv[1]); if(r.status!=="created"||typeof r.file!=="string"||typeof r.manifest!=="string")process.exit(2); process.stdout.write(r.file)' "$safe_result") \
+  || fail "the normalized backup result is invalid"
+backup_path="$backup_directory/$normalized_backup_file"
+manifest_path="$backup_path.json"
+[[ -f "$backup_path" && ! -L "$backup_path" && -f "$manifest_path" && ! -L "$manifest_path" ]] \
+  || fail "the normalized backup members are unsafe"
 
-printf '%s\n' "$safe_result"
+media_sha256=$(sha256sum --binary "$media_backup_path" | awk '{ print $1 }')
+database_manifest_sha256=$(sha256sum --binary "$manifest_path" | awk '{ print $1 }')
+media_manifest_sha256=$(sha256sum --binary "$media_manifest_path" | awk '{ print $1 }')
+pair_manifest_path="$backup_directory/mcap-backup-pair-$(date -u +%Y%m%dT%H%M%SZ)-$$.json"
+"$node_bin" -e '
+  const { randomUUID } = require("node:crypto"); const fs=require("node:fs"); const path=require("node:path");
+  const [target,dbPath,dbSha,dbManifest,dbManifestSha,mediaPath,mediaSha,mediaManifest,mediaManifestSha]=process.argv.slice(1); const partial=`${target}.partial`;
+  const pair={format:"mcap-backup-pair-v1",pairId:randomUUID(),createdAt:new Date().toISOString(),database:{artifact:{file:path.basename(dbPath),sha256:dbSha},manifest:{file:path.basename(dbManifest),sha256:dbManifestSha}},media:{artifact:{file:path.basename(mediaPath),sha256:mediaSha},manifest:{file:path.basename(mediaManifest),sha256:mediaManifestSha}}};
+  fs.writeFileSync(partial,`${JSON.stringify(pair,null,2)}\n`,{mode:0o600,flag:"wx"}); fs.renameSync(partial,target);
+' "$pair_manifest_path" "$backup_path" "$actual_sha256" "$manifest_path" "$database_manifest_sha256" "$media_backup_path" "$media_sha256" "$media_manifest_path" "$media_manifest_sha256"
+"$node_bin" -e 'import(process.argv[1]).then(m=>m.verifyBackupPair(process.argv[2])).catch(()=>process.exit(2))' \
+  "file://$pair_verifier" "$pair_manifest_path" \
+  || fail "the backup pair failed verification"
+
+"$node_bin" -e 'const r=JSON.parse(process.argv[1]); const path=require("node:path"); console.log(JSON.stringify({...r,mediaFile:path.basename(process.argv[2]),mediaManifest:path.basename(process.argv[3]),pairManifest:path.basename(process.argv[4])}))' \
+  "$safe_result" "$media_backup_path" "$media_manifest_path" "$pair_manifest_path"

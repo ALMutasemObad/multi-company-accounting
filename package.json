@@ -20,7 +20,8 @@
     "@prisma/engines@7.9.1": true,
     "argon2@0.45.1": true,
     "esbuild@0.28.1": true,
-    "prisma@7.9.1": true
+    "prisma@7.9.1": true,
+    "sharp@0.35.4": true
   },
   "scripts": {
     "dev": "npm run dev --workspaces --if-present",
@@ -52,7 +53,7 @@
     "release:create": "node scripts/release/create-release.mjs",
     "release:verify": "node scripts/release/verify-release.mjs",
     "audit:install-scripts": "npm install-scripts ls --json | node scripts/ci/verify-install-scripts.mjs",
-    "audit:production": "npm audit --omit=dev --omit=optional --audit-level=high",
+    "audit:production": "npm audit --omit=dev --audit-level=high",
     "audit:critical": "npm audit --audit-level=critical"
   },
   "devDependencies": {

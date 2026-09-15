@@ -1,5 +1,5 @@
 import type { Prisma } from "@prisma/client";
-import { isPlatformModuleCode } from "./platform-entitlement-ports.js";
+import { ModuleDependencyResolutionError, resolveModuleDependencies } from "./platform-module-dependency-resolver.js";
 
 export class SubscriptionStartPolicyError extends Error {
   constructor(public readonly reason: "NOT_CONFIGURED" | "INVALID_CONFIGURATION" | "PLAN_NOT_ELIGIBLE") {
@@ -43,21 +43,20 @@ export function validateNewCompanyStartPlan(version: StartPlanVersion | null, ef
 
   // Only INCLUDED modules are provisioned. Optional modules always require a later explicit choice.
   const included = version.entitlements.filter((item) => item.selectionMode === "INCLUDED");
-  const edges = new Map(included.map((item) => [item.moduleId.toString(),
-    item.module.dependencies.map((dependency) => dependency.dependsOnModuleId.toString()),
-  ]));
-  if (edges.size !== included.length || included.some((item) => !item.module.isActive
-    || !isPlatformModuleCode(item.module.code) || item.additionalRecurringFee !== null)) return invalid();
-  const visiting = new Set<string>();
-  const visited = new Set<string>();
-  const visit = (id: string): void => {
-    if (!edges.has(id) || visiting.has(id)) return invalid();
-    if (visited.has(id)) return;
-    visiting.add(id);
-    for (const dependency of edges.get(id)!) visit(dependency);
-    visiting.delete(id);
-    visited.add(id);
-  };
-  for (const id of edges.keys()) visit(id);
+  if (included.some((item) => !item.module.isActive || item.additionalRecurringFee !== null)) return invalid();
+  try {
+    resolveModuleDependencies(included.map((item) => ({
+      id: item.moduleId,
+      code: item.module.code,
+      isActive: item.module.isActive,
+      selectionMode: item.selectionMode,
+      dependencies: item.module.dependencies.map((dependency) => ({ id: dependency.dependsOnModuleId })),
+    })), { strict: true });
+  } catch (error) {
+    if (error instanceof ModuleDependencyResolutionError) return invalid();
+    throw error;
+  }
+  // Preserve the established entitlement order in the external provisioning
+  // contract; the resolver only determines eligibility and validates closure.
   return { version, modules: included.map((item) => ({ moduleId: item.moduleId, selectionMode: item.selectionMode })) };
 }

@@ -621,6 +621,7 @@ export type InventoryItem = {
   isActive: boolean;
   version: number;
   unitOfMeasure: UnitOfMeasure;
+  image: null | { version: number; thumbnailUrl: string };
 };
 
 export type InventoryBarcodeSymbology =

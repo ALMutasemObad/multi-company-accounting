@@ -5,7 +5,7 @@ import { AuthError, type AuthService } from '../src/auth/auth-service.js';
 import type { SellingProfileService } from '../src/sales/selling-profile-service.js';
 import { PosError, type PosService } from '../src/pos/pos-service.js';
 
-const item = { inventoryItemId: '9', code: 'ITM-9', nameAr: 'حليب اختبار', nameEn: 'Test milk', description: null,
+const item = { inventoryItemId: '9', code: 'ITM-9', nameAr: 'حليب اختبار', nameEn: 'Test milk', description: null, image: null,
   isActive: true, unitOfMeasure: { id: '4', code: 'EA', nameAr: 'حبة', nameEn: 'Each', decimalPlaces: 0, isActive: true },
   sellingProfile: { id: '7', unitPrice: '12.3400', currencyId: '2', currencyCode: 'YER', revenueAccountId: '3', taxRateId: null, isActive: true, version: 1 },
   isReady: true, readinessReason: null };

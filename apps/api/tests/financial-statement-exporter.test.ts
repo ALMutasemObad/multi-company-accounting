@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { costCenterActivityTable, financialPositionTable, indirectCashFlowTable, journalReportToCsv, ledgerReportTable, tableToCsv, tableToPdf, tableToXlsx, taxSummaryTable } from "../src/reports/financial-statement-exporter.js";
+import { tableToCsv as kernelCsv, tableToXlsx as kernelXlsx } from "../src/document-output-kernel/tabular-profile.js";
 
 const report = {
   company: { name: "الشركة التجريبية" }, baseCurrency: { code: "SAR", nameAr: "ريال سعودي" }, asOf: "2026-08-11", comparisonAsOf: null,
@@ -18,6 +19,11 @@ describe("financial statement exports", () => {
     const xlsx = tableToXlsx(table, "المركز المالي");
     expect(xlsx.subarray(0, 4).toString("hex")).toBe("504b0304");
     expect(xlsx.includes(Buffer.from("xl/worksheets/sheet1.xml"))).toBe(true);
+  });
+  it("preserves tabular parity through the shared kernel", () => {
+    const table = [[{ value: "وصف" }, { value: "9007199254740993.1234", numeric: true }]];
+    expect(tableToCsv(table)).toEqual(kernelCsv(table));
+    expect(tableToXlsx(table, "التكافؤ")).toEqual(kernelXlsx(table, "التكافؤ"));
   });
   it("creates an Arabic PDF", async () => {
     const pdf = await tableToPdf(financialPositionTable(report), "المركز المالي", "الشركة التجريبية");

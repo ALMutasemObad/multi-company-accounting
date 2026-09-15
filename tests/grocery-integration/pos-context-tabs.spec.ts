@@ -177,10 +177,18 @@ async function httpFixture(context: BrowserContext) {
   };
 }
 type Fixture = Awaited<ReturnType<typeof httpFixture>>;
-const cashier = (page: Page) => page.locator('.cashier-context-panel').filter({ has: page.getByRole('heading', { name: copy.title, exact: true }) });
+const sessionWizard = (page: Page) => page.getByRole('dialog', { name: pos['pos.sessionWizardTitle'], exact: true });
+const cashier = (page: Page) => sessionWizard(page).locator('.cashier-context-panel');
 const token = (page: Page) => page.evaluate(() => sessionStorage.getItem('mcap.csrf'));
 const marker = (page: Page) => page.evaluate(key => localStorage.getItem(key), markerKey);
 const allMarkers = (page: Page) => page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('pos-recovery:')).map(key => [key, localStorage.getItem(key)]));
+async function closeSessionWizard(page: Page) {
+  const dialog = sessionWizard(page);
+  if (await dialog.isVisible()) {
+    await dialog.getByRole('button', { name: pos['pos.sessionClose'], exact: true }).click();
+    await expect(dialog).toBeHidden();
+  }
+}
 async function loginFromScreen(page: Page, userId: UserId) {
   await page.locator('.login-card input[name=email]').fill(users[userId].email);
   await page.locator('.login-card input[name=password]').fill('Fixture-only-password-123!');
@@ -189,6 +197,7 @@ async function loginFromScreen(page: Page, userId: UserId) {
   await expect(page).toHaveURL(/#pos$/);
 }
 async function replaceLogin(page: Page, userId: UserId) {
+  await closeSessionWizard(page);
   await page.locator('.user-menu button[title][aria-label]').click();
   await loginFromScreen(page, userId);
 }
@@ -203,16 +212,18 @@ async function openTabs(context: BrowserContext, original: Page, fixture: Fixtur
   expect(peer.context()).toBe(context); expect(context.pages()).toHaveLength(2);
   expect(await token(peer)).toBe(await token(original)); expect(await token(original)).toBe('fixture-session-csrf-1');
   expect(fixture.calls(peer, '/auth/me').at(-1)?.sid).toBe(initialCookie!.value);
+  await closeSessionWizard(peer);
   return peer;
 }
 async function selectCompany(page: Page, id: CompanyId) {
+  await closeSessionWizard(page);
   await page.locator('.switch-company').click();
   await page.locator('.company-grid button').filter({ hasText: companies.find(company => company.id === id)!.name }).click();
   await expect(page.locator('.company-badge')).toContainText(companies.find(company => company.id === id)!.name);
   await expect(page).toHaveURL(/#pos$/);
 }
 async function prepareSale(page: Page) {
-  const panel = cashier(page); await expect(panel).toBeVisible();
+  const dialog = sessionWizard(page); const panel = cashier(page); await expect(panel).toBeVisible();
   await panel.getByLabel(copy.date, { exact: true }).fill('2026-08-31');
   for (const field of fields) {
     await panel.getByRole('button', { name: `${copy.edit} ${copy[field]}`, exact: true }).click();
@@ -220,10 +231,14 @@ async function prepareSale(page: Page) {
     await panel.getByRole('listbox').getByRole('option', { name: `11 ${copy[field]}`, exact: true }).click();
     await expect(panel.getByText(`11 ${copy[field]}`, { exact: true })).toBeVisible();
   }
-  await panel.getByRole('button', { name: copy.review, exact: true }).click();
-  await page.getByLabel(pos['pos.descriptionLabel'], { exact: true }).fill('Isolated HTTP fixture sale');
-  await page.getByRole('combobox', { name: pos['pos.customer'], exact: true }).click();
-  await page.getByRole('listbox').getByRole('option', { name: 'CUST — Fixture customer', exact: true }).click();
+  await dialog.getByRole('button', { name: pos['pos.sessionStepDetails'] }).click();
+  await dialog.getByLabel(pos['pos.descriptionLabel'], { exact: true }).fill('Isolated HTTP fixture sale');
+  await dialog.getByRole('combobox', { name: pos['pos.customer'], exact: true }).click();
+  await dialog.getByRole('listbox').getByRole('option', { name: 'CUST — Fixture customer', exact: true }).click();
+  await dialog.getByLabel(pos['pos.exchangeRate'], { exact: true }).fill('1');
+  await dialog.getByRole('button', { name: pos['pos.sessionStepReview'] }).click();
+  const activate = dialog.getByRole('button', { name: pos['pos.sessionActivate'], exact: true });
+  await expect(activate).toBeEnabled(); await activate.click(); await expect(dialog).toBeHidden();
   await page.locator('.pos-experience-product').click();
   await expect(page.getByTestId('pos-cart-line')).toHaveCount(1);
   await expect(page.getByRole('button', { name: pos['pos.checkout'], exact: true })).toBeEnabled();

@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const port = Number(process.env.VISUAL_QA_PORT ?? 3000);
+const productThumbnail = Buffer.from("UklGRtIDAABXRUJQVlA4WAoAAAAQAAAAvwAAvwAAQUxQSFMBAAABgFtt2/LkQRJ64lLqNLhX7u6UGcCXsQncSnSCCBaX/8P/P83T/hExAZBvXgnHH6sdQWen+hgPL5sxaN1xRpCbPtINwh6qC4JrQZtSmpMPQXLdO6aIuyiILrgUmP0QVL9Py1rtCrJ7uzJ2BOFH/5rtMdab+ofjTVD+4flDWxSk5zW/3QraL3+x1Xj7sPwICeL9AHR15mo64FhQfwBkuEvBInEnmVYE+Yth9oJx9iLP7D1W2Cu12WsJ1f+q/1X/q/5X/a/6XyVgm71Whb3SE3uPcfYiYfaCy+wtmCTuJBPS3CWAI+72AV2NuZoOQJA5HwDYary9m3/ghrcL/KrJs5bT/AbHG2cfbvw93WOsN4H/bhMmbeL/q122ejuQO/XO1dsE5DvzTOUcUHL05J2lulcLhS2BGkM1vxkD1B0mJW6kxME4Bm1cDEbvKm0+2pW7aHDRCPkAVlA4IFgCAAAwFQCdASrAAMAAPm02mkgkIyKhJvY4KIANiWdu4XCA8EMEzoBt9MA9ACrImKCYE+QN5yNbfGUkgKSQFAoQUeXxMjB8UPZwapV1ICmMMkGsxSQCgNwx2Tz2HNpo3//FPClA1cwBxbIc679RFlatzgTJUeRMJyhRZVR/ndo8kBSRQ/zQlh5CiyDMrBCw1eItUrZNcNNBRhZHkSQ3MUkAp3SQKaemMWmcaaRVrdRLkKLK1ggAAP7+uLeegRTgASQKEYbuy8oBF2/mIkv+Qj5sCkMIQM8Fd2K16L9ysL4xAv3WCH/Cd6QB4gSq2TibRCUlsUfiz/cL9Xrml3uJA+S+32GMyuaLKSbuXtExZR1A/sXqojW+KrDJdtCveG2j+D8CD6Z0ZQeDhVRnMTuzR1nxLUhcGOjcZExrsY7DBHlSgXPRiDUyDPfTV/XyJBmd5ssFft8SURY/VSO/BwnS5SKHDZEQUy/3rokHxJlnKU6ShU3Dj4ke6clulJvebmhR1RqAc1/6BXvTBbZM3M87KVOLpnw6/Ev89ulCMAeQMxNltY1lpPba/3mDU7MZOMccZvQYJvdC9ayh4M3Pw0v5r9RLq15ZnisWf2Gd73vq5a0Nfy5XhOVm+IGZdA2TOWX9w2h0nGVq//jXyauESXc/9d1316nOChmPG7hCiGzjF7qcHAK0EEKOQBAkUtAA7Vtk8o+Teffgj2FviJXB+SLLHThFzeGb191KnkA8k/F9vlhossUwkW1cCOyns2IaSkYgCZ/V8YaQ+ZbNBkWa504u+l9oLJyhshgDc50yYAA=", "base64");
 const meta = { page: 1, pageSize: 20, total: 0, totalPages: 0 };
 const currency = { id: "currency-sar", code: "SAR", nameAr: "ريال سعودي", nameEn: "Saudi Riyal", decimals: 2 };
 const company = {
@@ -42,6 +43,7 @@ const visualQaPermissions = [
   "inventory_barcodes.resolve",
   "manual_journals.view",
   "payments.view",
+  "pos.checkout",
   "pos.view",
   "professional_projects.view",
   "crm.view",
@@ -55,6 +57,7 @@ const visualQaPermissions = [
   "roles.view",
   "sales_invoices.create",
   "sales_invoices.view",
+  "sales_catalog.view",
   "security_events.view",
   "settings.manage",
   "subscriptions.manage",
@@ -534,11 +537,8 @@ export function responseFor(url, method, headers = {}) {
   const pathname = url.pathname.replace(/^\/api\/v1/, "");
   // Visual test data only: this server is never part of an application release.
   if (pathname.startsWith("/pos/")) {
-    // This actor can view history only. Never reflect request headers as identity,
-    // or enable checkout/recovery/cashier reads to make a visual test pass.
-    const historyIdentity = pathname === "/pos/context/identity"
-      && url.searchParams.getAll("purpose").length === 1 && url.searchParams.get("purpose") === "history";
-    if (method !== "GET" || (!historyIdentity && pathname !== "/pos/sales")) return { status: 403, code: "FORBIDDEN" };
+    // Read-only POS fixture. It exposes the smallest coherent session context for visual QA;
+    // checkout/recovery commands remain rejected and cannot create financial documents.
     const userId = headers["x-pos-expected-user-id"];
     const companyId = headers["x-pos-expected-company-id"];
     const canonical = value => typeof value === "string" && value.length >= 1 && value.length <= 20
@@ -546,7 +546,34 @@ export function responseFor(url, method, headers = {}) {
     if (!canonical(userId) || !canonical(companyId)) return { status: 400, code: "POS_CONTEXT_REQUIRED" };
     const posContext = { userId: currentAuthorization.user.id, companyId: currentAuthorization.selectedCompany.id };
     if (userId !== posContext.userId || companyId !== posContext.companyId) return { status: 409, code: "POS_CONTEXT_CHANGED" };
-    return { ...(historyIdentity ? {} : list()), posContext };
+    const response = (body) => ({ ...body, posContext });
+    const posList = (data) => ({ data, meta: { page: 1, pageSize: Number(url.searchParams.get("pageSize") ?? 20), total: data.length, totalPages: data.length ? 1 : 0 } });
+    if (pathname === "/pos/context/identity" && method === "GET") return response({});
+    if (pathname === "/pos/context/period" && method === "GET") return response({ documentDate: url.searchParams.get("documentDate"), status: "RESOLVED", period: { id: "1001", name: "ديسمبر 2026", startDate: "2026-12-01", endDate: "2026-12-31", status: "OPEN", version: 0 } });
+    const options = {
+      warehouseId: { id: "101", code: "WH-000001", nameAr: "المستودع الرئيسي", nameEn: "Main warehouse" },
+      cashBankAccountId: { id: "102", code: "CB-000001", nameAr: "صندوق المبيعات", nameEn: "Sales cash" },
+      paymentMethodId: { id: "103", code: "CASH", nameAr: "نقدي", nameEn: "Cash", requiresReference: false },
+      currencyId: { id: "104", code: "SAR", nameAr: "ريال سعودي", nameEn: "Saudi Riyal", isBase: true },
+    };
+    const optionMatch = pathname.match(/^\/pos\/context\/options\/(warehouseId|cashBankAccountId|paymentMethodId|currencyId)$/u);
+    if (optionMatch && method === "GET") {
+      const value = options[optionMatch[1]];
+      return response(posList([{ ...value, label: `${value.code} — ${value.nameAr}`, isAvailable: true, revision: "1" }]));
+    }
+    const referenceMatch = pathname.match(/^\/pos\/context\/references\/(warehouseId|cashBankAccountId|paymentMethodId|currencyId)\/([1-9][0-9]*)$/u);
+    if (referenceMatch && method === "GET") {
+      const value = options[referenceMatch[1]];
+      return response({ status: referenceMatch[2] === value.id ? "available" : "unavailable", ...(referenceMatch[2] === value.id ? { reference: { id: value.id, label: `${value.code} — ${value.nameAr}`, revision: "1", ...(value.requiresReference === undefined ? {} : { requiresReference: value.requiresReference }), ...(value.isBase === undefined ? {} : { isBase: value.isBase }), code: value.code, nameAr: value.nameAr, nameEn: value.nameEn } } : {}) });
+    }
+    if (pathname === "/pos/sales" && method === "GET") return response(posList([]));
+    return { status: 405, code: "VISUAL_QA_POS_WRITE_DISABLED" };
+  }
+  if (pathname === "/sales/catalog") {
+    const posContext = { userId: currentAuthorization.user.id, companyId: currentAuthorization.selectedCompany.id };
+    if (headers["x-pos-expected-user-id"] !== posContext.userId || headers["x-pos-expected-company-id"] !== posContext.companyId) return { status: 409, code: "POS_CONTEXT_CHANGED" };
+    const data = [{ inventoryItemId: "201", code: "ITM-000001", nameAr: "مياه معدنية", nameEn: "Mineral water", description: "عبوة 500 مل", isActive: true, image: { thumbnailUrl: "/api/v1/sales/catalog/items/201/image/pos?v=1" }, unitOfMeasure: { id: "1", code: "EA", nameAr: "حبة", nameEn: "Each", decimalPlaces: 0, isActive: true }, sellingProfile: { id: "301", unitPrice: "5.0000", currencyId: "104", currencyCode: "SAR", revenueAccountId: "401", taxRateId: null, isActive: true, version: 0 }, isReady: true, readinessReason: null }];
+    return { data, meta: { page: 1, pageSize: Number(url.searchParams.get("pageSize") ?? 24), total: 1, totalPages: 1 }, posContext };
   }
   if (pathname === "/public/subscription-plans") return {
     plans: [
@@ -805,13 +832,17 @@ export function responseFor(url, method, headers = {}) {
     { id: "unit-ea", code: "EA", nameAr: "حبة", nameEn: "Each", decimalPlaces: 0, isActive: true, version: 0 },
   ]);
   if (pathname === "/inventory-items") return list([
-    { id: "item-qa", code: "ITM-000001", nameAr: "صنف تجريبي", nameEn: "Sample item", description: "صنف مخصص للفحص البصري", isActive: true, version: 0, unitOfMeasure: { id: "unit-ea", code: "EA", nameAr: "حبة", nameEn: "Each", decimalPlaces: 0, isActive: true, version: 0 } },
+    { id: "item-qa", code: "ITM-000001", nameAr: "صنف تجريبي", nameEn: "Sample item", description: "صنف مخصص للفحص البصري", isActive: true, version: 0, image: { version: 1, thumbnailUrl: "/api/v1/inventory-items/201/image/inventory?v=1" }, unitOfMeasure: { id: "unit-ea", code: "EA", nameAr: "حبة", nameEn: "Each", decimalPlaces: 0, isActive: true, version: 0 } },
   ]);
   if (pathname === "/warehouses") return list([
     { id: "warehouse-qa", code: "WH-000001", nameAr: "المستودع الرئيسي", nameEn: "Main warehouse", address: "الرياض", isActive: true, version: 0 },
     { id: "warehouse-branch", code: "WH-000002", nameAr: "مستودع الفرع", nameEn: "Branch warehouse", address: "جدة", isActive: true, version: 0 },
   ]);
-  if (pathname === "/customers") return list([{ id: "customer-qa", receivableAccountId: "account-ar-qa", code: "CUS-000001", nameAr: "شركة الأفق", nameEn: "Horizon Company", phone: null, email: null, taxNumberMasked: null, isActive: true, addresses: [] }]);
+  if (pathname === "/customers") {
+    const customers = list([{ id: "customer-qa", receivableAccountId: "account-ar-qa", code: "CUS-000001", nameAr: "شركة الأفق", nameEn: "Horizon Company", phone: null, email: null, taxNumberMasked: null, isActive: true, addresses: [] }]);
+    const isPosRequest = headers["x-pos-expected-user-id"] === currentAuthorization.user.id && headers["x-pos-expected-company-id"] === currentAuthorization.selectedCompany.id;
+    return isPosRequest ? { ...customers, posContext: { userId: currentAuthorization.user.id, companyId: currentAuthorization.selectedCompany.id } } : customers;
+  }
   if (pathname === "/inventory-balances") return list([
     { id: "balance-qa", warehouse: { id: "warehouse-qa", code: "WH-000001", nameAr: "المستودع الرئيسي", nameEn: "Main warehouse" }, inventoryItem: { id: "item-qa", code: "ITM-000001", nameAr: "صنف تجريبي", nameEn: "Sample item", unitOfMeasure: { id: "unit-ea", code: "EA", nameAr: "حبة", nameEn: "Each", decimalPlaces: 0 } }, onHand: "125.000000", version: 3, movementCount: 4, updatedAt: "2026-08-24T12:00:00.000Z" },
   ]);
@@ -826,6 +857,17 @@ const server = createServer((request, response) => {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
   if (!url.pathname.startsWith("/api/v1/")) {
     response.writeHead(404).end();
+    return;
+  }
+  if (/^\/api\/v1\/(?:inventory-items\/[1-9][0-9]*\/image\/inventory|sales\/catalog\/items\/[1-9][0-9]*\/image\/pos)$/u.test(url.pathname)) {
+    response.writeHead(200, {
+      "Content-Type": "image/webp",
+      "Content-Length": String(productThumbnail.byteLength),
+      "Cache-Control": "private, max-age=31536000, immutable",
+      "ETag": '"product-image-v1"',
+      "Vary": "Cookie",
+    });
+    response.end(productThumbnail);
     return;
   }
   if (url.pathname === "/api/v1/auth/companies" && request.headers.referer?.includes("qa=login")) {

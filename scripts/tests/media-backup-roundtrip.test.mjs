@@ -1,0 +1,31 @@
+import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
+import test from "node:test";
+import { restoreMediaBackup } from "../media-restore.mjs";
+
+const exec = promisify(execFile);
+test("encrypted media backup round-trips content and excludes live staging directories", async (context) => {
+  const root = await mkdtemp(path.join(tmpdir(), "mcap-media-roundtrip-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const media = path.join(root, "media"); const backups = path.join(root, "backups"); const restored = path.join(root, "restored");
+  await mkdir(path.join(media, "product-images", "companies", "7", "inventory-items", "11", "hash"), { recursive: true });
+  await writeFile(path.join(media, "product-images", "companies", "7", "inventory-items", "11", "hash", "pos-thumb.webp"), "thumbnail");
+  await mkdir(path.join(media, ".staging-in-flight")); await writeFile(path.join(media, ".staging-in-flight", "partial"), "partial");
+  const passphrase = "test-media-backup-passphrase-at-least-32-characters";
+  const { stdout } = await exec(process.execPath, [path.resolve("scripts/media-backup.mjs")], { env: { ...process.env, MEDIA_ROOT: media, BACKUP_DIRECTORY: backups, BACKUP_ENCRYPTION_PASSPHRASE: passphrase } });
+  const result = JSON.parse(stdout);
+  await assert.rejects(restoreMediaBackup(result.backupPath, `${restored}-wrong-key`, { passphrase: "wrong-passphrase-that-is-still-at-least-32-characters" }));
+  await restoreMediaBackup(result.backupPath, restored, { passphrase });
+  assert.equal(await readFile(path.join(restored, "product-images", "companies", "7", "inventory-items", "11", "hash", "pos-thumb.webp"), "utf8"), "thumbnail");
+  await assert.rejects(readFile(path.join(restored, ".staging-in-flight", "partial")));
+  const manifestPath = `${result.backupPath}.json`;
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  await writeFile(manifestPath, `${JSON.stringify({ ...manifest, bytes: manifest.bytes + 1 })}\n`);
+  await assert.rejects(restoreMediaBackup(result.backupPath, `${restored}-tampered`, { passphrase }), /invalid/u);
+  await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`);
+  await assert.rejects(exec(process.execPath, [path.resolve("scripts/media-backup.mjs")], { env: { ...process.env, MEDIA_ROOT: media, BACKUP_DIRECTORY: path.join(media, "nested"), BACKUP_ENCRYPTION_PASSPHRASE: passphrase } }));
+});

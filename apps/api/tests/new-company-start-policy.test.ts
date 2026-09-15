@@ -139,6 +139,12 @@ describe('new-company start plan eligibility', () => {
     expect(selected.modules).toEqual([{ moduleId: 1n, selectionMode: 'INCLUDED' }, { moduleId: 2n, selectionMode: 'INCLUDED' }]);
   });
 
+  it('preserves entitlement order after dependency validation', () => {
+    const plan = startPlan({ entitlements: [entitlement(2n, 'SALES', [1n]), entitlement(1n, 'CORE_ACCOUNTING')] });
+    expect(validateNewCompanyStartPlan(plan, effectiveAt, 'SAR').modules)
+      .toEqual([{ moduleId: 2n, selectionMode: 'INCLUDED' }, { moduleId: 1n, selectionMode: 'INCLUDED' }]);
+  });
+
   it('requires the referenced plan version to exist', () => {
     expect(() => validateNewCompanyStartPlan(null, effectiveAt, 'SAR'))
       .toThrowError(new SubscriptionStartPolicyError('PLAN_NOT_ELIGIBLE'));

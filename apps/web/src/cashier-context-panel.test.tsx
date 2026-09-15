@@ -28,6 +28,14 @@ describe("CashierContextPanel static component contract (not browser/device QA)"
     const html = renderToStaticMarkup(<CashierContextPanel controller={c} currentScopeKey={cashierContextScopeKey({ ...cashierScope, userId: "8" })} locale="en" onReviewed={() => {}} />);
     expect(html).not.toContain("Reference"); expect(html).not.toContain("2026-08-31"); expect(html).toContain(cashierContextDictionaries.en.scopeChanged);
   });
+  it("keeps wizard-embedded context free of duplicate review, draft, refresh, and remember controls", async () => {
+    const c = createCashierContextController(cashierReader); c.setScope(cashierScope);
+    await c.startSale({ documentDate: "2026-08-31", requiresWarehouse: true, draft: { documentDate: "2026-08-31", values: cashierValues } });
+    const text = cashierContextDictionaries.en;
+    const html = renderToStaticMarkup(<CashierContextPanel compact controller={c} currentScopeKey={cashierContextScopeKey(cashierScope)} locale="en" onReviewed={() => {}} />);
+    expect(html).toContain('type="date"');
+    for (const duplicate of [text.review, text.saveDraft, text.refresh, text.remember, text.rememberHelp]) expect(html).not.toContain(duplicate);
+  });
   it("locks all actionable controls during an unknown checkout", async () => {
     const c = createCashierContextController(cashierReader); c.setScope(cashierScope);
     await c.startSale({ documentDate: "2026-08-31", requiresWarehouse: true, draft: { documentDate: "2026-08-31", values: cashierValues } }); c.setLock("checkout-unknown");

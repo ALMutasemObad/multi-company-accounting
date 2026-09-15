@@ -23,7 +23,7 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 364, requestBodies: 187, responseBodies: 2396 });
+    expect(openApiContractCoverage).toEqual({ operations: 368, requestBodies: 187, responseBodies: 2423 });
     expect(openApiOperationRoutes).toMatchObject({
       'GET /pos/context/identity': 'getPosContextIdentity',
       'GET /auth/social/accounts': 'getCurrentSocialAccounts',

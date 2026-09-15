@@ -83,9 +83,9 @@ async function configureCashierShell(page: Page) {
   };
   const products = Array.from({ length: 12 }, (_, index) => ({
     inventoryItemId: String(index + 1), code: `ITM-TEST-${index + 1}`, nameAr: `صنف تجريبي ${index + 1}`, nameEn: `Test item ${index + 1}`,
+    image: index < 6 ? { thumbnailUrl: `/api/v1/sales/catalog/items/${index + 1}/image/pos?v=1` } : null,
     description: null, unitOfMeasure: { id: '1', code: 'EA', nameAr: 'حبة', nameEn: 'Each', decimalPlaces: 0, isActive: true, version: 1 },
-    price: '2.1000', currency: { id: '1', code: 'SAR', nameAr: 'ريال سعودي', nameEn: 'Saudi riyal', isBase: true },
-    revenueAccount: { id: '41', code: '4100', nameAr: 'إيراد تجريبي', nameEn: 'Test revenue' }, taxRate: null,
+    sellingProfile: { id: String(index + 1), unitPrice: '2.1000', currencyId: '1', currencyCode: 'SAR', revenueAccountId: '41', taxRateId: null, isActive: true, version: 1 },
     isReady: true, readinessReason: null,
   }));
   const list = (data: unknown[], pageSize = 24) => ({ data, meta: { page: 1, pageSize, total: data.length, totalPages: data.length ? 1 : 0 } });
@@ -126,7 +126,6 @@ async function cashierShellGeometry(page: Page) {
     const main = document.querySelector<HTMLElement>('.app-main')!;
     const content = document.querySelector<HTMLElement>('.content')!;
     const workspace = document.querySelector<HTMLElement>('.pos-experience-workspace')!;
-    const settings = document.querySelector<HTMLElement>('.pos-experience-settings')!;
     const selection = document.querySelector<HTMLElement>('.pos-experience-selection')!;
     const basket = document.querySelector<HTMLElement>('.pos-experience-basket-panel')!;
     const sidebarStyle = getComputedStyle(sidebar);
@@ -137,8 +136,7 @@ async function cashierShellGeometry(page: Page) {
       contentWidth: content.getBoundingClientRect().width,
       documentFits: document.documentElement.scrollHeight <= innerHeight + 1 && document.documentElement.scrollWidth <= innerWidth + 1,
       workspaceFits: workspace.getBoundingClientRect().bottom <= innerHeight + 1,
-      columnsFit: [settings, selection, basket].every((column) => column.scrollWidth <= column.clientWidth + 1),
-      settingsScrollsInternally: settings.scrollHeight > settings.clientHeight && getComputedStyle(settings).overflowY === 'auto',
+      columnsFit: [selection, basket].every((column) => column.scrollWidth <= column.clientWidth + 1),
     };
   });
 }
@@ -258,15 +256,21 @@ async function auditCurrentInterface(page: Page, locale: Locale, label: string) 
   await expect(page.locator('html')).toHaveAttribute('lang', locale);
   await expect(page.locator('html')).toHaveAttribute('dir', directions[locale]);
   if (label === 'pos') {
-    // pos.view exposes authorized history; checkout/recovery/cashier stay absent.
-    // A heading or quarantined scope panel is not a successful history load.
+    // The fixture is a checkout-capable cashier. Close the initial setup wizard
+    // before auditing the underlying workspace and its read-only history.
+    const dialog = page.getByRole('dialog', { name: posCopy[locale]['pos.sessionWizardTitle'], exact: true });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: posCopy[locale]['pos.sessionClose'], exact: true }).click();
+    await expect(dialog).toBeHidden();
     const history = page.locator('.pos-experience-history');
     await expect(history).toBeVisible();
     await history.locator('summary').click();
     await expect(history.getByText(posCopy[locale]['pos.emptyDescription'], { exact: true })).toBeVisible();
     await expect(history.locator('.loading, [role="alert"]')).toHaveCount(0);
     await expect(page.locator('.pos-experience .cashier-context-panel, .pos-experience [role="alert"]')).toHaveCount(0);
-    await expect(page.locator('.pos-experience form, .pos-experience-checkout, .pos-experience .pos-recovery, .pos-experience .pos-barcode-scanner')).toHaveCount(0);
+    await expect(page.locator('.pos-experience-form')).toBeVisible();
+    await expect(page.locator('.pos-experience-checkout, .pos-experience .pos-barcode-scanner')).toHaveCount(2);
+    await expect(page.locator('.pos-experience .pos-recovery')).toHaveCount(0);
   }
   expect.soft(await interfaceFailures(page), `${locale}/${label} responsive interface contract`).toEqual([]);
 }
@@ -283,7 +287,12 @@ test('Arabic POS uses the real production shell and keeps sidebar preferences is
   const fixture = await configureCashierShell(page);
   await page.goto('/?qa=pos#pos');
   await expect(page.locator('.pos-experience-product')).toHaveCount(12);
+  await expect(page.locator('.pos-product-thumbnail img')).toHaveCount(6);
+  await expect(page.locator('.pos-experience-product-price').first()).toContainText('2.10 SAR');
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   expect(await page.evaluate(([currentKey, otherUserKey, otherCompanyKey]) => [
     localStorage.getItem(currentKey), localStorage.getItem(otherUserKey), localStorage.getItem(otherCompanyKey),
   ], [userOneCompanyOneKey, userTwoCompanyOneKey, userOneCompanyTwoKey])).toEqual([null, 'collapsed', 'collapsed']);
@@ -324,7 +333,7 @@ test('Arabic POS uses the real production shell and keeps sidebar preferences is
   expect(collapsed.mainWidth).toBeGreaterThanOrEqual(expanded.mainWidth + expanded.sidebarWidth - 1);
   expect(collapsed.contentWidth).toBeGreaterThan(expanded.contentWidth);
   expect(Math.abs(collapsed.mainWidth - collapsed.viewportWidth)).toBeLessThanOrEqual(1);
-  expect(collapsed).toMatchObject({ documentFits: true, workspaceFits: true, columnsFit: true, settingsScrollsInternally: true });
+  expect(collapsed).toMatchObject({ documentFits: true, workspaceFits: true, columnsFit: true });
   await page.screenshot({ path: testInfo.outputPath(`arabic-pos-production-shell-${width}.png`), fullPage: false });
   const language = page.locator('.topbar .language-switcher select');
   await language.selectOption('en');
@@ -345,6 +354,9 @@ test('Arabic POS uses the real production shell and keeps sidebar preferences is
 
   await page.goto('/?qa=pos#pos');
   await expect(page.locator('.pos-experience-product')).toHaveCount(12);
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(desktopToggle).toHaveAttribute('aria-expanded', 'false');
   await expect(sidebar).toBeHidden();
   expect(fixture.requests.filter(({ path }) => path === '/pos/context/identity').every(({ userId, companyId }) => userId === '1' && companyId === '1')).toBe(true);
@@ -405,11 +417,10 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
           }
           for (const request of posRequests) {
             const url = new URL(request.url());
-            expect([identityPath, salesPath]).toContain(url.pathname);
             expect(request.method()).toBe('GET');
             expect(request.headers()['x-pos-expected-user-id']).toBe('1');
             expect(request.headers()['x-pos-expected-company-id']).toBe('1');
-            if (url.pathname === identityPath) expect(url.searchParams.get('purpose')).toBe('history');
+            if (url.pathname === identityPath) expect(url.searchParams.get('purpose')).toBeNull();
           }
           for (const response of posResponses) {
             expect(response.status()).toBe(200);
@@ -472,6 +483,13 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
             scrollLocked: document.body.style.overflow === 'hidden',
           };
         }), `${locale}/inventory-${name} dialog contract`).toEqual({ labelled: true, contained: true, scrollLocked: true });
+        if (name === 'items') {
+          const imageInput = dialog.locator('input[type="file"]');
+          await expect(dialog.locator('.product-image-picker')).toBeVisible();
+          await expect(imageInput).toHaveCount(1);
+          await expect(imageInput).toHaveAttribute('accept', 'image/jpeg,image/png,image/webp');
+          await expect(imageInput).toHaveAttribute('aria-label', /.+/u);
+        }
         await auditCurrentInterface(page, locale, `inventory-${name}-editor`);
         await page.keyboard.press('Escape');
         await expect(dialog).toHaveCount(0);

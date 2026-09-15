@@ -57,7 +57,7 @@ test("dependency security monitoring runs daily from main without secrets or art
   const installIndex = source.indexOf("npm ci");
   const scriptsIndex = source.indexOf("npm run audit:install-scripts");
   const buildAuditIndex = source.indexOf("npm run audit:critical");
-  const pruneIndex = source.indexOf("npm prune --omit=dev --omit=optional");
+  const pruneIndex = source.indexOf("npm prune --omit=dev");
   const productionAuditIndex = source.indexOf("npm run audit:production");
 
   assert.match(source, /schedule:\s+- cron: '37 3 \* \* \*'/u);
@@ -531,13 +531,14 @@ test("manual staging DR stores immutable offsite recovery points and can run a r
   assert.match(source, /create-cpanel-offsite-backup\.sh/u);
   assert.match(source, /normalize-cpanel-backup\.mjs/u);
   assert.match(source, /verify-backup-artifact\.mjs/u);
-  assert.match(source, /name: mcap-production-database-backup/u);
+  assert.match(source, /name: mcap-production-backup-bundle/u);
   assert.match(source, /retention-days: 90/u);
   assert.match(source, /compression-level: 0/u);
   assert.match(source, /LOCAL_BACKUP_RETENTION_DAYS: '7'/u);
   assert.match(source, /LOCAL_ORPHAN_GRACE_DAYS: '1'/u);
   assert.match(source, /Prune only offsite-backed local recovery points/u);
-  assert.match(source, /mcap-production-\*\.sql\.gz\.jwb\.json/u);
+  assert.match(source, /mcap-backup-pair-\*\.json/u);
+  assert.match(source, /media-restore\.mjs/u);
   assert.doesNotMatch(source, /rm -rf/u);
   assert.match(source, /MAX_PREVIOUS_BACKUP_ARTIFACT_AGE_SECONDS: '91800'/u);
   assert.match(source, /production-backup-dr\.yml\/runs/u);
