@@ -19,6 +19,7 @@ Application startup file: apps/api/dist/server.js
 Application mode: Production
 Node.js version: 22.23.2
 Passenger log: logs/accounting-passenger.log
+Persistent media root: accounting-app/shared/media
 ```
 
 يسجل CloudLinux Node.js Selector جذر التطبيق وبيئة Node على مسار الإصدار الفعلي داخل `releases`، ولا يتبع رابط `current` عند تبديله. لذلك يبقى `current` مؤشرًا تشغيليًا للتدقيق، بينما يعيد مسار النشر إنشاء تسجيل Selector من الإصدار السابق إلى الإصدار الجديد مع الحفاظ على متغيرات البيئة المحمية. لا تغيّر `PassengerAppRoot` أو `PassengerNodejs` يدويًا بين الإصدارات.
@@ -38,7 +39,7 @@ Passenger log: logs/accounting-passenger.log
 
 تتضمن `.github/workflows/ci.yml` مهمة `Deploy production to iFastNet`. لا تبدأ هذه المهمة إلا عند الدفع إلى `main` وبعد نجاح بوابتي MariaDB 10.11 وMySQL 8.4 كاملتين. تنزّل Artifact الذي بُني داخل التشغيل نفسه، وتتحقق من SHA-256، وتتصل بمفتاح نشر مخصص وبصمة SSH مثبتة في `deploy/ssh/ifastnet_known_hosts`، ثم تنفذ بالترتيب:
 
-1. نسخة قاعدة بيانات مشفرة إلى `/home/doralash/backups/mcap`.
+1. نقطة استعادة مشفرة ومترابطة لقاعدة البيانات ووسائط المنتجات إلى `/home/doralash/backups/mcap`؛ لا يبدأ الترحيل ما لم تنجح بصمات أعضاء الزوج كلهم.
 2. `prisma migrate deploy` على الإصدار المرشح قبل تفعيله.
 3. Seed المرجعيات الإنتاجية المتكرر والآمن.
 4. تبديل رابط `current` وإعادة إنشاء تسجيل CloudLinux وبيئة Node على جذر الإصدار immutable الجديد.
@@ -64,6 +65,7 @@ MIGRATION_DATABASE_URL=mysql://<dedicated-ddl-user>:<secret>@<host>:3306/<produc
 
 ```bash
 export MCAP_DEPLOY_ROOT=/home/doralash/accounting-app
+export MCAP_MEDIA_ROOT=/home/doralash/accounting-app/shared/media
 export MCAP_NODE_BIN=/opt/alt/alt-nodejs22/root/usr/bin/node
 export MCAP_NPX_CLI=/opt/alt/alt-nodejs22/root/usr/lib/node_modules/npm/bin/npx-cli.js
 export MCAP_HEALTH_URL=https://accounting.doralashab.com/ready
@@ -89,7 +91,7 @@ bash deploy/scripts/install-cpanel-release.sh \
 
 ## إعداد التطبيق وقاعدة البيانات
 
-أضف متغيرات الإنتاج من `.env.production.example` في Node.js Selector. يجب أن يكون `WEB_ORIGIN` هو رابط HTTPS نفسه، وتبقى `SESSION_COOKIE_SECURE` و`TRUST_PROXY` مفعّلتين. يلزم دائمًا `RATE_LIMIT_IDENTITY_SECRET` عشوائي مستقل وثابت بين كل نسخ التطبيق؛ لا يقل عن 32 محرفًا ولا يحفظ في Git. عند ترقية بيئة أقدم لا تملكه، يولّده محوّل CloudLinux مرة واحدة داخل لقطة البيئة المحمية للهدف ولا يطبعه أو يعيده إلى GitHub؛ وبعد أول نجاح يحافظ عليه كل تبديل لاحق. القيمة الموجودة القصيرة أو غير الصالحة تُرفض ولا تُستبدل بصمت. عند تفعيل التسجيل الذاتي أضف أسرار Resend و`REGISTRATION_AUDIT_PEPPER` و`REGISTRATION_TOKEN_SECRET`؛ وإذا بقيت استعادة كلمة المرور مفعلة فتبقى أسرار Resend ومفتاح الرمز مطلوبة حتى مع `SELF_REGISTRATION_ENABLED=false`. لا تحفظ كلمة مرور قاعدة البيانات أو كلمة مرور المدير أو مفاتيح البريد في Git أو داخل ملفات Artifact.
+أضف متغيرات الإنتاج من `.env.production.example` في Node.js Selector. يجب أن يكون `WEB_ORIGIN` هو رابط HTTPS نفسه، وتبقى `SESSION_COOKIE_SECURE` و`TRUST_PROXY` مفعّلتين. يثبت مسار cPanel قيمة `MEDIA_ROOT=/home/doralash/accounting-app/shared/media` داخل بيئة CloudLinux؛ هذا المجلد دائم وخارج الإصدارات وجذر الويب، ولا يوضع داخله ملف إعداد أو سر. يلزم دائمًا `RATE_LIMIT_IDENTITY_SECRET` عشوائي مستقل وثابت بين كل نسخ التطبيق؛ لا يقل عن 32 محرفًا ولا يحفظ في Git. عند ترقية بيئة أقدم لا تملكه، يولّده محوّل CloudLinux مرة واحدة داخل لقطة البيئة المحمية للهدف ولا يطبعه أو يعيده إلى GitHub؛ وبعد أول نجاح يحافظ عليه كل تبديل لاحق. القيمة الموجودة القصيرة أو غير الصالحة تُرفض ولا تُستبدل بصمت. عند تفعيل التسجيل الذاتي أضف أسرار Resend و`REGISTRATION_AUDIT_PEPPER` و`REGISTRATION_TOKEN_SECRET`؛ وإذا بقيت استعادة كلمة المرور مفعلة فتبقى أسرار Resend ومفتاح الرمز مطلوبة حتى مع `SELF_REGISTRATION_ENABLED=false`. لا تحفظ كلمة مرور قاعدة البيانات أو كلمة مرور المدير أو مفاتيح البريد في Git أو داخل ملفات Artifact.
 
 أنشئ مستخدمين لقاعدة الإنتاج: حساب تشغيل يملك `SELECT, INSERT, UPDATE, DELETE` فقط على قاعدة التطبيق، وحساب ترحيل مستقل يملك صلاحيات DDL/DML اللازمة عليها. ضع عنوان حساب التشغيل وحده باسم `DATABASE_URL` في Selector، وضع عنوان حساب الترحيل وحده باسم `MIGRATION_DATABASE_URL` في أسرار بيئة GitHub `production`. لا تمنح حساب التشغيل `CREATE` أو `ALTER` أو `DROP` أو `INDEX` أو `REFERENCES` أو `TRIGGER` أو `EVENT` أو `EXECUTE` أو `ALL PRIVILEGES`.
 
