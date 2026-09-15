@@ -355,7 +355,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
       - name: Remove build-only dependencies
-        run: npm prune --omit=dev
+        run: npm run runtime:prune
       - name: Block high production dependency vulnerabilities
         run: npm run audit:production
       - name: Smoke-test production runtime and graceful shutdown
@@ -420,7 +420,11 @@ jobs:
           RELEASE_COMMIT: ${{ github.sha }}
           RELEASE_TARGET: linux-x64
         run: |
+          set -Eeuo pipefail
           bash scripts/release/package-release.sh . . | tee release-digests.txt
+          test "$(wc -l < release-digests.txt)" -eq 2
+          grep -Eq '^archive_sha256=[0-9a-f]{64}$' release-digests.txt
+          grep -Eq '^manifest_sha256=[0-9a-f]{64}$' release-digests.txt
           cat release-digests.txt >> "$GITHUB_OUTPUT"
 
   deploy-staging:
@@ -510,7 +514,7 @@ jobs:
           npm run prisma:generate
           npm run contracts:check
           npm run build
-          npm prune --omit=dev
+          npm run runtime:prune
           node -e "import('sharp').then(({default: sharp}) => sharp({create:{width:1,height:1,channels:3,background:'white'}}).webp().toBuffer()).then(() => console.log('sharp production smoke passed'))"
           npm run audit:production
 
