@@ -9,6 +9,28 @@ async function chooseContextValue(page: Page, label: string) {
   await dialog.getByRole("listbox", { name: label }).getByRole("option").first().click();
 }
 
+async function expectDialogInsideViewport(page: Page) {
+  const geometry = await page.evaluate(() => {
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    const rect = dialog.getBoundingClientRect();
+    const viewportWidth = document.documentElement.clientWidth;
+    const viewportHeight = document.documentElement.clientHeight;
+    const offenders = Array.from(dialog.querySelectorAll<HTMLElement>('button, input, select, textarea, [tabindex]'))
+      .filter((element) => {
+        const style = getComputedStyle(element);
+        const bounds = element.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && bounds.width > 0 && bounds.height > 0
+          && (bounds.left < -1 || bounds.right > viewportWidth + 1);
+      }).map((element) => element.getAttribute('aria-label') || element.textContent?.trim().slice(0, 40) || element.tagName);
+    return {
+      dialogFits: rect.left >= -1 && rect.right <= viewportWidth + 1 && rect.top >= -1 && rect.bottom <= viewportHeight + 1,
+      documentFitsHorizontally: document.documentElement.scrollWidth <= viewportWidth + 1,
+      offenders,
+    };
+  });
+  expect(geometry).toEqual({ dialogFits: true, documentFitsHorizontally: true, offenders: [] });
+}
+
 test("POS session wizard navigates, blocks incomplete activation, and reviews without checkout", async ({ page }) => {
   const writes: string[] = [];
   page.on("request", (request) => {
@@ -21,11 +43,14 @@ test("POS session wizard navigates, blocks incomplete activation, and reviews wi
   await page.goto("/?qa=pos#pos");
   const dialog = page.getByRole("dialog", { name: "Prepare sale session" });
   await expect(dialog).toBeVisible();
+  await expectDialogInsideViewport(page);
 
   await dialog.getByRole("button", { name: "Next", exact: true }).click();
   await expect(dialog.getByRole("heading", { name: "Sale & payment details" })).toBeFocused();
+  await expectDialogInsideViewport(page);
   await dialog.getByRole("button", { name: "Next", exact: true }).click();
   await expect(dialog.getByRole("heading", { name: "Readiness review" })).toBeFocused();
+  await expectDialogInsideViewport(page);
   await expect(dialog.getByRole("checkbox", { name: "Remember these settings for the next sale" })).not.toBeChecked();
   await expect(dialog.getByRole("button", { name: "Enable selling session" })).toBeDisabled();
   const writesBeforeIncompleteAttempt = writes.length;

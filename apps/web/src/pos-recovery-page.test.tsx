@@ -57,9 +57,11 @@ vi.mock("./i18n", async original => ({ ...await original<typeof import("./i18n")
 
 function element<P>(tree: ReactNode, type: unknown): ReactElement<P> {
   for (const child of React.Children.toArray(tree)) {
-    if (!React.isValidElement<{ children?: ReactNode }>(child)) continue;
+    if (!React.isValidElement<{ children?: ReactNode; sessionContext?: ReactNode; saleDetails?: ReactNode }>(child)) continue;
     if (child.type === type) return child as unknown as ReactElement<P>;
-    try { return element<P>(child.props.children, type); } catch { /* Search the next sibling. */ }
+    for (const branch of [child.props.children, child.props.sessionContext, child.props.saleDetails]) {
+      try { return element<P>(branch, type); } catch { /* Search the next branch or sibling. */ }
+    }
   }
   throw new Error("Missing child port");
 }

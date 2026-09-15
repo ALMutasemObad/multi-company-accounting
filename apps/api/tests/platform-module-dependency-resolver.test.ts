@@ -84,9 +84,9 @@ describe("platform module dependency resolver", () => {
     ];
     const expected = resolveModuleDependencies(input).ordered.map(({ id }) => id.toString());
     for (const shuffled of [
-      [input[4], input[2], input[0], input[3], input[1]],
-      [input[3], input[1], input[4], input[0], input[2]],
-      [input[2], input[4], input[1], input[3], input[0]],
+      [input[4]!, input[2]!, input[0]!, input[3]!, input[1]!],
+      [input[3]!, input[1]!, input[4]!, input[0]!, input[2]!],
+      [input[2]!, input[4]!, input[1]!, input[3]!, input[0]!],
     ]) {
       expect(resolveModuleDependencies(shuffled).ordered.map(({ id }) => id.toString())).toEqual(expected);
     }

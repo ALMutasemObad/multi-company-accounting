@@ -11,7 +11,9 @@ export class DecimalDisplayError extends Error {
 export function formatDecimal(value: string, minimumFractionDigits = 2, maximumFractionDigits = 4) {
   const match = DECIMAL.exec(value);
   if (!match || minimumFractionDigits < 0 || maximumFractionDigits < minimumFractionDigits) throw new DecimalDisplayError(value);
-  const [, sign, integer, sourceFraction = ""] = match;
+  const sign = match[1] ?? "";
+  const integer = match[2]!;
+  const sourceFraction = match[3] ?? "";
   if (sourceFraction.length > maximumFractionDigits) throw new DecimalDisplayError(value);
   const grouped = integer.replace(/\B(?=(\d{3})+(?!\d))/gu, ",");
   const fraction = sourceFraction.padEnd(minimumFractionDigits, "0");

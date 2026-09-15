@@ -24,7 +24,7 @@ export type CashierContextPanelProps = {
   setupAccess?: NavigationAccess | undefined;
   onRetryReadiness?: (() => void) | undefined;
   onOpenSetupTarget?: ((target: RetailSetupTarget) => void) | undefined;
-  /** The POS wizard supplies the visible heading, so the controller section avoids repeating it. */
+  /** The POS wizard owns the heading and final review controls, so this renders context fields only. */
   compact?: boolean;
 };
 
@@ -94,15 +94,17 @@ function CashierContextContent({ controller, currentScopeKey, locale, renderPick
       </div>;
     })}</dl>
     <p>{text.noExchangeRate}</p>
-    <label className="cashier-context-remember"><input type="checkbox" checked={remember} disabled={!canEdit} onChange={(event) => { if (canAct()) setRemember(event.target.checked); }} /><span>{text.remember}</span></label>
-    <p>{text.rememberHelp}</p>
-    <div className="cashier-context-actions">
-      <button type="button" disabled={!state.canReview || blocked} onClick={() => { if (canAct()) { const result = controller.review(remember); if (result) { setEditing(null); onReviewed(result); } } }}>{text.review}</button>
-      <button type="button" disabled={!canEdit} onClick={() => { if (canAct()) controller.saveDraft(); }}>{text.saveDraft}</button>
-      <button type="button" disabled={!canEdit} onClick={() => { if (canAct()) void controller.refresh(); }}>{text.refresh}</button>
-    </div>
-    {state.reviewed && <p role="status">{text.reviewed}</p>}
-    {state.hasSavedDraft && <p role="status">{text.savedDraft}</p>}
+    {!compact && <>
+      <label className="cashier-context-remember"><input type="checkbox" checked={remember} disabled={!canEdit} onChange={(event) => { if (canAct()) setRemember(event.target.checked); }} /><span>{text.remember}</span></label>
+      <p>{text.rememberHelp}</p>
+      <div className="cashier-context-actions">
+        <button type="button" disabled={!state.canReview || blocked} onClick={() => { if (canAct()) { const result = controller.review(remember); if (result) { setEditing(null); onReviewed(result); } } }}>{text.review}</button>
+        <button type="button" disabled={!canEdit} onClick={() => { if (canAct()) controller.saveDraft(); }}>{text.saveDraft}</button>
+        <button type="button" disabled={!canEdit} onClick={() => { if (canAct()) void controller.refresh(); }}>{text.refresh}</button>
+      </div>
+      {state.reviewed && <p role="status">{text.reviewed}</p>}
+      {state.hasSavedDraft && <p role="status">{text.savedDraft}</p>}
+    </>}
   </section>;
 }
 

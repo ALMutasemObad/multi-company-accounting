@@ -15,7 +15,7 @@ describe("selling profile executable contract", () => {
     expect(bodies.updateItemSellingProfile.parse({ version: 1, isActive: false })).toEqual({ version: 1, isActive: false });
   });
   it("requires explicit readiness without disclosing raw Inventory/Tax records", () => {
-    const data = { inventoryItemId: "1", code: "ITM-1", nameAr: "صنف", nameEn: null, description: null, isActive: true,
+    const data = { inventoryItemId: "1", code: "ITM-1", nameAr: "صنف", nameEn: null, description: null, image: null, isActive: true,
       unitOfMeasure: { id: "2", code: "EA", nameAr: "حبة", nameEn: null, decimalPlaces: 0, isActive: true },
       sellingProfile: null, isReady: false, readinessReason: "PROFILE_MISSING" };
     expect(parseOpenApiResponseBody("getSellingCatalogItem", 200, { data })).toEqual({ data });

@@ -116,7 +116,7 @@ function selectFont(arabic: boolean, emphasized: boolean) {
   return emphasized ? "Helvetica-Bold" : "Helvetica";
 }
 
-function textOptions(width: number, column: number, arabic: boolean, direction: PdfTableProfile["direction"]) {
+function textOptions(width: number, column: number, arabic: boolean, direction: PdfTableProfile["direction"]): PDFKit.Mixins.TextOptions {
   const rtl = direction !== "LTR";
   return { width: width - 8, align: column === 0 ? (rtl ? "right" as const : "left" as const) : "center" as const, features: rtl && arabic ? ["rtla"] : [] };
 }

@@ -49,7 +49,7 @@ export function ProductImageField({ value, onUpload, onRemove, disabled = false 
       {preview ? <img src={preview} alt="" width={112} height={112} loading="lazy" decoding="async" onError={() => setPreview(null)} /> : <span aria-hidden="true">{t("inventory.items.imagePlaceholder")}</span>}
     </div>
     <div className="product-image-controls">
-      <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" hidden disabled={disabled || busy} onChange={(event) => void choose(event.target.files?.[0])} />
+      <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" aria-label={t("inventory.items.imageChoose")} hidden disabled={disabled || busy} onChange={(event) => void choose(event.target.files?.[0])} />
       <Button type="button" variant="secondary" disabled={disabled || busy} onClick={() => inputRef.current?.click()}>{preview ? t("inventory.items.imageReplace") : t("inventory.items.imageChoose")}</Button>
       {preview && <Button type="button" variant="ghost" disabled={disabled || busy} onClick={() => void remove()}>{t("inventory.items.imageRemove")}</Button>}
     </div>
