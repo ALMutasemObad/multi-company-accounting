@@ -3580,7 +3580,16 @@ export const localeDictionary = {
   "companyProfile.requirement.saCommercialRegistration": "Saudi commercial registration",
   "companyProfile.requirement.saVat": "Saudi VAT registration",
   "companyProfile.requirement.saNationalAddress": "Saudi national address",
-  "companyProfile.requirement.other": "Additional requirement"
+  "companyProfile.requirement.other": "Additional requirement",
+  "inventory.items.image": "Image",
+  "inventory.items.imageChoose": "Choose image",
+  "inventory.items.imageHint": "Optional JPEG, PNG, or WebP; up to 5 MB.",
+  "inventory.items.imageInvalid": "Choose a JPEG, PNG, or WebP image smaller than 5 MB.",
+  "inventory.items.imagePlaceholder": "No image",
+  "inventory.items.imageRemove": "Remove image",
+  "inventory.items.imageReplace": "Replace image",
+  "inventory.items.imageSaveError": "Could not save the item image.",
+  "inventory.items.imagePartialSaveError": "The item was saved, but its image was not. Try again."
 } as const;
 
 const locale = { metadata: localeMetadata, dictionary: localeDictionary } satisfies LocaleDefinition;

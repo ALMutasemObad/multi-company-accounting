@@ -1509,4 +1509,13 @@ export const hi = {
   "accountStatement.emptyTitle": "आवश्यक खाता चुनें",
   "accountStatement.emptyDescription": "ग्राहक, आपूर्तिकर्ता या लेजर खाता चुनें, फिर आरंभिक शेष, गतिविधि और अंतिम शेष देखने के लिए अवधि लागू करें।",
   "accountStatement.currency": " · मुद्रा: {value1}",
+  "inventory.items.image": "चित्र",
+  "inventory.items.imageChoose": "चित्र चुनें",
+  "inventory.items.imageHint": "वैकल्पिक JPEG, PNG या WebP; अधिकतम 5 MB।",
+  "inventory.items.imageInvalid": "JPEG, PNG या WebP चित्र चुनें जो 5 MB से छोटा हो।",
+  "inventory.items.imagePlaceholder": "कोई चित्र नहीं",
+  "inventory.items.imageRemove": "चित्र हटाएँ",
+  "inventory.items.imageReplace": "चित्र बदलें",
+  "inventory.items.imageSaveError": "आइटम का चित्र सहेजा नहीं जा सका।",
+  "inventory.items.imagePartialSaveError": "आइटम सहेजा गया, लेकिन चित्र नहीं। फिर प्रयास करें।",
 } as const satisfies Record<keyof typeof ar, string>;

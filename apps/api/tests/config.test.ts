@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest';
+import path from 'node:path';
+import os from 'node:os';
 import { loadConfig } from '../src/config.js';
 
 const rateLimitIdentitySecret = 'test-rate-limit-identity-secret-1234567890';
+const productionMediaRoot = path.resolve('test-product-media');
 
 describe('production configuration', () => {
+  it('uses a cwd-independent media root outside the repository outside production', () => {
+    expect(loadConfig({ NODE_ENV: 'test' }).MEDIA_ROOT).toBe(path.join(os.tmpdir(), 'mcap-finance-product-media'));
+  });
   it('keeps both social providers disabled and rejects incomplete opt-in', () => {
     const disabled = loadConfig({ NODE_ENV: 'test' });
     expect(disabled.GOOGLE_OIDC_ENABLED).toBe(false);
@@ -41,6 +47,7 @@ describe('production configuration', () => {
   it('accepts a complete production configuration and applies operational defaults', () => {
     const config = loadConfig({
       NODE_ENV: 'production',
+      MEDIA_ROOT: productionMediaRoot,
       DATABASE_URL: 'mysql://runtime:secret@db.internal/mcap',
       WEB_ORIGIN: 'https://finance.example.com',
       SESSION_COOKIE_SECURE: 'true',
@@ -120,6 +127,7 @@ describe('production configuration', () => {
 
     const config = loadConfig({
       NODE_ENV: 'production',
+      MEDIA_ROOT: productionMediaRoot,
       DATABASE_URL: 'mysql://runtime:secret@db.internal/mcap',
       WEB_ORIGIN: 'https://finance.example.com',
       SESSION_COOKIE_SECURE: 'true',
@@ -138,6 +146,7 @@ describe('production configuration', () => {
   it('requires an explicit production company allowlist for bank reconciliation', () => {
     const production = {
       NODE_ENV: 'production',
+      MEDIA_ROOT: productionMediaRoot,
       DATABASE_URL: 'mysql://runtime:secret@db.internal/mcap',
       WEB_ORIGIN: 'https://finance.example.com',
       SESSION_COOKIE_SECURE: 'true',
@@ -167,6 +176,7 @@ describe('production configuration', () => {
 
     const config = loadConfig({
       NODE_ENV: 'production',
+      MEDIA_ROOT: productionMediaRoot,
       DATABASE_URL: 'mysql://runtime:secret@db.internal/mcap',
       WEB_ORIGIN: 'https://finance.example.com',
       SESSION_COOKIE_SECURE: 'true',
@@ -266,6 +276,7 @@ describe('production configuration', () => {
 
     expect(loadConfig({
       NODE_ENV: 'production',
+      MEDIA_ROOT: productionMediaRoot,
       DATABASE_URL: 'mysql://runtime:secret@db.internal/mcap',
       WEB_ORIGIN: 'https://finance.example.com',
       SESSION_COOKIE_SECURE: 'true',

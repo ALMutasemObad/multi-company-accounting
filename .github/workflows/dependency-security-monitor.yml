@@ -33,6 +33,6 @@ jobs:
       - name: Block critical build dependency vulnerabilities
         run: npm run audit:critical
       - name: Remove build-only and optional dependencies
-        run: npm prune --omit=dev --omit=optional
+        run: npm prune --omit=dev
       - name: Block high production dependency vulnerabilities
         run: npm run audit:production

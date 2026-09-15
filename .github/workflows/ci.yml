@@ -354,8 +354,8 @@ jobs:
           path: ${{ runner.temp }}/r2-db-gate/
           if-no-files-found: warn
           retention-days: 7
-      - name: Remove build-only and optional dependencies
-        run: npm prune --omit=dev --omit=optional
+      - name: Remove build-only dependencies
+        run: npm prune --omit=dev
       - name: Block high production dependency vulnerabilities
         run: npm run audit:production
       - name: Smoke-test production runtime and graceful shutdown
@@ -367,6 +367,7 @@ jobs:
           TRUST_PROXY: 'true'
           RATE_LIMIT_IDENTITY_SECRET: ci-only-stable-rate-limit-identity-secret-2026
           SELF_REGISTRATION_ENABLED: 'false'
+          MEDIA_ROOT: ${{ runner.temp }}/mcap-product-media
         run: |
           node apps/api/dist/server.js > api-smoke.log 2>&1 &
           api_pid=$!
@@ -509,7 +510,8 @@ jobs:
           npm run prisma:generate
           npm run contracts:check
           npm run build
-          npm prune --omit=dev --omit=optional
+          npm prune --omit=dev
+          node -e "import('sharp').then(({default: sharp}) => sharp({create:{width:1,height:1,channels:3,background:'white'}}).webp().toBuffer()).then(() => console.log('sharp production smoke passed'))"
           npm run audit:production
 
           bash scripts/release/package-release.sh . staging-artifact
@@ -526,6 +528,10 @@ jobs:
             = "$VERIFIED_ARCHIVE_SHA256"
           test "$(sha256sum staging-artifact/mcap-finance-linux-x64.manifest.json | awk '{print $1}')" \
             = "$VERIFIED_MANIFEST_SHA256"
+          release_smoke=$(mktemp -d)
+          trap 'rm -rf -- "$release_smoke"' EXIT
+          tar -xzf staging-artifact/mcap-finance-linux-x64.tgz -C "$release_smoke"
+          (cd "$release_smoke" && node -e "import('sharp').then(({default: sharp}) => sharp({create:{width:1,height:1,channels:3,background:'white'}}).webp().toBuffer())")
       - name: Configure the pinned staging SSH identity
         env:
           CPANEL_SSH_PRIVATE_KEY: ${{ secrets.CPANEL_SSH_PRIVATE_KEY }}

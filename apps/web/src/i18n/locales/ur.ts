@@ -1509,4 +1509,13 @@ export const ur = {
   "accountStatement.emptyTitle": "مطلوبہ اکاؤنٹ منتخب کریں",
   "accountStatement.emptyDescription": "گاہک، سپلائر یا لیجر اکاؤنٹ منتخب کریں، پھر ابتدائی بیلنس، سرگرمی اور اختتامی بیلنس دیکھنے کے لیے مدت لاگو کریں۔",
   "accountStatement.currency": " · کرنسی: {value1}",
+  "inventory.items.image": "تصویر",
+  "inventory.items.imageChoose": "تصویر منتخب کریں",
+  "inventory.items.imageHint": "اختیاری JPEG، PNG یا WebP؛ زیادہ سے زیادہ 5 MB۔",
+  "inventory.items.imageInvalid": "5 MB سے چھوٹی JPEG، PNG یا WebP تصویر منتخب کریں۔",
+  "inventory.items.imagePlaceholder": "کوئی تصویر نہیں",
+  "inventory.items.imageRemove": "تصویر ہٹائیں",
+  "inventory.items.imageReplace": "تصویر تبدیل کریں",
+  "inventory.items.imageSaveError": "آئٹم کی تصویر محفوظ نہیں ہو سکی۔",
+  "inventory.items.imagePartialSaveError": "آئٹم محفوظ ہو گیا، لیکن تصویر نہیں۔ دوبارہ کوشش کریں۔",
 } as const satisfies Record<keyof typeof ar, string>;

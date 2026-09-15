@@ -445,6 +445,7 @@ export const ar = {
   "inventory.items.imageHint": "JPEG أو PNG أو WebP، حتى 5MB",
   "inventory.items.imageInvalid": "اختر صورة JPEG أو PNG أو WebP لا تتجاوز 5MB.",
   "inventory.items.imageSaveError": "تعذر حفظ صورة الصنف.",
+  "inventory.items.imagePartialSaveError": "حُفظ الصنف، وتعذر حفظ الصورة؛ أعد المحاولة.",
   "inventory.items.deactivatePrompt": "اكتب سبب تعطيل الصنف: {name}",
   "inventory.items.deactivated": "تم تعطيل الصنف.",
   "inventory.items.deactivateError": "تعذر تعطيل الصنف.",

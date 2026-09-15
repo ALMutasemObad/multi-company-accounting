@@ -17,9 +17,17 @@ passenger_config_file=${MCAP_PASSENGER_CONFIG_FILE:-}
 cloudlinux_switcher=${MCAP_CLOUDLINUX_SWITCHER:-}
 health_attempts=${MCAP_HEALTH_ATTEMPTS:-30}
 run_database_migrations=${MCAP_RUN_DATABASE_MIGRATIONS:-false}
+media_root=${MCAP_MEDIA_ROOT:-"$deploy_root/shared/media"}
 
 [[ -n "$archive_input" ]] || fail "usage: install-cpanel-release.sh <archive.tgz> <trusted-sha256>"
 [[ "$deploy_root" == /* && "$deploy_root" != / ]] || fail "MCAP_DEPLOY_ROOT must be an explicit absolute non-root path"
+[[ "$media_root" == /* && "$media_root" != / ]] || fail "MCAP_MEDIA_ROOT must be an explicit absolute non-root path"
+[[ "$media_root" == "$deploy_root/shared/media" ]] || fail "MCAP_MEDIA_ROOT must equal the fixed persistent deployment media path"
+case "$media_root" in "$deploy_root"/releases|"$deploy_root"/releases/*|"$deploy_root"/current|"$deploy_root"/current/*) fail "MCAP_MEDIA_ROOT must be outside release and public web roots" ;; esac
+mkdir -p -- "$media_root"
+[[ -d "$media_root" && ! -L "$media_root" && "$(readlink -f -- "$media_root")" == "$media_root" ]] || fail "MCAP_MEDIA_ROOT must be a real non-symlink directory"
+chmod 0750 -- "$media_root"
+export MCAP_MEDIA_ROOT="$media_root"
 [[ "$health_url" == https://* ]] || fail "MCAP_HEALTH_URL must be an HTTPS readiness URL"
 [[ "$app_url" == https://* && "$app_url" != *\?* && "$app_url" != *\#* ]] || fail "MCAP_APP_URL must be an HTTPS application URL without a query or fragment"
 app_url=${app_url%/}
@@ -72,6 +80,8 @@ cleanup() {
 trap cleanup EXIT
 tar -xzf "$archive" --no-same-owner --no-same-permissions -C "$incoming"
 "$node_bin" "$incoming/scripts/release/verify-release.mjs" --root "$incoming"
+(cd "$incoming" && "$node_bin" -e "import('sharp').then(({default:s})=>s({create:{width:1,height:1,channels:3,background:'white'}}).webp().toBuffer()).catch(()=>process.exit(2))") \
+  || fail "packaged Sharp runtime or native dependency is unavailable"
 
 release_id=$("$node_bin" -e '
   const manifest = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));

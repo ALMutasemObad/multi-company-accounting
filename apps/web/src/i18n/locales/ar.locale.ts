@@ -3580,7 +3580,16 @@ export const localeDictionary = {
   "companyProfile.requirement.saCommercialRegistration": "السجل التجاري السعودي",
   "companyProfile.requirement.saVat": "ضريبة القيمة المضافة السعودية",
   "companyProfile.requirement.saNationalAddress": "العنوان الوطني السعودي",
-  "companyProfile.requirement.other": "متطلب إضافي"
+  "companyProfile.requirement.other": "متطلب إضافي",
+  "inventory.items.image": "الصورة",
+  "inventory.items.imageChoose": "اختيار صورة",
+  "inventory.items.imageHint": "JPEG أو PNG أو WebP اختياري؛ بحد أقصى 5 ميجابايت.",
+  "inventory.items.imageInvalid": "اختر صورة JPEG أو PNG أو WebP أصغر من 5 ميجابايت.",
+  "inventory.items.imagePlaceholder": "لا توجد صورة",
+  "inventory.items.imageRemove": "حذف الصورة",
+  "inventory.items.imageReplace": "استبدال الصورة",
+  "inventory.items.imageSaveError": "تعذر حفظ صورة الصنف.",
+  "inventory.items.imagePartialSaveError": "حُفظ الصنف، وتعذر حفظ الصورة؛ أعد المحاولة."
 } as const;
 
 const locale = { metadata: localeMetadata, dictionary: localeDictionary } satisfies LocaleDefinition;

@@ -24,6 +24,8 @@ const RELEASE_PATHS = [
   "package-lock.json",
   "package.json",
   "scripts/database-backup.mjs",
+  "scripts/media-backup.mjs",
+  "scripts/media-restore.mjs",
   "scripts/database-restore.mjs",
   "scripts/verify-backup-artifact.mjs",
   "scripts/verify-database-identities.mjs",
@@ -79,7 +81,7 @@ const main = async () => {
   const packageJson = JSON.parse(await readFile(path.join(source, "package.json"), "utf8"));
   for (const dependency of FORBIDDEN_PRODUCTION_DEPENDENCIES) {
     if (await exists(path.join(source, "node_modules", dependency))) {
-      throw new Error(`Development dependency remains in production tree: ${dependency}. Run npm prune --omit=dev --omit=optional first.`);
+      throw new Error(`Development dependency remains in production tree: ${dependency}. Run npm prune --omit=dev first.`);
     }
   }
 

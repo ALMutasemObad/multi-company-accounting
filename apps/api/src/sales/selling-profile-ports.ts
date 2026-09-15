@@ -6,6 +6,7 @@ import type { SellingProfileReadinessReason } from "./selling-profile-policy.js"
 export type SellingCatalogItemReference = {
   id: bigint; code: string; nameAr: string; nameEn: string | null;
   description: string | null; isActive: boolean;
+  image: { version: number } | null;
   unitOfMeasure: {
     id: bigint; code: string; nameAr: string; nameEn: string | null;
     decimalPlaces: number; isActive: boolean;
@@ -57,6 +58,7 @@ export type SellingProfileJson = {
 export type SellingCatalogItemJson = {
   inventoryItemId: string; code: string; nameAr: string; nameEn: string | null;
   description: string | null; isActive: boolean;
+  image: { thumbnailUrl: string } | null;
   unitOfMeasure: { id: string; code: string; nameAr: string; nameEn: string | null; decimalPlaces: number; isActive: boolean };
   sellingProfile: SellingProfileJson | null;
   isReady: boolean; readinessReason: SellingProfileReadinessReason | null;

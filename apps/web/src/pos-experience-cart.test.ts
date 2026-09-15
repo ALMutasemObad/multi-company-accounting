@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { addPosItem, applyPosSellingProfile, blankPosLine } from "./pos-experience-cart";
 import { posCatalogPath, type PosCatalogItem } from "./pos-experience-catalog";
-const item: PosCatalogItem = { inventoryItemId: "1", code: "I", nameAr: "A", nameEn: null, description: null, isActive: true,
+const item: PosCatalogItem = { inventoryItemId: "1", code: "I", nameAr: "A", nameEn: null, description: null, isActive: true, image: null,
   unitOfMeasure: { id: "1", code: "EA", nameAr: "Each", nameEn: null, decimalPlaces: 0, isActive: true },
   sellingProfile: { id: "1", unitPrice: "0.0000", currencyId: "1", currencyCode: "SAR", revenueAccountId: "4", taxRateId: null, version: 2, isActive: true }, isReady: true, readinessReason: null };
 describe("R1 unified catalog/scanner item transform", () => {

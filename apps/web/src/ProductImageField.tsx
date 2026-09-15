@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "./i18n";
 import { Button } from "./ui";
+import "./product-image-styles.css";
 
 const ACCEPTED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const MAX_BYTES = 5 * 1024 * 1024;
 
-export function ProductImagePicker({ value, onUpload, onRemove, disabled = false }: {
+export function ProductImageField({ value, onUpload, onRemove, disabled = false }: {
   value?: string | null;
   onUpload: (file: File) => Promise<void>;
   onRemove: () => Promise<void>;
@@ -45,7 +46,7 @@ export function ProductImagePicker({ value, onUpload, onRemove, disabled = false
 
   return <div className="product-image-picker">
     <div className="product-image-frame">
-      {preview ? <img src={preview} alt="" width={112} height={112} loading="lazy" decoding="async" /> : <span aria-hidden="true">{t("inventory.items.imagePlaceholder")}</span>}
+      {preview ? <img src={preview} alt="" width={112} height={112} loading="lazy" decoding="async" onError={() => setPreview(null)} /> : <span aria-hidden="true">{t("inventory.items.imagePlaceholder")}</span>}
     </div>
     <div className="product-image-controls">
       <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" hidden disabled={disabled || busy} onChange={(event) => void choose(event.target.files?.[0])} />

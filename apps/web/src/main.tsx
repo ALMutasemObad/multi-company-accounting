@@ -15,7 +15,6 @@ import { captureSubscriptionPlanPreference, isPublicPlansLocation } from "./publ
 import { Spinner } from "./ui";
 import { useI18n } from "./i18n";
 import "./styles.css";
-import "./product-image-styles.css";
 
 const App = lazy(() => import("./App"));
 const PublicPlansPage = lazy(() => import("./PublicPlansPage").then((module) => ({ default: module.PublicPlansPage })));

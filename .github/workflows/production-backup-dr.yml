@@ -93,7 +93,7 @@ jobs:
           gh api --paginate --slurp \
             -H 'Accept: application/vnd.github+json' \
             -H 'X-GitHub-Api-Version: 2022-11-28' \
-            "/repos/$GITHUB_REPOSITORY/actions/artifacts?name=mcap-production-database-backup&per_page=100" \
+            "/repos/$GITHUB_REPOSITORY/actions/artifacts?name=mcap-production-backup-bundle&per_page=100" \
             > "$artifacts_json"
           gh api --paginate --slurp \
             -H 'Accept: application/vnd.github+json' \
@@ -117,7 +117,7 @@ jobs:
           const candidates = artifacts
             .filter((artifact) =>
               !artifact.expired &&
-              artifact.name === 'mcap-production-database-backup' &&
+              artifact.name === 'mcap-production-backup-bundle' &&
               trustedRunIds.has(artifact.workflow_run?.id))
             .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
           const latest = candidates[0];
@@ -168,11 +168,19 @@ jobs:
           test ! -e "$remote_dir"
           mkdir -p -- "$(dirname -- "$remote_dir")"
           mkdir -m 0700 -- "$remote_dir"
+          mkdir -m 0700 -- "$remote_dir/lib"
           REMOTE
           scp -i "$HOME/.ssh/id_ed25519" -P "$CPANEL_SSH_PORT" -o IdentitiesOnly=yes \
             deploy/scripts/create-cpanel-offsite-backup.sh \
             deploy/scripts/normalize-cpanel-backup.mjs \
             "$CPANEL_SSH_USER@$CPANEL_SSH_HOST:$remote_dir/"
+          scp -i "$HOME/.ssh/id_ed25519" -P "$CPANEL_SSH_PORT" -o IdentitiesOnly=yes \
+            scripts/media-backup.mjs \
+            "$CPANEL_SSH_USER@$CPANEL_SSH_HOST:$remote_dir/"
+          scp -i "$HOME/.ssh/id_ed25519" -P "$CPANEL_SSH_PORT" -o IdentitiesOnly=yes \
+            scripts/lib/backup-format.mjs \
+            scripts/lib/backup-pair-verifier.mjs \
+            "$CPANEL_SSH_USER@$CPANEL_SSH_HOST:$remote_dir/lib/"
 
       - name: Create and download the encrypted staging backup
         id: create
@@ -205,18 +213,27 @@ jobs:
             if (
               result.status !== "created" ||
               !/^mcap-[A-Za-z0-9_.-]+\.sql\.gz\.jwb$/.test(result.file) ||
-              result.manifest !== `${result.file}.json`
+              result.manifest !== `${result.file}.json` ||
+              !/^mcap-product-media-[A-Za-z0-9_.-]+\.tar\.gz\.jwb$/.test(result.mediaFile) ||
+              result.mediaManifest !== `${result.mediaFile}.json` ||
+              !/^mcap-backup-pair-[A-Za-z0-9_.-]+\.json$/.test(result.pairManifest)
             ) process.exit(2);
-            process.stdout.write(`${result.file}\n${result.manifest}\n`);
+            process.stdout.write(`${result.file}\n${result.manifest}\n${result.mediaFile}\n${result.mediaManifest}\n${result.pairManifest}\n`);
           ' "$remote_result")
-          test "${#names[@]}" -eq 2
+          test "${#names[@]}" -eq 5
           backup_file=${names[0]}
           manifest_file=${names[1]}
+          media_file=${names[2]}
+          media_manifest=${names[3]}
+          pair_manifest=${names[4]}
           scp -i "$HOME/.ssh/id_ed25519" -P "$CPANEL_SSH_PORT" -o IdentitiesOnly=yes \
             "$CPANEL_SSH_USER@$CPANEL_SSH_HOST:$CPANEL_BACKUP_DIRECTORY/$backup_file" \
             "$CPANEL_SSH_USER@$CPANEL_SSH_HOST:$CPANEL_BACKUP_DIRECTORY/$manifest_file" \
+            "$CPANEL_SSH_USER@$CPANEL_SSH_HOST:$CPANEL_BACKUP_DIRECTORY/$media_file" \
+            "$CPANEL_SSH_USER@$CPANEL_SSH_HOST:$CPANEL_BACKUP_DIRECTORY/$media_manifest" \
+            "$CPANEL_SSH_USER@$CPANEL_SSH_HOST:$CPANEL_BACKUP_DIRECTORY/$pair_manifest" \
             "$LOCAL_DIR/"
-          printf 'backup_file=%s\nmanifest_file=%s\n' "$backup_file" "$manifest_file" >> "$GITHUB_OUTPUT"
+          printf 'backup_file=%s\nmanifest_file=%s\npair_manifest=%s\n' "$backup_file" "$manifest_file" "$pair_manifest" >> "$GITHUB_OUTPUT"
 
       - name: Verify the downloaded recovery point
         id: verify
@@ -227,6 +244,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           verification=$(node scripts/verify-backup-artifact.mjs "$LOCAL_DIR/$BACKUP_FILE")
+          node -e 'import("./scripts/lib/backup-pair-verifier.mjs").then(m=>m.verifyBackupPair(process.argv[1])).catch(()=>process.exit(2))' "$LOCAL_DIR/${{ steps.create.outputs.pair_manifest }}"
           printf '%s\n' "$verification"
           node - "$verification" "$GITHUB_OUTPUT" <<'NODE'
           const fs = require('node:fs');
@@ -243,7 +261,7 @@ jobs:
         id: offsite
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: mcap-production-database-backup
+          name: mcap-production-backup-bundle
           path: ${{ steps.stage.outputs.local_dir }}/
           if-no-files-found: error
           retention-days: 90
@@ -251,44 +269,53 @@ jobs:
           overwrite: ${{ github.run_attempt > 1 }}
 
       - name: Prune only offsite-backed local recovery points
+        env:
+          REMOTE_DIR: ${{ steps.stage.outputs.remote_dir }}
         run: |
           set -Eeuo pipefail
           [[ "$LOCAL_BACKUP_RETENTION_DAYS" =~ ^[1-9][0-9]*$ ]]
           [[ "$LOCAL_ORPHAN_GRACE_DAYS" =~ ^[1-9][0-9]*$ ]]
           ssh -i "$HOME/.ssh/id_ed25519" -p "$CPANEL_SSH_PORT" -o IdentitiesOnly=yes \
             "$CPANEL_SSH_USER@$CPANEL_SSH_HOST" bash -s -- \
-              "$CPANEL_BACKUP_DIRECTORY" "$LOCAL_BACKUP_RETENTION_DAYS" "$LOCAL_ORPHAN_GRACE_DAYS" <<'REMOTE'
+              "$CPANEL_BACKUP_DIRECTORY" "$LOCAL_BACKUP_RETENTION_DAYS" "$LOCAL_ORPHAN_GRACE_DAYS" "$REMOTE_DIR" <<'REMOTE'
           set -Eeuo pipefail
           umask 077
           backup_directory=$1
           retention_days=$2
           orphan_grace_days=$3
+          remote_dir=$4
           [[ "$backup_directory" == /home/doralash/backups/mcap ]]
           [[ "$retention_days" =~ ^[1-9][0-9]*$ ]]
           [[ "$orphan_grace_days" =~ ^[1-9][0-9]*$ ]]
           [[ -d "$backup_directory" && ! -L "$backup_directory" ]]
           [[ "$(readlink -f -- "$backup_directory")" == "$backup_directory" ]]
+          [[ -f "$remote_dir/lib/backup-pair-verifier.mjs" && ! -L "$remote_dir/lib/backup-pair-verifier.mjs" ]]
           cutoff_epoch=$(date -u --date="$retention_days days ago" +%s)
           orphan_cutoff_epoch=$(date -u --date="$orphan_grace_days days ago" +%s)
           removed=0
           removed_orphans=0
           shopt -s nullglob
-          for manifest_file in "$backup_directory"/mcap-production-*.sql.gz.jwb.json; do
-            backup_file=${manifest_file%.json}
-            [[ -f "$manifest_file" && ! -L "$manifest_file" ]]
-            [[ ! -L "$backup_file" ]]
-            if [[ -f "$backup_file" ]]; then
-              modified_epoch=$(stat -c '%Y' -- "$manifest_file")
-              if (( modified_epoch < cutoff_epoch )); then
-                rm -f -- "$backup_file" "$manifest_file"
-                removed=$((removed + 1))
-              fi
-            elif [[ -e "$backup_file" ]]; then
-              printf 'Unexpected legacy backup path type: %s\n' "$backup_file" >&2
-              exit 1
-            fi
+          for pair_file in "$backup_directory"/mcap-backup-pair-*.json; do
+            [[ -f "$pair_file" && ! -L "$pair_file" ]]
+            modified_epoch=$(stat -c '%Y' -- "$pair_file")
+            if (( modified_epoch >= cutoff_epoch )); then continue; fi
+            mapfile -t members < <(/opt/alt/alt-nodejs22/root/usr/bin/node -e '
+              import(process.argv[1]).then(async m => {
+                const result=await m.verifyBackupPair(process.argv[2]);
+                for(const file of result.files) process.stdout.write(`${file}\n`);
+              }).catch(()=>process.exit(2));
+            ' "file://$remote_dir/lib/backup-pair-verifier.mjs" "$pair_file")
+            [[ "${#members[@]}" -eq 4 ]] || exit 1
+            for member in "${members[@]}"; do
+              [[ "$member" != */* && -f "$backup_directory/$member" && ! -L "$backup_directory/$member" ]] || exit 1
+            done
+            for member in "${members[@]}"; do
+              rm -f -- "$backup_directory/$member"
+            done
+            rm -f -- "$pair_file"
+            removed=$((removed + 1))
           done
-          for partial_file in "$backup_directory"/mcap-production-*.partial; do
+          for partial_file in "$backup_directory"/mcap-*.partial; do
             [[ -f "$partial_file" && ! -L "$partial_file" ]]
             modified_epoch=$(stat -c '%Y' -- "$partial_file")
             if (( modified_epoch < orphan_cutoff_epoch )); then
@@ -296,30 +323,7 @@ jobs:
               removed_orphans=$((removed_orphans + 1))
             fi
           done
-          for backup_file in "$backup_directory"/mcap-production-*.sql.gz.jwb; do
-            [[ -f "$backup_file" && ! -L "$backup_file" ]]
-            manifest_file="$backup_file.json"
-            [[ ! -L "$manifest_file" ]]
-            if [[ ! -e "$manifest_file" && ! -L "$manifest_file" ]]; then
-              modified_epoch=$(stat -c '%Y' -- "$backup_file")
-              if (( modified_epoch < orphan_cutoff_epoch )); then
-                rm -f -- "$backup_file"
-                removed_orphans=$((removed_orphans + 1))
-              fi
-            fi
-          done
-          for manifest_file in "$backup_directory"/mcap-production-*.sql.gz.jwb.json; do
-            [[ -f "$manifest_file" && ! -L "$manifest_file" ]]
-            backup_file=${manifest_file%.json}
-            if [[ ! -e "$backup_file" && ! -L "$backup_file" ]]; then
-              modified_epoch=$(stat -c '%Y' -- "$manifest_file")
-              if (( modified_epoch < orphan_cutoff_epoch )); then
-                rm -f -- "$manifest_file"
-                removed_orphans=$((removed_orphans + 1))
-              fi
-            fi
-          done
-          printf 'Pruned %s offsite-backed local recovery point(s) and %s stale orphan(s).\n' \
+          printf 'Pruned %s verified offsite-backed bundle(s) and %s stale partial(s); incomplete bundles were retained.\n' \
             "$removed" "$removed_orphans"
           REMOTE
 
@@ -341,7 +345,11 @@ jobs:
           test -d "$remote_dir" && test ! -L "$remote_dir"
           rm -f -- \
             "$remote_dir/create-cpanel-offsite-backup.sh" \
-            "$remote_dir/normalize-cpanel-backup.mjs"
+            "$remote_dir/normalize-cpanel-backup.mjs" \
+            "$remote_dir/media-backup.mjs" \
+            "$remote_dir/lib/backup-format.mjs" \
+            "$remote_dir/lib/backup-pair-verifier.mjs"
+          rmdir -- "$remote_dir/lib"
           rmdir -- "$remote_dir"
           REMOTE
 
@@ -385,7 +393,7 @@ jobs:
           node-version: 22.23.2
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: mcap-production-database-backup
+          name: mcap-production-backup-bundle
           path: dr-backup
       - name: Install the MariaDB restore client
         run: |
@@ -398,27 +406,44 @@ jobs:
           BACKUP_MAX_AGE_SECONDS: '3600'
         run: |
           set -Eeuo pipefail
-          backup_file=$(find dr-backup -maxdepth 1 -type f -name '*.sql.gz.jwb' -print -quit)
-          test -n "$backup_file"
+          mapfile -t pair_files < <(find dr-backup -maxdepth 1 -type f -name 'mcap-backup-pair-*.json' -print)
+          test "${#pair_files[@]}" -eq 1
+          pair_file=${pair_files[0]}
+          mapfile -t members < <(node -e 'import("./scripts/lib/backup-pair-verifier.mjs").then(async m=>{const r=await m.verifyBackupPair(process.argv[1]); for(const f of r.files)console.log(f)}).catch(()=>process.exit(2))' "$pair_file")
+          test "${#members[@]}" -eq 4
+          backup_file=
+          media_file=
+          for member in "${members[@]}"; do
+            test -f "dr-backup/$member"
+            case "$member" in
+              *.sql.gz.jwb) backup_file="dr-backup/$member" ;;
+              *.tar.gz.jwb) media_file="dr-backup/$member" ;;
+            esac
+          done
+          test -n "$backup_file" && test -n "$media_file"
+          test "$(find dr-backup -maxdepth 1 -type f | wc -l)" -eq 5
           test -f "$backup_file.json"
           verification=$(node scripts/verify-backup-artifact.mjs "$backup_file")
           printf '%s\n' "$verification"
-          printf 'backup_file=%s\n' "$backup_file" >> "$GITHUB_OUTPUT"
+          printf 'backup_file=%s\nmedia_file=%s\n' "$backup_file" "$media_file" >> "$GITHUB_OUTPUT"
       - name: Restore and verify the staging recovery point
         id: restore
         env:
           BACKUP_FILE: ${{ steps.artifact.outputs.backup_file }}
+          MEDIA_BACKUP_FILE: ${{ steps.artifact.outputs.media_file }}
           BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
         run: |
           set -Eeuo pipefail
           started_ms=$(date +%s%3N)
           restore_result=$(node scripts/database-restore.mjs)
+          media_restore_result=$(node scripts/media-restore.mjs "$MEDIA_BACKUP_FILE" "$RUNNER_TEMP/mcap-media-restore")
           completed_ms=$(date +%s%3N)
           elapsed_ms=$((completed_ms - started_ms))
           rto_seconds=$(((elapsed_ms + 999) / 1000))
           rto_met=true
           if (( rto_seconds > RTO_OBJECTIVE_SECONDS )); then rto_met=false; fi
           printf '%s\n' "$restore_result"
+          printf '%s\n' "$media_restore_result"
           printf 'rto_seconds=%s\nrto_met=%s\nrestore_result=%s\n' \
             "$rto_seconds" "$rto_met" "$restore_result" >> "$GITHUB_OUTPUT"
       - name: Write sanitized recovery evidence

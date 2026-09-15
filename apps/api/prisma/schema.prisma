@@ -596,6 +596,7 @@ model Company {
   warehouses                        Warehouse[]
   unitsOfMeasure                    UnitOfMeasure[]
   inventoryItems                    InventoryItem[]
+  inventoryItemImages              InventoryItemImage[]
   inventoryItemBarcodes             InventoryItemBarcode[]
   inventoryMovementSequence         InventoryMovementSequence?
   inventoryMovements                InventoryMovement[]
@@ -2562,12 +2563,35 @@ model InventoryItem {
   inventoryBalances    InventoryBalance[]
   barcodes             InventoryItemBarcode[]
   sellingProfiles      SalesItemSellingProfile[]
+  image                InventoryItemImage?
 
   @@unique([companyId, code])
   @@unique([id, companyId])
   @@index([companyId, unitOfMeasureId, isActive])
   @@index([companyId, isActive, nameAr])
   @@map("inventory_items")
+}
+
+model InventoryItemImage {
+  id                  BigInt        @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId           BigInt        @map("company_id") @db.UnsignedBigInt
+  inventoryItemId     BigInt        @map("inventory_item_id") @db.UnsignedBigInt
+  contentHash         String        @map("content_hash") @db.Char(64)
+  mediaType           String        @map("media_type") @db.VarChar(40)
+  width               Int           @db.UnsignedSmallInt
+  height              Int           @db.UnsignedSmallInt
+  originalBytes       Int           @map("original_bytes") @db.UnsignedInt
+  inventoryThumbBytes Int           @map("inventory_thumb_bytes") @db.UnsignedInt
+  posThumbBytes       Int           @map("pos_thumb_bytes") @db.UnsignedInt
+  version             Int           @default(1) @db.UnsignedInt
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
+  company             Company       @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  inventoryItem       InventoryItem @relation(fields: [inventoryItemId, companyId], references: [id, companyId], onDelete: Cascade, onUpdate: Restrict)
+
+  @@unique([inventoryItemId, companyId], map: "inventory_item_images_item_company_key")
+  @@index([companyId, updatedAt], map: "inventory_item_images_company_updated_idx")
+  @@map("inventory_item_images")
 }
 
 model InventoryItemBarcode {

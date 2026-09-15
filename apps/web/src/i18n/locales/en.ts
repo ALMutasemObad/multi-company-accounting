@@ -447,6 +447,7 @@ export const en = {
   "inventory.items.imageHint": "JPEG, PNG, or WebP, up to 5MB",
   "inventory.items.imageInvalid": "Choose a JPEG, PNG, or WebP image up to 5MB.",
   "inventory.items.imageSaveError": "Could not save the item image.",
+  "inventory.items.imagePartialSaveError": "The item was saved, but its image was not. Try again.",
   "inventory.items.deactivatePrompt": "Enter the reason for disabling this item: {name}",
   "inventory.items.deactivated": "Item disabled.",
   "inventory.items.deactivateError": "Could not disable the item.",

@@ -3,6 +3,7 @@ import type { SellingCatalogInventoryPort, SellingCatalogQuery } from "../sales/
 
 const select = {
   id: true, code: true, nameAr: true, nameEn: true, description: true, isActive: true,
+  image: { select: { version: true } },
   unitOfMeasure: { select: { id: true, code: true, nameAr: true, nameEn: true, decimalPlaces: true, isActive: true } },
 } as const;
 

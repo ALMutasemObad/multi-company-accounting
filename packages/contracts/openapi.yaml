@@ -6823,6 +6823,78 @@ paths:
       security:
       - SessionCookie: []
         CsrfToken: []
+  /inventory-items/{inventoryItemId}/image:
+    put:
+      tags: [Inventory]
+      summary: رفع أو استبدال صورة صنف خام وإنتاج نسخ WebP آمنة
+      operationId: putInventoryItemImage
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: inventoryItemId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      - { name: If-Match, in: header, required: false, description: 'للاستبدال: "product-image-v{version}"', schema: { type: string, pattern: '^"product-image-v[1-9][0-9]*"$' } }
+      - { name: If-None-Match, in: header, required: false, description: 'للإنشاء الأول فقط: *', schema: { type: string, enum: ['*'] } }
+      requestBody:
+        required: true
+        content:
+          image/jpeg: { schema: { type: string, format: binary } }
+          image/png: { schema: { type: string, format: binary } }
+          image/webp: { schema: { type: string, format: binary } }
+      responses:
+        '200': { description: تم الاستبدال أو لم يتغير المحتوى, content: { application/json: { schema: { $ref: '#/components/schemas/ProductImageResponse' } } } }
+        '201': { description: تم إنشاء الصورة الأولى, content: { application/json: { schema: { $ref: '#/components/schemas/ProductImageResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/ValidationError' }
+        '415': { $ref: '#/components/responses/ValidationError' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-permission: inventory_catalog.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+    delete:
+      tags: [Inventory]
+      summary: حذف ربط صورة الصنف بنسخة متفائلة
+      operationId: deleteInventoryItemImage
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: inventoryItemId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      - { name: If-Match, in: header, required: true, schema: { type: string, pattern: '^"product-image-v[1-9][0-9]*"$' } }
+      responses:
+        '204': { description: حُذف ربط الصورة }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-permission: inventory_catalog.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /inventory-items/{inventoryItemId}/image/inventory:
+    get:
+      tags: [Inventory]
+      summary: قراءة الصورة المصغرة الخاصة بواجهة المخزون
+      operationId: getInventoryItemInventoryThumbnail
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: inventoryItemId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      - { name: v, in: query, required: true, schema: { type: integer, minimum: 1, maximum: 4294967294 } }
+      responses:
+        '200':
+          description: WebP مصغرة خاصة قابلة للتخزين بالنسخة
+          headers:
+            ETag: { schema: { type: string } }
+            Cache-Control: { schema: { type: string, const: 'private, max-age=31536000, immutable' } }
+          content: { image/webp: { schema: { type: string, format: binary } } }
+        '304': { description: النسخة في مخزن العميل مطابقة }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-permission: inventory_catalog.view
+      security: [{ SessionCookie: [] }]
   /inventory-items/{inventoryItemId}/deactivate:
     post:
       tags:
@@ -8674,6 +8746,30 @@ paths:
         '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
         '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
         '409': { $ref: '#/components/responses/Conflict' }
+      x-permission: sales_catalog.view
+      security: [{ SessionCookie: [] }]
+  /sales/catalog/items/{inventoryItemId}/image/pos:
+    get:
+      tags: [Sales Catalog]
+      summary: قراءة الصورة المصغرة الخاصة بكتالوج نقطة البيع
+      operationId: getSellingCatalogItemThumbnail
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: inventoryItemId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      - { name: v, in: query, required: true, schema: { type: integer, minimum: 1, maximum: 4294967294 } }
+      responses:
+        '200':
+          description: WebP مصغرة خاصة قابلة للتخزين بالنسخة
+          headers:
+            ETag: { schema: { type: string } }
+            Cache-Control: { schema: { type: string, const: 'private, max-age=31536000, immutable' } }
+          content: { image/webp: { schema: { type: string, format: binary } } }
+        '304': { description: النسخة في مخزن العميل مطابقة }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
       x-permission: sales_catalog.view
       security: [{ SessionCookie: [] }]
   /sales/catalog/items/{inventoryItemId}/selling-profile:
@@ -15483,6 +15579,19 @@ components:
           type: integer
           minimum: 0
           maximum: 6
+    ProductImageDescriptor:
+      type: object
+      additionalProperties: false
+      required: [version, thumbnailUrl]
+      properties:
+        version: { type: integer, minimum: 1, maximum: 4294967294 }
+        thumbnailUrl: { type: string, minLength: 1, maxLength: 500, pattern: '^/api/v1/inventory-items/[1-9][0-9]*/image/inventory\?v=[1-9][0-9]*$' }
+    ProductImageResponse:
+      type: object
+      additionalProperties: false
+      required: [image]
+      properties:
+        image: { $ref: '#/components/schemas/ProductImageDescriptor' }
     InventoryItem:
       type: object
       required:
@@ -15493,6 +15602,7 @@ components:
       - description
       - isActive
       - version
+      - image
       - unitOfMeasure
       properties:
         id:
@@ -15520,6 +15630,10 @@ components:
         version:
           type: integer
           minimum: 0
+        image:
+          oneOf:
+          - $ref: '#/components/schemas/ProductImageDescriptor'
+          - { type: 'null' }
         unitOfMeasure:
           $ref: '#/components/schemas/UnitOfMeasure'
     InventoryItemCreateRequest:
@@ -16748,7 +16862,7 @@ components:
     SellingCatalogItem:
       type: object
       additionalProperties: false
-      required: [inventoryItemId, code, nameAr, nameEn, description, isActive, unitOfMeasure, sellingProfile, isReady, readinessReason]
+      required: [inventoryItemId, code, nameAr, nameEn, description, isActive, image, unitOfMeasure, sellingProfile, isReady, readinessReason]
       properties:
         inventoryItemId: { $ref: '#/components/schemas/Id' }
         code: { type: string, maxLength: 40 }
@@ -16756,6 +16870,14 @@ components:
         nameEn: { type: [string, 'null'], maxLength: 200 }
         description: { type: [string, 'null'], maxLength: 500 }
         isActive: { type: boolean }
+        image:
+          oneOf:
+          - type: object
+            additionalProperties: false
+            required: [thumbnailUrl]
+            properties:
+              thumbnailUrl: { type: string, minLength: 1, maxLength: 500, pattern: '^/api/v1/sales/catalog/items/[1-9][0-9]*/image/pos\?v=[1-9][0-9]*$' }
+          - { type: 'null' }
         unitOfMeasure:
           type: object
           additionalProperties: false

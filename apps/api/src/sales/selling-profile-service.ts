@@ -11,6 +11,7 @@ import type {
   SellingCatalogTaxPort, SellingProfileAuditPort, SellingProfileCreate, SellingProfileRecord,
   SellingProfileRepository, SellingProfileUpdate, SellingProfileValues,
 } from "./selling-profile-ports.js";
+import { posThumbnailUrl } from "../media/product-image-types.js";
 
 const ids = (values: bigint[]) => [...new Set(values.map(String))].map(BigInt)
   .sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
@@ -138,6 +139,7 @@ export class SellingProfileService implements SellingCatalogQueryPort {
       const reason = this.readiness(item, profile, refs);
       return { inventoryItemId: String(item.id), code: item.code, nameAr: item.nameAr, nameEn: item.nameEn,
         description: item.description, isActive: item.isActive,
+        image: item.image ? { thumbnailUrl: posThumbnailUrl(item.id, item.image.version) } : null,
         unitOfMeasure: { ...item.unitOfMeasure, id: String(item.unitOfMeasure.id) },
         sellingProfile: profile && { id: String(profile.id), unitPrice: canonicalSellingPrice(profile.unitPrice),
           currencyId: String(profile.currencyId), currencyCode: refs.currencies.get(String(profile.currencyId))?.code ?? null,

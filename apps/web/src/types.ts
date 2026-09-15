@@ -621,10 +621,7 @@ export type InventoryItem = {
   isActive: boolean;
   version: number;
   unitOfMeasure: UnitOfMeasure;
-  image?: null | { version: number; thumbnailUrl: string };
-  /** Legacy-compatible aliases omitted by new API responses. */
-  imageUrl?: string | null;
-  thumbnailUrl?: string | null;
+  image: null | { version: number; thumbnailUrl: string };
 };
 
 export type InventoryBarcodeSymbology =

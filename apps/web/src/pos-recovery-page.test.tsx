@@ -63,7 +63,7 @@ function element<P>(tree: ReactNode, type: unknown): ReactElement<P> {
   }
   throw new Error("Missing child port");
 }
-const item: PosCatalogItem = { inventoryItemId: "55", code: "ITM-55", nameAr: "Item", nameEn: "Item", description: null, isActive: true,
+const item: PosCatalogItem = { inventoryItemId: "55", code: "ITM-55", nameAr: "Item", nameEn: "Item", description: null, isActive: true, image: null,
   unitOfMeasure: { id: "1", code: "EA", nameAr: "Each", nameEn: "Each", decimalPlaces: 0, isActive: true },
   sellingProfile: { id: "56", unitPrice: "1.2500", currencyId: "3", currencyCode: "SAR", revenueAccountId: "57", taxRateId: null, isActive: true, version: 1 },
   isReady: true, readinessReason: null };

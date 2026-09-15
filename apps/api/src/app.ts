@@ -90,6 +90,8 @@ import type { InventoryService } from './inventory/inventory-service.js';
 import { createInventoryRouter } from './inventory/inventory-router.js';
 import type { InventoryCatalogService } from './inventory/inventory-catalog-service.js';
 import { createInventoryCatalogRouter } from './inventory/inventory-catalog-router.js';
+import type { ProductImageService } from './inventory/product-image-service.js';
+import { createProductImageRouter } from './inventory/product-image-router.js';
 import type { InventoryBarcodeService } from './inventory/inventory-barcode-service.js';
 import { createInventoryBarcodeRouter } from './inventory/inventory-barcode-router.js';
 import type { InventoryMovementService } from './inventory/inventory-movement-service.js';
@@ -215,6 +217,7 @@ export type AppServices = {
   bankReconciliation?: BankReconciliationService;
   inventory?: InventoryService;
   inventoryCatalog?: InventoryCatalogService;
+  productImages?: ProductImageService;
   inventoryBarcodes?: InventoryBarcodeService;
   inventoryMovements?: InventoryMovementService;
   receipts?: ReceiptService;
@@ -439,6 +442,11 @@ export function createApp(config: AppConfig, services: AppServices = {}) {
   ));
   if (services.auth && services.inventory) app.use('/api/v1', createInventoryRouter(services.auth, services.inventory));
   if (services.auth && services.inventoryCatalog) app.use('/api/v1', createInventoryCatalogRouter(services.auth, services.inventoryCatalog));
+  if (services.auth && services.productImages) app.use('/api/v1', createProductImageRouter(
+    services.auth,
+    services.productImages,
+    config.PRODUCT_IMAGE_MAX_UPLOAD_BYTES ?? 5 * 1_024 * 1_024,
+  ));
   if (services.auth && services.inventoryBarcodes) app.use('/api/v1', createInventoryBarcodeRouter(services.auth, services.inventoryBarcodes));
   if (services.auth && services.inventoryMovements) app.use('/api/v1', createInventoryMovementRouter(services.auth, services.inventoryMovements));
   if (services.auth && services.receipts) app.use('/api/v1', createReceiptRouter(services.auth, services.receipts));

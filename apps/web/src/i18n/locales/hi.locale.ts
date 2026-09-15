@@ -3580,7 +3580,16 @@ export const localeDictionary = {
   "companyProfile.requirement.saCommercialRegistration": "सऊदी वाणिज्यिक पंजीकरण",
   "companyProfile.requirement.saVat": "सऊदी वैट पंजीकरण",
   "companyProfile.requirement.saNationalAddress": "सऊदी राष्ट्रीय पता",
-  "companyProfile.requirement.other": "अतिरिक्त आवश्यकता"
+  "companyProfile.requirement.other": "अतिरिक्त आवश्यकता",
+  "inventory.items.image": "चित्र",
+  "inventory.items.imageChoose": "चित्र चुनें",
+  "inventory.items.imageHint": "वैकल्पिक JPEG, PNG या WebP; अधिकतम 5 MB।",
+  "inventory.items.imageInvalid": "JPEG, PNG या WebP चित्र चुनें जो 5 MB से छोटा हो।",
+  "inventory.items.imagePlaceholder": "कोई चित्र नहीं",
+  "inventory.items.imageRemove": "चित्र हटाएँ",
+  "inventory.items.imageReplace": "चित्र बदलें",
+  "inventory.items.imageSaveError": "आइटम का चित्र सहेजा नहीं जा सका।",
+  "inventory.items.imagePartialSaveError": "आइटम सहेजा गया, लेकिन चित्र नहीं। फिर प्रयास करें।"
 } as const;
 
 const locale = { metadata: localeMetadata, dictionary: localeDictionary } satisfies LocaleDefinition;
