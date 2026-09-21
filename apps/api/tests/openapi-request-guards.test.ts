@@ -516,6 +516,23 @@ describe('generated OpenAPI request guards', () => {
     expect(verifySelfRegistrationRequestSchema.safeParse({ token: 'bad token' }).success).toBe(false);
   });
 
+  it('enforces the expanded group-company onboarding boundary from OpenAPI', () => {
+    const input = {
+      companyName: '  Branch company  ', phone: ' +966500000000 ', countryCode: 'sa',
+      primaryBusinessActivityCode: ' RETAIL_TRADE ', chartTemplateCode: ' RETAIL_INVENTORY ',
+      timezone: ' Asia/Riyadh ', baseCurrencyCode: 'SAR',
+    } as const;
+    expect(openApiRequestBodySchemas.createOrganizationCompany.parse(input)).toEqual({
+      companyName: 'Branch company', phone: '+966500000000', countryCode: 'sa',
+      primaryBusinessActivityCode: 'RETAIL_TRADE', chartTemplateCode: 'RETAIL_INVENTORY',
+      timezone: 'Asia/Riyadh', baseCurrencyCode: 'SAR',
+    });
+    expect(openApiRequestBodySchemas.createOrganizationCompany.safeParse({
+      companyName: 'Branch company', timezone: 'Asia/Riyadh', baseCurrencyCode: 'SAR',
+    }).success).toBe(false);
+    expect(openApiRequestBodySchemas.createOrganizationCompany.safeParse({ ...input, sourceCompanyId: '1' }).success).toBe(false);
+  });
+
   it('strictly guards company profile and compliance updates without accepting binary branding data', () => {
     expect(openApiRequestBodySchemas.updateCompanyProfile.parse({
       version: 2, tradeName: '  Northstar  ', countryCode: 'ye', primaryBusinessActivityCode: ' PROFESSIONAL_SERVICES ',

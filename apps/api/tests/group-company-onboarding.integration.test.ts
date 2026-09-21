@@ -186,6 +186,13 @@ describe.runIf(enabled)("group company creation on a real database", () => {
     await agent.post(path).send(input).expect(401);
     const csrf = await agent.get("/api/v1/auth/csrf").expect(200);
     const login = await agent.post("/api/v1/auth/login").set("X-CSRF-Token", csrf.body.csrfToken).send({ email: user.emailNormalized, password: "test-only-owner-password" }).expect(200);
+    const options = await agent.get(`/api/v1/organizations/${organization.id}/company-options`).expect(200);
+    expect(options.body).toMatchObject({
+      currencies: expect.arrayContaining([expect.objectContaining({ code: "SAR" })]),
+      countries: expect.arrayContaining([expect.objectContaining({ code: "SA" })]),
+      businessActivities: expect.arrayContaining([expect.objectContaining({ code: "RETAIL_TRADE" })]),
+      chartTemplates: expect.arrayContaining([expect.objectContaining({ code: "RETAIL_INVENTORY" })]),
+    });
     await agent.post(path).set("Idempotency-Key", randomUUID()).send(input).expect(403);
     await agent.post(path).set("X-CSRF-Token", login.body.csrfToken).send(input).expect(400);
     await agent.post(path).set("X-CSRF-Token", login.body.csrfToken).set("Idempotency-Key", randomUUID()).send({ ...input, organizationName: "Do not rename", adminEmail: "other@example.test" }).expect(400);

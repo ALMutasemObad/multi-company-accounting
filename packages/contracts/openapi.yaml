@@ -2298,7 +2298,7 @@ paths:
         schema: { $ref: '#/components/schemas/Id' }
       responses:
         '200':
-          description: العملات النشطة والمناطق الزمنية، دون اختيار خطة اشتراك
+          description: العملات والدول والأنشطة وقوالب الحسابات المسموحة والمناطق الزمنية، دون اختيار خطة اشتراك
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OrganizationCompanyOptions' }
