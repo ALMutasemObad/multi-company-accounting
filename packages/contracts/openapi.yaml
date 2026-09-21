@@ -232,11 +232,17 @@ paths:
           $ref: '#/components/responses/RateLimitUnavailable'
         '500':
           $ref: '#/components/responses/InternalError'
-      description: ينشئ جلسة تمهيدية عند الحاجة ويعيد رمز CSRF. تُرسل Cookie الجلسة بخصائص HttpOnly وSameSite، وSecure في
-        الإنتاج.
-      security: []
+      description: الوضع anonymous لا يتطلب مصادقة وينشئ جلسة تمهيدية جديدة وCookie للدخول. الوضع authenticated يفرض SessionCookie صالحة رغم أن العملية تعرض بديلًا عامًا في security، ويصدر رمزًا موقّعًا قصير العمر مرتبطًا بالجلسة دون Set-Cookie أو PRE_AUTH ودون إبطال رموز التبويبات الأخرى.
+      security:
+      - {}
+      - SessionCookie: []
       parameters:
       - $ref: '#/components/parameters/RequestId'
+      - name: mode
+        in: query
+        required: false
+        description: استخدم authenticated لتهيئة تبويب جديد من جلسة قائمة؛ الغياب يعني anonymous ولا يستخدم لاستعادة جلسة مصادق عليها.
+        schema: { type: string, enum: [anonymous, authenticated], default: anonymous }
   /auth/social/providers:
     get:
       tags: [Authentication]
@@ -11373,6 +11379,7 @@ components:
       type: object
       required:
       - csrfToken
+      - expiresAt
       properties:
         csrfToken:
           type: string

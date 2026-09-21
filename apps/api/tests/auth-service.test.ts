@@ -78,14 +78,14 @@ const companyCapabilities: CompanyCapabilityPort = {
   async allows() { return true; },
 };
 
-function fixture(capabilities: CompanyCapabilityPort = companyCapabilities) {
+function fixture(capabilities: CompanyCapabilityPort = companyCapabilities, clock: () => Date = () => now) {
   const store = new TestStore();
   store.users.set(user.emailNormalized, user);
   const auth = new AuthService(store, { verify: async (hash, password) => hash === 'valid-hash' && password === 'correct-password' }, {
     preAuthTtlMinutes: 10,
     sessionTtlHours: 12,
     companyCapabilities: capabilities,
-  }, () => now);
+  }, clock);
   return { store, auth };
 }
 
@@ -120,6 +120,45 @@ describe('AuthService', () => {
     await expect(auth.authenticate({ sid: login.sid, requireCsrf: true })).rejects.toEqual(new AuthError('INVALID_CSRF'));
     await expect(auth.authenticate({ sid: login.sid, csrfToken: login.csrfToken, requireCsrf: true })).resolves.toMatchObject({ userId: user.id });
     await expect(auth.authenticate({ sid: login.sid })).resolves.toMatchObject({ userId: user.id });
+  });
+
+  it('issues independent short-lived CSRF tokens bound to one authenticated session', async () => {
+    const { auth } = fixture();
+    const preAuth = await auth.issueCsrf();
+    const login = await auth.login({ sid: preAuth.sid, csrfToken: preAuth.csrfToken, email: user.emailNormalized, password: 'correct-password' });
+    const first = await auth.issueAuthenticatedCsrf({ sid: login.sid });
+    const second = await auth.issueAuthenticatedCsrf({ sid: login.sid });
+
+    expect(first.csrfToken).not.toBe(second.csrfToken);
+    expect(first.expiresAt).toEqual(new Date(now.getTime() + 15 * 60_000));
+    await expect(auth.authenticate({ sid: login.sid, csrfToken: first.csrfToken, requireCsrf: true })).resolves.toMatchObject({ userId: user.id });
+    await expect(auth.authenticate({ sid: login.sid, csrfToken: second.csrfToken, requireCsrf: true })).resolves.toMatchObject({ userId: user.id });
+    await expect(auth.authenticate({ sid: login.sid, csrfToken: login.csrfToken, requireCsrf: true })).resolves.toMatchObject({ userId: user.id });
+
+    const otherPreAuth = await auth.issueCsrf();
+    const otherLogin = await auth.login({ sid: otherPreAuth.sid, csrfToken: otherPreAuth.csrfToken, email: user.emailNormalized, password: 'correct-password' });
+    await expect(auth.authenticate({ sid: otherLogin.sid, csrfToken: first.csrfToken, requireCsrf: true }))
+      .rejects.toEqual(new AuthError('INVALID_CSRF'));
+  });
+
+  it('rejects authenticated CSRF bootstrap for pre-auth, revoked, expired, and stale-token sessions', async () => {
+    let clock = now;
+    const { auth, store } = fixture(companyCapabilities, () => clock);
+    const preAuth = await auth.issueCsrf();
+    await expect(auth.issueAuthenticatedCsrf({ sid: preAuth.sid })).rejects.toEqual(new AuthError('UNAUTHENTICATED'));
+
+    const login = await auth.login({ sid: preAuth.sid, csrfToken: preAuth.csrfToken, email: user.emailNormalized, password: 'correct-password' });
+    const refreshed = await auth.issueAuthenticatedCsrf({ sid: login.sid });
+    clock = new Date(now.getTime() + 16 * 60_000);
+    await expect(auth.authenticate({ sid: login.sid, csrfToken: refreshed.csrfToken, requireCsrf: true }))
+      .rejects.toEqual(new AuthError('INVALID_CSRF'));
+
+    const session = [...store.sessions.values()].find((candidate) => candidate.state === 'AUTHENTICATED')!;
+    session.revokedAt = clock;
+    await expect(auth.issueAuthenticatedCsrf({ sid: login.sid })).rejects.toEqual(new AuthError('UNAUTHENTICATED'));
+    session.revokedAt = null;
+    session.expiresAt = clock;
+    await expect(auth.issueAuthenticatedCsrf({ sid: login.sid })).rejects.toEqual(new AuthError('UNAUTHENTICATED'));
   });
 
   it('uses the same public error for an unknown email and a wrong password', async () => {

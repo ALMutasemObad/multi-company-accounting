@@ -15,30 +15,67 @@ export class ApiError extends Error {
 }
 
 let csrfToken = "";
-try { csrfToken = globalThis.sessionStorage?.getItem(storageKey("csrf")) ?? ""; } catch { /* In-memory CSRF still works when storage is disabled. */ }
+let authenticatedCsrfExpiresAtMs: number | null = null;
+const authenticatedCsrfExpiryKey = storageKey("csrf-authenticated-expires-at");
+const AUTHENTICATED_CSRF_REFRESH_SKEW_MS = 60_000;
+try {
+  csrfToken = globalThis.sessionStorage?.getItem(storageKey("csrf")) ?? "";
+  const storedExpiry = globalThis.sessionStorage?.getItem(authenticatedCsrfExpiryKey);
+  const parsedExpiry = storedExpiry === null || storedExpiry === undefined ? Number.NaN : Number(storedExpiry);
+  authenticatedCsrfExpiresAtMs = csrfToken && Number.isFinite(parsedExpiry) ? parsedExpiry : null;
+} catch { /* In-memory CSRF still works when storage is disabled. */ }
+
+function clearAuthenticatedCsrfExpiry() {
+  authenticatedCsrfExpiresAtMs = null;
+  try { globalThis.sessionStorage?.removeItem(authenticatedCsrfExpiryKey); } catch { /* Already cleared in memory. */ }
+}
 
 export function setCsrfToken(value: string) {
   csrfToken = value;
+  clearAuthenticatedCsrfExpiry();
   try { globalThis.sessionStorage?.setItem(storageKey("csrf"), value); } catch { /* Keep the in-memory token. */ }
+}
+
+function setAuthenticatedCsrfToken(value: string, expiresAt: string) {
+  const expiresAtMs = Date.parse(expiresAt);
+  if (!Number.isFinite(expiresAtMs)) throw new RequestError("response");
+  csrfToken = value;
+  authenticatedCsrfExpiresAtMs = expiresAtMs;
+  try {
+    globalThis.sessionStorage?.setItem(storageKey("csrf"), value);
+    globalThis.sessionStorage?.setItem(authenticatedCsrfExpiryKey, String(expiresAtMs));
+  } catch { /* Keep the in-memory token and expiry. */ }
 }
 
 export function clearCsrfToken() {
   csrfToken = "";
+  clearAuthenticatedCsrfExpiry();
   try { globalThis.sessionStorage?.removeItem(storageKey("csrf")); } catch { /* Already cleared in memory. */ }
 }
 
-export async function api<T>(
+type ApiOptions = RequestInit & { idempotencyKey?: string; timeoutMs?: number };
+type ApiDispatch = { csrfTokenSnapshot?: string; skipAuthenticatedCsrfRefresh?: boolean };
+
+export function api<T>(path: string, options: ApiOptions = {}): Promise<T> {
+  return requestApi(path, options);
+}
+
+async function requestApi<T>(
   path: string,
-  options: RequestInit & { idempotencyKey?: string; timeoutMs?: number } = {},
+  options: ApiOptions,
+  dispatch: ApiDispatch = {},
 ): Promise<T> {
-  const headers = new Headers(options.headers);
-  if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-  if (options.method && options.method !== "GET" && csrfToken)
-    headers.set("X-CSRF-Token", csrfToken);
-  if (options.idempotencyKey)
-    headers.set("Idempotency-Key", options.idempotencyKey);
   const { timeoutMs, idempotencyKey: _key, ...request } = options;
   return withinSessionRequest(async (signal) => {
+    const method = options.method?.toUpperCase() ?? "GET";
+    if (method !== "GET" && method !== "HEAD" && !dispatch.skipAuthenticatedCsrfRefresh) await ensureAuthenticatedCsrf({ signal });
+    const headers = new Headers(options.headers);
+    if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+    const requestCsrfToken = dispatch.csrfTokenSnapshot ?? csrfToken;
+    if (method !== "GET" && method !== "HEAD" && requestCsrfToken)
+      headers.set("X-CSRF-Token", requestCsrfToken);
+    if (options.idempotencyKey)
+      headers.set("Idempotency-Key", options.idempotencyKey);
     let response: Response;
     try {
       response = await fetch(`/api/v1${path}`, { ...request, headers, signal, credentials: "include" });
@@ -87,6 +124,29 @@ export function beginLogin(options: RequestPolicy = {}) {
   });
   beginLoginRequest = pending;
   return beginLoginRequest;
+}
+
+export async function refreshAuthenticatedCsrf(options: RequestPolicy = {}) {
+  const contextSignal = sessionRequestSignal(options.signal);
+  const result = await api<{ csrfToken: string; expiresAt: string }>("/auth/csrf?mode=authenticated", options);
+  assertRequestActive(options.signal);
+  assertRequestActive(contextSignal);
+  if (!result?.csrfToken || !result.expiresAt) throw new RequestError("response");
+  setAuthenticatedCsrfToken(result.csrfToken, result.expiresAt);
+}
+
+let authenticatedCsrfRefreshRequest: Promise<void> | null = null;
+
+async function ensureAuthenticatedCsrf(options: RequestPolicy = {}) {
+  if (authenticatedCsrfExpiresAtMs === null || authenticatedCsrfExpiresAtMs > Date.now() + AUTHENTICATED_CSRF_REFRESH_SKEW_MS) return;
+  if (!authenticatedCsrfRefreshRequest) {
+    const pending = refreshAuthenticatedCsrf(options).finally(() => {
+      if (authenticatedCsrfRefreshRequest === pending) authenticatedCsrfRefreshRequest = null;
+    });
+    authenticatedCsrfRefreshRequest = pending;
+  }
+  await authenticatedCsrfRefreshRequest;
+  assertRequestActive(options.signal);
 }
 
 export async function login(email: string, password: string, options: RequestPolicy = {}) {
@@ -181,7 +241,14 @@ export const cancelSocialOnboarding = (options: RequestPolicy = {}) =>
 
 export async function logout() {
   invalidateSessionRequests();
-  const pending = api<void>("/auth/logout", { method: "POST" });
+  const logoutSignal = sessionRequestSignal();
+  await ensureAuthenticatedCsrf({ signal: logoutSignal });
+  assertRequestActive(logoutSignal);
+  const csrfTokenSnapshot = csrfToken;
+  const pending = requestApi<void>("/auth/logout", { method: "POST", signal: logoutSignal }, {
+    csrfTokenSnapshot,
+    skipAuthenticatedCsrfRefresh: true,
+  });
   clearCsrfToken();
   await pending;
 }
