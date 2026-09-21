@@ -6,6 +6,10 @@ import {
   InventoryMovementError,
   InventoryMovementService,
 } from "./inventory-movement-service.js";
+import {
+  currentInventoryValuationReport,
+  inventoryValuationXlsx,
+} from "./inventory-valuation-report/report.js";
 
 const id = z.string().regex(/^[1-9][0-9]*$/u).transform(BigInt);
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u);
@@ -27,6 +31,12 @@ const balanceQuery = z.object({
   warehouseId: id.optional(),
   inventoryItemId: id.optional(),
   nonZero: z.enum(["true", "false"]).transform((value) => value === "true").optional(),
+});
+const valuationReportQuery = z.object({
+  search: z.string().trim().min(1).max(200).optional(),
+  warehouseId: id.optional(),
+  inventoryItemId: id.optional(),
+  valuationStatus: z.enum(["ALL", "VALUED", "UNVALUED"]).default("ALL"),
 });
 const movementQuery = z.object({
   ...basePage,
@@ -79,6 +89,19 @@ export function createInventoryMovementRouter(
       data: result.data.map(InventoryMovementService.balanceJson),
       meta: meta(query, result.total),
     });
+  });
+
+  router.get("/inventory-valuation-report", async (request, response) => {
+    const context = await authorize(request, "inventory_movements.view", false);
+    response.json(await currentInventoryValuationReport(service, context, valuationReportQuery.parse(request.query)));
+  });
+
+  router.get("/inventory-valuation-report.xlsx", async (request, response) => {
+    const context = await authorize(request, "inventory_movements.view", false);
+    const report = await currentInventoryValuationReport(service, context, valuationReportQuery.parse(request.query));
+    response.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    response.setHeader("Content-Disposition", "attachment; filename=inventory-current-valuation.xlsx");
+    response.send(inventoryValuationXlsx(report));
   });
 
   router.get("/inventory-movements", async (request, response) => {
