@@ -5,7 +5,7 @@ const sourceRoot = new URL("../src/", import.meta.url);
 const source = (relative: string) => readFile(new URL(relative, sourceRoot), "utf8");
 
 describe("ADM-1B account usage composition", () => {
-  it("registers Core, Sales, and Reporting but keeps lifecycle enforcement staged with four owners missing", async () => {
+  it("registers Core, Sales, Purchases, and Reporting but keeps lifecycle enforcement staged", async () => {
     const [server, accountService, guard] = await Promise.all([
       source("server.ts"),
       source("accounts/account-service.ts"),
@@ -14,6 +14,7 @@ describe("ADM-1B account usage composition", () => {
 
     expect(server).toContain("new CoreAccountUsageQueryAdapter()");
     expect(server).toContain("new SalesAccountUsageQueryAdapter()");
+    expect(server).toContain("new PurchasesAccountUsageQueryAdapter()");
     expect(server).toContain("new ReportingAccountUsageQueryAdapter()");
     expect(server).toContain("const accountUsageComposition = accountUsageGuard.completeness()");
     expect(server).toContain("accounts: new AccountService(database)");
@@ -22,22 +23,50 @@ describe("ADM-1B account usage composition", () => {
     expect(guard).toContain('enforcementEnabled: false');
   });
 
-  it("reports the staged server composition as 3/7 with deterministic missing owners", async () => {
+  it("reports the staged server composition as 4/7 with deterministic missing owners", async () => {
     const { CoreAccountUsageQueryAdapter } = await import("../src/accounts/core-account-usage-query-adapter.js");
     const { SalesAccountUsageQueryAdapter } = await import("../src/sales/sales-account-usage-query-adapter.js");
+    const { PurchasesAccountUsageQueryAdapter } = await import("../src/purchases/purchases-account-usage-query-adapter.js");
     const { ReportingAccountUsageQueryAdapter } = await import("../src/reports/reporting-account-usage-adapter.js");
     const { AccountUsageGuard } = await import("../src/accounts/account-usage-guard.js");
 
     expect(new AccountUsageGuard([
       new CoreAccountUsageQueryAdapter(),
       new SalesAccountUsageQueryAdapter(),
+      new PurchasesAccountUsageQueryAdapter(),
       new ReportingAccountUsageQueryAdapter(),
     ]).completeness()).toEqual({
       complete: false,
-      missingOwners: ["PURCHASES", "TAX", "TREASURY", "INVENTORY"],
+      missingOwners: ["TAX", "TREASURY", "INVENTORY"],
       duplicateOwners: [],
       enforcementEnabled: false,
     });
+  });
+
+  it("keeps the Purchases implementation behind Accounts-owned lifecycle ports", async () => {
+    const [usageAdapter, supplierService, invoiceService, accountService] = await Promise.all([
+      source("purchases/purchases-account-usage-query-adapter.ts"),
+      source("suppliers/supplier-service.ts"),
+      source("purchases/purchase-invoice-service.ts"),
+      source("accounts/account-service.ts"),
+    ]);
+
+    expect(usageAdapter).toContain('import type { AccountUsageQueryPort } from "../accounts/account-usage-query-port.js"');
+    expect(usageAdapter).toContain("tx.purchaseInvoiceLine.findFirst");
+    expect(usageAdapter).not.toContain("PrismaClient");
+    for (const writer of [supplierService, invoiceService]) {
+      expect(writer).toContain('import type { AccountReferenceLockPort } from "../accounts/account-reference-lock-port.js"');
+      expect(writer).not.toContain("PrismaAccountReferenceLockAdapter");
+    }
+    expect(supplierService.indexOf("await this.lockPostingAccount"))
+      .toBeLessThan(supplierService.indexOf("await tx.supplier.create"));
+    expect(invoiceService.indexOf("? await this.lockDebitAccounts"))
+      .toBeLessThan(invoiceService.indexOf("const accounts = await tx.account.findMany"));
+    expect(invoiceService).toContain("this.prepare(tx, context.companyId, input, invoice.id, false)");
+    expect(invoiceService.indexOf("await this.lockDebitAccounts(tx, companyId, [inventoryAccountId])"))
+      .toBeLessThan(invoiceService.indexOf("await tx.purchaseInvoiceLine.updateMany"));
+    expect(invoiceService).toMatch(/const prepared = await this\.prepare[\s\S]*?await tx\.purchaseInvoiceLine\.deleteMany/u);
+    expect(accountService).not.toContain("PurchasesAccountUsageQueryAdapter");
   });
 
   it("keeps the Sales implementation behind the Accounts-owned usage contract", async () => {

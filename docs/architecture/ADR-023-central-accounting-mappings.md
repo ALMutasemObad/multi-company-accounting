@@ -588,8 +588,12 @@ source template tags أو حقائق الأطراف.
 التاريخ غير القابل للتغيير: تبقى `DRAFT` استعمالًا قابلًا للتعديل، بينما تجعل
 `POSTED/REVERSED/CANCELLED` الفئة تاريخية غير قابلة للتغيير، ويقتصر مسار المستند
 على `SALES_INVOICE/SALES_CREDIT_NOTE`.
-يسجل composition الآن مالكي Core وSales وReporting (3/7)، ويبقى Account lifecycle
-enforcement معطلًا صراحة لأن محولات Purchases/Tax/Treasury/Inventory لم تكتمل؛ لا
+أضافت ADM-1B4 محول Purchases المملوك للمشتريات لعد Supplier وكل
+`PurchaseInvoiceLine` المرتبط بالحساب داخل الشركة. يشمل العدد الكلي أسطر `DRAFT`،
+بينما يقتصر التاريخ غير القابل للتغيير على `POSTED/REVERSED/CANCELLED` لمستندي
+`PURCHASE_INVOICE/PURCHASE_DEBIT_NOTE`.
+يسجل composition الآن مالكي Core وSales وPurchases وReporting (4/7)، ويبقى Account lifecycle
+enforcement معطلًا صراحة لأن محولات Tax/Treasury/Inventory لم تكتمل؛ لا
 يُفسر هذا التركيب الجزئي على أنه حارس مكتمل. لم يبدأ جدول default mappings أو
 API/permissions/consumers الخاصة بـADM-2 وما بعدها.
 
@@ -600,5 +604,13 @@ API/permissions/consumers الخاصة بـADM-2 وما بعدها.
 تصاعديًا ويقفلها داخل المعاملة نفسها قبل قراءة الحسابات أو حفظ الأسطر. تتجاوز
 التحديثات التي لا تغيّر مرجعًا هذه الأقفال، وتبقى الخدمات معتمدة على العقد type-only
 بينما يحقن composition محول Core الملموس.
+
+وتغلق ADM-1B4 السباق المناظر في Purchases: يقفل Supplier الحساب عند الإنشاء، وكلما
+حمل طلب التحديث `payableAccountId` حتى إن ساوى القيمة المقروءة؛ فلا تعتمد السلامة
+على مقارنة قراءة قديمة بلا قفل. تقفل كتابة فاتورة المشتريات حسابات الخصم الجديدة
+بعد إزالة التكرار وترتيب المعرّفات رقميًا داخل المعاملة وقبل القراءة والكتابة.
+مسار preview ومسار post يتحققان بلا قفل لهذه المعرّفات كي لا يعكسا ترتيب الأقفال؛
+وإذا استبدل post حساب بند مخزني بـ`inventoryAccountId` فإنه يقفل الحساب البديل
+داخل المعاملة قبل `updateMany`، ويتجاوز القفل والكتابة إن كانت البنود تستخدمه أصلًا.
 خطة الشرائح وبوابات التنفيذ في
 [خطة مركز تعيين الحسابات](CENTRAL_ACCOUNTING_MAPPINGS_SLICE_AR.md).

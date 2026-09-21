@@ -600,14 +600,16 @@ normalize reason -> fingerprint {key,accountId,expectedVersion,reason|null}
 Core Accounting لا يستورد Reporting Prisma model؛ غياب/فشل
 `ReportingAccountUsageQueryPort` يفشل lifecycle command مغلقًا ويرجع المعاملة كاملة.
 
-حالة ADM-1B1/B2/B3: نُفذ العقد والمنسق ومحولات Reporting وCore Accounting وSales،
-وسُجلت completeness في composition بحالة 3/7، مع أربعة مالكين مفقودين وبقاء
+حالة ADM-1B1/B2/B3/B4: نُفذ العقد والمنسق ومحولات Reporting وCore Accounting وSales
+وPurchases، وسُجلت completeness في composition بحالة 4/7، مع ثلاثة مالكين مفقودين وبقاء
 `enforcementEnabled=false`. يعد محول Core الأبناء وكل سطور اليومية المقيدة بالشركة،
 ويعد التاريخ immutable لأسطر المستندات النهائية `POSTED/REVERSED/CANCELLED`، مع
 بقاء `DRAFT` وحدها قابلة للتعديل. يعد محول Sales مراجع Customer وSelling Profile
 وكل `SalesInvoiceLine`، ويفصل العدد الكلي عن وجود تاريخ فاتورة نهائي بالحالات نفسها.
-لم يُحقن المنسق في `AccountService` حتى تكتمل محولات Purchases وTax وTreasury
-وInventory. في
+ويعد محول Purchases مراجع Supplier وكل `PurchaseInvoiceLine`، ويعد أسطر DRAFT ضمن
+الاستعمال الكلي مع قصر immutable على `POSTED/REVERSED/CANCELLED` لمستندي
+`PURCHASE_INVOICE/PURCHASE_DEBIT_NOTE`. لم يُحقن المنسق في `AccountService` حتى
+تكتمل محولات Tax وTreasury وInventory. في
 المقابل فُعل handshake الكتابة المطلوب في `CashFlowService.updateMapping`: يقفل
 Account أولًا داخل المعاملة نفسها ويرفض المرجع العابر للشركة أو غير النشط أو غير
 القابل للترحيل أو الأب قبل أي قراءة أو إنشاء/تحديث لـCash Flow mapping.
@@ -618,6 +620,13 @@ Account أولًا داخل المعاملة نفسها ويرفض المرجع 
 ويرتبها تصاعديًا ثم يقفل كل حساب داخل المعاملة نفسها قبل قراءة الحسابات أو
 حفظ/استبدال الأسطر. لا تنفذ التحديثات التي لا تغيّر مرجعًا قفلًا غير لازم، ولا
 تستورد خدمات Sales محول Prisma الملموس؛ يبقى الحقن في composition.
+
+ويقفل Supplier الحساب عند الإنشاء وكلما حمل التحديث `payableAccountId`، حتى إن
+ساوى القيمة المقروءة، كي لا تعتمد السلامة على no-change check بقراءة غير مقفلة. أما فاتورة
+المشتريات فتقفل حسابات الخصم الجديدة/المستبدلة بعد dedupe وترتيب رقمي وقبل
+قراءتها أو حفظ الأسطر. يبقى preview وpost في وضع validate-only لهذه الحسابات لمنع
+عكس ترتيب الأقفال؛ وبعد نتيجة حركة المخزون يقفل post حساب المخزون البديل قبل
+تحديث `PurchaseInvoiceLine`، ويتجاوز القفل والتحديث إذا لم يتغير الحساب.
 
 ```text
 Idempotency عند وجوده

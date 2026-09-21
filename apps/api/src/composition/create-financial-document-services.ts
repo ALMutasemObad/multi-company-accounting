@@ -51,6 +51,7 @@ export type PurchaseInvoiceCompositionDependencies = {
   inventory?: InventoryInvoiceCatalogPort;
   stock?: InventoryInvoiceStockPort;
   payables?: PayableInvoicePort;
+  accountReferences?: AccountReferenceLockPort;
 };
 
 export type ReceiptCompositionDependencies = {
@@ -87,6 +88,7 @@ export function createPurchaseInvoiceService(
     inventory: dependencies.inventory ?? new InventoryCatalogService(prisma),
     stock: dependencies.stock ?? new InventoryMovementService(prisma),
     payables: dependencies.payables ?? new PayableItemService(),
+    accountReferences: dependencies.accountReferences ?? new PrismaAccountReferenceLockAdapter(),
   });
 }
 
@@ -133,6 +135,7 @@ export function createFinancialDocumentServices(
       inventory: dependencies.inventory,
       stock: dependencies.stock,
       payables,
+      accountReferences: dependencies.accountReferences,
     }),
     receipts: new ReceiptService(prisma, {
       treasury: dependencies.treasury,

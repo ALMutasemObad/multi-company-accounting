@@ -89,6 +89,7 @@ import { PrismaAccountReferenceLockAdapter } from './accounts/prisma-account-ref
 import { AccountUsageGuard } from './accounts/account-usage-guard.js';
 import { CoreAccountUsageQueryAdapter } from './accounts/core-account-usage-query-adapter.js';
 import { SalesAccountUsageQueryAdapter } from './sales/sales-account-usage-query-adapter.js';
+import { PurchasesAccountUsageQueryAdapter } from './purchases/purchases-account-usage-query-adapter.js';
 import { ReportingAccountUsageQueryAdapter } from './reports/reporting-account-usage-adapter.js';
 import { createBarcodeLabelService } from './composition/create-barcode-label-service.js';
 import { CompanyCapabilityService } from './platform-subscriptions/company-capability-service.js';
@@ -148,6 +149,7 @@ const accountReferenceLocks = new PrismaAccountReferenceLockAdapter();
 const accountUsageGuard = new AccountUsageGuard([
   new CoreAccountUsageQueryAdapter(),
   new SalesAccountUsageQueryAdapter(),
+  new PurchasesAccountUsageQueryAdapter(),
   new ReportingAccountUsageQueryAdapter(),
 ]);
 const accountUsageComposition = accountUsageGuard.completeness();
@@ -238,7 +240,7 @@ const outboxWorker = outboxHandlers.size
     })
   : undefined;
 const customers = new CustomerService(database, accountReferenceLocks, accountQueries);
-const suppliers = new SupplierService(database, accountQueries);
+const suppliers = new SupplierService(database, accountReferenceLocks, accountQueries);
 const inventoryCatalog = new InventoryCatalogService(database);
 const inventoryBarcodes = new InventoryBarcodeService(database);
 const inventoryMovements = new InventoryMovementService(database);

@@ -7,6 +7,7 @@ import { PrismaAuthStore } from "../src/auth/prisma-auth-store.js";
 import { createPaymentService } from "../src/composition/create-financial-document-services.js";
 import { createDatabase } from "../src/database.js";
 import { SupplierService } from "../src/suppliers/supplier-service.js";
+import { PrismaAccountReferenceLockAdapter } from "../src/accounts/prisma-account-reference-lock-adapter.js";
 import type {
   PaymentService,
   PaymentInput,
@@ -232,7 +233,7 @@ describe.runIf(enabled)(
       periodId = year.periods[0]!.id;
       const treasury = new TreasuryService(prisma!);
       paymentService = createPaymentService(prisma!, { treasury });
-      const references = new SupplierService(prisma!);
+      const references = new SupplierService(prisma!, new PrismaAccountReferenceLockAdapter());
       const auth = new AuthService(
         new PrismaAuthStore(prisma!),
         { verify },

@@ -75,7 +75,7 @@ describe.runIf(enabled)("atomic data imports with MariaDB/MySQL", () => {
     service = new DataImportService(
       prisma!,
       new CustomerService(prisma!, new PrismaAccountReferenceLockAdapter()),
-      new SupplierService(prisma!),
+      new SupplierService(prisma!, new PrismaAccountReferenceLockAdapter()),
       createSalesInvoiceService(prisma!, { taxes }),
       createPurchaseInvoiceService(prisma!, { taxes }),
       new PrismaOutboxAppender(8),

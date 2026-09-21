@@ -4,6 +4,7 @@ import { reserveMasterDataCode } from "../platform/master-data-code-service.js";
 import type { ActorContext } from "../platform/actor-context.js";
 import type { AccountingAccountQueryPort } from "../accounts/account-query-port.js";
 import { PrismaAccountingAccountQueryAdapter } from "../accounts/prisma-account-query-adapter.js";
+import type { AccountReferenceLockPort } from "../accounts/account-reference-lock-port.js";
 import {
   SupplierError,
   type SupplierAddressInput,
@@ -28,6 +29,7 @@ type SupplierRecord = Prisma.SupplierGetPayload<{ include: typeof supplierInclud
 export class SupplierService implements SupplierImportPort {
   constructor(
     private readonly prisma: PrismaClient,
+    private readonly accountReferences: AccountReferenceLockPort,
     private readonly accounts: AccountingAccountQueryPort = new PrismaAccountingAccountQueryAdapter(),
   ) {}
   listSuppliers(
@@ -96,7 +98,7 @@ export class SupplierService implements SupplierImportPort {
   }
 
   async createImportedSupplier(tx: Prisma.TransactionClient, context: ActorContext, input: SupplierInput, imported = true) {
-    await this.validPostingAccount(tx, context.companyId, input.payableAccountId);
+    await this.lockPostingAccount(tx, context.companyId, input.payableAccountId);
     const code = await reserveMasterDataCode(tx, context.companyId, "SUPPLIER");
     const value = await tx.supplier.create({
       data: {
@@ -117,14 +119,13 @@ export class SupplierService implements SupplierImportPort {
   ) {
     try {
       return await this.prisma.$transaction(async (tx) => {
-        if (
-          !(await tx.supplier.findFirst({
-            where: { id, companyId: context.companyId },
-          }))
-        )
+        const current = await tx.supplier.findFirst({
+          where: { id, companyId: context.companyId },
+        });
+        if (!current)
           throw new SupplierError("NOT_FOUND");
         if (input.payableAccountId !== undefined)
-          await this.validPostingAccount(
+          await this.lockPostingAccount(
             tx,
             context.companyId,
             input.payableAccountId,
@@ -301,6 +302,14 @@ export class SupplierService implements SupplierImportPort {
     )
       throw new SupplierError("INVALID_ACCOUNT");
     return account;
+  }
+  private async lockPostingAccount(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+    accountId: bigint,
+  ) {
+    const result = await this.accountReferences.lockPostingAccount(tx, companyId, accountId);
+    if (!result.eligible) throw new SupplierError("INVALID_ACCOUNT");
   }
   private addressData(input: AddressUpdate) {
     return {
