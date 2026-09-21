@@ -235,6 +235,19 @@ enum InventoryMovementStatus {
   REVERSED
 }
 
+enum ExternalStockPositionType {
+  THIRD_PARTY_HELD_BY_US
+  OWNED_HELD_BY_THIRD_PARTY
+  OWNED_IN_TRANSIT
+}
+
+enum ExternalStockPositionEventType {
+  INCREASE
+  DECREASE
+  REVALUATION
+  REVERSAL
+}
+
 enum InventoryBarcodeSymbology {
   EAN_13
   EAN_8
@@ -603,6 +616,9 @@ model Company {
   inventoryMovementLines            InventoryMovementLine[]
   inventoryBalances                 InventoryBalance[]
   inventoryValuationInitializations InventoryValuationInitialization[]
+  externalInventoryParties          ExternalInventoryParty[]
+  externalStockPositions            ExternalStockPosition[]
+  externalStockPositionEvents       ExternalStockPositionEvent[]
   paymentMethods                    PaymentMethod[]
   receipts                          Receipt[]
   receiptAllocations                ReceiptAllocation[]
@@ -811,6 +827,7 @@ model User {
   passwordResetRequests                PasswordResetRequest[]
   dataImportBatches                    DataImportBatch[]                  @relation("DataImportCreatedBy")
   inventoryMovementsCreated            InventoryMovement[]                @relation("InventoryMovementCreatedBy")
+  externalStockPositionEventsCreated   ExternalStockPositionEvent[]        @relation("ExternalStockPositionEventCreatedBy")
   inventoryValuationsCreated           InventoryValuationInitialization[] @relation("InventoryValuationCreatedBy")
   bankStatementImportsCreated          BankStatementImport[]              @relation("BankStatementImportCreatedBy")
   bankStatementLinesClassified         BankStatementLine[]                @relation("BankStatementLineClassifiedBy")
@@ -2516,6 +2533,7 @@ model Warehouse {
   movementLinesFrom InventoryMovementLine[] @relation("InventoryMovementFromWarehouse")
   movementLinesTo   InventoryMovementLine[] @relation("InventoryMovementToWarehouse")
   inventoryBalances InventoryBalance[]
+  heldExternalStockPositions ExternalStockPosition[]
 
   @@unique([companyId, code])
   @@unique([id, companyId])
@@ -2561,6 +2579,7 @@ model InventoryItem {
   purchaseInvoiceLines PurchaseInvoiceLine[]
   movementLines        InventoryMovementLine[]
   inventoryBalances    InventoryBalance[]
+  externalStockPositions ExternalStockPosition[]
   barcodes             InventoryItemBarcode[]
   sellingProfiles      SalesItemSellingProfile[]
   image                InventoryItemImage?
@@ -2740,6 +2759,85 @@ model InventoryValuationInitialization {
   @@unique([inventoryBalanceId, companyId])
   @@index([companyId, createdAt])
   @@map("inventory_valuation_initializations")
+}
+
+model ExternalInventoryParty {
+  id             BigInt                  @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId      BigInt                  @map("company_id") @db.UnsignedBigInt
+  code           String                  @db.VarChar(40)
+  nameAr         String                  @map("name_ar") @db.VarChar(200)
+  nameEn         String?                 @map("name_en") @db.VarChar(200)
+  isActive       Boolean                 @default(true) @map("is_active")
+  version        Int                     @default(0) @db.UnsignedInt
+  createdAt      DateTime                @default(now()) @map("created_at")
+  updatedAt      DateTime                @updatedAt @map("updated_at")
+  company        Company                 @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "external_inventory_parties_company_fk")
+  stockPositions ExternalStockPosition[]
+
+  @@unique([companyId, code], map: "external_inventory_parties_company_code_key")
+  @@unique([id, companyId], map: "external_inventory_parties_id_company_key")
+  @@index([companyId, isActive, nameAr], map: "external_inventory_parties_company_active_name_idx")
+  @@map("external_inventory_parties")
+}
+
+model ExternalStockPosition {
+  id                     BigInt                    @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId              BigInt                    @map("company_id") @db.UnsignedBigInt
+  inventoryItemId        BigInt                    @map("inventory_item_id") @db.UnsignedBigInt
+  custodyPartyId         BigInt                    @map("custody_party_id") @db.UnsignedBigInt
+  warehouseId            BigInt?                   @map("warehouse_id") @db.UnsignedBigInt
+  positionType           ExternalStockPositionType @map("position_type")
+  positionKeyHash        String                    @map("position_key_hash") @db.Char(64)
+  externalLocation       String?                   @map("external_location") @db.VarChar(300)
+  transitOrigin          String?                   @map("transit_origin") @db.VarChar(300)
+  transitDestination     String?                   @map("transit_destination") @db.VarChar(300)
+  quantity               Decimal                   @default(0) @db.Decimal(19, 6)
+  inventoryValueBase     Decimal?                  @map("inventory_value_base") @db.Decimal(19, 4)
+  version                Int                       @default(0) @db.UnsignedInt
+  lastEventAt            DateTime?                 @map("last_event_at")
+  createdAt              DateTime                  @default(now()) @map("created_at")
+  updatedAt              DateTime                  @updatedAt @map("updated_at")
+  company                Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "external_stock_positions_company_fk")
+  inventoryItem          InventoryItem             @relation(fields: [inventoryItemId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict, map: "external_stock_positions_item_company_fk")
+  custodyParty           ExternalInventoryParty    @relation(fields: [custodyPartyId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict, map: "external_stock_positions_party_company_fk")
+  warehouse              Warehouse?                @relation(fields: [warehouseId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict, map: "external_stock_positions_warehouse_company_fk")
+  events                 ExternalStockPositionEvent[]
+
+  @@unique([companyId, positionKeyHash], map: "external_stock_positions_company_key_hash_key")
+  @@unique([id, companyId], map: "external_stock_positions_id_company_key")
+  @@index([companyId, positionType, inventoryItemId], map: "external_stock_positions_company_type_item_idx")
+  @@index([companyId, custodyPartyId, positionType], map: "external_stock_positions_company_party_type_idx")
+  @@index([companyId, warehouseId, positionType], map: "external_stock_positions_company_warehouse_type_idx")
+  @@map("external_stock_positions")
+}
+
+model ExternalStockPositionEvent {
+  id                        BigInt                         @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId                 BigInt                         @map("company_id") @db.UnsignedBigInt
+  externalStockPositionId   BigInt                         @map("external_stock_position_id") @db.UnsignedBigInt
+  eventType                 ExternalStockPositionEventType @map("event_type")
+  positionTypeSnapshot      ExternalStockPositionType      @map("position_type_snapshot")
+  idempotencyKey            String                         @map("idempotency_key") @db.VarChar(100)
+  quantityDelta             Decimal                        @map("quantity_delta") @db.Decimal(19, 6)
+  inventoryValueBaseDelta   Decimal?                       @map("inventory_value_base_delta") @db.Decimal(19, 4)
+  sourceTypeSnapshot        String                         @map("source_type_snapshot") @db.VarChar(40)
+  sourceReferenceSnapshot   String                         @map("source_reference_snapshot") @db.VarChar(100)
+  effectiveDate             DateTime                       @map("effective_date") @db.Date
+  reversalOfEventId         BigInt?                        @map("reversal_of_event_id") @db.UnsignedBigInt
+  createdById               BigInt                         @map("created_by_id") @db.UnsignedBigInt
+  createdAt                 DateTime                       @default(now()) @map("created_at")
+  company                   Company                        @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "external_stock_events_company_fk")
+  externalStockPosition     ExternalStockPosition          @relation(fields: [externalStockPositionId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict, map: "external_stock_events_position_company_fk")
+  reversalOfEvent           ExternalStockPositionEvent?    @relation("ExternalStockPositionEventReversal", fields: [reversalOfEventId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict, map: "external_stock_events_reversal_company_fk")
+  reversedByEvent           ExternalStockPositionEvent?    @relation("ExternalStockPositionEventReversal")
+  createdBy                 User                           @relation("ExternalStockPositionEventCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "external_stock_events_created_by_fk")
+
+  @@unique([companyId, idempotencyKey], map: "external_stock_events_company_idempotency_key")
+  @@unique([reversalOfEventId, companyId], map: "external_stock_events_reversal_company_key")
+  @@unique([id, companyId], map: "external_stock_events_id_company_key")
+  @@index([companyId, externalStockPositionId, effectiveDate, id], map: "external_stock_events_company_position_date_id_idx")
+  @@index([companyId, positionTypeSnapshot, effectiveDate], map: "external_stock_events_company_type_date_idx")
+  @@map("external_stock_position_events")
 }
 
 model PaymentMethod {
