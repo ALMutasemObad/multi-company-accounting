@@ -211,6 +211,10 @@ export class RegistrationService {
       timeoutMs: 10_000,
       deadlineMs: 20_000,
     }, async (tx) => {
+      if (await this.owners.identity.identityExists(tx, emailNormalized)) {
+        await this.recordEvent(tx, { emailNormalized, eventType: 'REGISTRATION_RESEND_IGNORED', severity: 'WARNING', metadata });
+        return null;
+      }
       const existing = await tx.registrationRequest.findUnique({ where: { emailNormalized } });
       if (!existing || !['PENDING_EMAIL', 'EMAIL_VERIFIED'].includes(existing.status)) {
         await this.recordEvent(tx, { emailNormalized, eventType: 'REGISTRATION_RESEND_IGNORED', severity: 'WARNING', metadata });
