@@ -2,6 +2,7 @@ import { type FormEvent, type KeyboardEvent, useCallback, useEffect, useRef, use
 import { api, idempotencyKey } from "../api";
 import type { ListResponse, Warehouse } from "../types";
 import { Button, EmptyState, Modal, Spinner } from "../ui";
+import "./inventory-count.css";
 
 type Notice = (message: string, tone?: "success" | "error") => void;
 type CountStatus = "DRAFT" | "SUBMITTED" | "APPROVED";
@@ -111,7 +112,7 @@ export function InventoryCountPanel({ notify }: { notify: Notice }) {
     } catch (cause) { notify(cause instanceof Error ? cause.message : "تعذر تحديث حالة الجرد.", "error"); }
   }
 
-  return <>
+  return <div className="inventory-count-workspace">
     <div className="toolbar treasury-filters inventory-catalog-toolbar">
       <select aria-label="جلسة الجرد" value={session?.id ?? ""} onChange={(event) => { setPage(1); setSession(sessions.find((value) => value.id === event.target.value) ?? null); }}><option value="">اختر جلسة الجرد</option>{sessions.map((value) => <option key={value.id} value={value.id}>{value.countDate} · {statusLabel[value.status]} · #{value.id}</option>)}</select>
       <form className="search-box" onSubmit={(event) => { event.preventDefault(); setPage(1); setSubmittedSearch(search.trim()); }}><input aria-label="بحث في بنود الجرد" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="الصنف أو الموقع أو الرف" /><button type="submit">بحث</button></form>
@@ -123,7 +124,7 @@ export function InventoryCountPanel({ notify }: { notify: Notice }) {
     {session && <div className="form-actions"><Button variant="ghost" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>السابق</Button><span>صفحة {page}</span><Button variant="ghost" disabled={lines.length < 50} onClick={() => setPage((value) => value + 1)}>التالي</Button>{session.status === "DRAFT" && <><Button variant="secondary" disabled={saving || dirty.size === 0} onClick={() => void saveRows()}>{saving ? "جارٍ الحفظ" : `حفظ (${dirty.size})`}</Button><Button disabled={summary.remaining > 0 || dirty.size > 0 || conflicts.size > 0} onClick={() => void transition("submit")}>إرسال للاعتماد</Button></>}{session.status === "SUBMITTED" && <Button onClick={() => setShowApprove(true)}>اعتماد الجرد</Button>}</div>}
     {showCreate && <CreateSessionForm warehouses={warehouses} onClose={() => setShowCreate(false)} onSaved={async (created) => { setShowCreate(false); await loadReferences(); setSession(created); notify("تم إنشاء جلسة الجرد والتقاط الرصيد الدفتري."); }} />}
     {showApprove && session && <ApproveForm onClose={() => setShowApprove(false)} onApprove={(name) => transition("approve", name)} />}
-  </>;
+  </div>;
 }
 
 function SummaryCard({ label, value }: { label: string; value: number }) { return <div className="summary-card"><span>{label}</span><strong>{value.toLocaleString("ar-SA")}</strong></div>; }
