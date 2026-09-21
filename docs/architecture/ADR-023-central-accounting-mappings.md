@@ -583,9 +583,22 @@ source template tags أو حقائق الأطراف.
 المملوك للحسابات لعد الأبناء وكل `JournalLine` داخل الشركة، ولا يضع
 `hasImmutableHistory=true` عند ارتباط سطر بمستند نهائي `POSTED` أو `REVERSED` أو
 `CANCELLED`؛ تبقى `DRAFT` وحدها قابلة للتعديل.
-يسجل composition الآن مالكي Core وReporting (2/7)، ويبقى Account lifecycle enforcement
-معطلًا صراحة لأن محولات Sales/Purchases/Tax/Treasury/Inventory لم تكتمل؛ لا
+أضافت ADM-1B3 محول Sales المملوك للمبيعات لعد Customer وSelling Profile وكل
+`SalesInvoiceLine` المرتبط بالحساب داخل الشركة. يفصل عدد أسطر الفواتير الكلي عن
+التاريخ غير القابل للتغيير: تبقى `DRAFT` استعمالًا قابلًا للتعديل، بينما تجعل
+`POSTED/REVERSED/CANCELLED` الفئة تاريخية غير قابلة للتغيير، ويقتصر مسار المستند
+على `SALES_INVOICE/SALES_CREDIT_NOTE`.
+يسجل composition الآن مالكي Core وSales وReporting (3/7)، ويبقى Account lifecycle
+enforcement معطلًا صراحة لأن محولات Purchases/Tax/Treasury/Inventory لم تكتمل؛ لا
 يُفسر هذا التركيب الجزئي على أنه حارس مكتمل. لم يبدأ جدول default mappings أو
 API/permissions/consumers الخاصة بـADM-2 وما بعدها.
+
+تغلق ADM-1B3 كذلك سباق writer/reference في Sales عبر
+`AccountReferenceLockPort`: يقفل Customer الحساب عند الإنشاء أو تغيير
+`receivableAccountId`، ويقفل Selling Profile عند الإنشاء أو إعادة التفعيل أو تغيير
+`revenueAccountId`. أما Sales Invoice فيزيل تكرار حسابات إيراد الأسطر ويرتبها
+تصاعديًا ويقفلها داخل المعاملة نفسها قبل قراءة الحسابات أو حفظ الأسطر. تتجاوز
+التحديثات التي لا تغيّر مرجعًا هذه الأقفال، وتبقى الخدمات معتمدة على العقد type-only
+بينما يحقن composition محول Core الملموس.
 خطة الشرائح وبوابات التنفيذ في
 [خطة مركز تعيين الحسابات](CENTRAL_ACCOUNTING_MAPPINGS_SLICE_AR.md).

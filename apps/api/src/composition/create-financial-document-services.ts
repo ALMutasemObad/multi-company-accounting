@@ -27,12 +27,15 @@ import {
 import { SalesInvoiceService } from "../sales/sales-invoice-service.js";
 import type { TaxQuotePort } from "../tax/tax-service.js";
 import type { TreasuryInstrumentPort } from "../treasury/treasury-service.js";
+import type { AccountReferenceLockPort } from "../accounts/account-reference-lock-port.js";
+import { PrismaAccountReferenceLockAdapter } from "../accounts/prisma-account-reference-lock-adapter.js";
 
 export type FinancialDocumentCompositionDependencies = {
   taxes: TaxQuotePort;
   inventory: InventoryInvoiceCatalogPort;
   stock: InventoryInvoiceStockPort;
   treasury: TreasuryInstrumentPort;
+  accountReferences: AccountReferenceLockPort;
 };
 
 export type SalesInvoiceCompositionDependencies = {
@@ -40,6 +43,7 @@ export type SalesInvoiceCompositionDependencies = {
   inventory?: InventoryInvoiceCatalogPort;
   stock?: InventoryInvoiceStockPort;
   receivables?: ReceivableInvoicePort;
+  accountReferences?: AccountReferenceLockPort;
 };
 
 export type PurchaseInvoiceCompositionDependencies = {
@@ -70,6 +74,7 @@ export function createSalesInvoiceService(
     inventory: dependencies.inventory ?? new InventoryCatalogService(prisma),
     stock: dependencies.stock ?? new InventoryMovementService(prisma),
     receivables: dependencies.receivables ?? new ReceivableItemService(),
+    accountReferences: dependencies.accountReferences ?? new PrismaAccountReferenceLockAdapter(),
   });
 }
 
@@ -121,6 +126,7 @@ export function createFinancialDocumentServices(
       inventory: dependencies.inventory,
       stock: dependencies.stock,
       receivables,
+      accountReferences: dependencies.accountReferences,
     }),
     purchaseInvoices: new PurchaseInvoiceService(prisma, {
       taxes: dependencies.taxes,

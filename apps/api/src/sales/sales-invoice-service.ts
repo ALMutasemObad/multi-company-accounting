@@ -24,6 +24,7 @@ import type { ReceivableInvoicePort } from "../receivables/receivable-item-servi
 import { calculateTaxDocument, TaxCalculationError } from "../tax/tax-calculator.js";
 import { TaxError, type TaxQuotePort } from "../tax/tax-service.js";
 import type { ActorContext } from "../platform/actor-context.js";
+import type { AccountReferenceLockPort } from "../accounts/account-reference-lock-port.js";
 import type {
   ProfessionalBillingInvoiceInput,
   ProfessionalBillingInvoiceReference,
@@ -70,6 +71,7 @@ export type SalesInvoiceDependencies = {
   inventory: InventoryInvoiceCatalogPort;
   stock: InventoryInvoiceStockPort;
   receivables: ReceivableInvoicePort;
+  accountReferences: AccountReferenceLockPort;
 };
 
 const asDate = (value: string) => new Date(`${value}T00:00:00.000Z`);
@@ -150,6 +152,7 @@ export class SalesInvoiceService implements ProfessionalBillingSalesPort, SalesI
   private readonly taxes: TaxQuotePort;
   private readonly inventory: InventoryInvoiceCatalogPort;
   private readonly stock: InventoryInvoiceStockPort;
+  private readonly accountReferences: AccountReferenceLockPort;
   private readonly commands: IdempotentCommandExecutor;
 
   constructor(
@@ -161,6 +164,7 @@ export class SalesInvoiceService implements ProfessionalBillingSalesPort, SalesI
     this.inventory = dependencies.inventory;
     this.stock = dependencies.stock;
     this.receivables = dependencies.receivables;
+    this.accountReferences = dependencies.accountReferences;
     this.commands = new IdempotentCommandExecutor(prisma);
   }
 
@@ -872,7 +876,11 @@ export class SalesInvoiceService implements ProfessionalBillingSalesPort, SalesI
     const company = await tx.company.findUniqueOrThrow({ where: { id: companyId } });
     const currency = await tx.companyCurrency.findFirst({ where: { companyId, currencyId: input.currencyId, isActive: true, currency: { isActive: true, OR: [{ scope: 'GLOBAL', ownerCompanyId: null }, { scope: 'COMPANY', ownerCompanyId: companyId }] } } });
     if (!currency || (input.currencyId === company.baseCurrencyId && !decimal(input.exchangeRate).equals(1))) throw new SalesInvoiceError("INVALID_CURRENCY");
-    const accountIds = [...new Set(input.lines.map((line) => line.revenueAccountId.toString()))].map(BigInt);
+    const accountIds = await this.lockRevenueAccounts(
+      tx,
+      companyId,
+      input.lines.map((line) => line.revenueAccountId),
+    );
     const accounts = await tx.account.findMany({ where: { companyId, id: { in: accountIds }, isActive: true, allowsPosting: true }, include: { accountType: true, _count: { select: { children: true } } } });
     if (accounts.length !== accountIds.length || accounts.some((account) => account._count.children || account.accountType.class !== "REVENUE")) throw new SalesInvoiceError("INVALID_ACCOUNT");
     const costCenterIds = [...new Set(input.lines.flatMap((line) => line.costCenterId ? [line.costCenterId.toString()] : []))].map(BigInt);
@@ -1033,6 +1041,21 @@ export class SalesInvoiceService implements ProfessionalBillingSalesPort, SalesI
     const account = await tx.account.findFirst({ where: { id, companyId }, include: { accountType: true, _count: { select: { children: true } } } });
     if (!account || !account.isActive || !account.allowsPosting || account._count.children) throw new SalesInvoiceError("INVALID_ACCOUNT");
     return account;
+  }
+
+  private async lockRevenueAccounts(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+    revenueAccountIds: readonly bigint[],
+  ) {
+    const accountIds = [...new Set(revenueAccountIds.map(String))]
+      .map(BigInt)
+      .sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+    for (const accountId of accountIds) {
+      const locked = await this.accountReferences.lockPostingAccount(tx, companyId, accountId);
+      if (!locked.eligible) throw new SalesInvoiceError("INVALID_ACCOUNT");
+    }
+    return accountIds;
   }
 
   private async openPeriod(companyId: bigint, id: bigint) {

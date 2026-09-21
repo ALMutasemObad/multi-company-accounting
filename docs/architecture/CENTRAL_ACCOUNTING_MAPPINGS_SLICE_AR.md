@@ -600,15 +600,24 @@ normalize reason -> fingerprint {key,accountId,expectedVersion,reason|null}
 Core Accounting لا يستورد Reporting Prisma model؛ غياب/فشل
 `ReportingAccountUsageQueryPort` يفشل lifecycle command مغلقًا ويرجع المعاملة كاملة.
 
-حالة ADM-1B1/B2: نُفذ العقد والمنسق ومحوّلا Reporting وCore Accounting، وسُجلت
-completeness في composition بحالة 2/7، مع خمسة مالكين مفقودين وبقاء
+حالة ADM-1B1/B2/B3: نُفذ العقد والمنسق ومحولات Reporting وCore Accounting وSales،
+وسُجلت completeness في composition بحالة 3/7، مع أربعة مالكين مفقودين وبقاء
 `enforcementEnabled=false`. يعد محول Core الأبناء وكل سطور اليومية المقيدة بالشركة،
 ويعد التاريخ immutable لأسطر المستندات النهائية `POSTED/REVERSED/CANCELLED`، مع
-بقاء `DRAFT` وحدها قابلة للتعديل. لم يُحقن المنسق في
-`AccountService` حتى تكتمل محولات Sales وPurchases وTax وTreasury وInventory. في
+بقاء `DRAFT` وحدها قابلة للتعديل. يعد محول Sales مراجع Customer وSelling Profile
+وكل `SalesInvoiceLine`، ويفصل العدد الكلي عن وجود تاريخ فاتورة نهائي بالحالات نفسها.
+لم يُحقن المنسق في `AccountService` حتى تكتمل محولات Purchases وTax وTreasury
+وInventory. في
 المقابل فُعل handshake الكتابة المطلوب في `CashFlowService.updateMapping`: يقفل
 Account أولًا داخل المعاملة نفسها ويرفض المرجع العابر للشركة أو غير النشط أو غير
 القابل للترحيل أو الأب قبل أي قراءة أو إنشاء/تحديث لـCash Flow mapping.
+
+وفُعل handshake المماثل في كتاب Sales: يقفل Customer الحساب عند الإنشاء أو تغيير
+`receivableAccountId` الفعلي، ويقفله Selling Profile عند الإنشاء أو إعادة التفعيل
+أو تغيير `revenueAccountId`. يجمع Sales Invoice حسابات إيراد الأسطر ويزيل تكرارها
+ويرتبها تصاعديًا ثم يقفل كل حساب داخل المعاملة نفسها قبل قراءة الحسابات أو
+حفظ/استبدال الأسطر. لا تنفذ التحديثات التي لا تغيّر مرجعًا قفلًا غير لازم، ولا
+تستورد خدمات Sales محول Prisma الملموس؛ يبقى الحقن في composition.
 
 ```text
 Idempotency عند وجوده

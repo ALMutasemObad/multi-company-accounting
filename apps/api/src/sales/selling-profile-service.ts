@@ -12,6 +12,7 @@ import type {
   SellingProfileRepository, SellingProfileUpdate, SellingProfileValues,
 } from "./selling-profile-ports.js";
 import { posThumbnailUrl } from "../media/product-image-types.js";
+import type { AccountReferenceLockPort } from "../accounts/account-reference-lock-port.js";
 
 const ids = (values: bigint[]) => [...new Set(values.map(String))].map(BigInt)
   .sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
@@ -23,6 +24,7 @@ export class SellingProfileService implements SellingCatalogQueryPort {
     profiles: SellingProfileRepository; inventory: SellingCatalogInventoryPort;
     accounts: SellingCatalogAccountPort; currencies: SellingCatalogCurrencyPort;
     tax: SellingCatalogTaxPort; audit: SellingProfileAuditPort;
+    accountReferences: AccountReferenceLockPort;
   }) {
     this.transactions = new TransactionExecutor(prisma);
     this.commands = new IdempotentCommandExecutor(prisma, this.transactions);
@@ -81,6 +83,17 @@ export class SellingProfileService implements SellingCatalogQueryPort {
       const changedDefaults = current && (values.unitPrice !== current.unitPrice
         || values.currencyId !== current.currencyId || values.revenueAccountId !== current.revenueAccountId
         || values.taxRateId !== current.taxRateId);
+      const createsReference = current === undefined;
+      const reactivatesReference = current !== undefined && !current.isActive && values.isActive;
+      const changesRevenueAccount = current !== undefined && values.revenueAccountId !== current.revenueAccountId;
+      if (createsReference || reactivatesReference || changesRevenueAccount) {
+        const locked = await this.ports.accountReferences.lockPostingAccount(
+          tx,
+          context.companyId,
+          values.revenueAccountId,
+        );
+        if (!locked.eligible) throw new SellingProfileError("REVENUE_ACCOUNT_INVALID");
+      }
       if (values.isActive || changedDefaults) {
         const readiness = await this.referenceState(tx, context.companyId, [values]);
         const reason = this.readiness(item, { ...values, isActive: true }, readiness);

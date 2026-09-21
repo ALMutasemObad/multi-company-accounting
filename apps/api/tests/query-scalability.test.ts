@@ -29,6 +29,7 @@ describe('bounded invoice listing queries', () => {
       inventory: {} as never,
       stock: {} as never,
       receivables: {} as never,
+      accountReferences: {} as never,
     });
 
     const result = await service.list(actor, { page: 3, pageSize: 20, outstandingOnly: true });

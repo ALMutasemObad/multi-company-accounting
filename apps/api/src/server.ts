@@ -88,6 +88,7 @@ import { PrismaAccountingAccountQueryAdapter } from './accounts/prisma-account-q
 import { PrismaAccountReferenceLockAdapter } from './accounts/prisma-account-reference-lock-adapter.js';
 import { AccountUsageGuard } from './accounts/account-usage-guard.js';
 import { CoreAccountUsageQueryAdapter } from './accounts/core-account-usage-query-adapter.js';
+import { SalesAccountUsageQueryAdapter } from './sales/sales-account-usage-query-adapter.js';
 import { ReportingAccountUsageQueryAdapter } from './reports/reporting-account-usage-adapter.js';
 import { createBarcodeLabelService } from './composition/create-barcode-label-service.js';
 import { CompanyCapabilityService } from './platform-subscriptions/company-capability-service.js';
@@ -146,6 +147,7 @@ const accountQueries = new PrismaAccountingAccountQueryAdapter();
 const accountReferenceLocks = new PrismaAccountReferenceLockAdapter();
 const accountUsageGuard = new AccountUsageGuard([
   new CoreAccountUsageQueryAdapter(),
+  new SalesAccountUsageQueryAdapter(),
   new ReportingAccountUsageQueryAdapter(),
 ]);
 const accountUsageComposition = accountUsageGuard.completeness();
@@ -235,7 +237,7 @@ const outboxWorker = outboxHandlers.size
       metrics: operationalMetrics,
     })
   : undefined;
-const customers = new CustomerService(database, accountQueries);
+const customers = new CustomerService(database, accountReferenceLocks, accountQueries);
 const suppliers = new SupplierService(database, accountQueries);
 const inventoryCatalog = new InventoryCatalogService(database);
 const inventoryBarcodes = new InventoryBarcodeService(database);
@@ -250,6 +252,7 @@ const {
   inventory: inventoryCatalog,
   stock: inventoryMovements,
   treasury,
+  accountReferences: accountReferenceLocks,
 });
 const pos = new PosService(database, salesInvoices, receipts, new PrismaPosSaleQueryAdapter(database));
 const posRecovery = new PosRecoveryService(new PrismaPosRecoveryQueryAdapter(database));
@@ -398,7 +401,7 @@ async function startServer() {
     pos,
     posRecovery,
     posContext: createCashierContextService(database),
-    sellingProfiles: createSellingProfileService(database),
+    sellingProfiles: createSellingProfileService(database, accountReferenceLocks),
   });
 
   const server = app.listen(config.PORT, () => {

@@ -144,6 +144,23 @@
       "reason": "Reserve attendance input to Payroll without importing attendance services."
     },
     {
+      "id": "sales-account-lifecycle-ports",
+      "kind": "adapter-to-port",
+      "fromPaths": [
+        "apps/api/src/sales/sales-account-usage-query-adapter.ts",
+        "apps/api/src/sales/customer-service.ts",
+        "apps/api/src/sales/selling-profile-service.ts",
+        "apps/api/src/sales/sales-invoice-service.ts"
+      ],
+      "toPaths": [
+        "apps/api/src/accounts/account-usage-query-port.ts",
+        "apps/api/src/accounts/account-reference-lock-port.ts"
+      ],
+      "typeOnly": true,
+      "status": "implemented",
+      "reason": "Sales implements the Accounts-owned usage query contract and consumes the account reference lock handshake without exposing Sales models to Core Accounting."
+    },
+    {
       "id": "reporting-account-lifecycle-adapters",
       "kind": "adapter-to-port",
       "fromPaths": [

@@ -5,7 +5,8 @@ import { CustomerService } from "../src/sales/customer-service.js";
 describe("Sales customer ports", () => {
   it("queries an active customer through the company boundary", async () => {
     const findFirst = vi.fn().mockResolvedValue({ id: 17n });
-    const service = new CustomerService({} as PrismaClient);
+    const accountReferences = { lockPostingAccount: vi.fn() };
+    const service = new CustomerService({} as PrismaClient, accountReferences);
     const result = await service.findActiveCustomer(
       { customer: { findFirst } } as unknown as Prisma.TransactionClient,
       3n,
@@ -55,7 +56,8 @@ describe("Sales customer ports", () => {
       $executeRaw: executeRaw,
       $queryRaw: queryRaw,
     } as unknown as Prisma.TransactionClient;
-    const service = new CustomerService({} as PrismaClient);
+    const lockPostingAccount = vi.fn().mockResolvedValue({ eligible: true, accountId: 5n, companyId: 3n });
+    const service = new CustomerService({} as PrismaClient, { lockPostingAccount });
 
     const result = await service.provisionCustomer(
       tx,
@@ -64,6 +66,8 @@ describe("Sales customer ports", () => {
     );
 
     expect(result).toEqual({ customerId: 19n });
+    expect(lockPostingAccount).toHaveBeenCalledWith(tx, 3n, 5n);
+    expect(lockPostingAccount.mock.invocationCallOrder[0]).toBeLessThan(customer.create.mock.invocationCallOrder[0]!);
     expect(customer.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ companyId: 3n, receivableAccountId: 5n, code: "CUS-000001" }),
     }));
@@ -77,5 +81,27 @@ describe("Sales customer ports", () => {
         details: { source: "CRM" },
       }),
     });
+  });
+
+  it("locks a changed receivable account but skips unchanged customer references", async () => {
+    const current = { id: 19n, companyId: 3n, receivableAccountId: 5n };
+    const customer = {
+      findFirst: vi.fn().mockResolvedValue(current),
+      update: vi.fn().mockResolvedValue({ ...current, nameAr: "عميل", addresses: [] }),
+    };
+    const tx = { customer, auditLog: { create: vi.fn().mockResolvedValue({ id: 1n }) } };
+    const prisma = {
+      $transaction: vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => work(tx)),
+    } as unknown as PrismaClient;
+    const lockPostingAccount = vi.fn().mockResolvedValue({ eligible: true, accountId: 6n, companyId: 3n });
+    const service = new CustomerService(prisma, { lockPostingAccount });
+
+    await service.updateCustomer({ companyId: 3n, userId: 11n }, 19n, { nameAr: "عميل" });
+    await service.updateCustomer({ companyId: 3n, userId: 11n }, 19n, { receivableAccountId: 5n });
+    expect(lockPostingAccount).not.toHaveBeenCalled();
+
+    await service.updateCustomer({ companyId: 3n, userId: 11n }, 19n, { receivableAccountId: 6n });
+    expect(lockPostingAccount).toHaveBeenCalledWith(tx, 3n, 6n);
+    expect(lockPostingAccount.mock.invocationCallOrder[0]).toBeLessThan(customer.update.mock.invocationCallOrder.at(-1)!);
   });
 });

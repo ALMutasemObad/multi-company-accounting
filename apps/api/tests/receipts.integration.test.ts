@@ -15,6 +15,7 @@ import type {
 import { PrintService } from "../src/printing/print-service.js";
 import { TreasuryService } from "../src/treasury/treasury-service.js";
 import { testAuthOptions } from "./helpers/test-auth-options.js";
+import { PrismaAccountReferenceLockAdapter } from "../src/accounts/prisma-account-reference-lock-adapter.js";
 
 const enabled = process.env.RUN_DB_TESTS === "true";
 const databaseUrl = process.env.DATABASE_URL ?? "";
@@ -248,7 +249,7 @@ describe.runIf(enabled)(
       periodId = year.periods[0]!.id;
       const treasury = new TreasuryService(prisma!);
       receiptService = createReceiptService(prisma!, { treasury });
-      const customers = new CustomerService(prisma!);
+      const customers = new CustomerService(prisma!, new PrismaAccountReferenceLockAdapter());
       const auth = new AuthService(
         new PrismaAuthStore(prisma!),
         { verify },

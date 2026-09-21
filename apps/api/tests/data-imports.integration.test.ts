@@ -10,6 +10,7 @@ import { PrismaOutboxAppender } from "../src/outbox/outbox.js";
 import { CustomerService } from "../src/sales/customer-service.js";
 import { SupplierService } from "../src/suppliers/supplier-service.js";
 import { TaxService } from "../src/tax/tax-service.js";
+import { PrismaAccountReferenceLockAdapter } from "../src/accounts/prisma-account-reference-lock-adapter.js";
 
 const enabled = process.env.RUN_DB_TESTS === "true";
 const prisma = enabled ? createDatabase(process.env.DATABASE_URL ?? "") : null;
@@ -73,7 +74,7 @@ describe.runIf(enabled)("atomic data imports with MariaDB/MySQL", () => {
     const taxes = new TaxService(prisma!);
     service = new DataImportService(
       prisma!,
-      new CustomerService(prisma!),
+      new CustomerService(prisma!, new PrismaAccountReferenceLockAdapter()),
       new SupplierService(prisma!),
       createSalesInvoiceService(prisma!, { taxes }),
       createPurchaseInvoiceService(prisma!, { taxes }),
