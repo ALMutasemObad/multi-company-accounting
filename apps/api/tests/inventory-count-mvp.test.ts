@@ -2,10 +2,15 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
+import express, { type ErrorRequestHandler } from "express";
+import request from "supertest";
+import type { AuthService } from "../src/auth/auth-service.js";
 import {
   InventoryCountError,
   InventoryCountService,
 } from "../src/inventory/inventory-count/inventory-count-service.js";
+import { createInventoryMovementRouter } from "../src/inventory/inventory-movement-router.js";
+import type { InventoryMovementService } from "../src/inventory/inventory-movement-service.js";
 
 const context = { companyId: 7n, userId: 11n };
 
@@ -17,6 +22,29 @@ const buildService = (tx: Record<string, unknown>) => {
     idempotency: { execute: async (_options: unknown, work: (value: unknown) => unknown) => work(tx) },
   });
   return service;
+};
+
+const routerFixture = () => {
+  const authorize = vi.fn().mockResolvedValue(context);
+  const inventoryCount = {
+    listSessions: vi.fn().mockResolvedValue({ data: [{ id: "90", status: "DRAFT" }], total: 1 }),
+    createSession: vi.fn().mockResolvedValue({ id: "90", status: "DRAFT" }),
+    getSession: vi.fn().mockResolvedValue({ id: "90", status: "DRAFT", summary: { total: 300, counted: 0, remaining: 300 } }),
+    listLines: vi.fn().mockResolvedValue({ data: [{ id: "1", code: "BOOK-001" }], summary: { total: 300, counted: 10, remaining: 290, surplus: 1, shortage: 2, conflicts: 0 } }),
+    bulkEnterCounts: vi.fn().mockResolvedValue({ conflicts: [], summary: { total: 300, counted: 11, remaining: 289, surplus: 1, shortage: 2, conflicts: 0 } }),
+    submit: vi.fn().mockResolvedValue({ id: "90", status: "SUBMITTED", version: 1 }),
+    approve: vi.fn().mockResolvedValue({ id: "90", status: "APPROVED", version: 2 }),
+  };
+  const app = express();
+  app.use(express.json());
+  app.use(createInventoryMovementRouter(
+    { authorize } as unknown as AuthService,
+    { inventoryCount } as unknown as InventoryMovementService,
+  ));
+  app.use(((error, _request, response, _next) => {
+    response.status(500).json({ code: "TEST_ERROR", error: String(error) });
+  }) satisfies ErrorRequestHandler);
+  return { app, authorize, inventoryCount };
 };
 
 describe("inventory count MVP", () => {
@@ -145,5 +173,64 @@ describe("inventory count MVP", () => {
     expect(migration).toContain("stock_count_lines_count_shape_chk");
     expect(migration).toContain("stock_count_sessions_state_chk");
     expect(rollback).toContain("DROP TABLE IF EXISTS `stock_count_sessions`");
+  });
+
+  it("exposes reload-safe session and line reads with the view permission", async () => {
+    const { app, authorize, inventoryCount } = routerFixture();
+    const sessions = await request(app)
+      .get("/inventory-count-sessions?page=1&pageSize=25&status=DRAFT&warehouseId=3")
+      .set("Cookie", "sid=session-token");
+    const lines = await request(app)
+      .get("/inventory-count-sessions/90/lines?page=1&pageSize=500&search=BOOK")
+      .set("Cookie", "sid=session-token");
+
+    expect(sessions.status).toBe(200);
+    expect(sessions.body.meta).toEqual({ page: 1, pageSize: 25, total: 1, totalPages: 1 });
+    expect(lines.status).toBe(200);
+    expect(lines.body.summary).toMatchObject({ total: 300, counted: 10, remaining: 290 });
+    expect(inventoryCount.listSessions).toHaveBeenCalledWith(context, { page: 1, pageSize: 25, status: "DRAFT", warehouseId: 3n });
+    expect(inventoryCount.listLines).toHaveBeenCalledWith(context, 90n, { page: 1, pageSize: 500, search: "BOOK" });
+    expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ permission: "inventory_movements.view", requireCsrf: false }));
+  });
+
+  it("requires create permission, CSRF and idempotency for a session snapshot", async () => {
+    const { app, authorize, inventoryCount } = routerFixture();
+    const response = await request(app)
+      .post("/inventory-count-sessions")
+      .set("Cookie", "sid=session-token")
+      .set("X-CSRF-Token", "csrf-token")
+      .set("Idempotency-Key", "library-2026-09-24")
+      .send({
+        warehouseId: "3",
+        countDate: "2026-09-24",
+        committee: [{ name: "سارة", role: "رئيس اللجنة" }],
+        locations: [{ inventoryItemId: "1", location: "قاعة الكتب", shelf: "A-01" }],
+      });
+
+    expect(response.status).toBe(201);
+    expect(authorize).toHaveBeenCalledWith({ sid: "session-token", csrfToken: "csrf-token", permission: "inventory_movements.create", requireCsrf: true });
+    expect(inventoryCount.createSession).toHaveBeenCalledWith(context, expect.objectContaining({ warehouseId: 3n }), "library-2026-09-24");
+  });
+
+  it("validates and forwards bulk counts and state transitions with CSRF", async () => {
+    const { app, authorize, inventoryCount } = routerFixture();
+    const bulk = await request(app)
+      .post("/inventory-count-sessions/90/counts")
+      .set("X-CSRF-Token", "csrf-token")
+      .send({ rows: [{ lineId: "1", expectedVersion: 2, countedQuantity: "1002", varianceReason: "نسختان زائدتان" }] });
+    const submit = await request(app)
+      .post("/inventory-count-sessions/90/submit")
+      .set("X-CSRF-Token", "csrf-token")
+      .send({ expectedVersion: 0 });
+    const approve = await request(app)
+      .post("/inventory-count-sessions/90/approve")
+      .set("X-CSRF-Token", "csrf-token")
+      .send({ expectedVersion: 1, approverName: "مدير المكتبة" });
+
+    expect([bulk.status, submit.status, approve.status]).toEqual([200, 200, 200]);
+    expect(inventoryCount.bulkEnterCounts).toHaveBeenCalledWith(context, 90n, [{ lineId: 1n, expectedVersion: 2, countedQuantity: "1002", varianceReason: "نسختان زائدتان" }]);
+    expect(inventoryCount.submit).toHaveBeenCalledWith(context, 90n, 0);
+    expect(inventoryCount.approve).toHaveBeenCalledWith(context, 90n, 1, "مدير المكتبة");
+    expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ permission: "inventory_movements.create", requireCsrf: true }));
   });
 });

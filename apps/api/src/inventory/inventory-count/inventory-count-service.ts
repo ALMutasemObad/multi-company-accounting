@@ -26,20 +26,20 @@ export class InventoryCountError extends Error {
 export type CommitteeMemberInput = { name: string; role: string };
 export type CountLocationInput = {
   inventoryItemId: bigint;
-  location?: string | null;
-  shelf?: string | null;
+  location?: string | null | undefined;
+  shelf?: string | null | undefined;
 };
 export type CreateInventoryCountInput = {
   warehouseId: bigint;
   countDate: Date;
   committee: CommitteeMemberInput[];
-  locations?: CountLocationInput[];
+  locations?: CountLocationInput[] | undefined;
 };
 export type BulkCountRow = {
   lineId: bigint;
   expectedVersion: number;
   countedQuantity: string;
-  varianceReason?: string | null;
+  varianceReason?: string | null | undefined;
 };
 export type BulkCountConflict = {
   lineId: string;
@@ -136,6 +136,56 @@ export class InventoryCountService {
   constructor(private readonly prisma: PrismaClient) {
     this.transactions = new TransactionExecutor(prisma);
     this.idempotency = new IdempotentCommandExecutor(prisma, this.transactions);
+  }
+
+  async listSessions(
+    context: ActorContext,
+    input: {
+      page: number;
+      pageSize: number;
+      warehouseId?: bigint | undefined;
+      status?: "DRAFT" | "SUBMITTED" | "APPROVED" | undefined;
+    },
+  ) {
+    const where: Prisma.StockCountSessionWhereInput = {
+      companyId: context.companyId,
+      ...(input.warehouseId === undefined ? {} : { warehouseId: input.warehouseId }),
+      ...(input.status === undefined ? {} : { status: input.status }),
+    };
+    const [sessions, total] = await this.prisma.$transaction([
+      this.prisma.stockCountSession.findMany({
+        where,
+        select: sessionSelect,
+        orderBy: [{ countDate: "desc" }, { id: "desc" }],
+        skip: (input.page - 1) * input.pageSize,
+        take: input.pageSize,
+      }),
+      this.prisma.stockCountSession.count({ where }),
+    ]);
+    return { data: sessions.map(toSessionDto), total };
+  }
+
+  async getSession(context: ActorContext, sessionId: bigint) {
+    const session = await this.prisma.stockCountSession.findFirst({
+      where: { id: sessionId, companyId: context.companyId },
+      select: {
+        ...sessionSelect,
+        committeeMembers: {
+          select: { id: true, memberName: true, memberRole: true },
+          orderBy: { id: "asc" },
+        },
+      },
+    });
+    if (!session) throw new InventoryCountError("NOT_FOUND");
+    return {
+      ...toSessionDto(session),
+      committee: session.committeeMembers.map((member) => ({
+        id: member.id.toString(),
+        name: member.memberName,
+        role: member.memberRole,
+      })),
+      summary: await this.summary(context, sessionId, 0),
+    };
   }
 
   async createSession(
@@ -246,7 +296,7 @@ export class InventoryCountService {
   async listLines(
     context: ActorContext,
     sessionId: bigint,
-    input: { page: number; pageSize: number; search?: string },
+    input: { page: number; pageSize: number; search?: string | undefined },
   ) {
     const session = await this.prisma.stockCountSession.findFirst({ where: { id: sessionId, companyId: context.companyId }, select: { id: true } });
     if (!session) throw new InventoryCountError("NOT_FOUND");
