@@ -5,7 +5,7 @@ const sourceRoot = new URL("../src/", import.meta.url);
 const source = (relative: string) => readFile(new URL(relative, sourceRoot), "utf8");
 
 describe("ADM-1B account usage composition", () => {
-  it("registers five owners but keeps lifecycle enforcement staged", async () => {
+  it("registers six owners but keeps lifecycle enforcement staged", async () => {
     const [server, accountService, guard] = await Promise.all([
       source("server.ts"),
       source("accounts/account-service.ts"),
@@ -16,6 +16,7 @@ describe("ADM-1B account usage composition", () => {
     expect(server).toContain("new SalesAccountUsageQueryAdapter()");
     expect(server).toContain("new PurchasesAccountUsageQueryAdapter()");
     expect(server).toContain("new TaxAccountUsageQueryAdapter()");
+    expect(server).toContain("new TreasuryAccountUsageQueryAdapter()");
     expect(server).toContain("new ReportingAccountUsageQueryAdapter()");
     expect(server).toContain("const accountUsageComposition = accountUsageGuard.completeness()");
     expect(server).toContain("accounts: new AccountService(database)");
@@ -24,11 +25,12 @@ describe("ADM-1B account usage composition", () => {
     expect(guard).toContain('enforcementEnabled: false');
   });
 
-  it("reports the staged server composition as 5/7 with deterministic missing owners", async () => {
+  it("reports the staged server composition as 6/7 with deterministic missing owners", async () => {
     const { CoreAccountUsageQueryAdapter } = await import("../src/accounts/core-account-usage-query-adapter.js");
     const { SalesAccountUsageQueryAdapter } = await import("../src/sales/sales-account-usage-query-adapter.js");
     const { PurchasesAccountUsageQueryAdapter } = await import("../src/purchases/purchases-account-usage-query-adapter.js");
     const { TaxAccountUsageQueryAdapter } = await import("../src/tax/tax-account-usage-query-adapter.js");
+    const { TreasuryAccountUsageQueryAdapter } = await import("../src/treasury/treasury-account-usage-query-adapter.js");
     const { ReportingAccountUsageQueryAdapter } = await import("../src/reports/reporting-account-usage-adapter.js");
     const { AccountUsageGuard } = await import("../src/accounts/account-usage-guard.js");
 
@@ -37,13 +39,45 @@ describe("ADM-1B account usage composition", () => {
       new SalesAccountUsageQueryAdapter(),
       new PurchasesAccountUsageQueryAdapter(),
       new TaxAccountUsageQueryAdapter(),
+      new TreasuryAccountUsageQueryAdapter(),
       new ReportingAccountUsageQueryAdapter(),
     ]).completeness()).toEqual({
       complete: false,
-      missingOwners: ["TREASURY", "INVENTORY"],
+      missingOwners: ["INVENTORY"],
       duplicateOwners: [],
       enforcementEnabled: false,
     });
+  });
+
+  it("keeps Treasury behind Accounts-owned lifecycle ports and locks runtime writers", async () => {
+    const [usageAdapter, treasuryService, receiptService, paymentService, accountService, server] = await Promise.all([
+      source("treasury/treasury-account-usage-query-adapter.ts"),
+      source("treasury/treasury-service.ts"),
+      source("receipts/receipt-service.ts"),
+      source("payments/payment-service.ts"),
+      source("accounts/account-service.ts"),
+      source("server.ts"),
+    ]);
+
+    expect(usageAdapter).toContain('import type { AccountUsageQueryPort } from "../accounts/account-usage-query-port.js"');
+    expect(usageAdapter).toContain("tx.cashBankAccount.count");
+    expect(usageAdapter).toContain("tx.receipt.findFirst");
+    expect(usageAdapter).toContain("tx.payment.findFirst");
+    expect(usageAdapter).not.toContain("PrismaClient");
+    for (const writer of [treasuryService, receiptService, paymentService]) {
+      expect(writer).toContain('import type { AccountReferenceLockPort } from "../accounts/account-reference-lock-port.js"');
+      expect(writer).not.toContain("PrismaAccountReferenceLockAdapter");
+    }
+    expect(treasuryService.indexOf("await this.lockLedgerAccounts"))
+      .toBeLessThan(treasuryService.indexOf("await tx.cashBankAccount.create"));
+    expect(receiptService).toContain("input.counterAccountId !== undefined");
+    expect(paymentService).toContain("input.counterAccountId !== undefined");
+    expect(receiptService.indexOf("const documentNumber = await this.reserveInTransaction"))
+      .toBeLessThan(receiptService.indexOf("const prepared = await this.prepare", receiptService.indexOf("createDraftInTransaction")));
+    expect(receiptService).toMatch(/this\.inputFrom\(receipt\),\s*false/u);
+    expect(paymentService).toMatch(/this\.inputFrom\(payment\),\s*false/u);
+    expect(server).toContain("new TreasuryService(database, accountReferenceLocks, accountQueries)");
+    expect(accountService).not.toContain("TreasuryAccountUsageQueryAdapter");
   });
 
   it("keeps Tax behind Accounts-owned lifecycle ports", async () => {

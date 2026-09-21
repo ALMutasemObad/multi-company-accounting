@@ -123,7 +123,7 @@ describe.runIf(enabled)("sales invoices and receivables with MariaDB", () => {
 
     const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, testAuthOptions(prisma!));
     const taxes = new TaxService(prisma!, new PrismaAccountReferenceLockAdapter());
-    const treasury = new TreasuryService(prisma!);
+    const treasury = new TreasuryService(prisma!, new PrismaAccountReferenceLockAdapter());
     app = createApp({ NODE_ENV: "test", PORT: 3000, WEB_ORIGIN: "http://localhost:5173", SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: databaseUrl }, { auth, taxes, salesInvoices: createSalesInvoiceService(prisma!, { taxes }), receipts: createReceiptService(prisma!, { treasury }), printing: new PrintService(prisma!) });
   });
 

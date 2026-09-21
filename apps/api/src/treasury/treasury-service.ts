@@ -6,6 +6,7 @@ import type { ActorContext } from "../platform/actor-context.js";
 import { paymentMethodDefinitions } from "./treasury-reference-data.js";
 import type { AccountingAccountQueryPort, PostingAccountReference } from "../accounts/account-query-port.js";
 import { PrismaAccountingAccountQueryAdapter } from "../accounts/prisma-account-query-adapter.js";
+import type { AccountReferenceLockPort } from "../accounts/account-reference-lock-port.js";
 
 export type TreasuryErrorReason =
   | "NOT_FOUND"
@@ -106,6 +107,7 @@ export class TreasuryService implements TreasuryInstrumentPort {
 
   constructor(
     private readonly prisma: PrismaClient,
+    private readonly accountReferences: AccountReferenceLockPort,
     private readonly accounts: AccountingAccountQueryPort = new PrismaAccountingAccountQueryAdapter(),
   ) {
     this.transactions = new TransactionExecutor(prisma);
@@ -159,13 +161,14 @@ export class TreasuryService implements TreasuryInstrumentPort {
       return await this.transactions.execute(
         { operation: "CREATE_CASH_BANK_ACCOUNT", companyId: context.companyId },
         async (tx) => {
-          await this.validatePostingAccount(tx, context.companyId, input.ledgerAccountId);
           this.validateBank(input);
           const code = await reserveMasterDataCode(
             tx,
             context.companyId,
             "CASH_BANK_ACCOUNT",
           );
+          await this.lockLedgerAccounts(tx, context.companyId, [input.ledgerAccountId]);
+          await this.validatePostingAccount(tx, context.companyId, input.ledgerAccountId);
           const value = await tx.cashBankAccount.create({
             data: {
               companyId: context.companyId,
@@ -203,6 +206,9 @@ export class TreasuryService implements TreasuryInstrumentPort {
           });
           if (!current) throw new TreasuryError("NOT_FOUND");
           const ledgerAccountId = input.ledgerAccountId ?? current.ledgerAccountId;
+          if (input.ledgerAccountId !== undefined) {
+            await this.lockLedgerAccounts(tx, context.companyId, [input.ledgerAccountId]);
+          }
           await this.validatePostingAccount(tx, context.companyId, ledgerAccountId);
           this.validateBank({
             accountType: input.accountType ?? current.accountType,
@@ -471,6 +477,20 @@ export class TreasuryService implements TreasuryInstrumentPort {
     const account = await this.accounts.findById(tx, companyId, id);
     if (!this.isPostingAccount(account, companyId)) throw new TreasuryError("INVALID_ACCOUNT");
     return account;
+  }
+
+  private async lockLedgerAccounts(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+    accountIds: readonly bigint[],
+  ) {
+    const sortedAccountIds = [...new Set(accountIds.map(String))]
+      .map(BigInt)
+      .sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+    for (const accountId of sortedAccountIds) {
+      const locked = await this.accountReferences.lockPostingAccount(tx, companyId, accountId);
+      if (!locked.eligible) throw new TreasuryError("INVALID_ACCOUNT");
+    }
   }
 
   private isPostingAccount(

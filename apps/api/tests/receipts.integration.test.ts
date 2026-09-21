@@ -247,7 +247,7 @@ describe.runIf(enabled)(
       });
       yearId = year.id;
       periodId = year.periods[0]!.id;
-      const treasury = new TreasuryService(prisma!);
+      const treasury = new TreasuryService(prisma!, new PrismaAccountReferenceLockAdapter());
       receiptService = createReceiptService(prisma!, { treasury });
       const customers = new CustomerService(prisma!, new PrismaAccountReferenceLockAdapter());
       const auth = new AuthService(

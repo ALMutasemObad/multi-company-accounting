@@ -600,8 +600,8 @@ normalize reason -> fingerprint {key,accountId,expectedVersion,reason|null}
 Core Accounting لا يستورد Reporting Prisma model؛ غياب/فشل
 `ReportingAccountUsageQueryPort` يفشل lifecycle command مغلقًا ويرجع المعاملة كاملة.
 
-حالة ADM-1B1/B2/B3/B4/B5: نُفذ العقد والمنسق ومحولات Reporting وCore Accounting وSales
-وPurchases وTax، وسُجلت completeness في composition بحالة 5/7، مع مالكين مفقودين وبقاء
+حالة ADM-1B1/B2/B3/B4/B5/B6: نُفذ العقد والمنسق ومحولات Reporting وCore Accounting وSales
+وPurchases وTax وTreasury، وسُجلت completeness في composition بحالة 6/7، مع Inventory مفقودًا وبقاء
 `enforcementEnabled=false`. يعد محول Core الأبناء وكل سطور اليومية المقيدة بالشركة،
 ويعد التاريخ immutable لأسطر المستندات النهائية `POSTED/REVERSED/CANCELLED`، مع
 بقاء `DRAFT` وحدها قابلة للتعديل. يعد محول Sales مراجع Customer وSelling Profile
@@ -609,7 +609,7 @@ Core Accounting لا يستورد Reporting Prisma model؛ غياب/فشل
 ويعد محول Purchases مراجع Supplier وكل `PurchaseInvoiceLine`، ويعد أسطر DRAFT ضمن
 الاستعمال الكلي مع قصر immutable على `POSTED/REVERSED/CANCELLED` لمستندي
 `PURCHASE_INVOICE/PURCHASE_DEBIT_NOTE`. لم يُحقن المنسق في `AccountService` حتى
-تكتمل محولات Treasury وInventory. يعد محول Tax كل `TaxRate` يشير إلى الحساب عبر
+يكتمل محول Inventory. يعد محول Tax كل `TaxRate` يشير إلى الحساب عبر
 حقل output أو input بعزل الشركة، ويبقي `hasImmutableHistory=false` لأنها تعيينات
 حالية ويغطي تاريخ الفواتير مالكو المستندات وCore. في
 المقابل فُعل handshake الكتابة المطلوب في `CashFlowService.updateMapping`: يقفل
@@ -634,6 +634,15 @@ Account أولًا داخل المعاملة نفسها ويرفض المرجع 
 يقفلها داخل المعاملة قبل create/update. إذا حمل update `accountId` يقفله حتى إن
 ساوى snapshot المقروء، فلا يعتمد no-change على قراءة غير مقفلة؛ يبقى CAS النسخة
 الحكم النهائي، والحقل الغائب وحده لا يضيف قفلًا.
+
+ويعد محول Treasury كل `CashBankAccount.ledgerAccountId` في فئة الإعداد الجاري،
+ويجمع Receipt وPayment ذوي `counterAccountId` في فئة تاريخ المستندات مع عزل الشركة
+ونوع المستند. يشمل total حالات `DRAFT`، ويصبح immutable عند وجود
+`POSTED/REVERSED/CANCELLED`. يحجز إنشاء Cash/Bank تسلسل الكود قبل قفل الحساب، ثم
+يقفل قبل الكتابة. يقفل update كل `ledgerAccountId` مصرح به حتى إن ساوى snapshot،
+وتقفل أوامر إنشاء/تحديث Receipt وPayment كل direct counter account سيُحفظ. post لا
+يقفل هذا المرجع لأنه لا يستبدله. `demo-seed.ts` bootstrap offline مستثنى من writers
+التشغيليين، ولا يشغّل بالتوازي مع الخدمة.
 
 ```text
 Idempotency عند وجوده

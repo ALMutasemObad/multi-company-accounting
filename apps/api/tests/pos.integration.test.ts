@@ -141,7 +141,7 @@ describe.runIf(enabled)("POS cash-sale vertical slice with MariaDB", () => {
 
     const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, testAuthOptions(prisma!));
     const taxes = new TaxService(prisma!, new PrismaAccountReferenceLockAdapter());
-    const treasury = new TreasuryService(prisma!);
+    const treasury = new TreasuryService(prisma!, new PrismaAccountReferenceLockAdapter());
     const inventory = new InventoryCatalogService(prisma!);
     const stock = new InventoryMovementService(prisma!);
     const sales = createSalesInvoiceService(prisma!, { taxes, inventory, stock });

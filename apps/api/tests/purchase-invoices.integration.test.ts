@@ -107,7 +107,7 @@ describe.runIf(enabled)("purchase invoices and payables with MariaDB", () => {
     yearId = year.id; periodId = year.periods[0]!.id;
     const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, testAuthOptions(prisma!));
     const taxes = new TaxService(prisma!, new PrismaAccountReferenceLockAdapter());
-    const treasury = new TreasuryService(prisma!);
+    const treasury = new TreasuryService(prisma!, new PrismaAccountReferenceLockAdapter());
     app = createApp({ NODE_ENV: "test", PORT: 3000, WEB_ORIGIN: "http://localhost:5173", SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: databaseUrl }, { auth, taxes, purchaseInvoices: createPurchaseInvoiceService(prisma!, { taxes }), payments: createPaymentService(prisma!, { treasury }), printing: new PrintService(prisma!) });
   });
 

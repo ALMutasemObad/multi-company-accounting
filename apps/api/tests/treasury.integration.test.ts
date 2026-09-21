@@ -6,6 +6,7 @@ import { AuthService } from "../src/auth/auth-service.js";
 import { PrismaAuthStore } from "../src/auth/prisma-auth-store.js";
 import { createDatabase } from "../src/database.js";
 import { TreasuryService } from "../src/treasury/treasury-service.js";
+import { PrismaAccountReferenceLockAdapter } from "../src/accounts/prisma-account-reference-lock-adapter.js";
 import { testAuthOptions } from "./helpers/test-auth-options.js";
 
 const enabled = process.env.RUN_DB_TESTS === "true";
@@ -50,7 +51,7 @@ describe.runIf(enabled)("Treasury ownership, concurrency and company isolation",
       { verify },
       testAuthOptions(prisma!),
     );
-    const treasury = new TreasuryService(prisma!);
+    const treasury = new TreasuryService(prisma!, new PrismaAccountReferenceLockAdapter());
     app = createApp({
       NODE_ENV: "test",
       PORT: 3000,

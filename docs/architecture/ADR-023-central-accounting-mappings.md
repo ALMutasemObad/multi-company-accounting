@@ -596,8 +596,12 @@ source template tags أو حقائق الأطراف.
 `outputTaxAccountId` أو `inputTaxAccountId` داخل الشركة. تبقى
 `hasImmutableHistory=false` لأن هذه تعيينات حالية، بينما يغطي تاريخ الفواتير
 محولو سياقات المستندات وCore Accounting.
-يسجل composition الآن مالكي Core وSales وPurchases وTax وReporting (5/7)، ويبقى Account lifecycle
-enforcement معطلًا صراحة لأن محولي Treasury/Inventory لم يكتملَا؛ لا
+أضافت ADM-1B6 محول Treasury المملوك للخزينة لعد `CashBankAccount.ledgerAccountId`
+وكل `Receipt/Payment.counterAccountId` داخل الشركة، مع تقييد العلاقة بنوع المستند.
+يشمل العدد كل الحالات، ولا يصبح التاريخ immutable إلا مع
+`POSTED/REVERSED/CANCELLED`.
+يسجل composition الآن مالكي Core وSales وPurchases وTax وTreasury وReporting (6/7)، ويبقى Account lifecycle
+enforcement معطلًا صراحة لأن محول Inventory لم يكتمل؛ لا
 يُفسر هذا التركيب الجزئي على أنه حارس مكتمل. لم يبدأ جدول default mappings أو
 API/permissions/consumers الخاصة بـADM-2 وما بعدها.
 
@@ -622,5 +626,14 @@ API/permissions/consumers الخاصة بـADM-2 وما بعدها.
 `taxRate.create/updateMany`. كل `accountId` مصرح به في update يقفل حتى إن ساوى
 snapshot المقروء، ثم يبقى `version` CAS الحكم النهائي للتزامن؛ غياب الحقل وحده لا
 ينشئ مرجعًا جديدًا ولا يطلب قفلًا.
+
+وتغلق ADM-1B6 سباق writer/reference في الكتاب التشغيليين المملوكين للخزينة.
+يحجز `TreasuryService` تسلسل الكود أولًا، ثم يقفل ledger account داخل المعاملة
+وقبل إنشاء Cash/Bank account، ويقفل كل `ledgerAccountId` مصرح به في update حتى إن
+ساوى snapshot؛ يبقى CAS الحكم النهائي، والحقل الغائب لا يقفل. وتقفل Receipt/Payment
+كل direct `counterAccountId` جديد أو مصرح به قبل الكتابة، بينما يتحقق post بلا قفل
+لأنه لا يستبدل المرجع. تزيل helpers التكرار وترتب المعرّفات رقميًا. يبقى
+`demo-seed.ts` bootstrap offline خارج أوامر runtime/concurrency؛ لا يمثل writer
+تشغيليًا ولا يجوز تشغيله بالتوازي مع الخدمة.
 خطة الشرائح وبوابات التنفيذ في
 [خطة مركز تعيين الحسابات](CENTRAL_ACCOUNTING_MAPPINGS_SLICE_AR.md).

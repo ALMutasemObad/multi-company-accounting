@@ -21,6 +21,7 @@ import {
 import type { ActorContext } from "../platform/actor-context.js";
 import { archiveDocument } from "../printing/print-archive.js";
 import { TransactionExecutor } from "../platform/transaction-executor.js";
+import type { AccountReferenceLockPort } from "../accounts/account-reference-lock-port.js";
 
 export type ReceiptErrorReason =
   | "NOT_FOUND"
@@ -58,6 +59,7 @@ export type ReceiptDependencies = {
   treasury: TreasuryInstrumentPort;
   fxAccounts: RealizedFxAccountPort;
   receivables: ReceivableSettlementPort;
+  accountReferences: AccountReferenceLockPort;
 };
 export type ReceiptInput = {
   fiscalPeriodId: bigint;
@@ -143,6 +145,7 @@ export class ReceiptService {
   private readonly treasury: TreasuryInstrumentPort;
   private readonly fxAccounts: RealizedFxAccountPort;
   private readonly commands: IdempotentCommandExecutor;
+  private readonly accountReferences: AccountReferenceLockPort;
   constructor(
     private readonly prisma: PrismaClient,
     dependencies: ReceiptDependencies,
@@ -152,6 +155,7 @@ export class ReceiptService {
     this.treasury = dependencies.treasury;
     this.fxAccounts = dependencies.fxAccounts;
     this.receivables = dependencies.receivables;
+    this.accountReferences = dependencies.accountReferences;
     this.commands = new IdempotentCommandExecutor(prisma, this.transactions);
   }
   private include() {
@@ -317,7 +321,12 @@ export class ReceiptService {
         if (!period || period.status === "CLOSED")
           throw new ReceiptError("PERIOD_CLOSED");
         this.validDate(period, merged.documentDate);
-        const prepared = await this.prepare(tx, context.companyId, merged);
+        const prepared = await this.prepare(
+          tx,
+          context.companyId,
+          merged,
+          input.counterAccountId !== undefined,
+        );
         if (input.counterpartyTaxNumber === undefined) prepared.counterpartyTaxLast4 = current.counterpartyTaxLast4;
         const changed = await tx.accountingDocument.updateMany({
           where: {
@@ -369,6 +378,7 @@ export class ReceiptService {
           tx,
           context.companyId,
           this.inputFrom(receipt),
+          false,
         );
         const zero = new Prisma.Decimal(0);
         const result = await this.posting.postPlan(tx, {
@@ -460,13 +470,13 @@ export class ReceiptService {
     });
     if (!period || period.status === "CLOSED") throw new ReceiptError("PERIOD_CLOSED");
     this.validDate(period, input.documentDate);
-    const prepared = await this.prepare(tx, context.companyId, input);
     const documentNumber = await this.reserveInTransaction(
       tx,
       context.companyId,
       period.fiscalYearId,
       "RECEIPT",
     );
+    const prepared = await this.prepare(tx, context.companyId, input);
     const document = await tx.accountingDocument.create({
       data: {
         companyId: context.companyId,
@@ -750,6 +760,7 @@ export class ReceiptService {
     tx: Prisma.TransactionClient,
     companyId: bigint,
     input: ReceiptInput,
+    lockCounterAccount = true,
   ) {
     if ((input.customerId == null) === (input.counterAccountId == null))
       throw new ReceiptError("COUNTERPARTY_REQUIRED");
@@ -768,6 +779,9 @@ export class ReceiptService {
       await this.validAccount(tx, companyId, customer.receivableAccountId);
       counterLedgerAccountId = customer.receivableAccountId;
     } else {
+      if (lockCounterAccount) {
+        await this.lockCounterAccounts(tx, companyId, [input.counterAccountId!]);
+      }
       await this.validAccount(tx, companyId, input.counterAccountId!);
       counterLedgerAccountId = input.counterAccountId!;
     }
@@ -850,6 +864,19 @@ export class ReceiptService {
       cashBankLedgerAccountId: instrument.cashBankLedgerAccountId,
       counterLedgerAccountId,
     };
+  }
+  private async lockCounterAccounts(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+    accountIds: readonly bigint[],
+  ) {
+    const sortedAccountIds = [...new Set(accountIds.map(String))]
+      .map(BigInt)
+      .sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+    for (const accountId of sortedAccountIds) {
+      const locked = await this.accountReferences.lockPostingAccount(tx, companyId, accountId);
+      if (!locked.eligible) throw new ReceiptError("INVALID_ACCOUNT");
+    }
   }
   private inputFrom(v: ReceiptRecord): ReceiptInput {
     return {

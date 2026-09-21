@@ -36,6 +36,7 @@ describe("realized FX settlement journals", () => {
       treasury: {} as never,
       fxAccounts: {} as never,
       receivables: {} as never,
+      accountReferences: {} as never,
     }) as unknown as { postingEntry: EntryBuilder };
     const entry = service.postingEntry(
       { ...document, customerId: 7n },
@@ -59,6 +60,7 @@ describe("realized FX settlement journals", () => {
       treasury: {} as never,
       fxAccounts: {} as never,
       payables: {} as never,
+      accountReferences: {} as never,
     }) as unknown as { postingEntry: EntryBuilder };
     const entry = service.postingEntry(
       { ...document, supplierId: 8n },

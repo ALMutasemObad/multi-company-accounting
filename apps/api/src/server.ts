@@ -91,6 +91,7 @@ import { CoreAccountUsageQueryAdapter } from './accounts/core-account-usage-quer
 import { SalesAccountUsageQueryAdapter } from './sales/sales-account-usage-query-adapter.js';
 import { PurchasesAccountUsageQueryAdapter } from './purchases/purchases-account-usage-query-adapter.js';
 import { TaxAccountUsageQueryAdapter } from './tax/tax-account-usage-query-adapter.js';
+import { TreasuryAccountUsageQueryAdapter } from './treasury/treasury-account-usage-query-adapter.js';
 import { ReportingAccountUsageQueryAdapter } from './reports/reporting-account-usage-adapter.js';
 import { createBarcodeLabelService } from './composition/create-barcode-label-service.js';
 import { CompanyCapabilityService } from './platform-subscriptions/company-capability-service.js';
@@ -152,11 +153,12 @@ const accountUsageGuard = new AccountUsageGuard([
   new SalesAccountUsageQueryAdapter(),
   new PurchasesAccountUsageQueryAdapter(),
   new TaxAccountUsageQueryAdapter(),
+  new TreasuryAccountUsageQueryAdapter(),
   new ReportingAccountUsageQueryAdapter(),
 ]);
 const accountUsageComposition = accountUsageGuard.completeness();
 const taxes = new TaxService(database, accountReferenceLocks, accountQueries);
-const treasury = new TreasuryService(database, accountQueries);
+const treasury = new TreasuryService(database, accountReferenceLocks, accountQueries);
 const bankReconciliation = config.BANK_RECONCILIATION_ENABLED
   ? new BankReconciliationService(
       database,

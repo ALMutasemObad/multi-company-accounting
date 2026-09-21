@@ -205,6 +205,23 @@
       "typeOnly": true,
       "status": "implemented",
       "reason": "Tax implements the Accounts-owned usage query contract and consumes the account reference lock handshake without exposing Tax models to Core Accounting."
+    },
+    {
+      "id": "treasury-account-lifecycle-ports",
+      "kind": "adapter-to-port",
+      "fromPaths": [
+        "apps/api/src/treasury/treasury-account-usage-query-adapter.ts",
+        "apps/api/src/treasury/treasury-service.ts",
+        "apps/api/src/receipts/receipt-service.ts",
+        "apps/api/src/payments/payment-service.ts"
+      ],
+      "toPaths": [
+        "apps/api/src/accounts/account-usage-query-port.ts",
+        "apps/api/src/accounts/account-reference-lock-port.ts"
+      ],
+      "typeOnly": true,
+      "status": "implemented",
+      "reason": "Treasury implements the Accounts-owned usage query contract and Treasury-owned runtime writers consume its lock/eligibility handshake without exposing Treasury models to Core Accounting."
     }
   ],
   "forbiddenImports": [

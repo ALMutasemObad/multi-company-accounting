@@ -58,12 +58,14 @@ export type ReceiptCompositionDependencies = {
   treasury: TreasuryInstrumentPort;
   fxAccounts?: RealizedFxAccountPort;
   receivables?: ReceivableSettlementPort;
+  accountReferences?: AccountReferenceLockPort;
 };
 
 export type PaymentCompositionDependencies = {
   treasury: TreasuryInstrumentPort;
   fxAccounts?: RealizedFxAccountPort;
   payables?: PayableSettlementPort;
+  accountReferences?: AccountReferenceLockPort;
 };
 
 export function createSalesInvoiceService(
@@ -100,6 +102,7 @@ export function createReceiptService(
     treasury: dependencies.treasury,
     fxAccounts: dependencies.fxAccounts ?? new RealizedFxAccountService(),
     receivables: dependencies.receivables ?? new ReceivableItemService(),
+    accountReferences: dependencies.accountReferences ?? new PrismaAccountReferenceLockAdapter(),
   });
 }
 
@@ -111,6 +114,7 @@ export function createPaymentService(
     treasury: dependencies.treasury,
     fxAccounts: dependencies.fxAccounts ?? new RealizedFxAccountService(),
     payables: dependencies.payables ?? new PayableItemService(),
+    accountReferences: dependencies.accountReferences ?? new PrismaAccountReferenceLockAdapter(),
   });
 }
 
@@ -141,11 +145,13 @@ export function createFinancialDocumentServices(
       treasury: dependencies.treasury,
       fxAccounts,
       receivables,
+      accountReferences: dependencies.accountReferences,
     }),
     payments: new PaymentService(prisma, {
       treasury: dependencies.treasury,
       fxAccounts,
       payables,
+      accountReferences: dependencies.accountReferences,
     }),
   };
 }
