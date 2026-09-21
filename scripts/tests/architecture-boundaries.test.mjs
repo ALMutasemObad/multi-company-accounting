@@ -92,6 +92,16 @@ test('declared provider adapters may import consumer-owned types, never the serv
   assert.equal((await checkBoundaries(setup)).diagnostics[0].code, 'CROSS_CONTEXT_IMPORT');
 });
 
+test('type-only import-equals is allowed for a declared adapter but runtime import-equals is not', async (t) => {
+  const setup = await fixture(t, {
+    [api('hr/professional-employee-adapter.ts')]: `import type ProfessionalEmployeePort = require('../projects/project-reference-ports.js');`,
+  });
+  assert.equal((await checkBoundaries(setup)).ok, true);
+  await writeFile(path.join(setup.root, api('hr/professional-employee-adapter.ts')), `import ProfessionalProjectService = require('../projects/project-reference-ports.js');`);
+  const result = await checkBoundaries(setup);
+  assert.equal(result.diagnostics[0].code, 'CROSS_CONTEXT_IMPORT');
+});
+
 test('a file merely named adapter or port gets no automatic exemption', async (t) => {
   const result = await checkBoundaries(await fixture(t, {
     [api('hr/fake-adapter.ts')]: `import type { X } from '../projects/project-reference-ports.js';`,

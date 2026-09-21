@@ -215,7 +215,14 @@ export function extractImports(source) {
       const argument = tokens[i + 2];
       if (argument?.kind !== 'string' && (tokens[i - 1]?.value === 'function' || tokens[closing]?.value === '{')) continue;
       const literal = argument?.kind === 'string' && [')', ','].includes(tokens[i + 3]?.value);
-      add(token, token.value === 'require' ? 'require' : 'dynamic-import', false, literal ? argument.value : null);
+      // TypeScript's `import type Name = require('module')` is erased at
+      // runtime. Preserve that distinction so a declared type-only adapter
+      // does not receive a false positive, while ordinary import-equals
+      // remains a runtime require.
+      const typeOnly = token.value === 'require' && tokens[i - 1]?.value === '='
+        && tokens[i - 2]?.kind === 'word' && tokens[i - 3]?.value === 'type'
+        && tokens[i - 4]?.value === 'import';
+      add(token, token.value === 'require' ? 'require' : 'dynamic-import', typeOnly, literal ? argument.value : null);
       continue;
     }
     if (token.value === 'require' || next?.value === '.' || next?.value === ':' || next?.value === '(') continue;
