@@ -97,6 +97,7 @@ export class AccountService {
         return result;
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
     } catch (error) {
+      if (knownWriteConflict(error)) throw new AccountError('VERSION_CONFLICT');
       if (error instanceof Error && error.message.startsWith('DEFAULT_CHART_VERSION_CONFLICT:')) throw new AccountError('VERSION_CONFLICT');
       if (knownUnique(error) || (error instanceof Error && error.message.startsWith('DEFAULT_CHART_CONFLICT:'))) throw new AccountError('TEMPLATE_CONFLICT');
       throw error;

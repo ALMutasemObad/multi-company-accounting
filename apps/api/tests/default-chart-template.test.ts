@@ -98,4 +98,11 @@ describe('default chart template contract', () => {
     expect(demoSeed).toContain('version: { increment: 1 }');
     expect(demoSeed).toContain('DEMO_SEED_ACCOUNT_VERSION_CONFLICT');
   });
+
+  it('maps a database write conflict during template apply to VERSION_CONFLICT', () => {
+    const service = readFileSync(new URL('../src/accounts/account-service.ts', import.meta.url), 'utf8');
+    const applySection = service.slice(service.indexOf('async applyDefaultTemplate'), service.indexOf('async deleteAccount'));
+    expect(applySection).toContain("if (knownWriteConflict(error)) throw new AccountError('VERSION_CONFLICT')");
+    expect(applySection.indexOf('knownWriteConflict(error)')).toBeLessThan(applySection.indexOf('DEFAULT_CHART_CONFLICT:'));
+  });
 });
