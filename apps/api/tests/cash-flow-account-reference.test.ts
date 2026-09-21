@@ -37,6 +37,80 @@ describe("CashFlowService account reference handshake", () => {
     expect(references.lockPostingAccount.mock.invocationCallOrder[0]).toBeLessThan(ledger.findPostingAccount.mock.invocationCallOrder[0]!);
     expect(references.lockPostingAccount.mock.invocationCallOrder[0]).toBeLessThan(tx.cashFlowAccountMapping.findUnique.mock.invocationCallOrder[0]!);
     expect(tx.cashFlowAccountMapping.create).toHaveBeenCalledTimes(1);
+    expect(tx.cashFlowAccountMapping.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ companyId: 7n, accountId: 11n, version: 1 }),
+    });
+  });
+
+  it("creates at version 1 and rejects a second create-sentinel command after the Account lock", async () => {
+    let mapping: { id: bigint; accountId: bigint; classification: "INVESTING"; version: number } | null = null;
+    const tx = {
+      cashFlowAccountMapping: {
+        findUnique: vi.fn(async () => mapping),
+        create: vi.fn(async () => {
+          mapping = { id: 19n, accountId: 11n, classification: "INVESTING", version: 1 };
+        }),
+        updateMany: vi.fn(),
+        findUniqueOrThrow: vi.fn(async () => mapping),
+      },
+      auditLog: { create: vi.fn().mockResolvedValue({}) },
+    };
+    const prisma = { $transaction: vi.fn(async (work: (value: typeof tx) => unknown) => work(tx)) };
+    const references = { lockPostingAccount: vi.fn().mockResolvedValue({ eligible: true, accountId: 11n, companyId: 7n }) };
+    const service = new CashFlowService(
+      prisma as never,
+      { findPostingAccount: vi.fn().mockResolvedValue(account) } as never,
+      references,
+      { listLedgerAccountIds: vi.fn().mockResolvedValue([]) },
+    );
+
+    await expect(service.updateMapping(
+      { companyId: 7n, userId: 3n },
+      11n,
+      { classification: "INVESTING", version: 0 },
+    )).resolves.toMatchObject({ version: 1 });
+    await expect(service.updateMapping(
+      { companyId: 7n, userId: 3n },
+      11n,
+      { classification: "INVESTING", version: 0 },
+    )).rejects.toEqual(new CashFlowError("VERSION_CONFLICT"));
+    expect(references.lockPostingAccount).toHaveBeenCalledTimes(2);
+    expect(tx.cashFlowAccountMapping.create).toHaveBeenCalledTimes(1);
+    expect(tx.cashFlowAccountMapping.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("still advances a legacy existing version-0 mapping", async () => {
+    const mapping = { id: 19n, accountId: 11n, classification: "INVESTING" as const, version: 0 };
+    const tx = {
+      cashFlowAccountMapping: {
+        findUnique: vi.fn().mockResolvedValue(mapping),
+        create: vi.fn(),
+        updateMany: vi.fn(async () => {
+          mapping.version = 1;
+          return { count: 1 };
+        }),
+        findUniqueOrThrow: vi.fn(async () => mapping),
+      },
+      auditLog: { create: vi.fn().mockResolvedValue({}) },
+    };
+    const prisma = { $transaction: vi.fn(async (work: (value: typeof tx) => unknown) => work(tx)) };
+    const service = new CashFlowService(
+      prisma as never,
+      { findPostingAccount: vi.fn().mockResolvedValue(account) } as never,
+      { lockPostingAccount: vi.fn().mockResolvedValue({ eligible: true, accountId: 11n, companyId: 7n }) },
+      { listLedgerAccountIds: vi.fn().mockResolvedValue([]) },
+    );
+
+    await expect(service.updateMapping(
+      { companyId: 7n, userId: 3n },
+      11n,
+      { classification: "INVESTING", version: 0 },
+    )).resolves.toMatchObject({ version: 1 });
+    expect(tx.cashFlowAccountMapping.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 19n, companyId: 7n, version: 0 },
+      data: expect.objectContaining({ version: { increment: 1 } }),
+    }));
+    expect(tx.cashFlowAccountMapping.create).not.toHaveBeenCalled();
   });
 
   it.each([

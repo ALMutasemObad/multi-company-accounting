@@ -110,6 +110,7 @@ export class CashFlowService {
               companyId: context.companyId,
               accountId,
               classification: input.classification,
+              version: 1,
               createdById: context.userId,
               updatedById: context.userId,
             },

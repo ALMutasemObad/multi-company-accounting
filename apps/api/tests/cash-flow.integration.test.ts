@@ -176,11 +176,11 @@ describe.runIf(enabled)("indirect cash-flow report with MariaDB", () => {
 
   it("updates classifications with optimistic concurrency and keeps company isolation", async () => {
     const changed = await service.updateMapping(context(), receivableAccountId, { classification: "INVESTING", version: 0 });
-    expect(changed).toMatchObject({ classification: "INVESTING", source: "EXPLICIT", version: 0 });
-    const advanced = await service.updateMapping(context(), receivableAccountId, { classification: "FINANCING", version: 0 });
-    expect(advanced).toMatchObject({ classification: "FINANCING", source: "EXPLICIT", version: 1 });
+    expect(changed).toMatchObject({ classification: "INVESTING", source: "EXPLICIT", version: 1 });
     await expect(service.updateMapping(context(), receivableAccountId, { classification: "INVESTING", version: 0 }))
       .rejects.toEqual(new CashFlowError("VERSION_CONFLICT"));
+    const advanced = await service.updateMapping(context(), receivableAccountId, { classification: "FINANCING", version: 1 });
+    expect(advanced).toMatchObject({ classification: "FINANCING", source: "EXPLICIT", version: 2 });
 
     const report = await service.cashFlow(context(), { dateFrom: "2057-01-01", dateTo: "2057-01-31" });
     expect(report).toMatchObject({
