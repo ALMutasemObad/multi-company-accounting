@@ -99,7 +99,7 @@ describe("Purchases account reference writer handshake", () => {
     expect(lockPostingAccount).toHaveBeenCalledWith(tx, 7n, 3n);
   });
 
-  it("locks a stock replacement account before changing persisted invoice lines", async () => {
+  it("persists the stock replacement only from the post-lock hook", async () => {
     const updateMany = vi.fn().mockResolvedValue({ count: 2 });
     const tx = { purchaseInvoiceLine: { updateMany } } as unknown as Prisma.TransactionClient;
     const lockPostingAccount = vi.fn(async (
@@ -114,55 +114,43 @@ describe("Purchases account reference writer handshake", () => {
       payables: {} as never,
       accountReferences: { lockPostingAccount },
     });
-    const lines = [{ accountId: 3n }, { accountId: 5n }] as unknown as Array<Record<string, unknown>>;
     const writer = service as unknown as {
       replaceInventoryDebitAccount(
         client: Prisma.TransactionClient,
         companyId: bigint,
         purchaseInvoiceId: bigint,
         accountId: bigint,
-        postingLines: Array<Record<string, unknown>>,
       ): Promise<void>;
     };
 
-    await writer.replaceInventoryDebitAccount(tx, 7n, 19n, 13n, lines);
+    await writer.replaceInventoryDebitAccount(tx, 7n, 19n, 13n);
 
-    expect(lockPostingAccount).toHaveBeenCalledWith(tx, 7n, 13n);
-    expect(lockPostingAccount.mock.invocationCallOrder[0]).toBeLessThan(updateMany.mock.invocationCallOrder[0]!);
-    expect(lines.map((line) => line.accountId)).toEqual([13n, 13n]);
+    expect(lockPostingAccount).not.toHaveBeenCalled();
     expect(updateMany).toHaveBeenCalledWith({
       where: { companyId: 7n, purchaseInvoiceId: 19n, inventoryItemId: { not: null } },
       data: { debitAccountId: 13n },
     });
   });
 
-  it("skips the stock replacement lock and write when every line already uses that account", async () => {
-    const updateMany = vi.fn();
-    const tx = { purchaseInvoiceLine: { updateMany } } as unknown as Prisma.TransactionClient;
-    const lockPostingAccount = vi.fn();
+  it("mutates final posting lines once and detects an already-current inventory account", () => {
     const service = new PurchaseInvoiceService({} as PrismaClient, {
       taxes: {} as never,
       inventory: {} as never,
       stock: {} as never,
       payables: {} as never,
-      accountReferences: { lockPostingAccount },
+      accountReferences: { lockPostingAccount: vi.fn() },
     });
+    const changedLines = [{ accountId: 3n }, { accountId: 5n }] as unknown as Array<Record<string, unknown>>;
+    const currentLines = [{ accountId: 13n }, { accountId: 13n }] as unknown as Array<Record<string, unknown>>;
     const writer = service as unknown as {
-      replaceInventoryDebitAccount(
-        client: Prisma.TransactionClient,
-        companyId: bigint,
-        purchaseInvoiceId: bigint,
+      replaceInventoryPostingAccount(
         accountId: bigint,
         postingLines: Array<Record<string, unknown>>,
-      ): Promise<void>;
+      ): boolean;
     };
 
-    await writer.replaceInventoryDebitAccount(tx, 7n, 19n, 13n, [
-      { accountId: 13n },
-      { accountId: 13n },
-    ]);
-
-    expect(lockPostingAccount).not.toHaveBeenCalled();
-    expect(updateMany).not.toHaveBeenCalled();
+    expect(writer.replaceInventoryPostingAccount(13n, changedLines)).toBe(true);
+    expect(changedLines.map((line) => line.accountId)).toEqual([13n, 13n]);
+    expect(writer.replaceInventoryPostingAccount(13n, currentLines)).toBe(false);
   });
 });

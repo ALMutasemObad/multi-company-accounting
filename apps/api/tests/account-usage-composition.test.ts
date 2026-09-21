@@ -52,10 +52,11 @@ describe("ADM-1B account usage composition", () => {
     });
   });
 
-  it("keeps Inventory behind Accounts-owned lifecycle ports and leaves PostingEngine gating explicit", async () => {
-    const [usageAdapter, movementService, accountService, server] = await Promise.all([
+  it("keeps Inventory usage behind the Accounts-owned port and centralizes posting account locks", async () => {
+    const [usageAdapter, movementService, postingEngine, accountService, server] = await Promise.all([
       source("inventory/inventory-account-usage-query-adapter.ts"),
       source("inventory/inventory-movement-service.ts"),
+      source("core-accounting/posting-engine.ts"),
       source("accounts/account-service.ts"),
       source("server.ts"),
     ]);
@@ -63,15 +64,13 @@ describe("ADM-1B account usage composition", () => {
     expect(usageAdapter).toContain('import type { AccountUsageQueryPort } from "../accounts/account-usage-query-port.js"');
     expect(usageAdapter).toContain("tx.inventoryMovement.count");
     expect(usageAdapter).not.toContain("PrismaClient");
-    expect(movementService).toContain('import type { AccountReferenceLockPort } from "../accounts/account-reference-lock-port.js"');
+    expect(movementService).not.toContain("AccountReferenceLockPort");
     expect(movementService).not.toContain("PrismaAccountReferenceLockAdapter");
-    expect(movementService.indexOf("await this.lockOffsetAccounts"))
-      .toBeLessThan(movementService.indexOf("const created = await this.createInTransaction", movementService.indexOf("createManualMovementWithAccountingPolicy")));
-    expect(movementService.slice(
-      movementService.indexOf("private async attachReversalAccounting"),
-      movementService.indexOf("private async lockOffsetAccounts"),
-    )).not.toContain("lockOffsetAccounts");
-    expect(server).toContain("new InventoryMovementService(database, accountReferenceLocks)");
+    expect(movementService).toContain("afterAccountLocks:");
+    expect(movementService).toContain("assertManualAccountingPolicyStillCurrent");
+    expect(postingEngine).toContain("lockPostingAccounts(");
+    expect(postingEngine).toContain("snapshotEntries");
+    expect(server).toContain("new InventoryMovementService(database)");
     expect(accountService).not.toContain("InventoryAccountUsageQueryAdapter");
     expect(accountService).not.toContain("AccountUsageGuard");
   });
@@ -99,8 +98,12 @@ describe("ADM-1B account usage composition", () => {
       .toBeLessThan(treasuryService.indexOf("await tx.cashBankAccount.create"));
     expect(receiptService).toContain("input.counterAccountId !== undefined");
     expect(paymentService).toContain("input.counterAccountId !== undefined");
-    expect(receiptService.indexOf("const documentNumber = await this.reserveInTransaction"))
-      .toBeLessThan(receiptService.indexOf("const prepared = await this.prepare", receiptService.indexOf("createDraftInTransaction")));
+    expect(receiptService).toContain("reserveCaptureInTransaction(");
+    const receiptDraft = receiptService.slice(
+      receiptService.indexOf("private async createDraftInTransaction("),
+      receiptService.indexOf("async reserveCaptureInTransaction("),
+    );
+    expect(receiptDraft).not.toContain("reserveInTransaction(");
     expect(receiptService).toMatch(/this\.inputFrom\(receipt\),\s*false/u);
     expect(paymentService).toMatch(/this\.inputFrom\(payment\),\s*false/u);
     expect(server).toContain("new TreasuryService(database, accountReferenceLocks, accountQueries)");
@@ -148,7 +151,8 @@ describe("ADM-1B account usage composition", () => {
     expect(invoiceService.indexOf("? await this.lockDebitAccounts"))
       .toBeLessThan(invoiceService.indexOf("const accounts = await tx.account.findMany"));
     expect(invoiceService).toContain("this.prepare(tx, context.companyId, input, invoice.id, false)");
-    expect(invoiceService.indexOf("await this.lockDebitAccounts(tx, companyId, [inventoryAccountId])"))
+    expect(invoiceService).not.toContain("await this.lockDebitAccounts(tx, companyId, [inventoryAccountId])");
+    expect(invoiceService.indexOf("afterAccountLocks:"))
       .toBeLessThan(invoiceService.indexOf("await tx.purchaseInvoiceLine.updateMany"));
     expect(invoiceService).toMatch(/const prepared = await this\.prepare[\s\S]*?await tx\.purchaseInvoiceLine\.deleteMany/u);
     expect(accountService).not.toContain("PurchasesAccountUsageQueryAdapter");
@@ -175,8 +179,74 @@ describe("ADM-1B account usage composition", () => {
     expect(sellingProfileService.indexOf("this.ports.accountReferences.lockPostingAccount"))
       .toBeLessThan(sellingProfileService.indexOf("this.ports.profiles.create"));
     expect(salesInvoiceService).toMatch(/const prepared = await this\.prepare[\s\S]*?await tx\.salesInvoiceLine\.deleteMany/u);
-    expect(salesInvoiceService).toContain("const accountIds = await this.lockRevenueAccounts");
+    expect(salesInvoiceService).toContain("lockRevenueAccounts = true");
+    expect(salesInvoiceService).toContain("this.prepare(tx, context.companyId, input, invoice.id, false)");
+    expect(salesInvoiceService).toContain("afterAccountLocks:");
+    expect(salesInvoiceService).toContain("assertRevenueAccountsStillCurrent");
     expect(accountService).not.toContain("SalesAccountUsageQueryAdapter");
+  });
+
+  it("orders draft document locks before account preparation and re-reads before CAS", async () => {
+    const writers = await Promise.all([
+      source("sales/sales-invoice-service.ts"),
+      source("purchases/purchase-invoice-service.ts"),
+      source("receipts/receipt-service.ts"),
+      source("payments/payment-service.ts"),
+    ]);
+
+    for (const writer of writers) {
+      const updateStart = writer.indexOf("async update(");
+      const updateEnd = writer.indexOf("\n  post(", updateStart);
+      const update = writer.slice(updateStart, updateEnd);
+      const firstRead = update.indexOf(".findFirst(");
+      const documentLock = update.indexOf("lockAccountingDocument(");
+      const lockedRead = update.indexOf(".findFirst(", firstRead + 1);
+      const prepare = update.indexOf("this.prepare(");
+      const cas = update.indexOf("accountingDocument.updateMany(");
+
+      expect(firstRead).toBeGreaterThanOrEqual(0);
+      expect(documentLock).toBeGreaterThan(firstRead);
+      expect(lockedRead).toBeGreaterThan(documentLock);
+      expect(prepare).toBeGreaterThan(lockedRead);
+      expect(cas).toBeGreaterThan(prepare);
+    }
+  });
+
+  it("reserves embedded invoice sequences before account locks on the same transaction", async () => {
+    const [sales, purchases, receipts, pos] = await Promise.all([
+      source("sales/sales-invoice-service.ts"),
+      source("purchases/purchase-invoice-service.ts"),
+      source("receipts/receipt-service.ts"),
+      source("pos/pos-service.ts"),
+    ]);
+    const salesCreate = sales.slice(
+      sales.indexOf("private async createDraftInTransaction("),
+      sales.indexOf("async createImportedDraft(", sales.indexOf("private async createDraftInTransaction(")),
+    );
+    const purchaseCreate = purchases.slice(
+      purchases.indexOf("async createImportedDraft("),
+      purchases.indexOf("async cancel(", purchases.indexOf("async createImportedDraft(")),
+    );
+
+    for (const create of [salesCreate, purchaseCreate]) {
+      expect(create.indexOf("reserveInTransaction(")).toBeGreaterThanOrEqual(0);
+      expect(create.indexOf("reserveInTransaction(")).toBeLessThan(create.indexOf("this.prepare("));
+      expect(create.indexOf("this.prepare(")).toBeLessThan(create.indexOf("accountingDocument.create("));
+    }
+    const salesResolve = sales.slice(
+      sales.indexOf("async resolveImportedDraft("),
+      sales.indexOf("private async createDraftInTransaction("),
+    );
+    expect(salesResolve).toContain("this.prepare(tx, companyId, input, undefined, false)");
+    expect(pos.indexOf("this.receipts.reserveCaptureInTransaction("))
+      .toBeLessThan(pos.indexOf("this.sales.checkoutInTransaction("));
+    expect(pos.indexOf("this.sales.checkoutInTransaction("))
+      .toBeLessThan(pos.indexOf("this.receipts.captureInTransaction("));
+    const receiptCapture = receipts.slice(
+      receipts.indexOf("async captureInTransaction("),
+      receipts.indexOf("async cancel(", receipts.indexOf("async captureInTransaction(")),
+    );
+    expect(receiptCapture).not.toContain("reserveInTransaction(");
   });
 
   it("keeps Reporting ownership out of Accounts and injects the lock handshake into the writer", async () => {

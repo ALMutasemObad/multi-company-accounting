@@ -278,7 +278,7 @@ describe.runIf(enabled)("purchase invoices and payables with MariaDB", () => {
       lines: [{ inventoryItemId: inventoryItemId.toString(), description: "صنف لاختبار ذرية العكس", quantity: "1.000000", unitPrice: "12.0000", discountAmount: "0.0000", debitAccountId: expenseId.toString(), taxRateId: null }],
     }).expect(201);
     await agent.post(`/api/v1/purchase-invoices/${blocked.body.id}/post`).set("X-CSRF-Token", login.body.csrfToken).set("Idempotency-Key", "it-post-reverse-blocked-purchase").send({ version: 0 }).expect(200);
-    await new InventoryMovementService(prisma!, new PrismaAccountReferenceLockAdapter()).createMovement({ companyId, userId }, {
+    await new InventoryMovementService(prisma!).createMovement({ companyId, userId }, {
       movementType: "ISSUE",
       movementDate: "2045-02-27",
       description: "استهلاك الكمية قبل عكس فاتورة الشراء",

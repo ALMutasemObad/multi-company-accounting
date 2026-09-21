@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { Prisma, type AccountingDocument, type PrismaClient } from "@prisma/client";
 import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import {
+  lockAccountingDocument,
+  lockFiscalPeriod,
   PostingEngine,
   type PostingFailureReason,
   type PostingEntryPlan,
@@ -87,11 +89,26 @@ export type PosReceiptCheckoutResult = {
   documentStatus: string;
   journalEntryIds: string[];
 };
+const posReceiptCaptureReservationBrand: unique symbol = Symbol("PosReceiptCaptureReservation");
+export type PosReceiptCaptureReservation = Readonly<{
+  [posReceiptCaptureReservationBrand]: true;
+  companyId: bigint;
+  fiscalPeriodId: bigint;
+  documentDate: string;
+  documentNumber: string;
+}>;
 export interface PosReceiptCheckoutPort {
+  reserveCaptureInTransaction(
+    tx: Prisma.TransactionClient,
+    context: ActorContext,
+    fiscalPeriodId: bigint,
+    documentDate: string,
+  ): Promise<PosReceiptCaptureReservation>;
   captureInTransaction(
     tx: Prisma.TransactionClient,
     context: ActorContext,
     input: ReceiptInput,
+    reservation: PosReceiptCaptureReservation,
   ): Promise<PosReceiptCheckoutResult>;
 }
 const date = (v: string) => new Date(`${v}T00:00:00.000Z`);
@@ -265,7 +282,15 @@ export class ReceiptService {
   async update(context: ActorContext, id: bigint, input: ReceiptUpdate) {
     return this.prisma.$transaction(
       async (tx) => {
-        const current = await tx.receipt.findFirst({
+        let current = await tx.receipt.findFirst({
+          where: { id, companyId: context.companyId },
+          include: this.include(),
+        });
+        if (!current) throw new ReceiptError("NOT_FOUND");
+        if (!await lockAccountingDocument(tx, context.companyId, current.accountingDocumentId)) {
+          throw new ReceiptError("NOT_FOUND");
+        }
+        current = await tx.receipt.findFirst({
           where: { id, companyId: context.companyId },
           include: this.include(),
         });
@@ -464,18 +489,13 @@ export class ReceiptService {
     tx: Prisma.TransactionClient,
     context: ActorContext,
     input: ReceiptInput,
+    documentNumber: string,
   ) {
     const period = await tx.fiscalPeriod.findFirst({
       where: { id: input.fiscalPeriodId, companyId: context.companyId },
     });
     if (!period || period.status === "CLOSED") throw new ReceiptError("PERIOD_CLOSED");
     this.validDate(period, input.documentDate);
-    const documentNumber = await this.reserveInTransaction(
-      tx,
-      context.companyId,
-      period.fiscalYearId,
-      "RECEIPT",
-    );
     const prepared = await this.prepare(tx, context.companyId, input);
     const document = await tx.accountingDocument.create({
       data: {
@@ -500,12 +520,54 @@ export class ReceiptService {
     await this.audit(tx, context, "RECEIPT_CREATED", receipt.id, { source: "POS" });
     return receipt;
   }
+  async reserveCaptureInTransaction(
+    tx: Prisma.TransactionClient,
+    context: ActorContext,
+    fiscalPeriodId: bigint,
+    documentDate: string,
+  ): Promise<PosReceiptCaptureReservation> {
+    if (!await lockFiscalPeriod(tx, context.companyId, fiscalPeriodId)) {
+      throw new ReceiptError("PERIOD_CLOSED");
+    }
+    const period = await tx.fiscalPeriod.findFirst({
+      where: { id: fiscalPeriodId, companyId: context.companyId },
+    });
+    if (!period || period.status === "CLOSED") throw new ReceiptError("PERIOD_CLOSED");
+    this.validDate(period, documentDate);
+    const documentNumber = await this.reserveInTransaction(
+      tx,
+      context.companyId,
+      period.fiscalYearId,
+      "RECEIPT",
+    );
+    return Object.freeze({
+      [posReceiptCaptureReservationBrand]: true as const,
+      companyId: context.companyId,
+      fiscalPeriodId: period.id,
+      documentDate,
+      documentNumber,
+    });
+  }
   async captureInTransaction(
     tx: Prisma.TransactionClient,
     context: ActorContext,
     input: ReceiptInput,
+    reservation: PosReceiptCaptureReservation,
   ): Promise<PosReceiptCheckoutResult> {
-    const receipt = await this.createDraftInTransaction(tx, context, input);
+    if (
+      reservation[posReceiptCaptureReservationBrand] !== true ||
+      reservation.companyId !== context.companyId ||
+      reservation.fiscalPeriodId !== input.fiscalPeriodId ||
+      reservation.documentDate !== input.documentDate
+    ) {
+      throw new ReceiptError("INVALID_STATE");
+    }
+    const receipt = await this.createDraftInTransaction(
+      tx,
+      context,
+      input,
+      reservation.documentNumber,
+    );
     const posted = await this.postInTransaction(tx, context, receipt.id, 0, receipt);
     await this.audit(tx, context, "POST_RECEIPT", receipt.id, { source: "POS" });
     return {

@@ -3,7 +3,6 @@ import { createDatabase } from "../src/database.js";
 import { InventoryCatalogService } from "../src/inventory/inventory-catalog-service.js";
 import { InventoryMovementError, InventoryMovementService } from "../src/inventory/inventory-movement-service.js";
 import { InventoryError, InventoryService } from "../src/inventory/inventory-service.js";
-import { PrismaAccountReferenceLockAdapter } from "../src/accounts/prisma-account-reference-lock-adapter.js";
 
 const enabled = process.env.RUN_DB_TESTS === "true" && Boolean(process.env.DATABASE_URL);
 const prisma = enabled ? createDatabase(process.env.DATABASE_URL!) : null;
@@ -19,7 +18,7 @@ describe.runIf(enabled)("Inventory quantity ledger, locking and isolation", () =
   const movementIds: bigint[] = [];
   const inventory = () => new InventoryService(prisma!);
   const catalog = () => new InventoryCatalogService(prisma!);
-  const movements = () => new InventoryMovementService(prisma!, new PrismaAccountReferenceLockAdapter());
+  const movements = () => new InventoryMovementService(prisma!);
   const context = () => ({ companyId, userId });
 
   async function removeFiscalYear(id: bigint) {

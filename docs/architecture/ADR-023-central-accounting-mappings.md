@@ -604,7 +604,8 @@ source template tags أو حقائق الأطراف.
 `InventoryMovement.offsetAccountId` داخل الشركة. حالات الحركة المحفوظة هي
 `POSTED/REVERSED`، ولذلك يعني أي count موجب تاريخًا immutable. يسجل composition
 المالكين السبعة الآن (7/7)، لكن يبقى Account lifecycle enforcement معطلًا صراحة؛
-اكتمال المحولات وحده لا يسمح بحقن الحارس قبل إغلاق بوابة Posting Engine أدناه.
+اكتمال المحولات وحده لا يسمح بحقن الحارس قبل إغلاق بروتوكولات كتاب المسودات
+والأبوة المبينة أدناه.
 لم يبدأ جدول default mappings أو API/permissions/consumers الخاصة بـADM-2 وما
 بعدها.
 
@@ -639,15 +640,37 @@ snapshot المقروء، ثم يبقى `version` CAS الحكم النهائي 
 `demo-seed.ts` bootstrap offline خارج أوامر runtime/concurrency؛ لا يمثل writer
 تشغيليًا ولا يجوز تشغيله بالتوازي مع الخدمة.
 
-وتغلق ADM-1B7 أول استعمال دائم جديد لمرجع Inventory: الحركة اليدوية المحاسبية تحل
-سياسة الحساب، ثم تقفل `offsetAccountId` على `TransactionClient` نفسها، ثم تعيد حل
-السياسة تحت القفل وتتحقق من بقاء المعرّف والفئة المتخصصة والأهلية قبل كتابة
-الحركة. لا تقفل Inventory محليًا حسابي inventory/COGS الديناميكيين لأنهما يصبحان
-`JournalLine` ويملك قفلهما Posting Engine. كما لا يعاد قفل `offsetAccountId` عند
-نسخه إلى حركة العكس: المرجع التاريخي الدائم موجود أصلًا، والنسخ لا ينشئ أول
-استعمال؛ يسمح ذلك بعكس التاريخ الصحيح إذا أصبح الحساب غير نشط ويتجنب قلب ترتيب
-Inventory→Account. قبل حقن `AccountUsageGuard` في `AccountService` يجب أن يقفل
-Posting Engine جميع account IDs الفريدة والمرتبة في القيد على المعاملة نفسها قبل
-فحص الحارس؛ حتى ذلك الحين يبقى `enforcementEnabled=false` رغم اكتمال 7/7.
+وأغلق بروتوكول Posting Engine اللاحق مجموعة حسابات القيد: بعد `beforeLedger` يقفل
+كل account IDs النهائية بعد إزالة التكرار وبترتيب رقمي على `TransactionClient`
+نفسها، وقبل التحقق وكتابة `JournalLine`. يطبق ذلك على `postPlan/postExisting`،
+وعلى `reverse` مع أهلية تاريخية ضيقة تشترط وجود الحساب في الشركة ولا تعيد اشتراط
+active/posting/leaf. يحجز reverse تسلسل المستند قبل أقفال الحساب والدفتر. يتيح
+`postPlan` hook بعد القفل والتحقق وقبل الكتابة. ينسخ المحرك الخطة النهائية بعد
+`beforeLedger` إلى snapshot مستقل يملكه وحده، وهو ما يقفله ويتحقق منه ويكتبه؛ لذلك
+لا يستطيع hook تغيير الحسابات أو المبالغ أو أرقام الأسطر أو التاريخ/العملة عبر
+closure بعد validation.
+
+لتوحيد graph الأقفال، تقفل updates في Sales/Purchases/Receipt/Payment مستند
+`AccountingDocument` أولًا، ثم تعيد قراءة status/version والـsnapshot تحت القفل،
+ثم تقفل مراجع الحسابات المصرح بها وتنفذ CAS. ويعمل Sales post بوضع validate-only
+قبل `PostingEngine`؛ فلا يأخذ قفل revenue محليًا قبل قفل المستند المركزي. وبعد
+القفل المركزي يعيد قراءة revenue IDs المحفوظة ويتحقق من تطابق المجموعة وبقاء
+active/posting/leaf وفئة REVENUE، ويفشل مغلقًا عند أي تبدل.
+كما تحجز embedded Sales/Purchases creates التسلسل أولًا على المعاملة نفسها ثم
+تنفذ `prepare` وقفل الحساب، مع تحقق import resolve بوضع بلا قفل مبكر؛ يحافظ rollback
+على ذرية الحجز إن فشل التحقق اللاحق.
+وفي POS يحجز `PosReceiptCheckoutPort.reserveCaptureInTransaction` رقم RECEIPT بعد
+قفل وإعادة قراءة الفترة، وقبل Sales checkout. يعاد تمرير reservation opaque إلى
+capture الذي يطابق company/period/date ويمنع الحجز الثاني؛ فلا ينتقل التدفق من
+أقفال Sales Account إلى Receipt Sequence.
+
+بذلك أزيل قفل offset الجزئي من Inventory: تبني الحركة والأسطر تمهيديًا، ثم يعيد
+hook حل السياسة المتخصصة تحت الأقفال المركزية ويقارن inventory/offset IDs قبل حفظ
+المرجع الدائم. ويحوّل Purchases أسطر الترحيل إلى inventory account قبل القفل، ولا
+يحفظ استبدال `PurchaseInvoiceLine.debitAccountId` إلا في post-lock hook. بقي
+`enforcementEnabled=false`: يحتاج التفعيل شريحة مستقلة لبروتوكول
+`ManualJournal` create/update الذي يكتب draft `JournalLine`، وبروتوكول
+`AccountService.parentAccountId` مع ترتيب Document/Account الموحد، ثم اختبارات
+التزامن الفعلية؛ لا يكفي اكتمال 7/7 أو قفل Posting Engine وحده.
 خطة الشرائح وبوابات التنفيذ في
 [خطة مركز تعيين الحسابات](CENTRAL_ACCOUNTING_MAPPINGS_SLICE_AR.md).

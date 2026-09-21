@@ -32,6 +32,120 @@ const transaction = () => ({
 });
 
 describe("Treasury document account reference writer handshake", () => {
+  it("reserves a POS receipt after locking its period and consumes it without a second sequence reservation", async () => {
+    const periodFindFirst = vi.fn().mockResolvedValue({
+      id: 1n,
+      fiscalYearId: 2n,
+      status: "OPEN",
+      startDate: new Date("2050-01-01T00:00:00.000Z"),
+      endDate: new Date("2050-12-31T00:00:00.000Z"),
+    });
+    const periodLock = vi.fn().mockResolvedValue([{ id: 1n }]);
+    const tx = {
+      fiscalPeriod: { findFirst: periodFindFirst },
+      $queryRaw: periodLock,
+    } as unknown as Prisma.TransactionClient;
+    const service = new ReceiptService({} as PrismaClient, {
+      treasury: {} as never,
+      fxAccounts: {} as never,
+      receivables: {} as never,
+      accountReferences: {} as never,
+    });
+    const reserveInTransaction = vi.fn().mockResolvedValue("REC-2050-000001");
+    const createDraftInTransaction = vi.fn().mockResolvedValue({ id: 61n });
+    const postInTransaction = vi.fn().mockResolvedValue({
+      document: { id: 51n, documentNumber: "REC-2050-000001", status: "POSTED" },
+      ids: ["71"],
+    });
+    const audit = vi.fn();
+    const writer = service as unknown as {
+      reserveInTransaction: typeof reserveInTransaction;
+      createDraftInTransaction: typeof createDraftInTransaction;
+      postInTransaction: typeof postInTransaction;
+      audit: typeof audit;
+    };
+    writer.reserveInTransaction = reserveInTransaction;
+    writer.createDraftInTransaction = createDraftInTransaction;
+    writer.postInTransaction = postInTransaction;
+    writer.audit = audit;
+
+    const reservation = await service.reserveCaptureInTransaction(
+      tx,
+      { companyId: 7n, userId: 4n },
+      1n,
+      "2050-01-01",
+    );
+    expect(periodLock.mock.invocationCallOrder[0]).toBeLessThan(periodFindFirst.mock.invocationCallOrder[0]!);
+    expect(periodFindFirst.mock.invocationCallOrder[0]).toBeLessThan(reserveInTransaction.mock.invocationCallOrder[0]!);
+    reserveInTransaction.mockClear();
+
+    await service.captureInTransaction(
+      tx,
+      { companyId: 7n, userId: 4n },
+      directCounterpartyInput,
+      reservation,
+    );
+
+    expect(reserveInTransaction).not.toHaveBeenCalled();
+    expect(createDraftInTransaction).toHaveBeenCalledWith(
+      tx,
+      { companyId: 7n, userId: 4n },
+      directCounterpartyInput,
+      "REC-2050-000001",
+    );
+  });
+
+  it("rejects a missing or mismatched POS receipt reservation before draft creation", async () => {
+    const tx = {
+      fiscalPeriod: { findFirst: vi.fn().mockResolvedValue({
+        id: 1n,
+        fiscalYearId: 2n,
+        status: "OPEN",
+        startDate: new Date("2050-01-01T00:00:00.000Z"),
+        endDate: new Date("2050-12-31T00:00:00.000Z"),
+      }) },
+      $queryRaw: vi.fn().mockResolvedValue([{ id: 1n }]),
+    } as unknown as Prisma.TransactionClient;
+    const service = new ReceiptService({} as PrismaClient, {
+      treasury: {} as never,
+      fxAccounts: {} as never,
+      receivables: {} as never,
+      accountReferences: {} as never,
+    });
+    const writer = service as unknown as {
+      reserveInTransaction: ReturnType<typeof vi.fn>;
+      createDraftInTransaction: ReturnType<typeof vi.fn>;
+    };
+    writer.reserveInTransaction = vi.fn().mockResolvedValue("REC-2050-000001");
+    writer.createDraftInTransaction = vi.fn();
+    const reservation = await service.reserveCaptureInTransaction(
+      tx,
+      { companyId: 7n, userId: 4n },
+      1n,
+      "2050-01-01",
+    );
+
+    await expect(service.captureInTransaction(
+      tx,
+      { companyId: 8n, userId: 4n },
+      directCounterpartyInput,
+      reservation,
+    )).rejects.toMatchObject({ reason: "INVALID_STATE" });
+    await expect(service.captureInTransaction(
+      tx,
+      { companyId: 7n, userId: 4n },
+      { ...directCounterpartyInput, documentDate: "2050-01-02" },
+      reservation,
+    )).rejects.toMatchObject({ reason: "INVALID_STATE" });
+    await expect(service.captureInTransaction(
+      tx,
+      { companyId: 7n, userId: 4n },
+      directCounterpartyInput,
+      {} as never,
+    )).rejects.toMatchObject({ reason: "INVALID_STATE" });
+    expect(writer.createDraftInTransaction).not.toHaveBeenCalled();
+  });
+
   it("locks a Receipt direct counter on the command transaction before document writes", async () => {
     const tx = {
       ...transaction(),

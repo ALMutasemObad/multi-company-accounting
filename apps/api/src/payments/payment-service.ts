@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Prisma, type AccountingDocument, type PrismaClient } from "@prisma/client";
 import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import {
+  lockAccountingDocument,
   PostingEngine,
   type PostingEntryPlan,
   type PostingFailureReason,
@@ -240,7 +241,15 @@ export class PaymentService {
   async update(context: ActorContext, id: bigint, input: PaymentUpdate) {
     return this.prisma.$transaction(
       async (tx) => {
-        const current = await tx.payment.findFirst({
+        let current = await tx.payment.findFirst({
+          where: { id, companyId: context.companyId },
+          include: this.include(),
+        });
+        if (!current) throw new PaymentError("NOT_FOUND");
+        if (!await lockAccountingDocument(tx, context.companyId, current.accountingDocumentId)) {
+          throw new PaymentError("NOT_FOUND");
+        }
+        current = await tx.payment.findFirst({
           where: { id, companyId: context.companyId },
           include: this.include(),
         });

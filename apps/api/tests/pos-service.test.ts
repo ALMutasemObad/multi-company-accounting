@@ -136,6 +136,7 @@ const input: PosCheckoutInput = {
 };
 
 function owners(options: { failReceipt?: boolean } = {}) {
+  const receiptReservation = { opaque: "receipt-reservation" } as never;
   const sales = {
     checkoutInTransaction: vi.fn(async (tx: any) => {
       tx.__state.invoices.push(101n);
@@ -155,7 +156,9 @@ function owners(options: { failReceipt?: boolean } = {}) {
     }),
   } satisfies PosSalesCheckoutPort;
   const receipts = {
-    captureInTransaction: vi.fn(async (tx: any, _context, value) => {
+    reserveCaptureInTransaction: vi.fn(async () => receiptReservation),
+    captureInTransaction: vi.fn(async (tx: any, _context, value, reservation) => {
+      expect(reservation).toBe(receiptReservation);
       tx.__state.receipts.push(201n);
       if (options.failReceipt) throw new Error("cash instrument rejected");
       expect(value.amount).toBe("50.0000");
@@ -188,8 +191,11 @@ describe("POS cash-sale orchestration", () => {
     ]);
 
     expect(retry).toEqual(first);
+    expect(receipts.reserveCaptureInTransaction).toHaveBeenCalledTimes(1);
     expect(sales.checkoutInTransaction).toHaveBeenCalledTimes(1);
     expect(receipts.captureInTransaction).toHaveBeenCalledTimes(1);
+    expect(receipts.reserveCaptureInTransaction.mock.invocationCallOrder[0])
+      .toBeLessThan(sales.checkoutInTransaction.mock.invocationCallOrder[0]!);
     expect(database.state()).toMatchObject({
       invoices: [101n],
       receipts: [201n],

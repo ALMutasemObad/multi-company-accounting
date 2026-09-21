@@ -159,4 +159,71 @@ describe("Sales account reference writer handshake", () => {
     expect(lockPostingAccount).toHaveBeenCalledTimes(1);
     expect(lockPostingAccount).toHaveBeenCalledWith(tx, 7n, 3n);
   });
+
+  it("fails closed when the locked invoice revenue source set changes", async () => {
+    const tx = {
+      salesInvoiceLine: {
+        findMany: vi.fn().mockResolvedValue([{ revenueAccountId: 3n }, { revenueAccountId: 8n }]),
+      },
+      account: { findMany: vi.fn() },
+    } as unknown as Prisma.TransactionClient;
+    const service = new SalesInvoiceService({} as PrismaClient, {
+      taxes: {} as never,
+      inventory: {} as never,
+      stock: {} as never,
+      receivables: {} as never,
+      accountReferences: {} as never,
+    });
+    const writer = service as unknown as {
+      assertRevenueAccountsStillCurrent(
+        client: Prisma.TransactionClient,
+        companyId: bigint,
+        invoiceId: bigint,
+        accountIds: readonly bigint[],
+      ): Promise<void>;
+    };
+
+    await expect(writer.assertRevenueAccountsStillCurrent(tx, 7n, 61n, [3n, 9n]))
+      .rejects.toMatchObject({ reason: "VERSION_CONFLICT" });
+    expect(tx.account.findMany).not.toHaveBeenCalled();
+  });
+
+  it("rechecks the revenue class and posting predicate after central locks", async () => {
+    const tx = {
+      salesInvoiceLine: {
+        findMany: vi.fn().mockResolvedValue([{ revenueAccountId: 3n }, { revenueAccountId: 9n }]),
+      },
+      account: {
+        findMany: vi.fn().mockResolvedValue([
+          { id: 3n, accountType: { class: "REVENUE" }, _count: { children: 0 } },
+          { id: 9n, accountType: { class: "ASSET" }, _count: { children: 0 } },
+        ]),
+      },
+    } as unknown as Prisma.TransactionClient;
+    const service = new SalesInvoiceService({} as PrismaClient, {
+      taxes: {} as never,
+      inventory: {} as never,
+      stock: {} as never,
+      receivables: {} as never,
+      accountReferences: {} as never,
+    });
+    const writer = service as unknown as {
+      assertRevenueAccountsStillCurrent(
+        client: Prisma.TransactionClient,
+        companyId: bigint,
+        invoiceId: bigint,
+        accountIds: readonly bigint[],
+      ): Promise<void>;
+    };
+
+    await expect(writer.assertRevenueAccountsStillCurrent(tx, 7n, 61n, [3n, 9n]))
+      .rejects.toMatchObject({ reason: "INVALID_ACCOUNT" });
+    expect(tx.salesInvoiceLine.findMany).toHaveBeenCalledWith({
+      where: { salesInvoiceId: 61n, companyId: 7n },
+      select: { revenueAccountId: true },
+    });
+    expect(tx.account.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ companyId: 7n, isActive: true, allowsPosting: true }),
+    }));
+  });
 });

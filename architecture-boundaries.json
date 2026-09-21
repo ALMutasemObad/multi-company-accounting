@@ -227,16 +227,14 @@
       "id": "inventory-account-lifecycle-ports",
       "kind": "adapter-to-port",
       "fromPaths": [
-        "apps/api/src/inventory/inventory-account-usage-query-adapter.ts",
-        "apps/api/src/inventory/inventory-movement-service.ts"
+        "apps/api/src/inventory/inventory-account-usage-query-adapter.ts"
       ],
       "toPaths": [
-        "apps/api/src/accounts/account-usage-query-port.ts",
-        "apps/api/src/accounts/account-reference-lock-port.ts"
+        "apps/api/src/accounts/account-usage-query-port.ts"
       ],
       "typeOnly": true,
       "status": "implemented",
-      "reason": "Inventory implements the Accounts-owned usage query contract and locks its permanent movement offset references without importing Accounts runtime adapters."
+      "reason": "Inventory implements the Accounts-owned usage query contract; PostingEngine centrally locks the final ledger account set, while Inventory rechecks its specialized accounting policy through a post-lock hook without importing Accounts runtime adapters."
     }
   ],
   "forbiddenImports": [

@@ -249,7 +249,7 @@ const customers = new CustomerService(database, accountReferenceLocks, accountQu
 const suppliers = new SupplierService(database, accountReferenceLocks, accountQueries);
 const inventoryCatalog = new InventoryCatalogService(database);
 const inventoryBarcodes = new InventoryBarcodeService(database);
-const inventoryMovements = new InventoryMovementService(database, accountReferenceLocks);
+const inventoryMovements = new InventoryMovementService(database);
 const {
   salesInvoices,
   purchaseInvoices,

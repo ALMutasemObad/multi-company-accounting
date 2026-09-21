@@ -610,7 +610,8 @@ composition بحالة 7/7 مع بقاء `enforcementEnabled=false`. يعد مح
 ويعد محول Purchases مراجع Supplier وكل `PurchaseInvoiceLine`، ويعد أسطر DRAFT ضمن
 الاستعمال الكلي مع قصر immutable على `POSTED/REVERSED/CANCELLED` لمستندي
 `PURCHASE_INVOICE/PURCHASE_DEBIT_NOTE`. لم يُحقن المنسق في `AccountService` رغم
-اكتمال المحولات؛ يتطلب التفعيل أولًا إغلاق بوابة Posting Engine المبينة أدناه.
+اكتمال المحولات؛ يتطلب التفعيل أولًا إغلاق بروتوكولات كتاب المسودات والأبوة
+المبينة أدناه.
 يعد محول Tax كل `TaxRate` يشير إلى الحساب عبر
 حقل output أو input بعزل الشركة، ويبقي `hasImmutableHistory=false` لأنها تعيينات
 حالية ويغطي تاريخ الفواتير مالكو المستندات وCore. في
@@ -648,14 +649,34 @@ Account أولًا داخل المعاملة نفسها ويرفض المرجع 
 
 ويعد محول Inventory كل حركة داخل الشركة يكون `offsetAccountId` فيها هو الحساب.
 كل حركة محفوظة في هذا النموذج `POSTED` أو `REVERSED`، لذلك يكون
-`hasImmutableHistory=true` لكل count موجب. الحركة اليدوية المحاسبية تحل السياسة،
-تقفل offset على `TransactionClient` نفسها قبل أول كتابة حركة، ثم تعيد حل السياسة
-تحت القفل وتتحقق من ثبات المعرّف والفئة المتخصصة والأهلية. لا تقفل حسابي
-inventory/COGS الديناميكيين محليًا؛ مرجعهما الدائم `JournalLine` ويجب أن يقفله
-Posting Engine مركزيًا. نسخ offset التاريخي إلى حركة العكس لا يعاد قفله لأنه لا
-ينشئ أول استعمال، فيظل عكس حركة صحيحة ممكنًا بعد تعطيل الحساب ويتجنب ترتيب
-Inventory→Account. بوابة التفعيل المتبقية هي قفل Posting Engine لكل account IDs
-الفريدة مرتبة على المعاملة نفسها قبل أي حقن للحارس في `AccountService`.
+`hasImmutableHistory=true` لكل count موجب. يقفل Posting Engine بعد
+`beforeLedger` كل account IDs النهائية بعد dedupe وترتيب رقمي، وقبل التحقق وكتابة
+`JournalLine` في `postPlan/postExisting/reverse`. يشترط post الحالي الأهلية الكاملة،
+بينما يشترط reverse التاريخي وجود الحساب في الشركة فقط كي لا يكسر عكس legacy
+inactive. يحجز reverse تسلسله قبل Account/JournalLine locks. بعد `beforeLedger`
+ينشئ المحرك snapshot مستقلًا للخطة النهائية، وهو وحده ما يقفل ويتحقق ويكتب؛ لذلك
+لا يستطيع hook ما بعد القفل تغيير الحسابات أو المبالغ أو line numbers أو
+التاريخ/العملة عبر closure بعد validation.
+
+تأخذ updates في Sales/Purchases/Receipt/Payment قفل `AccountingDocument` قبل إعادة
+قراءة status/version والـsnapshot، ثم تقفل حسابات الإدخال وتنفذ CAS. ويجهز Sales
+post حسابات revenue بوضع validate-only قبل المحرك، فلا يسبق قفل Account قفل
+Document المركزي. ثم يعيد فحص source set وخصائص active/posting/leaf وREVENUE داخل
+`afterAccountLocks` تحت الأقفال المركزية.
+وتحجز embedded creates في Sales/Purchases sequence داخل المعاملة قبل `prepare`
+وأقفال Account، بينما يتحقق import resolve بلا قفل مبكر؛ فيبقى الترتيب
+Sequence→Account والـrollback ذريًا.
+وفي checkout المركب يحجز POS رقم RECEIPT أولًا عبر reservation opaque من مالك
+Receipts، قبل بدء Sales. يتحقق capture من company/period/date ويستهلك الرقم بلا
+reserve ثانٍ، فيمنع حافة Sales Account→Receipt Sequence.
+
+أزيل قفل offset المحلي الجزئي من Inventory. تبني الحركة اليدوية entries تمهيديًا،
+ثم يعيد hook حل السياسة تحت المجموعة المقفلة ويقارن inventory/offset IDs قبل حفظ
+المرجع الدائم. ويعدل Purchases posting lines قبل القفل، ثم يحفظ snapshot
+`PurchaseInvoiceLine.debitAccountId` في hook بعد القفل فقط. لا يفعّل الحارس بعد:
+يبقى `ManualJournal` create/update كاتبًا لأسطر DRAFT يحتاج بروتوكول Document→Account
+مستقلًا، كما يحتاج تغيير `Account.parentAccountId` بروتوكول writer موحدًا؛ تعالج
+هاتان البوابتان واختبارات قاعدة البيانات المتزامنة قبل حقن الحارس.
 
 ```text
 Idempotency عند وجوده

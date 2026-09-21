@@ -58,6 +58,12 @@ export type PostPlanCommand = PostingCommandBase & {
     tx: Prisma.TransactionClient,
     document: AccountingDocument,
   ) => Promise<PostingEntryPlan[] | void>;
+  // Recheck specialized source policy or persist snapshots only. Posting uses an
+  // engine-owned clone, so this hook cannot mutate the validated ledger plan.
+  afterAccountLocks?: (
+    tx: Prisma.TransactionClient,
+    document: AccountingDocument,
+  ) => Promise<void>;
   afterEntries?: (
     tx: Prisma.TransactionClient,
     entries: PersistedPostingEntry[],
@@ -145,6 +151,32 @@ export async function lockJournalLines(
   );
 }
 
+export async function lockPostingAccounts(
+  tx: Prisma.TransactionClient,
+  companyId: bigint,
+  accountIds: bigint[],
+  error: (reason: PostingFailureReason) => Error,
+) {
+  const orderedIds = uniqueBigInts(accountIds);
+  if (orderedIds.length === 0) return orderedIds;
+  const rows = await tx.$queryRaw<LockedRow[]>(
+    Prisma.sql`
+      SELECT id
+      FROM accounts
+      WHERE company_id=${companyId} AND id IN (${Prisma.join(orderedIds)})
+      ORDER BY id
+      FOR UPDATE
+    `,
+  );
+  if (
+    rows.length !== orderedIds.length
+    || rows.some((row, index) => row.id !== orderedIds[index])
+  ) {
+    throw error("INVALID_ACCOUNT");
+  }
+  return orderedIds;
+}
+
 const decimal = (value: Prisma.Decimal.Value) => new Prisma.Decimal(value);
 const rounded = (value: Prisma.Decimal.Value) =>
   decimal(value).toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP);
@@ -164,7 +196,13 @@ export class PostingEngine {
     const preparedEntries = command.beforeLedger
       ? await command.beforeLedger(tx, document)
       : undefined;
-    const postingEntries = preparedEntries ?? command.entries;
+    const postingEntries = this.snapshotEntries(preparedEntries ?? command.entries);
+    await lockPostingAccounts(
+      tx,
+      command.companyId,
+      postingEntries.flatMap((entry) => entry.lines.map((line) => line.accountId)),
+      command.error,
+    );
     await this.validateEntries(
       tx,
       command.companyId,
@@ -172,6 +210,7 @@ export class PostingEngine {
       postingEntries,
       command.error,
     );
+    if (command.afterAccountLocks) await command.afterAccountLocks(tx, document);
 
     const entries: PersistedPostingEntry[] = [];
     for (const entry of postingEntries) {
@@ -216,6 +255,12 @@ export class PostingEngine {
       include: { lines: { orderBy: { lineNumber: "asc" } } },
       orderBy: { entryNumber: "asc" },
     });
+    await lockPostingAccounts(
+      tx,
+      command.companyId,
+      entries.flatMap((entry) => entry.lines.map((line) => line.accountId)),
+      command.error,
+    );
     const lockedLines = await lockJournalLines(
       tx,
       command.companyId,
@@ -285,6 +330,12 @@ export class PostingEngine {
     if (original.version !== command.expectedVersion)
       throw command.error("VERSION_CONFLICT");
 
+    const documentNumber = await command.reserveDocumentNumber(
+      tx,
+      period,
+      original.documentType,
+    );
+
     const originalEntries = await tx.journalEntry.findMany({
       where: {
         accountingDocumentId: original.id,
@@ -298,6 +349,12 @@ export class PostingEngine {
     // and settlement commands always contend on the AR/AP item first.
     if (command.beforeLedger)
       await command.beforeLedger(tx, original, originalEntries);
+    await lockPostingAccounts(
+      tx,
+      command.companyId,
+      originalEntries.flatMap((entry) => entry.lines.map((line) => line.accountId)),
+      command.error,
+    );
     const lockedLines = await lockJournalLines(
       tx,
       command.companyId,
@@ -321,13 +378,9 @@ export class PostingEngine {
         lines: entry.lines,
       })),
       command.error,
+      "HISTORICAL",
     );
 
-    const documentNumber = await command.reserveDocumentNumber(
-      tx,
-      period,
-      original.documentType,
-    );
     const reversalDocument = await tx.accountingDocument.create({
       data: {
         companyId: command.companyId,
@@ -481,12 +534,30 @@ export class PostingEngine {
     };
   }
 
+  private snapshotEntries(
+    entries: PostingEntryPlan[],
+  ) {
+    return entries.map((entry) => ({
+      ...entry,
+      entryDate: new Date(entry.entryDate.getTime()),
+      lines: entry.lines.map((line) => ({
+        ...line,
+        exchangeRate: decimal(line.exchangeRate),
+        debitAmount: decimal(line.debitAmount),
+        creditAmount: decimal(line.creditAmount),
+        baseDebitAmount: decimal(line.baseDebitAmount),
+        baseCreditAmount: decimal(line.baseCreditAmount),
+      })),
+    }));
+  }
+
   private async validateEntries(
     tx: Prisma.TransactionClient,
     companyId: bigint,
     period: FiscalPeriod,
     entries: PostingEntryPlan[],
     error: (reason: PostingFailureReason) => Error,
+    accountEligibility: "CURRENT" | "HISTORICAL" = "CURRENT",
   ) {
     if (entries.length === 0) throw error("INVALID_LINE");
     if (new Set(entries.map((entry) => entry.entryNumber)).size !== entries.length)
@@ -537,12 +608,12 @@ export class PostingEngine {
     });
     if (
       accounts.length !== accountIds.length ||
-      accounts.some(
+      (accountEligibility === "CURRENT" && accounts.some(
         (account) =>
           !account.isActive ||
           !account.allowsPosting ||
           account._count.children > 0,
-      )
+      ))
     ) {
       throw error("INVALID_ACCOUNT");
     }

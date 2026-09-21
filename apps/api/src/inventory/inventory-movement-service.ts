@@ -8,7 +8,6 @@ import {
 } from "../core-accounting/posting-engine.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
 import type { ActorContext } from "../platform/actor-context.js";
-import type { AccountReferenceLockPort } from "../accounts/account-reference-lock-port.js";
 
 export type InventoryMovementErrorReason =
   | "NOT_FOUND"
@@ -212,10 +211,7 @@ export class InventoryMovementService implements InventoryInvoiceStockPort {
   private readonly commands: IdempotentCommandExecutor;
   private readonly posting = new PostingEngine();
 
-  constructor(
-    private readonly prisma: PrismaClient,
-    private readonly accountReferences: AccountReferenceLockPort,
-  ) {
+  constructor(private readonly prisma: PrismaClient) {
     this.commands = new IdempotentCommandExecutor(prisma);
   }
 
@@ -588,6 +584,11 @@ export class InventoryMovementService implements InventoryInvoiceStockPort {
     }];
     let movementId = 0n;
     let offsetAccountId = 0n;
+    let manualPolicy: {
+      baseCurrencyId: bigint;
+      inventoryAccountId: bigint;
+      offsetAccountId: bigint;
+    } | undefined;
     await this.posting.postPlan(tx, {
       companyId: context.companyId,
       documentId: document.id,
@@ -635,6 +636,16 @@ export class InventoryMovementService implements InventoryInvoiceStockPort {
         ];
         movementId = created.id;
         offsetAccountId = policy.offsetAccountId;
+        manualPolicy = policy;
+      },
+      afterAccountLocks: async (postingTx) => {
+        if (!manualPolicy) throw new InventoryMovementError("INVALID_STATE");
+        await this.assertManualAccountingPolicyStillCurrent(
+          postingTx,
+          context.companyId,
+          input.movementType,
+          manualPolicy,
+        );
       },
       error: (postingReason) => this.postingError(postingReason),
     });
@@ -668,17 +679,28 @@ export class InventoryMovementService implements InventoryInvoiceStockPort {
       context.companyId,
       input.movementType,
     );
-    await this.lockOffsetAccounts(tx, context.companyId, [policy.offsetAccountId]);
-    const lockedPolicy = await this.resolveManualAccountingPolicy(
-      tx,
-      context.companyId,
-      input.movementType,
-    );
-    if (lockedPolicy.offsetAccountId !== policy.offsetAccountId) {
+    const created = await this.createInTransaction(tx, context, input);
+    return { created, policy };
+  }
+
+  private async assertManualAccountingPolicyStillCurrent(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+    movementType: InventoryMovementType,
+    expected: {
+      baseCurrencyId: bigint;
+      inventoryAccountId: bigint;
+      offsetAccountId: bigint;
+    },
+  ) {
+    const current = await this.resolveManualAccountingPolicy(tx, companyId, movementType);
+    if (
+      current.baseCurrencyId !== expected.baseCurrencyId
+      || current.inventoryAccountId !== expected.inventoryAccountId
+      || current.offsetAccountId !== expected.offsetAccountId
+    ) {
       throw new InventoryMovementError("INVENTORY_ACCOUNTING_NOT_CONFIGURED");
     }
-    const created = await this.createInTransaction(tx, context, input);
-    return { created, policy: lockedPolicy };
   }
 
   private async attachReversalAccounting(
@@ -1527,22 +1549,6 @@ export class InventoryMovementService implements InventoryInvoiceStockPort {
       inventoryAccountId: inventory!.id,
       offsetAccountId: offset!.id,
     };
-  }
-
-  private async lockOffsetAccounts(
-    tx: Prisma.TransactionClient,
-    companyId: bigint,
-    accountIds: readonly bigint[],
-  ) {
-    const sortedAccountIds = [...new Set(accountIds.map(String))]
-      .map(BigInt)
-      .sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
-    for (const accountId of sortedAccountIds) {
-      const locked = await this.accountReferences.lockPostingAccount(tx, companyId, accountId);
-      if (!locked.eligible) {
-        throw new InventoryMovementError("INVENTORY_ACCOUNTING_NOT_CONFIGURED");
-      }
-    }
   }
 
   private postingError(reason: PostingFailureReason) {
