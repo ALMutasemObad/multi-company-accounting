@@ -87,7 +87,7 @@ describe.runIf(process.env.RUN_GROUP_ONBOARDING_BROWSER_TESTS === "true")("group
     await page.route("**/api/v1/organizations/1/company-options", route => route.fulfill({ json: companyOptions(
       [{ code: "SAR", nameAr: "ريال" }, { code: "USD", nameAr: "دولار" }],
       ["UTC", "Asia/Riyadh"],
-    ) } }));
+    ) }));
     await page.route("**/api/v1/organizations/1/companies", route => { keys.push(route.request().headers()["idempotency-key"]); return route.fulfill({ status: 422, json: { code: "BUSINESS_RULE_VIOLATION" } }); });
     await page.goto(`${origin}/__group-company-test`);
     await fillCompanyForm(page, "Preserved company");
