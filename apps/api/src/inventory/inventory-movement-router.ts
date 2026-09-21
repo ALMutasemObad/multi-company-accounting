@@ -56,64 +56,21 @@ const externalPositionType = z.enum([
   "OWNED_HELD_BY_THIRD_PARTY",
   "OWNED_IN_TRANSIT",
 ]);
-const partyInput = z.object({
-  code: z.string().trim().min(1).max(40),
-  nameAr: z.string().trim().min(1).max(200),
-  nameEn: z.string().trim().max(200).nullable().optional(),
-});
-const externalStockEventInput = z.object({
-  positionId: id.optional(),
-  positionType: externalPositionType.optional(),
-  inventoryItemId: id.optional(),
-  custodyPartyId: id.optional(),
-  warehouseId: id.nullable().optional(),
-  externalLocation: z.string().trim().max(300).nullable().optional(),
-  transitOrigin: z.string().trim().max(300).nullable().optional(),
-  transitDestination: z.string().trim().max(300).nullable().optional(),
-  eventType: z.enum(["INCREASE", "DECREASE"]),
-  quantity: z.string().regex(/^\d{1,13}(?:\.\d{1,6})?$/u),
-  inventoryValueBase: z.string().regex(/^\d{1,15}(?:\.\d{1,4})?$/u).nullable(),
-  sourceReference: z.string().trim().min(1).max(100),
-  effectiveDate: isoDate,
-});
 const stockCountStatus = z.enum(["DRAFT", "SUBMITTED", "APPROVED"]);
 const stockCountListQuery = z.object({
   ...basePage,
   warehouseId: id.optional(),
   status: stockCountStatus.optional(),
 });
-const stockCountCreateInput = z.object({
-  warehouseId: id,
-  countDate: isoDate.transform((value) => new Date(`${value}T00:00:00.000Z`)),
-  committee: z.array(z.object({
-    name: z.string().trim().min(1).max(160),
-    role: z.string().trim().min(1).max(120),
-  }).strict()).min(1).max(50),
-  locations: z.array(z.object({
-    inventoryItemId: id,
-    location: z.string().trim().max(300).nullable().optional(),
-    shelf: z.string().trim().max(120).nullable().optional(),
-  }).strict()).max(5_000).optional(),
-}).strict();
+const stockCountCreateInput = bodies.createInventoryCountSession.transform((input) => ({
+  ...input,
+  countDate: new Date(`${input.countDate}T00:00:00.000Z`),
+}));
 const stockCountLinesQuery = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(1_000).default(100),
   search: z.string().trim().min(1).max(200).optional(),
 });
-const stockCountBulkInput = z.object({
-  rows: z.array(z.object({
-    lineId: id,
-    expectedVersion: z.number().int().nonnegative(),
-    countedQuantity: z.string().regex(/^(?:0|[1-9]\d*)(?:\.\d{1,6})?$/u),
-    varianceReason: z.string().trim().max(500).nullable().optional(),
-  }).strict()).min(1).max(5_000),
-}).strict();
-const stockCountTransitionInput = z.object({
-  expectedVersion: z.number().int().nonnegative(),
-}).strict();
-const stockCountApprovalInput = stockCountTransitionInput.extend({
-  approverName: z.string().trim().min(1).max(160),
-}).strict();
 
 function sid(request: Request) {
   return Object.fromEntries(
@@ -201,19 +158,19 @@ export function createInventoryMovementRouter(
 
   router.post("/inventory-count-sessions/:sessionId/counts", async (request, response) => {
     const context = await authorize(request, "inventory_movements.create", true);
-    const input = stockCountBulkInput.parse(request.body);
+    const input = bodies.enterInventoryCountQuantities.parse(request.body);
     response.json(await service.inventoryCount.bulkEnterCounts(context, id.parse(request.params.sessionId), input.rows));
   });
 
   router.post("/inventory-count-sessions/:sessionId/submit", async (request, response) => {
     const context = await authorize(request, "inventory_movements.create", true);
-    const input = stockCountTransitionInput.parse(request.body);
+    const input = bodies.submitInventoryCountSession.parse(request.body);
     response.json(await service.inventoryCount.submit(context, id.parse(request.params.sessionId), input.expectedVersion));
   });
 
   router.post("/inventory-count-sessions/:sessionId/approve", async (request, response) => {
     const context = await authorize(request, "inventory_movements.create", true);
-    const input = stockCountApprovalInput.parse(request.body);
+    const input = bodies.approveInventoryCountSession.parse(request.body);
     response.json(await service.inventoryCount.approve(
       context,
       id.parse(request.params.sessionId),
@@ -229,7 +186,10 @@ export function createInventoryMovementRouter(
 
   router.post("/external-inventory-parties", async (request, response) => {
     const context = await authorize(request, "inventory_movements.create", true);
-    response.status(201).json(await service.externalStock.createParty(context, partyInput.parse(request.body)));
+    response.status(201).json(await service.externalStock.createParty(
+      context,
+      bodies.createExternalInventoryParty.parse(request.body),
+    ));
   });
 
   router.get("/external-stock-positions", async (request, response) => {
@@ -245,7 +205,7 @@ export function createInventoryMovementRouter(
     const context = await authorize(request, "inventory_movements.create", true);
     response.status(201).json(await service.externalStock.recordEvent(
       context,
-      externalStockEventInput.parse(request.body),
+      bodies.recordExternalStockPositionEvent.parse(request.body),
       idempotencyKey(request),
     ));
   });
