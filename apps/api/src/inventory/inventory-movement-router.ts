@@ -6,6 +6,14 @@ import {
   InventoryMovementError,
   InventoryMovementService,
 } from "./inventory-movement-service.js";
+import {
+  currentInventoryValuationReport,
+  inventoryValuationXlsx,
+} from "./inventory-valuation-report/report.js";
+import {
+  ExternalStockPositionError,
+} from "./stock-position/external-stock-position-service.js";
+import { InventoryCountError } from "./inventory-count/inventory-count-service.js";
 
 const id = z.string().regex(/^[1-9][0-9]*$/u).transform(BigInt);
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u);
@@ -28,6 +36,12 @@ const balanceQuery = z.object({
   inventoryItemId: id.optional(),
   nonZero: z.enum(["true", "false"]).transform((value) => value === "true").optional(),
 });
+const valuationReportQuery = z.object({
+  search: z.string().trim().min(1).max(200).optional(),
+  warehouseId: id.optional(),
+  inventoryItemId: id.optional(),
+  valuationStatus: z.enum(["ALL", "VALUED", "UNVALUED"]).default("ALL"),
+});
 const movementQuery = z.object({
   ...basePage,
   movementType: movementType.optional(),
@@ -36,6 +50,26 @@ const movementQuery = z.object({
   warehouseId: id.optional(),
   inventoryItemId: id.optional(),
   search: z.string().trim().min(1).optional(),
+});
+const externalPositionType = z.enum([
+  "THIRD_PARTY_HELD_BY_US",
+  "OWNED_HELD_BY_THIRD_PARTY",
+  "OWNED_IN_TRANSIT",
+]);
+const stockCountStatus = z.enum(["DRAFT", "SUBMITTED", "APPROVED"]);
+const stockCountListQuery = z.object({
+  ...basePage,
+  warehouseId: id.optional(),
+  status: stockCountStatus.optional(),
+});
+const stockCountCreateInput = bodies.createInventoryCountSession.transform((input) => ({
+  ...input,
+  countDate: new Date(`${input.countDate}T00:00:00.000Z`),
+}));
+const stockCountLinesQuery = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(1_000).default(100),
+  search: z.string().trim().min(1).max(200).optional(),
 });
 
 function sid(request: Request) {
@@ -79,6 +113,110 @@ export function createInventoryMovementRouter(
       data: result.data.map(InventoryMovementService.balanceJson),
       meta: meta(query, result.total),
     });
+  });
+
+  router.get("/inventory-valuation-report", async (request, response) => {
+    const context = await authorize(request, "inventory_movements.view", false);
+    response.json(await currentInventoryValuationReport(service, context, valuationReportQuery.parse(request.query)));
+  });
+
+  router.get("/inventory-valuation-report.xlsx", async (request, response) => {
+    const context = await authorize(request, "inventory_movements.view", false);
+    const report = await currentInventoryValuationReport(service, context, valuationReportQuery.parse(request.query));
+    response.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    response.setHeader("Content-Disposition", "attachment; filename=inventory-current-valuation.xlsx");
+    response.send(inventoryValuationXlsx(report));
+  });
+
+  router.get("/inventory-count-sessions", async (request, response) => {
+    const context = await authorize(request, "inventory_movements.view", false);
+    const query = stockCountListQuery.parse(request.query);
+    const result = await service.inventoryCount.listSessions(context, query);
+    response.json({ data: result.data, meta: meta(query, result.total) });
+  });
+
+  router.post("/inventory-count-sessions", async (request, response) => {
+    const context = await authorize(request, "inventory_movements.create", true);
+    response.status(201).json(await service.inventoryCount.createSession(
+      context,
+      stockCountCreateInput.parse(request.body),
+      idempotencyKey(request),
+    ));
+  });
+
+  router.get("/inventory-count-sessions/:sessionId", async (request, response) => {
+    const context = await authorize(request, "inventory_movements.view", false);
+    response.json(await service.inventoryCount.getSession(context, id.parse(request.params.sessionId)));
+  });
+
+  router.get("/inventory-count-sessions/:sessionId/lines", async (request, response) => {
+    const context = await authorize(request, "inventory_movements.view", false);
+    const query = stockCountLinesQuery.parse(request.query);
+    const result = await service.inventoryCount.listLines(context, id.parse(request.params.sessionId), query);
+    response.json({ data: result.data, meta: meta(query, result.summary.total), summary: result.summary });
+  });
+
+  router.post("/inventory-count-sessions/:sessionId/counts", async (request, response) => {
+    const context = await authorize(request, "inventory_movements.create", true);
+    const input = bodies.enterInventoryCountQuantities.parse(request.body);
+    response.json(await service.inventoryCount.bulkEnterCounts(context, id.parse(request.params.sessionId), input.rows));
+  });
+
+  router.post("/inventory-count-sessions/:sessionId/submit", async (request, response) => {
+    const context = await authorize(request, "inventory_movements.create", true);
+    const input = bodies.submitInventoryCountSession.parse(request.body);
+    response.json(await service.inventoryCount.submit(context, id.parse(request.params.sessionId), input.expectedVersion));
+  });
+
+  router.post("/inventory-count-sessions/:sessionId/approve", async (request, response) => {
+    const context = await authorize(request, "inventory_movements.create", true);
+    const input = bodies.approveInventoryCountSession.parse(request.body);
+    response.json(await service.inventoryCount.approve(
+      context,
+      id.parse(request.params.sessionId),
+      input.expectedVersion,
+      input.approverName,
+    ));
+  });
+
+  router.get("/external-inventory-parties", async (request, response) => {
+    const context = await authorize(request, "inventory_movements.view", false);
+    response.json({ data: await service.externalStock.listParties(context) });
+  });
+
+  router.post("/external-inventory-parties", async (request, response) => {
+    const context = await authorize(request, "inventory_movements.create", true);
+    response.status(201).json(await service.externalStock.createParty(
+      context,
+      bodies.createExternalInventoryParty.parse(request.body),
+    ));
+  });
+
+  router.get("/external-stock-positions", async (request, response) => {
+    const context = await authorize(request, "inventory_movements.view", false);
+    const query = z.object({
+      positionType: externalPositionType.optional(),
+      includeZero: z.enum(["true", "false"]).transform((value) => value === "true").optional(),
+    }).parse(request.query);
+    response.json({ data: await service.externalStock.listPositions(context, query) });
+  });
+
+  router.post("/external-stock-positions/events", async (request, response) => {
+    const context = await authorize(request, "inventory_movements.create", true);
+    response.status(201).json(await service.externalStock.recordEvent(
+      context,
+      bodies.recordExternalStockPositionEvent.parse(request.body),
+      idempotencyKey(request),
+    ));
+  });
+
+  router.post("/external-stock-position-events/:eventId/reverse", async (request, response) => {
+    const context = await authorize(request, "inventory_movements.reverse", true);
+    response.json(await service.externalStock.reverseLatestEvent(
+      context,
+      id.parse(request.params.eventId),
+      idempotencyKey(request),
+    ));
   });
 
   router.get("/inventory-movements", async (request, response) => {
@@ -150,6 +288,31 @@ export function createInventoryMovementRouter(
         code: "BUSINESS_RULE_VIOLATION",
         reason: error.reason,
       });
+      return;
+    }
+    if (error instanceof ExternalStockPositionError) {
+      const status = error.reason === "NOT_FOUND" ? 404 : [
+        "DUPLICATE_CODE",
+        "IDEMPOTENCY_MISMATCH",
+        "ALREADY_REVERSED",
+        "NOT_LATEST_EVENT",
+        "VERSION_CONFLICT",
+      ].includes(error.reason) ? 409 : 422;
+      response.status(status).json({ status, code: "BUSINESS_RULE_VIOLATION", reason: error.reason });
+      return;
+    }
+    if (error instanceof InventoryCountError) {
+      const status = error.reason === "NOT_FOUND"
+        ? 404
+        : [
+            "VERSION_CONFLICT",
+            "IDEMPOTENCY_MISMATCH",
+            "IDEMPOTENCY_IN_PROGRESS",
+            "INVALID_STATE",
+          ].includes(error.reason)
+          ? 409
+          : 422;
+      response.status(status).json({ status, code: "BUSINESS_RULE_VIOLATION", reason: error.reason });
       return;
     }
     next(error);

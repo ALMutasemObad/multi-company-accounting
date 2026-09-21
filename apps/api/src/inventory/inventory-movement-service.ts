@@ -8,6 +8,8 @@ import {
 } from "../core-accounting/posting-engine.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
 import type { ActorContext } from "../platform/actor-context.js";
+import { ExternalStockPositionService } from "./stock-position/external-stock-position-service.js";
+import { InventoryCountService } from "./inventory-count/inventory-count-service.js";
 
 export type InventoryMovementErrorReason =
   | "NOT_FOUND"
@@ -210,9 +212,13 @@ export function invoiceStockMovementType(
 export class InventoryMovementService implements InventoryInvoiceStockPort {
   private readonly commands: IdempotentCommandExecutor;
   private readonly posting = new PostingEngine();
+  readonly externalStock: ExternalStockPositionService;
+  readonly inventoryCount: InventoryCountService;
 
   constructor(private readonly prisma: PrismaClient) {
     this.commands = new IdempotentCommandExecutor(prisma);
+    this.externalStock = new ExternalStockPositionService(prisma);
+    this.inventoryCount = new InventoryCountService(prisma);
   }
 
   async listBalances(

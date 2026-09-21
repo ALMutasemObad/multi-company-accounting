@@ -11,8 +11,8 @@ import {
 } from "../generate-openapi-guards.mjs";
 
 test("generated OpenAPI guards are committed and current", () => {
-  assert.equal(guardedOperationIds.length, 187);
-  assert.equal(responseOperationIds.length, 368);
+  assert.equal(guardedOperationIds.length, 193);
+  assert.equal(responseOperationIds.length, 382);
   for (const operation of ['getCompanyProfile', 'updateCompanyProfile', 'getCompanyCompliance', 'updateCompanyCompliance']) {
     assert.ok(responseOperationIds.includes(operation));
   }
@@ -54,6 +54,17 @@ test("generated OpenAPI guards are committed and current", () => {
   assert.ok(guardedOperationIds.includes("createInventoryMovement"));
   assert.ok(guardedOperationIds.includes("initializeInventoryBalanceValuation"));
   assert.ok(guardedOperationIds.includes("reverseInventoryMovement"));
+  for (const operation of [
+    "createInventoryCountSession",
+    "enterInventoryCountQuantities",
+    "submitInventoryCountSession",
+    "approveInventoryCountSession",
+    "createExternalInventoryParty",
+    "recordExternalStockPositionEvent",
+  ]) {
+    assert.ok(guardedOperationIds.includes(operation));
+  }
+  assert.ok(responseOperationIds.includes("reverseExternalStockPositionEvent"));
   assert.ok(guardedOperationIds.includes("commitDataImport"));
   assert.ok(guardedOperationIds.includes("commitBankStatementImport"));
   assert.ok(guardedOperationIds.includes("closeBankReconciliationSession"));
@@ -102,7 +113,7 @@ test("guard generation reflects request constraints from the contract", () => {
 
 test("guard generation covers request transforms and response schemas", () => {
   const generated = buildGeneratedSource();
-  assert.match(generated, /openApiContractCoverage = \{ operations: 368, requestBodies: 187, responseBodies: 2423 \}/u);
+  assert.match(generated, /openApiContractCoverage = \{ operations: 382, requestBodies: 193, responseBodies: 2513 \}/u);
   assert.match(generated, /"receivableItemId": z\.string\(\).*\.transform\(\(value\) => BigInt\(value\)\)/u);
   assert.match(generated, /export const openApiResponseBodySchemas = \{/u);
 });
