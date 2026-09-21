@@ -94,8 +94,8 @@ describe.runIf(enabled)('manual journal lifecycle with MariaDB', () => {
     }
     await prisma!.userCompanyRole.create({ data: { userId: makerId, companyId, roleId: role.id } });
     const type = await prisma!.accountType.findFirstOrThrow();
-    debitId = (await prisma!.account.upsert({ where: { companyId_code: { companyId, code: 'IT-JRN-D' } }, update: { isActive: true, allowsPosting: true }, create: { companyId, accountTypeId: type.id, code: 'IT-JRN-D', nameAr: 'مدين اختباري', level: 1, allowsPosting: true } })).id;
-    creditId = (await prisma!.account.upsert({ where: { companyId_code: { companyId, code: 'IT-JRN-C' } }, update: { isActive: true, allowsPosting: true }, create: { companyId, accountTypeId: type.id, code: 'IT-JRN-C', nameAr: 'دائن اختباري', level: 1, allowsPosting: true } })).id;
+    debitId = (await prisma!.account.upsert({ where: { companyId_code: { companyId, code: 'IT-JRN-D' } }, update: { isActive: true, allowsPosting: true, version: { increment: 1 } }, create: { companyId, accountTypeId: type.id, code: 'IT-JRN-D', nameAr: 'مدين اختباري', level: 1, allowsPosting: true } })).id;
+    creditId = (await prisma!.account.upsert({ where: { companyId_code: { companyId, code: 'IT-JRN-C' } }, update: { isActive: true, allowsPosting: true, version: { increment: 1 } }, create: { companyId, accountTypeId: type.id, code: 'IT-JRN-C', nameAr: 'دائن اختباري', level: 1, allowsPosting: true } })).id;
     costCenterId = (await prisma!.costCenter.upsert({ where: { companyId_code: { companyId, code: 'IT-JRN-CC' } }, update: { isActive: true }, create: { companyId, code: 'IT-JRN-CC', nameAr: 'مركز قيد اختباري' } })).id;
     const oldYear = await prisma!.fiscalYear.findFirst({ where: { companyId, name: 'IT-JRN-2042' } });
     if (oldYear) await removeYear(oldYear.id);

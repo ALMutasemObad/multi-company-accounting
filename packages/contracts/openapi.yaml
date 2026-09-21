@@ -5025,7 +5025,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ReasonRequest'
+              $ref: '#/components/schemas/AccountVersionReasonRequest'
       x-permission: accounts.delete
       security:
       - SessionCookie: []
@@ -5075,7 +5075,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ReasonRequest'
+              $ref: '#/components/schemas/AccountVersionReasonRequest'
       x-permission: accounts.deactivate
       security:
       - SessionCookie: []
@@ -14747,6 +14747,7 @@ components:
       - allowsPosting
       - isControlAccount
       - isActive
+      - version
       - sourceTemplateCode
       - sourceTemplateKey
       properties:
@@ -14788,6 +14789,10 @@ components:
           type: boolean
         isActive:
           type: boolean
+        version:
+          type: integer
+          minimum: 0
+          maximum: 4294967295
         sourceTemplateCode:
           type:
           - string
@@ -14843,8 +14848,14 @@ components:
     AccountUpdateRequest:
       type: object
       additionalProperties: false
-      minProperties: 1
+      required:
+      - expectedVersion
+      minProperties: 2
       properties:
+        expectedVersion:
+          type: integer
+          minimum: 0
+          maximum: 4294967295
         accountTypeId:
           type: string
           pattern: ^[1-9][0-9]*$
@@ -14877,6 +14888,22 @@ components:
           type: boolean
         isControlAccount:
           type: boolean
+    AccountVersionReasonRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - expectedVersion
+      - reason
+      properties:
+        expectedVersion:
+          type: integer
+          minimum: 0
+          maximum: 4294967295
+        reason:
+          type: string
+          x-trim: true
+          minLength: 3
+          maxLength: 500
     DefaultChartTemplateStatus:
       type: object
       required:

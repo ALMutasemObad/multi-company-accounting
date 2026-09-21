@@ -34,7 +34,7 @@ describe.runIf(enabled)("Treasury ownership, concurrency and company isolation",
     const assetType = await prisma!.accountType.findFirstOrThrow({ where: { code: "ASSET" } });
     ledgerAccountId = (await prisma!.account.upsert({
       where: { companyId_code: { companyId, code: "IT-TREASURY-LEDGER" } },
-      update: { isActive: true, allowsPosting: true },
+      update: { isActive: true, allowsPosting: true, version: { increment: 1 } },
       create: {
         companyId,
         accountTypeId: assetType.id,

@@ -1,8 +1,8 @@
 ---
 title: "خطة شرائح مركز تعيين الحسابات الافتراضية"
-status: "planned; documentation only"
-version: "1.3"
-date: "2026-09-09"
+status: "planned; ADM-1A implemented locally"
+version: "1.4"
+date: "2026-09-21"
 related:
   - "ADR-023-central-accounting-mappings.md"
   - "ARCHITECTURE_GUARDRAILS_AR.md"
@@ -20,8 +20,20 @@ related:
 ولقطات المستند عند مالكيها. تنتهي الخطة بإزالة بحث Inventory وFX وFinancial Close
 عن `SMALL_BUSINESS_GENERAL` و`sourceTemplateKey` والرمز `3300` وقت التشغيل.
 
-هذه الوثيقة خطة تنفيذ وليست ادعاء تنفيذ. لا تنشئ المهمة الحالية Schema أو API أو
-واجهة أو Permission.
+هذه الوثيقة خطة تنفيذ. نُفذت محليًا شريحة ADM-1A الأساسية فقط في 2026-09-21؛ لم
+يبدأ جدول mappings أو API أو واجهة أو Permission لـADM-1B وما بعدها.
+
+### حالة ADM-1A
+
+- `Account.version` هو `INT UNSIGNED NOT NULL DEFAULT 0` ويظهر في DTO.
+- PATCH/deactivate/delete تتطلب `expectedVersion`، وتنفذ CAS على
+  `(id, companyId, version)`؛ يعاد `VERSION_CONFLICT` مع 409.
+- reparent يزيد نسخة الجذر وكل descendant تغير `level` له مرة واحدة، ولا يمس غير
+  المتأثرين؛ تجرى الكتابات بترتيب `id` داخل معاملة Serializable.
+- ربط القالب لحساب موجود يستخدم النسخة التي قرأها الخادم وCAS وزيادة واحدة، ولا
+  تزيد إعادة التطبيق idempotent النسخة.
+- rollback يحافظ على العمود؛ binary قديم بلا CAS ليس مسار rollback صالحًا.
+- بقيت ADM-1B وجميع mappings وconsumers خارج هذه الشريحة.
 
 ## 2. Baseline يجب تثبيته قبل أي تعديل
 

@@ -143,6 +143,7 @@ type TemplateAccount = {
   level: number;
   allowsPosting: boolean;
   isActive: boolean;
+  version: number;
   sourceTemplateCode: string | null;
   sourceTemplateKey: string | null;
 };
@@ -168,7 +169,7 @@ function findMatches(accounts: TemplateAccount[], definition: DefaultChartDefini
 export async function inspectDefaultChartTemplate(tx: Prisma.TransactionClient, companyId: bigint, templateCode: ChartTemplateCode = DEFAULT_CHART_TEMPLATE_CODE): Promise<DefaultChartTemplateStatus> {
   const accounts = await tx.account.findMany({
     where: { companyId },
-    select: { id: true, code: true, parentAccountId: true, level: true, allowsPosting: true, isActive: true, sourceTemplateCode: true, sourceTemplateKey: true },
+    select: { id: true, code: true, parentAccountId: true, level: true, allowsPosting: true, isActive: true, version: true, sourceTemplateCode: true, sourceTemplateKey: true },
   });
   let matched = 0; let inactive = 0; let conflicts = 0;
   const definitions = [
@@ -196,7 +197,7 @@ export async function applyDefaultChartTemplate(tx: Prisma.TransactionClient, co
   const types = new Map((await tx.accountType.findMany({ select: { id: true, code: true } })).map((type) => [type.code, type.id]));
   const accounts: TemplateAccount[] = await tx.account.findMany({
     where: { companyId },
-    select: { id: true, code: true, parentAccountId: true, level: true, allowsPosting: true, isActive: true, sourceTemplateCode: true, sourceTemplateKey: true },
+    select: { id: true, code: true, parentAccountId: true, level: true, allowsPosting: true, isActive: true, version: true, sourceTemplateCode: true, sourceTemplateKey: true },
   });
   const resolved = new Map<string, TemplateAccount>();
   let created = 0; let linked = 0; let existing = 0;
@@ -211,10 +212,14 @@ export async function applyDefaultChartTemplate(tx: Prisma.TransactionClient, co
     let account = marked ?? byCode;
     if (account) {
       if (!marked) {
-        account = await tx.account.update({
-          where: { id: account.id },
-          data: { sourceTemplateCode, sourceTemplateKey: definition.key },
-          select: { id: true, code: true, parentAccountId: true, level: true, allowsPosting: true, isActive: true, sourceTemplateCode: true, sourceTemplateKey: true },
+        const linkedAccount = await tx.account.updateMany({
+          where: { id: account.id, companyId, version: account.version },
+          data: { sourceTemplateCode, sourceTemplateKey: definition.key, version: { increment: 1 } },
+        });
+        if (linkedAccount.count !== 1) throw new Error(`DEFAULT_CHART_VERSION_CONFLICT:${account.id}`);
+        account = await tx.account.findFirstOrThrow({
+          where: { id: account.id, companyId },
+          select: { id: true, code: true, parentAccountId: true, level: true, allowsPosting: true, isActive: true, version: true, sourceTemplateCode: true, sourceTemplateKey: true },
         });
         const index = accounts.findIndex((item) => item.id === account!.id); accounts[index] = account; linked += 1;
       } else existing += 1;
@@ -240,7 +245,7 @@ export async function applyDefaultChartTemplate(tx: Prisma.TransactionClient, co
         sourceTemplateCode,
         sourceTemplateKey: definition.key,
       },
-      select: { id: true, code: true, parentAccountId: true, level: true, allowsPosting: true, isActive: true, sourceTemplateCode: true, sourceTemplateKey: true },
+      select: { id: true, code: true, parentAccountId: true, level: true, allowsPosting: true, isActive: true, version: true, sourceTemplateCode: true, sourceTemplateKey: true },
     });
     accounts.push(account); resolved.set(definition.key, account); created += 1;
   }

@@ -59,6 +59,19 @@ describe('generated OpenAPI request guards', () => {
     ]));
   });
 
+  it('requires Account expectedVersion and exposes the resulting version', () => {
+    expect(openApiRequestBodySchemas.updateAccount.safeParse({ nameAr: 'تعديل' }).success).toBe(false);
+    expect(openApiRequestBodySchemas.updateAccount.safeParse({ expectedVersion: 3 }).success).toBe(false);
+    expect(openApiRequestBodySchemas.updateAccount.parse({ expectedVersion: 3, nameAr: '  تعديل  ' })).toEqual({ expectedVersion: 3, nameAr: 'تعديل' });
+    for (const operation of ['deactivateAccount', 'deleteAccount'] as const) {
+      expect(openApiRequestBodySchemas[operation].safeParse({ reason: 'سبب موثق' }).success).toBe(false);
+      expect(openApiRequestBodySchemas[operation].parse({ expectedVersion: 4, reason: '  سبب موثق  ' })).toEqual({ expectedVersion: 4, reason: 'سبب موثق' });
+    }
+    const account = { id: '1', accountTypeId: '2', parentAccountId: null, code: '1000', nameAr: 'الأصول', nameEn: null, level: 1, allowsPosting: false, isControlAccount: false, isActive: true, version: 5, sourceTemplateCode: null, sourceTemplateKey: null };
+    expect(parseOpenApiResponseBody('getAccount', 200, account)).toMatchObject({ id: '1', version: 5 });
+    expect(() => parseOpenApiResponseBody('getAccount', 200, { ...account, version: undefined })).toThrow();
+  });
+
   it('keeps warehouse codes server-owned and versioned changes contract-backed', () => {
     expect(openApiRequestBodySchemas.createWarehouse.parse({
       nameAr: '  المستودع الرئيسي  ', nameEn: 'Main', address: 'Riyadh',

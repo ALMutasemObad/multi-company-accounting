@@ -1,8 +1,8 @@
 ---
 title: "ADR-023 — Central Accounting Default Mappings"
-status: "proposed for acceptance; implementation not started"
-version: "1.3"
-date: "2026-09-09"
+status: "proposed for acceptance; ADM-1A implemented locally"
+version: "1.4"
+date: "2026-09-21"
 decision_owner: "Core Accounting"
 related:
   - "ARCHITECTURE_GUARDRAILS_AR.md"
@@ -569,6 +569,10 @@ source template tags أو حقائق الأطراف.
 
 ## حالة التطبيق
 
-هذه المهمة توثيقية فقط. لم يضف جدول أو Enum أو API أو صلاحية أو واجهة، ولم يتغير
-سلوك Runtime أو القوالب أو الإقفال. خطة الشرائح وبوابات التنفيذ في
+نُفذت محليًا شريحة ADM-1A فقط: أضيف `Account.version`، وأصبحت أوامر تعديل الحساب
+وتعطيله وحذفه تستخدم `expectedVersion` وCAS مع عزل الشركة. يزيد reparent نسخة الجذر
+وكل تابع تغير مستواه مرة واحدة، ويربط تطبيق القالب الحساب الموجود بـCAS وزيادة واحدة
+من دون زيادة عند الإعادة idempotent. يحافظ rollback على العمود حسب قرار السلامة
+الرتيبة. لم يبدأ جدول mappings أو API/permissions/consumers الخاصة بـADM-1B وما بعدها.
+خطة الشرائح وبوابات التنفيذ في
 [خطة مركز تعيين الحسابات](CENTRAL_ACCOUNTING_MAPPINGS_SLICE_AR.md).

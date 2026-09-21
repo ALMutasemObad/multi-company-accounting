@@ -1651,6 +1651,7 @@ model Account {
   allowsPosting            Boolean                   @map("allows_posting")
   isControlAccount         Boolean                   @default(false) @map("is_control_account")
   isActive                 Boolean                   @default(true) @map("is_active")
+  version                  Int                       @default(0) @db.UnsignedInt
   sourceTemplateCode       String?                   @map("source_template_code") @db.VarChar(80)
   sourceTemplateKey        String?                   @map("source_template_key") @db.VarChar(80)
   createdAt                DateTime                  @default(now()) @map("created_at")

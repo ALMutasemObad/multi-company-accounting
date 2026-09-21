@@ -186,7 +186,7 @@ describe.runIf(enabled)(
       arId = (
         await prisma!.account.upsert({
           where: { companyId_code: { companyId, code: "IT-RCP-AR" } },
-          update: { isActive: true, allowsPosting: true },
+          update: { isActive: true, allowsPosting: true, version: { increment: 1 } },
           create: {
             companyId,
             accountTypeId: type.id,
@@ -200,7 +200,7 @@ describe.runIf(enabled)(
       revenueId = (
         await prisma!.account.upsert({
           where: { companyId_code: { companyId, code: "IT-RCP-REV" } },
-          update: { isActive: true, allowsPosting: true },
+          update: { isActive: true, allowsPosting: true, version: { increment: 1 } },
           create: {
             companyId,
             accountTypeId: type.id,
@@ -214,7 +214,7 @@ describe.runIf(enabled)(
       cashLedgerId = (
         await prisma!.account.upsert({
           where: { companyId_code: { companyId, code: "IT-RCP-CASH-GL" } },
-          update: { isActive: true, allowsPosting: true },
+          update: { isActive: true, allowsPosting: true, version: { increment: 1 } },
           create: {
             companyId,
             accountTypeId: type.id,
