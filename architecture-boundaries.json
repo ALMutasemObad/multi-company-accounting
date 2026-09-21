@@ -235,6 +235,19 @@
       "typeOnly": true,
       "status": "implemented",
       "reason": "Inventory implements the Accounts-owned usage query contract; PostingEngine centrally locks the final ledger account set, while Inventory rechecks its specialized accounting policy through a post-lock hook without importing Accounts runtime adapters."
+    },
+    {
+      "id": "manual-journal-account-reference-lock",
+      "kind": "adapter-to-port",
+      "fromPaths": [
+        "apps/api/src/journals/manual-journal-service.ts"
+      ],
+      "toPaths": [
+        "apps/api/src/accounts/account-reference-lock-port.ts"
+      ],
+      "typeOnly": true,
+      "status": "implemented",
+      "reason": "ManualJournal consumes the Accounts-owned lock and eligibility handshake before creating or replacing draft JournalLine references."
     }
   ],
   "forbiddenImports": [

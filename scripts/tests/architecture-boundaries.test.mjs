@@ -139,6 +139,23 @@ test('Inventory implements the Accounts usage contract through its declared type
   assert.equal(runtime.diagnostics[0].file, api('inventory/inventory-account-usage-query-adapter.ts'));
 });
 
+test('ManualJournal consumes only the narrow Accounts lock contract as a type', async (t) => {
+  const setup = await fixture(t, {
+    [api('accounts/account-reference-lock-port.ts')]: 'export interface AccountReferenceLockPort {}',
+    [api('journals/manual-journal-service.ts')]: `import type { AccountReferenceLockPort } from '../accounts/account-reference-lock-port.js';`,
+  });
+  assert.equal((await checkBoundaries(setup)).ok, true);
+
+  await writeFile(path.join(setup.root, api('journals/manual-journal-service.ts')), `import { AccountReferenceLockPort } from '../accounts/account-reference-lock-port.js';`);
+  const runtime = await checkBoundaries(setup);
+  assert.equal(runtime.diagnostics[0].code, 'CROSS_CONTEXT_IMPORT');
+  assert.equal(runtime.diagnostics[0].file, api('journals/manual-journal-service.ts'));
+
+  await writeFile(path.join(setup.root, api('journals/other-service.ts')), `import type { AccountReferenceLockPort } from '../accounts/account-reference-lock-port.js';`);
+  const broadening = await checkBoundaries(setup);
+  assert.ok(broadening.diagnostics.some((diagnostic) => diagnostic.file === api('journals/other-service.ts')));
+});
+
 test('empty source root and absent reserved modules are valid', async (t) => {
   const result = await checkBoundaries(await fixture(t));
   assert.equal(result.ok, true);

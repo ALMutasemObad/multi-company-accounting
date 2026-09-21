@@ -386,7 +386,7 @@ async function startServer() {
     hr,
     employeeExpenses,
     accounts: new AccountService(database),
-    journals: new ManualJournalService(database),
+    journals: new ManualJournalService(database, accountReferenceLocks),
     customers,
     treasury,
     ...(bankReconciliation ? { bankReconciliation } : {}),

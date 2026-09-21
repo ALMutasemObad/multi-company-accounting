@@ -75,6 +75,22 @@ describe("ADM-1B account usage composition", () => {
     expect(accountService).not.toContain("AccountUsageGuard");
   });
 
+  it("injects the shared Account reference lock into ManualJournal without enabling lifecycle enforcement", async () => {
+    const [server, journals, guard, accountService] = await Promise.all([
+      source("server.ts"),
+      source("journals/manual-journal-service.ts"),
+      source("accounts/account-usage-guard.ts"),
+      source("accounts/account-service.ts"),
+    ]);
+
+    expect(server).toContain("new ManualJournalService(database, accountReferenceLocks)");
+    expect(journals).toContain('import type { AccountReferenceLockPort } from "../accounts/account-reference-lock-port.js"');
+    expect(journals).not.toContain("PrismaAccountReferenceLockAdapter");
+    expect(journals).toContain("this.accountReferences.lockPostingAccount");
+    expect(guard).toContain("enforcementEnabled: false");
+    expect(accountService).not.toContain("AccountUsageGuard");
+  });
+
   it("keeps Treasury behind Accounts-owned lifecycle ports and locks runtime writers", async () => {
     const [usageAdapter, treasuryService, receiptService, paymentService, accountService, server] = await Promise.all([
       source("treasury/treasury-account-usage-query-adapter.ts"),
