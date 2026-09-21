@@ -145,13 +145,7 @@ CREATE TABLE `external_stock_position_events` (
     ON DELETE RESTRICT ON UPDATE RESTRICT
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- The ledger is append-only. Corrections use a REVERSAL event.
-CREATE TRIGGER `external_stock_events_no_update`
-BEFORE UPDATE ON `external_stock_position_events`
-FOR EACH ROW
-SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'external_stock_position_events are immutable; append a reversal';
-
-CREATE TRIGGER `external_stock_events_no_delete`
-BEFORE DELETE ON `external_stock_position_events`
-FOR EACH ROW
-SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'external_stock_position_events are immutable; append a reversal';
+-- The service exposes this ledger as append-only and corrections use a REVERSAL
+-- event. Do not enforce immutability with database triggers: production MySQL
+-- runs with binary logging and a least-privilege migration user, where CREATE
+-- TRIGGER requires SUPER (or log_bin_trust_function_creators).
