@@ -228,14 +228,19 @@ export class InventoryCountService {
         });
         if (!warehouse) throw new InventoryCountError("NOT_FOUND");
         if (!warehouse.isActive) throw new InventoryCountError("WAREHOUSE_INACTIVE");
+        const items = await tx.inventoryItem.findMany({
+          where: { companyId: context.companyId, isActive: true },
+          include: { unitOfMeasure: true },
+          orderBy: { id: "asc" },
+        });
+        if (items.length === 0) throw new InventoryCountError("EMPTY_WAREHOUSE");
         const balances = await tx.inventoryBalance.findMany({
           where: { companyId: context.companyId, warehouseId: input.warehouseId },
-          include: { inventoryItem: { include: { unitOfMeasure: true } } },
           orderBy: { inventoryItemId: "asc" },
         });
-        if (balances.length === 0) throw new InventoryCountError("EMPTY_WAREHOUSE");
+        const balancesByItemId = new Map(balances.map((balance) => [balance.inventoryItemId.toString(), balance]));
         const unknownLocation = [...locations.keys()].some(
-          (itemId) => !balances.some((balance) => balance.inventoryItemId.toString() === itemId),
+          (itemId) => !items.some((item) => item.id.toString() === itemId),
         );
         if (unknownLocation) throw new InventoryCountError("NOT_FOUND");
         const movementBase = {
@@ -265,23 +270,23 @@ export class InventoryCountService {
             lastIssueMovementId: issue?.id ?? null,
             lastIssueMovementNumber: issue?.movementNumber ?? null,
             committeeMembers: {
-              create: committee.map((member) => ({ companyId: context.companyId, memberName: member.name, memberRole: member.role })),
+              create: committee.map((member) => ({ memberName: member.name, memberRole: member.role })),
             },
             lines: {
-              create: balances.map((balance) => {
-                const location = locations.get(balance.inventoryItemId.toString());
+              create: items.map((item) => {
+                const balance = balancesByItemId.get(item.id.toString());
+                const location = locations.get(item.id.toString());
                 return {
-                  companyId: context.companyId,
-                  inventoryItemId: balance.inventoryItemId,
-                  itemCodeSnapshot: balance.inventoryItem.code,
-                  itemTitleSnapshot: balance.inventoryItem.nameAr,
-                  unitCodeSnapshot: balance.inventoryItem.unitOfMeasure.code,
+                  inventoryItemId: item.id,
+                  itemCodeSnapshot: item.code,
+                  itemTitleSnapshot: item.nameAr,
+                  unitCodeSnapshot: item.unitOfMeasure.code,
                   locationSnapshot: location?.location ?? warehouse.address,
                   shelfSnapshot: location?.shelf ?? null,
-                  bookQuantity: balance.onHand,
-                  bookUnitCostBase: balance.averageUnitCostBase,
-                  bookValueBase: balance.inventoryValueBase,
-                  isValuationInitialized: balance.isValuationInitialized,
+                  bookQuantity: balance?.onHand ?? new Prisma.Decimal(0),
+                  bookUnitCostBase: balance?.averageUnitCostBase ?? new Prisma.Decimal(0),
+                  bookValueBase: balance?.inventoryValueBase ?? new Prisma.Decimal(0),
+                  isValuationInitialized: balance?.isValuationInitialized ?? false,
                 };
               }),
             },
