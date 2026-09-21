@@ -4,6 +4,7 @@ import { parseOpenApiResponseBody } from "../src/generated/openapi-request-guard
 import { PrismaCashFlowLedgerQueryAdapter } from "../src/reports/adapters/prisma-cash-flow-ledger-query-adapter.js";
 import { CashFlowError, CashFlowService } from "../src/reports/cash-flow-service.js";
 import { TreasuryCashFlowAccountAdapter } from "../src/treasury/cash-flow-account-adapter.js";
+import { PrismaAccountReferenceLockAdapter } from "../src/accounts/prisma-account-reference-lock-adapter.js";
 
 const enabled = process.env.RUN_DB_TESTS === "true" && Boolean(process.env.DATABASE_URL);
 const prisma = enabled ? createDatabase(process.env.DATABASE_URL!) : null;
@@ -128,7 +129,7 @@ describe.runIf(enabled)("indirect cash-flow report with MariaDB", () => {
       include: { periods: true },
     });
     periodId = year.periods[0]!.id;
-    service = new CashFlowService(prisma!, new PrismaCashFlowLedgerQueryAdapter(), new TreasuryCashFlowAccountAdapter());
+    service = new CashFlowService(prisma!, new PrismaCashFlowLedgerQueryAdapter(), new PrismaAccountReferenceLockAdapter(), new TreasuryCashFlowAccountAdapter());
 
     await createPostedDocument("CF-OPEN", "2056-12-31", [
       { accountId: cashAccountId, debit: "100.0000", credit: "0.0000" },

@@ -2,6 +2,7 @@ import { Prisma, type CashFlowMappingClassification, type PrismaClient } from "@
 import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import { TransactionExecutor } from "../platform/transaction-executor.js";
 import type { ActorContext } from "../platform/actor-context.js";
+import type { AccountReferenceLockPort } from "../accounts/account-reference-lock-port.js";
 import { calculateIndirectCashFlow, defaultCashFlowClassification } from "./cash-flow-calculator.js";
 import type {
   CashFlowAccountInput,
@@ -34,6 +35,7 @@ export class CashFlowService {
   constructor(
     private readonly prisma: PrismaClient,
     private readonly ledger: CashFlowLedgerQueryPort,
+    private readonly accountReferences: AccountReferenceLockPort,
     private readonly treasuryAccounts: TreasuryCashAccountQueryPort = noTreasuryAccounts,
   ) {
     this.transactions = new TransactionExecutor(prisma);
@@ -87,6 +89,10 @@ export class CashFlowService {
     input: { classification: CashFlowMappingClassification; version: number },
   ) {
     return this.transactions.execute({ operation: "UPDATE_CASH_FLOW_MAPPING", companyId: context.companyId }, async (tx) => {
+      const eligibility = await this.accountReferences.lockPostingAccount(tx, context.companyId, accountId);
+      if (!eligibility.eligible) {
+        throw new CashFlowError(eligibility.reason === "NOT_FOUND" ? "NOT_FOUND" : "INVALID_MAPPING");
+      }
       const account = await this.ledger.findPostingAccount(tx, context.companyId, accountId);
       if (!account) throw new CashFlowError("NOT_FOUND");
       const treasuryIds = new Set((await this.treasuryAccounts.listLedgerAccountIds(tx, context.companyId)).map(String));

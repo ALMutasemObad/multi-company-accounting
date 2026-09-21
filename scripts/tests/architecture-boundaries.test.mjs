@@ -32,12 +32,31 @@ async function fixture(t, files = {}, manifest = structuredClone(policy)) {
 
 const api = (name) => `apps/api/src/${name}`;
 
-test('policy declares seven distinct contexts, with existing and reserved paths', () => {
+test('policy declares eight distinct contexts, with existing and reserved paths', () => {
   validateManifest(policy);
   assert.deepEqual(policy.contexts.map((context) => context.id), [
-    'general-projects', 'professional-projects', 'service-catalog', 'hr', 'attendance', 'payroll', 'branch-pos',
+    'general-projects', 'professional-projects', 'service-catalog', 'hr', 'attendance', 'payroll', 'branch-pos', 'account-lifecycle',
   ]);
   assert.equal(policy.contexts.find((c) => c.id === 'professional-projects').paths[0], api('projects/**'));
+});
+
+test('Reporting reaches Accounts lifecycle contracts only through declared type-only adapters', async (t) => {
+  const setup = await fixture(t, {
+    [api('accounts/account-usage-query-port.ts')]: 'export interface AccountUsageQueryPort {}',
+    [api('accounts/account-reference-lock-port.ts')]: 'export interface AccountReferenceLockPort {}',
+    [api('reports/reporting-account-usage-adapter.ts')]: `import type { AccountUsageQueryPort } from '../accounts/account-usage-query-port.js';`,
+    [api('reports/cash-flow-service.ts')]: `import type { AccountReferenceLockPort } from '../accounts/account-reference-lock-port.js';`,
+  });
+  assert.equal((await checkBoundaries(setup)).ok, true);
+
+  await writeFile(path.join(setup.root, api('reports/cash-flow-service.ts')), `import { AccountReferenceLockPort } from '../accounts/account-reference-lock-port.js';`);
+  assert.equal((await checkBoundaries(setup)).diagnostics[0].code, 'CROSS_CONTEXT_IMPORT');
+
+  await writeFile(path.join(setup.root, api('reports/cash-flow-service.ts')), '');
+  await writeFile(path.join(setup.root, api('accounts/account-usage-guard.ts')), `import type { Report } from '../reports/report-service.js';`);
+  const reverse = await checkBoundaries(setup);
+  assert.equal(reverse.diagnostics[0].code, 'FORBIDDEN_IMPORT');
+  assert.equal(reverse.diagnostics[0].rule, 'accounts-must-not-import-reporting');
 });
 
 test('empty source root and absent reserved modules are valid', async (t) => {

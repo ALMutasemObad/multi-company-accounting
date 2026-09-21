@@ -569,10 +569,19 @@ source template tags أو حقائق الأطراف.
 
 ## حالة التطبيق
 
-نُفذت محليًا شريحة ADM-1A فقط: أضيف `Account.version`، وأصبحت أوامر تعديل الحساب
+نُفذت محليًا شريحة ADM-1A: أضيف `Account.version`، وأصبحت أوامر تعديل الحساب
 وتعطيله وحذفه تستخدم `expectedVersion` وCAS مع عزل الشركة. يزيد reparent نسخة الجذر
 وكل تابع تغير مستواه مرة واحدة، ويربط تطبيق القالب الحساب الموجود بـCAS وزيادة واحدة
 من دون زيادة عند الإعادة idempotent. يحافظ rollback على العمود حسب قرار السلامة
-الرتيبة. لم يبدأ جدول mappings أو API/permissions/consumers الخاصة بـADM-1B وما بعدها.
+الرتيبة.
+
+بدأت ADM-1B1 بعقد Usage مملوك لـCore Accounting ونتيجة محدودة
+`category/count/hasImmutableHistory`، ومنسق ثابت الترتيب يفشل مغلقًا عند نقص مالك أو
+فشل محوله. نُفذ محول Reporting لـ`CashFlowAccountMapping` داخل
+`TransactionClient`، كما أصبح كاتب Cash Flow mapping يقفل Account أولًا ويتحقق من
+نفس الشركة والنشاط وقابلية الترحيل وكونه leaf. يبقى Account lifecycle enforcement
+معطلًا صراحة لأن محولات Core/Sales/Purchases/Tax/Treasury/Inventory لم تكتمل؛ لا
+يُفسر تركيب Reporting الجزئي على أنه حارس مكتمل. لم يبدأ جدول default mappings أو
+API/permissions/consumers الخاصة بـADM-2 وما بعدها.
 خطة الشرائح وبوابات التنفيذ في
 [خطة مركز تعيين الحسابات](CENTRAL_ACCOUNTING_MAPPINGS_SLICE_AR.md).

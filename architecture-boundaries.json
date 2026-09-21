@@ -54,6 +54,18 @@
       "status": "pos-implemented-branch-reserved",
       "paths": ["apps/api/src/pos/**", "apps/api/src/branches/**", "apps/api/src/branch/**"],
       "reference": "docs/architecture/MULTI_BRANCH_POS_OPERATIONS_GOAL_AR.md"
+    },
+    {
+      "id": "account-lifecycle",
+      "name": "Core Accounting Account Lifecycle Contracts",
+      "status": "partial-implementation",
+      "paths": [
+        "apps/api/src/accounts/account-usage-query-port.ts",
+        "apps/api/src/accounts/account-usage-guard.ts",
+        "apps/api/src/accounts/account-reference-lock-port.ts",
+        "apps/api/src/accounts/prisma-account-reference-lock-adapter.ts"
+      ],
+      "reference": "docs/architecture/ADR-023-central-accounting-mappings.md"
     }
   ],
   "compositionRoots": [
@@ -129,12 +141,27 @@
       "typeOnly": true,
       "status": "reserved",
       "reason": "Reserve attendance input to Payroll without importing attendance services."
+    },
+    {
+      "id": "reporting-account-lifecycle-adapters",
+      "kind": "adapter-to-port",
+      "fromPaths": [
+        "apps/api/src/reports/reporting-account-usage-adapter.ts",
+        "apps/api/src/reports/cash-flow-service.ts"
+      ],
+      "toPaths": [
+        "apps/api/src/accounts/account-usage-query-port.ts",
+        "apps/api/src/accounts/account-reference-lock-port.ts"
+      ],
+      "typeOnly": true,
+      "status": "implemented",
+      "reason": "Reporting implements the Accounts-owned usage contract and consumes its lock/eligibility handshake without a reverse dependency."
     }
   ],
   "forbiddenImports": [
     {
       "id": "domain-must-not-import-composition",
-      "fromContexts": ["general-projects", "professional-projects", "service-catalog", "hr", "attendance", "payroll", "branch-pos"],
+      "fromContexts": ["general-projects", "professional-projects", "service-catalog", "hr", "attendance", "payroll", "branch-pos", "account-lifecycle"],
       "toPaths": ["apps/api/src/app.ts", "apps/api/src/server.ts", "apps/api/src/composition/**"],
       "reason": "Composition wires adapters; domain modules must not import the composition root."
     },
@@ -143,6 +170,12 @@
       "fromContexts": ["general-projects", "professional-projects", "service-catalog", "hr", "attendance", "payroll", "branch-pos"],
       "toPaths": ["apps/api/src/core-accounting/posting-engine.ts", "apps/api/src/journals/journal-service.ts"],
       "reason": "These contexts do not own financial posting. Payroll posting requires a separately reviewed contract."
+    },
+    {
+      "id": "accounts-must-not-import-reporting",
+      "fromPaths": ["apps/api/src/accounts/**"],
+      "toPaths": ["apps/api/src/reports/**"],
+      "reason": "Core Accounting owns lifecycle contracts and must consume Reporting only through owner-provided account usage adapters."
     }
   ],
   "forbiddenSpecifiers": []

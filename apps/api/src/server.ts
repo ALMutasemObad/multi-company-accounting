@@ -85,6 +85,9 @@ import { ProfessionalTimesheetApprovalAdapter } from './projects/professional-ti
 import { ProfessionalBillingCurrencyAdapter } from './companies/professional-billing-currency-adapter.js';
 import { ProfessionalBillingService } from './projects/professional-billing-service.js';
 import { PrismaAccountingAccountQueryAdapter } from './accounts/prisma-account-query-adapter.js';
+import { PrismaAccountReferenceLockAdapter } from './accounts/prisma-account-reference-lock-adapter.js';
+import { AccountUsageGuard } from './accounts/account-usage-guard.js';
+import { ReportingAccountUsageQueryAdapter } from './reports/reporting-account-usage-adapter.js';
 import { createBarcodeLabelService } from './composition/create-barcode-label-service.js';
 import { CompanyCapabilityService } from './platform-subscriptions/company-capability-service.js';
 import { PrismaCompanyEntitlementQueryAdapter } from './platform-subscriptions/prisma-company-entitlement-query-adapter.js';
@@ -139,6 +142,9 @@ const productImages = new ProductImageService(
   productImageFilesystem,
 );
 const accountQueries = new PrismaAccountingAccountQueryAdapter();
+const accountReferenceLocks = new PrismaAccountReferenceLockAdapter();
+const accountUsageGuard = new AccountUsageGuard([new ReportingAccountUsageQueryAdapter()]);
+const accountUsageComposition = accountUsageGuard.completeness();
 const taxes = new TaxService(database, accountQueries);
 const treasury = new TreasuryService(database, accountQueries);
 const bankReconciliation = config.BANK_RECONCILIATION_ENABLED
@@ -378,7 +384,7 @@ async function startServer() {
     suppliers,
     payments,
     reports: new ReportService(database),
-    cashFlow: new CashFlowService(database, new PrismaCashFlowLedgerQueryAdapter(), new TreasuryCashFlowAccountAdapter()),
+    cashFlow: new CashFlowService(database, new PrismaCashFlowLedgerQueryAdapter(), accountReferenceLocks, new TreasuryCashFlowAccountAdapter()),
     taxSummary: new TaxSummaryService(database, new PrismaTaxSummaryQueryAdapter()),
     costCenterActivity: new CostCenterActivityService(database, new PrismaCostCenterActivityLedgerQueryAdapter()),
     taxes,
@@ -398,6 +404,9 @@ async function startServer() {
       requestTimeoutMs: config.HTTP_REQUEST_TIMEOUT_MS,
       headersTimeoutMs: config.HTTP_HEADERS_TIMEOUT_MS,
       keepAliveTimeoutMs: config.HTTP_KEEP_ALIVE_TIMEOUT_MS,
+      accountUsageGuardComplete: accountUsageComposition.complete,
+      accountUsageGuardEnforcementEnabled: accountUsageComposition.enforcementEnabled,
+      accountUsageGuardMissingOwners: accountUsageComposition.missingOwners,
     });
     outboxWorker?.start();
   });
