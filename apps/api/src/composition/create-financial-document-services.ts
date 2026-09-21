@@ -75,7 +75,10 @@ export function createSalesInvoiceService(
   return new SalesInvoiceService(prisma, {
     taxes: dependencies.taxes,
     inventory: dependencies.inventory ?? new InventoryCatalogService(prisma),
-    stock: dependencies.stock ?? new InventoryMovementService(prisma),
+    stock: dependencies.stock ?? new InventoryMovementService(
+      prisma,
+      dependencies.accountReferences ?? new PrismaAccountReferenceLockAdapter(),
+    ),
     receivables: dependencies.receivables ?? new ReceivableItemService(),
     accountReferences: dependencies.accountReferences ?? new PrismaAccountReferenceLockAdapter(),
   });
@@ -88,7 +91,10 @@ export function createPurchaseInvoiceService(
   return new PurchaseInvoiceService(prisma, {
     taxes: dependencies.taxes,
     inventory: dependencies.inventory ?? new InventoryCatalogService(prisma),
-    stock: dependencies.stock ?? new InventoryMovementService(prisma),
+    stock: dependencies.stock ?? new InventoryMovementService(
+      prisma,
+      dependencies.accountReferences ?? new PrismaAccountReferenceLockAdapter(),
+    ),
     payables: dependencies.payables ?? new PayableItemService(),
     accountReferences: dependencies.accountReferences ?? new PrismaAccountReferenceLockAdapter(),
   });

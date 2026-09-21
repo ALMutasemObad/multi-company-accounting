@@ -222,6 +222,21 @@
       "typeOnly": true,
       "status": "implemented",
       "reason": "Treasury implements the Accounts-owned usage query contract and Treasury-owned runtime writers consume its lock/eligibility handshake without exposing Treasury models to Core Accounting."
+    },
+    {
+      "id": "inventory-account-lifecycle-ports",
+      "kind": "adapter-to-port",
+      "fromPaths": [
+        "apps/api/src/inventory/inventory-account-usage-query-adapter.ts",
+        "apps/api/src/inventory/inventory-movement-service.ts"
+      ],
+      "toPaths": [
+        "apps/api/src/accounts/account-usage-query-port.ts",
+        "apps/api/src/accounts/account-reference-lock-port.ts"
+      ],
+      "typeOnly": true,
+      "status": "implemented",
+      "reason": "Inventory implements the Accounts-owned usage query contract and locks its permanent movement offset references without importing Accounts runtime adapters."
     }
   ],
   "forbiddenImports": [

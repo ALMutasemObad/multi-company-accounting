@@ -5,7 +5,7 @@ const sourceRoot = new URL("../src/", import.meta.url);
 const source = (relative: string) => readFile(new URL(relative, sourceRoot), "utf8");
 
 describe("ADM-1B account usage composition", () => {
-  it("registers six owners but keeps lifecycle enforcement staged", async () => {
+  it("registers all seven owners but keeps lifecycle enforcement staged", async () => {
     const [server, accountService, guard] = await Promise.all([
       source("server.ts"),
       source("accounts/account-service.ts"),
@@ -17,6 +17,7 @@ describe("ADM-1B account usage composition", () => {
     expect(server).toContain("new PurchasesAccountUsageQueryAdapter()");
     expect(server).toContain("new TaxAccountUsageQueryAdapter()");
     expect(server).toContain("new TreasuryAccountUsageQueryAdapter()");
+    expect(server).toContain("new InventoryAccountUsageQueryAdapter()");
     expect(server).toContain("new ReportingAccountUsageQueryAdapter()");
     expect(server).toContain("const accountUsageComposition = accountUsageGuard.completeness()");
     expect(server).toContain("accounts: new AccountService(database)");
@@ -25,12 +26,13 @@ describe("ADM-1B account usage composition", () => {
     expect(guard).toContain('enforcementEnabled: false');
   });
 
-  it("reports the staged server composition as 6/7 with deterministic missing owners", async () => {
+  it("reports the staged server composition as complete 7/7 without enabling enforcement", async () => {
     const { CoreAccountUsageQueryAdapter } = await import("../src/accounts/core-account-usage-query-adapter.js");
     const { SalesAccountUsageQueryAdapter } = await import("../src/sales/sales-account-usage-query-adapter.js");
     const { PurchasesAccountUsageQueryAdapter } = await import("../src/purchases/purchases-account-usage-query-adapter.js");
     const { TaxAccountUsageQueryAdapter } = await import("../src/tax/tax-account-usage-query-adapter.js");
     const { TreasuryAccountUsageQueryAdapter } = await import("../src/treasury/treasury-account-usage-query-adapter.js");
+    const { InventoryAccountUsageQueryAdapter } = await import("../src/inventory/inventory-account-usage-query-adapter.js");
     const { ReportingAccountUsageQueryAdapter } = await import("../src/reports/reporting-account-usage-adapter.js");
     const { AccountUsageGuard } = await import("../src/accounts/account-usage-guard.js");
 
@@ -40,13 +42,38 @@ describe("ADM-1B account usage composition", () => {
       new PurchasesAccountUsageQueryAdapter(),
       new TaxAccountUsageQueryAdapter(),
       new TreasuryAccountUsageQueryAdapter(),
+      new InventoryAccountUsageQueryAdapter(),
       new ReportingAccountUsageQueryAdapter(),
     ]).completeness()).toEqual({
-      complete: false,
-      missingOwners: ["INVENTORY"],
+      complete: true,
+      missingOwners: [],
       duplicateOwners: [],
       enforcementEnabled: false,
     });
+  });
+
+  it("keeps Inventory behind Accounts-owned lifecycle ports and leaves PostingEngine gating explicit", async () => {
+    const [usageAdapter, movementService, accountService, server] = await Promise.all([
+      source("inventory/inventory-account-usage-query-adapter.ts"),
+      source("inventory/inventory-movement-service.ts"),
+      source("accounts/account-service.ts"),
+      source("server.ts"),
+    ]);
+
+    expect(usageAdapter).toContain('import type { AccountUsageQueryPort } from "../accounts/account-usage-query-port.js"');
+    expect(usageAdapter).toContain("tx.inventoryMovement.count");
+    expect(usageAdapter).not.toContain("PrismaClient");
+    expect(movementService).toContain('import type { AccountReferenceLockPort } from "../accounts/account-reference-lock-port.js"');
+    expect(movementService).not.toContain("PrismaAccountReferenceLockAdapter");
+    expect(movementService.indexOf("await this.lockOffsetAccounts"))
+      .toBeLessThan(movementService.indexOf("const created = await this.createInTransaction", movementService.indexOf("createManualMovementWithAccountingPolicy")));
+    expect(movementService.slice(
+      movementService.indexOf("private async attachReversalAccounting"),
+      movementService.indexOf("private async lockOffsetAccounts"),
+    )).not.toContain("lockOffsetAccounts");
+    expect(server).toContain("new InventoryMovementService(database, accountReferenceLocks)");
+    expect(accountService).not.toContain("InventoryAccountUsageQueryAdapter");
+    expect(accountService).not.toContain("AccountUsageGuard");
   });
 
   it("keeps Treasury behind Accounts-owned lifecycle ports and locks runtime writers", async () => {

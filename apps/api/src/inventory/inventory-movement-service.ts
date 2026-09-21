@@ -8,6 +8,7 @@ import {
 } from "../core-accounting/posting-engine.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
 import type { ActorContext } from "../platform/actor-context.js";
+import type { AccountReferenceLockPort } from "../accounts/account-reference-lock-port.js";
 
 export type InventoryMovementErrorReason =
   | "NOT_FOUND"
@@ -211,7 +212,10 @@ export class InventoryMovementService implements InventoryInvoiceStockPort {
   private readonly commands: IdempotentCommandExecutor;
   private readonly posting = new PostingEngine();
 
-  constructor(private readonly prisma: PrismaClient) {
+  constructor(
+    private readonly prisma: PrismaClient,
+    private readonly accountReferences: AccountReferenceLockPort,
+  ) {
     this.commands = new IdempotentCommandExecutor(prisma);
   }
 
@@ -466,13 +470,12 @@ export class InventoryMovementService implements InventoryInvoiceStockPort {
           });
           if (createdId === 0n) throw new InventoryMovementError("INVALID_STATE");
           reversalMovementId = createdId;
-          await tx.inventoryMovement.update({
-            where: { id: reversalMovementId },
-            data: {
-              accountingDocumentId: result.reversalDocument.id,
-              offsetAccountId: original.offsetAccountId,
-            },
-          });
+          await this.attachReversalAccounting(
+            tx,
+            reversalMovementId,
+            result.reversalDocument.id,
+            original.offsetAccountId,
+          );
         } else {
           const lockedOriginal = await this.lockManualMovement(
             tx,
@@ -592,7 +595,11 @@ export class InventoryMovementService implements InventoryInvoiceStockPort {
       actorUserId: context.userId,
       entries,
       beforeLedger: async (postingTx) => {
-        const created = await this.createInTransaction(postingTx, context, input);
+        const { created, policy } = await this.createManualMovementWithAccountingPolicy(
+          postingTx,
+          context,
+          input,
+        );
         const totalCostBase = money(created.lines.reduce(
           (sum, line) => sum.add(line.totalCostBase),
           new Prisma.Decimal(0),
@@ -600,11 +607,6 @@ export class InventoryMovementService implements InventoryInvoiceStockPort {
         if (!totalCostBase.gt(0)) {
           throw new InventoryMovementError("NON_ZERO_COST_REQUIRED");
         }
-        const policy = await this.resolveManualAccountingPolicy(
-          postingTx,
-          context.companyId,
-          input.movementType,
-        );
         const inbound = ["OPENING_BALANCE", "RECEIPT", "ADJUSTMENT_IN"]
           .includes(input.movementType);
         entries[0]!.lines = [
@@ -654,6 +656,41 @@ export class InventoryMovementService implements InventoryInvoiceStockPort {
       },
     });
     return this.getMovementInTransaction(tx, context.companyId, movementId);
+  }
+
+  private async createManualMovementWithAccountingPolicy(
+    tx: Prisma.TransactionClient,
+    context: ActorContext,
+    input: InventoryMovementInput,
+  ) {
+    const policy = await this.resolveManualAccountingPolicy(
+      tx,
+      context.companyId,
+      input.movementType,
+    );
+    await this.lockOffsetAccounts(tx, context.companyId, [policy.offsetAccountId]);
+    const lockedPolicy = await this.resolveManualAccountingPolicy(
+      tx,
+      context.companyId,
+      input.movementType,
+    );
+    if (lockedPolicy.offsetAccountId !== policy.offsetAccountId) {
+      throw new InventoryMovementError("INVENTORY_ACCOUNTING_NOT_CONFIGURED");
+    }
+    const created = await this.createInTransaction(tx, context, input);
+    return { created, policy: lockedPolicy };
+  }
+
+  private async attachReversalAccounting(
+    tx: Prisma.TransactionClient,
+    movementId: bigint,
+    accountingDocumentId: bigint,
+    offsetAccountId: bigint | null,
+  ) {
+    await tx.inventoryMovement.update({
+      where: { id: movementId },
+      data: { accountingDocumentId, offsetAccountId },
+    });
   }
 
   async initializeBalanceValuation(
@@ -1490,6 +1527,22 @@ export class InventoryMovementService implements InventoryInvoiceStockPort {
       inventoryAccountId: inventory!.id,
       offsetAccountId: offset!.id,
     };
+  }
+
+  private async lockOffsetAccounts(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+    accountIds: readonly bigint[],
+  ) {
+    const sortedAccountIds = [...new Set(accountIds.map(String))]
+      .map(BigInt)
+      .sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+    for (const accountId of sortedAccountIds) {
+      const locked = await this.accountReferences.lockPostingAccount(tx, companyId, accountId);
+      if (!locked.eligible) {
+        throw new InventoryMovementError("INVENTORY_ACCOUNTING_NOT_CONFIGURED");
+      }
+    }
   }
 
   private postingError(reason: PostingFailureReason) {

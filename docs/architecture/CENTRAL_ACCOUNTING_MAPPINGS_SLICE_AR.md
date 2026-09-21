@@ -600,16 +600,18 @@ normalize reason -> fingerprint {key,accountId,expectedVersion,reason|null}
 Core Accounting لا يستورد Reporting Prisma model؛ غياب/فشل
 `ReportingAccountUsageQueryPort` يفشل lifecycle command مغلقًا ويرجع المعاملة كاملة.
 
-حالة ADM-1B1/B2/B3/B4/B5/B6: نُفذ العقد والمنسق ومحولات Reporting وCore Accounting وSales
-وPurchases وTax وTreasury، وسُجلت completeness في composition بحالة 6/7، مع Inventory مفقودًا وبقاء
-`enforcementEnabled=false`. يعد محول Core الأبناء وكل سطور اليومية المقيدة بالشركة،
+حالة ADM-1B1/B2/B3/B4/B5/B6/B7: نُفذ العقد والمنسق ومحولات Reporting وCore
+Accounting وSales وPurchases وTax وTreasury وInventory، وسُجلت completeness في
+composition بحالة 7/7 مع بقاء `enforcementEnabled=false`. يعد محول Core الأبناء
+وكل سطور اليومية المقيدة بالشركة،
 ويعد التاريخ immutable لأسطر المستندات النهائية `POSTED/REVERSED/CANCELLED`، مع
 بقاء `DRAFT` وحدها قابلة للتعديل. يعد محول Sales مراجع Customer وSelling Profile
 وكل `SalesInvoiceLine`، ويفصل العدد الكلي عن وجود تاريخ فاتورة نهائي بالحالات نفسها.
 ويعد محول Purchases مراجع Supplier وكل `PurchaseInvoiceLine`، ويعد أسطر DRAFT ضمن
 الاستعمال الكلي مع قصر immutable على `POSTED/REVERSED/CANCELLED` لمستندي
-`PURCHASE_INVOICE/PURCHASE_DEBIT_NOTE`. لم يُحقن المنسق في `AccountService` حتى
-يكتمل محول Inventory. يعد محول Tax كل `TaxRate` يشير إلى الحساب عبر
+`PURCHASE_INVOICE/PURCHASE_DEBIT_NOTE`. لم يُحقن المنسق في `AccountService` رغم
+اكتمال المحولات؛ يتطلب التفعيل أولًا إغلاق بوابة Posting Engine المبينة أدناه.
+يعد محول Tax كل `TaxRate` يشير إلى الحساب عبر
 حقل output أو input بعزل الشركة، ويبقي `hasImmutableHistory=false` لأنها تعيينات
 حالية ويغطي تاريخ الفواتير مالكو المستندات وCore. في
 المقابل فُعل handshake الكتابة المطلوب في `CashFlowService.updateMapping`: يقفل
@@ -643,6 +645,17 @@ Account أولًا داخل المعاملة نفسها ويرفض المرجع 
 وتقفل أوامر إنشاء/تحديث Receipt وPayment كل direct counter account سيُحفظ. post لا
 يقفل هذا المرجع لأنه لا يستبدله. `demo-seed.ts` bootstrap offline مستثنى من writers
 التشغيليين، ولا يشغّل بالتوازي مع الخدمة.
+
+ويعد محول Inventory كل حركة داخل الشركة يكون `offsetAccountId` فيها هو الحساب.
+كل حركة محفوظة في هذا النموذج `POSTED` أو `REVERSED`، لذلك يكون
+`hasImmutableHistory=true` لكل count موجب. الحركة اليدوية المحاسبية تحل السياسة،
+تقفل offset على `TransactionClient` نفسها قبل أول كتابة حركة، ثم تعيد حل السياسة
+تحت القفل وتتحقق من ثبات المعرّف والفئة المتخصصة والأهلية. لا تقفل حسابي
+inventory/COGS الديناميكيين محليًا؛ مرجعهما الدائم `JournalLine` ويجب أن يقفله
+Posting Engine مركزيًا. نسخ offset التاريخي إلى حركة العكس لا يعاد قفله لأنه لا
+ينشئ أول استعمال، فيظل عكس حركة صحيحة ممكنًا بعد تعطيل الحساب ويتجنب ترتيب
+Inventory→Account. بوابة التفعيل المتبقية هي قفل Posting Engine لكل account IDs
+الفريدة مرتبة على المعاملة نفسها قبل أي حقن للحارس في `AccountService`.
 
 ```text
 Idempotency عند وجوده

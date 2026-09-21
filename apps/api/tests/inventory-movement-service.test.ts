@@ -6,7 +6,10 @@ import {
 } from "../src/inventory/inventory-movement-service.js";
 
 describe("Inventory movement service invariants", () => {
-  const service = new InventoryMovementService({} as PrismaClient);
+  const accountReferences = {
+    lockPostingAccount: vi.fn().mockResolvedValue({ eligible: true, companyId: 7n, accountId: 1n }),
+  };
+  const service = new InventoryMovementService({} as PrismaClient, accountReferences);
   const context = { companyId: 7n, userId: 3n };
 
   it("rejects invalid routing and duplicate items before opening a transaction", async () => {

@@ -126,6 +126,21 @@ test('Treasury implements Accounts lifecycle contracts through declared type-onl
   assert.equal(runtime.diagnostics[0].file, api('receipts/receipt-service.ts'));
 });
 
+test('Inventory implements Accounts lifecycle contracts through declared type-only ports', async (t) => {
+  const setup = await fixture(t, {
+    [api('accounts/account-usage-query-port.ts')]: 'export interface AccountUsageQueryPort {}',
+    [api('accounts/account-reference-lock-port.ts')]: 'export interface AccountReferenceLockPort {}',
+    [api('inventory/inventory-account-usage-query-adapter.ts')]: `import type { AccountUsageQueryPort } from '../accounts/account-usage-query-port.js';`,
+    [api('inventory/inventory-movement-service.ts')]: `import type { AccountReferenceLockPort } from '../accounts/account-reference-lock-port.js';`,
+  });
+  assert.equal((await checkBoundaries(setup)).ok, true);
+
+  await writeFile(path.join(setup.root, api('inventory/inventory-movement-service.ts')), `import { AccountReferenceLockPort } from '../accounts/account-reference-lock-port.js';`);
+  const runtime = await checkBoundaries(setup);
+  assert.equal(runtime.diagnostics[0].code, 'CROSS_CONTEXT_IMPORT');
+  assert.equal(runtime.diagnostics[0].file, api('inventory/inventory-movement-service.ts'));
+});
+
 test('empty source root and absent reserved modules are valid', async (t) => {
   const result = await checkBoundaries(await fixture(t));
   assert.equal(result.ok, true);

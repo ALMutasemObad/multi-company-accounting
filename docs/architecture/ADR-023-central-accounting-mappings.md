@@ -600,10 +600,13 @@ source template tags أو حقائق الأطراف.
 وكل `Receipt/Payment.counterAccountId` داخل الشركة، مع تقييد العلاقة بنوع المستند.
 يشمل العدد كل الحالات، ولا يصبح التاريخ immutable إلا مع
 `POSTED/REVERSED/CANCELLED`.
-يسجل composition الآن مالكي Core وSales وPurchases وTax وTreasury وReporting (6/7)، ويبقى Account lifecycle
-enforcement معطلًا صراحة لأن محول Inventory لم يكتمل؛ لا
-يُفسر هذا التركيب الجزئي على أنه حارس مكتمل. لم يبدأ جدول default mappings أو
-API/permissions/consumers الخاصة بـADM-2 وما بعدها.
+أضافت ADM-1B7 محول Inventory المملوك للمخزون لعد كل
+`InventoryMovement.offsetAccountId` داخل الشركة. حالات الحركة المحفوظة هي
+`POSTED/REVERSED`، ولذلك يعني أي count موجب تاريخًا immutable. يسجل composition
+المالكين السبعة الآن (7/7)، لكن يبقى Account lifecycle enforcement معطلًا صراحة؛
+اكتمال المحولات وحده لا يسمح بحقن الحارس قبل إغلاق بوابة Posting Engine أدناه.
+لم يبدأ جدول default mappings أو API/permissions/consumers الخاصة بـADM-2 وما
+بعدها.
 
 تغلق ADM-1B3 كذلك سباق writer/reference في Sales عبر
 `AccountReferenceLockPort`: يقفل Customer الحساب عند الإنشاء أو تغيير
@@ -635,5 +638,16 @@ snapshot المقروء، ثم يبقى `version` CAS الحكم النهائي 
 لأنه لا يستبدل المرجع. تزيل helpers التكرار وترتب المعرّفات رقميًا. يبقى
 `demo-seed.ts` bootstrap offline خارج أوامر runtime/concurrency؛ لا يمثل writer
 تشغيليًا ولا يجوز تشغيله بالتوازي مع الخدمة.
+
+وتغلق ADM-1B7 أول استعمال دائم جديد لمرجع Inventory: الحركة اليدوية المحاسبية تحل
+سياسة الحساب، ثم تقفل `offsetAccountId` على `TransactionClient` نفسها، ثم تعيد حل
+السياسة تحت القفل وتتحقق من بقاء المعرّف والفئة المتخصصة والأهلية قبل كتابة
+الحركة. لا تقفل Inventory محليًا حسابي inventory/COGS الديناميكيين لأنهما يصبحان
+`JournalLine` ويملك قفلهما Posting Engine. كما لا يعاد قفل `offsetAccountId` عند
+نسخه إلى حركة العكس: المرجع التاريخي الدائم موجود أصلًا، والنسخ لا ينشئ أول
+استعمال؛ يسمح ذلك بعكس التاريخ الصحيح إذا أصبح الحساب غير نشط ويتجنب قلب ترتيب
+Inventory→Account. قبل حقن `AccountUsageGuard` في `AccountService` يجب أن يقفل
+Posting Engine جميع account IDs الفريدة والمرتبة في القيد على المعاملة نفسها قبل
+فحص الحارس؛ حتى ذلك الحين يبقى `enforcementEnabled=false` رغم اكتمال 7/7.
 خطة الشرائح وبوابات التنفيذ في
 [خطة مركز تعيين الحسابات](CENTRAL_ACCOUNTING_MAPPINGS_SLICE_AR.md).

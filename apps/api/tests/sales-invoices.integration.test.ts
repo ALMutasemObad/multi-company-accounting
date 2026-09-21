@@ -243,7 +243,7 @@ describe.runIf(enabled)("sales invoices and receivables with MariaDB", () => {
     await prisma!.warehouse.update({ where: { id: warehouseId }, data: { nameAr: "مستودع مبيعات اختباري" } });
     await prisma!.inventoryItem.update({ where: { id: inventoryItemId }, data: { nameAr: "صنف مبيعات اختباري" } });
 
-    const movements = new InventoryMovementService(prisma!);
+    const movements = new InventoryMovementService(prisma!, new PrismaAccountReferenceLockAdapter());
     await movements.createMovement({ companyId, userId }, {
       movementType: "OPENING_BALANCE",
       movementDate: "2044-02-21",

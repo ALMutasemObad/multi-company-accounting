@@ -92,6 +92,7 @@ import { SalesAccountUsageQueryAdapter } from './sales/sales-account-usage-query
 import { PurchasesAccountUsageQueryAdapter } from './purchases/purchases-account-usage-query-adapter.js';
 import { TaxAccountUsageQueryAdapter } from './tax/tax-account-usage-query-adapter.js';
 import { TreasuryAccountUsageQueryAdapter } from './treasury/treasury-account-usage-query-adapter.js';
+import { InventoryAccountUsageQueryAdapter } from './inventory/inventory-account-usage-query-adapter.js';
 import { ReportingAccountUsageQueryAdapter } from './reports/reporting-account-usage-adapter.js';
 import { createBarcodeLabelService } from './composition/create-barcode-label-service.js';
 import { CompanyCapabilityService } from './platform-subscriptions/company-capability-service.js';
@@ -154,6 +155,7 @@ const accountUsageGuard = new AccountUsageGuard([
   new PurchasesAccountUsageQueryAdapter(),
   new TaxAccountUsageQueryAdapter(),
   new TreasuryAccountUsageQueryAdapter(),
+  new InventoryAccountUsageQueryAdapter(),
   new ReportingAccountUsageQueryAdapter(),
 ]);
 const accountUsageComposition = accountUsageGuard.completeness();
@@ -247,7 +249,7 @@ const customers = new CustomerService(database, accountReferenceLocks, accountQu
 const suppliers = new SupplierService(database, accountReferenceLocks, accountQueries);
 const inventoryCatalog = new InventoryCatalogService(database);
 const inventoryBarcodes = new InventoryBarcodeService(database);
-const inventoryMovements = new InventoryMovementService(database);
+const inventoryMovements = new InventoryMovementService(database, accountReferenceLocks);
 const {
   salesInvoices,
   purchaseInvoices,
