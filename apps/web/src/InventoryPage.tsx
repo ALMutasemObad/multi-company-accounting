@@ -20,9 +20,10 @@ import { Button, EmptyState, Icon, Modal, PageHeader, Pagination, Spinner } from
 import { visibleInventorySections, type InventorySection } from "./page-section-navigation";
 import { InventoryValuationReportPanel } from "./inventory-valuation-report/InventoryValuationReportPanel";
 import { inventoryValuationReportCopy } from "./i18n/locales/inventory-valuation-report";
+import { ExternalStockPositionsPanel } from "./inventory-compliance-mvp/ExternalStockPositionsPanel";
 
 type Notice = (message: string, tone?: "success" | "error") => void;
-type Tab = InventorySection | "valuation-report";
+type Tab = InventorySection | "valuation-report" | "external-stock";
 type PageMeta = { page: number; pageSize: number; total: number; totalPages: number };
 
 const emptyMeta: PageMeta = { page: 1, pageSize: 10, total: 0, totalPages: 0 };
@@ -33,14 +34,14 @@ export function InventoryPage({ notify, section, onSectionChange }: {
   const { permissionSet } = useAuthorization();
   const { locale } = useI18n();
   const reportCopy = localizedCopyFor(inventoryValuationReportCopy, locale, "ar");
-  const tabs: Tab[] = [...visibleInventorySections(permissionSet), ...(permissionSet.has("inventory_movements.view") ? ["valuation-report" as const] : [])];
+  const tabs: Tab[] = [...visibleInventorySections(permissionSet), ...(permissionSet.has("inventory_movements.view") ? ["valuation-report" as const, "external-stock" as const] : [])];
   const [selectedTab, setTab] = useState<Tab>(section ?? "warehouses");
   const tab = tabs.includes(selectedTab) ? selectedTab : tabs[0];
   useEffect(() => { setTab(section ?? "warehouses"); }, [section]);
   return <section className="workspace-page">
     <PageHeader kicker={t("inventory.kicker")} title={t("inventory.title")} description={t("inventory.description")} />
     <div className="section-tabs" role="tablist" aria-label={t("inventory.tabs.label")}>
-      {tabs.map((value) => <button key={value} type="button" role="tab" aria-selected={tab === value} className={tab === value ? "active" : ""} onClick={() => { setTab(value); if (value !== "valuation-report") onSectionChange?.(value); }}>{value === "valuation-report" ? reportCopy.tab : t(`inventory.tabs.${value}`)}</button>)}
+      {tabs.map((value) => <button key={value} type="button" role="tab" aria-selected={tab === value} className={tab === value ? "active" : ""} onClick={() => { setTab(value); if (value !== "valuation-report" && value !== "external-stock") onSectionChange?.(value); }}>{value === "valuation-report" ? reportCopy.tab : value === "external-stock" ? "الأمانات والبضاعة بالطريق" : t(`inventory.tabs.${value}`)}</button>)}
     </div>
     {tab === "balances" && <BalancesPanel notify={notify} />}
     {tab === "movements" && <MovementsPanel notify={notify} />}
@@ -48,6 +49,7 @@ export function InventoryPage({ notify, section, onSectionChange }: {
     {tab === "units" && <UnitsPanel notify={notify} />}
     {tab === "items" && <ItemsPanel notify={notify} />}
     {tab === "valuation-report" && <InventoryValuationReportPanel notify={notify} />}
+    {tab === "external-stock" && <ExternalStockPositionsPanel notify={notify} />}
   </section>;
 }
 
