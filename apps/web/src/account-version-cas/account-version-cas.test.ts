@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { runAccountMutationOnce, versionedAccountBody } from "./account-version-cas";
+import { runAccountMutationOnce, runDefaultTemplateApplyOnce, versionedAccountBody } from "./account-version-cas";
 
 const apiError = (message: string, status: number, code: string, reason: string) => Object.assign(new Error(message), { status, code, reason });
 
@@ -14,6 +14,14 @@ describe("account version CAS UI", () => {
     await expect(runAccountMutationOnce(command, refresh)).resolves.toBe(false);
     expect(command).toHaveBeenCalledTimes(1);
     expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry default-template apply and refreshes accounts/template status on conflict", async () => {
+    const apply = vi.fn().mockRejectedValue(apiError("template changed", 409, "VERSION_CONFLICT", "VERSION_CONFLICT"));
+    const refreshAccountsAndTemplate = vi.fn().mockResolvedValue(undefined);
+    await expect(runDefaultTemplateApplyOnce(apply, refreshAccountsAndTemplate)).resolves.toEqual({ completed: false });
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(refreshAccountsAndTemplate).toHaveBeenCalledTimes(1);
   });
 
   it("does not absorb unrelated failures", async () => {

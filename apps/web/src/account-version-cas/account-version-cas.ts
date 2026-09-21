@@ -21,3 +21,9 @@ export async function runAccountMutationOnce(command: () => Promise<unknown>, on
     return false;
   }
 }
+
+export async function runDefaultTemplateApplyOnce<T>(command: () => Promise<T>, onConflict: (cause: AccountVersionConflict) => Promise<void>) {
+  let value: T | undefined;
+  const completed = await runAccountMutationOnce(async () => { value = await command(); }, onConflict);
+  return completed ? { completed: true as const, value: value as T } : { completed: false as const };
+}
