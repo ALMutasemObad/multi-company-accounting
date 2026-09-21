@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { checkBoundaries, extractImports, matches, validateManifest } from '../architecture-boundaries.mjs';
@@ -9,15 +10,15 @@ import { checkBoundaries, extractImports, matches, validateManifest } from '../a
 const repository = fileURLToPath(new URL('../../', import.meta.url));
 const script = path.join(repository, 'scripts/architecture-boundaries.mjs');
 const policy = JSON.parse(await readFile(path.join(repository, 'architecture-boundaries.json'), 'utf8'));
-// Keep every generated fixture inside the task's declared documentation scope.
-const fixtureParent = path.join(repository, 'docs/release/architecture-boundary-guard-implementation');
+// Keep generated fixtures outside the repository so parallel repository scanners
+// cannot observe a fixture between its creation and cleanup.
+const fixtureParent = path.resolve(process.env.RUNNER_TEMP || tmpdir());
 
 async function fixture(t, files = {}, manifest = structuredClone(policy)) {
-  await mkdir(fixtureParent, { recursive: true });
-  const root = await mkdtemp(path.join(fixtureParent, '.fixture-'));
+  const root = await mkdtemp(path.join(fixtureParent, 'mcap-architecture-boundary-'));
   t.after(async () => {
     assert.equal(path.dirname(root), fixtureParent);
-    assert.ok(path.basename(root).startsWith('.fixture-'));
+    assert.ok(path.basename(root).startsWith('mcap-architecture-boundary-'));
     await rm(root, { recursive: true, force: true });
   });
   await mkdir(path.join(root, 'apps/api/src'), { recursive: true });
