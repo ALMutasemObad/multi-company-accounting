@@ -600,9 +600,12 @@ normalize reason -> fingerprint {key,accountId,expectedVersion,reason|null}
 Core Accounting لا يستورد Reporting Prisma model؛ غياب/فشل
 `ReportingAccountUsageQueryPort` يفشل lifecycle command مغلقًا ويرجع المعاملة كاملة.
 
-حالة ADM-1B1: نُفذ العقد والمنسق ومحول Reporting، وسُجلت completeness في composition
-بحالة غير مكتملة و`enforcementEnabled=false`. لم يُحقن المنسق في `AccountService`
-حتى تكتمل محولات Core Accounting وSales وPurchases وTax وTreasury وInventory. في
+حالة ADM-1B1/B2: نُفذ العقد والمنسق ومحوّلا Reporting وCore Accounting، وسُجلت
+completeness في composition بحالة 2/7، مع خمسة مالكين مفقودين وبقاء
+`enforcementEnabled=false`. يعد محول Core الأبناء وكل سطور اليومية المقيدة بالشركة،
+ويعد التاريخ immutable لأسطر المستندات النهائية `POSTED/REVERSED/CANCELLED`، مع
+بقاء `DRAFT` وحدها قابلة للتعديل. لم يُحقن المنسق في
+`AccountService` حتى تكتمل محولات Sales وPurchases وTax وTreasury وInventory. في
 المقابل فُعل handshake الكتابة المطلوب في `CashFlowService.updateMapping`: يقفل
 Account أولًا داخل المعاملة نفسها ويرفض المرجع العابر للشركة أو غير النشط أو غير
 القابل للترحيل أو الأب قبل أي قراءة أو إنشاء/تحديث لـCash Flow mapping.

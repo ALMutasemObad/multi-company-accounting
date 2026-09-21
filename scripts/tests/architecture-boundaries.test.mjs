@@ -38,11 +38,13 @@ test('policy declares eight distinct contexts, with existing and reserved paths'
     'general-projects', 'professional-projects', 'service-catalog', 'hr', 'attendance', 'payroll', 'branch-pos', 'account-lifecycle',
   ]);
   assert.equal(policy.contexts.find((c) => c.id === 'professional-projects').paths[0], api('projects/**'));
+  assert.ok(policy.contexts.find((c) => c.id === 'account-lifecycle').paths.includes(api('accounts/core-account-usage-query-adapter.ts')));
 });
 
 test('Reporting reaches Accounts lifecycle contracts only through declared type-only adapters', async (t) => {
   const setup = await fixture(t, {
     [api('accounts/account-usage-query-port.ts')]: 'export interface AccountUsageQueryPort {}',
+    [api('accounts/core-account-usage-query-adapter.ts')]: `import type { AccountUsageQueryPort } from './account-usage-query-port.js';`,
     [api('accounts/account-reference-lock-port.ts')]: 'export interface AccountReferenceLockPort {}',
     [api('reports/reporting-account-usage-adapter.ts')]: `import type { AccountUsageQueryPort } from '../accounts/account-usage-query-port.js';`,
     [api('reports/cash-flow-service.ts')]: `import type { AccountReferenceLockPort } from '../accounts/account-reference-lock-port.js';`,

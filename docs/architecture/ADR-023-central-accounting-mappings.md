@@ -579,9 +579,13 @@ source template tags أو حقائق الأطراف.
 `category/count/hasImmutableHistory`، ومنسق ثابت الترتيب يفشل مغلقًا عند نقص مالك أو
 فشل محوله. نُفذ محول Reporting لـ`CashFlowAccountMapping` داخل
 `TransactionClient`، كما أصبح كاتب Cash Flow mapping يقفل Account أولًا ويتحقق من
-نفس الشركة والنشاط وقابلية الترحيل وكونه leaf. يبقى Account lifecycle enforcement
-معطلًا صراحة لأن محولات Core/Sales/Purchases/Tax/Treasury/Inventory لم تكتمل؛ لا
-يُفسر تركيب Reporting الجزئي على أنه حارس مكتمل. لم يبدأ جدول default mappings أو
+نفس الشركة والنشاط وقابلية الترحيل وكونه leaf. أضافت ADM-1B2 محول Core Accounting
+المملوك للحسابات لعد الأبناء وكل `JournalLine` داخل الشركة، ولا يضع
+`hasImmutableHistory=true` عند ارتباط سطر بمستند نهائي `POSTED` أو `REVERSED` أو
+`CANCELLED`؛ تبقى `DRAFT` وحدها قابلة للتعديل.
+يسجل composition الآن مالكي Core وReporting (2/7)، ويبقى Account lifecycle enforcement
+معطلًا صراحة لأن محولات Sales/Purchases/Tax/Treasury/Inventory لم تكتمل؛ لا
+يُفسر هذا التركيب الجزئي على أنه حارس مكتمل. لم يبدأ جدول default mappings أو
 API/permissions/consumers الخاصة بـADM-2 وما بعدها.
 خطة الشرائح وبوابات التنفيذ في
 [خطة مركز تعيين الحسابات](CENTRAL_ACCOUNTING_MAPPINGS_SLICE_AR.md).

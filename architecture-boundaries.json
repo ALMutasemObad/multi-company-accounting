@@ -62,6 +62,7 @@
       "paths": [
         "apps/api/src/accounts/account-usage-query-port.ts",
         "apps/api/src/accounts/account-usage-guard.ts",
+        "apps/api/src/accounts/core-account-usage-query-adapter.ts",
         "apps/api/src/accounts/account-reference-lock-port.ts",
         "apps/api/src/accounts/prisma-account-reference-lock-adapter.ts"
       ],

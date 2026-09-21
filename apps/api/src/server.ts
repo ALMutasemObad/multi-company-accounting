@@ -87,6 +87,7 @@ import { ProfessionalBillingService } from './projects/professional-billing-serv
 import { PrismaAccountingAccountQueryAdapter } from './accounts/prisma-account-query-adapter.js';
 import { PrismaAccountReferenceLockAdapter } from './accounts/prisma-account-reference-lock-adapter.js';
 import { AccountUsageGuard } from './accounts/account-usage-guard.js';
+import { CoreAccountUsageQueryAdapter } from './accounts/core-account-usage-query-adapter.js';
 import { ReportingAccountUsageQueryAdapter } from './reports/reporting-account-usage-adapter.js';
 import { createBarcodeLabelService } from './composition/create-barcode-label-service.js';
 import { CompanyCapabilityService } from './platform-subscriptions/company-capability-service.js';
@@ -143,7 +144,10 @@ const productImages = new ProductImageService(
 );
 const accountQueries = new PrismaAccountingAccountQueryAdapter();
 const accountReferenceLocks = new PrismaAccountReferenceLockAdapter();
-const accountUsageGuard = new AccountUsageGuard([new ReportingAccountUsageQueryAdapter()]);
+const accountUsageGuard = new AccountUsageGuard([
+  new CoreAccountUsageQueryAdapter(),
+  new ReportingAccountUsageQueryAdapter(),
+]);
 const accountUsageComposition = accountUsageGuard.completeness();
 const taxes = new TaxService(database, accountQueries);
 const treasury = new TreasuryService(database, accountQueries);
