@@ -243,6 +243,8 @@ jobs:
         with:
           node-version: 24.19.0
           cache: npm
+      - name: Enforce architecture import boundaries
+        run: node scripts/architecture-boundaries.mjs
       - name: Ratchet registered architecture debt
         run: node scripts/architecture-debt-ratchet.mjs
       - name: Pin the package manager

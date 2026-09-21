@@ -87,11 +87,18 @@ test('accepts an empty debt register after every debt is removed and rejects imp
   await assert.rejects(() => evaluateRegister({ root, register: register({ expiry: '2026-02-31' }), now: new Date('2026-01-01T00:00:00Z') }), /expiry must be an ISO date/);
 });
 
-test('exposes package scripts and runs the dependency-free CI gate exactly once', async () => {
+test('exposes package scripts and runs each dependency-free architecture guard once before npm install', async () => {
   const packageJson = JSON.parse(await readFile(path.join(repositoryRoot, 'package.json'), 'utf8'));
   assert.equal(packageJson.scripts['architecture-debt:check'], 'node scripts/architecture-debt-ratchet.mjs');
   assert.equal(packageJson.scripts['architecture-debt:test'], 'node --test scripts/tests/architecture-debt-ratchet.test.mjs');
 
   const workflow = await readFile(path.join(repositoryRoot, '.github/workflows/ci.yml'), 'utf8');
-  assert.equal(workflow.match(/run: node scripts\/architecture-debt-ratchet\.mjs/g)?.length, 1);
+  const boundaryStep = 'run: node scripts/architecture-boundaries.mjs';
+  const debtStep = 'run: node scripts/architecture-debt-ratchet.mjs';
+  const npmInstall = 'run: npm install --global npm@12.0.2';
+  const verify = workflow.slice(workflow.indexOf('\n  verify:'), workflow.indexOf('\n  deploy-staging:'));
+  assert.equal(verify.split(boundaryStep).length - 1, 1);
+  assert.equal(verify.split(debtStep).length - 1, 1);
+  assert.ok(verify.indexOf(boundaryStep) < verify.indexOf(debtStep));
+  assert.ok(verify.indexOf(debtStep) < verify.indexOf(npmInstall));
 });
