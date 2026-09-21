@@ -600,8 +600,8 @@ normalize reason -> fingerprint {key,accountId,expectedVersion,reason|null}
 Core Accounting لا يستورد Reporting Prisma model؛ غياب/فشل
 `ReportingAccountUsageQueryPort` يفشل lifecycle command مغلقًا ويرجع المعاملة كاملة.
 
-حالة ADM-1B1/B2/B3/B4: نُفذ العقد والمنسق ومحولات Reporting وCore Accounting وSales
-وPurchases، وسُجلت completeness في composition بحالة 4/7، مع ثلاثة مالكين مفقودين وبقاء
+حالة ADM-1B1/B2/B3/B4/B5: نُفذ العقد والمنسق ومحولات Reporting وCore Accounting وSales
+وPurchases وTax، وسُجلت completeness في composition بحالة 5/7، مع مالكين مفقودين وبقاء
 `enforcementEnabled=false`. يعد محول Core الأبناء وكل سطور اليومية المقيدة بالشركة،
 ويعد التاريخ immutable لأسطر المستندات النهائية `POSTED/REVERSED/CANCELLED`، مع
 بقاء `DRAFT` وحدها قابلة للتعديل. يعد محول Sales مراجع Customer وSelling Profile
@@ -609,7 +609,9 @@ Core Accounting لا يستورد Reporting Prisma model؛ غياب/فشل
 ويعد محول Purchases مراجع Supplier وكل `PurchaseInvoiceLine`، ويعد أسطر DRAFT ضمن
 الاستعمال الكلي مع قصر immutable على `POSTED/REVERSED/CANCELLED` لمستندي
 `PURCHASE_INVOICE/PURCHASE_DEBIT_NOTE`. لم يُحقن المنسق في `AccountService` حتى
-تكتمل محولات Tax وTreasury وInventory. في
+تكتمل محولات Treasury وInventory. يعد محول Tax كل `TaxRate` يشير إلى الحساب عبر
+حقل output أو input بعزل الشركة، ويبقي `hasImmutableHistory=false` لأنها تعيينات
+حالية ويغطي تاريخ الفواتير مالكو المستندات وCore. في
 المقابل فُعل handshake الكتابة المطلوب في `CashFlowService.updateMapping`: يقفل
 Account أولًا داخل المعاملة نفسها ويرفض المرجع العابر للشركة أو غير النشط أو غير
 القابل للترحيل أو الأب قبل أي قراءة أو إنشاء/تحديث لـCash Flow mapping.
@@ -627,6 +629,11 @@ Account أولًا داخل المعاملة نفسها ويرفض المرجع 
 قراءتها أو حفظ الأسطر. يبقى preview وpost في وضع validate-only لهذه الحسابات لمنع
 عكس ترتيب الأقفال؛ وبعد نتيجة حركة المخزون يقفل post حساب المخزون البديل قبل
 تحديث `PurchaseInvoiceLine`، ويتجاوز القفل والتحديث إذا لم يتغير الحساب.
+
+ويجمع Tax كل accountId غير null سيحفظه، يزيل التكرار ويرتب المعرّفات رقميًا ثم
+يقفلها داخل المعاملة قبل create/update. إذا حمل update `accountId` يقفله حتى إن
+ساوى snapshot المقروء، فلا يعتمد no-change على قراءة غير مقفلة؛ يبقى CAS النسخة
+الحكم النهائي، والحقل الغائب وحده لا يضيف قفلًا.
 
 ```text
 Idempotency عند وجوده

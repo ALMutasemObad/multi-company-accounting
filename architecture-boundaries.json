@@ -190,6 +190,21 @@
       "typeOnly": true,
       "status": "implemented",
       "reason": "Purchases implements the Accounts-owned usage query contract and consumes the account reference lock handshake without exposing Purchases models to Core Accounting."
+    },
+    {
+      "id": "tax-account-lifecycle-ports",
+      "kind": "adapter-to-port",
+      "fromPaths": [
+        "apps/api/src/tax/tax-account-usage-query-adapter.ts",
+        "apps/api/src/tax/tax-service.ts"
+      ],
+      "toPaths": [
+        "apps/api/src/accounts/account-usage-query-port.ts",
+        "apps/api/src/accounts/account-reference-lock-port.ts"
+      ],
+      "typeOnly": true,
+      "status": "implemented",
+      "reason": "Tax implements the Accounts-owned usage query contract and consumes the account reference lock handshake without exposing Tax models to Core Accounting."
     }
   ],
   "forbiddenImports": [

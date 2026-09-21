@@ -6,6 +6,8 @@ import {
 } from '../src/composition/create-financial-document-services.js';
 import { createDatabase } from '../src/database.js';
 import { TaxService } from '../src/tax/tax-service.js';
+import { PrismaAccountReferenceLockAdapter } from '../src/accounts/prisma-account-reference-lock-adapter.js';
+import { PrismaAccountingAccountQueryAdapter } from '../src/accounts/prisma-account-query-adapter.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 const seedPassword = process.env.SEED_ADMIN_PASSWORD;
@@ -251,7 +253,11 @@ try {
     create: { companyId: company.id, code: 'ZERO', nameAr: 'نسبة صفرية', rate: '0' },
   });
 
-  const invoiceTaxes = new TaxService(prisma);
+  const invoiceTaxes = new TaxService(
+    prisma,
+    new PrismaAccountReferenceLockAdapter(),
+    new PrismaAccountingAccountQueryAdapter(),
+  );
   const salesService = createSalesInvoiceService(prisma, { taxes: invoiceTaxes });
   const salesContext = { userId: admin.id, companyId: company.id };
   const ensureSalesDocument = async (input: {

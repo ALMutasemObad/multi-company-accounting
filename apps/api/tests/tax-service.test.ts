@@ -2,6 +2,10 @@ import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 import { TaxError, TaxService } from "../src/tax/tax-service.js";
 
+const accountReferences = () => ({
+  lockPostingAccount: vi.fn().mockResolvedValue({ eligible: true, companyId: 77n, accountId: 1n }),
+});
+
 const validAccount = (id: bigint, accountClass: string) => ({
   id,
   code: `A-${id}`,
@@ -16,7 +20,7 @@ describe("TaxService ownership and quote policy", () => {
   it("returns unusable rates with explicit readiness instead of hiding configuration defects", async () => {
     const findMany = vi.fn().mockResolvedValue([]);
     const tx = { taxRate: { findMany, count: vi.fn().mockResolvedValue(0) } };
-    const service = new TaxService({ $transaction: vi.fn(async (run: (client: unknown) => unknown) => run(tx)) } as never);
+    const service = new TaxService({ $transaction: vi.fn(async (run: (client: unknown) => unknown) => run(tx)) } as never, accountReferences());
     await service.list({ companyId: 77n, userId: 2n }, "OUTPUT", { page: 1, pageSize: 25 });
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { companyId: 77n } }));
     expect(TaxService.json({ id: 1n, code: "VAT", nameAr: "ضريبة", rate: new Prisma.Decimal("15"), isActive: true, version: 0, outputTaxAccount: null, inputTaxAccount: null }, "OUTPUT")).toMatchObject({ isReady: false, readinessReason: "TAX_ACCOUNT_MISSING" });
@@ -31,7 +35,7 @@ describe("TaxService ownership and quote policy", () => {
       },
     };
     const prisma = { $transaction: vi.fn(async (run: (client: unknown) => unknown) => run(tx)) };
-    const service = new TaxService(prisma as never);
+    const service = new TaxService(prisma as never, accountReferences());
 
     const result = await service.list(
       { companyId: 77n, userId: 2n },
@@ -67,7 +71,7 @@ describe("TaxService ownership and quote policy", () => {
         inputTaxAccount: null,
       },
     ]);
-    const service = new TaxService({} as never);
+    const service = new TaxService({} as never, accountReferences());
     const quotes = await service.resolveQuotes(
       { taxRate: { findMany } } as never,
       77n,
@@ -84,7 +88,7 @@ describe("TaxService ownership and quote policy", () => {
   });
 
   it("rejects a cross-purpose input quote that points at a liability account", async () => {
-    const service = new TaxService({} as never);
+    const service = new TaxService({} as never, accountReferences());
     const tx = {
       taxRate: {
         findMany: vi.fn().mockResolvedValue([{
@@ -101,7 +105,7 @@ describe("TaxService ownership and quote policy", () => {
 
   it("resolves import-facing codes through the Tax owner and enforces readiness", async () => {
     const findMany = vi.fn().mockResolvedValue([{ id: 4n, code: "VAT15", rate: new Prisma.Decimal("15"), isActive: true, outputTaxAccount: validAccount(40n, "LIABILITY"), inputTaxAccount: null }]);
-    const service = new TaxService({} as never);
+    const service = new TaxService({} as never, accountReferences());
     const resolved = await service.resolveCodeIds({ taxRate: { findMany } } as never, 10n, "OUTPUT", ["VAT15", "VAT15"]);
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { companyId: 10n, code: { in: ["VAT15"] }, isActive: true } }));
     expect(resolved.get("VAT15")).toBe(4n);
@@ -122,7 +126,8 @@ describe("TaxService ownership and quote policy", () => {
       account: { findFirst: vi.fn().mockResolvedValue(validAccount(81n, "LIABILITY")) },
     };
     const prisma = { $transaction: vi.fn(async (run: (client: unknown) => unknown) => run(tx)) };
-    const service = new TaxService(prisma as never);
+    const references = accountReferences();
+    const service = new TaxService(prisma as never, references);
 
     await expect(service.update(
       { companyId: 12n, userId: 2n },
@@ -135,12 +140,47 @@ describe("TaxService ownership and quote policy", () => {
       where: { id: 8n, companyId: 12n, version: 3 },
       data: expect.objectContaining({ version: { increment: 1 } }),
     }));
+    expect(references.lockPostingAccount).not.toHaveBeenCalled();
+  });
+
+  it("locks the supplied account before creating a tax-rate reference", async () => {
+    const create = vi.fn().mockResolvedValue({
+      id: 8n,
+      code: "TAX-000001",
+      nameAr: "ضريبة",
+      rate: new Prisma.Decimal("15.0000"),
+      isActive: true,
+      version: 0,
+      outputTaxAccountId: 81n,
+      inputTaxAccountId: null,
+      outputTaxAccount: validAccount(81n, "LIABILITY"),
+      inputTaxAccount: null,
+    });
+    const tx = {
+      account: { findFirst: vi.fn().mockResolvedValue(validAccount(81n, "LIABILITY")) },
+      taxRate: { create },
+      auditLog: { create: vi.fn().mockResolvedValue({ id: 1n }) },
+      $executeRaw: vi.fn().mockResolvedValue(1),
+      $queryRaw: vi.fn().mockResolvedValue([{ prefix: "TAX-", padding: 6, nextNumber: 2n }]),
+    };
+    const prisma = { $transaction: vi.fn(async (run: (client: unknown) => unknown) => run(tx)) };
+    const lockPostingAccount = vi.fn().mockResolvedValue({ eligible: true, companyId: 12n, accountId: 81n });
+    const service = new TaxService(prisma as never, { lockPostingAccount });
+
+    await service.create(
+      { companyId: 12n, userId: 2n },
+      "OUTPUT",
+      { nameAr: "ضريبة", rate: "15", accountId: 81n },
+    );
+
+    expect(lockPostingAccount).toHaveBeenCalledWith(tx, 12n, 81n);
+    expect(lockPostingAccount.mock.invocationCallOrder[0]).toBeLessThan(create.mock.invocationCallOrder[0]!);
   });
 
   it("does not reveal a tax rate owned by another company", async () => {
     const tx = { taxRate: { findFirst: vi.fn().mockResolvedValue(null) } };
     const prisma = { $transaction: vi.fn(async (run: (client: unknown) => unknown) => run(tx)) };
-    const service = new TaxService(prisma as never);
+    const service = new TaxService(prisma as never, accountReferences());
 
     await expect(service.update(
       { companyId: 999n, userId: 2n },
@@ -149,5 +189,73 @@ describe("TaxService ownership and quote policy", () => {
       { version: 0, nameAr: "محاولة عابرة للشركات" },
     )).rejects.toEqual(new TaxError("NOT_FOUND"));
     expect(tx.taxRate.findFirst).toHaveBeenCalledWith({ where: { id: 8n, companyId: 999n } });
+  });
+
+  it("locks a supplied account even when it equals the current mapping and before CAS update", async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const tx = {
+      taxRate: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: 8n,
+          companyId: 12n,
+          rate: new Prisma.Decimal("15.0000"),
+          outputTaxAccountId: 81n,
+          inputTaxAccountId: null,
+        }),
+        updateMany,
+        findFirstOrThrow: vi.fn().mockResolvedValue({
+          id: 8n,
+          code: "VAT",
+          nameAr: "ضريبة",
+          rate: new Prisma.Decimal("15.0000"),
+          isActive: true,
+          version: 4,
+          outputTaxAccountId: 81n,
+          inputTaxAccountId: null,
+          outputTaxAccount: validAccount(81n, "LIABILITY"),
+          inputTaxAccount: null,
+        }),
+      },
+      account: { findFirst: vi.fn().mockResolvedValue(validAccount(81n, "LIABILITY")) },
+      auditLog: { create: vi.fn().mockResolvedValue({ id: 1n }) },
+    };
+    const prisma = { $transaction: vi.fn(async (run: (client: unknown) => unknown) => run(tx)) };
+    const lockPostingAccount = vi.fn().mockResolvedValue({ eligible: true, companyId: 12n, accountId: 81n });
+    const service = new TaxService(prisma as never, { lockPostingAccount });
+
+    await service.update(
+      { companyId: 12n, userId: 2n },
+      "OUTPUT",
+      8n,
+      { version: 3, accountId: 81n },
+    );
+
+    expect(lockPostingAccount).toHaveBeenCalledWith(tx, 12n, 81n);
+    expect(lockPostingAccount.mock.invocationCallOrder[0]).toBeLessThan(updateMany.mock.invocationCallOrder[0]!);
+    expect(updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 8n, companyId: 12n, version: 3 },
+      data: expect.objectContaining({ outputTaxAccountId: 81n, version: { increment: 1 } }),
+    }));
+  });
+
+  it("deduplicates and locks non-null tax accounts in numeric order on the supplied transaction", async () => {
+    const tx = { marker: "same-transaction" };
+    const lockPostingAccount = vi.fn().mockImplementation(async (_tx, companyId, accountId) => ({
+      eligible: true as const,
+      companyId,
+      accountId,
+    }));
+    const service = new TaxService({} as never, { lockPostingAccount });
+    const writer = service as unknown as {
+      lockTaxAccounts(client: unknown, companyId: bigint, accountIds: readonly (bigint | null)[]): Promise<void>;
+    };
+
+    await writer.lockTaxAccounts(tx, 12n, [9n, null, 3n, 9n, 5n]);
+
+    expect(lockPostingAccount.mock.calls).toEqual([
+      [tx, 12n, 3n],
+      [tx, 12n, 5n],
+      [tx, 12n, 9n],
+    ]);
   });
 });

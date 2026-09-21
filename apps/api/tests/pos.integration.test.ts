@@ -17,6 +17,7 @@ import { PosService } from "../src/pos/pos-service.js";
 import { PosRecoveryService } from "../src/pos/recovery-service.js";
 import { PrismaPosRecoveryQueryAdapter } from "../src/platform/prisma-pos-recovery-query-adapter.js";
 import { TaxService } from "../src/tax/tax-service.js";
+import { PrismaAccountReferenceLockAdapter } from "../src/accounts/prisma-account-reference-lock-adapter.js";
 import { testAuthOptions } from "./helpers/test-auth-options.js";
 import { TreasuryService } from "../src/treasury/treasury-service.js";
 
@@ -139,7 +140,7 @@ describe.runIf(enabled)("POS cash-sale vertical slice with MariaDB", () => {
     periodId = year.periods[0]!.id;
 
     const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, testAuthOptions(prisma!));
-    const taxes = new TaxService(prisma!);
+    const taxes = new TaxService(prisma!, new PrismaAccountReferenceLockAdapter());
     const treasury = new TreasuryService(prisma!);
     const inventory = new InventoryCatalogService(prisma!);
     const stock = new InventoryMovementService(prisma!);

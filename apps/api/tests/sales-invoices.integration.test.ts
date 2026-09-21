@@ -12,6 +12,7 @@ import { createDatabase } from "../src/database.js";
 import { InventoryMovementService } from "../src/inventory/inventory-movement-service.js";
 import { PrintService } from "../src/printing/print-service.js";
 import { TaxService } from "../src/tax/tax-service.js";
+import { PrismaAccountReferenceLockAdapter } from "../src/accounts/prisma-account-reference-lock-adapter.js";
 import { TreasuryService } from "../src/treasury/treasury-service.js";
 import { testAuthOptions } from "./helpers/test-auth-options.js";
 
@@ -121,7 +122,7 @@ describe.runIf(enabled)("sales invoices and receivables with MariaDB", () => {
     periodId = year.periods[0]!.id;
 
     const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, testAuthOptions(prisma!));
-    const taxes = new TaxService(prisma!);
+    const taxes = new TaxService(prisma!, new PrismaAccountReferenceLockAdapter());
     const treasury = new TreasuryService(prisma!);
     app = createApp({ NODE_ENV: "test", PORT: 3000, WEB_ORIGIN: "http://localhost:5173", SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: databaseUrl }, { auth, taxes, salesInvoices: createSalesInvoiceService(prisma!, { taxes }), receipts: createReceiptService(prisma!, { treasury }), printing: new PrintService(prisma!) });
   });

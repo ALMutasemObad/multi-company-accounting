@@ -71,7 +71,7 @@ describe.runIf(enabled)("atomic data imports with MariaDB/MySQL", () => {
     foreignCompanyId = (await prisma!.company.create({ data: { organizationId: company.organizationId, baseCurrencyId: company.baseCurrencyId, code: "IT-IMPORT-OTHER", name: "IT Import Isolation", timezone: company.timezone } })).id;
     const year = await prisma!.fiscalYear.create({ data: { companyId, name: "IT-IMPORT-2047", startDate: new Date("2047-01-01T00:00:00Z"), endDate: new Date("2047-12-31T00:00:00Z"), periods: { create: { periodNumber: 1, name: "فترة الاستيراد", startDate: new Date("2047-01-01T00:00:00Z"), endDate: new Date("2047-12-31T00:00:00Z") } } } });
     yearId = year.id;
-    const taxes = new TaxService(prisma!);
+    const taxes = new TaxService(prisma!, new PrismaAccountReferenceLockAdapter());
     service = new DataImportService(
       prisma!,
       new CustomerService(prisma!, new PrismaAccountReferenceLockAdapter()),

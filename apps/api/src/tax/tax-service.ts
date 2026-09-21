@@ -5,6 +5,7 @@ import { TransactionExecutor } from "../platform/transaction-executor.js";
 import type { ActorContext } from "../platform/actor-context.js";
 import type { AccountingAccountQueryPort, PostingAccountReference } from "../accounts/account-query-port.js";
 import { PrismaAccountingAccountQueryAdapter } from "../accounts/prisma-account-query-adapter.js";
+import type { AccountReferenceLockPort } from "../accounts/account-reference-lock-port.js";
 
 export type TaxUsage = "OUTPUT" | "INPUT";
 export type TaxErrorReason = "NOT_FOUND" | "VERSION_CONFLICT" | "INVALID_TAX_RATE";
@@ -93,6 +94,7 @@ export class TaxService implements TaxQuotePort {
 
   constructor(
     private readonly prisma: PrismaClient,
+    private readonly accountReferences: AccountReferenceLockPort,
     private readonly accounts: AccountingAccountQueryPort = new PrismaAccountingAccountQueryAdapter(),
   ) {
     this.transactions = new TransactionExecutor(prisma);
@@ -134,7 +136,9 @@ export class TaxService implements TaxQuotePort {
       companyId: context.companyId,
     }, async (tx) => {
       const rate = this.validRate(input.rate);
-      await this.validateAccount(tx, context.companyId, usage, rate, input.accountId ?? null);
+      const accountId = input.accountId ?? null;
+      await this.lockTaxAccounts(tx, context.companyId, [accountId]);
+      await this.validateAccount(tx, context.companyId, usage, rate, accountId);
       const code = await reserveMasterDataCode(tx, context.companyId, "TAX_RATE");
       const value = await tx.taxRate.create({
         data: {
@@ -169,6 +173,9 @@ export class TaxService implements TaxQuotePort {
         ? current.outputTaxAccountId
         : current.inputTaxAccountId;
       const accountId = input.accountId === undefined ? currentAccountId : input.accountId;
+      if (input.accountId !== undefined) {
+        await this.lockTaxAccounts(tx, context.companyId, [input.accountId]);
+      }
       await this.validateAccount(tx, context.companyId, usage, rate, accountId);
       const changed = await tx.taxRate.updateMany({
         where: { id, companyId: context.companyId, version: input.version },
@@ -304,6 +311,21 @@ export class TaxService implements TaxQuotePort {
     if (!accountId) throw new TaxError("INVALID_TAX_RATE");
     const account = await this.accounts.findById(tx, companyId, accountId);
     this.assertAccount(usage, rate, account);
+  }
+
+  private async lockTaxAccounts(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+    accountIds: readonly (bigint | null)[],
+  ) {
+    const sortedAccountIds = [...new Set(accountIds.flatMap((accountId) =>
+      accountId === null ? [] : [accountId.toString()]))]
+      .map(BigInt)
+      .sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+    for (const accountId of sortedAccountIds) {
+      const locked = await this.accountReferences.lockPostingAccount(tx, companyId, accountId);
+      if (!locked.eligible) throw new TaxError("INVALID_TAX_RATE");
+    }
   }
 
   private assertAccount(

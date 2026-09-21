@@ -5,7 +5,7 @@ const sourceRoot = new URL("../src/", import.meta.url);
 const source = (relative: string) => readFile(new URL(relative, sourceRoot), "utf8");
 
 describe("ADM-1B account usage composition", () => {
-  it("registers Core, Sales, Purchases, and Reporting but keeps lifecycle enforcement staged", async () => {
+  it("registers five owners but keeps lifecycle enforcement staged", async () => {
     const [server, accountService, guard] = await Promise.all([
       source("server.ts"),
       source("accounts/account-service.ts"),
@@ -15,6 +15,7 @@ describe("ADM-1B account usage composition", () => {
     expect(server).toContain("new CoreAccountUsageQueryAdapter()");
     expect(server).toContain("new SalesAccountUsageQueryAdapter()");
     expect(server).toContain("new PurchasesAccountUsageQueryAdapter()");
+    expect(server).toContain("new TaxAccountUsageQueryAdapter()");
     expect(server).toContain("new ReportingAccountUsageQueryAdapter()");
     expect(server).toContain("const accountUsageComposition = accountUsageGuard.completeness()");
     expect(server).toContain("accounts: new AccountService(database)");
@@ -23,10 +24,11 @@ describe("ADM-1B account usage composition", () => {
     expect(guard).toContain('enforcementEnabled: false');
   });
 
-  it("reports the staged server composition as 4/7 with deterministic missing owners", async () => {
+  it("reports the staged server composition as 5/7 with deterministic missing owners", async () => {
     const { CoreAccountUsageQueryAdapter } = await import("../src/accounts/core-account-usage-query-adapter.js");
     const { SalesAccountUsageQueryAdapter } = await import("../src/sales/sales-account-usage-query-adapter.js");
     const { PurchasesAccountUsageQueryAdapter } = await import("../src/purchases/purchases-account-usage-query-adapter.js");
+    const { TaxAccountUsageQueryAdapter } = await import("../src/tax/tax-account-usage-query-adapter.js");
     const { ReportingAccountUsageQueryAdapter } = await import("../src/reports/reporting-account-usage-adapter.js");
     const { AccountUsageGuard } = await import("../src/accounts/account-usage-guard.js");
 
@@ -34,13 +36,35 @@ describe("ADM-1B account usage composition", () => {
       new CoreAccountUsageQueryAdapter(),
       new SalesAccountUsageQueryAdapter(),
       new PurchasesAccountUsageQueryAdapter(),
+      new TaxAccountUsageQueryAdapter(),
       new ReportingAccountUsageQueryAdapter(),
     ]).completeness()).toEqual({
       complete: false,
-      missingOwners: ["TAX", "TREASURY", "INVENTORY"],
+      missingOwners: ["TREASURY", "INVENTORY"],
       duplicateOwners: [],
       enforcementEnabled: false,
     });
+  });
+
+  it("keeps Tax behind Accounts-owned lifecycle ports", async () => {
+    const [usageAdapter, taxService, accountService, server] = await Promise.all([
+      source("tax/tax-account-usage-query-adapter.ts"),
+      source("tax/tax-service.ts"),
+      source("accounts/account-service.ts"),
+      source("server.ts"),
+    ]);
+
+    expect(usageAdapter).toContain('import type { AccountUsageQueryPort } from "../accounts/account-usage-query-port.js"');
+    expect(usageAdapter).toContain("tx.taxRate.count");
+    expect(usageAdapter).not.toContain("PrismaClient");
+    expect(taxService).toContain('import type { AccountReferenceLockPort } from "../accounts/account-reference-lock-port.js"');
+    expect(taxService).not.toContain("PrismaAccountReferenceLockAdapter");
+    expect(taxService.indexOf("await this.lockTaxAccounts"))
+      .toBeLessThan(taxService.indexOf("await tx.taxRate.create"));
+    expect(taxService.indexOf("await this.lockTaxAccounts", taxService.indexOf("update(context")))
+      .toBeLessThan(taxService.indexOf("await tx.taxRate.updateMany"));
+    expect(server).toContain("new TaxService(database, accountReferenceLocks, accountQueries)");
+    expect(accountService).not.toContain("TaxAccountUsageQueryAdapter");
   });
 
   it("keeps the Purchases implementation behind Accounts-owned lifecycle ports", async () => {

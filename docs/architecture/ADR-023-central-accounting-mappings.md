@@ -592,8 +592,12 @@ source template tags أو حقائق الأطراف.
 `PurchaseInvoiceLine` المرتبط بالحساب داخل الشركة. يشمل العدد الكلي أسطر `DRAFT`،
 بينما يقتصر التاريخ غير القابل للتغيير على `POSTED/REVERSED/CANCELLED` لمستندي
 `PURCHASE_INVOICE/PURCHASE_DEBIT_NOTE`.
-يسجل composition الآن مالكي Core وSales وPurchases وReporting (4/7)، ويبقى Account lifecycle
-enforcement معطلًا صراحة لأن محولات Tax/Treasury/Inventory لم تكتمل؛ لا
+أضافت ADM-1B5 محول Tax المملوك للضرائب لعد كل `TaxRate` يشير إلى الحساب عبر
+`outputTaxAccountId` أو `inputTaxAccountId` داخل الشركة. تبقى
+`hasImmutableHistory=false` لأن هذه تعيينات حالية، بينما يغطي تاريخ الفواتير
+محولو سياقات المستندات وCore Accounting.
+يسجل composition الآن مالكي Core وSales وPurchases وTax وReporting (5/7)، ويبقى Account lifecycle
+enforcement معطلًا صراحة لأن محولي Treasury/Inventory لم يكتملَا؛ لا
 يُفسر هذا التركيب الجزئي على أنه حارس مكتمل. لم يبدأ جدول default mappings أو
 API/permissions/consumers الخاصة بـADM-2 وما بعدها.
 
@@ -612,5 +616,11 @@ API/permissions/consumers الخاصة بـADM-2 وما بعدها.
 مسار preview ومسار post يتحققان بلا قفل لهذه المعرّفات كي لا يعكسا ترتيب الأقفال؛
 وإذا استبدل post حساب بند مخزني بـ`inventoryAccountId` فإنه يقفل الحساب البديل
 داخل المعاملة قبل `updateMany`، ويتجاوز القفل والكتابة إن كانت البنود تستخدمه أصلًا.
+
+وتغلق ADM-1B5 سباق writer/reference في Tax: يجمع الكاتب كل accountId غير null
+سيحفظه، يزيل التكرار ويرتب المعرّفات رقميًا، ثم يقفلها داخل المعاملة قبل
+`taxRate.create/updateMany`. كل `accountId` مصرح به في update يقفل حتى إن ساوى
+snapshot المقروء، ثم يبقى `version` CAS الحكم النهائي للتزامن؛ غياب الحقل وحده لا
+ينشئ مرجعًا جديدًا ولا يطلب قفلًا.
 خطة الشرائح وبوابات التنفيذ في
 [خطة مركز تعيين الحسابات](CENTRAL_ACCOUNTING_MAPPINGS_SLICE_AR.md).
