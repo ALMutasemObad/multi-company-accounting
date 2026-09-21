@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { evaluateRegister, normalizeRepositoryPath } from '../architecture-debt-ratchet.mjs';
 
 const debtPath = 'apps/api/src/fiscal/financial-close-service.ts';
 const exceptionPath = 'apps/api/src/accounts/default-chart-template.ts';
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 async function fixture(source = 'code: "3300"\ncode: "3300"\n') {
   const root = await mkdtemp(path.join(os.tmpdir(), 'architecture-debt-ratchet-'));
@@ -65,8 +67,31 @@ test('validates paths, ownership and Windows path normalization', async () => {
   await assert.rejects(() => evaluateRegister({ root, register: register({ paths: ['apps/**/financial-close-service.ts'] }), now: new Date('2026-09-15T00:00:00Z') }), /non-glob/);
 });
 
+test('rejects every entry missing required ownership, removal, matching, baseline or expiry metadata', async (context) => {
+  const root = await fixture();
+  for (const field of ['owner', 'removalSlice', 'rationale', 'paths', 'matcher', 'baseline', 'expiry']) {
+    await context.test(field, async () => {
+      const incomplete = register();
+      delete incomplete.entries[0][field];
+      await assert.rejects(
+        () => evaluateRegister({ root, register: incomplete, now: new Date('2026-09-15T00:00:00Z') }),
+        new RegExp(`missing ${field}`),
+      );
+    });
+  }
+});
+
 test('accepts an empty debt register after every debt is removed and rejects impossible calendar dates', async () => {
   const root = await fixture();
   await assert.doesNotReject(() => evaluateRegister({ root, register: { schemaVersion: 1, entries: [] }, now: new Date('2026-09-15T00:00:00Z') }));
   await assert.rejects(() => evaluateRegister({ root, register: register({ expiry: '2026-02-31' }), now: new Date('2026-01-01T00:00:00Z') }), /expiry must be an ISO date/);
+});
+
+test('exposes package scripts and runs the dependency-free CI gate exactly once', async () => {
+  const packageJson = JSON.parse(await readFile(path.join(repositoryRoot, 'package.json'), 'utf8'));
+  assert.equal(packageJson.scripts['architecture-debt:check'], 'node scripts/architecture-debt-ratchet.mjs');
+  assert.equal(packageJson.scripts['architecture-debt:test'], 'node --test scripts/tests/architecture-debt-ratchet.test.mjs');
+
+  const workflow = await readFile(path.join(repositoryRoot, '.github/workflows/ci.yml'), 'utf8');
+  assert.equal(workflow.match(/run: node scripts\/architecture-debt-ratchet\.mjs/g)?.length, 1);
 });
