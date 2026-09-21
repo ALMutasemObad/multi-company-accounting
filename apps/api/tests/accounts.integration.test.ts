@@ -57,6 +57,44 @@ describe.runIf(enabled)('accounts and cost centers with MariaDB', () => {
     expect((await agent.delete(`/api/v1/accounts/${unaffected.id}`).set('X-CSRF-Token', csrf).send({ expectedVersion: unaffected.version, reason: 'نسخة قديمة للحذف' }).expect(409)).body.code).toBe('VERSION_CONFLICT');
     await agent.delete(`/api/v1/accounts/${unaffected.id}`).set('X-CSRF-Token', csrf).send({ expectedVersion: renamed.body.version, reason: 'حذف CAS ناجح' }).expect(200);
   });
+  it('serializes child creation and reparenting against parent deactivation', async () => {
+    const type = (await agent.get('/api/v1/account-types').expect(200)).body.data[0];
+    const createParent = (await agent.post('/api/v1/accounts').set('X-CSRF-Token', csrf).send({ accountTypeId: type.id, code: 'IT-RACE-CREATE-P', nameAr: 'أب سباق الإنشاء', allowsPosting: false }).expect(201)).body;
+    const [createdChild, createParentDeactivation] = await Promise.all([
+      agent.post('/api/v1/accounts').set('X-CSRF-Token', csrf).send({ accountTypeId: type.id, parentAccountId: createParent.id, code: 'IT-RACE-CREATE-C', nameAr: 'طفل سباق الإنشاء', allowsPosting: true }),
+      agent.post(`/api/v1/accounts/${createParent.id}/deactivate`).set('X-CSRF-Token', csrf).send({ expectedVersion: createParent.version, reason: 'سباق إنشاء طفل' }),
+    ]);
+    expect([createdChild.status, createParentDeactivation.status].filter((status) => status === 200 || status === 201)).toHaveLength(1);
+    const persistedCreateParent = await prisma!.account.findFirstOrThrow({ where: { id: BigInt(createParent.id), companyId } });
+    const persistedChild = await prisma!.account.findFirst({ where: { companyId, code: 'IT-RACE-CREATE-C' } });
+    expect(persistedChild == null || persistedCreateParent.isActive).toBe(true);
+
+    const postingParent = (await agent.post('/api/v1/accounts').set('X-CSRF-Token', csrf).send({ accountTypeId: type.id, code: 'IT-RACE-POST-P', nameAr: 'أب سباق الترحيل', allowsPosting: false }).expect(201)).body;
+    const [postingChild, madePosting] = await Promise.all([
+      agent.post('/api/v1/accounts').set('X-CSRF-Token', csrf).send({ accountTypeId: type.id, parentAccountId: postingParent.id, code: 'IT-RACE-POST-C', nameAr: 'طفل سباق الترحيل', allowsPosting: true }),
+      agent.patch(`/api/v1/accounts/${postingParent.id}`).set('X-CSRF-Token', csrf).send({ expectedVersion: postingParent.version, allowsPosting: true }),
+    ]);
+    expect([postingChild.status, madePosting.status].filter((status) => status === 200 || status === 201)).toHaveLength(1);
+    const [persistedPostingParent, persistedPostingChild] = await Promise.all([
+      prisma!.account.findFirstOrThrow({ where: { id: BigInt(postingParent.id), companyId } }),
+      prisma!.account.findFirst({ where: { companyId, code: 'IT-RACE-POST-C' } }),
+    ]);
+    expect(persistedPostingParent.allowsPosting && persistedPostingChild != null).toBe(false);
+
+    const source = (await agent.post('/api/v1/accounts').set('X-CSRF-Token', csrf).send({ accountTypeId: type.id, code: 'IT-RACE-SOURCE', nameAr: 'مصدر سباق النقل', allowsPosting: false }).expect(201)).body;
+    const moved = (await agent.post('/api/v1/accounts').set('X-CSRF-Token', csrf).send({ accountTypeId: type.id, parentAccountId: source.id, code: 'IT-RACE-MOVED', nameAr: 'حساب منقول', allowsPosting: true }).expect(201)).body;
+    const target = (await agent.post('/api/v1/accounts').set('X-CSRF-Token', csrf).send({ accountTypeId: type.id, code: 'IT-RACE-TARGET', nameAr: 'هدف سباق النقل', allowsPosting: false }).expect(201)).body;
+    const [reparented, targetDeactivation] = await Promise.all([
+      agent.patch(`/api/v1/accounts/${moved.id}`).set('X-CSRF-Token', csrf).send({ expectedVersion: moved.version, parentAccountId: target.id }),
+      agent.post(`/api/v1/accounts/${target.id}/deactivate`).set('X-CSRF-Token', csrf).send({ expectedVersion: target.version, reason: 'سباق نقل طفل' }),
+    ]);
+    expect([reparented.status, targetDeactivation.status].filter((status) => status === 200)).toHaveLength(1);
+    const [persistedMoved, persistedTarget] = await Promise.all([
+      prisma!.account.findFirstOrThrow({ where: { id: BigInt(moved.id), companyId } }),
+      prisma!.account.findFirstOrThrow({ where: { id: BigInt(target.id), companyId } }),
+    ]);
+    expect(persistedMoved.parentAccountId === persistedTarget.id && !persistedTarget.isActive).toBe(false);
+  });
   it('generates concurrent cost-center codes, prevents cycles and preserves manual account numbering', async () => {
     const createdIds: string[] = [];
     try {

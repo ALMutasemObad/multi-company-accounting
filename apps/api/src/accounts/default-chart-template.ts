@@ -1,4 +1,5 @@
 import type { Prisma } from '@prisma/client';
+import { lockAccountRows, orderedAccountIds } from './account-row-lock.js';
 
 export const DEFAULT_CHART_TEMPLATE_CODE = 'SMALL_BUSINESS_GENERAL';
 export const DEFAULT_CHART_TEMPLATE_VERSION = 2;
@@ -195,23 +196,50 @@ export async function applyDefaultChartTemplate(tx: Prisma.TransactionClient, co
   if (!isSupportedChartTemplate(requestedTemplateCode)) throw new Error(`DEFAULT_CHART_UNSUPPORTED:${requestedTemplateCode}`);
   const templateCode = requestedTemplateCode;
   const types = new Map((await tx.accountType.findMany({ select: { id: true, code: true } })).map((type) => [type.code, type.id]));
-  const accounts: TemplateAccount[] = await tx.account.findMany({
-    where: { companyId },
-    select: { id: true, code: true, parentAccountId: true, level: true, allowsPosting: true, isActive: true, version: true, sourceTemplateCode: true, sourceTemplateKey: true },
-  });
-  const resolved = new Map<string, TemplateAccount>();
-  let created = 0; let linked = 0; let existing = 0;
-
   const definitions = [
     ...defaultChartDefinitions.map((definition) => ({ definition, sourceTemplateCode: DEFAULT_CHART_TEMPLATE_CODE })),
     ...overlayFor(templateCode).map((definition) => ({ definition, sourceTemplateCode: templateCode })),
   ];
+  const accounts: TemplateAccount[] = await tx.account.findMany({
+    where: { companyId },
+    select: { id: true, code: true, parentAccountId: true, level: true, allowsPosting: true, isActive: true, version: true, sourceTemplateCode: true, sourceTemplateKey: true },
+  });
+  const selectedByKey = new Map(definitions.map(({ definition, sourceTemplateCode }) => [
+    definition.key,
+    findMatches(accounts, definition, sourceTemplateCode),
+  ]));
+  const selectedExistingIds = orderedAccountIds(definitions.flatMap(({ definition, sourceTemplateCode }) => {
+    const matches = findMatches(accounts, definition, sourceTemplateCode);
+    const linkIds = matches.selected && !matches.marked ? [matches.selected.id] : [];
+    if (matches.selected || !definition.parentKey) return linkIds;
+    const parent = selectedByKey.get(definition.parentKey)?.selected;
+    return parent ? [...linkIds, parent.id] : linkIds;
+  }));
+  const lockedExistingIds = await lockAccountRows(tx, companyId, selectedExistingIds);
+  if (lockedExistingIds.length !== selectedExistingIds.length) throw new Error('DEFAULT_CHART_VERSION_CONFLICT:ACCOUNT_SET');
+  if (lockedExistingIds.length > 0) {
+    const refreshed = await tx.account.findMany({
+      where: { companyId, id: { in: lockedExistingIds } },
+      select: { id: true, code: true, parentAccountId: true, level: true, allowsPosting: true, isActive: true, version: true, sourceTemplateCode: true, sourceTemplateKey: true },
+    });
+    if (refreshed.length !== lockedExistingIds.length) throw new Error('DEFAULT_CHART_VERSION_CONFLICT:ACCOUNT_SET');
+    const refreshedById = new Map(refreshed.map((account) => [account.id.toString(), account]));
+    for (let index = 0; index < accounts.length; index += 1) {
+      accounts[index] = refreshedById.get(accounts[index]!.id.toString()) ?? accounts[index]!;
+    }
+  }
+  const resolved = new Map<string, TemplateAccount>();
+  const createdAccountIds = new Set<string>();
+  const lockedExisting = new Set(lockedExistingIds.map(String));
+  let created = 0; let linked = 0; let existing = 0;
+
   for (const { definition, sourceTemplateCode } of definitions) {
     const { marked, byCode } = findMatches(accounts, definition, sourceTemplateCode);
     if (marked && byCode && marked.id !== byCode.id) throw new Error(`DEFAULT_CHART_CONFLICT:${definition.key}:CODE`);
     let account = marked ?? byCode;
     if (account) {
       if (!marked) {
+        if (!lockedExisting.has(account.id.toString())) throw new Error(`DEFAULT_CHART_VERSION_CONFLICT:${account.id}`);
         const linkedAccount = await tx.account.updateMany({
           where: { id: account.id, companyId, version: account.version },
           data: { sourceTemplateCode, sourceTemplateKey: definition.key, version: { increment: 1 } },
@@ -227,7 +255,15 @@ export async function applyDefaultChartTemplate(tx: Prisma.TransactionClient, co
       continue;
     }
 
-    const parent = definition.parentKey ? resolved.get(definition.parentKey) : undefined;
+    let parent = definition.parentKey ? resolved.get(definition.parentKey) : undefined;
+    if (parent && !createdAccountIds.has(parent.id.toString())) {
+      if (!lockedExisting.has(parent.id.toString())) throw new Error(`DEFAULT_CHART_VERSION_CONFLICT:${parent.id}`);
+      parent = await tx.account.findFirst({
+        where: { id: parent.id, companyId },
+        select: { id: true, code: true, parentAccountId: true, level: true, allowsPosting: true, isActive: true, version: true, sourceTemplateCode: true, sourceTemplateKey: true },
+      }) ?? undefined;
+      if (definition.parentKey && parent) resolved.set(definition.parentKey, parent);
+    }
     if (definition.parentKey && (!parent || !parent.isActive || parent.allowsPosting)) throw new Error(`DEFAULT_CHART_CONFLICT:${definition.key}:PARENT`);
     const accountTypeId = types.get(definition.accountTypeCode);
     if (!accountTypeId) throw new Error(`DEFAULT_CHART_CONFLICT:${definition.key}:ACCOUNT_TYPE`);
@@ -247,7 +283,7 @@ export async function applyDefaultChartTemplate(tx: Prisma.TransactionClient, co
       },
       select: { id: true, code: true, parentAccountId: true, level: true, allowsPosting: true, isActive: true, version: true, sourceTemplateCode: true, sourceTemplateKey: true },
     });
-    accounts.push(account); resolved.set(definition.key, account); created += 1;
+    accounts.push(account); resolved.set(definition.key, account); createdAccountIds.add(account.id.toString()); created += 1;
   }
 
   const status = await inspectDefaultChartTemplate(tx, companyId, templateCode);
