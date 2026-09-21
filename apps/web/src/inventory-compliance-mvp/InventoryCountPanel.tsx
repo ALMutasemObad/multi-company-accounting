@@ -1,5 +1,5 @@
 import { type FormEvent, type KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
-import { api, idempotencyKey } from "../api";
+import { ApiError, api, idempotencyKey } from "../api";
 import { activeIntlLocale, localizedCopyFor, useI18n } from "../i18n";
 import { inventoryCountCopy } from "../i18n/locales/inventory-count";
 import type { ListResponse, Warehouse } from "../types";
@@ -22,6 +22,12 @@ type Draft = { quantity: string; reason: string; version: number };
 type InventoryCountLocalizedCopy = { [Key in keyof typeof inventoryCountCopy.ar]: string };
 const emptySummary: Summary = { total: 0, counted: 0, remaining: 0, surplus: 0, shortage: 0, conflicts: 0 };
 const today = () => new Date().toISOString().slice(0, 10);
+const quantityPattern = /^(?:0|[1-9]\d{0,12})(?:\.\d{1,6})?$/u;
+const normalizeQuantity = (value: string) => value
+  .replace(/[٠-٩]/gu, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)))
+  .replace(/[۰-۹]/gu, (digit) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)))
+  .replace(/[٬,\s]/gu, "")
+  .replace(/٫/gu, ".");
 
 export function InventoryCountPanel({ notify }: { notify: Notice }) {
   const { locale } = useI18n();
@@ -43,7 +49,9 @@ export function InventoryCountPanel({ notify }: { notify: Notice }) {
   const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [showApprove, setShowApprove] = useState(false);
+  const [invalidRows, setInvalidRows] = useState<Set<string>>(new Set());
   const quantityInputs = useRef(new Map<string, HTMLInputElement>());
+  const reasonInputs = useRef(new Map<string, HTMLInputElement>());
 
   const loadReferences = useCallback(async () => {
     try {
@@ -75,8 +83,23 @@ export function InventoryCountPanel({ notify }: { notify: Notice }) {
 
   const saveRows = useCallback(async (ids?: string[]) => {
     if (!session || session.status !== "DRAFT") return false;
-    const targets = (ids ?? [...dirty]).filter((id) => dirty.has(id) && drafts[id]?.quantity.trim());
+    const targets = (ids ?? [...dirty]).filter((id) => dirty.has(id));
     if (!targets.length) return true;
+    const invalidQuantityId = targets.find((id) => !quantityPattern.test(drafts[id]?.quantity.trim() ?? ""));
+    if (invalidQuantityId) {
+      setInvalidRows(new Set([invalidQuantityId])); setError(copy.invalidQuantity);
+      quantityInputs.current.get(invalidQuantityId)?.focus(); return false;
+    }
+    const missingReasonId = targets.find((id) => {
+      const line = lines.find((value) => value.id === id);
+      const draft = drafts[id];
+      return line && draft && Number(draft.quantity) !== Number(line.bookQuantity) && !draft.reason.trim();
+    });
+    if (missingReasonId) {
+      setInvalidRows(new Set([missingReasonId])); setError(copy.varianceReasonMissing);
+      reasonInputs.current.get(missingReasonId)?.focus(); return false;
+    }
+    setInvalidRows(new Set());
     setSaving(true); setError("");
     try {
       const result = await api<{ conflicts: Array<{ lineId: string }>; summary: Summary }>(`/inventory-count-sessions/${session.id}/counts`, {
@@ -88,9 +111,16 @@ export function InventoryCountPanel({ notify }: { notify: Notice }) {
       if (conflicting.size) { notify(copy.concurrentConflict, "error"); return false; }
       notify(targets.length === 1 ? copy.savedOne : copy.savedMany.replace("{count}", targets.length.toLocaleString(activeIntlLocale())));
       await loadLines(); return true;
-    } catch (cause) { setError(cause instanceof Error ? cause.message : copy.saveError); return false; }
+    } catch (cause) {
+      setError(cause instanceof ApiError && cause.reason === "INVALID_VARIANCE_REASON"
+        ? copy.varianceReasonMissing
+        : cause instanceof ApiError && cause.reason === "INVALID_COUNT"
+          ? copy.invalidQuantity
+          : cause instanceof Error ? cause.message : copy.saveError);
+      return false;
+    }
     finally { setSaving(false); }
-  }, [copy.concurrentConflict, copy.saveError, copy.savedMany, copy.savedOne, dirty, drafts, loadLines, notify, session]);
+  }, [copy.concurrentConflict, copy.invalidQuantity, copy.saveError, copy.savedMany, copy.savedOne, copy.varianceReasonMissing, dirty, drafts, lines, loadLines, notify, session]);
 
   useEffect(() => {
     const handler = (event: globalThis.KeyboardEvent) => {
@@ -103,6 +133,8 @@ export function InventoryCountPanel({ notify }: { notify: Notice }) {
     setDrafts((current) => ({ ...current, [id]: { ...current[id]!, ...patch } }));
     setDirty((current) => new Set(current).add(id));
     setConflicts((current) => { const next = new Set(current); next.delete(id); return next; });
+    setInvalidRows((current) => { const next = new Set(current); next.delete(id); return next; });
+    setError("");
   }
   async function enterSave(event: KeyboardEvent<HTMLInputElement>, index: number, lineId: string) {
     if (event.key !== "Enter") return; event.preventDefault();
@@ -125,7 +157,8 @@ export function InventoryCountPanel({ notify }: { notify: Notice }) {
     </div>
     {session && <><div className="detail-grid"><div><span>{copy.state}</span><strong>{statusLabel[session.status]}</strong></div><div><span>{copy.countDate}</span><strong dir="ltr">{session.countDate}</strong></div><div><span>{copy.lastReceipt}</span><strong dir="ltr">{session.cutoff?.receipt?.number ?? "—"}</strong></div><div><span>{copy.lastIssue}</span><strong dir="ltr">{session.cutoff?.issue?.number ?? "—"}</strong></div></div><div className="summary-cards"><SummaryCard label={copy.totalItems} value={summary.total} /><SummaryCard label={copy.counted} value={summary.counted} /><SummaryCard label={copy.remaining} value={summary.remaining} /><SummaryCard label={copy.surplus} value={summary.surplus} /><SummaryCard label={copy.shortage} value={summary.shortage} /><SummaryCard label={copy.conflicts} value={conflicts.size || summary.conflicts} /></div></>}
     {conflicts.size > 0 && <div className="inline-notice" role="alert">{copy.conflictAlert}<Button variant="secondary" onClick={() => void loadLines()}>{copy.reload}</Button></div>}
-    {error ? <div className="error-panel" role="alert"><p>{error}</p><Button variant="secondary" onClick={() => void loadLines()}>{copy.retry}</Button></div> : loading ? <Spinner label={copy.loading} /> : !session ? <EmptyState title={copy.noSession} description={copy.noSessionDescription} /> : !lines.length ? <EmptyState title={copy.noLines} description={copy.noLinesDescription} /> : <div className="data-table-wrap" role="region" tabIndex={0} aria-label={copy.tableLabel}><table className="data-table"><thead><tr><th>{copy.item}</th><th>{copy.location}</th><th>{copy.shelf}</th><th>{copy.bookQuantity}</th><th>{copy.countedQuantity}</th><th>{copy.variance}</th><th>{copy.varianceReason}</th></tr></thead><tbody>{lines.map((line, index) => { const draft = drafts[line.id]; const variance = draft?.quantity ? Number(draft.quantity) - Number(line.bookQuantity) : line.varianceQuantity === null ? null : Number(line.varianceQuantity); return <tr key={line.id} className={conflicts.has(line.id) ? "row-conflict" : dirty.has(line.id) ? "row-pending" : ""}><td><strong>{line.title}</strong><small dir="ltr">{line.code} · {line.unitCode}</small></td><td>{line.location ?? "—"}</td><td>{line.shelf ?? "—"}</td><td dir="ltr">{Number(line.bookQuantity).toLocaleString(activeIntlLocale(), { maximumFractionDigits: 6 })}</td><td><input ref={(node) => { if (node) quantityInputs.current.set(line.id, node); else quantityInputs.current.delete(line.id); }} aria-label={copy.countedQuantityFor.replace("{title}", line.title)} dir="ltr" inputMode="decimal" value={draft?.quantity ?? ""} disabled={session.status !== "DRAFT" || saving} onChange={(event) => updateDraft(line.id, { quantity: event.target.value })} onKeyDown={(event) => void enterSave(event, index, line.id)} pattern="[0-9]{1,13}([.][0-9]{1,6})?" /></td><td dir="ltr" className={variance && variance !== 0 ? "variance-cell" : ""}>{variance === null ? "—" : variance.toLocaleString(activeIntlLocale(), { maximumFractionDigits: 6 })}</td><td><input aria-label={copy.varianceReasonFor.replace("{title}", line.title)} value={draft?.reason ?? ""} disabled={session.status !== "DRAFT" || saving} required={Boolean(variance)} onChange={(event) => updateDraft(line.id, { reason: event.target.value })} maxLength={500} placeholder={variance ? copy.reasonRequired : "—"} /></td></tr>; })}</tbody></table></div>}
+    {error && <div className="error-panel" role="alert"><p>{error}</p>{lines.length === 0 && <Button variant="secondary" onClick={() => void loadLines()}>{copy.retry}</Button>}</div>}
+    {loading ? <Spinner label={copy.loading} /> : !session ? <EmptyState title={copy.noSession} description={copy.noSessionDescription} /> : !lines.length ? <EmptyState title={copy.noLines} description={copy.noLinesDescription} /> : <div className="data-table-wrap" role="region" tabIndex={0} aria-label={copy.tableLabel}><table className="data-table"><thead><tr><th>{copy.item}</th><th>{copy.location}</th><th>{copy.shelf}</th><th>{copy.bookQuantity}</th><th>{copy.countedQuantity}</th><th>{copy.variance}</th><th>{copy.varianceReason}</th></tr></thead><tbody>{lines.map((line, index) => { const draft = drafts[line.id]; const variance = draft?.quantity ? Number(draft.quantity) - Number(line.bookQuantity) : line.varianceQuantity === null ? null : Number(line.varianceQuantity); return <tr key={line.id} className={conflicts.has(line.id) || invalidRows.has(line.id) ? "row-conflict" : dirty.has(line.id) ? "row-pending" : ""}><td><strong>{line.title}</strong><small dir="ltr">{line.code} · {line.unitCode}</small></td><td>{line.location ?? "—"}</td><td>{line.shelf ?? "—"}</td><td dir="ltr">{Number(line.bookQuantity).toLocaleString(activeIntlLocale(), { maximumFractionDigits: 6 })}</td><td><input ref={(node) => { if (node) quantityInputs.current.set(line.id, node); else quantityInputs.current.delete(line.id); }} aria-label={copy.countedQuantityFor.replace("{title}", line.title)} dir="ltr" inputMode="decimal" value={draft?.quantity ?? ""} disabled={session.status !== "DRAFT" || saving} onChange={(event) => updateDraft(line.id, { quantity: normalizeQuantity(event.target.value) })} onKeyDown={(event) => void enterSave(event, index, line.id)} pattern="[0-9]{1,13}([.][0-9]{1,6})?" /></td><td dir="ltr" className={variance && variance !== 0 ? "variance-cell" : ""}>{variance === null ? "—" : variance.toLocaleString(activeIntlLocale(), { maximumFractionDigits: 6 })}</td><td><input ref={(node) => { if (node) reasonInputs.current.set(line.id, node); else reasonInputs.current.delete(line.id); }} aria-label={copy.varianceReasonFor.replace("{title}", line.title)} value={draft?.reason ?? ""} disabled={session.status !== "DRAFT" || saving} required={Boolean(variance)} onChange={(event) => updateDraft(line.id, { reason: event.target.value })} maxLength={500} placeholder={variance ? copy.reasonRequired : "—"} /></td></tr>; })}</tbody></table></div>}
     {session && <div className="form-actions"><Button variant="ghost" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>{copy.previous}</Button><span>{copy.page.replace("{page}", page.toLocaleString(activeIntlLocale()))}</span><Button variant="ghost" disabled={lines.length < 50} onClick={() => setPage((value) => value + 1)}>{copy.next}</Button>{session.status === "DRAFT" && <><Button variant="secondary" disabled={saving || dirty.size === 0} onClick={() => void saveRows()}>{saving ? copy.saving : copy.save.replace("{count}", dirty.size.toLocaleString(activeIntlLocale()))}</Button><Button disabled={summary.remaining > 0 || dirty.size > 0 || conflicts.size > 0} onClick={() => void transition("submit")}>{copy.submit}</Button></>}{session.status === "SUBMITTED" && <Button onClick={() => setShowApprove(true)}>{copy.approveCount}</Button>}</div>}
     {showCreate && <CreateSessionForm copy={copy} warehouses={warehouses} onClose={() => setShowCreate(false)} onSaved={async (created) => { setShowCreate(false); await loadReferences(); setSession(created); notify(copy.created); }} />}
     {showApprove && session && <ApproveForm copy={copy} onClose={() => setShowApprove(false)} onApprove={(name) => transition("approve", name)} />}
