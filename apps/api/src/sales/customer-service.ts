@@ -194,7 +194,7 @@ export class CustomerService implements CustomerImportPort, CrmCustomerQueryPort
         if (!current) {
           throw new CustomerError("NOT_FOUND");
         }
-        if (input.receivableAccountId !== undefined && input.receivableAccountId !== current.receivableAccountId) {
+        if (input.receivableAccountId !== undefined) {
           await this.lockPostingAccount(tx, context.companyId, input.receivableAccountId);
         }
         const value = await tx.customer.update({

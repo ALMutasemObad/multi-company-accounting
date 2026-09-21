@@ -83,7 +83,7 @@ describe("Sales customer ports", () => {
     });
   });
 
-  it("locks a changed receivable account but skips unchanged customer references", async () => {
+  it("locks every supplied receivable account but skips updates without that field", async () => {
     const current = { id: 19n, companyId: 3n, receivableAccountId: 5n };
     const customer = {
       findFirst: vi.fn().mockResolvedValue(current),
@@ -97,9 +97,13 @@ describe("Sales customer ports", () => {
     const service = new CustomerService(prisma, { lockPostingAccount });
 
     await service.updateCustomer({ companyId: 3n, userId: 11n }, 19n, { nameAr: "عميل" });
-    await service.updateCustomer({ companyId: 3n, userId: 11n }, 19n, { receivableAccountId: 5n });
     expect(lockPostingAccount).not.toHaveBeenCalled();
 
+    await service.updateCustomer({ companyId: 3n, userId: 11n }, 19n, { receivableAccountId: 5n });
+    expect(lockPostingAccount).toHaveBeenCalledWith(tx, 3n, 5n);
+    expect(lockPostingAccount.mock.invocationCallOrder[0]).toBeLessThan(customer.update.mock.invocationCallOrder.at(-1)!);
+
+    lockPostingAccount.mockClear();
     await service.updateCustomer({ companyId: 3n, userId: 11n }, 19n, { receivableAccountId: 6n });
     expect(lockPostingAccount).toHaveBeenCalledWith(tx, 3n, 6n);
     expect(lockPostingAccount.mock.invocationCallOrder[0]).toBeLessThan(customer.update.mock.invocationCallOrder.at(-1)!);
