@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Prisma, type AccountingDocument, type PrismaClient } from "@prisma/client";
 import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import {
+  lockAccountingDocument,
   PostingEngine,
   type PostingEntryPlan,
   type PostingFailureReason,
@@ -21,6 +22,7 @@ import {
 } from "../treasury/treasury-service.js";
 import type { ActorContext } from "../platform/actor-context.js";
 import { archiveDocument } from "../printing/print-archive.js";
+import type { AccountReferenceLockPort } from "../accounts/account-reference-lock-port.js";
 
 export type PaymentErrorReason =
   | "NOT_FOUND"
@@ -58,6 +60,7 @@ export type PaymentDependencies = {
   treasury: TreasuryInstrumentPort;
   fxAccounts: RealizedFxAccountPort;
   payables: PayableSettlementPort;
+  accountReferences: AccountReferenceLockPort;
 };
 export type PaymentInput = {
   fiscalPeriodId: bigint;
@@ -118,6 +121,7 @@ export class PaymentService {
   private readonly treasury: TreasuryInstrumentPort;
   private readonly fxAccounts: RealizedFxAccountPort;
   private readonly commands: IdempotentCommandExecutor;
+  private readonly accountReferences: AccountReferenceLockPort;
   constructor(
     private readonly prisma: PrismaClient,
     dependencies: PaymentDependencies,
@@ -127,6 +131,7 @@ export class PaymentService {
     this.treasury = dependencies.treasury;
     this.fxAccounts = dependencies.fxAccounts;
     this.payables = dependencies.payables;
+    this.accountReferences = dependencies.accountReferences;
     this.commands = new IdempotentCommandExecutor(prisma, this.transactions);
   }
   private include() {
@@ -236,7 +241,15 @@ export class PaymentService {
   async update(context: ActorContext, id: bigint, input: PaymentUpdate) {
     return this.prisma.$transaction(
       async (tx) => {
-        const current = await tx.payment.findFirst({
+        let current = await tx.payment.findFirst({
+          where: { id, companyId: context.companyId },
+          include: this.include(),
+        });
+        if (!current) throw new PaymentError("NOT_FOUND");
+        if (!await lockAccountingDocument(tx, context.companyId, current.accountingDocumentId)) {
+          throw new PaymentError("NOT_FOUND");
+        }
+        current = await tx.payment.findFirst({
           where: { id, companyId: context.companyId },
           include: this.include(),
         });
@@ -292,7 +305,12 @@ export class PaymentService {
         if (!period || period.status === "CLOSED")
           throw new PaymentError("PERIOD_CLOSED");
         this.validDate(period, merged.documentDate);
-        const prepared = await this.prepare(tx, context.companyId, merged);
+        const prepared = await this.prepare(
+          tx,
+          context.companyId,
+          merged,
+          input.counterAccountId !== undefined,
+        );
         if (input.counterpartyTaxNumber === undefined) prepared.counterpartyTaxLast4 = current.counterpartyTaxLast4;
         const changed = await tx.accountingDocument.updateMany({
           where: {
@@ -335,6 +353,7 @@ export class PaymentService {
           tx,
           context.companyId,
           this.inputFrom(payment),
+          false,
         );
         const zero = new Prisma.Decimal(0);
         const result = await this.posting.postPlan(tx, {
@@ -659,6 +678,7 @@ export class PaymentService {
     tx: Prisma.TransactionClient,
     companyId: bigint,
     input: PaymentInput,
+    lockCounterAccount = true,
   ) {
     if ((input.supplierId == null) === (input.counterAccountId == null))
       throw new PaymentError("COUNTERPARTY_REQUIRED");
@@ -677,6 +697,9 @@ export class PaymentService {
       await this.validAccount(tx, companyId, supplier.payableAccountId);
       counterLedgerAccountId = supplier.payableAccountId;
     } else {
+      if (lockCounterAccount) {
+        await this.lockCounterAccounts(tx, companyId, [input.counterAccountId!]);
+      }
       await this.validAccount(tx, companyId, input.counterAccountId!);
       counterLedgerAccountId = input.counterAccountId!;
     }
@@ -759,6 +782,19 @@ export class PaymentService {
       cashBankLedgerAccountId: instrument.cashBankLedgerAccountId,
       counterLedgerAccountId,
     };
+  }
+  private async lockCounterAccounts(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+    accountIds: readonly bigint[],
+  ) {
+    const sortedAccountIds = [...new Set(accountIds.map(String))]
+      .map(BigInt)
+      .sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+    for (const accountId of sortedAccountIds) {
+      const locked = await this.accountReferences.lockPostingAccount(tx, companyId, accountId);
+      if (!locked.eligible) throw new PaymentError("INVALID_ACCOUNT");
+    }
   }
   private inputFrom(v: PaymentRecord): PaymentInput {
     return {

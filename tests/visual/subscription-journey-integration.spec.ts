@@ -23,8 +23,16 @@ for (const locale of ['ar', 'en', 'ur', 'hi']) {
     });
     await page.route('**/api/v1/subscription/catalog?*', (route) => route.fulfill({ json: { ...catalog, plans: [selectedPlan] } }));
     await page.route('**/api/v1/auth/**', (route) => {
-      const path = new URL(route.request().url()).pathname;
-      if (path.endsWith('/csrf')) return route.fulfill({ json: { csrfToken: `pre-auth-${++csrfReads}` } });
+      const url = new URL(route.request().url());
+      const path = url.pathname;
+      if (path.endsWith('/csrf')) {
+        if (url.searchParams.get('mode') === 'authenticated') {
+          return signedIn
+            ? route.fulfill({ json: { csrfToken: 'authenticated-journey-token', expiresAt: new Date(Date.now() + 10 * 60_000).toISOString() } })
+            : route.fulfill({ status: 401, json: { code: 'UNAUTHENTICATED' } });
+        }
+        return route.fulfill({ json: { csrfToken: `pre-auth-${++csrfReads}` } });
+      }
       if (path.endsWith('/register')) {
         expect(route.request().headers()['x-csrf-token']).toBe(`pre-auth-${csrfReads}`);
         return route.fulfill({ status: 202, json: { status: 'ACCEPTED' } });
@@ -127,6 +135,9 @@ async function optionalPage(page: Page) {
   await page.route('**/api/v1/**', route => {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace('/api/v1', '');
+    if (path === '/auth/csrf') return route.fulfill({ json: {
+      csrfToken: 'optional-test-csrf', expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+    } });
     if (state.failure?.path === path) return route.fulfill({ status: state.failure.status, json: { code: state.failure.code } });
     if (path === '/auth/me') { state.authReads++; return route.fulfill({ json: state.auth }); }
     if (path === '/auth/companies') return route.fulfill({ json: { data: companies } });

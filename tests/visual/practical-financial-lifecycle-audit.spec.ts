@@ -180,7 +180,10 @@ async function configureLifecycle(page: Page) {
     if (path === "/auth/companies") return fulfill(route, { data: [{ id: "audit-company", name: "Lifecycle audit company" }] });
     if (path === "/platform/capabilities") return fulfill(route, { platformOperations: false });
     if (path === "/organizations/workspaces") return fulfill(route, { data: [] });
-    if (path === "/auth/csrf") return fulfill(route, { csrfToken: "synthetic-lifecycle-csrf" });
+    if (path === "/auth/csrf") return fulfill(route, {
+      csrfToken: "synthetic-lifecycle-csrf",
+      expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+    });
 
     const command = path.match(/^\/(sales-invoices|purchase-invoices|receipts|payments)\/([^/]+)\/(post|reverse)$/u);
     if (method === "POST" && command) {

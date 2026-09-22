@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { Prisma, type AccountingDocument, type PrismaClient } from "@prisma/client";
 import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import {
+  lockAccountingDocument,
+  lockFiscalPeriod,
   PostingEngine,
   type PostingFailureReason,
   type PostingEntryPlan,
@@ -21,6 +23,7 @@ import {
 import type { ActorContext } from "../platform/actor-context.js";
 import { archiveDocument } from "../printing/print-archive.js";
 import { TransactionExecutor } from "../platform/transaction-executor.js";
+import type { AccountReferenceLockPort } from "../accounts/account-reference-lock-port.js";
 
 export type ReceiptErrorReason =
   | "NOT_FOUND"
@@ -58,6 +61,7 @@ export type ReceiptDependencies = {
   treasury: TreasuryInstrumentPort;
   fxAccounts: RealizedFxAccountPort;
   receivables: ReceivableSettlementPort;
+  accountReferences: AccountReferenceLockPort;
 };
 export type ReceiptInput = {
   fiscalPeriodId: bigint;
@@ -85,11 +89,26 @@ export type PosReceiptCheckoutResult = {
   documentStatus: string;
   journalEntryIds: string[];
 };
+const posReceiptCaptureReservationBrand: unique symbol = Symbol("PosReceiptCaptureReservation");
+export type PosReceiptCaptureReservation = Readonly<{
+  [posReceiptCaptureReservationBrand]: true;
+  companyId: bigint;
+  fiscalPeriodId: bigint;
+  documentDate: string;
+  documentNumber: string;
+}>;
 export interface PosReceiptCheckoutPort {
+  reserveCaptureInTransaction(
+    tx: Prisma.TransactionClient,
+    context: ActorContext,
+    fiscalPeriodId: bigint,
+    documentDate: string,
+  ): Promise<PosReceiptCaptureReservation>;
   captureInTransaction(
     tx: Prisma.TransactionClient,
     context: ActorContext,
     input: ReceiptInput,
+    reservation: PosReceiptCaptureReservation,
   ): Promise<PosReceiptCheckoutResult>;
 }
 const date = (v: string) => new Date(`${v}T00:00:00.000Z`);
@@ -143,6 +162,7 @@ export class ReceiptService {
   private readonly treasury: TreasuryInstrumentPort;
   private readonly fxAccounts: RealizedFxAccountPort;
   private readonly commands: IdempotentCommandExecutor;
+  private readonly accountReferences: AccountReferenceLockPort;
   constructor(
     private readonly prisma: PrismaClient,
     dependencies: ReceiptDependencies,
@@ -152,6 +172,7 @@ export class ReceiptService {
     this.treasury = dependencies.treasury;
     this.fxAccounts = dependencies.fxAccounts;
     this.receivables = dependencies.receivables;
+    this.accountReferences = dependencies.accountReferences;
     this.commands = new IdempotentCommandExecutor(prisma, this.transactions);
   }
   private include() {
@@ -261,7 +282,15 @@ export class ReceiptService {
   async update(context: ActorContext, id: bigint, input: ReceiptUpdate) {
     return this.prisma.$transaction(
       async (tx) => {
-        const current = await tx.receipt.findFirst({
+        let current = await tx.receipt.findFirst({
+          where: { id, companyId: context.companyId },
+          include: this.include(),
+        });
+        if (!current) throw new ReceiptError("NOT_FOUND");
+        if (!await lockAccountingDocument(tx, context.companyId, current.accountingDocumentId)) {
+          throw new ReceiptError("NOT_FOUND");
+        }
+        current = await tx.receipt.findFirst({
           where: { id, companyId: context.companyId },
           include: this.include(),
         });
@@ -317,7 +346,12 @@ export class ReceiptService {
         if (!period || period.status === "CLOSED")
           throw new ReceiptError("PERIOD_CLOSED");
         this.validDate(period, merged.documentDate);
-        const prepared = await this.prepare(tx, context.companyId, merged);
+        const prepared = await this.prepare(
+          tx,
+          context.companyId,
+          merged,
+          input.counterAccountId !== undefined,
+        );
         if (input.counterpartyTaxNumber === undefined) prepared.counterpartyTaxLast4 = current.counterpartyTaxLast4;
         const changed = await tx.accountingDocument.updateMany({
           where: {
@@ -369,6 +403,7 @@ export class ReceiptService {
           tx,
           context.companyId,
           this.inputFrom(receipt),
+          false,
         );
         const zero = new Prisma.Decimal(0);
         const result = await this.posting.postPlan(tx, {
@@ -454,6 +489,7 @@ export class ReceiptService {
     tx: Prisma.TransactionClient,
     context: ActorContext,
     input: ReceiptInput,
+    documentNumber: string,
   ) {
     const period = await tx.fiscalPeriod.findFirst({
       where: { id: input.fiscalPeriodId, companyId: context.companyId },
@@ -461,12 +497,6 @@ export class ReceiptService {
     if (!period || period.status === "CLOSED") throw new ReceiptError("PERIOD_CLOSED");
     this.validDate(period, input.documentDate);
     const prepared = await this.prepare(tx, context.companyId, input);
-    const documentNumber = await this.reserveInTransaction(
-      tx,
-      context.companyId,
-      period.fiscalYearId,
-      "RECEIPT",
-    );
     const document = await tx.accountingDocument.create({
       data: {
         companyId: context.companyId,
@@ -490,12 +520,54 @@ export class ReceiptService {
     await this.audit(tx, context, "RECEIPT_CREATED", receipt.id, { source: "POS" });
     return receipt;
   }
+  async reserveCaptureInTransaction(
+    tx: Prisma.TransactionClient,
+    context: ActorContext,
+    fiscalPeriodId: bigint,
+    documentDate: string,
+  ): Promise<PosReceiptCaptureReservation> {
+    if (!await lockFiscalPeriod(tx, context.companyId, fiscalPeriodId)) {
+      throw new ReceiptError("PERIOD_CLOSED");
+    }
+    const period = await tx.fiscalPeriod.findFirst({
+      where: { id: fiscalPeriodId, companyId: context.companyId },
+    });
+    if (!period || period.status === "CLOSED") throw new ReceiptError("PERIOD_CLOSED");
+    this.validDate(period, documentDate);
+    const documentNumber = await this.reserveInTransaction(
+      tx,
+      context.companyId,
+      period.fiscalYearId,
+      "RECEIPT",
+    );
+    return Object.freeze({
+      [posReceiptCaptureReservationBrand]: true as const,
+      companyId: context.companyId,
+      fiscalPeriodId: period.id,
+      documentDate,
+      documentNumber,
+    });
+  }
   async captureInTransaction(
     tx: Prisma.TransactionClient,
     context: ActorContext,
     input: ReceiptInput,
+    reservation: PosReceiptCaptureReservation,
   ): Promise<PosReceiptCheckoutResult> {
-    const receipt = await this.createDraftInTransaction(tx, context, input);
+    if (
+      reservation[posReceiptCaptureReservationBrand] !== true ||
+      reservation.companyId !== context.companyId ||
+      reservation.fiscalPeriodId !== input.fiscalPeriodId ||
+      reservation.documentDate !== input.documentDate
+    ) {
+      throw new ReceiptError("INVALID_STATE");
+    }
+    const receipt = await this.createDraftInTransaction(
+      tx,
+      context,
+      input,
+      reservation.documentNumber,
+    );
     const posted = await this.postInTransaction(tx, context, receipt.id, 0, receipt);
     await this.audit(tx, context, "POST_RECEIPT", receipt.id, { source: "POS" });
     return {
@@ -750,6 +822,7 @@ export class ReceiptService {
     tx: Prisma.TransactionClient,
     companyId: bigint,
     input: ReceiptInput,
+    lockCounterAccount = true,
   ) {
     if ((input.customerId == null) === (input.counterAccountId == null))
       throw new ReceiptError("COUNTERPARTY_REQUIRED");
@@ -768,6 +841,9 @@ export class ReceiptService {
       await this.validAccount(tx, companyId, customer.receivableAccountId);
       counterLedgerAccountId = customer.receivableAccountId;
     } else {
+      if (lockCounterAccount) {
+        await this.lockCounterAccounts(tx, companyId, [input.counterAccountId!]);
+      }
       await this.validAccount(tx, companyId, input.counterAccountId!);
       counterLedgerAccountId = input.counterAccountId!;
     }
@@ -850,6 +926,19 @@ export class ReceiptService {
       cashBankLedgerAccountId: instrument.cashBankLedgerAccountId,
       counterLedgerAccountId,
     };
+  }
+  private async lockCounterAccounts(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+    accountIds: readonly bigint[],
+  ) {
+    const sortedAccountIds = [...new Set(accountIds.map(String))]
+      .map(BigInt)
+      .sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+    for (const accountId of sortedAccountIds) {
+      const locked = await this.accountReferences.lockPostingAccount(tx, companyId, accountId);
+      if (!locked.eligible) throw new ReceiptError("INVALID_ACCOUNT");
+    }
   }
   private inputFrom(v: ReceiptRecord): ReceiptInput {
     return {

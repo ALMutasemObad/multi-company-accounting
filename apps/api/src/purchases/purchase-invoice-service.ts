@@ -23,6 +23,7 @@ import { archiveDocument } from "../printing/print-archive.js";
 import { calculateTaxDocument, TaxCalculationError } from "../tax/tax-calculator.js";
 import { TaxError, type TaxQuotePort } from "../tax/tax-service.js";
 import type { ActorContext } from "../platform/actor-context.js";
+import type { AccountReferenceLockPort } from "../accounts/account-reference-lock-port.js";
 import {
   PurchaseInvoiceError,
   type PurchaseInvoiceImportGroup,
@@ -62,6 +63,7 @@ export type PurchaseInvoiceDependencies = {
   inventory: InventoryInvoiceCatalogPort;
   stock: InventoryInvoiceStockPort;
   payables: PayableInvoicePort;
+  accountReferences: AccountReferenceLockPort;
 };
 
 const asDate = (value: string) => new Date(`${value}T00:00:00.000Z`);
@@ -142,6 +144,7 @@ export class PurchaseInvoiceService implements PurchaseInvoiceImportPort {
   private readonly taxes: TaxQuotePort;
   private readonly inventory: InventoryInvoiceCatalogPort;
   private readonly stock: InventoryInvoiceStockPort;
+  private readonly accountReferences: AccountReferenceLockPort;
   private readonly commands: IdempotentCommandExecutor;
 
   constructor(
@@ -153,6 +156,7 @@ export class PurchaseInvoiceService implements PurchaseInvoiceImportPort {
     this.inventory = dependencies.inventory;
     this.stock = dependencies.stock;
     this.payables = dependencies.payables;
+    this.accountReferences = dependencies.accountReferences;
     this.commands = new IdempotentCommandExecutor(prisma);
   }
 
@@ -267,7 +271,12 @@ export class PurchaseInvoiceService implements PurchaseInvoiceImportPort {
 
   async update(context: ActorContext, id: bigint, input: PurchaseInvoiceUpdate) {
     return this.prisma.$transaction(async (tx) => {
-      const current = await tx.purchaseInvoice.findFirst({ where: { id, companyId: context.companyId }, include: { accountingDocument: true, lines: { orderBy: { lineNumber: "asc" } } } });
+      let current = await tx.purchaseInvoice.findFirst({ where: { id, companyId: context.companyId }, include: { accountingDocument: true, lines: { orderBy: { lineNumber: "asc" } } } });
+      if (!current) throw new PurchaseInvoiceError("NOT_FOUND");
+      if (!await lockAccountingDocument(tx, context.companyId, current.accountingDocumentId)) {
+        throw new PurchaseInvoiceError("NOT_FOUND");
+      }
+      current = await tx.purchaseInvoice.findFirst({ where: { id, companyId: context.companyId }, include: { accountingDocument: true, lines: { orderBy: { lineNumber: "asc" } } } });
       if (!current) throw new PurchaseInvoiceError("NOT_FOUND");
       if (current.accountingDocument.status !== "DRAFT") throw new PurchaseInvoiceError("INVALID_STATE");
       if (current.accountingDocument.version !== input.version) throw new PurchaseInvoiceError("VERSION_CONFLICT");
@@ -340,7 +349,7 @@ export class PurchaseInvoiceService implements PurchaseInvoiceImportPort {
   post(context: ActorContext, id: bigint, version: number, key: string) {
     return this.command(context, id, "POST_PURCHASE_INVOICE", key, JSON.stringify({ id: id.toString(), version }), async (tx, invoice) => {
       const input = this.inputFrom(invoice);
-      const prepared = await this.prepare(tx, context.companyId, input, invoice.id);
+      const prepared = await this.prepare(tx, context.companyId, input, invoice.id, false);
 
       const isDebitNote = input.documentType === "PURCHASE_DEBIT_NOTE";
       const zero = decimal(0);
@@ -397,6 +406,7 @@ export class PurchaseInvoiceService implements PurchaseInvoiceImportPort {
         baseDebitAmount: isDebitNote ? baseTotal : zero,
         baseCreditAmount: isDebitNote ? zero : baseTotal,
       }, ...detailLines];
+      let replacementInventoryAccountId: bigint | undefined;
       const result = await this.posting.postPlan(tx, {
         companyId: context.companyId,
         documentId: invoice.accountingDocumentId,
@@ -440,15 +450,9 @@ export class PurchaseInvoiceService implements PurchaseInvoiceImportPort {
             day(invoice.accountingDocument.documentDate),
           );
           if (stock) {
-            for (const line of inventoryNetLines) line.accountId = stock.inventoryAccountId;
-            await postingTx.purchaseInvoiceLine.updateMany({
-              where: {
-                companyId: context.companyId,
-                purchaseInvoiceId: invoice.id,
-                inventoryItemId: { not: null },
-              },
-              data: { debitAccountId: stock.inventoryAccountId },
-            });
+            if (this.replaceInventoryPostingAccount(stock.inventoryAccountId, inventoryNetLines)) {
+              replacementInventoryAccountId = stock.inventoryAccountId;
+            }
             const difference = money(inventoryFinancialBase.sub(stock.totalCostBase));
             if (isDebitNote && !difference.isZero()) {
               const amount = difference.abs();
@@ -479,6 +483,16 @@ export class PurchaseInvoiceService implements PurchaseInvoiceImportPort {
                 baseCreditAmount: amount,
               });
             }
+          }
+        },
+        afterAccountLocks: async (postingTx) => {
+          if (replacementInventoryAccountId !== undefined) {
+            await this.replaceInventoryDebitAccount(
+              postingTx,
+              context.companyId,
+              invoice.id,
+              replacementInventoryAccountId,
+            );
           }
         },
         afterEntries: async (postingTx, entries) => {
@@ -552,7 +566,7 @@ export class PurchaseInvoiceService implements PurchaseInvoiceImportPort {
     }
     const input: PurchaseInvoiceInput = { documentType: "PURCHASE_INVOICE", fiscalPeriodId: period.id, documentDate: first.document_date!, dueDate: first.due_date!, description: first.description!, supplierId: supplier.id, supplierInvoiceNumber: first.supplier_invoice_number || null, warehouseId: importedInventory.warehouse?.id ?? null, currencyId: companyCurrency.currencyId, exchangeRate: first.exchange_rate!, supplierAddress: first.supplier_address || null, notes: first.notes || null, lines };
     this.validDate(period, input.documentDate);
-    await this.prepare(tx, companyId, input);
+    await this.prepare(tx, companyId, input, undefined, false);
     return input;
   }
 
@@ -560,8 +574,8 @@ export class PurchaseInvoiceService implements PurchaseInvoiceImportPort {
     const period = await tx.fiscalPeriod.findFirst({ where: { id: input.fiscalPeriodId, companyId: context.companyId } });
     if (!period || period.status === "CLOSED") throw new PurchaseInvoiceError("PERIOD_CLOSED");
     this.validDate(period, input.documentDate);
-    const prepared = await this.prepare(tx, context.companyId, input);
     const documentNumber = await this.reserveInTransaction(tx, context.companyId, period.fiscalYearId, "PURCHASE_INVOICE");
+    const prepared = await this.prepare(tx, context.companyId, input);
     const document = await tx.accountingDocument.create({ data: { companyId: context.companyId, fiscalPeriodId: input.fiscalPeriodId, documentType: "PURCHASE_INVOICE", documentNumber, documentDate: asDate(input.documentDate), description: input.description, createdBy: context.userId } });
     const invoice = await tx.purchaseInvoice.create({
       data: { companyId: context.companyId, accountingDocumentId: document.id, supplierId: input.supplierId, supplierInvoiceNumber: input.supplierInvoiceNumber?.trim() || null, warehouseId: prepared.inventory.warehouse?.id ?? null, currencyId: input.currencyId, exchangeRate: decimal(input.exchangeRate), dueDate: asDate(input.dueDate), subtotal: prepared.calculation.subtotal, discountTotal: prepared.calculation.discountTotal, taxableTotal: prepared.calculation.taxableTotal, taxTotal: prepared.calculation.taxTotal, total: prepared.calculation.total, baseTotal: prepared.calculation.baseTotal, supplierNameSnapshot: prepared.supplier.nameAr, supplierTaxLast4: prepared.supplier.taxNumberLast4, supplierAddressSnapshot: prepared.supplierAddress, warehouseCodeSnapshot: prepared.inventory.warehouse?.code ?? null, warehouseNameSnapshot: prepared.inventory.warehouse?.nameAr ?? null, notes: input.notes ?? null, lines: { create: prepared.calculation.lines } },
@@ -751,7 +765,13 @@ export class PurchaseInvoiceService implements PurchaseInvoiceImportPort {
     return invoice.total.sub(paid).sub(debited);
   }
 
-  private async prepare(tx: Prisma.TransactionClient, companyId: bigint, input: PurchaseInvoiceInput, currentId?: bigint) {
+  private async prepare(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+    input: PurchaseInvoiceInput,
+    currentId?: bigint,
+    lockDebitAccounts = true,
+  ) {
     if (input.documentType === "PURCHASE_DEBIT_NOTE" && !input.sourceInvoiceId) throw new PurchaseInvoiceError("SOURCE_INVOICE_REQUIRED");
     if (input.documentType === "PURCHASE_INVOICE" && input.sourceInvoiceId) throw new PurchaseInvoiceError("INVALID_SOURCE_INVOICE");
     if (asDate(input.dueDate) < asDate(input.documentDate)) throw new PurchaseInvoiceError("INVALID_TOTAL");
@@ -761,7 +781,10 @@ export class PurchaseInvoiceService implements PurchaseInvoiceImportPort {
     const company = await tx.company.findUniqueOrThrow({ where: { id: companyId } });
     const currency = await tx.companyCurrency.findFirst({ where: { companyId, currencyId: input.currencyId, isActive: true, currency: { isActive: true, OR: [{ scope: 'GLOBAL', ownerCompanyId: null }, { scope: 'COMPANY', ownerCompanyId: companyId }] } } });
     if (!currency || (input.currencyId === company.baseCurrencyId && !decimal(input.exchangeRate).equals(1))) throw new PurchaseInvoiceError("INVALID_CURRENCY");
-    const accountIds = [...new Set(input.lines.map((line) => line.debitAccountId.toString()))].map(BigInt);
+    const debitAccountIds = input.lines.map((line) => line.debitAccountId);
+    const accountIds = lockDebitAccounts
+      ? await this.lockDebitAccounts(tx, companyId, debitAccountIds)
+      : this.sortedUniqueAccountIds(debitAccountIds);
     const accounts = await tx.account.findMany({ where: { companyId, id: { in: accountIds }, isActive: true, allowsPosting: true }, include: { accountType: true, _count: { select: { children: true } } } });
     if (accounts.length !== accountIds.length || accounts.some((account) => account._count.children || !["ASSET", "EXPENSE"].includes(account.accountType.class))) throw new PurchaseInvoiceError("INVALID_ACCOUNT");
     const costCenterIds = [...new Set(input.lines.flatMap((line) => line.costCenterId ? [line.costCenterId.toString()] : []))].map(BigInt);
@@ -922,6 +945,50 @@ export class PurchaseInvoiceService implements PurchaseInvoiceImportPort {
     const account = await tx.account.findFirst({ where: { id, companyId }, include: { accountType: true, _count: { select: { children: true } } } });
     if (!account || !account.isActive || !account.allowsPosting || account._count.children) throw new PurchaseInvoiceError("INVALID_ACCOUNT");
     return account;
+  }
+
+  private async lockDebitAccounts(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+    debitAccountIds: readonly bigint[],
+  ) {
+    const accountIds = this.sortedUniqueAccountIds(debitAccountIds);
+    for (const accountId of accountIds) {
+      const locked = await this.accountReferences.lockPostingAccount(tx, companyId, accountId);
+      if (!locked.eligible) throw new PurchaseInvoiceError("INVALID_ACCOUNT");
+    }
+    return accountIds;
+  }
+
+  private sortedUniqueAccountIds(accountIds: readonly bigint[]) {
+    return [...new Set(accountIds.map(String))]
+      .map(BigInt)
+      .sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+  }
+
+  private async replaceInventoryDebitAccount(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+    purchaseInvoiceId: bigint,
+    inventoryAccountId: bigint,
+  ) {
+    await tx.purchaseInvoiceLine.updateMany({
+      where: {
+        companyId,
+        purchaseInvoiceId,
+        inventoryItemId: { not: null },
+      },
+      data: { debitAccountId: inventoryAccountId },
+    });
+  }
+
+  private replaceInventoryPostingAccount(
+    inventoryAccountId: bigint,
+    postingLines: PostingLinePlan[],
+  ) {
+    if (postingLines.every((line) => line.accountId === inventoryAccountId)) return false;
+    for (const line of postingLines) line.accountId = inventoryAccountId;
+    return true;
   }
 
   private async openPeriod(companyId: bigint, id: bigint) {

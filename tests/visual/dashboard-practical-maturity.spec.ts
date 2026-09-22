@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { authMeResponse, e2eCompany } from "../e2e/auth-me-mock.js";
+import { authMeResponse, authenticatedCsrfResponse, e2eCompany } from "../e2e/auth-me-mock.js";
 import type { PlatformModuleCode } from "../../apps/web/src/types.js";
 
 const modules: PlatformModuleCode[] = ["CORE_ACCOUNTING", "SALES", "PURCHASES", "TREASURY", "POS", "REPORTING"];
@@ -41,6 +41,7 @@ async function installDashboardFixture(page: Page, options: DashboardFixtureOpti
     const method = request.method();
     const json = (body: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
     if (method !== "GET") writes.push(`${method} ${path}`);
+    if (path === "/auth/csrf") return json(authenticatedCsrfResponse());
 
     if (path === "/auth/companies") return json({ data: [e2eCompany] });
     if (path === "/auth/me") return json(authMeResponse(options.permissions, modules));

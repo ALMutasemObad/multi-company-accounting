@@ -4,6 +4,7 @@ import { parseOpenApiResponseBody } from "../src/generated/openapi-request-guard
 import { PrismaCashFlowLedgerQueryAdapter } from "../src/reports/adapters/prisma-cash-flow-ledger-query-adapter.js";
 import { CashFlowError, CashFlowService } from "../src/reports/cash-flow-service.js";
 import { TreasuryCashFlowAccountAdapter } from "../src/treasury/cash-flow-account-adapter.js";
+import { PrismaAccountReferenceLockAdapter } from "../src/accounts/prisma-account-reference-lock-adapter.js";
 
 const enabled = process.env.RUN_DB_TESTS === "true" && Boolean(process.env.DATABASE_URL);
 const prisma = enabled ? createDatabase(process.env.DATABASE_URL!) : null;
@@ -128,7 +129,7 @@ describe.runIf(enabled)("indirect cash-flow report with MariaDB", () => {
       include: { periods: true },
     });
     periodId = year.periods[0]!.id;
-    service = new CashFlowService(prisma!, new PrismaCashFlowLedgerQueryAdapter(), new TreasuryCashFlowAccountAdapter());
+    service = new CashFlowService(prisma!, new PrismaCashFlowLedgerQueryAdapter(), new PrismaAccountReferenceLockAdapter(), new TreasuryCashFlowAccountAdapter());
 
     await createPostedDocument("CF-OPEN", "2056-12-31", [
       { accountId: cashAccountId, debit: "100.0000", credit: "0.0000" },
@@ -175,11 +176,11 @@ describe.runIf(enabled)("indirect cash-flow report with MariaDB", () => {
 
   it("updates classifications with optimistic concurrency and keeps company isolation", async () => {
     const changed = await service.updateMapping(context(), receivableAccountId, { classification: "INVESTING", version: 0 });
-    expect(changed).toMatchObject({ classification: "INVESTING", source: "EXPLICIT", version: 0 });
-    const advanced = await service.updateMapping(context(), receivableAccountId, { classification: "FINANCING", version: 0 });
-    expect(advanced).toMatchObject({ classification: "FINANCING", source: "EXPLICIT", version: 1 });
+    expect(changed).toMatchObject({ classification: "INVESTING", source: "EXPLICIT", version: 1 });
     await expect(service.updateMapping(context(), receivableAccountId, { classification: "INVESTING", version: 0 }))
       .rejects.toEqual(new CashFlowError("VERSION_CONFLICT"));
+    const advanced = await service.updateMapping(context(), receivableAccountId, { classification: "FINANCING", version: 1 });
+    expect(advanced).toMatchObject({ classification: "FINANCING", source: "EXPLICIT", version: 2 });
 
     const report = await service.cashFlow(context(), { dateFrom: "2057-01-01", dateTo: "2057-01-31" });
     expect(report).toMatchObject({

@@ -315,6 +315,7 @@ export type Account = {
   allowsPosting: boolean;
   isControlAccount: boolean;
   isActive: boolean;
+  version: number;
   sourceTemplateCode: string | null;
   sourceTemplateKey: string | null;
 };

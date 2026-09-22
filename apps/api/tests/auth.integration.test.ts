@@ -71,6 +71,43 @@ describe.runIf(enabled)('authentication with MariaDB', () => {
     await agent.get('/api/v1/auth/companies').expect(401);
   });
 
+  it('bootstraps independent authenticated CSRF tokens without replacing the session cookie', async () => {
+    const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, testAuthOptions(prisma!));
+    const app = createApp({ NODE_ENV: 'test', PORT: 3000, WEB_ORIGIN: 'http://localhost:5173', SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: databaseUrl }, { auth });
+    const agent = request.agent(app);
+    const preAuthBefore = await prisma!.session.count({ where: { state: 'PRE_AUTH' } });
+    const activeBefore = await prisma!.session.count({ where: { state: 'AUTHENTICATED', revokedAt: null, expiresAt: { gt: new Date() } } });
+    const csrf = await agent.get('/api/v1/auth/csrf').expect(200);
+    const preAuthRefresh = await agent.get('/api/v1/auth/csrf?mode=authenticated').expect(401);
+    expect(preAuthRefresh.headers['set-cookie']).toBeUndefined();
+    expect(await prisma!.session.count({ where: { state: 'PRE_AUTH' } })).toBe(preAuthBefore + 1);
+
+    const login = await agent.post('/api/v1/auth/login').set('X-CSRF-Token', csrf.body.csrfToken)
+      .send({ email: 'admin@mcap.local', password }).expect(200);
+    const first = await agent.get('/api/v1/auth/csrf?mode=authenticated').expect(200);
+    const second = await agent.get('/api/v1/auth/csrf?mode=authenticated').expect(200);
+    expect(first.headers['set-cookie']).toBeUndefined();
+    expect(second.headers['set-cookie']).toBeUndefined();
+    expect(first.body.csrfToken).not.toBe(second.body.csrfToken);
+    expect(await prisma!.session.count({ where: { state: 'AUTHENTICATED', revokedAt: null, expiresAt: { gt: new Date() } } })).toBe(activeBefore + 1);
+    expect(await prisma!.session.count({ where: { state: 'PRE_AUTH' } })).toBe(preAuthBefore);
+
+    const companies = await agent.get('/api/v1/auth/companies').expect(200);
+    for (const token of [first.body.csrfToken, second.body.csrfToken, login.body.csrfToken]) {
+      await agent.put('/api/v1/auth/context').set('X-CSRF-Token', token)
+        .send({ companyId: companies.body.data[0].id }).expect(204);
+    }
+    await agent.get('/api/v1/auth/me').expect(200);
+
+    const session = await prisma!.session.findFirstOrThrow({ where: { state: 'AUTHENTICATED', revokedAt: null, expiresAt: { gt: new Date() } } });
+    await prisma!.session.update({ where: { id: session.id }, data: { revokedAt: new Date() } });
+    const revoked = await agent.get('/api/v1/auth/csrf?mode=authenticated').expect(401);
+    expect(revoked.headers['set-cookie']).toBeUndefined();
+    await prisma!.session.update({ where: { id: session.id }, data: { revokedAt: null, expiresAt: new Date('2020-01-01') } });
+    const expired = await agent.get('/api/v1/auth/csrf?mode=authenticated').expect(401);
+    expect(expired.headers['set-cookie']).toBeUndefined();
+  });
+
   it('logs out the current session and expires its cookie', async () => {
     const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, testAuthOptions(prisma!));
     const app = createApp({ NODE_ENV: 'test', PORT: 3000, WEB_ORIGIN: 'http://localhost:5173', SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: databaseUrl }, { auth });

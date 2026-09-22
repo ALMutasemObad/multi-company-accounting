@@ -11,6 +11,7 @@ import {
 import { createDatabase } from "../src/database.js";
 import { InventoryMovementService } from "../src/inventory/inventory-movement-service.js";
 import { TaxService } from "../src/tax/tax-service.js";
+import { PrismaAccountReferenceLockAdapter } from "../src/accounts/prisma-account-reference-lock-adapter.js";
 import { PrintService } from "../src/printing/print-service.js";
 import { TreasuryService } from "../src/treasury/treasury-service.js";
 import { testAuthOptions } from "./helpers/test-auth-options.js";
@@ -105,8 +106,8 @@ describe.runIf(enabled)("purchase invoices and payables with MariaDB", () => {
     const year = await prisma!.fiscalYear.create({ data: { companyId, name: "IT-PURCHASE-2045", startDate: new Date("2045-01-01T00:00:00.000Z"), endDate: new Date("2045-12-31T00:00:00.000Z"), periods: { create: { periodNumber: 1, name: "السنة الاختبارية", startDate: new Date("2045-01-01T00:00:00.000Z"), endDate: new Date("2045-12-31T00:00:00.000Z") } } }, include: { periods: true } });
     yearId = year.id; periodId = year.periods[0]!.id;
     const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, testAuthOptions(prisma!));
-    const taxes = new TaxService(prisma!);
-    const treasury = new TreasuryService(prisma!);
+    const taxes = new TaxService(prisma!, new PrismaAccountReferenceLockAdapter());
+    const treasury = new TreasuryService(prisma!, new PrismaAccountReferenceLockAdapter());
     app = createApp({ NODE_ENV: "test", PORT: 3000, WEB_ORIGIN: "http://localhost:5173", SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: databaseUrl }, { auth, taxes, purchaseInvoices: createPurchaseInvoiceService(prisma!, { taxes }), payments: createPaymentService(prisma!, { treasury }), printing: new PrintService(prisma!) });
   });
 
@@ -292,7 +293,7 @@ describe.runIf(enabled)("purchase invoices and payables with MariaDB", () => {
   }, 35_000);
 
   it("prevents reversing a supplier invoice that has a posted debit note", async () => {
-    const service = createPurchaseInvoiceService(prisma!, { taxes: new TaxService(prisma!) });
+    const service = createPurchaseInvoiceService(prisma!, { taxes: new TaxService(prisma!, new PrismaAccountReferenceLockAdapter()) });
     const context = { userId, companyId };
     const source = await service.create(context, { documentType: "PURCHASE_INVOICE", fiscalPeriodId: periodId, documentDate: "2045-03-01", dueDate: "2045-03-31", description: "فاتورة مرجعية لاختبار الإشعار", supplierId, currencyId, exchangeRate: "1.00000000", lines: [{ description: "خدمة أصلية", quantity: "1.0000", unitPrice: "500.0000", discountAmount: "0.0000", debitAccountId: expenseId, taxRateId: null }] });
     await service.post(context, source.id, 0, "it-post-source-with-debit-note");

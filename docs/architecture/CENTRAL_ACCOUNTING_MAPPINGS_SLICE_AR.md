@@ -1,8 +1,8 @@
 ---
 title: "خطة شرائح مركز تعيين الحسابات الافتراضية"
-status: "planned; documentation only"
-version: "1.3"
-date: "2026-09-09"
+status: "planned; ADM-1A implemented locally"
+version: "1.4"
+date: "2026-09-21"
 related:
   - "ADR-023-central-accounting-mappings.md"
   - "ARCHITECTURE_GUARDRAILS_AR.md"
@@ -20,8 +20,20 @@ related:
 ولقطات المستند عند مالكيها. تنتهي الخطة بإزالة بحث Inventory وFX وFinancial Close
 عن `SMALL_BUSINESS_GENERAL` و`sourceTemplateKey` والرمز `3300` وقت التشغيل.
 
-هذه الوثيقة خطة تنفيذ وليست ادعاء تنفيذ. لا تنشئ المهمة الحالية Schema أو API أو
-واجهة أو Permission.
+هذه الوثيقة خطة تنفيذ. نُفذت محليًا شريحة ADM-1A الأساسية فقط في 2026-09-21؛ لم
+يبدأ جدول mappings أو API أو واجهة أو Permission لـADM-1B وما بعدها.
+
+### حالة ADM-1A
+
+- `Account.version` هو `INT UNSIGNED NOT NULL DEFAULT 0` ويظهر في DTO.
+- PATCH/deactivate/delete تتطلب `expectedVersion`، وتنفذ CAS على
+  `(id, companyId, version)`؛ يعاد `VERSION_CONFLICT` مع 409.
+- reparent يزيد نسخة الجذر وكل descendant تغير `level` له مرة واحدة، ولا يمس غير
+  المتأثرين؛ تجرى الكتابات بترتيب `id` داخل معاملة Serializable.
+- ربط القالب لحساب موجود يستخدم النسخة التي قرأها الخادم وCAS وزيادة واحدة، ولا
+  تزيد إعادة التطبيق idempotent النسخة.
+- rollback يحافظ على العمود؛ binary قديم بلا CAS ليس مسار rollback صالحًا.
+- بقيت ADM-1B وجميع mappings وconsumers خارج هذه الشريحة.
 
 ## 2. Baseline يجب تثبيته قبل أي تعديل
 
@@ -587,6 +599,84 @@ normalize reason -> fingerprint {key,accountId,expectedVersion,reason|null}
 جديدًا بعد فحص الحارس؛ إضافة علاقة Account جديدة مستقبلًا لا تقبل بلا Port واختبار.
 Core Accounting لا يستورد Reporting Prisma model؛ غياب/فشل
 `ReportingAccountUsageQueryPort` يفشل lifecycle command مغلقًا ويرجع المعاملة كاملة.
+
+حالة ADM-1B1/B2/B3/B4/B5/B6/B7: نُفذ العقد والمنسق ومحولات Reporting وCore
+Accounting وSales وPurchases وTax وTreasury وInventory، وسُجلت completeness في
+composition بحالة 7/7 مع بقاء `enforcementEnabled=false`. يعد محول Core الأبناء
+وكل سطور اليومية المقيدة بالشركة،
+ويعد التاريخ immutable لأسطر المستندات النهائية `POSTED/REVERSED/CANCELLED`، مع
+بقاء `DRAFT` وحدها قابلة للتعديل. يعد محول Sales مراجع Customer وSelling Profile
+وكل `SalesInvoiceLine`، ويفصل العدد الكلي عن وجود تاريخ فاتورة نهائي بالحالات نفسها.
+ويعد محول Purchases مراجع Supplier وكل `PurchaseInvoiceLine`، ويعد أسطر DRAFT ضمن
+الاستعمال الكلي مع قصر immutable على `POSTED/REVERSED/CANCELLED` لمستندي
+`PURCHASE_INVOICE/PURCHASE_DEBIT_NOTE`. لم يُحقن المنسق في `AccountService` رغم
+اكتمال المحولات؛ يتطلب التفعيل أولًا إغلاق بروتوكولات كتاب المسودات والأبوة
+المبينة أدناه.
+يعد محول Tax كل `TaxRate` يشير إلى الحساب عبر
+حقل output أو input بعزل الشركة، ويبقي `hasImmutableHistory=false` لأنها تعيينات
+حالية ويغطي تاريخ الفواتير مالكو المستندات وCore. في
+المقابل فُعل handshake الكتابة المطلوب في `CashFlowService.updateMapping`: يقفل
+Account أولًا داخل المعاملة نفسها ويرفض المرجع العابر للشركة أو غير النشط أو غير
+القابل للترحيل أو الأب قبل أي قراءة أو إنشاء/تحديث لـCash Flow mapping.
+
+وفُعل handshake المماثل في كتاب Sales: يقفل Customer الحساب عند الإنشاء أو تغيير
+`receivableAccountId` الفعلي، ويقفله Selling Profile عند الإنشاء أو إعادة التفعيل
+أو تغيير `revenueAccountId`. يجمع Sales Invoice حسابات إيراد الأسطر ويزيل تكرارها
+ويرتبها تصاعديًا ثم يقفل كل حساب داخل المعاملة نفسها قبل قراءة الحسابات أو
+حفظ/استبدال الأسطر. لا تنفذ التحديثات التي لا تغيّر مرجعًا قفلًا غير لازم، ولا
+تستورد خدمات Sales محول Prisma الملموس؛ يبقى الحقن في composition.
+
+ويقفل Supplier الحساب عند الإنشاء وكلما حمل التحديث `payableAccountId`، حتى إن
+ساوى القيمة المقروءة، كي لا تعتمد السلامة على no-change check بقراءة غير مقفلة. أما فاتورة
+المشتريات فتقفل حسابات الخصم الجديدة/المستبدلة بعد dedupe وترتيب رقمي وقبل
+قراءتها أو حفظ الأسطر. يبقى preview وpost في وضع validate-only لهذه الحسابات لمنع
+عكس ترتيب الأقفال؛ وبعد نتيجة حركة المخزون يقفل post حساب المخزون البديل قبل
+تحديث `PurchaseInvoiceLine`، ويتجاوز القفل والتحديث إذا لم يتغير الحساب.
+
+ويجمع Tax كل accountId غير null سيحفظه، يزيل التكرار ويرتب المعرّفات رقميًا ثم
+يقفلها داخل المعاملة قبل create/update. إذا حمل update `accountId` يقفله حتى إن
+ساوى snapshot المقروء، فلا يعتمد no-change على قراءة غير مقفلة؛ يبقى CAS النسخة
+الحكم النهائي، والحقل الغائب وحده لا يضيف قفلًا.
+
+ويعد محول Treasury كل `CashBankAccount.ledgerAccountId` في فئة الإعداد الجاري،
+ويجمع Receipt وPayment ذوي `counterAccountId` في فئة تاريخ المستندات مع عزل الشركة
+ونوع المستند. يشمل total حالات `DRAFT`، ويصبح immutable عند وجود
+`POSTED/REVERSED/CANCELLED`. يحجز إنشاء Cash/Bank تسلسل الكود قبل قفل الحساب، ثم
+يقفل قبل الكتابة. يقفل update كل `ledgerAccountId` مصرح به حتى إن ساوى snapshot،
+وتقفل أوامر إنشاء/تحديث Receipt وPayment كل direct counter account سيُحفظ. post لا
+يقفل هذا المرجع لأنه لا يستبدله. `demo-seed.ts` bootstrap offline مستثنى من writers
+التشغيليين، ولا يشغّل بالتوازي مع الخدمة.
+
+ويعد محول Inventory كل حركة داخل الشركة يكون `offsetAccountId` فيها هو الحساب.
+كل حركة محفوظة في هذا النموذج `POSTED` أو `REVERSED`، لذلك يكون
+`hasImmutableHistory=true` لكل count موجب. يقفل Posting Engine بعد
+`beforeLedger` كل account IDs النهائية بعد dedupe وترتيب رقمي، وقبل التحقق وكتابة
+`JournalLine` في `postPlan/postExisting/reverse`. يشترط post الحالي الأهلية الكاملة،
+بينما يشترط reverse التاريخي وجود الحساب في الشركة فقط كي لا يكسر عكس legacy
+inactive. يحجز reverse تسلسله قبل Account/JournalLine locks. بعد `beforeLedger`
+ينشئ المحرك snapshot مستقلًا للخطة النهائية، وهو وحده ما يقفل ويتحقق ويكتب؛ لذلك
+لا يستطيع hook ما بعد القفل تغيير الحسابات أو المبالغ أو line numbers أو
+التاريخ/العملة عبر closure بعد validation.
+
+تأخذ updates في Sales/Purchases/Receipt/Payment قفل `AccountingDocument` قبل إعادة
+قراءة status/version والـsnapshot، ثم تقفل حسابات الإدخال وتنفذ CAS. ويجهز Sales
+post حسابات revenue بوضع validate-only قبل المحرك، فلا يسبق قفل Account قفل
+Document المركزي. ثم يعيد فحص source set وخصائص active/posting/leaf وREVENUE داخل
+`afterAccountLocks` تحت الأقفال المركزية.
+وتحجز embedded creates في Sales/Purchases sequence داخل المعاملة قبل `prepare`
+وأقفال Account، بينما يتحقق import resolve بلا قفل مبكر؛ فيبقى الترتيب
+Sequence→Account والـrollback ذريًا.
+وفي checkout المركب يحجز POS رقم RECEIPT أولًا عبر reservation opaque من مالك
+Receipts، قبل بدء Sales. يتحقق capture من company/period/date ويستهلك الرقم بلا
+reserve ثانٍ، فيمنع حافة Sales Account→Receipt Sequence.
+
+أزيل قفل offset المحلي الجزئي من Inventory. تبني الحركة اليدوية entries تمهيديًا،
+ثم يعيد hook حل السياسة تحت المجموعة المقفلة ويقارن inventory/offset IDs قبل حفظ
+المرجع الدائم. ويعدل Purchases posting lines قبل القفل، ثم يحفظ snapshot
+`PurchaseInvoiceLine.debitAccountId` في hook بعد القفل فقط. لا يفعّل الحارس بعد:
+يبقى `ManualJournal` create/update كاتبًا لأسطر DRAFT يحتاج بروتوكول Document→Account
+مستقلًا، كما يحتاج تغيير `Account.parentAccountId` بروتوكول writer موحدًا؛ تعالج
+هاتان البوابتان واختبارات قاعدة البيانات المتزامنة قبل حقن الحارس.
 
 ```text
 Idempotency عند وجوده

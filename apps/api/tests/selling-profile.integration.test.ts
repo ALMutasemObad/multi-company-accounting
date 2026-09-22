@@ -8,6 +8,7 @@ import { SellingCatalogInventoryAdapter } from "../src/inventory/selling-catalog
 import { SellingCatalogAccountAdapter } from "../src/accounts/selling-catalog-account-adapter.js";
 import { SellingCatalogCurrencyAdapter } from "../src/companies/selling-catalog-currency-adapter.js";
 import { SellingCatalogTaxAdapter } from "../src/tax/selling-catalog-tax-adapter.js";
+import { PrismaAccountReferenceLockAdapter } from "../src/accounts/prisma-account-reference-lock-adapter.js";
 
 // Deliberately no fallback to DATABASE_URL: never connect to development or hosting by accident.
 const url = process.env.R2_DATABASE_URL;
@@ -81,7 +82,8 @@ describe.runIf(enabled)("R2 actual database gate — requires MariaDB10.11/MySQL
     const itemId = await newItem();
     const failing = new SellingProfileService(db!, { profiles: new PrismaSellingProfileRepository(), inventory: new SellingCatalogInventoryAdapter(),
       accounts: new SellingCatalogAccountAdapter(), currencies: new SellingCatalogCurrencyAdapter(), tax: new SellingCatalogTaxAdapter(),
-      audit: { append: async () => { throw new Error("R2_AUDIT_FAILURE"); } } });
+      audit: { append: async () => { throw new Error("R2_AUDIT_FAILURE"); } },
+      accountReferences: new PrismaAccountReferenceLockAdapter() });
     const before = await db!.idempotencyRecord.count({ where: { companyId: context.companyId } });
     await expect(failing.create(context, itemId, values(), randomUUID())).rejects.toThrow("R2_AUDIT_FAILURE");
     expect(await db!.salesItemSellingProfile.count({ where: { companyId: context.companyId, inventoryItemId: itemId } })).toBe(0);

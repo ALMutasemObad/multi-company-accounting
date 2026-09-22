@@ -25,8 +25,10 @@ const input = {
 function fixture(existingUser = false, onboardingTemplateAllowed = true) {
   const events: unknown[] = [];
   const upsert = vi.fn().mockResolvedValue({ id: 9n, publicId: 'registration-public-id', deliveryGeneration: 4 });
+  const findUnique = vi.fn().mockResolvedValue(null);
+  const update = vi.fn();
   const tx = {
-    registrationRequest: { upsert },
+    registrationRequest: { upsert, findUnique, update },
     registrationEvent: { create: vi.fn((event) => { events.push(event); return Promise.resolve(event); }) },
   };
   const prisma = {
@@ -56,7 +58,7 @@ function fixture(existingUser = false, onboardingTemplateAllowed = true) {
     passwordHasher,
     now: () => new Date('2026-08-22T01:00:00.000Z'),
   });
-  return { service, events, upsert, passwordHasher, outbox };
+  return { service, events, upsert, findUnique, update, passwordHasher, outbox };
 }
 
 describe('RegistrationService anonymous boundary', () => {
@@ -90,6 +92,19 @@ describe('RegistrationService anonymous boundary', () => {
     expect(upsert).not.toHaveBeenCalled();
     expect(outbox.append).not.toHaveBeenCalled();
     expect(events).toEqual([expect.objectContaining({ data: expect.objectContaining({ eventType: 'REGISTRATION_EXISTING_IDENTITY_ATTEMPT', severity: 'WARNING' }) })]);
+  });
+
+  it('keeps resend generic and does not revive a stale registration after the identity exists', async () => {
+    const { service, findUnique, update, outbox, events } = fixture(true);
+
+    await expect(service.resend(' OWNER@example.com ')).resolves.toEqual({ status: 'PENDING_VERIFICATION' });
+
+    expect(findUnique).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+    expect(outbox.append).not.toHaveBeenCalled();
+    expect(events).toEqual([expect.objectContaining({
+      data: expect.objectContaining({ eventType: 'REGISTRATION_RESEND_IGNORED', severity: 'WARNING' }),
+    })]);
   });
 
   it('canonicalizes a safe BCP47 locale without requiring a server allow-list entry', async () => {

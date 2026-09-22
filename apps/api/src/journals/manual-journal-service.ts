@@ -2,13 +2,16 @@ import { randomUUID } from "node:crypto";
 import { Prisma, type AccountingDocument, type PrismaClient } from "@prisma/client";
 import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import {
+  lockAccountingDocument,
+  lockFiscalPeriod,
+  lockJournalLines,
   PostingEngine,
   type PostingFailureReason,
 } from "../core-accounting/posting-engine.js";
+import type { AccountReferenceLockPort } from "../accounts/account-reference-lock-port.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
 import type { ActorContext } from "../platform/actor-context.js";
 import { archiveDocument } from "../printing/print-archive.js";
-import { FiscalService } from "../fiscal/fiscal-service.js";
 
 export type JournalErrorReason =
   | "NOT_FOUND"
@@ -96,11 +99,12 @@ type ManualJournalCommandJsonInput = {
 };
 
 export class ManualJournalService {
-  private readonly fiscal: FiscalService;
   private readonly posting = new PostingEngine();
   private readonly commands: IdempotentCommandExecutor;
-  constructor(private readonly prisma: PrismaClient) {
-    this.fiscal = new FiscalService(prisma);
+  constructor(
+    private readonly prisma: PrismaClient,
+    private readonly accountReferences: AccountReferenceLockPort,
+  ) {
     this.commands = new IdempotentCommandExecutor(prisma);
   }
 
@@ -166,19 +170,28 @@ export class ManualJournalService {
       input.fiscalPeriodId,
     );
     this.assertDates(period, input.documentDate, input.entries);
-    const documentNumber = await this.fiscal.reserveDocumentNumber(
-      context,
-      period.fiscalYearId,
-      "MANUAL_JOURNAL",
-    );
     return this.prisma.$transaction(
       async (tx) => {
+        if (!await lockFiscalPeriod(tx, context.companyId, input.fiscalPeriodId)) {
+          throw new JournalError("PERIOD_CLOSED");
+        }
         const currentPeriod = await tx.fiscalPeriod.findFirst({
           where: { id: input.fiscalPeriodId, companyId: context.companyId },
         });
         if (!currentPeriod || currentPeriod.status === "CLOSED")
           throw new JournalError("PERIOD_CLOSED");
         this.assertDates(currentPeriod, input.documentDate, input.entries);
+        const documentNumber = await this.reserveInTransaction(
+          tx,
+          context.companyId,
+          currentPeriod.fiscalYearId,
+          "MANUAL_JOURNAL",
+        );
+        await this.lockAndValidatePostingAccounts(
+          tx,
+          context.companyId,
+          input.entries.flatMap((entry) => entry.lines.map((line) => line.accountId)),
+        );
         const entries = await this.prepareEntries(
           tx,
           context.companyId,
@@ -207,19 +220,37 @@ export class ManualJournalService {
   async update(context: ActorContext, id: bigint, input: JournalUpdateInput) {
     return this.prisma.$transaction(
       async (tx) => {
+        const candidate = await tx.accountingDocument.findFirst({
+          where: {
+            id,
+            companyId: context.companyId,
+            documentType: "MANUAL_JOURNAL",
+          },
+          select: { fiscalPeriodId: true },
+        });
+        if (!candidate) throw new JournalError("NOT_FOUND");
+        const periodId = input.fiscalPeriodId ?? candidate.fiscalPeriodId;
+        if (!await lockFiscalPeriod(tx, context.companyId, periodId)) {
+          throw new JournalError("PERIOD_CLOSED");
+        }
+        if (!await lockAccountingDocument(tx, context.companyId, id)) {
+          throw new JournalError("NOT_FOUND");
+        }
         const current = await tx.accountingDocument.findFirst({
           where: {
             id,
             companyId: context.companyId,
             documentType: "MANUAL_JOURNAL",
           },
-          include: { journalEntries: true },
+          include: this.include(),
         });
         if (!current) throw new JournalError("NOT_FOUND");
         if (current.status !== "DRAFT") throw new JournalError("INVALID_STATE");
         if (current.version !== input.version)
           throw new JournalError("VERSION_CONFLICT");
-        const periodId = input.fiscalPeriodId ?? current.fiscalPeriodId;
+        if (input.fiscalPeriodId === undefined && current.fiscalPeriodId !== periodId) {
+          throw new JournalError("VERSION_CONFLICT");
+        }
         const period = await tx.fiscalPeriod.findFirst({
           where: { id: periodId, companyId: context.companyId },
         });
@@ -231,6 +262,28 @@ export class ManualJournalService {
           | Awaited<ReturnType<ManualJournalService["prepareEntries"]>>
           | undefined;
         if (input.entries) {
+          const oldAccountIds = current.journalEntries.flatMap((entry) =>
+            entry.lines.map((line) => line.accountId),
+          );
+          const newAccountIds = input.entries.flatMap((entry) =>
+            entry.lines.map((line) => line.accountId),
+          );
+          await this.lockAndValidatePostingAccounts(
+            tx,
+            context.companyId,
+            [...oldAccountIds, ...newAccountIds],
+          );
+          const currentLineIds = current.journalEntries.flatMap((entry) =>
+            entry.lines.map((line) => line.id),
+          );
+          const lockedLines = await lockJournalLines(
+            tx,
+            context.companyId,
+            currentLineIds,
+          );
+          if (lockedLines.length !== currentLineIds.length) {
+            throw new JournalError("VERSION_CONFLICT");
+          }
           this.assertDates(period, documentDate, input.entries);
           entries = await this.prepareEntries(
             tx,
@@ -338,6 +391,9 @@ export class ManualJournalService {
   ) {
     return this.prisma.$transaction(
       async (tx) => {
+        if (!await lockAccountingDocument(tx, context.companyId, id)) {
+          throw new JournalError("NOT_FOUND");
+        }
         const current = await tx.accountingDocument.findFirst({
           where: {
             id,
@@ -501,17 +557,6 @@ export class ManualJournalService {
           (line.customerId != null && line.supplierId != null)
         )
           throw new JournalError("INVALID_LINE");
-        const account = await tx.account.findFirst({
-          where: { id: line.accountId, companyId },
-          include: { _count: { select: { children: true } } },
-        });
-        if (
-          !account ||
-          !account.isActive ||
-          !account.allowsPosting ||
-          account._count.children > 0
-        )
-          throw new JournalError("INVALID_ACCOUNT");
         if (
           line.costCenterId != null &&
           !(await tx.costCenter.findFirst({
@@ -551,6 +596,24 @@ export class ManualJournalService {
       });
     }
     return output;
+  }
+  private async lockAndValidatePostingAccounts(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+    accountIds: bigint[],
+  ) {
+    const lockedAccountIds = [...new Set(accountIds.map(String))]
+      .map(BigInt)
+      .sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+    for (const accountId of lockedAccountIds) {
+      const locked = await this.accountReferences.lockPostingAccount(
+        tx,
+        companyId,
+        accountId,
+      );
+      if (!locked.eligible) throw new JournalError("INVALID_ACCOUNT");
+    }
+    return lockedAccountIds;
   }
   private async reserveInTransaction(
     tx: Prisma.TransactionClient,

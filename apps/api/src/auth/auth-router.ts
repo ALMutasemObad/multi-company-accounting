@@ -8,6 +8,8 @@ const paginationSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
 });
+export const csrfModes = ['anonymous', 'authenticated'] as const;
+export const csrfModeSchema = z.enum(csrfModes).default('anonymous');
 
 function cookies(header: string | undefined) {
   return Object.fromEntries((header ?? '').split(';').map((part) => part.trim().split('=', 2)).filter(([key, value]) => key && value));
@@ -18,7 +20,12 @@ export function createAuthRouter(auth: AuthService, secureCookie: boolean) {
   const router = Router();
   const cookie = (sid: string, expires: Date) => `sid=${encodeURIComponent(sid)}; Path=/; HttpOnly; SameSite=Lax; Expires=${expires.toUTCString()}${secureCookie ? '; Secure' : ''}`;
 
-  router.get('/csrf', async (_request, response) => {
+  router.get('/csrf', async (request, response) => {
+    if (csrfModeSchema.parse(request.query.mode) === 'authenticated') {
+      const result = await auth.issueAuthenticatedCsrf({ sid: cookies(request.headers.cookie).sid });
+      response.json({ csrfToken: result.csrfToken, expiresAt: result.expiresAt.toISOString() });
+      return;
+    }
     const result = await auth.issueCsrf();
     response.setHeader('Set-Cookie', cookie(result.sid, result.expiresAt));
     response.json({ csrfToken: result.csrfToken, expiresAt: result.expiresAt.toISOString() });

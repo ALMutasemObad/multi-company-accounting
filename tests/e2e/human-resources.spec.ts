@@ -1,5 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
-import { authMeResponse, e2eCompany } from "./auth-me-mock.js";
+import { authenticatedCsrfResponse, authMeResponse, e2eCompany } from "./auth-me-mock.js";
 
 const permissions = [
   "hr.structure.view",
@@ -65,6 +65,7 @@ test("creates an independent employee record and a non-financial contract", asyn
     const method = request.method();
     const json = (body: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 
+    if (path === "/auth/csrf") return json(authenticatedCsrfResponse());
     if (path === "/auth/companies") return json({ data: [e2eCompany] });
     if (path === "/auth/me") return json(authMeResponse(permissions, ["HUMAN_RESOURCES"]));
     if (path === "/auth/context") return route.fulfill({ status: 204, body: "" });
@@ -319,6 +320,7 @@ async function installShellMocks(page: Page, grantedPermissions: readonly string
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname.replace(/^\/api\/v1/u, "");
+    if (path === "/auth/csrf") return respond(route, authenticatedCsrfResponse());
     if (path === "/auth/companies") return respond(route, { data: [e2eCompany] });
     if (path === "/auth/me") return respond(route, authMeResponse(grantedPermissions, ["HUMAN_RESOURCES"]));
     if (path === "/auth/context") return route.fulfill({ status: 204, body: "" });

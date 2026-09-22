@@ -4,13 +4,14 @@ import { describe, expect, it } from 'vitest';
 const migrationRoot = new URL('../prisma/migrations/20260906220000_social_account_provider_uniqueness/', import.meta.url);
 
 describe('social account linking migration', () => {
-  it('is migration 74 and adds one provider identity per user without rewriting rows', async () => {
+  it('keeps the social account linking migration and adds one provider identity per user without rewriting rows', async () => {
     const [directories, migration, schema] = await Promise.all([
       readdir(new URL('../prisma/migrations/', import.meta.url), { withFileTypes: true }),
       readFile(new URL('migration.sql', migrationRoot), 'utf8'),
       readFile(new URL('../prisma/schema.prisma', import.meta.url), 'utf8'),
     ]);
-    expect(directories.filter((entry) => entry.isDirectory()).length).toBeGreaterThanOrEqual(82);
+    expect(directories.filter((entry) => entry.isDirectory()).map((entry) => entry.name))
+      .toContain('20260906220000_social_account_provider_uniqueness');
     expect(migration).toContain('ADD UNIQUE INDEX `ext_identity_user_provider_key` (`user_id`, `provider`)');
     expect(migration).not.toMatch(/\b(?:DELETE|UPDATE|REPLACE)\b/iu);
     expect(schema).toContain('@@unique([userId, provider], map: "ext_identity_user_provider_key")');

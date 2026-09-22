@@ -91,7 +91,9 @@ async function httpFixture(context: BrowserContext) {
     };
     const error = (status: number, code: string) => reply(status, { status, code });
     if (path === '/auth/social/providers' && record.method === 'GET') return reply(200, { google: false, apple: false });
-    if (path === '/auth/csrf' && record.method === 'GET') return reply(200, { csrfToken: 'fixture-login-csrf' });
+    if (path === '/auth/csrf' && record.method === 'GET' && url.searchParams.get('mode') !== 'authenticated') {
+      return reply(200, { csrfToken: 'fixture-login-csrf' });
+    }
     if (path === '/auth/login' && record.method === 'POST') {
       expect(record.csrf).toBe('fixture-login-csrf');
       const body = request.postDataJSON() as { email: string; password: string };
@@ -108,6 +110,9 @@ async function httpFixture(context: BrowserContext) {
     // admission. Response barriers below instead retain the earlier actor's envelope.
     const session = sid ? sessions.get(sid) : undefined;
     if (!session || session.revoked) return error(401, 'UNAUTHORIZED');
+    if (path === '/auth/csrf' && record.method === 'GET' && url.searchParams.get('mode') === 'authenticated') {
+      return reply(200, { csrfToken: session.csrf, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() });
+    }
     if (record.method !== 'GET' && record.csrf !== session.csrf) return error(403, 'CSRF_INVALID');
     if (path === '/auth/logout' && record.method === 'POST') {
       session.revoked = true;

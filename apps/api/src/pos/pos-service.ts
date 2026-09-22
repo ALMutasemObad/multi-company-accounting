@@ -87,6 +87,12 @@ export class PosService {
         transaction: { deadlineAt, maxWaitMs: 2_000, timeoutMs: 12_000 },
       },
       async (tx) => {
+        const receiptReservation = await this.receipts.reserveCaptureInTransaction(
+          tx,
+          context,
+          input.fiscalPeriodId,
+          input.documentDate,
+        );
         const invoice = await this.sales.checkoutInTransaction(tx, context, {
           documentType: "SALES_INVOICE",
           fiscalPeriodId: input.fiscalPeriodId,
@@ -119,7 +125,7 @@ export class PosService {
             receivableItemId: invoice.receivableItemId,
             allocatedAmount: invoice.total.toFixed(4),
           }],
-        });
+        }, receiptReservation);
         const sale = await tx.posSale.create({
           data: {
             companyId: context.companyId,

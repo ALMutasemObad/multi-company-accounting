@@ -1,0 +1,17 @@
+{
+  "ok": true,
+  "scannedFiles": 323,
+  "importCount": 1422,
+  "relativeImportCount": 1038,
+  "contextFiles": {
+    "general-projects": 0,
+    "professional-projects": 11,
+    "service-catalog": 0,
+    "hr": 7,
+    "attendance": 0,
+    "payroll": 0,
+    "branch-pos": 10
+  },
+  "diagnostics": [],
+  "warnings": []
+}

@@ -54,6 +54,8 @@
     "release:verify": "node scripts/release/verify-release.mjs",
     "runtime:prune": "node scripts/release/prune-runtime.mjs",
     "audit:install-scripts": "npm install-scripts ls --json | node scripts/ci/verify-install-scripts.mjs",
+    "architecture-debt:check": "node scripts/architecture-debt-ratchet.mjs",
+    "architecture-debt:test": "node --test scripts/tests/architecture-debt-ratchet.test.mjs",
     "audit:production": "npm audit --omit=dev --audit-level=high",
     "audit:critical": "npm audit --audit-level=critical"
   },

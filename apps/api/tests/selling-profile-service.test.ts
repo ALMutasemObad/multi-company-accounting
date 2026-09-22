@@ -26,6 +26,7 @@ function harness(withProfile = true) {
     accounts: { findMany: vi.fn().mockResolvedValue(new Map([["3", { id: 3n, companyId: 7n, code: "REV",
       isActive: true, allowsPosting: true, accountClass: "REVENUE", childCount: 0 }]])) },
     tax: { readyIds: vi.fn().mockResolvedValue(new Set(["5"])) }, audit: { append: vi.fn().mockResolvedValue(undefined) },
+    accountReferences: { lockPostingAccount: vi.fn(async (_tx, companyId, accountId) => ({ eligible: true as const, companyId, accountId })) },
   };
   return { service: new SellingProfileService(prisma as unknown as PrismaClient, ports), ports, tx };
 }
@@ -57,6 +58,9 @@ describe("selling profile application boundary", () => {
     const { service, ports, tx } = harness(false);
     const result = await service.create(context, 11n, { unitPrice: "2.1", currencyId: 2n, revenueAccountId: 3n, taxRateId: 5n }, "create-profile-1");
     expect(result.data.sellingProfile?.unitPrice).toBe("2.1000");
+    expect(ports.accountReferences.lockPostingAccount).toHaveBeenCalledWith(tx, 7n, 3n);
+    expect(ports.accountReferences.lockPostingAccount.mock.invocationCallOrder[0])
+      .toBeLessThan(ports.profiles.create.mock.invocationCallOrder[0]!);
     expect(ports.profiles.create).toHaveBeenCalledWith(tx, 7n, 11n, expect.objectContaining({ unitPrice: "2.1000" }));
     expect(ports.audit.append).toHaveBeenCalledWith(tx, context, expect.objectContaining({ fromVersion: null, toVersion: 1 }));
     expect(tx.idempotencyRecord.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "COMPLETED", responseBody: result }) }));
@@ -69,8 +73,22 @@ describe("selling profile application boundary", () => {
   it("can disable stale references but never reactivate or replace them without validation", async () => {
     const { service, ports } = harness(); ports.accounts.findMany.mockResolvedValue(new Map());
     expect((await service.update(context, 11n, { version: 1, isActive: false }, "disable-profile-1")).data.sellingProfile?.version).toBe(2);
+    expect(ports.accountReferences.lockPostingAccount).not.toHaveBeenCalled();
     await expect(service.update(context, 11n, { version: 2, isActive: true }, "reactivate-profile-1")).rejects.toMatchObject({ reason: "REVENUE_ACCOUNT_INVALID" });
+    expect(ports.accountReferences.lockPostingAccount).toHaveBeenCalledWith(expect.anything(), 7n, 3n);
     await expect(service.update(context, 11n, { version: 2, unitPrice: "4" }, "replace-profile-1")).rejects.toMatchObject({ reason: "REVENUE_ACCOUNT_INVALID" });
+  });
+  it("locks changed revenue accounts but skips active updates that keep the reference", async () => {
+    const { service, ports, tx } = harness();
+    await service.update(context, 11n, { version: 1, unitPrice: "2" }, "price-only-1");
+    expect(ports.accountReferences.lockPostingAccount).not.toHaveBeenCalled();
+
+    ports.accounts.findMany.mockResolvedValue(new Map([["7", { id: 7n, companyId: 7n, code: "REV-7",
+      isActive: true, allowsPosting: true, accountClass: "REVENUE", childCount: 0 }]]));
+    await service.update(context, 11n, { version: 2, revenueAccountId: 7n }, "change-revenue-1");
+    expect(ports.accountReferences.lockPostingAccount).toHaveBeenCalledWith(tx, 7n, 7n);
+    expect(ports.accountReferences.lockPostingAccount.mock.invocationCallOrder[0])
+      .toBeLessThan(ports.profiles.update.mock.invocationCallOrder.at(-1)!);
   });
   it("invalid references never complete idempotency or audit", async () => {
     const { service, ports, tx } = harness(false); ports.tax.readyIds.mockResolvedValue(new Set());

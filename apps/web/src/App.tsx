@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, ApiError, logout } from "./api";
+import { api, ApiError, logout, refreshAuthenticatedCsrf } from "./api";
 import { invalidateSessionRequests, onSessionExpired, sessionRequestSignal } from "./session-safety/session";
 import { localizedBrand, storageKey } from "./branding";
 import { LanguageSwitcher, useI18n } from "./i18n";
@@ -202,6 +202,7 @@ export default function App() {
   }, [activateAuthorization]);
 
   const loadAuthenticatedShell = useCallback(async (autoSelectSingleCompany: boolean, signal: AbortSignal) => {
+    await refreshAuthenticatedCsrf({ signal });
     const [companyResult, snapshot, capabilities, workspaceResult] = await Promise.all([
       api<{ data: Company[] }>("/auth/companies", { signal }),
       api<CurrentAuthorization>("/auth/me", { signal }),

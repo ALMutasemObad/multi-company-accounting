@@ -46,7 +46,10 @@ async function auditFixture(page: Page) {
     if (path === "/auth/companies") return json(route, { data: [{ id: "1", name: "Audit Company" }] });
     if (path === "/platform/capabilities") return json(route, { platformOperations: false });
     if (path === "/organizations/workspaces") return json(route, { data: [] });
-    if (path === "/auth/csrf") return json(route, { csrfToken: "audit-filter-csrf" });
+    if (path === "/auth/csrf") return json(route, {
+      csrfToken: "audit-filter-csrf",
+      expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+    });
     if (path === "/audit-logs/options") return json(route, {
       actions: ["CUSTOMER_CREATED", "POS_SALE_COMPLETED"],
       entityTypes: ["CUSTOMER", "POS_SALE"],

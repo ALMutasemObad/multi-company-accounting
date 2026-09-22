@@ -24,8 +24,10 @@ export function onSessionExpired(listener: () => void) {
 
 export function isSessionExpiry(path: string, status: number, code?: string, reason?: string) {
   const route = path.split(/[?#]/)[0];
+  const authenticatedCsrf = route === "/auth/csrf"
+    && new URLSearchParams(path.split("?", 2)[1]?.split("#", 1)[0] ?? "").get("mode") === "authenticated";
   if (code === "INVALID_CSRF" || reason === "INVALID_CSRF") return false;
-  if (route === "/auth/login" || route === "/auth/logout" || route === "/auth/csrf"
+  if (route === "/auth/login" || route === "/auth/logout" || (route === "/auth/csrf" && !authenticatedCsrf)
     || route === "/auth/social/providers" || route?.startsWith("/auth/password/")) return false;
   return status === 401;
 }

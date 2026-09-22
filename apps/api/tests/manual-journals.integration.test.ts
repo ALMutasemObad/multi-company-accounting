@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
+import { PrismaAccountReferenceLockAdapter } from '../src/accounts/prisma-account-reference-lock-adapter.js';
 import { AuthService } from '../src/auth/auth-service.js';
 import { PrismaAuthStore } from '../src/auth/prisma-auth-store.js';
 import { createDatabase } from '../src/database.js';
@@ -94,14 +95,14 @@ describe.runIf(enabled)('manual journal lifecycle with MariaDB', () => {
     }
     await prisma!.userCompanyRole.create({ data: { userId: makerId, companyId, roleId: role.id } });
     const type = await prisma!.accountType.findFirstOrThrow();
-    debitId = (await prisma!.account.upsert({ where: { companyId_code: { companyId, code: 'IT-JRN-D' } }, update: { isActive: true, allowsPosting: true }, create: { companyId, accountTypeId: type.id, code: 'IT-JRN-D', nameAr: 'مدين اختباري', level: 1, allowsPosting: true } })).id;
-    creditId = (await prisma!.account.upsert({ where: { companyId_code: { companyId, code: 'IT-JRN-C' } }, update: { isActive: true, allowsPosting: true }, create: { companyId, accountTypeId: type.id, code: 'IT-JRN-C', nameAr: 'دائن اختباري', level: 1, allowsPosting: true } })).id;
+    debitId = (await prisma!.account.upsert({ where: { companyId_code: { companyId, code: 'IT-JRN-D' } }, update: { isActive: true, allowsPosting: true, version: { increment: 1 } }, create: { companyId, accountTypeId: type.id, code: 'IT-JRN-D', nameAr: 'مدين اختباري', level: 1, allowsPosting: true } })).id;
+    creditId = (await prisma!.account.upsert({ where: { companyId_code: { companyId, code: 'IT-JRN-C' } }, update: { isActive: true, allowsPosting: true, version: { increment: 1 } }, create: { companyId, accountTypeId: type.id, code: 'IT-JRN-C', nameAr: 'دائن اختباري', level: 1, allowsPosting: true } })).id;
     costCenterId = (await prisma!.costCenter.upsert({ where: { companyId_code: { companyId, code: 'IT-JRN-CC' } }, update: { isActive: true }, create: { companyId, code: 'IT-JRN-CC', nameAr: 'مركز قيد اختباري' } })).id;
     const oldYear = await prisma!.fiscalYear.findFirst({ where: { companyId, name: 'IT-JRN-2042' } });
     if (oldYear) await removeYear(oldYear.id);
     const year = await prisma!.fiscalYear.create({ data: { companyId, name: 'IT-JRN-2042', startDate: new Date('2042-01-01'), endDate: new Date('2042-12-31'), periods: { create: [{ periodNumber: 1, name: '2042', startDate: new Date('2042-01-01'), endDate: new Date('2042-12-31') }] } }, include: { periods: true } });
     yearId = year.id; periodId = year.periods[0]!.id;
-    service = new ManualJournalService(prisma!);
+    service = new ManualJournalService(prisma!, new PrismaAccountReferenceLockAdapter());
     const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, testAuthOptions(prisma!));
     app = createApp({ NODE_ENV: 'test', PORT: 3000, WEB_ORIGIN: 'http://localhost:5173', SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: databaseUrl }, { auth, journals: service });
     ({ agent: admin, csrf: adminCsrf } = await login('admin@mcap.local', adminPassword));

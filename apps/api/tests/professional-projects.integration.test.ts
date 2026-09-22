@@ -16,6 +16,7 @@ import { ProfessionalBillingCurrencyAdapter } from "../src/companies/professiona
 import { ProfessionalProjectAccessService } from "../src/projects/professional-project-access-service.js";
 import { ProfessionalProjectPlanningService } from "../src/projects/professional-project-planning-service.js";
 import { TaxService } from "../src/tax/tax-service.js";
+import { PrismaAccountReferenceLockAdapter } from "../src/accounts/prisma-account-reference-lock-adapter.js";
 
 const enabled = process.env.RUN_DB_TESTS === "true" && Boolean(process.env.DATABASE_URL);
 const prisma = enabled ? createDatabase(process.env.DATABASE_URL!) : null;
@@ -231,7 +232,7 @@ describe.runIf(enabled)("professional projects and time with MariaDB", () => {
     billing = new ProfessionalBillingService(
       prisma!,
       new ProfessionalBillingCurrencyAdapter(prisma!),
-      createSalesInvoiceService(prisma!, { taxes: new TaxService(prisma!) }),
+      createSalesInvoiceService(prisma!, { taxes: new TaxService(prisma!, new PrismaAccountReferenceLockAdapter()) }),
     );
     access = new ProfessionalProjectAccessService(prisma!, new ProfessionalPeopleAdapter(prisma!));
     planning = new ProfessionalProjectPlanningService(prisma!);

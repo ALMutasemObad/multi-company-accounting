@@ -15,9 +15,13 @@ async function setup(page: Page, locale: Locale = 'en', preference = '') {
     if (preference) sessionStorage.setItem('mcap.subscription-plan-intent', JSON.stringify({ id: preference, expiresAt: Date.now() + 86_400_000 }));
   }, { locale, preference });
   page.on('request', request => {
-    if (request.url().includes('/auth/csrf')) state.csrfReads++;
+    if (new URL(request.url()).pathname.endsWith('/auth/csrf')
+      && new URL(request.url()).searchParams.get('mode') !== 'authenticated') state.csrfReads++;
     if (request.url().includes('/subscription/change-requests')) requests.push({ body: request.postData(), key: request.headers()['idempotency-key'], csrf: request.headers()['x-csrf-token'] });
   });
+  await page.route('**/api/v1/auth/csrf?mode=authenticated', route => route.fulfill({
+    json: { csrfToken: 'track-d-authenticated', expiresAt: new Date(Date.now() + 10 * 60_000).toISOString() },
+  }));
   await page.route('**/api/v1/subscription?*', async route => {
     if (state.failRead) return route.fulfill({ status: 503, json: { code: 'UNAVAILABLE' } });
     const body = await (await route.fetch()).json();

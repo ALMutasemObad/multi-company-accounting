@@ -27,12 +27,15 @@ import {
 import { SalesInvoiceService } from "../sales/sales-invoice-service.js";
 import type { TaxQuotePort } from "../tax/tax-service.js";
 import type { TreasuryInstrumentPort } from "../treasury/treasury-service.js";
+import type { AccountReferenceLockPort } from "../accounts/account-reference-lock-port.js";
+import { PrismaAccountReferenceLockAdapter } from "../accounts/prisma-account-reference-lock-adapter.js";
 
 export type FinancialDocumentCompositionDependencies = {
   taxes: TaxQuotePort;
   inventory: InventoryInvoiceCatalogPort;
   stock: InventoryInvoiceStockPort;
   treasury: TreasuryInstrumentPort;
+  accountReferences: AccountReferenceLockPort;
 };
 
 export type SalesInvoiceCompositionDependencies = {
@@ -40,6 +43,7 @@ export type SalesInvoiceCompositionDependencies = {
   inventory?: InventoryInvoiceCatalogPort;
   stock?: InventoryInvoiceStockPort;
   receivables?: ReceivableInvoicePort;
+  accountReferences?: AccountReferenceLockPort;
 };
 
 export type PurchaseInvoiceCompositionDependencies = {
@@ -47,18 +51,21 @@ export type PurchaseInvoiceCompositionDependencies = {
   inventory?: InventoryInvoiceCatalogPort;
   stock?: InventoryInvoiceStockPort;
   payables?: PayableInvoicePort;
+  accountReferences?: AccountReferenceLockPort;
 };
 
 export type ReceiptCompositionDependencies = {
   treasury: TreasuryInstrumentPort;
   fxAccounts?: RealizedFxAccountPort;
   receivables?: ReceivableSettlementPort;
+  accountReferences?: AccountReferenceLockPort;
 };
 
 export type PaymentCompositionDependencies = {
   treasury: TreasuryInstrumentPort;
   fxAccounts?: RealizedFxAccountPort;
   payables?: PayableSettlementPort;
+  accountReferences?: AccountReferenceLockPort;
 };
 
 export function createSalesInvoiceService(
@@ -70,6 +77,7 @@ export function createSalesInvoiceService(
     inventory: dependencies.inventory ?? new InventoryCatalogService(prisma),
     stock: dependencies.stock ?? new InventoryMovementService(prisma),
     receivables: dependencies.receivables ?? new ReceivableItemService(),
+    accountReferences: dependencies.accountReferences ?? new PrismaAccountReferenceLockAdapter(),
   });
 }
 
@@ -82,6 +90,7 @@ export function createPurchaseInvoiceService(
     inventory: dependencies.inventory ?? new InventoryCatalogService(prisma),
     stock: dependencies.stock ?? new InventoryMovementService(prisma),
     payables: dependencies.payables ?? new PayableItemService(),
+    accountReferences: dependencies.accountReferences ?? new PrismaAccountReferenceLockAdapter(),
   });
 }
 
@@ -93,6 +102,7 @@ export function createReceiptService(
     treasury: dependencies.treasury,
     fxAccounts: dependencies.fxAccounts ?? new RealizedFxAccountService(),
     receivables: dependencies.receivables ?? new ReceivableItemService(),
+    accountReferences: dependencies.accountReferences ?? new PrismaAccountReferenceLockAdapter(),
   });
 }
 
@@ -104,6 +114,7 @@ export function createPaymentService(
     treasury: dependencies.treasury,
     fxAccounts: dependencies.fxAccounts ?? new RealizedFxAccountService(),
     payables: dependencies.payables ?? new PayableItemService(),
+    accountReferences: dependencies.accountReferences ?? new PrismaAccountReferenceLockAdapter(),
   });
 }
 
@@ -121,22 +132,26 @@ export function createFinancialDocumentServices(
       inventory: dependencies.inventory,
       stock: dependencies.stock,
       receivables,
+      accountReferences: dependencies.accountReferences,
     }),
     purchaseInvoices: new PurchaseInvoiceService(prisma, {
       taxes: dependencies.taxes,
       inventory: dependencies.inventory,
       stock: dependencies.stock,
       payables,
+      accountReferences: dependencies.accountReferences,
     }),
     receipts: new ReceiptService(prisma, {
       treasury: dependencies.treasury,
       fxAccounts,
       receivables,
+      accountReferences: dependencies.accountReferences,
     }),
     payments: new PaymentService(prisma, {
       treasury: dependencies.treasury,
       fxAccounts,
       payables,
+      accountReferences: dependencies.accountReferences,
     }),
   };
 }

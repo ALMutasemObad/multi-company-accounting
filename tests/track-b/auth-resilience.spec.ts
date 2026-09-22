@@ -17,8 +17,16 @@ async function authFixture(page: Page, locale = "en") {
     if (request.method() === "POST") state.posts.push(path);
   });
   await page.route("**/api/v1/auth/**", async (route) => {
-    const path = new URL(route.request().url()).pathname.replace("/api/v1", "");
-    if (path === "/auth/csrf") return route.fulfill({ json: { csrfToken: `pre-${++state.csrf}` } });
+    const url = new URL(route.request().url());
+    const path = url.pathname.replace("/api/v1", "");
+    if (path === "/auth/csrf") {
+      if (url.searchParams.get("mode") === "authenticated") {
+        return state.authorized
+          ? route.fulfill({ json: { csrfToken: "authenticated-token", expiresAt: new Date(Date.now() + 10 * 60_000).toISOString() } })
+          : route.fulfill({ status: 401, json: { code: "AUTHENTICATION_REQUIRED" } });
+      }
+      return route.fulfill({ json: { csrfToken: `pre-${++state.csrf}` } });
+    }
     if (path === "/auth/login") {
       expect(route.request().headers()["x-csrf-token"]).toBe(`pre-${state.csrf}`);
       state.authorized = true;
@@ -257,6 +265,9 @@ for (const failure of ["network", "timeout", "cancel"] as const) {
 
 test("boot network failure is bounded and direct recovery pages do not await CSRF", async ({ page }) => {
   await authFixture(page);
+  await page.route("**/api/v1/auth/csrf?mode=authenticated", route => route.fulfill({ json: {
+    csrfToken: "authenticated-token", expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+  } }));
   await page.route("**/api/v1/auth/companies", hang);
   await page.route("**/api/v1/auth/me", hang);
   await page.clock.install();

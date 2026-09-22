@@ -87,6 +87,15 @@ import { ProfessionalTimesheetApprovalAdapter } from './projects/professional-ti
 import { ProfessionalBillingCurrencyAdapter } from './companies/professional-billing-currency-adapter.js';
 import { ProfessionalBillingService } from './projects/professional-billing-service.js';
 import { PrismaAccountingAccountQueryAdapter } from './accounts/prisma-account-query-adapter.js';
+import { PrismaAccountReferenceLockAdapter } from './accounts/prisma-account-reference-lock-adapter.js';
+import { AccountUsageGuard } from './accounts/account-usage-guard.js';
+import { CoreAccountUsageQueryAdapter } from './accounts/core-account-usage-query-adapter.js';
+import { SalesAccountUsageQueryAdapter } from './sales/sales-account-usage-query-adapter.js';
+import { PurchasesAccountUsageQueryAdapter } from './purchases/purchases-account-usage-query-adapter.js';
+import { TaxAccountUsageQueryAdapter } from './tax/tax-account-usage-query-adapter.js';
+import { TreasuryAccountUsageQueryAdapter } from './treasury/treasury-account-usage-query-adapter.js';
+import { InventoryAccountUsageQueryAdapter } from './inventory/inventory-account-usage-query-adapter.js';
+import { ReportingAccountUsageQueryAdapter } from './reports/reporting-account-usage-adapter.js';
 import { createBarcodeLabelService } from './composition/create-barcode-label-service.js';
 import { CompanyCapabilityService } from './platform-subscriptions/company-capability-service.js';
 import { PrismaCompanyEntitlementQueryAdapter } from './platform-subscriptions/prisma-company-entitlement-query-adapter.js';
@@ -141,8 +150,19 @@ const productImages = new ProductImageService(
   productImageFilesystem,
 );
 const accountQueries = new PrismaAccountingAccountQueryAdapter();
-const taxes = new TaxService(database, accountQueries);
-const treasury = new TreasuryService(database, accountQueries);
+const accountReferenceLocks = new PrismaAccountReferenceLockAdapter();
+const accountUsageGuard = new AccountUsageGuard([
+  new CoreAccountUsageQueryAdapter(),
+  new SalesAccountUsageQueryAdapter(),
+  new PurchasesAccountUsageQueryAdapter(),
+  new TaxAccountUsageQueryAdapter(),
+  new TreasuryAccountUsageQueryAdapter(),
+  new InventoryAccountUsageQueryAdapter(),
+  new ReportingAccountUsageQueryAdapter(),
+]).activate();
+const accountUsageComposition = accountUsageGuard.completeness();
+const taxes = new TaxService(database, accountReferenceLocks, accountQueries);
+const treasury = new TreasuryService(database, accountReferenceLocks, accountQueries);
 const bankReconciliation = config.BANK_RECONCILIATION_ENABLED
   ? new BankReconciliationService(
       database,
@@ -227,8 +247,8 @@ const outboxWorker = outboxHandlers.size
       metrics: operationalMetrics,
     })
   : undefined;
-const customers = new CustomerService(database, accountQueries);
-const suppliers = new SupplierService(database, accountQueries);
+const customers = new CustomerService(database, accountReferenceLocks, accountQueries);
+const suppliers = new SupplierService(database, accountReferenceLocks, accountQueries);
 const inventoryCatalog = new InventoryCatalogService(database);
 const inventoryBarcodes = new InventoryBarcodeService(database);
 const inventoryMovements = new InventoryMovementService(database);
@@ -243,6 +263,7 @@ const {
   inventory: inventoryCatalog,
   stock: inventoryMovements,
   treasury,
+  accountReferences: accountReferenceLocks,
 });
 const pos = new PosService(database, salesInvoices, receipts, new PrismaPosSaleQueryAdapter(database));
 const posRecovery = new PosRecoveryService(new PrismaPosRecoveryQueryAdapter(database));
@@ -331,7 +352,10 @@ async function startServer() {
     config,
   );
   const app = createApp(config, {
-    readiness: new DatabaseReadinessService(database, config.READINESS_TIMEOUT_MS),
+    readiness: new DatabaseReadinessService(database, config.READINESS_TIMEOUT_MS, {
+      complete: accountUsageComposition.complete,
+      enforcementEnabled: accountUsageComposition.enforcementEnabled,
+    }),
     metrics: operationalMetrics,
     sensitiveRateLimits: new PrismaRateLimitStore(
       database,
@@ -367,8 +391,8 @@ async function startServer() {
     professionalBilling,
     hr,
     employeeExpenses,
-    accounts: new AccountService(database),
-    journals: new ManualJournalService(database),
+    accounts: new AccountService(database, accountUsageGuard),
+    journals: new ManualJournalService(database, accountReferenceLocks),
     customers,
     treasury,
     ...(bankReconciliation ? { bankReconciliation } : {}),
@@ -382,7 +406,7 @@ async function startServer() {
     suppliers,
     payments,
     reports: new ReportService(database),
-    cashFlow: new CashFlowService(database, new PrismaCashFlowLedgerQueryAdapter(), new TreasuryCashFlowAccountAdapter()),
+    cashFlow: new CashFlowService(database, new PrismaCashFlowLedgerQueryAdapter(), accountReferenceLocks, new TreasuryCashFlowAccountAdapter()),
     taxSummary: new TaxSummaryService(database, new PrismaTaxSummaryQueryAdapter()),
     costCenterActivity: new CostCenterActivityService(database, new PrismaCostCenterActivityLedgerQueryAdapter()),
     taxes,
@@ -392,7 +416,7 @@ async function startServer() {
     pos,
     posRecovery,
     posContext: createCashierContextService(database),
-    sellingProfiles: createSellingProfileService(database),
+    sellingProfiles: createSellingProfileService(database, accountReferenceLocks),
   });
 
   const server = app.listen(config.PORT, () => {
@@ -402,6 +426,9 @@ async function startServer() {
       requestTimeoutMs: config.HTTP_REQUEST_TIMEOUT_MS,
       headersTimeoutMs: config.HTTP_HEADERS_TIMEOUT_MS,
       keepAliveTimeoutMs: config.HTTP_KEEP_ALIVE_TIMEOUT_MS,
+      accountUsageGuardComplete: accountUsageComposition.complete,
+      accountUsageGuardEnforcementEnabled: accountUsageComposition.enforcementEnabled,
+      accountUsageGuardMissingOwners: accountUsageComposition.missingOwners,
     });
     outboxWorker?.start();
   });

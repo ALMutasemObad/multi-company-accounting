@@ -23,7 +23,7 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 389, requestBodies: 195, responseBodies: 2550 });
+    expect(openApiContractCoverage).toEqual({ operations: 389, requestBodies: 195, responseBodies: 2553 });
     expect(openApiOperationRoutes).toMatchObject({
       'GET /pos/context/identity': 'getPosContextIdentity',
       'GET /auth/social/accounts': 'getCurrentSocialAccounts',
@@ -73,6 +73,19 @@ describe('generated OpenAPI request guards', () => {
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
       'login', 'upsertPlatformBillingAccount', 'createPlatformSubscriptionPlan', 'updatePlatformSubscriptionPlanDraft', 'publishPlatformSubscriptionPlanVersion', 'schedulePlatformCompanySubscriptionChange', 'requestCompanySubscriptionChange', 'issuePlatformBillingInvoice', 'recordPlatformBillingPayment', 'voidPlatformBillingInvoice', 'createUser', 'linkUserEmployee', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'initializeInventoryBalanceValuation', 'reverseInventoryMovement', 'createInventoryItemBarcode', 'updateInventoryItemBarcode', 'setPrimaryInventoryItemBarcode', 'deactivateInventoryItemBarcode', 'resolveInventoryBarcode', 'resolveInventoryBarcodeBatch', 'previewDataImport', 'commitDataImport', 'previewBankStatement', 'commitBankStatementImport', 'createBankReconciliationSession', 'generateBankReconciliationSuggestions', 'approveBankReconciliationMatch', 'createManualBankReconciliationMatch', 'releaseBankReconciliationMatch', 'classifyBankStatementLine', 'closeBankReconciliationSession', 'startFinancialCloseRun', 'refreshFinancialCloseRun', 'createApprovalRequest', 'approveApprovalRequest', 'rejectApprovalRequest', 'createEmployeeExpenseClaim', 'updateEmployeeExpenseClaim', 'createProfessionalProject', 'assignProfessionalProjectMember', 'createProfessionalTimeEntry', 'createProfessionalTimesheet', 'createProfessionalServiceContract', 'endProfessionalServiceContract', 'createProfessionalServiceRate', 'endProfessionalServiceRate', 'createProfessionalBillingRun', 'updateProfessionalProjectAccess', 'grantProfessionalProjectAccess', 'revokeProfessionalProjectAccess', 'updateProfessionalProjectTimeBudget', 'createProfessionalProjectStage', 'updateProfessionalProjectStage', 'transitionProfessionalProjectStage', 'createProfessionalProjectTask', 'updateProfessionalProjectTask', 'transitionProfessionalProjectTask', 'createProfessionalProjectTaskDependency', 'removeProfessionalProjectTaskDependency', 'createHrDepartment', 'updateHrDepartment', 'createHrPosition', 'updateHrPosition', 'createEmployee', 'updateEmployee', 'transitionEmployee', 'createEmploymentContract', 'endEmploymentContract', 'returnFinancialCloseRun', 'updateCashFlowMapping',
     ]));
+  });
+
+  it('requires Account expectedVersion and exposes the resulting version', () => {
+    expect(openApiRequestBodySchemas.updateAccount.safeParse({ nameAr: 'تعديل' }).success).toBe(false);
+    expect(openApiRequestBodySchemas.updateAccount.safeParse({ expectedVersion: 3 }).success).toBe(false);
+    expect(openApiRequestBodySchemas.updateAccount.parse({ expectedVersion: 3, nameAr: '  تعديل  ' })).toEqual({ expectedVersion: 3, nameAr: 'تعديل' });
+    for (const operation of ['deactivateAccount', 'deleteAccount'] as const) {
+      expect(openApiRequestBodySchemas[operation].safeParse({ reason: 'سبب موثق' }).success).toBe(false);
+      expect(openApiRequestBodySchemas[operation].parse({ expectedVersion: 4, reason: '  سبب موثق  ' })).toEqual({ expectedVersion: 4, reason: 'سبب موثق' });
+    }
+    const account = { id: '1', accountTypeId: '2', parentAccountId: null, code: '1000', nameAr: 'الأصول', nameEn: null, level: 1, allowsPosting: false, isControlAccount: false, isActive: true, version: 5, sourceTemplateCode: null, sourceTemplateKey: null };
+    expect(parseOpenApiResponseBody('getAccount', 200, account)).toMatchObject({ id: '1', version: 5 });
+    expect(() => parseOpenApiResponseBody('getAccount', 200, { ...account, version: undefined })).toThrow();
   });
 
   it('keeps warehouse codes server-owned and versioned changes contract-backed', () => {
@@ -530,6 +543,23 @@ describe('generated OpenAPI request guards', () => {
     expect(resendSelfRegistrationVerificationRequestSchema.parse({ email: ' owner@example.com ' })).toEqual({ email: 'owner@example.com' });
     expect(verifySelfRegistrationRequestSchema.safeParse({ token: 'x'.repeat(43) }).success).toBe(true);
     expect(verifySelfRegistrationRequestSchema.safeParse({ token: 'bad token' }).success).toBe(false);
+  });
+
+  it('enforces the expanded group-company onboarding boundary from OpenAPI', () => {
+    const input = {
+      companyName: '  Branch company  ', phone: ' +966500000000 ', countryCode: 'sa',
+      primaryBusinessActivityCode: ' RETAIL_TRADE ', chartTemplateCode: ' RETAIL_INVENTORY ',
+      timezone: ' Asia/Riyadh ', baseCurrencyCode: 'SAR',
+    } as const;
+    expect(openApiRequestBodySchemas.createOrganizationCompany.parse(input)).toEqual({
+      companyName: 'Branch company', phone: '+966500000000', countryCode: 'sa',
+      primaryBusinessActivityCode: 'RETAIL_TRADE', chartTemplateCode: 'RETAIL_INVENTORY',
+      timezone: 'Asia/Riyadh', baseCurrencyCode: 'SAR',
+    });
+    expect(openApiRequestBodySchemas.createOrganizationCompany.safeParse({
+      companyName: 'Branch company', timezone: 'Asia/Riyadh', baseCurrencyCode: 'SAR',
+    }).success).toBe(false);
+    expect(openApiRequestBodySchemas.createOrganizationCompany.safeParse({ ...input, sourceCompanyId: '1' }).success).toBe(false);
   });
 
   it('strictly guards company profile and compliance updates without accepting binary branding data', () => {

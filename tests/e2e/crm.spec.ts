@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { authMeResponse, e2eCompany } from "./auth-me-mock.js";
+import { authenticatedCsrfResponse, authMeResponse, e2eCompany } from "./auth-me-mock.js";
 
 const owner = { id: "813503e9-6353-4b7c-83ef-d1a2f7d15275", employeeNumber: "EMP-000014", nameAr: "نورة القحطاني", nameEn: "Noura Alqahtani" };
 const leadId = "19e7e8dc-125a-4d67-84c0-0dbd5ca849f4";
@@ -16,6 +16,7 @@ for (const viewport of [{ name: "mobile-390", width: 390, height: 844 }, { name:
     await page.route("**/api/v1/**", async (route) => {
       const request = route.request();
       const path = new URL(request.url()).pathname.replace("/api/v1", "");
+      if (path === "/auth/csrf") return route.fulfill({ json: authenticatedCsrfResponse() });
       if (path === "/auth/companies") return route.fulfill({ json: { data: [e2eCompany] } });
       if (path === "/auth/me") return route.fulfill({ json: authMeResponse(["crm.view", "crm.manage", "crm.activities.manage", "crm.convert"], ["SALES", "HUMAN_RESOURCES"]) });
       if (path === "/platform/capabilities") return route.fulfill({ json: { platformOperations: false } });

@@ -6,6 +6,8 @@ import {
 } from '../src/composition/create-financial-document-services.js';
 import { createDatabase } from '../src/database.js';
 import { TaxService } from '../src/tax/tax-service.js';
+import { PrismaAccountReferenceLockAdapter } from '../src/accounts/prisma-account-reference-lock-adapter.js';
+import { PrismaAccountingAccountQueryAdapter } from '../src/accounts/prisma-account-query-adapter.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 const seedPassword = process.env.SEED_ADMIN_PASSWORD;
@@ -61,11 +63,14 @@ try {
   });
 
   const accountTypes = new Map((await prisma.accountType.findMany()).map((item) => [item.code, item]));
-  const account = async (input: { code: string; nameAr: string; type: string; parent?: bigint; level: number; allowsPosting: boolean; isControlAccount?: boolean }) =>
-    prisma.account.upsert({
-      where: { companyId_code: { companyId: company.id, code: input.code } },
-      update: { nameAr: input.nameAr, accountTypeId: accountTypes.get(input.type)!.id, parentAccountId: input.parent ?? null, level: input.level, allowsPosting: input.allowsPosting, isControlAccount: input.isControlAccount ?? false, isActive: true },
-      create: { companyId: company.id, code: input.code, nameAr: input.nameAr, accountTypeId: accountTypes.get(input.type)!.id, parentAccountId: input.parent ?? null, level: input.level, allowsPosting: input.allowsPosting, isControlAccount: input.isControlAccount ?? false },
+  const account = (input: { code: string; nameAr: string; type: string; parent?: bigint; level: number; allowsPosting: boolean; isControlAccount?: boolean }) =>
+    prisma.$transaction(async (tx) => {
+      const existing = await tx.account.findFirst({ where: { companyId: company.id, code: input.code } });
+      const data = { nameAr: input.nameAr, accountTypeId: accountTypes.get(input.type)!.id, parentAccountId: input.parent ?? null, level: input.level, allowsPosting: input.allowsPosting, isControlAccount: input.isControlAccount ?? false, isActive: true };
+      if (!existing) return tx.account.create({ data: { companyId: company.id, code: input.code, ...data } });
+      const changed = await tx.account.updateMany({ where: { id: existing.id, companyId: company.id, version: existing.version }, data: { ...data, version: { increment: 1 } } });
+      if (changed.count !== 1) throw new Error(`DEMO_SEED_ACCOUNT_VERSION_CONFLICT:${input.code}`);
+      return tx.account.findFirstOrThrow({ where: { id: existing.id, companyId: company.id } });
     });
 
   const assets = await account({ code: '1000', nameAr: 'الأصول', type: 'ASSET', level: 1, allowsPosting: false });
@@ -248,7 +253,11 @@ try {
     create: { companyId: company.id, code: 'ZERO', nameAr: 'نسبة صفرية', rate: '0' },
   });
 
-  const invoiceTaxes = new TaxService(prisma);
+  const invoiceTaxes = new TaxService(
+    prisma,
+    new PrismaAccountReferenceLockAdapter(),
+    new PrismaAccountingAccountQueryAdapter(),
+  );
   const salesService = createSalesInvoiceService(prisma, { taxes: invoiceTaxes });
   const salesContext = { userId: admin.id, companyId: company.id };
   const ensureSalesDocument = async (input: {

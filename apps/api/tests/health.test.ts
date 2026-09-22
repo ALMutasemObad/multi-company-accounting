@@ -1,8 +1,9 @@
 import request from 'supertest';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createApp } from '../src/app.js';
 import type { AuthService } from '../src/auth/auth-service.js';
 import { OperationalMetrics } from '../src/operations/metrics.js';
+import { DatabaseReadinessService } from '../src/operations/readiness-service.js';
 import type { RateLimitStore } from '../src/operations/rate-limit.js';
 
 const app = createApp({
@@ -47,6 +48,43 @@ describe('GET /health', () => {
     const response = await request(unavailable).get('/health').expect(503);
     expect(response.body).toEqual({ status: 'error', service: 'mcap-finance-api', checks: { database: 'error' } });
     expect(JSON.stringify(response.body)).not.toContain('hostname');
+  });
+
+  it('exposes safe account usage guard readiness metadata', async () => {
+    const ready = createApp({
+      NODE_ENV: 'test', PORT: 3000, WEB_ORIGIN: 'http://localhost:5173', SESSION_COOKIE_SECURE: false,
+      PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12,
+    }, { readiness: { check: async () => ({
+      database: 'ok',
+      latencyMs: 1,
+      accountUsageGuard: { complete: true, enforcementEnabled: true },
+    }) } });
+    expect((await request(ready).get('/ready').expect(200)).body).toEqual({
+      status: 'ok',
+      service: 'mcap-finance-api',
+      checks: {
+        database: 'ok',
+        latencyMs: 1,
+        accountUsageGuard: { complete: true, enforcementEnabled: true },
+      },
+    });
+  });
+
+  it('fails readiness closed when account usage enforcement is incomplete or disabled', async () => {
+    const databaseQuery = vi.fn().mockResolvedValue([{ ok: 1 }]);
+    const readiness = new DatabaseReadinessService(
+      { $queryRaw: databaseQuery } as never,
+      100,
+      { complete: true, enforcementEnabled: false },
+    );
+    const ready = createApp({
+      NODE_ENV: 'test', PORT: 3000, WEB_ORIGIN: 'http://localhost:5173', SESSION_COOKIE_SECURE: false,
+      PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12,
+    }, { readiness });
+    expect((await request(ready).get('/ready').expect(503)).body).toEqual({
+      status: 'error', service: 'mcap-finance-api', checks: { database: 'error' },
+    });
+    expect(databaseQuery).not.toHaveBeenCalled();
   });
 
   it('limits repeated API requests and returns standard retry metadata', async () => {

@@ -1,6 +1,14 @@
 import type { AuthStore, ClientMetadata, PasswordVerifier, StoredSession } from './auth-store.js';
 import type { CompanyCapabilityPort } from '../platform-subscriptions/company-capability-service.js';
-import { createOpaqueToken, hashToken, tokenMatches } from './session-tokens.js';
+import {
+  AUTHENTICATED_CSRF_TTL_MS,
+  authenticatedCsrfSigningKey,
+  authenticatedCsrfTokenMatches,
+  createAuthenticatedCsrfToken,
+  createOpaqueToken,
+  hashToken,
+  tokenMatches,
+} from './session-tokens.js';
 
 // A fixed, valid Argon2id hash keeps unknown and social-only accounts on the
 // same expensive verification path as password accounts without introducing a
@@ -33,6 +41,17 @@ export class AuthService {
     const expiresAt = new Date(this.now().getTime() + this.options.preAuthTtlMinutes * 60_000);
     await this.store.createPreAuth({ tokenHash: hashToken(sid), csrfHash: hashToken(csrfToken), expiresAt });
     return { sid, csrfToken, expiresAt };
+  }
+
+  async issueAuthenticatedCsrf(input: { sid?: string | undefined }) {
+    if (!input.sid) throw new AuthError('UNAUTHENTICATED');
+    const session = await this.requireAuthenticated(input.sid);
+    const now = this.now();
+    const expiresAt = new Date(Math.min(session.expiresAt.getTime(), now.getTime() + AUTHENTICATED_CSRF_TTL_MS));
+    return {
+      csrfToken: createAuthenticatedCsrfToken({ sessionId: session.id, expiresAt, sessionSigningKey: authenticatedCsrfSigningKey(input.sid) }),
+      expiresAt,
+    };
   }
 
   async login(input: { sid?: string | undefined; csrfToken?: string | undefined; email: string; password: string; metadata?: ClientMetadata }) {
@@ -155,7 +174,14 @@ export class AuthService {
     if (!sid) throw new AuthError('UNAUTHENTICATED');
     const session = await this.store.findSession(hashToken(sid));
     if (!session || session.state !== state || session.revokedAt || session.expiresAt <= this.now()) throw new AuthError('UNAUTHENTICATED');
-    if (!csrfToken || !tokenMatches(csrfToken, session.csrfHash)) throw new AuthError('INVALID_CSRF');
+    const validCsrf = csrfToken && (tokenMatches(csrfToken, session.csrfHash)
+      || state === 'AUTHENTICATED' && authenticatedCsrfTokenMatches(csrfToken, {
+        sessionId: session.id,
+        sessionExpiresAt: session.expiresAt,
+        sessionSigningKey: authenticatedCsrfSigningKey(sid),
+        now: this.now(),
+      }));
+    if (!validCsrf) throw new AuthError('INVALID_CSRF');
     return session;
   }
 }

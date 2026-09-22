@@ -232,11 +232,17 @@ paths:
           $ref: '#/components/responses/RateLimitUnavailable'
         '500':
           $ref: '#/components/responses/InternalError'
-      description: ينشئ جلسة تمهيدية عند الحاجة ويعيد رمز CSRF. تُرسل Cookie الجلسة بخصائص HttpOnly وSameSite، وSecure في
-        الإنتاج.
-      security: []
+      description: الوضع anonymous لا يتطلب مصادقة وينشئ جلسة تمهيدية جديدة وCookie للدخول. الوضع authenticated يفرض SessionCookie صالحة رغم أن العملية تعرض بديلًا عامًا في security، ويصدر رمزًا موقّعًا قصير العمر مرتبطًا بالجلسة دون Set-Cookie أو PRE_AUTH ودون إبطال رموز التبويبات الأخرى.
+      security:
+      - {}
+      - SessionCookie: []
       parameters:
       - $ref: '#/components/parameters/RequestId'
+      - name: mode
+        in: query
+        required: false
+        description: استخدم authenticated لتهيئة تبويب جديد من جلسة قائمة؛ الغياب يعني anonymous ولا يستخدم لاستعادة جلسة مصادق عليها.
+        schema: { type: string, enum: [anonymous, authenticated], default: anonymous }
   /auth/social/providers:
     get:
       tags: [Authentication]
@@ -2298,7 +2304,7 @@ paths:
         schema: { $ref: '#/components/schemas/Id' }
       responses:
         '200':
-          description: العملات النشطة والمناطق الزمنية، دون اختيار خطة اشتراك
+          description: العملات والدول والأنشطة وقوالب الحسابات المسموحة والمناطق الزمنية، دون اختيار خطة اشتراك
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OrganizationCompanyOptions' }
@@ -4947,6 +4953,12 @@ paths:
           $ref: '#/components/responses/BusinessRuleViolation'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '503':
+          description: تعذر التحقق من استخدام الحساب مؤقتًا
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '500':
           $ref: '#/components/responses/InternalError'
       parameters:
@@ -5004,6 +5016,12 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/BusinessRuleViolation'
+        '503':
+          description: تعذر التحقق من استخدام الحساب مؤقتًا
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '500':
           $ref: '#/components/responses/InternalError'
       parameters:
@@ -5019,7 +5037,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ReasonRequest'
+              $ref: '#/components/schemas/AccountVersionReasonRequest'
       x-permission: accounts.delete
       security:
       - SessionCookie: []
@@ -5051,6 +5069,12 @@ paths:
           $ref: '#/components/responses/BusinessRuleViolation'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '503':
+          description: تعذر التحقق من استخدام الحساب مؤقتًا
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '500':
           $ref: '#/components/responses/InternalError'
       parameters:
@@ -5069,7 +5093,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ReasonRequest'
+              $ref: '#/components/schemas/AccountVersionReasonRequest'
       x-permission: accounts.deactivate
       security:
       - SessionCookie: []
@@ -11948,10 +11972,18 @@ components:
           properties:
             database: { type: string, enum: [ok, error] }
             latencyMs: { type: number, minimum: 0 }
+            accountUsageGuard:
+              type: object
+              additionalProperties: false
+              required: [complete, enforcementEnabled]
+              properties:
+                complete: { type: boolean }
+                enforcementEnabled: { type: boolean }
     CsrfTokenResponse:
       type: object
       required:
       - csrfToken
+      - expiresAt
       properties:
         csrfToken:
           type: string
@@ -15324,6 +15356,7 @@ components:
       - allowsPosting
       - isControlAccount
       - isActive
+      - version
       - sourceTemplateCode
       - sourceTemplateKey
       properties:
@@ -15365,6 +15398,10 @@ components:
           type: boolean
         isActive:
           type: boolean
+        version:
+          type: integer
+          minimum: 0
+          maximum: 4294967295
         sourceTemplateCode:
           type:
           - string
@@ -15420,8 +15457,14 @@ components:
     AccountUpdateRequest:
       type: object
       additionalProperties: false
-      minProperties: 1
+      required:
+      - expectedVersion
+      minProperties: 2
       properties:
+        expectedVersion:
+          type: integer
+          minimum: 0
+          maximum: 4294967295
         accountTypeId:
           type: string
           pattern: ^[1-9][0-9]*$
@@ -15454,6 +15497,22 @@ components:
           type: boolean
         isControlAccount:
           type: boolean
+    AccountVersionReasonRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - expectedVersion
+      - reason
+      properties:
+        expectedVersion:
+          type: integer
+          minimum: 0
+          maximum: 4294967295
+        reason:
+          type: string
+          x-trim: true
+          minLength: 3
+          maxLength: 500
     DefaultChartTemplateStatus:
       type: object
       required:

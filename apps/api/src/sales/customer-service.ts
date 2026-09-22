@@ -13,6 +13,7 @@ import type {
 import { CustomerError } from "./customer-ports.js";
 import type { AccountingAccountQueryPort } from "../accounts/account-query-port.js";
 import { PrismaAccountingAccountQueryAdapter } from "../accounts/prisma-account-query-adapter.js";
+import type { AccountReferenceLockPort } from "../accounts/account-reference-lock-port.js";
 
 export type CustomerUpdate = {
   receivableAccountId?: bigint | undefined;
@@ -65,6 +66,7 @@ const unique = (error: unknown) => error instanceof Prisma.PrismaClientKnownRequ
 export class CustomerService implements CustomerImportPort, CrmCustomerQueryPort, CrmCustomerProvisioningPort {
   constructor(
     private readonly prisma: PrismaClient,
+    private readonly accountReferences: AccountReferenceLockPort,
     private readonly accounts: AccountingAccountQueryPort = new PrismaAccountingAccountQueryAdapter(),
   ) {}
 
@@ -188,11 +190,12 @@ export class CustomerService implements CustomerImportPort, CrmCustomerQueryPort
   async updateCustomer(context: ActorContext, id: bigint, input: CustomerUpdate) {
     try {
       return await this.prisma.$transaction(async (tx) => {
-        if (!(await tx.customer.findFirst({ where: { id, companyId: context.companyId } }))) {
+        const current = await tx.customer.findFirst({ where: { id, companyId: context.companyId } });
+        if (!current) {
           throw new CustomerError("NOT_FOUND");
         }
         if (input.receivableAccountId !== undefined) {
-          await this.validPostingAccount(tx, context.companyId, input.receivableAccountId);
+          await this.lockPostingAccount(tx, context.companyId, input.receivableAccountId);
         }
         const value = await tx.customer.update({
           where: { id },
@@ -316,7 +319,7 @@ export class CustomerService implements CustomerImportPort, CrmCustomerQueryPort
     input: CustomerInput,
     source?: "DATA_IMPORT" | "CRM",
   ) {
-    await this.validPostingAccount(tx, context.companyId, input.receivableAccountId);
+    await this.lockPostingAccount(tx, context.companyId, input.receivableAccountId);
     const code = await reserveMasterDataCode(tx, context.companyId, "CUSTOMER");
     const value = await tx.customer.create({
       data: {
@@ -362,6 +365,11 @@ export class CustomerService implements CustomerImportPort, CrmCustomerQueryPort
       throw new CustomerError("INVALID_ACCOUNT");
     }
     return account;
+  }
+
+  private async lockPostingAccount(tx: Prisma.TransactionClient, companyId: bigint, accountId: bigint) {
+    const result = await this.accountReferences.lockPostingAccount(tx, companyId, accountId);
+    if (!result.eligible) throw new CustomerError("INVALID_ACCOUNT");
   }
 
   private addressData(input: CustomerAddressUpdate) {

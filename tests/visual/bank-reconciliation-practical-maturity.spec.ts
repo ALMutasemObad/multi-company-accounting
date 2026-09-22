@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { authMeResponse, e2eCompany } from "../e2e/auth-me-mock.js";
+import { authMeResponse, authenticatedCsrfResponse, e2eCompany } from "../e2e/auth-me-mock.js";
 
 const permissions = [
   "cash_bank_accounts.view",
@@ -58,6 +58,7 @@ async function installCapabilityFixture(page: Page, capabilities: Capabilities, 
     const method = request.method();
     const json = (body: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
     if (method === "POST" && (path.startsWith("/bank-statement-imports") || path.startsWith("/bank-reconciliation"))) businessPosts.push(path);
+    if (path === "/auth/csrf") return json(authenticatedCsrfResponse());
 
     const proposedMatch = { id: "301", bankStatementLineId: firstLine.id, bookMovement: suggestedMovement, status: approved ? "APPROVED" : "PROPOSED", source: "SUGGESTED", rule: "EXACT_REFERENCE_AMOUNT_CURRENCY", score: 100, version: approved ? 1 : 0, approvedAt: approved ? "2026-08-27T10:05:00.000Z" : null, releasedAt: null, releaseReason: null, createdAt: "2026-08-27T10:04:00.000Z" };
     const resolvedLine = scenario === "close" ? { ...firstLine, classification: "PENDING_TRANSACTION", classificationNote: "Synthetic resolved item", classifiedAt: "2026-08-27T10:06:00.000Z", version: 1 } : firstLine;
@@ -107,6 +108,7 @@ async function installFullJourneyFixture(page: Page) {
     const method = request.method();
     const json = (body: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
     if (method === "POST" && (path.startsWith("/bank-statement-imports") || path.startsWith("/bank-reconciliation"))) posts.push(path);
+    if (path === "/auth/csrf") return json(authenticatedCsrfResponse());
 
     const suggestion = { id: "301", bankStatementLineId: firstLine.id, bookMovement: suggestedMovement, status: released ? "RELEASED" : approved ? "APPROVED" : "PROPOSED", source: "SUGGESTED", rule: "EXACT_REFERENCE_AMOUNT_CURRENCY", score: 100, version: released ? 2 : approved ? 1 : 0, approvedAt: approved ? "2026-08-27T10:05:00.000Z" : null, releasedAt: released ? "2026-08-27T10:06:00.000Z" : null, releaseReason: released ? "Synthetic correction" : null, createdAt: "2026-08-27T10:04:00.000Z" };
     const manual = { id: "302", bankStatementLineId: firstLine.id, bookMovement: manualMovement, status: "APPROVED", source: "MANUAL", rule: "MANUAL", score: 100, version: 0, approvedAt: "2026-08-27T10:07:00.000Z", releasedAt: null, releaseReason: null, createdAt: "2026-08-27T10:07:00.000Z" };

@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { authenticatedCsrfResponse } from "./auth-me-mock.js";
 
 const company = { id: "1", name: "North Star Services", timezone: "Asia/Riyadh" };
 const meta = { page: 1, pageSize: 20, total: 1, totalPages: 1 };
@@ -52,6 +53,7 @@ async function mockSubscriptionApp(page: Page, permissions: string[], platformOp
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace(/^\/api\/v1/u, "");
+    if (path === "/auth/csrf") return json(route, authenticatedCsrfResponse());
     if (path === "/auth/companies") return json(route, { data: [company] });
     if (path === "/auth/me") return json(route, {
       user: { id: "1", displayName: "E2E Operator" }, selectedCompany: company,

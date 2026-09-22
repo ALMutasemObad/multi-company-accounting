@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { authMeResponse, e2eCompany } from "./auth-me-mock.js";
+import { authenticatedCsrfResponse, authMeResponse, e2eCompany } from "./auth-me-mock.js";
 
 const permissions = [
   "professional_projects.view",
@@ -227,6 +227,7 @@ test("creates a legal matter, approves time, configures rates, and posts profess
     const method = request.method();
     const json = (body: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 
+    if (path === "/auth/csrf") return json(authenticatedCsrfResponse());
     if (path === "/auth/companies") return json({ data: [e2eCompany] });
     if (path === "/auth/me") return json(authMeResponse(permissions, [
       "CORE_ACCOUNTING",

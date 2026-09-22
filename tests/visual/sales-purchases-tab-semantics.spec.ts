@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { authMeResponse, e2eCompany } from "../e2e/auth-me-mock.js";
+import { authMeResponse, authenticatedCsrfResponse, e2eCompany } from "../e2e/auth-me-mock.js";
 
 const meta = { page: 1, pageSize: 25, total: 0, totalPages: 0 };
 const viewPermissions = ["sales_invoices.view", "purchase_invoices.view"];
@@ -17,6 +17,7 @@ async function installApiFixture(page: Page) {
     const json = (body: unknown) => route.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
 
     if (method !== "GET") writes.push(`${method} ${path}`);
+    if (path === "/auth/csrf") return json(authenticatedCsrfResponse());
     if (path === "/auth/companies") return json({ data: [e2eCompany] });
     if (path === "/auth/me") return json(authMeResponse(
       canViewAging ? [...viewPermissions, ...agingPermissions] : viewPermissions,

@@ -15,6 +15,7 @@ import type {
 import { PrintService } from "../src/printing/print-service.js";
 import { TreasuryService } from "../src/treasury/treasury-service.js";
 import { testAuthOptions } from "./helpers/test-auth-options.js";
+import { PrismaAccountReferenceLockAdapter } from "../src/accounts/prisma-account-reference-lock-adapter.js";
 
 const enabled = process.env.RUN_DB_TESTS === "true";
 const databaseUrl = process.env.DATABASE_URL ?? "";
@@ -186,7 +187,7 @@ describe.runIf(enabled)(
       arId = (
         await prisma!.account.upsert({
           where: { companyId_code: { companyId, code: "IT-RCP-AR" } },
-          update: { isActive: true, allowsPosting: true },
+          update: { isActive: true, allowsPosting: true, version: { increment: 1 } },
           create: {
             companyId,
             accountTypeId: type.id,
@@ -200,7 +201,7 @@ describe.runIf(enabled)(
       revenueId = (
         await prisma!.account.upsert({
           where: { companyId_code: { companyId, code: "IT-RCP-REV" } },
-          update: { isActive: true, allowsPosting: true },
+          update: { isActive: true, allowsPosting: true, version: { increment: 1 } },
           create: {
             companyId,
             accountTypeId: type.id,
@@ -214,7 +215,7 @@ describe.runIf(enabled)(
       cashLedgerId = (
         await prisma!.account.upsert({
           where: { companyId_code: { companyId, code: "IT-RCP-CASH-GL" } },
-          update: { isActive: true, allowsPosting: true },
+          update: { isActive: true, allowsPosting: true, version: { increment: 1 } },
           create: {
             companyId,
             accountTypeId: type.id,
@@ -246,9 +247,9 @@ describe.runIf(enabled)(
       });
       yearId = year.id;
       periodId = year.periods[0]!.id;
-      const treasury = new TreasuryService(prisma!);
+      const treasury = new TreasuryService(prisma!, new PrismaAccountReferenceLockAdapter());
       receiptService = createReceiptService(prisma!, { treasury });
-      const customers = new CustomerService(prisma!);
+      const customers = new CustomerService(prisma!, new PrismaAccountReferenceLockAdapter());
       const auth = new AuthService(
         new PrismaAuthStore(prisma!),
         { verify },
