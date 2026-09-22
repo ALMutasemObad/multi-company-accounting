@@ -592,7 +592,9 @@ export function responseFor(url, method, headers = {}) {
     })),
     meta: { page: 1, pageSize: 9, total: 3, totalPages: 1 },
   };
-  if (pathname === "/auth/csrf") return { csrfToken: "visual-qa-csrf" };
+  if (pathname === "/auth/csrf") return url.searchParams.get("mode") === "authenticated"
+    ? { csrfToken: "visual-qa-csrf", expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() }
+    : { csrfToken: "visual-qa-csrf" };
   if (pathname === "/auth/social/providers") return { google: false, apple: false };
   if (pathname === "/auth/social/accounts") return {
     data: [

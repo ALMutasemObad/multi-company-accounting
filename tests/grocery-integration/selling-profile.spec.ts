@@ -44,6 +44,9 @@ async function setup(page: Page, locale: keyof typeof sellingWorkspace, canManag
   await page.addInitScript(locale => { localStorage.setItem('mcap.locale', locale); sessionStorage.setItem('mcap.csrf', 'grocery-fixture-csrf'); }, locale);
   await page.route('**/api/v1/**', async route => {
     const request = route.request(); const url = new URL(request.url()); const path = url.pathname.slice(7);
+    if (path === '/auth/csrf') return route.fulfill({ json: url.searchParams.get('mode') === 'authenticated'
+      ? { csrfToken: 'grocery-fixture-csrf', expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() }
+      : { csrfToken: 'grocery-fixture-csrf' } });
     if (path === '/auth/me') return route.fulfill({ json: snapshot });
     if (request.method() === 'GET') state.reads.push(`${path}${url.search}`);
     const headers = request.headers();
