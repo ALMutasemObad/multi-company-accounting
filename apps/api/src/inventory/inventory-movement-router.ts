@@ -73,12 +73,7 @@ const stockCountLinesQuery = z.object({
   pageSize: z.coerce.number().int().min(1).max(1_000).default(100),
   search: z.string().trim().min(1).max(200).optional(),
 });
-const stockCountEntryInput = z.object({
-  inventoryItemId: id,
-  quantity: z.string().regex(/^(?:0|[1-9]\d*)(?:\.\d{1,6})?$/u),
-  locationReference: z.string().trim().max(200).nullable().optional(),
-  entryKey: z.string().trim().min(8).max(100),
-});
+const stockCountEntryInput = bodies.addInventoryCountEntry;
 
 function sid(request: Request) {
   return Object.fromEntries(

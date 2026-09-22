@@ -107,7 +107,10 @@ describe.runIf(enabled)("Inventory quantity ledger, locking and isolation", () =
       }
     }
     await prisma.inventoryBalance.deleteMany({ where: { companyId, inventoryItemId: item?.id } });
-    if (item?.id) await prisma.inventoryItem.delete({ where: { id: item.id } });
+    if (item?.id) {
+      await prisma.inventoryItemBarcode.deleteMany({ where: { companyId, inventoryItemId: item.id } });
+      await prisma.inventoryItem.delete({ where: { id: item.id } });
+    }
     if (unitId) await prisma.unitOfMeasure.delete({ where: { id: unitId } });
     if (warehouseA?.id || warehouseB?.id) {
       await prisma.warehouse.deleteMany({ where: { id: { in: [warehouseA?.id, warehouseB?.id].filter((value): value is bigint => value !== undefined) } } });
