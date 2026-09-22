@@ -14,6 +14,8 @@ import {
   ExternalStockPositionError,
 } from "./stock-position/external-stock-position-service.js";
 import { InventoryCountError } from "./inventory-count/inventory-count-service.js";
+import { inventoryCountReportXlsx } from "./inventory-count/inventory-count-report.js";
+import { externalStockPositionsXlsx } from "./stock-position/external-stock-position-report.js";
 
 const id = z.string().regex(/^[1-9][0-9]*$/u).transform(BigInt);
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u);
@@ -56,7 +58,7 @@ const externalPositionType = z.enum([
   "OWNED_HELD_BY_THIRD_PARTY",
   "OWNED_IN_TRANSIT",
 ]);
-const stockCountStatus = z.enum(["DRAFT", "SUBMITTED", "APPROVED"]);
+const stockCountStatus = z.enum(["DRAFT", "SUBMITTED", "APPROVED", "SETTLED"]);
 const stockCountListQuery = z.object({
   ...basePage,
   warehouseId: id.optional(),
@@ -70,6 +72,12 @@ const stockCountLinesQuery = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(1_000).default(100),
   search: z.string().trim().min(1).max(200).optional(),
+});
+const stockCountEntryInput = z.object({
+  inventoryItemId: id,
+  quantity: z.string().regex(/^(?:0|[1-9]\d*)(?:\.\d{1,6})?$/u),
+  locationReference: z.string().trim().max(200).nullable().optional(),
+  entryKey: z.string().trim().min(8).max(100),
 });
 
 function sid(request: Request) {
@@ -136,7 +144,7 @@ export function createInventoryMovementRouter(
   });
 
   router.post("/inventory-count-sessions", async (request, response) => {
-    const context = await authorize(request, "inventory_movements.create", true);
+    const context = await authorize(request, "inventory_counts.manage", true);
     response.status(201).json(await service.inventoryCount.createSession(
       context,
       stockCountCreateInput.parse(request.body),
@@ -145,37 +153,71 @@ export function createInventoryMovementRouter(
   });
 
   router.get("/inventory-count-sessions/:sessionId", async (request, response) => {
-    const context = await authorize(request, "inventory_movements.view", false);
+    const context = await authorize(request, "inventory_counts.manage", false);
     response.json(await service.inventoryCount.getSession(context, id.parse(request.params.sessionId)));
   });
 
   router.get("/inventory-count-sessions/:sessionId/lines", async (request, response) => {
-    const context = await authorize(request, "inventory_movements.view", false);
+    const context = await authorize(request, "inventory_counts.manage", false);
     const query = stockCountLinesQuery.parse(request.query);
     const result = await service.inventoryCount.listLines(context, id.parse(request.params.sessionId), query);
     response.json({ data: result.data, meta: meta(query, result.summary.total), summary: result.summary });
   });
 
   router.post("/inventory-count-sessions/:sessionId/counts", async (request, response) => {
-    const context = await authorize(request, "inventory_movements.create", true);
+    const context = await authorize(request, "inventory_counts.manage", true);
     const input = bodies.enterInventoryCountQuantities.parse(request.body);
     response.json(await service.inventoryCount.bulkEnterCounts(context, id.parse(request.params.sessionId), input.rows));
   });
 
+  router.post("/inventory-count-sessions/:sessionId/entries", async (request, response) => {
+    const context = await authorize(request, "inventory_counts.enter", true);
+    response.status(201).json(await service.inventoryCount.addEntry(
+      context,
+      id.parse(request.params.sessionId),
+      stockCountEntryInput.parse(request.body),
+    ));
+  });
+
+  router.get("/inventory-count-sessions/:sessionId/entries", async (request, response) => {
+    const context = await authorize(request, "inventory_counts.manage", false);
+    const query = z.object({ lineId: id.optional() }).parse(request.query);
+    response.json({ data: await service.inventoryCount.listEntries(context, id.parse(request.params.sessionId), query.lineId) });
+  });
+
+  router.get("/inventory-count-sessions/:sessionId/report.xlsx", async (request, response) => {
+    const context = await authorize(request, "inventory_counts.manage", false);
+    const report = await service.inventoryCount.report(context, id.parse(request.params.sessionId));
+    response.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    response.setHeader("Content-Disposition", `attachment; filename=inventory-count-${report.session.id}.xlsx`);
+    response.send(inventoryCountReportXlsx(report));
+  });
+
   router.post("/inventory-count-sessions/:sessionId/submit", async (request, response) => {
-    const context = await authorize(request, "inventory_movements.create", true);
+    const context = await authorize(request, "inventory_counts.manage", true);
     const input = bodies.submitInventoryCountSession.parse(request.body);
     response.json(await service.inventoryCount.submit(context, id.parse(request.params.sessionId), input.expectedVersion));
   });
 
   router.post("/inventory-count-sessions/:sessionId/approve", async (request, response) => {
-    const context = await authorize(request, "inventory_movements.create", true);
+    const context = await authorize(request, "inventory_counts.manage", true);
     const input = bodies.approveInventoryCountSession.parse(request.body);
     response.json(await service.inventoryCount.approve(
       context,
       id.parse(request.params.sessionId),
       input.expectedVersion,
       input.approverName,
+    ));
+  });
+
+  router.post("/inventory-count-sessions/:sessionId/settle", async (request, response) => {
+    const context = await authorize(request, "inventory_counts.manage", true);
+    const input = bodies.settleInventoryCountSession.parse(request.body);
+    response.json(await service.settleApprovedCount(
+      context,
+      id.parse(request.params.sessionId),
+      input,
+      idempotencyKey(request),
     ));
   });
 
@@ -199,6 +241,18 @@ export function createInventoryMovementRouter(
       includeZero: z.enum(["true", "false"]).transform((value) => value === "true").optional(),
     }).parse(request.query);
     response.json({ data: await service.externalStock.listPositions(context, query) });
+  });
+
+  router.get("/external-stock-positions.xlsx", async (request, response) => {
+    const context = await authorize(request, "inventory_movements.view", false);
+    const query = z.object({
+      positionType: externalPositionType.optional(),
+      includeZero: z.enum(["true", "false"]).transform((value) => value === "true").optional(),
+    }).parse(request.query);
+    const positions = await service.externalStock.listPositions(context, query);
+    response.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    response.setHeader("Content-Disposition", "attachment; filename=external-stock-positions.xlsx");
+    response.send(externalStockPositionsXlsx(positions));
   });
 
   router.post("/external-stock-positions/events", async (request, response) => {
@@ -280,6 +334,7 @@ export function createInventoryMovementRouter(
             "VALUATION_ALREADY_INITIALIZED",
             "INVALID_STATE",
             "ALREADY_REVERSED",
+            "COUNT_MOVED_SINCE_SNAPSHOT",
           ].includes(error.reason)
           ? 409
           : 422;

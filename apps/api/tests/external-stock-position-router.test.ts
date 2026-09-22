@@ -53,6 +53,22 @@ describe("external inventory position routes", () => {
     expect(listPositions).toHaveBeenCalledWith(context, { positionType: "OWNED_IN_TRANSIT", includeZero: true });
   });
 
+  it("exports the filtered positions as a real Excel workbook", async () => {
+    const { app, listPositions, context } = fixture();
+    const response = await request(app)
+      .get("/external-stock-positions.xlsx?positionType=OWNED_IN_TRANSIT")
+      .buffer(true)
+      .parse((response, callback) => {
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk: Buffer) => chunks.push(chunk));
+        response.on("end", () => callback(null, Buffer.concat(chunks)));
+      });
+    expect(response.status).toBe(200);
+    expect(response.headers["content-type"]).toContain("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    expect(Buffer.from(response.body).subarray(0, 4).toString("hex")).toBe("504b0304");
+    expect(listPositions).toHaveBeenCalledWith(context, { positionType: "OWNED_IN_TRANSIT" });
+  });
+
   it("rejects a malformed quantity before reaching the service", async () => {
     const { app, recordEvent } = fixture();
     const response = await request(app)

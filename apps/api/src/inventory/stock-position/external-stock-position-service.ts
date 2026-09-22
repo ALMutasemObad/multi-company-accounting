@@ -42,7 +42,12 @@ export type RecordExternalStockInput = {
 };
 
 const positionInclude = {
-  inventoryItem: { include: { unitOfMeasure: true } },
+  inventoryItem: {
+    include: {
+      unitOfMeasure: true,
+      barcodes: { where: { isActive: true }, orderBy: [{ isPrimary: "desc" as const }, { id: "asc" as const }], take: 1 },
+    },
+  },
   custodyParty: true,
   warehouse: true,
   events: {
@@ -94,7 +99,7 @@ function positionJson(position: Prisma.ExternalStockPositionGetPayload<{ include
     transitDestination: position.transitDestination,
     item: {
       id: position.inventoryItem.id.toString(),
-      code: position.inventoryItem.code,
+      code: position.inventoryItem.barcodes[0]?.value ?? "—",
       nameAr: position.inventoryItem.nameAr,
       nameEn: position.inventoryItem.nameEn,
       unitCode: position.inventoryItem.unitOfMeasure.code,
@@ -104,6 +109,7 @@ function positionJson(position: Prisma.ExternalStockPositionGetPayload<{ include
       code: position.custodyParty.code,
       nameAr: position.custodyParty.nameAr,
       nameEn: position.custodyParty.nameEn,
+      isActive: position.custodyParty.isActive,
     },
     warehouse: position.warehouse
       ? { id: position.warehouse.id.toString(), code: position.warehouse.code, nameAr: position.warehouse.nameAr }

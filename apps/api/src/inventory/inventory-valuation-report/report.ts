@@ -18,6 +18,7 @@ type BalanceRow = ReturnType<typeof InventoryMovementService.balanceJson>;
 export type InventoryValuationReport = {
   generatedAt: string;
   basis: "CURRENT_BALANCE";
+  valuationPolicy: "MOVING_WEIGHTED_AVERAGE";
   rows: BalanceRow[];
   totals: {
     rowCount: number;
@@ -61,6 +62,7 @@ export async function currentInventoryValuationReport(
   return {
     generatedAt: new Date().toISOString(),
     basis: "CURRENT_BALANCE",
+    valuationPolicy: "MOVING_WEIGHTED_AVERAGE",
     rows: filtered,
     totals: {
       rowCount: filtered.length,
@@ -76,9 +78,10 @@ export function inventoryValuationXlsx(report: InventoryValuationReport) {
     [{ value: "كشف تقييم المخزون الحالي", style: 1 }],
     [{ value: "وقت التوليد", style: 3 }, { value: report.generatedAt }],
     [{ value: "أساس التقرير", style: 3 }, { value: "الرصيد الحالي وقت التوليد (ليس تقريرًا تاريخيًا)" }],
-    ["رمز الصنف", "الصنف", "الوحدة", "رمز المستودع", "المستودع", "الكمية", "متوسط تكلفة الوحدة", "القيمة الإجمالية", "حالة التقييم"].map((value) => ({ value, style: 2 })),
+    [{ value: "سياسة التقييم", style: 3 }, { value: "متوسط التكلفة المرجح المتحرك" }],
+    ["الردمك / الباركود", "الصنف", "الوحدة", "رمز المستودع", "المستودع / الموقع", "الكمية", "متوسط تكلفة الوحدة", "القيمة الإجمالية", "حالة التقييم"].map((value) => ({ value, style: 2 })),
     ...report.rows.map((row) => [
-      { value: row.inventoryItem.code },
+      { value: row.inventoryItem.primaryBarcode ?? "" },
       { value: row.inventoryItem.nameAr },
       { value: row.inventoryItem.unitOfMeasure.code },
       { value: row.warehouse.code },

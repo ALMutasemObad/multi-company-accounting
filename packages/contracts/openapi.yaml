@@ -7335,6 +7335,65 @@ paths:
         '500': { $ref: '#/components/responses/InternalError' }
       x-permission: inventory_movements.view
       security: [{ SessionCookie: [] }]
+  /inventory-aging-report:
+    get:
+      tags: [Inventory]
+      summary: عرض تقرير تقادم وبطء حركة المخزون
+      description: يصنف الأرصدة الموجبة حسب عدد الأيام منذ آخر حركة مرحّلة حتى التاريخ المحدد.
+      operationId: getInventoryAgingReport
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: asOf
+        in: query
+        required: true
+        schema: { type: string, format: date }
+      - name: slowMovingDays
+        in: query
+        schema: { type: integer, minimum: 1, maximum: 3650, default: 90 }
+      - name: stagnantDays
+        in: query
+        schema: { type: integer, minimum: 2, maximum: 7300, default: 180 }
+      responses:
+        '200':
+          description: تقرير تقادم المخزون
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InventoryAgingReport' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-permission: inventory_movements.view
+      security: [{ SessionCookie: [] }]
+  /inventory-aging-report.xlsx:
+    get:
+      tags: [Inventory]
+      summary: تنزيل تقرير تقادم وبطء حركة المخزون بصيغة Excel
+      operationId: exportInventoryAgingReportXlsx
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: asOf
+        in: query
+        required: true
+        schema: { type: string, format: date }
+      - name: slowMovingDays
+        in: query
+        schema: { type: integer, minimum: 1, maximum: 3650, default: 90 }
+      - name: stagnantDays
+        in: query
+        schema: { type: integer, minimum: 2, maximum: 7300, default: 180 }
+      responses:
+        '200':
+          description: ملف Excel لتقرير التقادم
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-permission: inventory_movements.view
+      security: [{ SessionCookie: [] }]
   /inventory-count-sessions:
     get:
       tags: [Inventory]
@@ -7479,6 +7538,71 @@ paths:
         '500': { $ref: '#/components/responses/InternalError' }
       x-permission: inventory_movements.create
       security: [{ SessionCookie: [], CsrfToken: [] }]
+  /inventory-count-sessions/{sessionId}/entries:
+    get:
+      tags: [Inventory]
+      summary: عرض أحدث إدخالات العد المستقلة في الجلسة
+      operationId: listInventoryCountEntries
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/InventoryCountSessionId'
+      - { name: lineId, in: query, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
+      responses:
+        '200': { description: إدخالات العد, content: { application/json: { schema: { type: object } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: inventory_movements.view
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [Inventory]
+      summary: إضافة كمية عد مستقلة وتراكمية من محطة موظف
+      operationId: addInventoryCountEntry
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/InventoryCountSessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [inventoryItemId, quantity, entryKey]
+              properties:
+                inventoryItemId: { type: string, pattern: '^[1-9][0-9]*$' }
+                quantity: { type: string, pattern: '^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,6})?$' }
+                locationReference: { type: [string, 'null'], maxLength: 200 }
+                entryKey: { type: string, minLength: 8, maxLength: 100 }
+      responses:
+        '201': { description: تم تسجيل الدفعة وتحديث الإجمالي, content: { application/json: { schema: { type: object } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: inventory_movements.create
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /inventory-count-sessions/{sessionId}/report.xlsx:
+    get:
+      tags: [Inventory]
+      summary: تصدير محضر فروقات الجرد والتقييم بصيغة Excel
+      operationId: exportInventoryCountReportXlsx
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/InventoryCountSessionId'
+      responses:
+        '200':
+          description: ملف Excel
+          content: { application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: { schema: { type: string, format: binary } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: inventory_movements.view
+      security: [{ SessionCookie: [] }]
   /inventory-count-sessions/{sessionId}/submit:
     post:
       tags: [Inventory]
@@ -7526,6 +7650,35 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/InventoryCountSession' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-permission: inventory_movements.create
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /inventory-count-sessions/{sessionId}/settle:
+    post:
+      tags: [Inventory]
+      summary: ترحيل فروقات جلسة الجرد المعتمدة إلى المخزون والمحاسبة
+      operationId: settleInventoryCountSession
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/InventoryCountSessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InventoryCountSettlementRequest' }
+      responses:
+        '200':
+          description: تم ترحيل فروقات الجرد ذريًا
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InventoryCountSettlementResult' }
         '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -7607,6 +7760,31 @@ paths:
                 required: [data]
                 properties:
                   data: { type: array, items: { $ref: '#/components/schemas/ExternalStockPosition' } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-permission: inventory_movements.view
+      security: [{ SessionCookie: [] }]
+  /external-stock-positions.xlsx:
+    get:
+      tags: [Inventory]
+      summary: تنزيل كشف الأمانات والمخزون لدى الغير والبضاعة بالطريق بصيغة Excel
+      operationId: exportExternalStockPositionsXlsx
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: positionType
+        in: query
+        schema: { $ref: '#/components/schemas/ExternalStockPositionType' }
+      - name: includeZero
+        in: query
+        schema: { type: boolean }
+      responses:
+        '200':
+          description: ملف Excel للأرصدة الخارجية
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
         '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -16001,6 +16179,11 @@ components:
       - nameAr
       - nameEn
       - description
+      - author
+      - publisher
+      - publicationYear
+      - edition
+      - primaryBarcode
       - isActive
       - version
       - image
@@ -16026,6 +16209,28 @@ components:
         description:
           type: [string, 'null']
           maxLength: 500
+        author:
+          type: [string, 'null']
+          maxLength: 200
+        publisher:
+          type: [string, 'null']
+          maxLength: 200
+        publicationYear:
+          type: [integer, 'null']
+          minimum: 1000
+          maximum: 9999
+        edition:
+          type: [string, 'null']
+          maxLength: 120
+        primaryBarcode:
+          oneOf:
+          - type: object
+            additionalProperties: false
+            required: [value, symbology]
+            properties:
+              value: { type: string, minLength: 1, maxLength: 255 }
+              symbology: { $ref: '#/components/schemas/InventoryBarcodeSymbology' }
+          - { type: 'null' }
         isActive:
           type: boolean
         version:
@@ -16058,6 +16263,26 @@ components:
         description:
           type: [string, 'null']
           maxLength: 500
+        author:
+          type: [string, 'null']
+          maxLength: 200
+        publisher:
+          type: [string, 'null']
+          maxLength: 200
+        publicationYear:
+          type: [integer, 'null']
+          minimum: 1000
+          maximum: 9999
+        edition:
+          type: [string, 'null']
+          maxLength: 120
+        primaryBarcodeValue:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 255
+          description: إن ترك فارغًا يولد النظام باركود CODE_128 من رمز الصنف الداخلي.
+        primaryBarcodeSymbology:
+          $ref: '#/components/schemas/InventoryBarcodeSymbology'
     InventoryItemUpdateRequest:
       type: object
       additionalProperties: false
@@ -16081,6 +16306,19 @@ components:
         description:
           type: [string, 'null']
           maxLength: 500
+        author:
+          type: [string, 'null']
+          maxLength: 200
+        publisher:
+          type: [string, 'null']
+          maxLength: 200
+        publicationYear:
+          type: [integer, 'null']
+          minimum: 1000
+          maximum: 9999
+        edition:
+          type: [string, 'null']
+          maxLength: 120
     InventoryCatalogDeactivateRequest:
       type: object
       additionalProperties: false
@@ -16262,10 +16500,11 @@ components:
     InventoryItemReference:
       type: object
       additionalProperties: false
-      required: [id, code, nameAr, nameEn, unitOfMeasure]
+      required: [id, code, primaryBarcode, nameAr, nameEn, unitOfMeasure]
       properties:
         id: { type: string, pattern: '^[1-9][0-9]*$' }
         code: { type: string, maxLength: 40 }
+        primaryBarcode: { type: [string, 'null'], maxLength: 255 }
         nameAr: { type: string, maxLength: 200 }
         nameEn: { type: [string, 'null'], maxLength: 200 }
         unitOfMeasure:
@@ -16300,10 +16539,11 @@ components:
     InventoryValuationReport:
       type: object
       additionalProperties: false
-      required: [generatedAt, basis, rows, totals]
+      required: [generatedAt, basis, valuationPolicy, rows, totals]
       properties:
         generatedAt: { type: string, format: date-time }
         basis: { type: string, const: CURRENT_BALANCE }
+        valuationPolicy: { type: string, const: MOVING_WEIGHTED_AVERAGE }
         rows:
           type: array
           maxItems: 5000
@@ -16317,9 +16557,76 @@ components:
             valuedRowCount: { type: integer, minimum: 0, maximum: 5000 }
             unvaluedRowCount: { type: integer, minimum: 0, maximum: 5000 }
             valuedInventoryValueBase: { type: string, pattern: '^[0-9]{1,15}\.[0-9]{4}$' }
+    InventoryAgingClassification:
+      type: string
+      enum: [ACTIVE, SLOW_MOVING, STAGNANT, NO_MOVEMENT]
+    InventoryAgingRow:
+      type: object
+      additionalProperties: false
+      required: [balanceId, inventoryItemId, barcode, itemName, unitOfMeasureCode, warehouseId, warehouseCode, warehouseName, onHand, lastMovementDate, ageDays, classification, averageUnitCostBase, inventoryValueBase, valuationWarning, isValuationInitialized]
+      properties:
+        balanceId: { type: string, pattern: '^[1-9][0-9]*$' }
+        inventoryItemId: { type: string, pattern: '^[1-9][0-9]*$' }
+        barcode: { type: [string, 'null'], maxLength: 255 }
+        itemName: { type: string, minLength: 1, maxLength: 200 }
+        unitOfMeasureCode: { type: string, minLength: 1, maxLength: 20 }
+        warehouseId: { type: string, pattern: '^[1-9][0-9]*$' }
+        warehouseCode: { type: string, minLength: 1, maxLength: 30 }
+        warehouseName: { type: string, minLength: 1, maxLength: 160 }
+        onHand: { type: string, pattern: '^[0-9]{1,13}\.[0-9]{6}$' }
+        lastMovementDate: { type: [string, 'null'], format: date }
+        ageDays: { type: [integer, 'null'], minimum: 0 }
+        classification: { $ref: '#/components/schemas/InventoryAgingClassification' }
+        averageUnitCostBase: { type: [string, 'null'], pattern: '^[0-9]{1,11}\.[0-9]{8}$' }
+        inventoryValueBase: { type: [string, 'null'], pattern: '^[0-9]{1,15}\.[0-9]{4}$' }
+        valuationWarning:
+          oneOf:
+          - { type: string, const: UNVALUED_BALANCE_EXCLUDED_FROM_TOTALS }
+          - { type: 'null' }
+        isValuationInitialized: { type: boolean }
+    InventoryAgingReport:
+      type: object
+      additionalProperties: false
+      required: [asOf, policy, rows, summary]
+      properties:
+        asOf: { type: string, format: date }
+        policy:
+          type: object
+          additionalProperties: false
+          required: [slowMovingDays, stagnantDays]
+          properties:
+            slowMovingDays: { type: integer, minimum: 1, maximum: 3650 }
+            stagnantDays: { type: integer, minimum: 2, maximum: 7300 }
+        rows:
+          type: array
+          items: { $ref: '#/components/schemas/InventoryAgingRow' }
+        summary:
+          type: object
+          additionalProperties: false
+          required: [balanceCount, unvaluedBalanceCount, valuedInventoryTotalBase, classificationTotals]
+          properties:
+            balanceCount: { type: integer, minimum: 0 }
+            unvaluedBalanceCount: { type: integer, minimum: 0 }
+            valuedInventoryTotalBase: { type: string, pattern: '^[0-9]{1,15}\.[0-9]{4}$' }
+            classificationTotals:
+              type: object
+              additionalProperties: false
+              required: [ACTIVE, SLOW_MOVING, STAGNANT, NO_MOVEMENT]
+              properties:
+                ACTIVE: { $ref: '#/components/schemas/InventoryAgingClassificationTotal' }
+                SLOW_MOVING: { $ref: '#/components/schemas/InventoryAgingClassificationTotal' }
+                STAGNANT: { $ref: '#/components/schemas/InventoryAgingClassificationTotal' }
+                NO_MOVEMENT: { $ref: '#/components/schemas/InventoryAgingClassificationTotal' }
+    InventoryAgingClassificationTotal:
+      type: object
+      additionalProperties: false
+      required: [balanceCount, valuedInventoryValueBase]
+      properties:
+        balanceCount: { type: integer, minimum: 0 }
+        valuedInventoryValueBase: { type: string, pattern: '^[0-9]{1,15}\.[0-9]{4}$' }
     InventoryCountStatus:
       type: string
-      enum: [DRAFT, SUBMITTED, APPROVED]
+      enum: [DRAFT, SUBMITTED, APPROVED, SETTLED]
     InventoryCountSummary:
       type: object
       additionalProperties: false
@@ -16334,7 +16641,7 @@ components:
     InventoryCountSession:
       type: object
       additionalProperties: false
-      required: [id, warehouseId, countDate, snapshotAt, status, version, cutoff, submittedAt, approvedAt, approvedByName]
+      required: [id, warehouseId, countDate, snapshotAt, status, version, cutoff, submittedAt, approvedAt, approvedByName, settlement]
       properties:
         id: { type: string, pattern: '^[1-9][0-9]*$' }
         warehouseId: { type: string, pattern: '^[1-9][0-9]*$' }
@@ -16358,9 +16665,20 @@ components:
         submittedAt: { type: [string, 'null'], format: date-time }
         approvedAt: { type: [string, 'null'], format: date-time }
         approvedByName: { type: [string, 'null'], maxLength: 160 }
+        settlement:
+          oneOf:
+          - type: object
+            additionalProperties: false
+            required: [date, settledAt, surplusMovementId, shortageMovementId]
+            properties:
+              date: { type: string, format: date }
+              settledAt: { type: string, format: date-time }
+              surplusMovementId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+              shortageMovementId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+          - { type: 'null' }
         committee:
           type: array
-          minItems: 1
+          minItems: 0
           maxItems: 50
           items: { $ref: '#/components/schemas/InventoryCountCommitteeMember' }
         summary: { $ref: '#/components/schemas/InventoryCountSummary' }
@@ -16382,13 +16700,13 @@ components:
     InventoryCountSessionCreateRequest:
       type: object
       additionalProperties: false
-      required: [warehouseId, countDate, committee]
+      required: [warehouseId, countDate]
       properties:
         warehouseId: { type: string, pattern: '^[1-9][0-9]*$' }
         countDate: { type: string, format: date }
         committee:
           type: array
-          minItems: 1
+          minItems: 0
           maxItems: 50
           items:
             type: object
@@ -16411,11 +16729,12 @@ components:
     InventoryCountLine:
       type: object
       additionalProperties: false
-      required: [id, inventoryItemId, code, title, unitCode, location, shelf, bookQuantity, bookUnitCostBase, bookValueBase, countedQuantity, varianceQuantity, varianceReason, countedByName, countedAt, version]
+      required: [id, inventoryItemId, code, barcode, title, unitCode, location, shelf, bookQuantity, bookUnitCostBase, bookValueBase, countedQuantity, varianceQuantity, varianceReason, countedByName, countedAt, version]
       properties:
         id: { type: string, pattern: '^[1-9][0-9]*$' }
         inventoryItemId: { type: string, pattern: '^[1-9][0-9]*$' }
         code: { type: string, maxLength: 40 }
+        barcode: { type: [string, 'null'], maxLength: 255 }
         title: { type: string, maxLength: 200 }
         unitCode: { type: string, maxLength: 20 }
         location: { type: [string, 'null'], maxLength: 300 }
@@ -16476,6 +16795,34 @@ components:
       properties:
         expectedVersion: { type: integer, minimum: 0 }
         approverName: { type: string, x-trim: true, minLength: 1, maxLength: 160 }
+    InventoryCountSettlementRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, settlementDate]
+      properties:
+        expectedVersion: { type: integer, minimum: 0 }
+        settlementDate: { type: string, format: date }
+        surplusUnitCosts:
+          type: object
+          additionalProperties: { type: string, pattern: '^(?:0|[1-9][0-9]{0,10})(?:\.[0-9]{1,8})?$' }
+    InventoryCountSettlementResult:
+      type: object
+      additionalProperties: false
+      required: [sessionId, status, version, settlementDate, settledAt, surplusMovement, shortageMovement]
+      properties:
+        sessionId: { type: string, pattern: '^[1-9][0-9]*$' }
+        status: { type: string, enum: [SETTLED] }
+        version: { type: integer, minimum: 0 }
+        settlementDate: { type: string, format: date }
+        settledAt: { type: string, format: date-time }
+        surplusMovement:
+          oneOf:
+          - { $ref: '#/components/schemas/InventoryMovement' }
+          - { type: 'null' }
+        shortageMovement:
+          oneOf:
+          - { $ref: '#/components/schemas/InventoryMovement' }
+          - { type: 'null' }
     ExternalStockPositionType:
       type: string
       enum: [THIRD_PARTY_HELD_BY_US, OWNED_HELD_BY_THIRD_PARTY, OWNED_IN_TRANSIT]

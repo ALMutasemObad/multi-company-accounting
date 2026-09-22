@@ -160,6 +160,8 @@ try {
     ['inventory_movements.view', 'inventory', 'عرض أرصدة وحركات المخزون'],
     ['inventory_movements.create', 'inventory', 'إنشاء حركات المخزون'],
     ['inventory_movements.reverse', 'inventory', 'عكس حركات المخزون اليدوية'],
+    ['inventory_counts.enter', 'inventory', 'تسجيل دفعات العد في جلسات الجرد'],
+    ['inventory_counts.manage', 'inventory', 'إنشاء جلسات الجرد ومراجعتها واعتمادها وتسويتها'],
     ['receipts.view', 'receipts', 'عرض سندات القبض'],
     ['receipts.create', 'receipts', 'إنشاء سندات القبض'],
     ['receipts.update', 'receipts', 'تعديل سندات القبض'],

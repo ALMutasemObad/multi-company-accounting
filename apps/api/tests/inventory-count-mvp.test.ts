@@ -15,11 +15,12 @@ import type { InventoryMovementService } from "../src/inventory/inventory-moveme
 const context = { companyId: 7n, userId: 11n };
 
 const buildService = (tx: Record<string, unknown>) => {
+  const transactionalClient = { $queryRaw: vi.fn().mockResolvedValue([{ id: 1n }]), ...tx };
   const service = Object.create(InventoryCountService.prototype) as InventoryCountService;
   Object.assign(service, {
     prisma: {},
-    transactions: { execute: async (_options: unknown, work: (value: unknown) => unknown) => work(tx) },
-    idempotency: { execute: async (_options: unknown, work: (value: unknown) => unknown) => work(tx) },
+    transactions: { execute: async (_options: unknown, work: (value: unknown) => unknown) => work(transactionalClient) },
+    idempotency: { execute: async (_options: unknown, work: (value: unknown) => unknown) => work(transactionalClient) },
   });
   return service;
 };
@@ -243,7 +244,7 @@ describe("inventory count MVP", () => {
       });
 
     expect(response.status).toBe(201);
-    expect(authorize).toHaveBeenCalledWith({ sid: "session-token", csrfToken: "csrf-token", permission: "inventory_movements.create", requireCsrf: true });
+    expect(authorize).toHaveBeenCalledWith({ sid: "session-token", csrfToken: "csrf-token", permission: "inventory_counts.manage", requireCsrf: true });
     expect(inventoryCount.createSession).toHaveBeenCalledWith(context, expect.objectContaining({ warehouseId: 3n }), "library-2026-09-24");
   });
 
@@ -266,6 +267,6 @@ describe("inventory count MVP", () => {
     expect(inventoryCount.bulkEnterCounts).toHaveBeenCalledWith(context, 90n, [{ lineId: 1n, expectedVersion: 2, countedQuantity: "1002", varianceReason: "نسختان زائدتان" }]);
     expect(inventoryCount.submit).toHaveBeenCalledWith(context, 90n, 0);
     expect(inventoryCount.approve).toHaveBeenCalledWith(context, 90n, 1, "مدير المكتبة");
-    expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ permission: "inventory_movements.create", requireCsrf: true }));
+    expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ permission: "inventory_counts.manage", requireCsrf: true }));
   });
 });

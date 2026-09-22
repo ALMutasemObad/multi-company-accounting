@@ -96,6 +96,8 @@ import type { InventoryBarcodeService } from './inventory/inventory-barcode-serv
 import { createInventoryBarcodeRouter } from './inventory/inventory-barcode-router.js';
 import type { InventoryMovementService } from './inventory/inventory-movement-service.js';
 import { createInventoryMovementRouter } from './inventory/inventory-movement-router.js';
+import type { InventoryAgingReportService } from './inventory/inventory-aging-report/inventory-aging-report-service.js';
+import { createInventoryAgingReportRouter } from './inventory/inventory-aging-report/inventory-aging-report-router.js';
 import type { BankReconciliationService } from './treasury/reconciliation/reconciliation-service.js';
 import { createBankReconciliationRouter } from './treasury/reconciliation/reconciliation-router.js';
 import { BankReconciliationRolloutPolicy } from './treasury/reconciliation/reconciliation-rollout.js';
@@ -220,6 +222,7 @@ export type AppServices = {
   productImages?: ProductImageService;
   inventoryBarcodes?: InventoryBarcodeService;
   inventoryMovements?: InventoryMovementService;
+  inventoryAgingReport?: InventoryAgingReportService;
   receipts?: ReceiptService;
   suppliers?: SupplierService;
   payments?: PaymentService;
@@ -449,6 +452,7 @@ export function createApp(config: AppConfig, services: AppServices = {}) {
   ));
   if (services.auth && services.inventoryBarcodes) app.use('/api/v1', createInventoryBarcodeRouter(services.auth, services.inventoryBarcodes));
   if (services.auth && services.inventoryMovements) app.use('/api/v1', createInventoryMovementRouter(services.auth, services.inventoryMovements));
+  if (services.auth && services.inventoryAgingReport) app.use('/api/v1', createInventoryAgingReportRouter(services.auth, services.inventoryAgingReport));
   if (services.auth && services.receipts) app.use('/api/v1', createReceiptRouter(services.auth, services.receipts));
   if (services.auth && services.suppliers) app.use('/api/v1', createSupplierRouter(services.auth, services.suppliers));
   if (services.auth && services.payments) app.use('/api/v1', createPaymentRouter(services.auth, services.payments));

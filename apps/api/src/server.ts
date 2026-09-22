@@ -41,6 +41,8 @@ import { InventoryService } from './inventory/inventory-service.js';
 import { InventoryCatalogService } from './inventory/inventory-catalog-service.js';
 import { InventoryBarcodeService } from './inventory/inventory-barcode-service.js';
 import { InventoryMovementService } from './inventory/inventory-movement-service.js';
+import { InventoryAgingReportService } from './inventory/inventory-aging-report/inventory-aging-report-service.js';
+import { PrismaInventoryAgingReportPort } from './inventory/inventory-aging-report/prisma-inventory-aging-report-port.js';
 import { BankStatementParser } from './treasury/reconciliation/bank-statement-parser.js';
 import { PrismaReconciliationLedgerQueryAdapter } from './treasury/reconciliation/adapters/prisma-reconciliation-ledger-query-adapter.js';
 import { BankReconciliationService } from './treasury/reconciliation/reconciliation-service.js';
@@ -230,6 +232,7 @@ const suppliers = new SupplierService(database, accountQueries);
 const inventoryCatalog = new InventoryCatalogService(database);
 const inventoryBarcodes = new InventoryBarcodeService(database);
 const inventoryMovements = new InventoryMovementService(database);
+const inventoryAgingReport = new InventoryAgingReportService(new PrismaInventoryAgingReportPort(database));
 const {
   salesInvoices,
   purchaseInvoices,
@@ -374,6 +377,7 @@ async function startServer() {
     productImages,
     inventoryBarcodes,
     inventoryMovements,
+    inventoryAgingReport,
     receipts,
     suppliers,
     payments,
