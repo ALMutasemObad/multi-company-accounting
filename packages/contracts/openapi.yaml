@@ -13885,6 +13885,11 @@ components:
       properties:
         nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 120 }
         nameEn: { type: [string, 'null'], x-trim: true, maxLength: 120 }
+        permissionIds:
+          type: array
+          uniqueItems: true
+          maxItems: 200
+          items: { $ref: '#/components/schemas/Id' }
     RolePermissionsRequest:
       type: object
       additionalProperties: false

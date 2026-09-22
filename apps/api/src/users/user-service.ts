@@ -102,27 +102,34 @@ export class UserService {
     }
   }
 
-  async updateRole(context: ActorContext, roleId: bigint, input: { nameAr?: string | undefined; nameEn?: string | null | undefined }) {
-    const role = await this.getEditableRole(context, roleId);
+  async updateRole(context: ActorContext, roleId: bigint, input: { nameAr?: string | undefined; nameEn?: string | null | undefined; permissionIds?: bigint[] | undefined }) {
+    if (input.permissionIds !== undefined) await this.validatePermissions(input.permissionIds);
     const data = { ...(input.nameAr !== undefined ? { nameAr: input.nameAr } : {}), ...(input.nameEn !== undefined ? { nameEn: input.nameEn } : {}) };
-    await this.prisma.$transaction(async (tx) => {
-      await tx.role.update({ where: { id: roleId }, data });
-      await appendAudit(tx, { data: { companyId: context.companyId, actorUserId: context.userId, action: 'ROLE_UPDATED', entityType: 'ROLE', entityId: roleId.toString(), details: input } });
+    const nextPermissionIds = input.permissionIds?.slice().sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+    return this.prisma.$transaction(async (tx) => {
+      const role = await tx.role.findFirst({ where: { id: roleId, companyId: context.companyId }, include: { permissions: true } });
+      if (!role) throw new UserManagementError('NOT_FOUND');
+      if (role.isSystemRole) throw new UserManagementError('SYSTEM_ROLE_PROTECTED');
+      const currentPermissionIds = role.permissions.map((item) => item.permissionId).sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+      const permissionsChanged = nextPermissionIds !== undefined
+        && (nextPermissionIds.length !== currentPermissionIds.length || nextPermissionIds.some((permissionId, index) => permissionId !== currentPermissionIds[index]));
+      if (Object.keys(data).length) {
+        await tx.role.update({ where: { id: roleId }, data });
+        await appendAudit(tx, { data: { companyId: context.companyId, actorUserId: context.userId, action: 'ROLE_UPDATED', entityType: 'ROLE', entityId: roleId.toString(), details: data } });
+      }
+      if (permissionsChanged && nextPermissionIds) {
+        const affected = await tx.userCompanyRole.findMany({ where: { companyId: context.companyId, roleId }, select: { userId: true } });
+        await tx.rolePermission.deleteMany({ where: { roleId } });
+        if (nextPermissionIds.length) await tx.rolePermission.createMany({ data: nextPermissionIds.map((permissionId) => ({ roleId, permissionId })) });
+        if (affected.length) await tx.session.updateMany({ where: { userId: { in: affected.map((item) => item.userId) }, selectedCompanyId: context.companyId, revokedAt: null }, data: { revokedAt: new Date() } });
+        await appendAudit(tx, { data: { companyId: context.companyId, actorUserId: context.userId, action: 'ROLE_PERMISSIONS_REPLACED', entityType: 'ROLE', entityId: roleId.toString(), details: { permissionIds: nextPermissionIds.map(String) } } });
+      }
+      return tx.role.findFirstOrThrow({ where: { id: roleId, companyId: context.companyId }, include: { permissions: { include: { permission: true } }, _count: { select: { assignments: true } } } });
     });
-    return this.getRole(context, roleId);
   }
 
   async replaceRolePermissions(context: ActorContext, roleId: bigint, permissionIds: bigint[]) {
-    await this.getEditableRole(context, roleId);
-    await this.validatePermissions(permissionIds);
-    const affected = await this.prisma.userCompanyRole.findMany({ where: { companyId: context.companyId, roleId }, select: { userId: true } });
-    await this.prisma.$transaction(async (tx) => {
-      await tx.rolePermission.deleteMany({ where: { roleId } });
-      if (permissionIds.length) await tx.rolePermission.createMany({ data: permissionIds.map((permissionId) => ({ roleId, permissionId })) });
-      if (affected.length) await tx.session.updateMany({ where: { userId: { in: affected.map((item) => item.userId) }, selectedCompanyId: context.companyId, revokedAt: null }, data: { revokedAt: new Date() } });
-      await appendAudit(tx, { data: { companyId: context.companyId, actorUserId: context.userId, action: 'ROLE_PERMISSIONS_REPLACED', entityType: 'ROLE', entityId: roleId.toString(), details: { permissionIds: permissionIds.map(String) } } });
-    });
-    return this.getRole(context, roleId);
+    return this.updateRole(context, roleId, { permissionIds });
   }
 
   async deactivateRole(context: ActorContext, roleId: bigint, reason: string) {
