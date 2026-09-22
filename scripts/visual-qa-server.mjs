@@ -832,7 +832,7 @@ export function responseFor(url, method, headers = {}) {
     { id: "unit-ea", code: "EA", nameAr: "حبة", nameEn: "Each", decimalPlaces: 0, isActive: true, version: 0 },
   ]);
   if (pathname === "/inventory-items") return list([
-    { id: "item-qa", code: "ITM-000001", nameAr: "صنف تجريبي", nameEn: "Sample item", description: "صنف مخصص للفحص البصري", isActive: true, version: 0, image: { version: 1, thumbnailUrl: "/api/v1/inventory-items/201/image/inventory?v=1" }, unitOfMeasure: { id: "unit-ea", code: "EA", nameAr: "حبة", nameEn: "Each", decimalPlaces: 0, isActive: true, version: 0 } },
+    { id: "item-qa", code: "ITM-000001", primaryBarcode: { id: "barcode-qa", symbology: "CODE_128", value: "QA-ITEM-000001" }, nameAr: "صنف تجريبي", nameEn: "Sample item", description: "صنف مخصص للفحص البصري", isActive: true, version: 0, image: { version: 1, thumbnailUrl: "/api/v1/inventory-items/201/image/inventory?v=1" }, unitOfMeasure: { id: "unit-ea", code: "EA", nameAr: "حبة", nameEn: "Each", decimalPlaces: 0, isActive: true, version: 0 } },
   ]);
   if (pathname === "/warehouses") return list([
     { id: "warehouse-qa", code: "WH-000001", nameAr: "المستودع الرئيسي", nameEn: "Main warehouse", address: "الرياض", isActive: true, version: 0 },
@@ -846,6 +846,29 @@ export function responseFor(url, method, headers = {}) {
   if (pathname === "/inventory-balances") return list([
     { id: "balance-qa", warehouse: { id: "warehouse-qa", code: "WH-000001", nameAr: "المستودع الرئيسي", nameEn: "Main warehouse" }, inventoryItem: { id: "item-qa", code: "ITM-000001", nameAr: "صنف تجريبي", nameEn: "Sample item", unitOfMeasure: { id: "unit-ea", code: "EA", nameAr: "حبة", nameEn: "Each", decimalPlaces: 0 } }, onHand: "125.000000", version: 3, movementCount: 4, updatedAt: "2026-08-24T12:00:00.000Z" },
   ]);
+  if (pathname === "/inventory-valuation-report") return {
+    generatedAt: "2026-09-21T18:30:00.000Z",
+    basis: "CURRENT_BALANCE",
+    rows: [
+      { id: "balance-valued", warehouse: { id: "warehouse-qa", code: "WH-000001", nameAr: "المستودع الرئيسي", nameEn: "Main warehouse" }, inventoryItem: { id: "item-qa", code: "ITM-000001", nameAr: "مياه معدنية 1.5 لتر", nameEn: "Mineral water 1.5L", unitOfMeasure: { id: "unit-ea", code: "EA", nameAr: "حبة", nameEn: "Each", decimalPlaces: 0 } }, onHand: "125.000000", inventoryValueBase: "937.5000", averageUnitCostBase: "7.50000000", isValuationInitialized: true, version: 3, movementCount: 4, updatedAt: "2026-09-21T12:00:00.000Z" },
+      { id: "balance-unvalued", warehouse: { id: "warehouse-branch", code: "WH-000002", nameAr: "مستودع الفرع", nameEn: "Branch warehouse" }, inventoryItem: { id: "item-unvalued", code: "ITM-000002", nameAr: "عبوات تغليف", nameEn: "Packaging" , unitOfMeasure: { id: "unit-ea", code: "EA", nameAr: "حبة", nameEn: "Each", decimalPlaces: 0 } }, onHand: "40.000000", inventoryValueBase: "0.0000", averageUnitCostBase: "0.00000000", isValuationInitialized: false, version: 0, movementCount: 1, updatedAt: "2026-09-21T12:00:00.000Z" },
+    ],
+    totals: { rowCount: 2, valuedRowCount: 1, unvaluedRowCount: 1, valuedInventoryValueBase: "937.5000" },
+  };
+  if (pathname === "/inventory-count-sessions") return {
+    data: [{ id: "901", warehouseId: "warehouse-qa", countDate: "2026-09-24", snapshotAt: "2026-09-21T18:45:00.000Z", status: "DRAFT", version: 2, cutoff: { receipt: { id: "movement-qa", number: "IMV-00000001" }, issue: { id: "movement-issue-qa", number: "IMV-00000002" } }, approvedByName: null }],
+    meta: { page: 1, pageSize: 25, total: 1, totalPages: 1 },
+  };
+  if (pathname === "/inventory-count-sessions/901/lines") return {
+    data: [
+      { id: "9101", code: "BOOK-0001", title: "مدخل إلى علوم المكتبات", unitCode: "COPY", location: "قاعة الكتب العربية", shelf: "A-01", bookQuantity: "1000.000000", countedQuantity: "998.000000", varianceQuantity: "-2.000000", varianceReason: "نسختان تالفتان", version: 1 },
+      { id: "9102", code: "BOOK-0002", title: "تاريخ الجزيرة العربية", unitCode: "COPY", location: "قاعة الكتب العربية", shelf: "A-02", bookQuantity: "1000.000000", countedQuantity: null, varianceQuantity: null, varianceReason: null, version: 0 },
+    ],
+    meta: { page: 1, pageSize: 50, total: 300, totalPages: 6 },
+    summary: { total: 300, counted: 126, remaining: 174, surplus: 3, shortage: 7, conflicts: 0 },
+  };
+  if (pathname === "/external-inventory-parties") return { data: [{ id: "701", code: "LIBRARY", nameAr: "المكتبة العامة", nameEn: "Public Library", isActive: true, version: 0 }] };
+  if (pathname === "/external-stock-positions") return { data: [{ id: "801", positionType: "OWNED_HELD_BY_THIRD_PARTY", inventoryItemId: "item-qa", inventoryItemCode: "ITM-000001", inventoryItemNameAr: "مياه معدنية 1.5 لتر", custodyPartyId: "701", custodyPartyCode: "LIBRARY", custodyPartyNameAr: "المكتبة العامة", warehouseId: null, warehouseCode: null, warehouseNameAr: null, externalLocation: "مخزن المكتبة", transitOrigin: null, transitDestination: null, quantity: "125.000000", inventoryValueBase: "937.5000", version: 1, lastEventAt: "2026-09-21T18:45:00.000Z", latestEventId: "811" }] };
   const movement = { id: "movement-qa", movementNumber: "IMV-00000001", movementType: "RECEIPT", movementDate: "2026-08-24", description: "استلام بضاعة تجريبية", externalReference: "PO-QA-1", source: null, createdByName: "مدير النظام", createdAt: "2026-08-24T12:00:00.000Z", lineCount: 1 };
   if (pathname === "/inventory-movements") return method === "POST" ? { ...movement, lines: [] } : list([movement]);
   if (pathname === "/inventory-movements/movement-qa") return { ...movement, lines: [{ id: "movement-line-qa", lineNumber: 1, inventoryItemId: "item-qa", inventoryItemCode: "ITM-000001", inventoryItemName: "صنف تجريبي", unitOfMeasureCode: "EA", fromWarehouseId: null, fromWarehouseCode: null, fromWarehouseName: null, toWarehouseId: "warehouse-qa", toWarehouseCode: "WH-000001", toWarehouseName: "المستودع الرئيسي", quantity: "125.000000" }] };

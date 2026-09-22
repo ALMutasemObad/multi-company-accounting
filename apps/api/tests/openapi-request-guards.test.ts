@@ -23,7 +23,7 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 368, requestBodies: 187, responseBodies: 2423 });
+    expect(openApiContractCoverage).toEqual({ operations: 389, requestBodies: 195, responseBodies: 2550 });
     expect(openApiOperationRoutes).toMatchObject({
       'GET /pos/context/identity': 'getPosContextIdentity',
       'GET /auth/social/accounts': 'getCurrentSocialAccounts',
@@ -39,16 +39,32 @@ describe('generated OpenAPI request guards', () => {
       'PATCH /company-profile': 'updateCompanyProfile',
       'GET /company-compliance': 'getCompanyCompliance',
       'PATCH /company-compliance': 'updateCompanyCompliance',
+      'GET /inventory-valuation-report': 'getInventoryValuationReport',
+      'GET /inventory-valuation-report.xlsx': 'exportInventoryValuationReportXlsx',
+      'GET /inventory-aging-report': 'getInventoryAgingReport',
+      'GET /inventory-aging-report.xlsx': 'exportInventoryAgingReportXlsx',
+      'GET /external-stock-positions.xlsx': 'exportExternalStockPositionsXlsx',
+      'POST /external-stock-positions/events': 'recordExternalStockPositionEvent',
+      'POST /external-stock-position-events/{eventId}/reverse': 'reverseExternalStockPositionEvent',
+      'GET /inventory-count-sessions': 'listInventoryCountSessions',
+      'POST /inventory-count-sessions/{sessionId}/approve': 'approveInventoryCountSession',
       'POST /auth/social/onboarding': 'completeSocialOnboarding',
       'DELETE /auth/social/onboarding': 'cancelSocialOnboarding',
     });
-    expect(guardedOpenApiOperations).toHaveLength(187);
+    expect(guardedOpenApiOperations).toHaveLength(195);
     expect(guardedOpenApiOperations).toContain('unlinkCurrentSocialAccount');
     expect(guardedOpenApiOperations).toContain('completeSocialOnboarding');
     expect(guardedOpenApiOperations).toContain('createOrganizationCompany');
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining(['updateCompanyProfile', 'updateCompanyCompliance']));
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining(['createItemSellingProfile', 'updateItemSellingProfile']));
     expect(guardedOpenApiOperations).toContain("setPlatformSubscriptionPublicListing");
+    expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
+      "createExternalInventoryParty", "recordExternalStockPositionEvent",
+    ]));
+    expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
+      "createInventoryCountSession", "enterInventoryCountQuantities", "addInventoryCountEntry",
+      "submitInventoryCountSession", "approveInventoryCountSession",
+    ]));
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining(["createOrganizationMember", "updateOrganizationMember"]));
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
       'createCrmLead', 'markCrmLeadContacted', 'qualifyCrmLead', 'convertCrmLead',

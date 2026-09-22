@@ -1,18 +1,22 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
+import { randomUUID } from "node:crypto";
 import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import { reserveMasterDataCode } from "../platform/master-data-code-service.js";
 import { TransactionExecutor } from "../platform/transaction-executor.js";
 import type { ActorContext } from "../platform/actor-context.js";
 import { inventoryThumbnailUrl } from "../media/product-image-types.js";
+import { BarcodeCodecError, encodeBarcode, type InventoryBarcodeSymbology } from "./barcode-codec.js";
 
 export type InventoryCatalogErrorReason =
   | "NOT_FOUND"
   | "CODE_EXISTS"
+  | "BARCODE_EXISTS"
   | "VERSION_CONFLICT"
   | "UNIT_INACTIVE"
   | "UNIT_IN_USE"
   | "ITEM_INACTIVE"
-  | "ITEM_HAS_STOCK";
+  | "ITEM_HAS_STOCK"
+  | "INVALID_BARCODE";
 
 export class InventoryCatalogError extends Error {
   constructor(public readonly reason: InventoryCatalogErrorReason) {
@@ -39,6 +43,12 @@ export type InventoryItemInput = {
   nameAr: string;
   nameEn?: string | null | undefined;
   description?: string | null | undefined;
+  author?: string | null | undefined;
+  publisher?: string | null | undefined;
+  publicationYear?: number | null | undefined;
+  edition?: string | null | undefined;
+  primaryBarcodeValue?: string | null | undefined;
+  primaryBarcodeSymbology?: InventoryBarcodeSymbology | undefined;
 };
 
 export type InventoryItemUpdate = {
@@ -47,7 +57,21 @@ export type InventoryItemUpdate = {
   nameAr?: string | undefined;
   nameEn?: string | null | undefined;
   description?: string | null | undefined;
+  author?: string | null | undefined;
+  publisher?: string | null | undefined;
+  publicationYear?: number | null | undefined;
+  edition?: string | null | undefined;
 };
+
+const itemInclude = {
+  unitOfMeasure: true,
+  image: { select: { version: true } },
+  barcodes: {
+    where: { isPrimary: true, isActive: true },
+    select: { value: true, symbology: true },
+    take: 1,
+  },
+} satisfies Prisma.InventoryItemInclude;
 
 export type InventoryInvoiceSelectionErrorReason =
   | "WAREHOUSE_REQUIRED"
@@ -125,6 +149,11 @@ const nullableTrimmed = (value: string | null | undefined) => {
 
 const isUniqueConflict = (error: unknown) =>
   error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+
+const isBarcodeUniqueConflict = (error: unknown) =>
+  error instanceof Prisma.PrismaClientKnownRequestError &&
+  error.code === "P2002" &&
+  JSON.stringify(error.meta ?? {}).toLowerCase().includes("barcode");
 
 export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
   private readonly transactions: TransactionExecutor;
@@ -299,7 +328,7 @@ export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
     return this.prisma.$transaction(async (tx) => ({
       data: await tx.inventoryItem.findMany({
         where,
-        include: { unitOfMeasure: true, image: { select: { version: true } } },
+        include: itemInclude,
         orderBy: { code: "asc" },
         skip: (input.page - 1) * input.pageSize,
         take: input.pageSize,
@@ -311,7 +340,7 @@ export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
   async getItem(context: ActorContext, id: bigint) {
     const value = await this.prisma.inventoryItem.findFirst({
       where: { id, companyId: context.companyId },
-      include: { unitOfMeasure: true, image: { select: { version: true } } },
+      include: itemInclude,
     });
     if (!value) throw new InventoryCatalogError("NOT_FOUND");
     return value;
@@ -420,7 +449,25 @@ export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
         { operation: "CREATE_INVENTORY_ITEM", companyId: context.companyId },
         async (tx) => {
           await this.requireActiveUnit(tx, context.companyId, input.unitOfMeasureId);
-          const code = await reserveMasterDataCode(tx, context.companyId, "INVENTORY_ITEM");
+          const encoded = encodeBarcode(
+            input.primaryBarcodeValue?.trim()
+              ? (input.primaryBarcodeSymbology ?? "CODE_128")
+              : "CODE_128",
+            input.primaryBarcodeValue?.trim() || `BK-${randomUUID().replaceAll("-", "").slice(0, 16).toUpperCase()}`,
+          );
+          if (await tx.inventoryItemBarcode.findFirst({
+            where: { companyId: context.companyId, normalizedValue: encoded.normalizedValue },
+            select: { id: true },
+          })) throw new InventoryCatalogError("BARCODE_EXISTS");
+          let code = "";
+          for (let attempt = 0; attempt < 100; attempt += 1) {
+            const candidate = await reserveMasterDataCode(tx, context.companyId, "INVENTORY_ITEM");
+            const exists = await tx.inventoryItem.findFirst({
+              where: { companyId: context.companyId, code: candidate }, select: { id: true },
+            });
+            if (!exists) { code = candidate; break; }
+          }
+          if (!code) throw new Error("INVENTORY_ITEM_SEQUENCE_EXHAUSTED");
           const value = await tx.inventoryItem.create({
             data: {
               companyId: context.companyId,
@@ -429,14 +476,29 @@ export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
               nameAr: input.nameAr.trim(),
               nameEn: nullableTrimmed(input.nameEn) ?? null,
               description: nullableTrimmed(input.description) ?? null,
+              author: nullableTrimmed(input.author) ?? null,
+              publisher: nullableTrimmed(input.publisher) ?? null,
+              publicationYear: input.publicationYear ?? null,
+              edition: nullableTrimmed(input.edition) ?? null,
             },
-            include: { unitOfMeasure: true, image: { select: { version: true } } },
+            include: itemInclude,
           });
+          await tx.inventoryItemBarcode.create({
+            data: {
+              companyId: context.companyId, inventoryItemId: value.id,
+              symbology: encoded.symbology, value: encoded.value, normalizedValue: encoded.normalizedValue,
+              isPrimary: true, primaryInventoryItemId: value.id,
+            },
+          });
+          const complete = await tx.inventoryItem.findFirstOrThrow({ where: { id: value.id }, include: itemInclude });
           await this.audit(tx, context, "INVENTORY_ITEM_CREATED", "INVENTORY_ITEM", value.id);
-          return value;
+          return complete;
         },
       );
     } catch (error) {
+      if (error instanceof InventoryCatalogError) throw error;
+      if (error instanceof BarcodeCodecError) throw new InventoryCatalogError("INVALID_BARCODE");
+      if (isBarcodeUniqueConflict(error)) throw new InventoryCatalogError("BARCODE_EXISTS");
       if (isUniqueConflict(error)) throw new InventoryCatalogError("CODE_EXISTS");
       throw error;
     }
@@ -466,13 +528,17 @@ export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
             ...(input.description === undefined
               ? {}
               : { description: nullableTrimmed(input.description) ?? null }),
+            ...(input.author === undefined ? {} : { author: nullableTrimmed(input.author) ?? null }),
+            ...(input.publisher === undefined ? {} : { publisher: nullableTrimmed(input.publisher) ?? null }),
+            ...(input.publicationYear === undefined ? {} : { publicationYear: input.publicationYear }),
+            ...(input.edition === undefined ? {} : { edition: nullableTrimmed(input.edition) ?? null }),
             version: { increment: 1 },
           },
         });
         if (changed.count !== 1) throw new InventoryCatalogError("VERSION_CONFLICT");
         const value = await tx.inventoryItem.findFirstOrThrow({
           where: { id, companyId: context.companyId },
-          include: { unitOfMeasure: true, image: { select: { version: true } } },
+          include: itemInclude,
         });
         await this.audit(tx, context, "INVENTORY_ITEM_UPDATED", "INVENTORY_ITEM", id, {
           fromVersion: input.version,
@@ -522,7 +588,7 @@ export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
         if (changed.count !== 1) throw new InventoryCatalogError("VERSION_CONFLICT");
         const value = await tx.inventoryItem.findFirstOrThrow({
           where: { id, companyId: context.companyId },
-          include: { unitOfMeasure: true, image: { select: { version: true } } },
+          include: itemInclude,
         });
         await this.audit(tx, context, "INVENTORY_ITEM_DEACTIVATED", "INVENTORY_ITEM", id, {
           reason: input.reason,
@@ -561,9 +627,14 @@ export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
     nameAr: string;
     nameEn: string | null;
     description: string | null;
+    author: string | null;
+    publisher: string | null;
+    publicationYear: number | null;
+    edition: string | null;
     isActive: boolean;
     version: number;
     image: { version: number } | null;
+    barcodes: Array<{ value: string; symbology: InventoryBarcodeSymbology }>;
     unitOfMeasure: Parameters<typeof InventoryCatalogService.unitJson>[0];
   }) {
     return {
@@ -572,6 +643,11 @@ export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
       nameAr: value.nameAr,
       nameEn: value.nameEn,
       description: value.description,
+      author: value.author,
+      publisher: value.publisher,
+      publicationYear: value.publicationYear,
+      edition: value.edition,
+      primaryBarcode: value.barcodes[0] ?? null,
       isActive: value.isActive,
       version: value.version,
       image: value.image

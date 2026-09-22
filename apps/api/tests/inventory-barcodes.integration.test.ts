@@ -161,10 +161,10 @@ describe.runIf(enabled)("inventory barcode identity, concurrency and tenant isol
     const list = await agent
       .get(`/api/v1/inventory-items/${item.id}/barcodes?page=1&pageSize=10`)
       .expect(200);
-    expect(list.body).toMatchObject({
-      data: [{ id: created.body.id, value: "0012345678905" }],
-      meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 },
-    });
+    expect(list.body.meta).toMatchObject({ page: 1, pageSize: 10, total: 2, totalPages: 1 });
+    expect(list.body.data).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: created.body.id, value: "0012345678905" }),
+    ]));
     const resolved = await agent.post("/api/v1/inventory-barcodes/resolve")
       .set("X-CSRF-Token", csrf)
       .send({ value: "0012345678905" })
@@ -201,7 +201,8 @@ describe.runIf(enabled)("inventory barcode identity, concurrency and tenant isol
       .rejects.toMatchObject({ reason: "BARCODE_NOT_FOUND" });
 
     const listed = await barcodes().listBarcodes(context(), item.id, { page: 1, pageSize: 10 });
-    expect(listed.data[0]).toMatchObject({ id: local.id, value: "036000291452" });
+    expect(listed.data.find(({ id }) => id === local.id))
+      .toMatchObject({ id: local.id, value: "036000291452" });
     await expect(createBarcode(item.id, {
       symbology: "EAN_13",
       value: "0036000291452",
@@ -274,6 +275,9 @@ describe.runIf(enabled)("inventory barcode identity, concurrency and tenant isol
       symbology: "QR",
       value: "ITEM-DEACTIVATION-QR",
     });
+    const activeBarcodeCount = await prisma!.inventoryItemBarcode.count({
+      where: { companyId, inventoryItemId: item.id, isActive: true },
+    });
     const deactivated = await catalog().deactivateItem(context(), item.id, {
       version: item.version,
       reason: "إيقاف صنف الاختبار",
@@ -296,7 +300,7 @@ describe.runIf(enabled)("inventory barcode identity, concurrency and tenant isol
       where: { companyId, entityType: "INVENTORY_ITEM", entityId: item.id.toString(), action: "INVENTORY_ITEM_DEACTIVATED" },
       orderBy: { id: "desc" },
     });
-    expect(itemAudit.details).toMatchObject({ deactivatedBarcodeCount: 2 });
+    expect(itemAudit.details).toMatchObject({ deactivatedBarcodeCount: activeBarcodeCount });
   });
 
   it("enforces migration constraints and never records raw identifiers in barcode audit", async () => {

@@ -1,0 +1,174 @@
+.inventory-count-workspace {
+  display: grid;
+  min-width: 0;
+  gap: 18px;
+}
+
+.inventory-count-access-notice {
+  display: grid;
+  gap: .65rem;
+}
+
+.inventory-count-access-notice ul {
+  margin: 0;
+  padding-inline-start: 1.4rem;
+}
+
+.inventory-count-access-notice li + li {
+  margin-top: .35rem;
+}
+
+.inventory-count-access-notice p {
+  margin: 0;
+}
+
+.inventory-count-access-notice code {
+  unicode-bidi: isolate;
+}
+
+@media print {
+  body * { visibility: hidden !important; }
+  .inventory-count-workspace, .inventory-count-workspace * { visibility: visible !important; }
+  .inventory-count-workspace { position: absolute; inset: 0; background: #fff; padding: 12mm; }
+  .inventory-count-workspace .toolbar, .inventory-count-workspace .quick-count-station, .inventory-count-actions, .app-sidebar, .app-header { display: none !important; }
+  .inventory-count-workspace .data-table-wrap { overflow: visible; border: 0; }
+  .inventory-count-workspace table { width: 100%; font-size: 10pt; }
+  .inventory-count-workspace input, .inventory-count-workspace select { border: 0; appearance: none; }
+}
+
+.inventory-count-workspace > .detail-grid {
+  overflow: hidden;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+}
+
+.inventory-count-workspace > .detail-grid span,
+.inventory-count-workspace > .detail-grid strong {
+  display: block;
+}
+
+.inventory-count-workspace > .detail-grid span {
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: .85rem;
+}
+
+.inventory-count-workspace .summary-cards {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(110px, 1fr));
+  gap: 10px;
+}
+
+.inventory-count-workspace .summary-card {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.inventory-count-workspace .summary-card span {
+  color: var(--muted);
+  font-size: .85rem;
+  font-weight: 600;
+}
+
+.inventory-count-workspace .summary-card strong {
+  color: var(--ink);
+  font-size: 1.25rem;
+}
+
+.quick-count-station {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid #b9d8d2;
+  border-radius: 18px;
+  background: #f2faf8;
+}
+
+.quick-count-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.quick-count-heading h3,
+.quick-count-heading p {
+  margin: 0;
+}
+
+.quick-count-heading p,
+.quick-count-heading small {
+  color: var(--muted);
+}
+
+.quick-count-heading small {
+  max-width: 380px;
+}
+
+.quick-count-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.3fr) minmax(190px, 1fr) minmax(150px, .7fr) auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.quick-count-grid label,
+.quick-count-item {
+  display: grid;
+  gap: 6px;
+}
+
+.quick-count-grid input,
+.quick-count-grid select {
+  width: 100%;
+  min-height: 46px;
+}
+
+.quick-count-item {
+  align-self: stretch;
+  align-content: center;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.inventory-count-workspace .data-table input {
+  min-width: 120px;
+}
+
+.inventory-count-workspace .data-table tr.row-pending {
+  background: #fff9e8;
+}
+
+.inventory-count-workspace .data-table tr.row-conflict {
+  background: #fff0ef;
+  outline: 2px solid #d85a54;
+  outline-offset: -2px;
+}
+
+@media (max-width: 1100px) {
+  .inventory-count-workspace .summary-cards {
+    grid-template-columns: repeat(3, minmax(120px, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .inventory-count-workspace .summary-cards {
+    grid-template-columns: repeat(2, minmax(110px, 1fr));
+  }
+
+  .quick-count-heading {
+    display: grid;
+  }
+
+  .quick-count-grid {
+    grid-template-columns: 1fr;
+  }
+}

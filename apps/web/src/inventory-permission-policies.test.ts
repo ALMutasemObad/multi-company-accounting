@@ -9,6 +9,8 @@ describe("inventory permission policies", () => {
       manageCatalog: { permission: "inventory_catalog.manage" },
       createMovement: { permission: "inventory_movements.create" },
       reverseMovement: { permission: "inventory_movements.reverse" },
+      enterCount: { permission: "inventory_counts.enter" },
+      manageCounts: { permission: "inventory_counts.manage" },
     });
   });
 
@@ -27,6 +29,8 @@ describe("inventory permission policies", () => {
     ["inventory_catalog.manage", "manageCatalog"],
     ["inventory_movements.create", "createMovement"],
     ["inventory_movements.reverse", "reverseMovement"],
+    ["inventory_counts.enter", "enterCount"],
+    ["inventory_counts.manage", "manageCounts"],
   ] as const)("keeps %s independent", (permission, policyName) => {
     const granted = new Set([permission]);
 

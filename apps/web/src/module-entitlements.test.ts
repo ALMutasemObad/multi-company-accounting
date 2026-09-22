@@ -17,3 +17,18 @@ describe('sales catalogue entitlement boundary', () => {
     expect([...effectivePermissionSet(permissions, new Set(['SALES']))]).toEqual(permissions);
   });
 });
+
+describe('inventory count entitlement boundary', () => {
+  it('keeps dedicated count permissions when INVENTORY is entitled', () => {
+    const permissions = ['inventory_counts.enter', 'inventory_counts.manage'];
+    expect(permissionModule('inventory_counts.enter')).toBe('INVENTORY');
+    expect(permissionModule('inventory_counts.manage')).toBe('INVENTORY');
+    expect([...effectivePermissionSet(permissions, new Set(['INVENTORY']))]).toEqual(permissions);
+  });
+
+  it('does not expose count permissions without the INVENTORY module', () => {
+    const permissions = ['inventory_counts.enter', 'inventory_counts.manage'];
+    expect(effectivePermissionSet(permissions, new Set()).size).toBe(0);
+    expect(effectivePermissionSet(permissions, new Set(['CORE_ACCOUNTING'])).size).toBe(0);
+  });
+});

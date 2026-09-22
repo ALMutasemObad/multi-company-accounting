@@ -1,5 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
-import { api, downloadFile, idempotencyKey } from "./api";
+import { api, downloadFile } from "./api";
 import { allows, type PermissionPolicy } from "./authorization";
 import { Can, useAuthorization } from "./authorization-context";
 import {
@@ -18,9 +18,15 @@ import { sellingWorkspace } from "./i18n/locales/selling-profile-workspace";
 import type { InventoryBalance, InventoryBarcodeSymbology, InventoryItem, InventoryItemBarcode, InventoryMovement, InventoryMovementType, ListResponse, UnitOfMeasure, Warehouse } from "./types";
 import { Button, EmptyState, Icon, Modal, PageHeader, Pagination, Spinner } from "./ui";
 import { visibleInventorySections, type InventorySection } from "./page-section-navigation";
+import { InventoryValuationReportPanel } from "./inventory-valuation-report/InventoryValuationReportPanel";
+import { inventoryValuationReportCopy } from "./i18n/locales/inventory-valuation-report";
+import { inventoryCountCopy } from "./i18n/locales/inventory-count";
+import { ExternalStockPositionsPanel } from "./inventory-compliance-mvp/ExternalStockPositionsPanel";
+import { InventoryCountPanel } from "./inventory-compliance-mvp/InventoryCountPanel";
+import { inventoryRequestKey } from "./inventory-compliance-mvp/inventory-client-id";
 
 type Notice = (message: string, tone?: "success" | "error") => void;
-type Tab = InventorySection;
+type Tab = InventorySection | "valuation-report" | "external-stock" | "inventory-count";
 type PageMeta = { page: number; pageSize: number; total: number; totalPages: number };
 
 const emptyMeta: PageMeta = { page: 1, pageSize: 10, total: 0, totalPages: 0 };
@@ -29,20 +35,26 @@ export function InventoryPage({ notify, section, onSectionChange }: {
   notify: Notice; section?: InventorySection; onSectionChange?: (section: InventorySection) => void;
 }) {
   const { permissionSet } = useAuthorization();
-  const tabs = visibleInventorySections(permissionSet);
+  const { locale } = useI18n();
+  const reportCopy = localizedCopyFor(inventoryValuationReportCopy, locale, "ar");
+  const complianceCopy = localizedCopyFor(inventoryCountCopy, locale, "ar");
+  const tabs: Tab[] = [...visibleInventorySections(permissionSet), ...(permissionSet.has("inventory_movements.view") ? ["valuation-report" as const, "external-stock" as const, "inventory-count" as const] : [])];
   const [selectedTab, setTab] = useState<Tab>(section ?? "warehouses");
   const tab = tabs.includes(selectedTab) ? selectedTab : tabs[0];
   useEffect(() => { setTab(section ?? "warehouses"); }, [section]);
   return <section className="workspace-page">
     <PageHeader kicker={t("inventory.kicker")} title={t("inventory.title")} description={t("inventory.description")} />
     <div className="section-tabs" role="tablist" aria-label={t("inventory.tabs.label")}>
-      {tabs.map((value) => <button key={value} type="button" role="tab" aria-selected={tab === value} className={tab === value ? "active" : ""} onClick={() => { setTab(value); onSectionChange?.(value); }}>{t(`inventory.tabs.${value}`)}</button>)}
+      {tabs.map((value) => <button key={value} type="button" role="tab" aria-selected={tab === value} className={tab === value ? "active" : ""} onClick={() => { setTab(value); if (value !== "valuation-report" && value !== "external-stock" && value !== "inventory-count") onSectionChange?.(value); }}>{value === "valuation-report" ? reportCopy.tab : value === "external-stock" ? complianceCopy.externalStockTab : value === "inventory-count" ? complianceCopy.countTab : t(`inventory.tabs.${value}`)}</button>)}
     </div>
     {tab === "balances" && <BalancesPanel notify={notify} />}
     {tab === "movements" && <MovementsPanel notify={notify} />}
     {tab === "warehouses" && <WarehousesPanel notify={notify} />}
     {tab === "units" && <UnitsPanel notify={notify} />}
     {tab === "items" && <ItemsPanel notify={notify} />}
+    {tab === "valuation-report" && <InventoryValuationReportPanel notify={notify} />}
+    {tab === "external-stock" && <ExternalStockPositionsPanel notify={notify} />}
+    {tab === "inventory-count" && <InventoryCountPanel notify={notify} canEnter={allows(permissionSet, inventoryPermissionPolicies.enterCount)} canManage={allows(permissionSet, inventoryPermissionPolicies.manageCounts)} />}
   </section>;
 }
 
@@ -93,7 +105,7 @@ function BalancesPanel({ notify }: { notify: Notice }) {
   return <>
     <div className="toolbar treasury-filters inventory-catalog-toolbar">
       <select aria-label={t("inventory.balances.warehouse")} value={warehouseId} onChange={(event) => { setPage(1); setWarehouseId(event.target.value); }}><option value="">{t("inventory.balances.allWarehouses")}</option>{warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.code} — {localizedReferenceName(warehouse)}</option>)}</select>
-      <select aria-label={t("inventory.balances.item")} value={inventoryItemId} onChange={(event) => { setPage(1); setInventoryItemId(event.target.value); }}><option value="">{t("inventory.balances.allItems")}</option>{catalog.map((item) => <option key={item.id} value={item.id}>{item.code} — {localizedReferenceName(item)}</option>)}</select>
+      <select aria-label={t("inventory.balances.item")} value={inventoryItemId} onChange={(event) => { setPage(1); setInventoryItemId(event.target.value); }}><option value="">{t("inventory.balances.allItems")}</option>{catalog.map((item) => <option key={item.id} value={item.id}>{item.primaryBarcode?.value ? `${item.primaryBarcode.value} — ` : ""}{localizedReferenceName(item)}</option>)}</select>
       <label className="checkbox-line"><input type="checkbox" checked={nonZero} onChange={(event) => { setPage(1); setNonZero(event.target.checked); }} />{t("inventory.balances.nonZero")}</label>
     </div>
     {error ? <ErrorPanel error={error} retry={load} /> : loading ? <Spinner label={t("inventory.balances.loading")} /> : !balances.length ? <EmptyState title={t("inventory.balances.emptyTitle")} description={t("inventory.balances.emptyDescription")} /> : <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("inventory.balances.warehouse")}</th><th>{t("inventory.balances.item")}</th><th>{t("inventory.balances.onHand")}</th><th>{t("inventory.balances.value")}</th><th>{t("inventory.balances.averageCost")}</th><th>{t("inventory.balances.valuationStatus")}</th><th>{t("inventory.actions")}</th></tr></thead><tbody>{balances.map((balance) => <tr key={balance.id}><td><strong>{localizedReferenceName(balance.warehouse)}</strong><small dir="ltr">{balance.warehouse.code}</small></td><td><strong>{localizedReferenceName(balance.inventoryItem)}</strong><small dir="ltr">{balance.inventoryItem.code}</small></td><td><strong dir="ltr">{quantityLabel(balance.onHand)}</strong> <span className="code-pill" dir="ltr">{balance.inventoryItem.unitOfMeasure.code}</span></td><td dir="ltr">{balance.isValuationInitialized ? Number(balance.inventoryValueBase).toLocaleString(activeIntlLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : "—"}</td><td dir="ltr">{balance.isValuationInitialized ? Number(balance.averageUnitCostBase).toLocaleString(activeIntlLocale(), { maximumFractionDigits: 8 }) : "—"}</td><td><span className={`status-chip ${balance.isValuationInitialized ? "active" : "inactive"}`}>{t(balance.isValuationInitialized ? "inventory.balances.valued" : "inventory.balances.requiresValuation")}</span></td><td>{!balance.isValuationInitialized && <Can policy={inventoryPermissionPolicies.createMovement}><Button variant="ghost" onClick={() => { if (canInitializeValuation) setValuationBalance(balance); }}>{t("inventory.balances.initializeValuation")}</Button></Can>}</td></tr>)}</tbody></table></div>}
@@ -117,7 +129,7 @@ function ValuationInitializationForm({ balance, onClose, onSaved }: { balance: I
     try {
       await api(`/inventory-balances/${balance.id}/initialize-valuation`, {
         method: "POST",
-        idempotencyKey: idempotencyKey("inventory-valuation", crypto.randomUUID()),
+        idempotencyKey: inventoryRequestKey("inventory-valuation"),
         body: JSON.stringify({ version: balance.version, unitCostBase, reason: reason.trim() }),
       });
       onSaved();
@@ -230,7 +242,7 @@ function MovementForm({ warehouses, catalog, onClose, onSaved }: { warehouses: W
           ...(!outbound ? { toWarehouseId: line.toWarehouseId } : {}),
         })),
       };
-      await api("/inventory-movements", { method: "POST", idempotencyKey: idempotencyKey("inventory-movement", crypto.randomUUID()), body: JSON.stringify(body) });
+      await api("/inventory-movements", { method: "POST", idempotencyKey: inventoryRequestKey("inventory-movement"), body: JSON.stringify(body) });
       onSaved();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t("inventory.movements.saveError"));
@@ -261,7 +273,7 @@ function MovementReversalForm({ movement, onClose, onSaved }: { movement: Invent
     try {
       await api(`/inventory-movements/${movement.id}/reverse`, {
         method: "POST",
-        idempotencyKey: idempotencyKey("inventory-movement-reversal", crypto.randomUUID()),
+        idempotencyKey: inventoryRequestKey("inventory-movement-reversal"),
         body: JSON.stringify({ version: movement.version, reversalDate, reason: reason.trim() }),
       });
       onSaved();
@@ -410,7 +422,7 @@ function ItemsPanel({ notify }: { notify: Notice }) {
         api<ListResponse<InventoryItem>>(`/inventory-items?${query}`),
         api<ListResponse<UnitOfMeasure>>("/units-of-measure?page=1&pageSize=100&active=true"),
       ]);
-      setItems(result.data);
+      setItems(result.data.map((item) => ({ ...item, code: item.primaryBarcode?.value ?? "—" })));
       setMeta(result.meta);
       setUnits(unitResult.data);
     } catch (cause) {
@@ -449,7 +461,7 @@ function ItemsPanel({ notify }: { notify: Notice }) {
       <Can policy={inventoryPermissionPolicies.manageCatalog}><Button icon="plus" disabled={!units.length} onClick={() => { if (canManageCatalog) setForm("new"); }}>{t("inventory.items.create")}</Button></Can>
     </div>
     {!loading && !units.length && <div className="inline-notice neutral">{t("inventory.items.unitRequired")}</div>}
-    {error ? <ErrorPanel error={error} retry={load} /> : loading ? <Spinner label={t("inventory.items.loading")} /> : !items.length ? <EmptyState title={t("inventory.items.emptyTitle")} description={t("inventory.items.emptyDescription")} action={units.length ? <Can policy={inventoryPermissionPolicies.manageCatalog}><Button icon="plus" onClick={() => { if (canManageCatalog) setForm("new"); }}>{t("inventory.items.create")}</Button></Can> : undefined} /> : <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("inventory.items.image")}</th><th>{t("inventory.code")}</th><th>{t("inventory.items.name")}</th><th>{t("inventory.items.unit")}</th><th>{t("inventory.items.description")}</th><th>{t("inventory.status")}</th><th>{t("inventory.actions")}</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><ProductThumbnail src={item.image?.thumbnailUrl} alt={localizedReferenceName(item)} /></td><td><strong dir="ltr">{item.code}</strong></td><td><strong>{localizedReferenceName(item)}</strong>{item.nameEn && <small dir="ltr">{item.nameEn}</small>}</td><td><span className="code-pill" dir="ltr">{item.unitOfMeasure.code}</span><small>{localizedReferenceName(item.unitOfMeasure)}</small></td><td>{item.description || "—"}</td><td><Status active={item.isActive} /></td><td><div className="inline-actions"><Can policy={inventoryPermissionPolicies.manageCatalog}><Button variant="ghost" icon="edit" onClick={() => { if (canManageCatalog) setForm(item); }}>{t("inventory.edit")}</Button></Can>{canViewSelling && <Button variant="ghost" onClick={() => setSellingItem(item)}>{localizedCopyFor(sellingWorkspace, locale, "ar").open}</Button>}<Can policy={barcodePermissionPolicies.view}><Button variant="ghost" icon="inventory" onClick={() => setBarcodeItem(item)}>{t("inventory.barcodes.manage")}</Button></Can>{item.isActive && <Can policy={inventoryPermissionPolicies.manageCatalog}><Button variant="ghost" icon="ban" onClick={() => void deactivate(item)}>{t("inventory.deactivate")}</Button></Can>}</div></td></tr>)}</tbody></table></div>}
+    {error ? <ErrorPanel error={error} retry={load} /> : loading ? <Spinner label={t("inventory.items.loading")} /> : !items.length ? <EmptyState title={t("inventory.items.emptyTitle")} description={t("inventory.items.emptyDescription")} action={units.length ? <Can policy={inventoryPermissionPolicies.manageCatalog}><Button icon="plus" onClick={() => { if (canManageCatalog) setForm("new"); }}>{t("inventory.items.create")}</Button></Can> : undefined} /> : <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("inventory.items.image")}</th><th>{t("inventory.items.name")}</th><th>{t("inventory.items.primaryBarcode")}</th><th>{t("inventory.items.bookDetails")}</th><th>{t("inventory.items.unit")}</th><th>{t("inventory.status")}</th><th>{t("inventory.actions")}</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><ProductThumbnail src={item.image?.thumbnailUrl} alt={localizedReferenceName(item)} /></td><td><strong>{localizedReferenceName(item)}</strong>{item.nameEn && <small dir="ltr">{item.nameEn}</small>}</td><td><strong dir="ltr">{item.primaryBarcode?.value ?? "—"}</strong></td><td>{[item.author, item.publisher, item.publicationYear, item.edition].filter(Boolean).join(" · ") || item.description || "—"}</td><td><span className="code-pill" dir="ltr">{item.unitOfMeasure.code}</span><small>{localizedReferenceName(item.unitOfMeasure)}</small></td><td><Status active={item.isActive} /></td><td><div className="inline-actions"><Can policy={inventoryPermissionPolicies.manageCatalog}><Button variant="ghost" icon="edit" onClick={() => { if (canManageCatalog) setForm(item); }}>{t("inventory.edit")}</Button></Can>{canViewSelling && <Button variant="ghost" onClick={() => setSellingItem(item)}>{localizedCopyFor(sellingWorkspace, locale, "ar").open}</Button>}<Can policy={barcodePermissionPolicies.view}><Button variant="ghost" icon="inventory" onClick={() => setBarcodeItem(item)}>{t("inventory.barcodes.manage")}</Button></Can>{item.isActive && <Can policy={inventoryPermissionPolicies.manageCatalog}><Button variant="ghost" icon="ban" onClick={() => void deactivate(item)}>{t("inventory.deactivate")}</Button></Can>}</div></td></tr>)}</tbody></table></div>}
     <Pagination {...meta} page={page} onChange={setPage} />
     {form && canManageCatalog && <ItemForm item={form === "new" ? null : form} units={units} onClose={() => setForm(null)} onSaved={async () => { const created = form === "new"; setForm(null); notify(t(created ? "inventory.items.created" : "inventory.items.updated")); await load(); }} />}
     {barcodeItem && canViewBarcodes && <BarcodeManager item={barcodeItem} notify={notify} onClose={() => setBarcodeItem(null)} />}
@@ -556,7 +568,7 @@ function BarcodeManager({ item, notify, onClose }: { item: InventoryItem; notify
     }
   }
 
-  return <Modal title={t("inventory.barcodes.title", { item: localizedReferenceName(item) })} description={t("inventory.barcodes.description", { code: item.code })} onClose={onClose} wide>
+  return <Modal title={t("inventory.barcodes.title", { item: localizedReferenceName(item) })} description={t("inventory.barcodes.description", { code: item.primaryBarcode?.value ?? "—" })} onClose={onClose} wide>
     <div className="barcode-manager-toolbar">
       <select aria-label={t("inventory.barcodes.statusFilter")} value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }}>
         <option value="">{t("inventory.barcodes.all")}</option>
@@ -689,6 +701,12 @@ function ItemForm({ item, units, onClose, onSaved }: { item: InventoryItem | nul
   const [nameAr, setNameAr] = useState(item?.nameAr ?? "");
   const [nameEn, setNameEn] = useState(item?.nameEn ?? "");
   const [description, setDescription] = useState(item?.description ?? "");
+  const [author, setAuthor] = useState(item?.author ?? "");
+  const [publisher, setPublisher] = useState(item?.publisher ?? "");
+  const [publicationYear, setPublicationYear] = useState(item?.publicationYear?.toString() ?? "");
+  const [edition, setEdition] = useState(item?.edition ?? "");
+  const [primaryBarcodeValue, setPrimaryBarcodeValue] = useState(item?.primaryBarcode?.value ?? "");
+  const [primaryBarcodeSymbology, setPrimaryBarcodeSymbology] = useState<InventoryBarcodeSymbology>(item?.primaryBarcode?.symbology ?? "EAN_13");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [pendingImage, setPendingImage] = useState<File | null>(null);
@@ -704,7 +722,7 @@ function ItemForm({ item, units, onClose, onSaved }: { item: InventoryItem | nul
     let catalogSaved = false;
     try {
       const target = persistedItem;
-      const saved = await api<InventoryItem>(target ? `/inventory-items/${target.id}` : "/inventory-items", { method: target ? "PATCH" : "POST", body: JSON.stringify({ ...(target ? { version: target.version, ...(unitOfMeasureId === target.unitOfMeasure.id ? {} : { unitOfMeasureId }) } : { unitOfMeasureId }), nameAr: nameAr.trim(), nameEn: nameEn.trim() || null, description: description.trim() || null }) });
+      const saved = await api<InventoryItem>(target ? `/inventory-items/${target.id}` : "/inventory-items", { method: target ? "PATCH" : "POST", body: JSON.stringify({ ...(target ? { version: target.version, ...(unitOfMeasureId === target.unitOfMeasure.id ? {} : { unitOfMeasureId }) } : { unitOfMeasureId, primaryBarcodeValue: primaryBarcodeValue.trim() || null, primaryBarcodeSymbology }), nameAr: nameAr.trim(), nameEn: nameEn.trim() || null, description: description.trim() || null, author: author.trim() || null, publisher: publisher.trim() || null, publicationYear: publicationYear ? Number(publicationYear) : null, edition: edition.trim() || null }) });
       setPersistedItem(saved);
       catalogSaved = true;
       if (pendingImage) await api(`/inventory-items/${saved.id}/image`, { method: "PUT", headers: { "Content-Type": pendingImage.type, ...(expectedImageVersion ? { "If-Match": `"product-image-v${expectedImageVersion}"` } : { "If-None-Match": "*" }) }, body: pendingImage });
@@ -717,7 +735,7 @@ function ItemForm({ item, units, onClose, onSaved }: { item: InventoryItem | nul
     }
   }
 
-  return <Modal title={item ? t("inventory.items.editTitle") : t("inventory.items.create")} description={t("inventory.items.formDescription")} onClose={onClose}><form className="document-form" onSubmit={submit}>{error && <div className="form-error" role="alert">{error}</div>}<div className="form-grid">{item ? <label><span>{t("inventory.code")}</span><input dir="ltr" value={item.code} readOnly /></label> : <div className="inline-notice neutral full">{t("common.autoGeneratedCode")}</div>}<label><span>{t("inventory.items.unit")}</span><select value={unitOfMeasureId} onChange={(event) => setUnitOfMeasureId(event.target.value)} required>{choices.map((unit) => <option key={unit.id} value={unit.id} disabled={!unit.isActive}>{unit.code} — {localizedReferenceName(unit)}</option>)}</select></label><label><span>{t("inventory.nameAr")}</span><input value={nameAr} onChange={(event) => setNameAr(event.target.value)} maxLength={200} required /></label><label><span>{t("inventory.nameEn")}</span><input dir="ltr" value={nameEn} onChange={(event) => setNameEn(event.target.value)} maxLength={200} /></label><label className="full"><span>{t("inventory.items.description")}</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} maxLength={500} rows={3} /></label><div className="full"><ProductImageField value={persistedItem?.image?.thumbnailUrl} onUpload={async (file) => { setPendingImage(file); setRemoveImage(false); }} onRemove={async () => { setPendingImage(null); setRemoveImage(true); }} disabled={saving} /></div></div><FormActions saving={saving} onClose={onClose} /></form></Modal>;
+  return <Modal title={item ? t("inventory.items.editTitle") : t("inventory.items.create")} description={t("inventory.items.formDescription")} onClose={onClose}><form className="document-form" onSubmit={submit}>{error && <div className="form-error" role="alert">{error}</div>}<div className="form-grid">{item ? <label><span>{t("inventory.code")}</span><input dir="ltr" value={item.code} readOnly /></label> : <div className="inline-notice neutral full">{t("common.autoGeneratedCode")}</div>}<label><span>{t("inventory.items.unit")}</span><select value={unitOfMeasureId} onChange={(event) => setUnitOfMeasureId(event.target.value)} required>{choices.map((unit) => <option key={unit.id} value={unit.id} disabled={!unit.isActive}>{unit.code} — {localizedReferenceName(unit)}</option>)}</select></label><label><span>{t("inventory.nameAr")}</span><input value={nameAr} onChange={(event) => setNameAr(event.target.value)} maxLength={200} required autoFocus /></label><label><span>{t("inventory.nameEn")}</span><input dir="ltr" value={nameEn} onChange={(event) => setNameEn(event.target.value)} maxLength={200} /></label><label><span>{t("inventory.items.author")}</span><input value={author} onChange={(event) => setAuthor(event.target.value)} maxLength={200} /></label><label><span>{t("inventory.items.publisher")}</span><input value={publisher} onChange={(event) => setPublisher(event.target.value)} maxLength={200} /></label><label><span>{t("inventory.items.publicationYear")}</span><input dir="ltr" inputMode="numeric" type="number" min="1000" max="9999" value={publicationYear} onChange={(event) => setPublicationYear(event.target.value)} /></label><label><span>{t("inventory.items.edition")}</span><input value={edition} onChange={(event) => setEdition(event.target.value)} maxLength={120} /></label>{!item && <><label><span>{t("inventory.items.primaryBarcode")}</span><input dir="ltr" value={primaryBarcodeValue} onChange={(event) => setPrimaryBarcodeValue(event.target.value.trim())} maxLength={255} placeholder={t("inventory.items.barcodeAutoHint")} /></label><label><span>{t("inventory.barcodes.symbology")}</span><select value={primaryBarcodeSymbology} onChange={(event) => setPrimaryBarcodeSymbology(event.target.value as InventoryBarcodeSymbology)}>{inventoryBarcodeSymbologies.map((option) => <option key={option} value={option}>{t(`inventory.barcodes.symbologies.${option}`)}</option>)}</select></label></>}<label className="full"><span>{t("inventory.items.description")}</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} maxLength={500} rows={3} /></label><div className="full"><ProductImageField value={persistedItem?.image?.thumbnailUrl} onUpload={async (file) => { setPendingImage(file); setRemoveImage(false); }} onRemove={async () => { setPendingImage(null); setRemoveImage(true); }} disabled={saving} /></div></div><FormActions saving={saving} onClose={onClose} /></form></Modal>;
 }
 
 function ProductThumbnail({ src, alt }: { src?: string | null; alt: string }) {

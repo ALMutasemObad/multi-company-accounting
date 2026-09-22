@@ -235,6 +235,26 @@ enum InventoryMovementStatus {
   REVERSED
 }
 
+enum StockCountSessionStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  SETTLED
+}
+
+enum ExternalStockPositionType {
+  THIRD_PARTY_HELD_BY_US
+  OWNED_HELD_BY_THIRD_PARTY
+  OWNED_IN_TRANSIT
+}
+
+enum ExternalStockPositionEventType {
+  INCREASE
+  DECREASE
+  REVALUATION
+  REVERSAL
+}
+
 enum InventoryBarcodeSymbology {
   EAN_13
   EAN_8
@@ -521,16 +541,16 @@ enum OrganizationMembershipRole {
 }
 
 model Organization {
-  id                   BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
-  code                 String                @unique @default(uuid()) @db.VarChar(80)
-  name                 String                @db.VarChar(200)
-  createdAt            DateTime              @default(now()) @map("created_at")
-  updatedAt            DateTime              @updatedAt @map("updated_at")
+  id                   BigInt                          @id @default(autoincrement()) @db.UnsignedBigInt
+  code                 String                          @unique @default(uuid()) @db.VarChar(80)
+  name                 String                          @db.VarChar(200)
+  createdAt            DateTime                        @default(now()) @map("created_at")
+  updatedAt            DateTime                        @updatedAt @map("updated_at")
   companies            Company[]
   memberships          OrganizationMembership[]
   idempotency          OrganizationIdempotencyRecord[]
-  auditLogs             OrganizationAuditLog[]
-  registrationRequests RegistrationRequest[] @relation("RegistrationOrganization")
+  auditLogs            OrganizationAuditLog[]
+  registrationRequests RegistrationRequest[]           @relation("RegistrationOrganization")
 
   @@map("organizations")
 }
@@ -596,13 +616,20 @@ model Company {
   warehouses                        Warehouse[]
   unitsOfMeasure                    UnitOfMeasure[]
   inventoryItems                    InventoryItem[]
-  inventoryItemImages              InventoryItemImage[]
+  inventoryItemImages               InventoryItemImage[]
   inventoryItemBarcodes             InventoryItemBarcode[]
+  stockCountEntries                 StockCountEntry[]
   inventoryMovementSequence         InventoryMovementSequence?
   inventoryMovements                InventoryMovement[]
   inventoryMovementLines            InventoryMovementLine[]
   inventoryBalances                 InventoryBalance[]
   inventoryValuationInitializations InventoryValuationInitialization[]
+  stockCountSessions                StockCountSession[]
+  stockCountCommitteeMembers        StockCountCommitteeMember[]
+  stockCountLines                   StockCountLine[]
+  externalInventoryParties          ExternalInventoryParty[]
+  externalStockPositions            ExternalStockPosition[]
+  externalStockPositionEvents       ExternalStockPositionEvent[]
   paymentMethods                    PaymentMethod[]
   receipts                          Receipt[]
   receiptAllocations                ReceiptAllocation[]
@@ -790,7 +817,7 @@ model User {
   sessions                             Session[]
   externalIdentities                   ExternalIdentity[]
   socialAuthorizationTransactions      SocialAuthorizationTransaction[]
-  socialOnboardingContinuations        SocialOnboardingContinuation[]    @relation("SocialOnboardingCompletedUser")
+  socialOnboardingContinuations        SocialOnboardingContinuation[]     @relation("SocialOnboardingCompletedUser")
   idempotency                          IdempotencyRecord[]
   auditLogs                            AuditLog[]
   organizationAuditLogs                OrganizationAuditLog[]
@@ -811,7 +838,14 @@ model User {
   passwordResetRequests                PasswordResetRequest[]
   dataImportBatches                    DataImportBatch[]                  @relation("DataImportCreatedBy")
   inventoryMovementsCreated            InventoryMovement[]                @relation("InventoryMovementCreatedBy")
+  externalStockPositionEventsCreated   ExternalStockPositionEvent[]       @relation("ExternalStockPositionEventCreatedBy")
   inventoryValuationsCreated           InventoryValuationInitialization[] @relation("InventoryValuationCreatedBy")
+  stockCountSessionsCreated            StockCountSession[]                @relation("StockCountCreatedBy")
+  stockCountSessionsSubmitted          StockCountSession[]                @relation("StockCountSubmittedBy")
+  stockCountSessionsApproved           StockCountSession[]                @relation("StockCountApprovedBy")
+  stockCountSessionsSettled            StockCountSession[]                @relation("StockCountSettledBy")
+  stockCountLinesCounted               StockCountLine[]                   @relation("StockCountLineCountedBy")
+  stockCountEntriesCreated             StockCountEntry[]                  @relation("StockCountEntryCreatedBy")
   bankStatementImportsCreated          BankStatementImport[]              @relation("BankStatementImportCreatedBy")
   bankStatementLinesClassified         BankStatementLine[]                @relation("BankStatementLineClassifiedBy")
   bankReconciliationSessionsCreated    BankReconciliationSession[]        @relation("BankReconciliationSessionCreatedBy")
@@ -880,41 +914,41 @@ model User {
 }
 
 model RegistrationRequest {
-  id                        BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
-  publicId                  String                     @unique @default(uuid()) @map("public_id") @db.VarChar(80)
-  emailNormalized           String                     @unique @map("email_normalized") @db.VarChar(320)
-  passwordHash              String?                    @map("password_hash") @db.VarChar(255)
-  displayName               String                     @map("display_name") @db.VarChar(160)
-  organizationName          String                     @map("organization_name") @db.VarChar(200)
-  companyName               String                     @map("company_name") @db.VarChar(200)
-  timezone                  String                     @db.VarChar(64)
-  baseCurrencyCode          String                     @map("base_currency_code") @db.Char(3)
-  locale                    String                     @default("ar") @db.VarChar(10)
-  chartTemplateCode         String                     @default("SMALL_BUSINESS_GENERAL") @map("chart_template_code") @db.VarChar(80)
-  phone                     String?                    @db.VarChar(40)
-  countryCode               String?                    @map("country_code") @db.Char(2)
-  primaryBusinessActivityCode String?                  @map("primary_business_activity_code") @db.VarChar(80)
-  verificationTokenHash     Bytes                      @unique @map("verification_token_hash") @db.Binary(32)
-  verificationExpiresAt     DateTime                   @map("verification_expires_at")
-  status                    RegistrationStatus         @default(PENDING_EMAIL)
-  deliveryStatus            RegistrationDeliveryStatus @default(PENDING) @map("delivery_status")
-  deliveryAttempts          Int                        @default(0) @map("delivery_attempts") @db.UnsignedSmallInt
-  deliveryGeneration        Int                        @default(1) @map("delivery_generation") @db.UnsignedSmallInt
-  verifiedAt                DateTime?                  @map("verified_at")
-  provisioningStartedAt     DateTime?                  @map("provisioning_started_at")
-  completedAt               DateTime?                  @map("completed_at")
-  provisionedOrganizationId BigInt?                    @map("provisioned_organization_id") @db.UnsignedBigInt
-  provisionedCompanyId      BigInt?                    @map("provisioned_company_id") @db.UnsignedBigInt
-  provisionedUserId         BigInt?                    @map("provisioned_user_id") @db.UnsignedBigInt
-  lastErrorCode             String?                    @map("last_error_code") @db.VarChar(80)
-  initialIpAddress          String?                    @map("initial_ip_address") @db.VarChar(64)
-  initialUserAgent          String?                    @map("initial_user_agent") @db.VarChar(500)
-  createdAt                 DateTime                   @default(now()) @map("created_at")
-  updatedAt                 DateTime                   @updatedAt @map("updated_at")
-  provisionedOrganization   Organization?              @relation("RegistrationOrganization", fields: [provisionedOrganizationId], references: [id], onDelete: SetNull)
-  provisionedCompany        Company?                   @relation("RegistrationCompany", fields: [provisionedCompanyId], references: [id], onDelete: SetNull)
-  provisionedUser           User?                      @relation("RegistrationUser", fields: [provisionedUserId], references: [id], onDelete: SetNull)
-  events                    RegistrationEvent[]
+  id                          BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId                    String                     @unique @default(uuid()) @map("public_id") @db.VarChar(80)
+  emailNormalized             String                     @unique @map("email_normalized") @db.VarChar(320)
+  passwordHash                String?                    @map("password_hash") @db.VarChar(255)
+  displayName                 String                     @map("display_name") @db.VarChar(160)
+  organizationName            String                     @map("organization_name") @db.VarChar(200)
+  companyName                 String                     @map("company_name") @db.VarChar(200)
+  timezone                    String                     @db.VarChar(64)
+  baseCurrencyCode            String                     @map("base_currency_code") @db.Char(3)
+  locale                      String                     @default("ar") @db.VarChar(10)
+  chartTemplateCode           String                     @default("SMALL_BUSINESS_GENERAL") @map("chart_template_code") @db.VarChar(80)
+  phone                       String?                    @db.VarChar(40)
+  countryCode                 String?                    @map("country_code") @db.Char(2)
+  primaryBusinessActivityCode String?                    @map("primary_business_activity_code") @db.VarChar(80)
+  verificationTokenHash       Bytes                      @unique @map("verification_token_hash") @db.Binary(32)
+  verificationExpiresAt       DateTime                   @map("verification_expires_at")
+  status                      RegistrationStatus         @default(PENDING_EMAIL)
+  deliveryStatus              RegistrationDeliveryStatus @default(PENDING) @map("delivery_status")
+  deliveryAttempts            Int                        @default(0) @map("delivery_attempts") @db.UnsignedSmallInt
+  deliveryGeneration          Int                        @default(1) @map("delivery_generation") @db.UnsignedSmallInt
+  verifiedAt                  DateTime?                  @map("verified_at")
+  provisioningStartedAt       DateTime?                  @map("provisioning_started_at")
+  completedAt                 DateTime?                  @map("completed_at")
+  provisionedOrganizationId   BigInt?                    @map("provisioned_organization_id") @db.UnsignedBigInt
+  provisionedCompanyId        BigInt?                    @map("provisioned_company_id") @db.UnsignedBigInt
+  provisionedUserId           BigInt?                    @map("provisioned_user_id") @db.UnsignedBigInt
+  lastErrorCode               String?                    @map("last_error_code") @db.VarChar(80)
+  initialIpAddress            String?                    @map("initial_ip_address") @db.VarChar(64)
+  initialUserAgent            String?                    @map("initial_user_agent") @db.VarChar(500)
+  createdAt                   DateTime                   @default(now()) @map("created_at")
+  updatedAt                   DateTime                   @updatedAt @map("updated_at")
+  provisionedOrganization     Organization?              @relation("RegistrationOrganization", fields: [provisionedOrganizationId], references: [id], onDelete: SetNull)
+  provisionedCompany          Company?                   @relation("RegistrationCompany", fields: [provisionedCompanyId], references: [id], onDelete: SetNull)
+  provisionedUser             User?                      @relation("RegistrationUser", fields: [provisionedUserId], references: [id], onDelete: SetNull)
+  events                      RegistrationEvent[]
 
   @@index([status, verificationExpiresAt])
   @@index([provisionedCompanyId])
@@ -2334,40 +2368,40 @@ model HrPosition {
 }
 
 model Employee {
-  id                    BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
-  publicId              String               @unique @default(uuid()) @map("public_id") @db.Char(36)
-  companyId             BigInt               @map("company_id") @db.UnsignedBigInt
-  userId                BigInt?              @map("user_id") @db.UnsignedBigInt
-  departmentId          BigInt?              @map("department_id") @db.UnsignedBigInt
-  positionId            BigInt?              @map("position_id") @db.UnsignedBigInt
-  managerEmployeeId     BigInt?              @map("manager_employee_id") @db.UnsignedBigInt
-  employeeNumber        String               @map("employee_number") @db.VarChar(40)
-  nameAr                String               @map("name_ar") @db.VarChar(160)
-  nameEn                String?              @map("name_en") @db.VarChar(160)
-  employmentType        HrEmploymentType     @map("employment_type")
-  status                HrEmploymentStatus   @default(ACTIVE)
-  hireDate              DateTime             @map("hire_date") @db.Date
-  terminationDate       DateTime?            @map("termination_date") @db.Date
-  terminationReason     String?              @map("termination_reason") @db.VarChar(500)
-  workLocation          String?              @map("work_location") @db.VarChar(160)
-  version               Int                  @default(0) @db.UnsignedInt
-  createdById           BigInt               @map("created_by_id") @db.UnsignedBigInt
-  updatedById           BigInt               @map("updated_by_id") @db.UnsignedBigInt
-  createdAt             DateTime             @default(now()) @map("created_at")
-  updatedAt             DateTime             @updatedAt @map("updated_at")
-  company               Company              @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  identityAssignment    UserCompany?         @relation(fields: [userId, companyId], references: [userId, companyId], onDelete: Restrict, onUpdate: Restrict)
-  department            HrDepartment?        @relation(fields: [departmentId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
-  position              HrPosition?          @relation(fields: [positionId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
-  manager               Employee?            @relation("EmployeeManager", fields: [managerEmployeeId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
-  directReports         Employee[]           @relation("EmployeeManager")
+  id                    BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId              String                 @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId             BigInt                 @map("company_id") @db.UnsignedBigInt
+  userId                BigInt?                @map("user_id") @db.UnsignedBigInt
+  departmentId          BigInt?                @map("department_id") @db.UnsignedBigInt
+  positionId            BigInt?                @map("position_id") @db.UnsignedBigInt
+  managerEmployeeId     BigInt?                @map("manager_employee_id") @db.UnsignedBigInt
+  employeeNumber        String                 @map("employee_number") @db.VarChar(40)
+  nameAr                String                 @map("name_ar") @db.VarChar(160)
+  nameEn                String?                @map("name_en") @db.VarChar(160)
+  employmentType        HrEmploymentType       @map("employment_type")
+  status                HrEmploymentStatus     @default(ACTIVE)
+  hireDate              DateTime               @map("hire_date") @db.Date
+  terminationDate       DateTime?              @map("termination_date") @db.Date
+  terminationReason     String?                @map("termination_reason") @db.VarChar(500)
+  workLocation          String?                @map("work_location") @db.VarChar(160)
+  version               Int                    @default(0) @db.UnsignedInt
+  createdById           BigInt                 @map("created_by_id") @db.UnsignedBigInt
+  updatedById           BigInt                 @map("updated_by_id") @db.UnsignedBigInt
+  createdAt             DateTime               @default(now()) @map("created_at")
+  updatedAt             DateTime               @updatedAt @map("updated_at")
+  company               Company                @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  identityAssignment    UserCompany?           @relation(fields: [userId, companyId], references: [userId, companyId], onDelete: Restrict, onUpdate: Restrict)
+  department            HrDepartment?          @relation(fields: [departmentId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  position              HrPosition?            @relation(fields: [positionId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  manager               Employee?              @relation("EmployeeManager", fields: [managerEmployeeId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  directReports         Employee[]             @relation("EmployeeManager")
   contracts             EmploymentContract[]
   expenseClaims         EmployeeExpenseClaim[]
-  createdBy             User                 @relation("EmployeeCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  updatedBy             User                 @relation("EmployeeUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  crmLeadsOwned         CrmLead[]            @relation("CrmLeadOwner")
-  crmOpportunitiesOwned CrmOpportunity[]     @relation("CrmOpportunityOwner")
-  crmActivitiesAssigned CrmActivity[]        @relation("CrmActivityAssignee")
+  createdBy             User                   @relation("EmployeeCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy             User                   @relation("EmployeeUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  crmLeadsOwned         CrmLead[]              @relation("CrmLeadOwner")
+  crmOpportunitiesOwned CrmOpportunity[]       @relation("CrmOpportunityOwner")
+  crmActivitiesAssigned CrmActivity[]          @relation("CrmActivityAssignee")
 
   @@unique([companyId, employeeNumber])
   @@unique([userId, companyId])
@@ -2501,22 +2535,24 @@ model CashBankAccount {
 }
 
 model Warehouse {
-  id                BigInt                  @id @default(autoincrement()) @db.UnsignedBigInt
-  companyId         BigInt                  @map("company_id") @db.UnsignedBigInt
-  code              String                  @db.VarChar(40)
-  nameAr            String                  @map("name_ar") @db.VarChar(160)
-  nameEn            String?                 @map("name_en") @db.VarChar(160)
-  address           String?                 @db.VarChar(300)
-  isActive          Boolean                 @default(true) @map("is_active")
-  version           Int                     @default(0) @db.UnsignedInt
-  createdAt         DateTime                @default(now()) @map("created_at")
-  updatedAt         DateTime                @updatedAt @map("updated_at")
-  company           Company                 @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  salesInvoices     SalesInvoice[]
-  purchaseInvoices  PurchaseInvoice[]
-  movementLinesFrom InventoryMovementLine[] @relation("InventoryMovementFromWarehouse")
-  movementLinesTo   InventoryMovementLine[] @relation("InventoryMovementToWarehouse")
-  inventoryBalances InventoryBalance[]
+  id                         BigInt                  @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId                  BigInt                  @map("company_id") @db.UnsignedBigInt
+  code                       String                  @db.VarChar(40)
+  nameAr                     String                  @map("name_ar") @db.VarChar(160)
+  nameEn                     String?                 @map("name_en") @db.VarChar(160)
+  address                    String?                 @db.VarChar(300)
+  isActive                   Boolean                 @default(true) @map("is_active")
+  version                    Int                     @default(0) @db.UnsignedInt
+  createdAt                  DateTime                @default(now()) @map("created_at")
+  updatedAt                  DateTime                @updatedAt @map("updated_at")
+  company                    Company                 @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  salesInvoices              SalesInvoice[]
+  purchaseInvoices           PurchaseInvoice[]
+  movementLinesFrom          InventoryMovementLine[] @relation("InventoryMovementFromWarehouse")
+  movementLinesTo            InventoryMovementLine[] @relation("InventoryMovementToWarehouse")
+  inventoryBalances          InventoryBalance[]
+  stockCountSessions         StockCountSession[]
+  heldExternalStockPositions ExternalStockPosition[]
 
   @@unique([companyId, code])
   @@unique([id, companyId])
@@ -2545,26 +2581,32 @@ model UnitOfMeasure {
 }
 
 model InventoryItem {
-  id                   BigInt                    @id @default(autoincrement()) @db.UnsignedBigInt
-  companyId            BigInt                    @map("company_id") @db.UnsignedBigInt
-  unitOfMeasureId      BigInt                    @map("unit_of_measure_id") @db.UnsignedBigInt
-  code                 String                    @db.VarChar(40)
-  nameAr               String                    @map("name_ar") @db.VarChar(200)
-  nameEn               String?                   @map("name_en") @db.VarChar(200)
-  description          String?                   @db.VarChar(500)
-  isActive             Boolean                   @default(true) @map("is_active")
-  version              Int                       @default(0) @db.UnsignedInt
-  createdAt            DateTime                  @default(now()) @map("created_at")
-  updatedAt            DateTime                  @updatedAt @map("updated_at")
-  company              Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  unitOfMeasure        UnitOfMeasure             @relation(fields: [unitOfMeasureId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
-  salesInvoiceLines    SalesInvoiceLine[]
-  purchaseInvoiceLines PurchaseInvoiceLine[]
-  movementLines        InventoryMovementLine[]
-  inventoryBalances    InventoryBalance[]
-  barcodes             InventoryItemBarcode[]
-  sellingProfiles      SalesItemSellingProfile[]
-  image                InventoryItemImage?
+  id                     BigInt                    @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId              BigInt                    @map("company_id") @db.UnsignedBigInt
+  unitOfMeasureId        BigInt                    @map("unit_of_measure_id") @db.UnsignedBigInt
+  code                   String                    @db.VarChar(40)
+  nameAr                 String                    @map("name_ar") @db.VarChar(200)
+  nameEn                 String?                   @map("name_en") @db.VarChar(200)
+  description            String?                   @db.VarChar(500)
+  author                 String?                   @db.VarChar(200)
+  publisher              String?                   @db.VarChar(200)
+  publicationYear        Int?                      @map("publication_year") @db.UnsignedSmallInt
+  edition                String?                   @db.VarChar(120)
+  isActive               Boolean                   @default(true) @map("is_active")
+  version                Int                       @default(0) @db.UnsignedInt
+  createdAt              DateTime                  @default(now()) @map("created_at")
+  updatedAt              DateTime                  @updatedAt @map("updated_at")
+  company                Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  unitOfMeasure          UnitOfMeasure             @relation(fields: [unitOfMeasureId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  salesInvoiceLines      SalesInvoiceLine[]
+  purchaseInvoiceLines   PurchaseInvoiceLine[]
+  movementLines          InventoryMovementLine[]
+  inventoryBalances      InventoryBalance[]
+  stockCountLines        StockCountLine[]
+  externalStockPositions ExternalStockPosition[]
+  barcodes               InventoryItemBarcode[]
+  sellingProfiles        SalesItemSellingProfile[]
+  image                  InventoryItemImage?
 
   @@unique([companyId, code])
   @@unique([id, companyId])
@@ -2656,6 +2698,10 @@ model InventoryMovement {
   reversedByMovement           InventoryMovement?            @relation("InventoryMovementReversal")
   createdBy                    User                          @relation("InventoryMovementCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
   lines                        InventoryMovementLine[]
+  stockCountReceiptCutoffs     StockCountSession[]           @relation("StockCountLastReceipt")
+  stockCountIssueCutoffs       StockCountSession[]           @relation("StockCountLastIssue")
+  stockCountSurplusSettlements StockCountSession[]           @relation("StockCountSurplusSettlement")
+  stockCountShortageSettlements StockCountSession[]          @relation("StockCountShortageSettlement")
 
   @@unique([companyId, movementNumber])
   @@unique([companyId, sourceType, sourceId, sourceEvent], map: "inventory_movements_invoice_source_key")
@@ -2741,6 +2787,205 @@ model InventoryValuationInitialization {
   @@unique([inventoryBalanceId, companyId])
   @@index([companyId, createdAt])
   @@map("inventory_valuation_initializations")
+}
+
+model StockCountSession {
+  id                        BigInt                      @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId                 BigInt                      @map("company_id") @db.UnsignedBigInt
+  warehouseId               BigInt                      @map("warehouse_id") @db.UnsignedBigInt
+  countDate                 DateTime                    @map("count_date") @db.Date
+  snapshotAt                DateTime                    @default(now()) @map("snapshot_at")
+  status                    StockCountSessionStatus     @default(DRAFT)
+  lastReceiptMovementId     BigInt?                     @map("last_receipt_movement_id") @db.UnsignedBigInt
+  lastReceiptMovementNumber String?                     @map("last_receipt_movement_number") @db.VarChar(40)
+  lastIssueMovementId       BigInt?                     @map("last_issue_movement_id") @db.UnsignedBigInt
+  lastIssueMovementNumber   String?                     @map("last_issue_movement_number") @db.VarChar(40)
+  version                   Int                         @default(0) @db.UnsignedInt
+  createdById               BigInt                      @map("created_by_id") @db.UnsignedBigInt
+  submittedById             BigInt?                     @map("submitted_by_id") @db.UnsignedBigInt
+  submittedAt               DateTime?                   @map("submitted_at")
+  approvedById              BigInt?                     @map("approved_by_id") @db.UnsignedBigInt
+  approvedByName            String?                     @map("approved_by_name") @db.VarChar(160)
+  approvedAt                DateTime?                   @map("approved_at")
+  settlementDate            DateTime?                   @map("settlement_date") @db.Date
+  surplusMovementId         BigInt?                     @map("surplus_movement_id") @db.UnsignedBigInt
+  shortageMovementId        BigInt?                     @map("shortage_movement_id") @db.UnsignedBigInt
+  settledById               BigInt?                     @map("settled_by_id") @db.UnsignedBigInt
+  settledAt                 DateTime?                   @map("settled_at")
+  createdAt                 DateTime                    @default(now()) @map("created_at")
+  updatedAt                 DateTime                    @updatedAt @map("updated_at")
+  company                   Company                     @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  warehouse                 Warehouse                   @relation(fields: [warehouseId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  lastReceiptMovement       InventoryMovement?          @relation("StockCountLastReceipt", fields: [lastReceiptMovementId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  lastIssueMovement         InventoryMovement?          @relation("StockCountLastIssue", fields: [lastIssueMovementId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  createdBy                 User                        @relation("StockCountCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  submittedBy               User?                       @relation("StockCountSubmittedBy", fields: [submittedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  approvedBy                User?                       @relation("StockCountApprovedBy", fields: [approvedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  settledBy                 User?                       @relation("StockCountSettledBy", fields: [settledById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  surplusMovement           InventoryMovement?          @relation("StockCountSurplusSettlement", fields: [surplusMovementId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  shortageMovement          InventoryMovement?          @relation("StockCountShortageSettlement", fields: [shortageMovementId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  committeeMembers          StockCountCommitteeMember[]
+  lines                     StockCountLine[]
+  entries                   StockCountEntry[]
+
+  @@unique([id, companyId])
+  @@unique([surplusMovementId, companyId])
+  @@unique([shortageMovementId, companyId])
+  @@index([companyId, warehouseId, countDate, id])
+  @@index([companyId, status, countDate, id])
+  @@map("stock_count_sessions")
+}
+
+model StockCountCommitteeMember {
+  id         BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId  BigInt            @map("company_id") @db.UnsignedBigInt
+  sessionId  BigInt            @map("session_id") @db.UnsignedBigInt
+  memberName String            @map("member_name") @db.VarChar(160)
+  memberRole String            @map("member_role") @db.VarChar(120)
+  createdAt  DateTime          @default(now()) @map("created_at")
+  company    Company           @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  session    StockCountSession @relation(fields: [sessionId, companyId], references: [id, companyId], onDelete: Cascade, onUpdate: Restrict)
+
+  @@unique([companyId, sessionId, memberName, memberRole])
+  @@index([companyId, sessionId, id])
+  @@map("stock_count_committee_members")
+}
+
+model StockCountLine {
+  id                     BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId              BigInt            @map("company_id") @db.UnsignedBigInt
+  sessionId              BigInt            @map("session_id") @db.UnsignedBigInt
+  inventoryItemId        BigInt            @map("inventory_item_id") @db.UnsignedBigInt
+  itemCodeSnapshot       String            @map("item_code_snapshot") @db.VarChar(40)
+  itemTitleSnapshot      String            @map("item_title_snapshot") @db.VarChar(200)
+  unitCodeSnapshot       String            @map("unit_code_snapshot") @db.VarChar(20)
+  locationSnapshot       String?           @map("location_snapshot") @db.VarChar(300)
+  shelfSnapshot          String?           @map("shelf_snapshot") @db.VarChar(120)
+  bookQuantity           Decimal           @map("book_quantity") @db.Decimal(19, 6)
+  bookUnitCostBase       Decimal           @map("book_unit_cost_base") @db.Decimal(19, 8)
+  bookValueBase          Decimal           @map("book_value_base") @db.Decimal(19, 4)
+  isValuationInitialized Boolean           @default(false) @map("is_valuation_initialized")
+  countedQuantity        Decimal?          @map("counted_quantity") @db.Decimal(19, 6)
+  varianceQuantity       Decimal?          @map("variance_quantity") @db.Decimal(19, 6)
+  varianceReason         String?           @map("variance_reason") @db.VarChar(500)
+  countedById            BigInt?           @map("counted_by_id") @db.UnsignedBigInt
+  countedByNameSnapshot  String?           @map("counted_by_name_snapshot") @db.VarChar(160)
+  countedAt              DateTime?         @map("counted_at")
+  version                Int               @default(0) @db.UnsignedInt
+  createdAt              DateTime          @default(now()) @map("created_at")
+  updatedAt              DateTime          @updatedAt @map("updated_at")
+  company                Company           @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  session                StockCountSession @relation(fields: [sessionId, companyId], references: [id, companyId], onDelete: Cascade, onUpdate: Restrict)
+  inventoryItem          InventoryItem     @relation(fields: [inventoryItemId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  countedBy              User?             @relation("StockCountLineCountedBy", fields: [countedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  entries                StockCountEntry[]
+
+  @@unique([companyId, sessionId, inventoryItemId])
+  @@unique([id, companyId])
+  @@index([companyId, sessionId, itemCodeSnapshot])
+  @@index([companyId, sessionId, itemTitleSnapshot])
+  @@map("stock_count_lines")
+}
+
+model StockCountEntry {
+  id                  BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId           BigInt            @map("company_id") @db.UnsignedBigInt
+  sessionId           BigInt            @map("session_id") @db.UnsignedBigInt
+  lineId              BigInt            @map("line_id") @db.UnsignedBigInt
+  entryKey             String            @map("entry_key") @db.VarChar(100)
+  quantity             Decimal           @db.Decimal(19, 6)
+  locationReference   String?           @map("location_reference") @db.VarChar(200)
+  counterNameSnapshot String            @map("counter_name_snapshot") @db.VarChar(160)
+  createdById         BigInt             @map("created_by_id") @db.UnsignedBigInt
+  createdAt           DateTime           @default(now()) @map("created_at")
+  company             Company            @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  session             StockCountSession  @relation(fields: [sessionId, companyId], references: [id, companyId], onDelete: Cascade, onUpdate: Restrict)
+  line                StockCountLine     @relation(fields: [lineId, companyId], references: [id, companyId], onDelete: Cascade, onUpdate: Restrict)
+  createdBy           User               @relation("StockCountEntryCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([companyId, entryKey], map: "stock_count_entries_company_key")
+  @@index([companyId, sessionId, createdAt], map: "stock_count_entries_session_created_idx")
+  @@index([companyId, lineId, createdAt], map: "stock_count_entries_line_created_idx")
+  @@map("stock_count_entries")
+}
+
+model ExternalInventoryParty {
+  id             BigInt                  @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId      BigInt                  @map("company_id") @db.UnsignedBigInt
+  code           String                  @db.VarChar(40)
+  nameAr         String                  @map("name_ar") @db.VarChar(200)
+  nameEn         String?                 @map("name_en") @db.VarChar(200)
+  isActive       Boolean                 @default(true) @map("is_active")
+  version        Int                     @default(0) @db.UnsignedInt
+  createdAt      DateTime                @default(now()) @map("created_at")
+  updatedAt      DateTime                @updatedAt @map("updated_at")
+  company        Company                 @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "external_inventory_parties_company_fk")
+  stockPositions ExternalStockPosition[]
+
+  @@unique([companyId, code], map: "external_inventory_parties_company_code_key")
+  @@unique([id, companyId], map: "external_inventory_parties_id_company_key")
+  @@index([companyId, isActive, nameAr], map: "external_inventory_parties_company_active_name_idx")
+  @@map("external_inventory_parties")
+}
+
+model ExternalStockPosition {
+  id                 BigInt                       @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId          BigInt                       @map("company_id") @db.UnsignedBigInt
+  inventoryItemId    BigInt                       @map("inventory_item_id") @db.UnsignedBigInt
+  custodyPartyId     BigInt                       @map("custody_party_id") @db.UnsignedBigInt
+  warehouseId        BigInt?                      @map("warehouse_id") @db.UnsignedBigInt
+  positionType       ExternalStockPositionType    @map("position_type")
+  positionKeyHash    String                       @map("position_key_hash") @db.Char(64)
+  externalLocation   String?                      @map("external_location") @db.VarChar(300)
+  transitOrigin      String?                      @map("transit_origin") @db.VarChar(300)
+  transitDestination String?                      @map("transit_destination") @db.VarChar(300)
+  quantity           Decimal                      @default(0) @db.Decimal(19, 6)
+  inventoryValueBase Decimal?                     @map("inventory_value_base") @db.Decimal(19, 4)
+  version            Int                          @default(0) @db.UnsignedInt
+  lastEventAt        DateTime?                    @map("last_event_at")
+  createdAt          DateTime                     @default(now()) @map("created_at")
+  updatedAt          DateTime                     @updatedAt @map("updated_at")
+  company            Company                      @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "external_stock_positions_company_fk")
+  inventoryItem      InventoryItem                @relation(fields: [inventoryItemId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict, map: "external_stock_positions_item_company_fk")
+  custodyParty       ExternalInventoryParty       @relation(fields: [custodyPartyId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict, map: "external_stock_positions_party_company_fk")
+  warehouse          Warehouse?                   @relation(fields: [warehouseId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict, map: "external_stock_positions_warehouse_company_fk")
+  events             ExternalStockPositionEvent[]
+
+  @@unique([companyId, positionKeyHash], map: "external_stock_positions_company_key_hash_key")
+  @@unique([id, companyId], map: "external_stock_positions_id_company_key")
+  @@index([companyId, positionType, inventoryItemId], map: "external_stock_positions_company_type_item_idx")
+  @@index([companyId, custodyPartyId, positionType], map: "external_stock_positions_company_party_type_idx")
+  @@index([companyId, warehouseId, positionType], map: "external_stock_positions_company_warehouse_type_idx")
+  @@map("external_stock_positions")
+}
+
+model ExternalStockPositionEvent {
+  id                      BigInt                         @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId               BigInt                         @map("company_id") @db.UnsignedBigInt
+  externalStockPositionId BigInt                         @map("external_stock_position_id") @db.UnsignedBigInt
+  eventType               ExternalStockPositionEventType @map("event_type")
+  positionTypeSnapshot    ExternalStockPositionType      @map("position_type_snapshot")
+  idempotencyKey          String                         @map("idempotency_key") @db.VarChar(100)
+  quantityDelta           Decimal                        @map("quantity_delta") @db.Decimal(19, 6)
+  inventoryValueBaseDelta Decimal?                       @map("inventory_value_base_delta") @db.Decimal(19, 4)
+  sourceTypeSnapshot      String                         @map("source_type_snapshot") @db.VarChar(40)
+  sourceReferenceSnapshot String                         @map("source_reference_snapshot") @db.VarChar(100)
+  effectiveDate           DateTime                       @map("effective_date") @db.Date
+  reversalOfEventId       BigInt?                        @map("reversal_of_event_id") @db.UnsignedBigInt
+  createdById             BigInt                         @map("created_by_id") @db.UnsignedBigInt
+  createdAt               DateTime                       @default(now()) @map("created_at")
+  company                 Company                        @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "external_stock_events_company_fk")
+  externalStockPosition   ExternalStockPosition          @relation(fields: [externalStockPositionId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict, map: "external_stock_events_position_company_fk")
+  reversalOfEvent         ExternalStockPositionEvent?    @relation("ExternalStockPositionEventReversal", fields: [reversalOfEventId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict, map: "external_stock_events_reversal_company_fk")
+  reversedByEvent         ExternalStockPositionEvent?    @relation("ExternalStockPositionEventReversal")
+  createdBy               User                           @relation("ExternalStockPositionEventCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "external_stock_events_created_by_fk")
+
+  @@unique([companyId, idempotencyKey], map: "external_stock_events_company_idempotency_key")
+  @@unique([reversalOfEventId, companyId], map: "external_stock_events_reversal_company_key")
+  @@unique([id, companyId], map: "external_stock_events_id_company_key")
+  @@index([companyId, externalStockPositionId, effectiveDate, id], map: "external_stock_events_company_position_date_id_idx")
+  @@index([companyId, positionTypeSnapshot, effectiveDate], map: "external_stock_events_company_type_date_idx")
+  @@map("external_stock_position_events")
 }
 
 model PaymentMethod {
@@ -3709,21 +3954,21 @@ model UserCompanyRole {
 }
 
 model Session {
-  id                BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
-  tokenHash         Bytes        @unique @map("token_hash") @db.Binary(32)
-  csrfHash          Bytes        @map("csrf_hash") @db.Binary(32)
-  state             SessionState @map("session_state")
-  userId            BigInt?      @map("user_id") @db.UnsignedBigInt
-  selectedCompanyId BigInt?      @map("selected_company_id") @db.UnsignedBigInt
-  authenticatedAt   DateTime?    @map("authenticated_at")
-  expiresAt         DateTime     @map("expires_at")
-  lastSeenAt        DateTime     @default(now()) @map("last_seen_at")
-  revokedAt         DateTime?    @map("revoked_at")
-  createdAt         DateTime     @default(now()) @map("created_at")
-  user              User?        @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  selectedCompany   Company?     @relation(fields: [selectedCompanyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  id                              BigInt                           @id @default(autoincrement()) @db.UnsignedBigInt
+  tokenHash                       Bytes                            @unique @map("token_hash") @db.Binary(32)
+  csrfHash                        Bytes                            @map("csrf_hash") @db.Binary(32)
+  state                           SessionState                     @map("session_state")
+  userId                          BigInt?                          @map("user_id") @db.UnsignedBigInt
+  selectedCompanyId               BigInt?                          @map("selected_company_id") @db.UnsignedBigInt
+  authenticatedAt                 DateTime?                        @map("authenticated_at")
+  expiresAt                       DateTime                         @map("expires_at")
+  lastSeenAt                      DateTime                         @default(now()) @map("last_seen_at")
+  revokedAt                       DateTime?                        @map("revoked_at")
+  createdAt                       DateTime                         @default(now()) @map("created_at")
+  user                            User?                            @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  selectedCompany                 Company?                         @relation(fields: [selectedCompanyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   socialAuthorizationTransactions SocialAuthorizationTransaction[]
-  socialOnboardingContinuations    SocialOnboardingContinuation[]
+  socialOnboardingContinuations   SocialOnboardingContinuation[]
 
   @@index([userId, revokedAt, expiresAt])
   @@index([selectedCompanyId])
@@ -3731,16 +3976,16 @@ model Session {
 }
 
 model ExternalIdentity {
-  id             BigInt         @id @default(autoincrement()) @db.UnsignedBigInt
-  userId         BigInt         @map("user_id") @db.UnsignedBigInt
-  provider       SocialProvider
-  issuer         String         @db.VarChar(255)
-  subject        String         @db.VarChar(255)
-  emailSnapshot  String?        @map("email_snapshot") @db.VarChar(320)
-  privateRelay   Boolean        @default(false) @map("private_relay")
-  createdAt      DateTime       @default(now()) @map("created_at")
-  updatedAt      DateTime       @updatedAt @map("updated_at")
-  user           User           @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  id            BigInt         @id @default(autoincrement()) @db.UnsignedBigInt
+  userId        BigInt         @map("user_id") @db.UnsignedBigInt
+  provider      SocialProvider
+  issuer        String         @db.VarChar(255)
+  subject       String         @db.VarChar(255)
+  emailSnapshot String?        @map("email_snapshot") @db.VarChar(320)
+  privateRelay  Boolean        @default(false) @map("private_relay")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  user          User           @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
   @@unique([issuer, subject], map: "external_identities_issuer_subject_key")
   @@unique([userId, provider], map: "ext_identity_user_provider_key")
@@ -3748,23 +3993,23 @@ model ExternalIdentity {
 }
 
 model SocialAuthorizationTransaction {
-  id                    BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
-  provider              SocialProvider
-  purpose               SocialAuthorizationPurpose
-  initiatingSessionId   BigInt                     @map("initiating_session_id") @db.UnsignedBigInt
-  initiatingUserId      BigInt?                    @map("initiating_user_id") @db.UnsignedBigInt
-  stateHash             Bytes                      @unique @map("state_hash") @db.Binary(32)
-  nonceHash             Bytes                      @map("nonce_hash") @db.Binary(32)
-  protectedNonce        Bytes                      @map("protected_nonce") @db.VarBinary(256)
-  browserBindingHash    Bytes                      @map("browser_binding_hash") @db.Binary(32)
-  protectedPkceVerifier Bytes                      @map("protected_pkce_verifier") @db.VarBinary(512)
-  returnPath            String                     @map("return_path") @db.VarChar(255)
-  consentedAt           DateTime?                  @map("consented_at")
-  expiresAt             DateTime                   @map("expires_at")
-  usedAt                DateTime?                  @map("used_at")
-  createdAt             DateTime                   @default(now()) @map("created_at")
-  initiatingSession     Session                    @relation(fields: [initiatingSessionId], references: [id], onDelete: Cascade, onUpdate: Restrict)
-  initiatingUser        User?                      @relation(fields: [initiatingUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  id                     BigInt                        @id @default(autoincrement()) @db.UnsignedBigInt
+  provider               SocialProvider
+  purpose                SocialAuthorizationPurpose
+  initiatingSessionId    BigInt                        @map("initiating_session_id") @db.UnsignedBigInt
+  initiatingUserId       BigInt?                       @map("initiating_user_id") @db.UnsignedBigInt
+  stateHash              Bytes                         @unique @map("state_hash") @db.Binary(32)
+  nonceHash              Bytes                         @map("nonce_hash") @db.Binary(32)
+  protectedNonce         Bytes                         @map("protected_nonce") @db.VarBinary(256)
+  browserBindingHash     Bytes                         @map("browser_binding_hash") @db.Binary(32)
+  protectedPkceVerifier  Bytes                         @map("protected_pkce_verifier") @db.VarBinary(512)
+  returnPath             String                        @map("return_path") @db.VarChar(255)
+  consentedAt            DateTime?                     @map("consented_at")
+  expiresAt              DateTime                      @map("expires_at")
+  usedAt                 DateTime?                     @map("used_at")
+  createdAt              DateTime                      @default(now()) @map("created_at")
+  initiatingSession      Session                       @relation(fields: [initiatingSessionId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  initiatingUser         User?                         @relation(fields: [initiatingUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   onboardingContinuation SocialOnboardingContinuation?
 
   @@index([expiresAt, usedAt], map: "social_authorization_expiry_idx")

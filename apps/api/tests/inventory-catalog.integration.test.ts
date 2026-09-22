@@ -72,12 +72,16 @@ describe.runIf(enabled)("Inventory catalog ownership, concurrency and company is
       },
     });
     if (itemIds.length) {
+      await prisma.inventoryItemBarcode.deleteMany({
+        where: { companyId, inventoryItemId: { in: itemIds } },
+      });
       await prisma.inventoryItem.deleteMany({ where: { id: { in: itemIds }, companyId } });
     }
     if (unitIds.length) {
       await prisma.unitOfMeasure.deleteMany({ where: { id: { in: unitIds }, companyId } });
     }
     if (foreignCompanyId) {
+      await prisma.inventoryItemBarcode.deleteMany({ where: { companyId: foreignCompanyId } });
       await prisma.inventoryItem.deleteMany({ where: { companyId: foreignCompanyId } });
       await prisma.unitOfMeasure.deleteMany({ where: { companyId: foreignCompanyId } });
       await prisma.masterDataCodeSequence.deleteMany({ where: { companyId: foreignCompanyId } });

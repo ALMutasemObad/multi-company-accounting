@@ -17,6 +17,7 @@ export const arDomain = {
   "errors.VALIDATION_ERROR": "تحقق من الحقول المطلوبة وصيغ القيم.",
   "errors.NOT_FOUND": "لم يعد السجل المطلوب موجودًا.",
   "errors.CODE_EXISTS": "الرمز مستخدم مسبقًا داخل الشركة.",
+  "errors.BARCODE_EXISTS": "رقم الردمك أو الباركود مستخدم مسبقًا لصنف آخر.",
   "errors.INVALID_ACCOUNT": "الحساب المحدد غير صالح للترحيل.",
   "errors.INVALID_SUPPLIER": "المورد المحدد غير نشط أو غير صالح.",
   "errors.INVALID_CUSTOMER": "العميل المحدد غير نشط أو غير صالح.",

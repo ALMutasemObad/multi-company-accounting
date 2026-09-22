@@ -93,6 +93,8 @@ export const permissionDefinitions = [
   ['inventory_movements.view', 'inventory', 'عرض أرصدة وحركات المخزون'],
   ['inventory_movements.create', 'inventory', 'إنشاء حركات المخزون'],
   ['inventory_movements.reverse', 'inventory', 'عكس حركات المخزون اليدوية'],
+  ['inventory_counts.enter', 'inventory', 'تسجيل دفعات العد في جلسات الجرد'],
+  ['inventory_counts.manage', 'inventory', 'إنشاء جلسات الجرد ومراجعتها واعتمادها وتسويتها'],
   ['pos.view', 'pos', 'عرض شاشة نقاط البيع والمبيعات النقدية'],
   ['pos.checkout', 'pos', 'تنفيذ بيع نقدي كامل عبر نقاط البيع'],
   ['sales_catalog.view', 'sales_catalog', 'عرض كتالوج البيع وملفات بيع الأصناف'],
