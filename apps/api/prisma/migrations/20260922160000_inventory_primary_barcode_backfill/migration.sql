@@ -6,8 +6,8 @@ INSERT INTO `inventory_item_barcodes` (
 )
 SELECT
   item.`company_id`, item.`id`, 'CODE_128',
-  CONCAT('BK-', UPPER(SUBSTRING(SHA2(CONCAT('JUWAR-PUBLIC-BARCODE:', item.`company_id`, ':', item.`id`), 256), 1, 16))),
-  CONCAT('BK-', UPPER(SUBSTRING(SHA2(CONCAT('JUWAR-PUBLIC-BARCODE:', item.`company_id`, ':', item.`id`), 256), 1, 16))),
+  CONCAT('BK-', UPPER(SUBSTRING(SHA2(CONCAT('INVENTORY-PUBLIC-BARCODE:', item.`company_id`, ':', item.`id`), 256), 1, 16))),
+  CONCAT('BK-', UPPER(SUBSTRING(SHA2(CONCAT('INVENTORY-PUBLIC-BARCODE:', item.`company_id`, ':', item.`id`), 256), 1, 16))),
   TRUE, item.`id`, TRUE, 0, CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3)
 FROM `inventory_items` item
 WHERE item.`is_active` = TRUE
