@@ -24,6 +24,9 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
       writes.push({ path: new URL(request.url()).pathname, key: request.headers()['idempotency-key']!, body: request.postData() });
     });
     await page.route('**/api/v1/subscription/change-requests', (route) => route.fulfill({ json: { paymentCollected: false, change: { state: 'PENDING_APPROVAL' } } }));
+    await page.route('**/api/v1/auth/csrf?mode=authenticated', route => route.fulfill({ json: {
+      csrfToken: 'synthetic-integrated-command-csrf', expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+    } }));
     await page.route('**/api/v1/subscription/billing/invoices?*', (route) => failBillingRead
       ? route.fulfill({ status: 503, json: { code: 'UNAVAILABLE' } }) : route.fallback());
     await page.route('**/api/v1/subscription/billing/payments/*/cancel', (route) => {

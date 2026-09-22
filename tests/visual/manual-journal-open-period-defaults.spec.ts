@@ -37,6 +37,10 @@ async function installFixture(page: Page) {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace("/api/v1", "");
     const method = request.method();
+    if (path === "/auth/csrf") return json(route, {
+      csrfToken: "manual-journal-date-csrf",
+      expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+    });
     if (path === "/auth/me") return json(route, {
       user: { id: "journal-user", displayName: "Journal user" },
       selectedCompany: { id: "company-riyadh", name: "Riyadh company", timezone: "Asia/Riyadh" },

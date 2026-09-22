@@ -113,7 +113,10 @@ async function customerFixture(page: Page, initialMode: PermissionMode = "view")
     if (path === "/auth/companies") return json(route, { data: [{ id: permissionMode, name: permissionMode === "manage" ? "Manager Company" : "Viewer Company" }] });
     if (path === "/platform/capabilities") return json(route, { platformOperations: false });
     if (path === "/organizations/workspaces") return json(route, { data: [] });
-    if (path === "/auth/csrf") return json(route, { csrfToken: "customer-maturity-csrf" });
+    if (path === "/auth/csrf") return json(route, {
+      csrfToken: "customer-maturity-csrf",
+      expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+    });
     if (method === "GET" && path === "/accounts") return json(route, list([account]));
     if (method === "GET" && path === "/customers") {
       const search = (url.searchParams.get("search") ?? "").toLocaleLowerCase();
