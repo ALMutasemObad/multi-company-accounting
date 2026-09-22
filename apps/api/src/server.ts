@@ -157,7 +157,7 @@ const accountUsageGuard = new AccountUsageGuard([
   new TreasuryAccountUsageQueryAdapter(),
   new InventoryAccountUsageQueryAdapter(),
   new ReportingAccountUsageQueryAdapter(),
-]);
+]).activate();
 const accountUsageComposition = accountUsageGuard.completeness();
 const taxes = new TaxService(database, accountReferenceLocks, accountQueries);
 const treasury = new TreasuryService(database, accountReferenceLocks, accountQueries);
@@ -349,7 +349,10 @@ async function startServer() {
     config,
   );
   const app = createApp(config, {
-    readiness: new DatabaseReadinessService(database, config.READINESS_TIMEOUT_MS),
+    readiness: new DatabaseReadinessService(database, config.READINESS_TIMEOUT_MS, {
+      complete: accountUsageComposition.complete,
+      enforcementEnabled: accountUsageComposition.enforcementEnabled,
+    }),
     metrics: operationalMetrics,
     sensitiveRateLimits: new PrismaRateLimitStore(
       database,
@@ -385,7 +388,7 @@ async function startServer() {
     professionalBilling,
     hr,
     employeeExpenses,
-    accounts: new AccountService(database),
+    accounts: new AccountService(database, accountUsageGuard),
     journals: new ManualJournalService(database, accountReferenceLocks),
     customers,
     treasury,

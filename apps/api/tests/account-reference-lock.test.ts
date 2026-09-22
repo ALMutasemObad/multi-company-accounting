@@ -72,11 +72,12 @@ describe("Account row lock", () => {
 
 describe("AccountService hierarchy writer protocol", () => {
   const context = { companyId: 7n, userId: 5n, role: "ADMIN" as const };
+  const unusedGuard = { inspect: vi.fn().mockResolvedValue({ inUse: false, facts: [] }) };
 
   function serviceWith(tx: Record<string, unknown>) {
     return new AccountService({
       $transaction: vi.fn(async (callback: (transaction: unknown) => unknown) => callback(tx)),
-    } as never);
+    } as never, unusedGuard as never);
   }
 
   it("locks and re-reads the parent before creating a child", async () => {
@@ -193,7 +194,7 @@ describe("AccountService hierarchy writer protocol", () => {
       auditLog: { create: vi.fn().mockResolvedValue({}) },
     };
     const transaction = vi.fn(async (callback: (transactionClient: unknown) => unknown) => callback(tx));
-    const service = new AccountService({ $transaction: transaction } as never);
+    const service = new AccountService({ $transaction: transaction } as never, unusedGuard as never);
 
     await service.updateAccount(context, 7n, { expectedVersion: 4, nameAr: "محدث" });
     expect(tx.account.findMany).not.toHaveBeenCalled();

@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { AccountService } from "../src/accounts/account-service.js";
 
+const unusedGuard = { inspect: vi.fn().mockResolvedValue({ inUse: false, facts: [] }) };
+
 describe("account reference filters", () => {
   it("combines company, posting, class, activity, search, and pagination filters", async () => {
     const tx = {
@@ -10,7 +12,7 @@ describe("account reference filters", () => {
       },
     };
     const prisma = { $transaction: vi.fn(async (run: (client: unknown) => unknown) => run(tx)) };
-    const service = new AccountService(prisma as never);
+    const service = new AccountService(prisma as never, unusedGuard as never);
 
     await service.listAccounts(
       { companyId: 41n, userId: 7n },
@@ -47,7 +49,7 @@ describe("account reference filters", () => {
       },
     };
     const prisma = { $transaction: vi.fn(async (run: (client: unknown) => unknown) => run(tx)) };
-    const service = new AccountService(prisma as never);
+    const service = new AccountService(prisma as never, unusedGuard as never);
 
     await service.listCostCenters(
       { companyId: 41n, userId: 7n },

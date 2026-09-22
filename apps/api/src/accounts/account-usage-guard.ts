@@ -28,18 +28,30 @@ export type AccountUsageComposition = {
   complete: boolean;
   missingOwners: AccountUsageOwner[];
   duplicateOwners: AccountUsageOwner[];
-  // Account lifecycle remains deliberately disconnected until every owner adapter exists.
-  enforcementEnabled: false;
+  enforcementEnabled: boolean;
+};
+
+declare const activatedAccountUsageGuard: unique symbol;
+export type ActivatedAccountUsageGuard = AccountUsageGuard & {
+  readonly [activatedAccountUsageGuard]: true;
 };
 
 export class AccountUsageGuard {
   private readonly portsByOwner = new Map<AccountUsageOwner, AccountUsageQueryPort[]>();
+  private enforcementEnabled = false;
 
   constructor(ports: readonly AccountUsageQueryPort[]) {
     for (const port of ports) {
       const registered = this.portsByOwner.get(port.owner) ?? [];
       registered.push(port);
       this.portsByOwner.set(port.owner, registered);
+    }
+    const composition = this.completeness();
+    if (composition.duplicateOwners.length > 0) {
+      throw new AccountUsageGuardError("DUPLICATE_OWNER", composition.duplicateOwners[0]);
+    }
+    if (composition.missingOwners.length > 0) {
+      throw new AccountUsageGuardError("INCOMPLETE_COMPOSITION", composition.missingOwners[0]);
     }
   }
 
@@ -50,19 +62,16 @@ export class AccountUsageGuard {
       complete: missingOwners.length === 0 && duplicateOwners.length === 0,
       missingOwners: [...missingOwners],
       duplicateOwners: [...duplicateOwners],
-      enforcementEnabled: false,
+      enforcementEnabled: this.enforcementEnabled && missingOwners.length === 0 && duplicateOwners.length === 0,
     };
   }
 
-  async inspect(tx: Prisma.TransactionClient, companyId: bigint, accountId: bigint) {
-    const composition = this.completeness();
-    if (composition.duplicateOwners.length > 0) {
-      throw new AccountUsageGuardError("DUPLICATE_OWNER", composition.duplicateOwners[0]);
-    }
-    if (composition.missingOwners.length > 0) {
-      throw new AccountUsageGuardError("INCOMPLETE_COMPOSITION", composition.missingOwners[0]);
-    }
+  activate(): ActivatedAccountUsageGuard {
+    this.enforcementEnabled = true;
+    return this as unknown as ActivatedAccountUsageGuard;
+  }
 
+  async inspect(tx: Prisma.TransactionClient, companyId: bigint, accountId: bigint) {
     const facts: AccountUsageFact[] = [];
     for (const owner of ACCOUNT_USAGE_OWNER_ORDER) {
       const port = this.portsByOwner.get(owner)![0]!;

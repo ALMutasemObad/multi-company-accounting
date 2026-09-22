@@ -3,10 +3,17 @@ import { appendAudit } from '../audit/prisma-audit-append-adapter.js';
 import { reserveMasterDataCode } from '../platform/master-data-code-service.js';
 import type { ActorContext } from '../platform/actor-context.js';
 import { lockAccountRows, orderedAccountIds } from './account-row-lock.js';
+import type { ActivatedAccountUsageGuard } from './account-usage-guard.js';
+import type { AccountUsageFact } from './account-usage-query-port.js';
 import { applyDefaultChartTemplate, inspectDefaultChartTemplate } from './default-chart-template.js';
 
 export type AccountErrorReason = 'NOT_FOUND' | 'CODE_EXISTS' | 'INVALID_PARENT' | 'CYCLE_DETECTED' | 'LEVEL_EXCEEDED' | 'HAS_ACTIVE_CHILDREN' | 'HAS_CHILDREN' | 'ACCOUNT_IN_USE' | 'POSTING_NOT_ALLOWED' | 'TEMPLATE_CONFLICT' | 'VERSION_CONFLICT';
-export class AccountError extends Error { constructor(public readonly reason: AccountErrorReason) { super(reason); } }
+export class AccountError extends Error {
+  constructor(
+    public readonly reason: AccountErrorReason,
+    public readonly details?: { usageFacts: AccountUsageFact[] },
+  ) { super(reason); }
+}
 
 type Page = {
   page: number;
@@ -29,6 +36,7 @@ const hierarchyAccountSelect = {
   version: true,
   isActive: true,
   allowsPosting: true,
+  accountTypeId: true,
 } as const;
 
 type HierarchyAccount = Prisma.AccountGetPayload<{ select: typeof hierarchyAccountSelect }>;
@@ -37,7 +45,10 @@ function knownUnique(error: unknown) { return error instanceof Prisma.PrismaClie
 function knownWriteConflict(error: unknown) { return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034'; }
 
 export class AccountService {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(
+    private readonly prisma: PrismaClient,
+    private readonly accountUsageGuard: ActivatedAccountUsageGuard,
+  ) {}
 
   listTypes() { return this.prisma.accountType.findMany({ orderBy: { id: 'asc' } }); }
 
@@ -81,6 +92,10 @@ export class AccountService {
       if (!current) throw new AccountError('VERSION_CONFLICT');
       if (current.version !== input.expectedVersion) throw new AccountError('VERSION_CONFLICT');
       if (input.accountTypeId !== undefined) await tx.accountType.findUniqueOrThrow({ where: { id: input.accountTypeId } }).catch(() => { throw new AccountError('NOT_FOUND'); });
+      const invalidatesUsedAccount =
+        (input.allowsPosting === false && current.allowsPosting)
+        || (input.accountTypeId !== undefined && input.accountTypeId !== current.accountTypeId);
+      if (invalidatesUsedAccount) await this.assertAccountUnused(tx, context.companyId, id);
       const parentId = input.parentAccountId === undefined ? current.parentAccountId : input.parentAccountId;
       const descendants = changesHierarchy ? await this.descendants(tx, context.companyId, id) : [];
       const ancestors = { rows: [] as HierarchyAccount[], cycle: false };
@@ -121,7 +136,7 @@ export class AccountService {
   }
 
   async deactivateAccount(context: ActorContext, id: bigint, reason: string, expectedVersion: number) {
-    try { return await this.prisma.$transaction(async (tx) => { const locked = await lockAccountRows(tx, context.companyId, [id]); if (locked.length !== 1) throw new AccountError('NOT_FOUND'); const current = await tx.account.findFirst({ where: { id, companyId: context.companyId } }); if (!current) throw new AccountError('NOT_FOUND'); if (current.version !== expectedVersion) throw new AccountError('VERSION_CONFLICT'); if (await tx.account.count({ where: { companyId: context.companyId, parentAccountId: id, isActive: true } })) throw new AccountError('HAS_ACTIVE_CHILDREN'); const changed = await tx.account.updateMany({ where: { id, companyId: context.companyId, version: expectedVersion }, data: { isActive: false, version: { increment: 1 } } }); if (changed.count !== 1) throw new AccountError('VERSION_CONFLICT'); const value = await tx.account.findFirstOrThrow({ where: { id, companyId: context.companyId }, include: { accountType: true } }); await this.audit(tx, context, 'ACCOUNT_DEACTIVATED', 'ACCOUNT', id, reason); return value; }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }); } catch (error) { if (knownWriteConflict(error)) throw new AccountError('VERSION_CONFLICT'); throw error; }
+    try { return await this.prisma.$transaction(async (tx) => { const locked = await lockAccountRows(tx, context.companyId, [id]); if (locked.length !== 1) throw new AccountError('NOT_FOUND'); const current = await tx.account.findFirst({ where: { id, companyId: context.companyId } }); if (!current) throw new AccountError('NOT_FOUND'); if (current.version !== expectedVersion) throw new AccountError('VERSION_CONFLICT'); if (await tx.account.count({ where: { companyId: context.companyId, parentAccountId: id, isActive: true } })) throw new AccountError('HAS_ACTIVE_CHILDREN'); await this.assertAccountUnused(tx, context.companyId, id); const changed = await tx.account.updateMany({ where: { id, companyId: context.companyId, version: expectedVersion }, data: { isActive: false, version: { increment: 1 } } }); if (changed.count !== 1) throw new AccountError('VERSION_CONFLICT'); const value = await tx.account.findFirstOrThrow({ where: { id, companyId: context.companyId }, include: { accountType: true } }); await this.audit(tx, context, 'ACCOUNT_DEACTIVATED', 'ACCOUNT', id, reason); return value; }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }); } catch (error) { if (knownWriteConflict(error)) throw new AccountError('VERSION_CONFLICT'); throw error; }
   }
 
   getDefaultTemplateStatus(context: ActorContext) {
@@ -150,13 +165,12 @@ export class AccountService {
         if (locked.length !== 1) throw new AccountError('NOT_FOUND');
         const account = await tx.account.findFirst({
           where: { id, companyId: context.companyId },
-          include: { _count: { select: { children: true, journalLines: true, customers: true, cashBankAccounts: true, receiptCounterAccounts: true, suppliers: true, paymentCounterAccounts: true, outputTaxRates: true, inputTaxRates: true, salesInvoiceLines: true, purchaseInvoiceLines: true } } },
+          include: { _count: { select: { children: true } } },
         });
         if (!account) throw new AccountError('NOT_FOUND');
         if (account.version !== expectedVersion) throw new AccountError('VERSION_CONFLICT');
         if (account._count.children > 0) throw new AccountError('HAS_CHILDREN');
-        const usage = Object.entries(account._count).filter(([key, count]) => key !== 'children' && count > 0).map(([key]) => key);
-        if (usage.length > 0) throw new AccountError('ACCOUNT_IN_USE');
+        await this.assertAccountUnused(tx, context.companyId, id);
         const deleted = await tx.account.deleteMany({ where: { id, companyId: context.companyId, version: expectedVersion } });
         if (deleted.count !== 1) throw new AccountError('VERSION_CONFLICT');
         await appendAudit(tx, { data: { companyId: context.companyId, actorUserId: context.userId, action: 'ACCOUNT_DELETED', entityType: 'ACCOUNT', entityId: id.toString(), details: { reason, code: account.code, nameAr: account.nameAr, sourceTemplateCode: account.sourceTemplateCode, sourceTemplateKey: account.sourceTemplateKey } } });
@@ -234,6 +248,10 @@ export class AccountService {
       cursorId = cursor.parentAccountId;
     }
     return { rows, cycle: false };
+  }
+  private async assertAccountUnused(tx: Prisma.TransactionClient, companyId: bigint, accountId: bigint) {
+    const usage = await this.accountUsageGuard.inspect(tx, companyId, accountId);
+    if (usage.inUse) throw new AccountError('ACCOUNT_IN_USE', { usageFacts: usage.facts });
   }
   private audit(tx: Prisma.TransactionClient, context: ActorContext, action: string, entityType: string, id: bigint, reason?: string) { return appendAudit(tx, { data: { companyId: context.companyId, actorUserId: context.userId, action, entityType, entityId: id.toString(), ...(reason ? { details: { reason } } : {}) } }); }
 }

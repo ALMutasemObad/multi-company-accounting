@@ -4,6 +4,7 @@ import { z, ZodError } from 'zod';
 import type { AuthService } from '../auth/auth-service.js';
 import { openApiRequestBodySchemas as bodies } from '../generated/openapi-request-guards.js';
 import { AccountError, AccountService } from './account-service.js';
+import { AccountUsageGuardError } from './account-usage-guard.js';
 import { readWithPosContext } from '../platform/pos-request-context.js';
 
 const id = z.string().regex(/^[1-9][0-9]*$/).transform(BigInt);
@@ -43,5 +44,5 @@ export function createAccountRouter(auth: AuthService, service: AccountService) 
   router.get('/cost-centers/:costCenterId', async (req, res) => { const context = await authorize(req, 'cost_centers.manage', false); res.json(centerJson(await service.getCostCenter(context, id.parse(req.params.costCenterId)))); });
   router.patch('/cost-centers/:costCenterId', async (req, res) => { const context = await authorize(req, 'cost_centers.manage', true); res.json(centerJson(await service.updateCostCenter(context, id.parse(req.params.costCenterId), bodies.updateCostCenter.parse(req.body)))); });
   router.post('/cost-centers/:costCenterId/deactivate', async (req, res) => { const context = await authorize(req, 'cost_centers.manage', true); const body = bodies.deactivateCostCenter.parse(req.body); res.json(centerJson(await service.deactivateCostCenter(context, id.parse(req.params.costCenterId), body.reason))); });
-  const errors: ErrorRequestHandler = (error, _req, res, next) => { if (error instanceof ZodError) { res.status(400).json({ status: 400, code: 'VALIDATION_ERROR', errors: error.issues }); return; } if (error instanceof AccountError) { const status = error.reason === 'NOT_FOUND' ? 404 : ['CODE_EXISTS', 'ACCOUNT_IN_USE', 'TEMPLATE_CONFLICT', 'VERSION_CONFLICT'].includes(error.reason) ? 409 : 422; res.status(status).json({ status, code: error.reason === 'VERSION_CONFLICT' ? 'VERSION_CONFLICT' : 'BUSINESS_RULE_VIOLATION', reason: error.reason }); return; } next(error); }; router.use(errors); return router;
+  const errors: ErrorRequestHandler = (error, _req, res, next) => { if (error instanceof ZodError) { res.status(400).json({ status: 400, code: 'VALIDATION_ERROR', errors: error.issues }); return; } if (error instanceof AccountUsageGuardError) { res.status(503).json({ status: 503, code: 'ACCOUNT_USAGE_UNAVAILABLE' }); return; } if (error instanceof AccountError) { const status = error.reason === 'NOT_FOUND' ? 404 : ['CODE_EXISTS', 'ACCOUNT_IN_USE', 'TEMPLATE_CONFLICT', 'VERSION_CONFLICT'].includes(error.reason) ? 409 : 422; res.status(status).json({ status, code: error.reason === 'VERSION_CONFLICT' ? 'VERSION_CONFLICT' : 'BUSINESS_RULE_VIOLATION', reason: error.reason, ...(error.details ? { details: error.details } : {}) }); return; } next(error); }; router.use(errors); return router;
 }

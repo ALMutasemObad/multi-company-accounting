@@ -3,17 +3,28 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
 import { AccountError, AccountService } from '../src/accounts/account-service.js';
+import { AccountUsageGuard } from '../src/accounts/account-usage-guard.js';
+import { CoreAccountUsageQueryAdapter } from '../src/accounts/core-account-usage-query-adapter.js';
+import { PrismaAccountReferenceLockAdapter } from '../src/accounts/prisma-account-reference-lock-adapter.js';
 import { DEFAULT_CHART_TEMPLATE_CODE, defaultChartDefinitions } from '../src/accounts/default-chart-template.js';
 import { AuthService } from '../src/auth/auth-service.js';
 import { PrismaAuthStore } from '../src/auth/prisma-auth-store.js';
 import { createDatabase } from '../src/database.js';
+import { InventoryAccountUsageQueryAdapter } from '../src/inventory/inventory-account-usage-query-adapter.js';
+import { PurchasesAccountUsageQueryAdapter } from '../src/purchases/purchases-account-usage-query-adapter.js';
+import { ReportingAccountUsageQueryAdapter } from '../src/reports/reporting-account-usage-adapter.js';
+import { SalesAccountUsageQueryAdapter } from '../src/sales/sales-account-usage-query-adapter.js';
+import { TaxAccountUsageQueryAdapter } from '../src/tax/tax-account-usage-query-adapter.js';
+import { TreasuryAccountUsageQueryAdapter } from '../src/treasury/treasury-account-usage-query-adapter.js';
+import { TreasuryService } from '../src/treasury/treasury-service.js';
 import { testAuthOptions } from './helpers/test-auth-options.js';
 
 const enabled = process.env.RUN_DB_TESTS === 'true'; const databaseUrl = process.env.DATABASE_URL ?? ''; const password = process.env.SEED_ADMIN_PASSWORD ?? ''; const prisma = enabled ? createDatabase(databaseUrl) : null;
 describe.runIf(enabled)('accounts and cost centers with MariaDB', () => {
-  let app: ReturnType<typeof createApp>; let service: AccountService; let companyId: bigint; let csrf = ''; let agent: ReturnType<typeof request.agent>;
+  let app: ReturnType<typeof createApp>; let service: AccountService; let companyId: bigint; let userId: bigint; let csrf = ''; let agent: ReturnType<typeof request.agent>;
   beforeAll(async () => {
     const user = await prisma!.user.findUniqueOrThrow({ where: { emailNormalized: 'admin@mcap.local' } });
+    userId = user.id;
     companyId = (await prisma!.userCompany.findFirstOrThrow({ where: { userId: user.id, isActive: true } })).companyId;
     await prisma!.receiptAllocation.deleteMany({ where: { companyId, receivableItem: { salesInvoice: { arJournalLine: { account: { code: { startsWith: 'IT-' } } } } } } });
     await prisma!.receivableItem.deleteMany({ where: { companyId, salesInvoice: { arJournalLine: { account: { code: { startsWith: 'IT-' } } } } } });
@@ -23,7 +34,15 @@ describe.runIf(enabled)('accounts and cost centers with MariaDB', () => {
     await prisma!.account.deleteMany({ where: { companyId, code: { startsWith: 'IT-' } } });
     await prisma!.costCenter.updateMany({ where: { companyId, code: { startsWith: 'IT-' } }, data: { parentId: null } });
     await prisma!.costCenter.deleteMany({ where: { companyId, code: { startsWith: 'IT-' } } });
-    service = new AccountService(prisma!);
+    service = new AccountService(prisma!, new AccountUsageGuard([
+      new CoreAccountUsageQueryAdapter(),
+      new SalesAccountUsageQueryAdapter(),
+      new PurchasesAccountUsageQueryAdapter(),
+      new TaxAccountUsageQueryAdapter(),
+      new TreasuryAccountUsageQueryAdapter(),
+      new InventoryAccountUsageQueryAdapter(),
+      new ReportingAccountUsageQueryAdapter(),
+    ]).activate());
     const auth = new AuthService(new PrismaAuthStore(prisma!), { verify }, testAuthOptions(prisma!));
     app = createApp({ NODE_ENV: 'test', PORT: 3000, WEB_ORIGIN: 'http://localhost:5173', SESSION_COOKIE_SECURE: false, PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: databaseUrl }, { auth, accounts: service });
     agent = request.agent(app);
@@ -94,6 +113,45 @@ describe.runIf(enabled)('accounts and cost centers with MariaDB', () => {
       prisma!.account.findFirstOrThrow({ where: { id: BigInt(target.id), companyId } }),
     ]);
     expect(persistedMoved.parentAccountId === persistedTarget.id && !persistedTarget.isActive).toBe(false);
+  });
+  it('serializes a runtime reference writer against account deactivation', async () => {
+    const type = (await agent.get('/api/v1/account-types').expect(200)).body.data[0];
+    const account = (await agent.post('/api/v1/accounts').set('X-CSRF-Token', csrf).send({
+      accountTypeId: type.id,
+      code: 'IT-USAGE-WRITER-RACE',
+      nameAr: 'حساب سباق كاتب الاستخدام',
+      allowsPosting: true,
+    }).expect(201)).body;
+    const accountId = BigInt(account.id);
+    const treasury = new TreasuryService(prisma!, new PrismaAccountReferenceLockAdapter());
+    try {
+      const [writer, lifecycle] = await Promise.allSettled([
+        treasury.createCashBankAccount(
+          { companyId, userId },
+          { ledgerAccountId: accountId, accountType: 'CASH', nameAr: 'صندوق سباق الحارس' },
+        ),
+        service.deactivateAccount(
+          { companyId, userId },
+          accountId,
+          'سباق مع كاتب مرجع فعلي',
+          account.version,
+        ),
+      ]);
+      expect([writer, lifecycle].filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      const [persisted, references] = await Promise.all([
+        prisma!.account.findFirstOrThrow({ where: { id: accountId, companyId } }),
+        prisma!.cashBankAccount.count({ where: { companyId, ledgerAccountId: accountId } }),
+      ]);
+      expect(references > 0 && !persisted.isActive).toBe(false);
+      if (references > 0) {
+        expect(lifecycle.status).toBe('rejected');
+        expect((lifecycle as PromiseRejectedResult).reason).toMatchObject({ reason: 'ACCOUNT_IN_USE' });
+      }
+    } finally {
+      const cashRows = await prisma!.cashBankAccount.findMany({ where: { companyId, ledgerAccountId: accountId }, select: { id: true } });
+      await prisma!.auditLog.deleteMany({ where: { companyId, entityType: 'CASH_BANK_ACCOUNT', entityId: { in: cashRows.map(({ id }) => id.toString()) } } });
+      await prisma!.cashBankAccount.deleteMany({ where: { companyId, ledgerAccountId: accountId } });
+    }
   });
   it('generates concurrent cost-center codes, prevents cycles and preserves manual account numbering', async () => {
     const createdIds: string[] = [];

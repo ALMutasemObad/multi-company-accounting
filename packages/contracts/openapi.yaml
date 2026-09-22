@@ -4953,6 +4953,12 @@ paths:
           $ref: '#/components/responses/BusinessRuleViolation'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '503':
+          description: تعذر التحقق من استخدام الحساب مؤقتًا
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '500':
           $ref: '#/components/responses/InternalError'
       parameters:
@@ -5010,6 +5016,12 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/BusinessRuleViolation'
+        '503':
+          description: تعذر التحقق من استخدام الحساب مؤقتًا
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '500':
           $ref: '#/components/responses/InternalError'
       parameters:
@@ -5057,6 +5069,12 @@ paths:
           $ref: '#/components/responses/BusinessRuleViolation'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '503':
+          description: تعذر التحقق من استخدام الحساب مؤقتًا
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '500':
           $ref: '#/components/responses/InternalError'
       parameters:
@@ -11375,6 +11393,13 @@ components:
           properties:
             database: { type: string, enum: [ok, error] }
             latencyMs: { type: number, minimum: 0 }
+            accountUsageGuard:
+              type: object
+              additionalProperties: false
+              required: [complete, enforcementEnabled]
+              properties:
+                complete: { type: boolean }
+                enforcementEnabled: { type: boolean }
     CsrfTokenResponse:
       type: object
       required:

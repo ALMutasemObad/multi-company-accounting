@@ -5,7 +5,7 @@ const sourceRoot = new URL("../src/", import.meta.url);
 const source = (relative: string) => readFile(new URL(relative, sourceRoot), "utf8");
 
 describe("ADM-1B account usage composition", () => {
-  it("registers all seven owners but keeps lifecycle enforcement staged", async () => {
+  it("registers all seven owners and injects fail-closed lifecycle enforcement", async () => {
     const [server, accountService, guard] = await Promise.all([
       source("server.ts"),
       source("accounts/account-service.ts"),
@@ -19,14 +19,16 @@ describe("ADM-1B account usage composition", () => {
     expect(server).toContain("new TreasuryAccountUsageQueryAdapter()");
     expect(server).toContain("new InventoryAccountUsageQueryAdapter()");
     expect(server).toContain("new ReportingAccountUsageQueryAdapter()");
+    expect(server).toContain("]).activate()");
     expect(server).toContain("const accountUsageComposition = accountUsageGuard.completeness()");
-    expect(server).toContain("accounts: new AccountService(database)");
-    expect(server).not.toMatch(/new AccountService\(database,\s*accountUsageGuard/u);
-    expect(accountService).not.toContain("AccountUsageGuard");
-    expect(guard).toContain('enforcementEnabled: false');
+    expect(server).toContain("accounts: new AccountService(database, accountUsageGuard)");
+    expect(server).toContain("enforcementEnabled: accountUsageComposition.enforcementEnabled");
+    expect(accountService).toContain("AccountUsageGuard");
+    expect(accountService).toContain("this.accountUsageGuard.inspect(tx, companyId, accountId)");
+    expect(guard).toContain("enforcementEnabled: this.enforcementEnabled && missingOwners.length === 0 && duplicateOwners.length === 0");
   });
 
-  it("reports the staged server composition as complete 7/7 without enabling enforcement", async () => {
+  it("reports the server composition as complete 7/7 with enforcement enabled", async () => {
     const { CoreAccountUsageQueryAdapter } = await import("../src/accounts/core-account-usage-query-adapter.js");
     const { SalesAccountUsageQueryAdapter } = await import("../src/sales/sales-account-usage-query-adapter.js");
     const { PurchasesAccountUsageQueryAdapter } = await import("../src/purchases/purchases-account-usage-query-adapter.js");
@@ -44,11 +46,11 @@ describe("ADM-1B account usage composition", () => {
       new TreasuryAccountUsageQueryAdapter(),
       new InventoryAccountUsageQueryAdapter(),
       new ReportingAccountUsageQueryAdapter(),
-    ]).completeness()).toEqual({
+    ]).activate().completeness()).toEqual({
       complete: true,
       missingOwners: [],
       duplicateOwners: [],
-      enforcementEnabled: false,
+      enforcementEnabled: true,
     });
   });
 
@@ -72,10 +74,9 @@ describe("ADM-1B account usage composition", () => {
     expect(postingEngine).toContain("snapshotEntries");
     expect(server).toContain("new InventoryMovementService(database)");
     expect(accountService).not.toContain("InventoryAccountUsageQueryAdapter");
-    expect(accountService).not.toContain("AccountUsageGuard");
   });
 
-  it("injects the shared Account reference lock into ManualJournal without enabling lifecycle enforcement", async () => {
+  it("injects the shared Account reference lock into ManualJournal while lifecycle enforcement stays centralized", async () => {
     const [server, journals, guard, accountService] = await Promise.all([
       source("server.ts"),
       source("journals/manual-journal-service.ts"),
@@ -87,8 +88,8 @@ describe("ADM-1B account usage composition", () => {
     expect(journals).toContain('import type { AccountReferenceLockPort } from "../accounts/account-reference-lock-port.js"');
     expect(journals).not.toContain("PrismaAccountReferenceLockAdapter");
     expect(journals).toContain("this.accountReferences.lockPostingAccount");
-    expect(guard).toContain("enforcementEnabled: false");
-    expect(accountService).not.toContain("AccountUsageGuard");
+    expect(guard).toContain("activate(): ActivatedAccountUsageGuard");
+    expect(accountService).toContain("ActivatedAccountUsageGuard");
   });
 
   it("keeps Treasury behind Accounts-owned lifecycle ports and locks runtime writers", async () => {

@@ -40,11 +40,23 @@ Accounts. يقفل helper مجموعة صفوف الحسابات بنطاق ال
   لحسابات مفقودة، ويقفلها دفعة مرتبة قبل أول كتابة ثم يعيد القراءة والتخطيط.
   الحساب الذي أنشأته المعاملة نفسها لا يحتاج إعادة قفل.
 
-## بوابة التفعيل المتبقية
+## تفعيل حارس الاستخدام
 
-يبقى `AccountUsageGuard.enforcementEnabled=false` ولا يحقن في `AccountService`.
-اكتملت handshakes لكتاب المراجع التشغيلية وكتابة القيود اليدوية وبروتوكول
-`Account.parentAccountId`، لكن تفعيل الحارس قرار مستقل يحتاج مراجعة تكاملية نهائية.
-اكتمال composition ‏7/7 وحده لا يمنح إذن التفعيل.
+يسجل composition محولًا واحدًا بالضبط لكل مالك من الملاك السبعة، ويفشل بدء
+الخدمة عند نقص مالك أو تكراره. الاكتمال وحده لا يعني التفعيل: يستدعي composition
+`activate()` صراحة، ويحقن النوع المنشّط في `AccountService` بلا default أو اعتماد
+اختياري. تعرض readiness حالتي `complete` و`enforcementEnabled`، وتفشل بـ503 إذا
+لم تكونا صحيحتين.
 
-لا تغير هذه الشريحة schema أو OpenAPI، ولا تضيف retry للأوامر المالية.
+بعد قفل الحساب وإعادة قراءة version، يفحص `AccountService` الاستخدام على
+`TransactionClient` نفسها قبل التعطيل أو الحذف، وقبل خفض `allowsPosting` من true
+إلى false أو تغيير `accountTypeId`. لا يجري الفحص لتعديل metadata أو إعادة الأبوة.
+تظل أسبقية `HAS_ACTIVE_CHILDREN` و`HAS_CHILDREN` متوافقة مع العقد السابق، ثم يصبح
+أي fact مستخدم `ACCOUNT_IN_USE` مع فئات وعدد وراية تاريخ immutable فقط، بلا IDs.
+فشل أي owner أو نتيجة غير مكتملة يفشل مغلقًا ويرجع `ACCOUNT_USAGE_UNAVAILABLE`
+بـ503؛ لا يحوّل عطل البنية إلى «غير مستخدم» ولا إلى `ACCOUNT_IN_USE` زائف.
+
+تغيير `isControlAccount` مؤجل لأن نموذج default/control mapping الصريح غير موجود؛
+لا يوسّع هذا القرار دلالة الحارس بالتخمين. لا تضيف هذه الشريحة schema migration
+ولا retry للأوامر المالية. يلزم نجاح بوابة CI على MariaDB 10.11/MySQL 8.4 قبل
+النشر؛ اختبار MariaDB 10.4 المحلي smoke إضافي فقط.
