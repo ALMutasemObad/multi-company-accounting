@@ -60,6 +60,8 @@
       "name": "Core Accounting Account Lifecycle Contracts",
       "status": "partial-implementation",
       "paths": [
+        "apps/api/src/accounts/account-router.ts",
+        "apps/api/src/accounts/account-service.ts",
         "apps/api/src/accounts/account-usage-query-port.ts",
         "apps/api/src/accounts/account-usage-guard.ts",
         "apps/api/src/accounts/core-account-usage-query-adapter.ts",
