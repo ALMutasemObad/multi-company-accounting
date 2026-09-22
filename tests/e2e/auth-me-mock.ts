@@ -15,6 +15,11 @@ export const e2eCompany = {
   timezone: "Asia/Riyadh",
 };
 
+export const authenticatedCsrfResponse = () => ({
+  csrfToken: "e2e-authenticated-csrf-token",
+  expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+});
+
 export function authMeResponse(
   permissions: readonly string[],
   modules: readonly PlatformModuleCode[],

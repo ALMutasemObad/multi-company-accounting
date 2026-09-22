@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { authMeResponse } from "./auth-me-mock.js";
+import { authenticatedCsrfResponse, authMeResponse } from "./auth-me-mock.js";
 
 const tenantCompany = { id: "1", name: "North Star Services", timezone: "Asia/Riyadh" };
 const tenantPermissions = [
@@ -69,6 +69,7 @@ async function mockBootstrap(page: Page, platformOperations: boolean) {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace(/^\/api\/v1/u, "");
     const json = (body: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    if (path === "/auth/csrf") return json(authenticatedCsrfResponse());
     if (path === "/auth/companies") return json({ data: [tenantCompany] });
     if (path === "/auth/me") return json(authMeResponse(tenantPermissions, [
       "CORE_ACCOUNTING",
