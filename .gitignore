@@ -18,3 +18,4 @@ mcap-finance-linux-x64.manifest.json
 tmp/
 playwright-report/
 test-results/
+.ci-logs/
