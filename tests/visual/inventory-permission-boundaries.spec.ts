@@ -118,7 +118,7 @@ test("inventory view-only users can browse without actions, forms, prompts, or w
   }
 
   workspace = await openSection(page, "items", 3);
-  await expect(workspace.locator(".data-table tbody tr").filter({ hasText: "ITM-000001" })).toBeVisible();
+  await expect(workspace.locator(".data-table tbody tr").filter({ hasText: "QA-ITEM-000001" })).toBeVisible();
   for (const action of ["Create item", "Edit", "Disable"] as const) {
     await expect(workspace.getByRole("button", { name: action, exact: true })).toHaveCount(0);
   }

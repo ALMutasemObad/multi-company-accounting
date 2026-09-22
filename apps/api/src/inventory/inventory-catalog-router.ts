@@ -150,7 +150,7 @@ export function createInventoryCatalogRouter(
     if (error instanceof InventoryCatalogError) {
       const status = error.reason === "NOT_FOUND"
         ? 404
-        : ["CODE_EXISTS", "VERSION_CONFLICT"].includes(error.reason)
+        : ["CODE_EXISTS", "BARCODE_EXISTS", "VERSION_CONFLICT"].includes(error.reason)
           ? 409
           : 422;
       response.status(status).json({

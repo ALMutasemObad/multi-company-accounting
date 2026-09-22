@@ -12,7 +12,7 @@ export type InventoryAgingPolicy = {
 export type InventoryAgingBalance = {
   balanceId: bigint;
   inventoryItemId: bigint;
-  itemCode: string;
+  barcode: string | null;
   itemName: string;
   unitOfMeasureCode: string;
   warehouseId: bigint;
@@ -54,4 +54,3 @@ export type InventoryAgingRow = Omit<
   inventoryValueBase: string | null;
   valuationWarning: "UNVALUED_BALANCE_EXCLUDED_FROM_TOTALS" | null;
 };
-

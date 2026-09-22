@@ -15,11 +15,12 @@ import type { InventoryMovementService } from "../src/inventory/inventory-moveme
 const context = { companyId: 7n, userId: 11n };
 
 const buildService = (tx: Record<string, unknown>) => {
+  const transactionalClient = { $queryRaw: vi.fn().mockResolvedValue([{ id: 1n }]), ...tx };
   const service = Object.create(InventoryCountService.prototype) as InventoryCountService;
   Object.assign(service, {
     prisma: {},
-    transactions: { execute: async (_options: unknown, work: (value: unknown) => unknown) => work(tx) },
-    idempotency: { execute: async (_options: unknown, work: (value: unknown) => unknown) => work(tx) },
+    transactions: { execute: async (_options: unknown, work: (value: unknown) => unknown) => work(transactionalClient) },
+    idempotency: { execute: async (_options: unknown, work: (value: unknown) => unknown) => work(transactionalClient) },
   });
   return service;
 };
@@ -49,21 +50,23 @@ const routerFixture = () => {
 
 describe("inventory count MVP", () => {
   it("creates a company-scoped 300-title snapshot with cutoff and location snapshots", async () => {
-    const balances = Array.from({ length: 300 }, (_, index) => ({
-      inventoryItemId: BigInt(index + 1),
+    const items = Array.from({ length: 300 }, (_, index) => ({
+      id: BigInt(index + 1),
+      code: `BOOK-${String(index + 1).padStart(3, "0")}`,
+      nameAr: `عنوان ${index + 1}`,
+      unitOfMeasure: { code: "COPY" },
+    }));
+    const balances = items.map((item) => ({
+      inventoryItemId: item.id,
       onHand: new Prisma.Decimal(1000),
       inventoryValueBase: new Prisma.Decimal(15000),
       averageUnitCostBase: new Prisma.Decimal(15),
       isValuationInitialized: true,
-      inventoryItem: {
-        code: `BOOK-${String(index + 1).padStart(3, "0")}`,
-        nameAr: `عنوان ${index + 1}`,
-        unitOfMeasure: { code: "COPY" },
-      },
     }));
     const create = vi.fn(async ({ data }: { data: { lines: { create: unknown[] } } }) => {
       expect(data.lines.create).toHaveLength(300);
       expect(data.lines.create[0]).toMatchObject({ shelfSnapshot: "A-01", locationSnapshot: "قاعة الكتب" });
+      expect(data.lines.create[0]).not.toHaveProperty("companyId");
       return {
         id: 90n, warehouseId: 3n, countDate: new Date("2026-09-24"), snapshotAt: new Date("2026-09-21T10:00:00Z"),
         status: "DRAFT", version: 0, lastReceiptMovementId: 50n, lastReceiptMovementNumber: "IMV-50",
@@ -75,6 +78,7 @@ describe("inventory count MVP", () => {
       .mockResolvedValueOnce({ id: 49n, movementNumber: "IMV-49" });
     const service = buildService({
       warehouse: { findFirst: vi.fn().mockResolvedValue({ id: 3n, isActive: true, address: "المكتبة العامة" }) },
+      inventoryItem: { findMany: vi.fn().mockResolvedValue(items) },
       inventoryBalance: { findMany: vi.fn().mockResolvedValue(balances) },
       inventoryMovement: { findFirst: movementFindFirst },
       stockCountSession: { create },
@@ -91,6 +95,38 @@ describe("inventory count MVP", () => {
     expect(movementFindFirst).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ companyId: 7n, movementType: "RECEIPT" }),
     }));
+  });
+
+  it("includes active catalog items with a zero book snapshot when no balance exists yet", async () => {
+    const create = vi.fn(async ({ data }: { data: { lines: { create: Array<Record<string, unknown>> } } }) => {
+      expect(data.lines.create).toHaveLength(1);
+      expect(data.lines.create[0]).toMatchObject({
+        inventoryItemId: 1n,
+        itemCodeSnapshot: "BOOK-001",
+        bookQuantity: new Prisma.Decimal(0),
+        bookUnitCostBase: new Prisma.Decimal(0),
+        bookValueBase: new Prisma.Decimal(0),
+        isValuationInitialized: false,
+      });
+      return {
+        id: 91n, warehouseId: 3n, countDate: new Date("2026-09-24"), snapshotAt: new Date("2026-09-21T10:00:00Z"),
+        status: "DRAFT", version: 0, lastReceiptMovementId: null, lastReceiptMovementNumber: null,
+        lastIssueMovementId: null, lastIssueMovementNumber: null, submittedAt: null, approvedAt: null, approvedByName: null,
+      };
+    });
+    const service = buildService({
+      warehouse: { findFirst: vi.fn().mockResolvedValue({ id: 3n, isActive: true, address: "المكتبة العامة" }) },
+      inventoryItem: { findMany: vi.fn().mockResolvedValue([{ id: 1n, code: "BOOK-001", nameAr: "كتاب تجريبي", unitOfMeasure: { code: "COPY" } }]) },
+      inventoryBalance: { findMany: vi.fn().mockResolvedValue([]) },
+      inventoryMovement: { findFirst: vi.fn().mockResolvedValue(null) },
+      stockCountSession: { create },
+    });
+
+    await expect(service.createSession(context, {
+      warehouseId: 3n,
+      countDate: new Date("2026-09-24"),
+      committee: [{ name: "موظف الاختبار", role: "عضو لجنة الجرد" }],
+    }, "zero-balance-count")).resolves.toMatchObject({ id: "91", status: "DRAFT" });
   });
 
   it("bulk updates valid rows, reports stale/foreign conflicts, and records the employee snapshot", async () => {
@@ -208,7 +244,7 @@ describe("inventory count MVP", () => {
       });
 
     expect(response.status).toBe(201);
-    expect(authorize).toHaveBeenCalledWith({ sid: "session-token", csrfToken: "csrf-token", permission: "inventory_movements.create", requireCsrf: true });
+    expect(authorize).toHaveBeenCalledWith({ sid: "session-token", csrfToken: "csrf-token", permission: "inventory_counts.manage", requireCsrf: true });
     expect(inventoryCount.createSession).toHaveBeenCalledWith(context, expect.objectContaining({ warehouseId: 3n }), "library-2026-09-24");
   });
 
@@ -231,6 +267,6 @@ describe("inventory count MVP", () => {
     expect(inventoryCount.bulkEnterCounts).toHaveBeenCalledWith(context, 90n, [{ lineId: 1n, expectedVersion: 2, countedQuantity: "1002", varianceReason: "نسختان زائدتان" }]);
     expect(inventoryCount.submit).toHaveBeenCalledWith(context, 90n, 0);
     expect(inventoryCount.approve).toHaveBeenCalledWith(context, 90n, 1, "مدير المكتبة");
-    expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ permission: "inventory_movements.create", requireCsrf: true }));
+    expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ permission: "inventory_counts.manage", requireCsrf: true }));
   });
 });

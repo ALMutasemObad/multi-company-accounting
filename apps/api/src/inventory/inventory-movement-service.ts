@@ -45,7 +45,9 @@ export type InventoryMovementErrorReason =
   | "UNBALANCED"
   | "ALREADY_REVERSED"
   | "IDEMPOTENCY_MISMATCH"
-  | "IDEMPOTENCY_IN_PROGRESS";
+  | "IDEMPOTENCY_IN_PROGRESS"
+  | "COUNT_MOVED_SINCE_SNAPSHOT"
+  | "MISSING_SURPLUS_COST";
 
 export class InventoryMovementError extends Error {
   constructor(public readonly reason: InventoryMovementErrorReason) {
@@ -244,6 +246,7 @@ export class InventoryMovementService implements InventoryInvoiceStockPort {
               { warehouse: { nameAr: { contains: input.search } } },
               { warehouse: { nameEn: { contains: input.search } } },
               { inventoryItem: { code: { contains: input.search } } },
+              { inventoryItem: { barcodes: { some: { value: { contains: input.search }, isActive: true } } } },
               { inventoryItem: { nameAr: { contains: input.search } } },
               { inventoryItem: { nameEn: { contains: input.search } } },
             ],
@@ -255,7 +258,17 @@ export class InventoryMovementService implements InventoryInvoiceStockPort {
         where,
         include: {
           warehouse: true,
-          inventoryItem: { include: { unitOfMeasure: true } },
+          inventoryItem: {
+            include: {
+              unitOfMeasure: true,
+              barcodes: {
+                where: { isActive: true },
+                orderBy: [{ isPrimary: "desc" }, { id: "asc" }],
+                take: 1,
+                select: { value: true },
+              },
+            },
+          },
         },
         orderBy: [{ warehouse: { code: "asc" } }, { inventoryItem: { code: "asc" } }],
         skip: (input.page - 1) * input.pageSize,
@@ -383,6 +396,101 @@ export class InventoryMovementService implements InventoryInvoiceStockPort {
         return InventoryMovementService.movementJson(
           await this.createAccountedManualMovement(tx, context, input),
         );
+      },
+    );
+  }
+
+  async settleApprovedCount(
+    context: ActorContext,
+    sessionId: bigint,
+    input: { expectedVersion: number; settlementDate: string; surplusUnitCosts?: Record<string, string> | undefined },
+    idempotencyKey: string,
+  ) {
+    const suppliedCosts = input.surplusUnitCosts ?? {};
+    const fingerprint = JSON.stringify({
+      sessionId: sessionId.toString(),
+      expectedVersion: input.expectedVersion,
+      settlementDate: input.settlementDate,
+      surplusUnitCosts: Object.fromEntries(Object.entries(suppliedCosts).sort(([left], [right]) => left.localeCompare(right))),
+    });
+    return this.commands.execute(
+      {
+        context,
+        operation: "SETTLE_STOCK_COUNT",
+        key: idempotencyKey,
+        fingerprint,
+        errors: {
+          mismatch: () => new InventoryMovementError("IDEMPOTENCY_MISMATCH"),
+          inProgress: () => new InventoryMovementError("IDEMPOTENCY_IN_PROGRESS"),
+        },
+      },
+      async (tx) => {
+        await tx.$queryRaw(Prisma.sql`SELECT id FROM stock_count_sessions WHERE id = ${sessionId} AND company_id = ${context.companyId} FOR UPDATE`);
+        const session = await tx.stockCountSession.findFirst({
+          where: { id: sessionId, companyId: context.companyId },
+          include: { lines: { where: { varianceQuantity: { not: 0 } }, orderBy: { inventoryItemId: "asc" } } },
+        });
+        if (!session) throw new InventoryMovementError("NOT_FOUND");
+        if (session.status !== "APPROVED") throw new InventoryMovementError("INVALID_STATE");
+        if (session.version !== input.expectedVersion) throw new InventoryMovementError("VERSION_CONFLICT");
+        const settlementDate = movementDate(input.settlementDate);
+        if (settlementDate < session.countDate) throw new InventoryMovementError("DATE_OUTSIDE_PERIOD");
+        const laterMovement = await tx.inventoryMovement.findFirst({
+          where: {
+            companyId: context.companyId,
+            status: "POSTED",
+            createdAt: { gt: session.snapshotAt },
+            lines: { some: { OR: [{ fromWarehouseId: session.warehouseId }, { toWarehouseId: session.warehouseId }] } },
+          },
+          select: { id: true },
+        });
+        if (laterMovement) throw new InventoryMovementError("COUNT_MOVED_SINCE_SNAPSHOT");
+        if (session.lines.some((line) => line.countedQuantity === null || !line.varianceReason)) throw new InventoryMovementError("INVALID_STATE");
+
+        const surplusLines: InventoryMovementLineInput[] = [];
+        const shortageLines: InventoryMovementLineInput[] = [];
+        for (const line of session.lines) {
+          const variance = line.varianceQuantity!;
+          if (variance.gt(0)) {
+            const fallbackCost = line.bookUnitCostBase.gt(0) ? line.bookUnitCostBase.toFixed(8) : null;
+            const unitCostBase = suppliedCosts[line.inventoryItemId.toString()] ?? fallbackCost;
+            if (!unitCostBase || !this.parseUnitCost(unitCostBase).gt(0)) throw new InventoryMovementError("MISSING_SURPLUS_COST");
+            surplusLines.push({ inventoryItemId: line.inventoryItemId, toWarehouseId: session.warehouseId, quantity: variance.toFixed(6), unitCostBase });
+          } else if (variance.lt(0)) {
+            shortageLines.push({ inventoryItemId: line.inventoryItemId, fromWarehouseId: session.warehouseId, quantity: variance.abs().toFixed(6) });
+          }
+        }
+        const reference = `STOCK_COUNT:${sessionId.toString()}`;
+        const description = `تسوية فروقات جلسة الجرد ${sessionId.toString()}`;
+        const surplus = surplusLines.length ? await this.createAccountedManualMovement(tx, context, {
+          movementType: "ADJUSTMENT_IN", movementDate: input.settlementDate, description, externalReference: `${reference}:SURPLUS`, lines: surplusLines,
+        }) : null;
+        const shortage = shortageLines.length ? await this.createAccountedManualMovement(tx, context, {
+          movementType: "ADJUSTMENT_OUT", movementDate: input.settlementDate, description, externalReference: `${reference}:SHORTAGE`, lines: shortageLines,
+        }) : null;
+        const settledAt = new Date();
+        const updated = await tx.stockCountSession.update({
+          where: { id: session.id },
+          data: {
+            status: "SETTLED",
+            settlementDate,
+            surplusMovementId: surplus?.id ?? null,
+            shortageMovementId: shortage?.id ?? null,
+            settledById: context.userId,
+            settledAt,
+            version: { increment: 1 },
+          },
+        });
+        await appendAudit(tx, { data: {
+          companyId: context.companyId, actorUserId: context.userId, action: "STOCK_COUNT_SETTLED", entityType: "STOCK_COUNT_SESSION", entityId: session.id.toString(),
+          details: { surplusMovementId: surplus?.id.toString() ?? null, shortageMovementId: shortage?.id.toString() ?? null },
+        } });
+        return {
+          sessionId: updated.id.toString(), status: updated.status, version: updated.version,
+          settlementDate: updated.settlementDate!.toISOString().slice(0, 10), settledAt: settledAt.toISOString(),
+          surplusMovement: surplus ? InventoryMovementService.movementJson(surplus) : null,
+          shortageMovement: shortage ? InventoryMovementService.movementJson(shortage) : null,
+        };
       },
     );
   }
@@ -1146,6 +1254,7 @@ export class InventoryMovementService implements InventoryInvoiceStockPort {
       code: string;
       nameAr: string;
       nameEn: string | null;
+      barcodes?: Array<{ value: string }>;
       unitOfMeasure: { id: bigint; code: string; nameAr: string; nameEn: string | null; decimalPlaces: number };
     };
   }) {
@@ -1160,6 +1269,7 @@ export class InventoryMovementService implements InventoryInvoiceStockPort {
       inventoryItem: {
         id: value.inventoryItem.id.toString(),
         code: value.inventoryItem.code,
+        primaryBarcode: value.inventoryItem.barcodes?.[0]?.value ?? null,
         nameAr: value.inventoryItem.nameAr,
         nameEn: value.inventoryItem.nameEn,
         unitOfMeasure: {

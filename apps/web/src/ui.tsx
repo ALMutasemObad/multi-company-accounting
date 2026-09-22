@@ -355,11 +355,15 @@ export function Modal({
   const titleId = useId();
   const descriptionId = useId();
   const modalRef = useRef<HTMLElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+  if (returnFocusRef.current === null && document.activeElement instanceof HTMLElement) {
+    // Capture the opener during render, before a descendant's autoFocus runs during commit.
+    returnFocusRef.current = document.activeElement;
+  }
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
   useEffect(() => {
-    const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     modalRef.current?.focus();
@@ -394,7 +398,7 @@ export function Modal({
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
       document.body.style.overflow = previousOverflow;
-      activeElement?.focus();
+      returnFocusRef.current?.focus();
     };
   }, []);
 

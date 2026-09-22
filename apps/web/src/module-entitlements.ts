@@ -31,6 +31,7 @@ const permissionEntitlementPrefixes = [
   ['inventory_catalog.', 'INVENTORY'],
   ['inventory_barcodes.', 'INVENTORY'],
   ['inventory_movements.', 'INVENTORY'],
+  ['inventory_counts.', 'INVENTORY'],
   ['pos.', 'POS'],
   ['dashboard.', 'REPORTING'],
   ['reports.', 'REPORTING'],

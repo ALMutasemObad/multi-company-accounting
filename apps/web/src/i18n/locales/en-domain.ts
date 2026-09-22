@@ -19,6 +19,7 @@ export const enDomain = {
   "errors.VALIDATION_ERROR": "Check the required fields and value formats.",
   "errors.NOT_FOUND": "The requested record no longer exists.",
   "errors.CODE_EXISTS": "This code is already used in the company.",
+  "errors.BARCODE_EXISTS": "This ISBN or barcode is already assigned to another item.",
   "errors.INVALID_ACCOUNT": "The selected account cannot be posted to.",
   "errors.INVALID_SUPPLIER": "The selected supplier is inactive or invalid.",
   "errors.INVALID_CUSTOMER": "The selected customer is inactive or invalid.",

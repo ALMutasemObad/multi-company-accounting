@@ -1,4 +1,5 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
+import { randomUUID } from "node:crypto";
 import type { ActorContext } from "../../platform/actor-context.js";
 import { IdempotentCommandExecutor } from "../../platform/idempotent-command-executor.js";
 import { TransactionExecutor } from "../../platform/transaction-executor.js";
@@ -32,7 +33,7 @@ export type CountLocationInput = {
 export type CreateInventoryCountInput = {
   warehouseId: bigint;
   countDate: Date;
-  committee: CommitteeMemberInput[];
+  committee?: CommitteeMemberInput[] | undefined;
   locations?: CountLocationInput[] | undefined;
 };
 export type BulkCountRow = {
@@ -45,6 +46,12 @@ export type BulkCountConflict = {
   lineId: string;
   expectedVersion: number;
   actualVersion: number | null;
+};
+export type CountEntryInput = {
+  inventoryItemId: bigint;
+  quantity: string;
+  locationReference?: string | null | undefined;
+  entryKey: string;
 };
 export type InventoryCountSummary = {
   total: number;
@@ -74,7 +81,6 @@ const normalizeCommittee = (members: CommitteeMemberInput[]) => {
     role: trimmed(member.role, 120),
   }));
   if (
-    normalized.length === 0 ||
     normalized.some((member) => !member.name || !member.role) ||
     new Set(normalized.map((member) => `${member.name}\u0000${member.role}`)).size !== normalized.length
   ) {
@@ -105,6 +111,10 @@ const sessionSelect = {
   submittedAt: true,
   approvedAt: true,
   approvedByName: true,
+  settlementDate: true,
+  surplusMovementId: true,
+  shortageMovementId: true,
+  settledAt: true,
 } satisfies Prisma.StockCountSessionSelect;
 
 const toSessionDto = (session: Prisma.StockCountSessionGetPayload<{ select: typeof sessionSelect }>) => ({
@@ -127,6 +137,12 @@ const toSessionDto = (session: Prisma.StockCountSessionGetPayload<{ select: type
   submittedAt: session.submittedAt?.toISOString() ?? null,
   approvedAt: session.approvedAt?.toISOString() ?? null,
   approvedByName: session.approvedByName,
+  settlement: session.settlementDate && session.settledAt ? {
+    date: session.settlementDate.toISOString().slice(0, 10),
+    settledAt: session.settledAt.toISOString(),
+    surplusMovementId: session.surplusMovementId?.toString() ?? null,
+    shortageMovementId: session.shortageMovementId?.toString() ?? null,
+  } : null,
 });
 
 export class InventoryCountService {
@@ -144,7 +160,7 @@ export class InventoryCountService {
       page: number;
       pageSize: number;
       warehouseId?: bigint | undefined;
-      status?: "DRAFT" | "SUBMITTED" | "APPROVED" | undefined;
+      status?: "DRAFT" | "SUBMITTED" | "APPROVED" | "SETTLED" | undefined;
     },
   ) {
     const where: Prisma.StockCountSessionWhereInput = {
@@ -193,7 +209,7 @@ export class InventoryCountService {
     input: CreateInventoryCountInput,
     idempotencyKey: string,
   ) {
-    const committee = normalizeCommittee(input.committee);
+    const committee = normalizeCommittee(input.committee ?? []);
     const locations = new Map<string, { location: string | null; shelf: string | null }>();
     for (const value of input.locations ?? []) {
       const key = value.inventoryItemId.toString();
@@ -222,20 +238,26 @@ export class InventoryCountService {
         },
       },
       async (tx) => {
+        await tx.$queryRaw(Prisma.sql`SELECT id FROM warehouses WHERE id = ${input.warehouseId} AND company_id = ${context.companyId} FOR UPDATE`);
         const warehouse = await tx.warehouse.findFirst({
           where: { id: input.warehouseId, companyId: context.companyId },
           select: { id: true, isActive: true, address: true },
         });
         if (!warehouse) throw new InventoryCountError("NOT_FOUND");
         if (!warehouse.isActive) throw new InventoryCountError("WAREHOUSE_INACTIVE");
+        const items = await tx.inventoryItem.findMany({
+          where: { companyId: context.companyId, isActive: true },
+          include: { unitOfMeasure: true },
+          orderBy: { id: "asc" },
+        });
+        if (items.length === 0) throw new InventoryCountError("EMPTY_WAREHOUSE");
         const balances = await tx.inventoryBalance.findMany({
           where: { companyId: context.companyId, warehouseId: input.warehouseId },
-          include: { inventoryItem: { include: { unitOfMeasure: true } } },
           orderBy: { inventoryItemId: "asc" },
         });
-        if (balances.length === 0) throw new InventoryCountError("EMPTY_WAREHOUSE");
+        const balancesByItemId = new Map(balances.map((balance) => [balance.inventoryItemId.toString(), balance]));
         const unknownLocation = [...locations.keys()].some(
-          (itemId) => !balances.some((balance) => balance.inventoryItemId.toString() === itemId),
+          (itemId) => !items.some((item) => item.id.toString() === itemId),
         );
         if (unknownLocation) throw new InventoryCountError("NOT_FOUND");
         const movementBase = {
@@ -259,29 +281,30 @@ export class InventoryCountService {
             companyId: context.companyId,
             warehouseId: input.warehouseId,
             countDate: input.countDate,
+            snapshotAt: new Date(),
             createdById: context.userId,
             lastReceiptMovementId: receipt?.id ?? null,
             lastReceiptMovementNumber: receipt?.movementNumber ?? null,
             lastIssueMovementId: issue?.id ?? null,
             lastIssueMovementNumber: issue?.movementNumber ?? null,
             committeeMembers: {
-              create: committee.map((member) => ({ companyId: context.companyId, memberName: member.name, memberRole: member.role })),
+              create: committee.map((member) => ({ memberName: member.name, memberRole: member.role })),
             },
             lines: {
-              create: balances.map((balance) => {
-                const location = locations.get(balance.inventoryItemId.toString());
+              create: items.map((item) => {
+                const balance = balancesByItemId.get(item.id.toString());
+                const location = locations.get(item.id.toString());
                 return {
-                  companyId: context.companyId,
-                  inventoryItemId: balance.inventoryItemId,
-                  itemCodeSnapshot: balance.inventoryItem.code,
-                  itemTitleSnapshot: balance.inventoryItem.nameAr,
-                  unitCodeSnapshot: balance.inventoryItem.unitOfMeasure.code,
+                  inventoryItemId: item.id,
+                  itemCodeSnapshot: item.code,
+                  itemTitleSnapshot: item.nameAr,
+                  unitCodeSnapshot: item.unitOfMeasure.code,
                   locationSnapshot: location?.location ?? warehouse.address,
                   shelfSnapshot: location?.shelf ?? null,
-                  bookQuantity: balance.onHand,
-                  bookUnitCostBase: balance.averageUnitCostBase,
-                  bookValueBase: balance.inventoryValueBase,
-                  isValuationInitialized: balance.isValuationInitialized,
+                  bookQuantity: balance?.onHand ?? new Prisma.Decimal(0),
+                  bookUnitCostBase: balance?.averageUnitCostBase ?? new Prisma.Decimal(0),
+                  bookValueBase: balance?.inventoryValueBase ?? new Prisma.Decimal(0),
+                  isValuationInitialized: balance?.isValuationInitialized ?? false,
                 };
               }),
             },
@@ -306,12 +329,19 @@ export class InventoryCountService {
       ...(input.search?.trim() ? { OR: [
         { itemCodeSnapshot: { contains: input.search.trim() } },
         { itemTitleSnapshot: { contains: input.search.trim() } },
+        { inventoryItem: { barcodes: { some: { value: { contains: input.search.trim() }, isActive: true } } } },
         { locationSnapshot: { contains: input.search.trim() } },
         { shelfSnapshot: { contains: input.search.trim() } },
       ] } : {}),
     };
     const [lines, total, counted, surplus, shortage] = await this.prisma.$transaction([
-      this.prisma.stockCountLine.findMany({ where, orderBy: [{ itemCodeSnapshot: "asc" }, { id: "asc" }], skip: (input.page - 1) * input.pageSize, take: input.pageSize }),
+      this.prisma.stockCountLine.findMany({
+        where,
+        include: { inventoryItem: { select: { barcodes: { where: { isActive: true }, orderBy: [{ isPrimary: "desc" }, { id: "asc" }], take: 1, select: { value: true } } } } },
+        orderBy: [{ itemTitleSnapshot: "asc" }, { id: "asc" }],
+        skip: (input.page - 1) * input.pageSize,
+        take: input.pageSize,
+      }),
       this.prisma.stockCountLine.count({ where: { companyId: context.companyId, sessionId } }),
       this.prisma.stockCountLine.count({ where: { companyId: context.companyId, sessionId, countedQuantity: { not: null } } }),
       this.prisma.stockCountLine.count({ where: { companyId: context.companyId, sessionId, varianceQuantity: { gt: 0 } } }),
@@ -320,6 +350,7 @@ export class InventoryCountService {
     return {
       data: lines.map((line) => ({
         id: line.id.toString(), inventoryItemId: line.inventoryItemId.toString(), code: line.itemCodeSnapshot,
+        barcode: line.inventoryItem.barcodes[0]?.value ?? null,
         title: line.itemTitleSnapshot, unitCode: line.unitCodeSnapshot, location: line.locationSnapshot, shelf: line.shelfSnapshot,
         bookQuantity: line.bookQuantity.toString(), bookUnitCostBase: line.bookUnitCostBase.toString(), bookValueBase: line.bookValueBase.toString(),
         countedQuantity: line.countedQuantity?.toString() ?? null, varianceQuantity: line.varianceQuantity?.toString() ?? null,
@@ -341,7 +372,11 @@ export class InventoryCountService {
         if (session.status !== "DRAFT") throw new InventoryCountError("INVALID_STATE");
         const ids = rows.map((row) => row.lineId).sort(numericBigIntSort);
         await tx.$queryRaw(Prisma.sql`SELECT id FROM stock_count_lines WHERE company_id = ${context.companyId} AND session_id = ${sessionId} AND id IN (${Prisma.join(ids)}) ORDER BY id FOR UPDATE`);
-        const current = await tx.stockCountLine.findMany({ where: { companyId: context.companyId, sessionId, id: { in: ids } }, orderBy: { id: "asc" } });
+        const current = await tx.stockCountLine.findMany({
+          where: { companyId: context.companyId, sessionId, id: { in: ids } },
+          include: { _count: { select: { entries: true } } },
+          orderBy: { id: "asc" },
+        });
         const byId = new Map(current.map((line) => [line.id.toString(), line]));
         const conflicts: BulkCountConflict[] = [];
         const counterName = await this.resolveCounterName(tx, context.userId);
@@ -355,6 +390,20 @@ export class InventoryCountService {
           const variance = counted.minus(line.bookQuantity);
           const reason = trimmed(row.varianceReason, 500);
           if (!variance.isZero() && !reason) throw new InventoryCountError("INVALID_VARIANCE_REASON");
+          if ((line._count?.entries ?? 0) > 0 && line.countedQuantity && !counted.equals(line.countedQuantity)) {
+            await tx.stockCountEntry.create({
+              data: {
+                companyId: context.companyId,
+                sessionId,
+                lineId: line.id,
+                entryKey: `CORRECTION-${randomUUID()}`,
+                quantity: counted.minus(line.countedQuantity),
+                locationReference: `تصحيح مشرف: ${reason ?? "مطابقة الإجمالي"}`.slice(0, 200),
+                counterNameSnapshot: counterName,
+                createdById: context.userId,
+              },
+            });
+          }
           const updated = await tx.stockCountLine.updateMany({
             where: { id: row.lineId, companyId: context.companyId, sessionId, version: row.expectedVersion },
             data: {
@@ -374,10 +423,139 @@ export class InventoryCountService {
     );
   }
 
+  async addEntry(context: ActorContext, sessionId: bigint, input: CountEntryInput) {
+    const quantity = parseQuantity(input.quantity);
+    if (quantity.isZero()) throw new InventoryCountError("INVALID_COUNT");
+    const locationReference = trimmed(input.locationReference, 200);
+    const entryKey = input.entryKey.trim().slice(0, 100);
+    if (entryKey.length < 8) throw new InventoryCountError("INVALID_COUNT");
+    return this.transactions.execute(
+      { operation: "ADD_STOCK_COUNT_ENTRY", companyId: context.companyId },
+      async (tx) => {
+        await tx.$queryRaw(Prisma.sql`SELECT id FROM stock_count_sessions WHERE id = ${sessionId} AND company_id = ${context.companyId} FOR UPDATE`);
+        const session = await tx.stockCountSession.findFirst({ where: { id: sessionId, companyId: context.companyId }, select: { status: true } });
+        if (!session) throw new InventoryCountError("NOT_FOUND");
+        if (session.status !== "DRAFT") throw new InventoryCountError("INVALID_STATE");
+        const existing = await tx.stockCountEntry.findFirst({ where: { companyId: context.companyId, entryKey }, select: { lineId: true } });
+        if (existing) return this.entryResult(tx, context, sessionId, existing.lineId, true);
+        let line = await tx.stockCountLine.findFirst({
+          where: { companyId: context.companyId, sessionId, inventoryItemId: input.inventoryItemId },
+        });
+        if (!line) {
+          const [item, sessionRecord] = await Promise.all([
+            tx.inventoryItem.findFirst({ where: { id: input.inventoryItemId, companyId: context.companyId, isActive: true }, include: { unitOfMeasure: true } }),
+            tx.stockCountSession.findFirstOrThrow({ where: { id: sessionId, companyId: context.companyId }, select: { warehouseId: true } }),
+          ]);
+          if (!item) throw new InventoryCountError("NOT_FOUND");
+          const balance = await tx.inventoryBalance.findFirst({ where: { companyId: context.companyId, warehouseId: sessionRecord.warehouseId, inventoryItemId: item.id } });
+          line = await tx.stockCountLine.create({
+            data: {
+              companyId: context.companyId, sessionId, inventoryItemId: item.id,
+              itemCodeSnapshot: item.code, itemTitleSnapshot: item.nameAr, unitCodeSnapshot: item.unitOfMeasure.code,
+              bookQuantity: balance?.onHand ?? new Prisma.Decimal(0), bookUnitCostBase: balance?.averageUnitCostBase ?? new Prisma.Decimal(0),
+              bookValueBase: balance?.inventoryValueBase ?? new Prisma.Decimal(0), isValuationInitialized: balance?.isValuationInitialized ?? false,
+            },
+          });
+        }
+        await tx.$queryRaw(Prisma.sql`SELECT id FROM stock_count_lines WHERE id = ${line.id} AND company_id = ${context.companyId} FOR UPDATE`);
+        const locked = await tx.stockCountLine.findFirstOrThrow({ where: { id: line.id, companyId: context.companyId } });
+        const counterName = await this.resolveCounterName(tx, context.userId);
+        const total = (locked.countedQuantity ?? new Prisma.Decimal(0)).plus(quantity);
+        const variance = total.minus(locked.bookQuantity);
+        await tx.stockCountEntry.create({
+          data: {
+            companyId: context.companyId,
+            sessionId,
+            lineId: locked.id,
+            entryKey,
+            quantity,
+            locationReference,
+            counterNameSnapshot: counterName,
+            createdById: context.userId,
+          },
+        });
+        await tx.stockCountLine.update({
+          where: { id: locked.id },
+          data: {
+            countedQuantity: total,
+            varianceQuantity: variance,
+            ...(variance.isZero() ? { varianceReason: null } : {}),
+            countedById: context.userId,
+            countedByNameSnapshot: counterName,
+            countedAt: new Date(),
+            version: { increment: 1 },
+          },
+        });
+        return this.entryResult(tx, context, sessionId, locked.id, false);
+      },
+    );
+  }
+
+  async listEntries(context: ActorContext, sessionId: bigint, lineId?: bigint) {
+    const session = await this.prisma.stockCountSession.findFirst({ where: { id: sessionId, companyId: context.companyId }, select: { id: true } });
+    if (!session) throw new InventoryCountError("NOT_FOUND");
+    const entries = await this.prisma.stockCountEntry.findMany({
+      where: { companyId: context.companyId, sessionId, ...(lineId ? { lineId } : {}) },
+      include: { line: { select: { itemCodeSnapshot: true, itemTitleSnapshot: true } } },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: 500,
+    });
+    return entries.map((entry) => ({
+      id: entry.id.toString(),
+      lineId: entry.lineId.toString(),
+      code: entry.line.itemCodeSnapshot,
+      title: entry.line.itemTitleSnapshot,
+      quantity: entry.quantity.toString(),
+      locationReference: entry.locationReference,
+      counterName: entry.counterNameSnapshot,
+      createdAt: entry.createdAt.toISOString(),
+    }));
+  }
+
+  async report(context: ActorContext, sessionId: bigint) {
+    const session = await this.prisma.stockCountSession.findFirst({
+      where: { id: sessionId, companyId: context.companyId },
+      include: {
+        warehouse: { select: { code: true, nameAr: true } },
+        committeeMembers: { select: { memberName: true, memberRole: true }, orderBy: { id: "asc" } },
+      },
+    });
+    if (!session) throw new InventoryCountError("NOT_FOUND");
+    const lines = await this.prisma.stockCountLine.findMany({
+      where: { companyId: context.companyId, sessionId },
+      include: { inventoryItem: { select: { barcodes: { where: { isActive: true }, orderBy: [{ isPrimary: "desc" }, { id: "asc" }], take: 1, select: { value: true } } } } },
+      orderBy: [{ itemTitleSnapshot: "asc" }, { id: "asc" }],
+    });
+    return {
+      session: {
+        id: session.id.toString(), countDate: session.countDate.toISOString().slice(0, 10), status: session.status, warehouse: session.warehouse,
+        cutoff: { receiptNumber: session.lastReceiptMovementNumber, issueNumber: session.lastIssueMovementNumber },
+        committee: session.committeeMembers.map((member) => ({ name: member.memberName, role: member.memberRole })),
+        approvedByName: session.approvedByName,
+        approvedAt: session.approvedAt?.toISOString() ?? null,
+        settlement: session.settlementDate && session.settledAt ? {
+          date: session.settlementDate.toISOString().slice(0, 10),
+          surplusMovementId: session.surplusMovementId?.toString() ?? null,
+          shortageMovementId: session.shortageMovementId?.toString() ?? null,
+        } : null,
+      },
+      rows: lines.map((line) => ({
+        code: line.itemCodeSnapshot, barcode: line.inventoryItem.barcodes[0]?.value ?? null, title: line.itemTitleSnapshot, unitCode: line.unitCodeSnapshot,
+        locationReference: line.locationSnapshot ?? line.shelfSnapshot,
+        bookQuantity: line.bookQuantity.toString(), countedQuantity: line.countedQuantity?.toString() ?? "",
+        varianceQuantity: line.varianceQuantity?.toString() ?? "", unitCostBase: line.bookUnitCostBase.toString(),
+        varianceValueBase: line.varianceQuantity?.times(line.bookUnitCostBase).toFixed(4) ?? "",
+        varianceReason: line.varianceReason ?? "", countedBy: line.countedByNameSnapshot ?? "",
+      })),
+    };
+  }
+
   async submit(context: ActorContext, sessionId: bigint, expectedVersion: number) {
     return this.transition(context, sessionId, expectedVersion, "DRAFT", async (tx, now) => {
       const remaining = await tx.stockCountLine.count({ where: { companyId: context.companyId, sessionId, countedQuantity: null } });
       if (remaining !== 0) throw new InventoryCountError("INCOMPLETE_COUNT");
+      const unexplained = await tx.stockCountLine.count({ where: { companyId: context.companyId, sessionId, varianceQuantity: { not: 0 }, varianceReason: null } });
+      if (unexplained !== 0) throw new InventoryCountError("INVALID_VARIANCE_REASON");
       return { status: "SUBMITTED" as const, submittedById: context.userId, submittedAt: now };
     });
   }
@@ -386,8 +564,6 @@ export class InventoryCountService {
     const name = trimmed(approverName, 160);
     if (!name) throw new InventoryCountError("INVALID_COMMITTEE");
     return this.transition(context, sessionId, expectedVersion, "SUBMITTED", async (tx, now) => {
-      const members = await tx.stockCountCommitteeMember.count({ where: { companyId: context.companyId, sessionId } });
-      if (members === 0) throw new InventoryCountError("INVALID_COMMITTEE");
       return { status: "APPROVED" as const, approvedById: context.userId, approvedByName: name, approvedAt: now };
     });
   }
@@ -418,6 +594,18 @@ export class InventoryCountService {
     const user = await tx.user.findUnique({ where: { id: userId }, select: { displayName: true } });
     if (!user) throw new InventoryCountError("NOT_FOUND");
     return user.displayName;
+  }
+
+  private async entryResult(tx: Prisma.TransactionClient, context: ActorContext, sessionId: bigint, lineId: bigint, duplicate: boolean) {
+    const line = await tx.stockCountLine.findFirstOrThrow({ where: { id: lineId, companyId: context.companyId, sessionId } });
+    return {
+      duplicate,
+      line: {
+        id: line.id.toString(), inventoryItemId: line.inventoryItemId.toString(), code: line.itemCodeSnapshot,
+        title: line.itemTitleSnapshot, countedQuantity: line.countedQuantity?.toString() ?? null,
+        varianceQuantity: line.varianceQuantity?.toString() ?? null, version: line.version,
+      },
+    };
   }
 
   private summary(context: ActorContext, sessionId: bigint, conflicts: number) {

@@ -29,7 +29,7 @@ describe("inventory aging report", () => {
         {
           balanceId: 1n,
           inventoryItemId: 11n,
-          itemCode: "ITM-11",
+          barcode: "9780000000011",
           itemName: "صنف مقيم",
           unitOfMeasureCode: "EA",
           warehouseId: 101n,
@@ -43,7 +43,7 @@ describe("inventory aging report", () => {
         {
           balanceId: 2n,
           inventoryItemId: 12n,
-          itemCode: "ITM-12",
+          barcode: null,
           itemName: "صنف غير مقيم",
           unitOfMeasureCode: "EA",
           warehouseId: 102n,
@@ -102,6 +102,12 @@ describe("inventory aging report", () => {
       balanceCount: 2,
       unvaluedBalanceCount: 1,
       valuedInventoryTotalBase: "20.0000",
+      classificationTotals: {
+        ACTIVE: { balanceCount: 0, valuedInventoryValueBase: "0.0000" },
+        SLOW_MOVING: { balanceCount: 1, valuedInventoryValueBase: "20.0000" },
+        STAGNANT: { balanceCount: 0, valuedInventoryValueBase: "0.0000" },
+        NO_MOVEMENT: { balanceCount: 1, valuedInventoryValueBase: "0.0000" },
+      },
     });
   });
 });

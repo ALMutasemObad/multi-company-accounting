@@ -23,6 +23,7 @@ const balance = (id: bigint, initialized: boolean, nameAr = `صنف ${id}`) => (
   warehouse: { id: 3n, code: "MAIN", nameAr: "الرئيسي", nameEn: "Main" },
   inventoryItem: {
     id, code: `IT-${id}`, nameAr, nameEn: null,
+    barcodes: [{ value: `978000000000${id}` }],
     unitOfMeasure: { id: 2n, code: "EA", nameAr: "حبة", nameEn: "Each", decimalPlaces: 0 },
   },
 });
@@ -37,6 +38,7 @@ describe("current inventory valuation report", () => {
     );
     expect(listBalances).toHaveBeenCalledWith(context, expect.objectContaining({ warehouseId: 3n, nonZero: true }));
     expect(report.basis).toBe("CURRENT_BALANCE");
+    expect(report.valuationPolicy).toBe("MOVING_WEIGHTED_AVERAGE");
     expect(report.totals).toMatchObject({ rowCount: 2, valuedRowCount: 1, unvaluedRowCount: 1, valuedInventoryValueBase: "25.1250" });
   });
 
@@ -51,5 +53,7 @@ describe("current inventory valuation report", () => {
     expect(workbook.subarray(0, 4).toString("hex")).toBe("504b0304");
     expect(workbook.toString("utf8")).toContain('t="inlineStr"');
     expect(workbook.toString("utf8")).not.toContain("<f>");
+    expect(workbook.toString("utf8")).toContain("متوسط التكلفة المرجح المتحرك");
+    expect(workbook.toString("utf8")).toContain("9780000000001");
   });
 });

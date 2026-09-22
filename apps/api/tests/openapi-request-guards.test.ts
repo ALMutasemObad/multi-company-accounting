@@ -23,7 +23,7 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 382, requestBodies: 193, responseBodies: 2513 });
+    expect(openApiContractCoverage).toEqual({ operations: 389, requestBodies: 195, responseBodies: 2550 });
     expect(openApiOperationRoutes).toMatchObject({
       'GET /pos/context/identity': 'getPosContextIdentity',
       'GET /auth/social/accounts': 'getCurrentSocialAccounts',
@@ -41,6 +41,9 @@ describe('generated OpenAPI request guards', () => {
       'PATCH /company-compliance': 'updateCompanyCompliance',
       'GET /inventory-valuation-report': 'getInventoryValuationReport',
       'GET /inventory-valuation-report.xlsx': 'exportInventoryValuationReportXlsx',
+      'GET /inventory-aging-report': 'getInventoryAgingReport',
+      'GET /inventory-aging-report.xlsx': 'exportInventoryAgingReportXlsx',
+      'GET /external-stock-positions.xlsx': 'exportExternalStockPositionsXlsx',
       'POST /external-stock-positions/events': 'recordExternalStockPositionEvent',
       'POST /external-stock-position-events/{eventId}/reverse': 'reverseExternalStockPositionEvent',
       'GET /inventory-count-sessions': 'listInventoryCountSessions',
@@ -48,7 +51,7 @@ describe('generated OpenAPI request guards', () => {
       'POST /auth/social/onboarding': 'completeSocialOnboarding',
       'DELETE /auth/social/onboarding': 'cancelSocialOnboarding',
     });
-    expect(guardedOpenApiOperations).toHaveLength(193);
+    expect(guardedOpenApiOperations).toHaveLength(195);
     expect(guardedOpenApiOperations).toContain('unlinkCurrentSocialAccount');
     expect(guardedOpenApiOperations).toContain('completeSocialOnboarding');
     expect(guardedOpenApiOperations).toContain('createOrganizationCompany');
@@ -59,7 +62,7 @@ describe('generated OpenAPI request guards', () => {
       "createExternalInventoryParty", "recordExternalStockPositionEvent",
     ]));
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
-      "createInventoryCountSession", "enterInventoryCountQuantities",
+      "createInventoryCountSession", "enterInventoryCountQuantities", "addInventoryCountEntry",
       "submitInventoryCountSession", "approveInventoryCountSession",
     ]));
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining(["createOrganizationMember", "updateOrganizationMember"]));

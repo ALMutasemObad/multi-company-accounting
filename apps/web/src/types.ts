@@ -618,6 +618,11 @@ export type InventoryItem = {
   nameAr: string;
   nameEn: string | null;
   description: string | null;
+  author: string | null;
+  publisher: string | null;
+  publicationYear: number | null;
+  edition: string | null;
+  primaryBarcode: null | { value: string; symbology: InventoryBarcodeSymbology };
   isActive: boolean;
   version: number;
   unitOfMeasure: UnitOfMeasure;
@@ -674,6 +679,7 @@ export type InventoryBalance = {
   id: string;
   warehouse: Pick<Warehouse, "id" | "code" | "nameAr" | "nameEn">;
   inventoryItem: Pick<InventoryItem, "id" | "code" | "nameAr" | "nameEn"> & {
+    primaryBarcode: string | null;
     unitOfMeasure: Pick<UnitOfMeasure, "id" | "code" | "nameAr" | "nameEn" | "decimalPlaces">;
   };
   onHand: string;

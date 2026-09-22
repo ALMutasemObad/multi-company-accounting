@@ -239,6 +239,7 @@ enum StockCountSessionStatus {
   DRAFT
   SUBMITTED
   APPROVED
+  SETTLED
 }
 
 enum ExternalStockPositionType {
@@ -617,6 +618,7 @@ model Company {
   inventoryItems                    InventoryItem[]
   inventoryItemImages               InventoryItemImage[]
   inventoryItemBarcodes             InventoryItemBarcode[]
+  stockCountEntries                 StockCountEntry[]
   inventoryMovementSequence         InventoryMovementSequence?
   inventoryMovements                InventoryMovement[]
   inventoryMovementLines            InventoryMovementLine[]
@@ -841,7 +843,9 @@ model User {
   stockCountSessionsCreated            StockCountSession[]                @relation("StockCountCreatedBy")
   stockCountSessionsSubmitted          StockCountSession[]                @relation("StockCountSubmittedBy")
   stockCountSessionsApproved           StockCountSession[]                @relation("StockCountApprovedBy")
+  stockCountSessionsSettled            StockCountSession[]                @relation("StockCountSettledBy")
   stockCountLinesCounted               StockCountLine[]                   @relation("StockCountLineCountedBy")
+  stockCountEntriesCreated             StockCountEntry[]                  @relation("StockCountEntryCreatedBy")
   bankStatementImportsCreated          BankStatementImport[]              @relation("BankStatementImportCreatedBy")
   bankStatementLinesClassified         BankStatementLine[]                @relation("BankStatementLineClassifiedBy")
   bankReconciliationSessionsCreated    BankReconciliationSession[]        @relation("BankReconciliationSessionCreatedBy")
@@ -2583,6 +2587,10 @@ model InventoryItem {
   nameAr                 String                    @map("name_ar") @db.VarChar(200)
   nameEn                 String?                   @map("name_en") @db.VarChar(200)
   description            String?                   @db.VarChar(500)
+  author                 String?                   @db.VarChar(200)
+  publisher              String?                   @db.VarChar(200)
+  publicationYear        Int?                      @map("publication_year") @db.UnsignedSmallInt
+  edition                String?                   @db.VarChar(120)
   isActive               Boolean                   @default(true) @map("is_active")
   version                Int                       @default(0) @db.UnsignedInt
   createdAt              DateTime                  @default(now()) @map("created_at")
@@ -2691,6 +2699,8 @@ model InventoryMovement {
   lines                        InventoryMovementLine[]
   stockCountReceiptCutoffs     StockCountSession[]           @relation("StockCountLastReceipt")
   stockCountIssueCutoffs       StockCountSession[]           @relation("StockCountLastIssue")
+  stockCountSurplusSettlements StockCountSession[]           @relation("StockCountSurplusSettlement")
+  stockCountShortageSettlements StockCountSession[]          @relation("StockCountShortageSettlement")
 
   @@unique([companyId, movementNumber])
   @@unique([companyId, sourceType, sourceId, sourceEvent], map: "inventory_movements_invoice_source_key")
@@ -2796,6 +2806,11 @@ model StockCountSession {
   approvedById              BigInt?                     @map("approved_by_id") @db.UnsignedBigInt
   approvedByName            String?                     @map("approved_by_name") @db.VarChar(160)
   approvedAt                DateTime?                   @map("approved_at")
+  settlementDate            DateTime?                   @map("settlement_date") @db.Date
+  surplusMovementId         BigInt?                     @map("surplus_movement_id") @db.UnsignedBigInt
+  shortageMovementId        BigInt?                     @map("shortage_movement_id") @db.UnsignedBigInt
+  settledById               BigInt?                     @map("settled_by_id") @db.UnsignedBigInt
+  settledAt                 DateTime?                   @map("settled_at")
   createdAt                 DateTime                    @default(now()) @map("created_at")
   updatedAt                 DateTime                    @updatedAt @map("updated_at")
   company                   Company                     @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
@@ -2805,10 +2820,16 @@ model StockCountSession {
   createdBy                 User                        @relation("StockCountCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
   submittedBy               User?                       @relation("StockCountSubmittedBy", fields: [submittedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
   approvedBy                User?                       @relation("StockCountApprovedBy", fields: [approvedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  settledBy                 User?                       @relation("StockCountSettledBy", fields: [settledById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  surplusMovement           InventoryMovement?          @relation("StockCountSurplusSettlement", fields: [surplusMovementId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  shortageMovement          InventoryMovement?          @relation("StockCountShortageSettlement", fields: [shortageMovementId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
   committeeMembers          StockCountCommitteeMember[]
   lines                     StockCountLine[]
+  entries                   StockCountEntry[]
 
   @@unique([id, companyId])
+  @@unique([surplusMovementId, companyId])
+  @@unique([shortageMovementId, companyId])
   @@index([companyId, warehouseId, countDate, id])
   @@index([companyId, status, countDate, id])
   @@map("stock_count_sessions")
@@ -2856,12 +2877,35 @@ model StockCountLine {
   session                StockCountSession @relation(fields: [sessionId, companyId], references: [id, companyId], onDelete: Cascade, onUpdate: Restrict)
   inventoryItem          InventoryItem     @relation(fields: [inventoryItemId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
   countedBy              User?             @relation("StockCountLineCountedBy", fields: [countedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  entries                StockCountEntry[]
 
   @@unique([companyId, sessionId, inventoryItemId])
   @@unique([id, companyId])
   @@index([companyId, sessionId, itemCodeSnapshot])
   @@index([companyId, sessionId, itemTitleSnapshot])
   @@map("stock_count_lines")
+}
+
+model StockCountEntry {
+  id                  BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId           BigInt            @map("company_id") @db.UnsignedBigInt
+  sessionId           BigInt            @map("session_id") @db.UnsignedBigInt
+  lineId              BigInt            @map("line_id") @db.UnsignedBigInt
+  entryKey             String            @map("entry_key") @db.VarChar(100)
+  quantity             Decimal           @db.Decimal(19, 6)
+  locationReference   String?           @map("location_reference") @db.VarChar(200)
+  counterNameSnapshot String            @map("counter_name_snapshot") @db.VarChar(160)
+  createdById         BigInt             @map("created_by_id") @db.UnsignedBigInt
+  createdAt           DateTime           @default(now()) @map("created_at")
+  company             Company            @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  session             StockCountSession  @relation(fields: [sessionId, companyId], references: [id, companyId], onDelete: Cascade, onUpdate: Restrict)
+  line                StockCountLine     @relation(fields: [lineId, companyId], references: [id, companyId], onDelete: Cascade, onUpdate: Restrict)
+  createdBy           User               @relation("StockCountEntryCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([companyId, entryKey], map: "stock_count_entries_company_key")
+  @@index([companyId, sessionId, createdAt], map: "stock_count_entries_session_created_idx")
+  @@index([companyId, lineId, createdAt], map: "stock_count_entries_line_created_idx")
+  @@map("stock_count_entries")
 }
 
 model ExternalInventoryParty {

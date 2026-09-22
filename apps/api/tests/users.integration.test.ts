@@ -216,7 +216,16 @@ describe.runIf(enabled)('users and roles with MariaDB', () => {
     try {
       expect(created.body.permissionIds).toEqual([permissions.body.data[0].id]);
       expect(created.body.code).toMatch(/^ROL-[0-9]{6,}$/);
-      await admin.agent.put(`/api/v1/roles/${roleId}/permissions`).set('X-CSRF-Token', admin.csrfToken).send({ permissionIds: permissions.body.data.slice(0, 2).map((item: { id: string }) => item.id) }).expect(200);
+      const nextPermissionIds = permissions.body.data.slice(0, 2).map((item: { id: string }) => item.id);
+      const updated = await admin.agent.patch(`/api/v1/roles/${roleId}`).set('X-CSRF-Token', admin.csrfToken).send({ nameAr: 'دور اختبار التكامل المحدّث', permissionIds: nextPermissionIds }).expect(200);
+      expect(updated.body.nameAr).toBe('دور اختبار التكامل المحدّث');
+      expect(updated.body.permissionIds.sort()).toEqual(nextPermissionIds.slice().sort());
+      const rejected = await admin.agent.patch(`/api/v1/roles/${roleId}`).set('X-CSRF-Token', admin.csrfToken).send({ nameAr: 'اسم يجب ألا يحفظ', permissionIds: ['999999999999999999'] }).expect(422);
+      expect(rejected.body.code).toBe('INVALID_PERMISSION');
+      const afterRejectedUpdate = (await admin.agent.get('/api/v1/roles').expect(200)).body.data.find((role: { id: string }) => role.id === roleId);
+      expect(afterRejectedUpdate.nameAr).toBe('دور اختبار التكامل المحدّث');
+      expect(afterRejectedUpdate.permissionIds.sort()).toEqual(nextPermissionIds.slice().sort());
+      await admin.agent.put(`/api/v1/roles/${roleId}/permissions`).set('X-CSRF-Token', admin.csrfToken).send({ permissionIds: nextPermissionIds }).expect(200);
       const systemRole = (await admin.agent.get('/api/v1/roles').expect(200)).body.data.find((role: { isSystemRole: boolean }) => role.isSystemRole);
       await admin.agent.patch(`/api/v1/roles/${systemRole.id}`).set('X-CSRF-Token', admin.csrfToken).send({ nameAr: 'غير مسموح' }).expect(422);
       await admin.agent.post(`/api/v1/roles/${roleId}/deactivate`).set('X-CSRF-Token', admin.csrfToken).send({ reason: 'انتهاء اختبار التكامل' }).expect(200);

@@ -8,4 +8,6 @@ export const inventoryPermissionPolicies = {
   manageCatalog: permission("inventory_catalog.manage"),
   createMovement: permission("inventory_movements.create"),
   reverseMovement: permission("inventory_movements.reverse"),
+  enterCount: permission("inventory_counts.enter"),
+  manageCounts: permission("inventory_counts.manage"),
 } as const satisfies Record<string, PermissionPolicy>;

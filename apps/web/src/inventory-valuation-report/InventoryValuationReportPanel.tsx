@@ -2,12 +2,15 @@ import { useCallback, useEffect, useState } from "react";
 import { api, downloadFile } from "../api";
 import { activeIntlLocale, localizedCopyFor, localizedReferenceName, useI18n } from "../i18n";
 import { inventoryValuationReportCopy } from "../i18n/locales/inventory-valuation-report";
+import { inventoryAgingReportCopy } from "../i18n/locales/inventory-aging-report";
 import type { InventoryBalance, InventoryItem, ListResponse, Warehouse } from "../types";
 import { Button, EmptyState, Spinner } from "../ui";
+import { InventoryAgingReportPanel } from "./InventoryAgingReportPanel";
 
 type Report = {
   generatedAt: string;
   basis: "CURRENT_BALANCE";
+  valuationPolicy: "MOVING_WEIGHTED_AVERAGE";
   rows: InventoryBalance[];
   totals: { rowCount: number; valuedRowCount: number; unvaluedRowCount: number; valuedInventoryValueBase: string };
 };
@@ -15,6 +18,7 @@ type Report = {
 export function InventoryValuationReportPanel({ notify }: { notify: (message: string, tone?: "success" | "error") => void }) {
   const { locale } = useI18n();
   const copy = localizedCopyFor(inventoryValuationReportCopy, locale, "ar");
+  const agingCopy = localizedCopyFor(inventoryAgingReportCopy, locale, "ar");
   const [report, setReport] = useState<Report | null>(null);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [items, setItems] = useState<InventoryItem[]>([]);
@@ -24,6 +28,7 @@ export function InventoryValuationReportPanel({ notify }: { notify: (message: st
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [reportMode, setReportMode] = useState<"valuation" | "aging">("valuation");
 
   const query = useCallback(() => new URLSearchParams({ valuationStatus, ...(warehouseId ? { warehouseId } : {}), ...(inventoryItemId ? { inventoryItemId } : {}), ...(search.trim() ? { search: search.trim() } : {}) }), [inventoryItemId, search, valuationStatus, warehouseId]);
   const load = useCallback(async () => {
@@ -47,6 +52,8 @@ export function InventoryValuationReportPanel({ notify }: { notify: (message: st
   const money = (value: string) => Number(value).toLocaleString(activeIntlLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 4 });
   const quantity = (value: string) => Number(value).toLocaleString(activeIntlLocale(), { maximumFractionDigits: 6 });
   return <>
+    <div className="toolbar"><Button variant={reportMode === "valuation" ? "primary" : "secondary"} onClick={() => setReportMode("valuation")}>{copy.title}</Button><Button variant={reportMode === "aging" ? "primary" : "secondary"} onClick={() => setReportMode("aging")}>{agingCopy.title}</Button></div>
+    {reportMode === "aging" ? <InventoryAgingReportPanel notify={notify} /> : <>
     <div className="subsection-heading"><div><h2>{copy.title}</h2><p>{copy.description}</p></div><Button variant="secondary" icon="document" onClick={() => void download()} disabled={loading || !report}>{copy.download}</Button></div>
     <div className="toolbar treasury-filters inventory-catalog-toolbar">
       <input aria-label={copy.search} placeholder={copy.search} value={search} onChange={(event) => setSearch(event.target.value)} />
@@ -57,7 +64,8 @@ export function InventoryValuationReportPanel({ notify }: { notify: (message: st
     {error ? <div className="form-error" role="alert">{error} <Button variant="ghost" onClick={() => void load()}>{copy.loading}</Button></div> : loading ? <Spinner label={copy.loading} /> : report && <>
       <div className="metric-grid statement-metrics"><article className="metric-card"><span>{copy.total}</span><strong dir="ltr">{money(report.totals.valuedInventoryValueBase)}</strong><small>{copy.valued}</small></article><article className="metric-card neutral"><span>{copy.rows}</span><strong>{report.totals.rowCount.toLocaleString(activeIntlLocale())}</strong><small>{new Date(report.generatedAt).toLocaleString(activeIntlLocale())}</small></article></div>
       {report.totals.unvaluedRowCount > 0 && <div className="inline-notice warning" role="alert">{copy.warning.replace("{count}", report.totals.unvaluedRowCount.toLocaleString(activeIntlLocale()))}</div>}
-      {!report.rows.length ? <EmptyState title={copy.empty} description={copy.description} /> : <div className="data-table-wrap" role="region" tabIndex={0} aria-label={copy.title}><table className="data-table"><thead><tr><th>{copy.item}</th><th>{copy.unit}</th><th>{copy.warehouse}</th><th>{copy.quantity}</th><th>{copy.averageCost}</th><th>{copy.value}</th><th>{copy.status}</th></tr></thead><tbody>{report.rows.map((row) => <tr key={row.id}><td><strong>{localizedReferenceName(row.inventoryItem)}</strong><small dir="ltr">{row.inventoryItem.code}</small></td><td dir="ltr">{row.inventoryItem.unitOfMeasure.code}</td><td><strong>{localizedReferenceName(row.warehouse)}</strong><small dir="ltr">{row.warehouse.code}</small></td><td dir="ltr">{quantity(row.onHand)}</td><td dir="ltr">{row.isValuationInitialized ? money(row.averageUnitCostBase) : "—"}</td><td dir="ltr">{row.isValuationInitialized ? money(row.inventoryValueBase) : "—"}</td><td><span className={`status-chip ${row.isValuationInitialized ? "active" : "inactive"}`}>{row.isValuationInitialized ? copy.valued : copy.unvalued}</span></td></tr>)}</tbody></table></div>}
+      {!report.rows.length ? <EmptyState title={copy.empty} description={copy.description} /> : <div className="data-table-wrap" role="region" tabIndex={0} aria-label={copy.title}><table className="data-table"><thead><tr><th>{copy.item}</th><th>{copy.unit}</th><th>{copy.warehouse}</th><th>{copy.quantity}</th><th>{copy.averageCost}</th><th>{copy.value}</th><th>{copy.status}</th></tr></thead><tbody>{report.rows.map((row) => <tr key={row.id}><td><strong>{localizedReferenceName(row.inventoryItem)}</strong><small dir="ltr">{row.inventoryItem.primaryBarcode ?? "—"}</small></td><td dir="ltr">{row.inventoryItem.unitOfMeasure.code}</td><td><strong>{localizedReferenceName(row.warehouse)}</strong><small dir="ltr">{row.warehouse.code}</small></td><td dir="ltr">{quantity(row.onHand)}</td><td dir="ltr">{row.isValuationInitialized ? money(row.averageUnitCostBase) : "—"}</td><td dir="ltr">{row.isValuationInitialized ? money(row.inventoryValueBase) : "—"}</td><td><span className={`status-chip ${row.isValuationInitialized ? "active" : "inactive"}`}>{row.isValuationInitialized ? copy.valued : copy.unvalued}</span></td></tr>)}</tbody></table></div>}
+    </>}
     </>}
   </>;
 }

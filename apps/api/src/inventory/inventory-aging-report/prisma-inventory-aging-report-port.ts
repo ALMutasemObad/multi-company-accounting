@@ -20,20 +20,24 @@ export class PrismaInventoryAgingReportPort implements InventoryAgingReportPort 
         isValuationInitialized: true,
         inventoryItem: {
           select: {
-            code: true,
             nameAr: true,
             unitOfMeasure: { select: { code: true } },
+            barcodes: {
+              where: { isPrimary: true, isActive: true },
+              select: { value: true },
+              take: 1,
+            },
           },
         },
         warehouse: { select: { code: true, nameAr: true } },
       },
-      orderBy: [{ warehouse: { code: "asc" } }, { inventoryItem: { code: "asc" } }],
+      orderBy: [{ warehouse: { code: "asc" } }, { inventoryItem: { nameAr: "asc" } }],
     });
 
     return balances.map((balance) => ({
       balanceId: balance.id,
       inventoryItemId: balance.inventoryItemId,
-      itemCode: balance.inventoryItem.code,
+      barcode: balance.inventoryItem.barcodes[0]?.value ?? null,
       itemName: balance.inventoryItem.nameAr,
       unitOfMeasureCode: balance.inventoryItem.unitOfMeasure.code,
       warehouseId: balance.warehouseId,
@@ -83,4 +87,3 @@ export class PrismaInventoryAgingReportPort implements InventoryAgingReportPort 
     })));
   }
 }
-
