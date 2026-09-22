@@ -832,7 +832,7 @@ export function responseFor(url, method, headers = {}) {
     { id: "unit-ea", code: "EA", nameAr: "حبة", nameEn: "Each", decimalPlaces: 0, isActive: true, version: 0 },
   ]);
   if (pathname === "/inventory-items") return list([
-    { id: "item-qa", code: "ITM-000001", nameAr: "صنف تجريبي", nameEn: "Sample item", description: "صنف مخصص للفحص البصري", isActive: true, version: 0, image: { version: 1, thumbnailUrl: "/api/v1/inventory-items/201/image/inventory?v=1" }, unitOfMeasure: { id: "unit-ea", code: "EA", nameAr: "حبة", nameEn: "Each", decimalPlaces: 0, isActive: true, version: 0 } },
+    { id: "item-qa", code: "ITM-000001", primaryBarcode: { id: "barcode-qa", symbology: "CODE_128", value: "QA-ITEM-000001" }, nameAr: "صنف تجريبي", nameEn: "Sample item", description: "صنف مخصص للفحص البصري", isActive: true, version: 0, image: { version: 1, thumbnailUrl: "/api/v1/inventory-items/201/image/inventory?v=1" }, unitOfMeasure: { id: "unit-ea", code: "EA", nameAr: "حبة", nameEn: "Each", decimalPlaces: 0, isActive: true, version: 0 } },
   ]);
   if (pathname === "/warehouses") return list([
     { id: "warehouse-qa", code: "WH-000001", nameAr: "المستودع الرئيسي", nameEn: "Main warehouse", address: "الرياض", isActive: true, version: 0 },
