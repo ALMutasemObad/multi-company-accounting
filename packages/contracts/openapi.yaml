@@ -10909,6 +10909,50 @@ paths:
         '400': { $ref: '#/components/responses/ValidationError' }
       x-permission: reports.journal.export
       security: [{ SessionCookie: [] }]
+  /reports/inventory-counts:
+    get:
+      tags: [Reports]
+      summary: قائمة محاضر الجرد المتاحة في مركز التقارير
+      operationId: listInventoryCountReports
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: جلسات الجرد للشركة الحالية
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data, meta]
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/InventoryCountSession' } }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: inventory_counts.manage
+      security: [{ SessionCookie: [] }]
+  /reports/inventory-counts/{sessionId}/pdf:
+    get:
+      tags: [Reports]
+      summary: محضر الجرد الكامل بصيغة PDF للطباعة من المتصفح
+      operationId: printInventoryCountReportPdf
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/InventoryCountSessionId'
+      responses:
+        '200':
+          description: محضر كامل لكل بنود الجلسة دون ترقيم صفحات API
+          content: { application/pdf: { schema: { type: string, format: binary } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: inventory_counts.manage
+      security: [{ SessionCookie: [] }]
   /reports/financial-position:
     get:
       tags: [Reports]

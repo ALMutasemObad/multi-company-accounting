@@ -83,7 +83,7 @@ export const viewPermissionPolicies: Record<TenantProtectedView, PermissionPolic
   accounts: accountPermissionPolicies.workspace,
   treasury: { permission: "cash_bank_accounts.view" },
   inventory: { permission: "warehouses.view" },
-  reports: { permission: "reports.cash_flow.view" },
+  reports: { anyOf: ["reports.cash_flow.view", "inventory_counts.manage"] },
   imports: { permission: "data_imports.view" },
   admin: adminPermissionPolicies.navigation,
   audit: { permission: "audit_logs.view" },
@@ -142,6 +142,10 @@ export function isNavigationItemVisible(
   if (!access.hasSelectedCompany) return false;
   if (item.view === "home") return true;
   if (item.view === "accountSecurity") return true;
+  if (item.view === "reports") {
+    return (access.moduleSet.has("REPORTING") && access.permissionSet.has("reports.cash_flow.view"))
+      || (access.moduleSet.has("INVENTORY") && access.permissionSet.has("inventory_counts.manage"));
+  }
   if (item.module && !access.moduleSet.has(item.module)) return false;
   if (item.view === "settings") {
     return allows(access.permissionSet, viewPermissionPolicies.settings)

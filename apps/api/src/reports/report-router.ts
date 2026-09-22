@@ -1,11 +1,13 @@
 import { Router, type ErrorRequestHandler, type Request } from "express";
 import { z, ZodError } from "zod";
 import type { AuthService } from "../auth/auth-service.js";
+import { InventoryCountError, type InventoryCountService } from "../inventory/inventory-count/inventory-count-service.js";
 import { openApiRequestBodySchemas as bodies } from "../generated/openapi-request-guards.js";
 import { CashFlowError, type CashFlowService } from "./cash-flow-service.js";
 import { CostCenterActivityError, type CostCenterActivityService } from "./cost-center-activity-service.js";
 import { TaxSummaryError, type TaxSummaryService } from "./tax-summary-service.js";
 import { ReportError, ReportService } from "./report-service.js";
+import { inventoryCountReportPdf } from "./inventory-count-report-pdf.js";
 import { costCenterActivityTable, financialPositionTable, incomeStatementTable, indirectCashFlowTable, journalReportToCsv, ledgerReportTable, tableToCsv, tableToPdf, tableToXlsx, taxSummaryTable } from "./financial-statement-exporter.js";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -32,12 +34,32 @@ const journalQuery = query.and(z.object({
   accountId: id.optional(), search: z.string().trim().min(1).max(200).optional(),
   page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(25),
 }));
+const inventoryCountListQuery = z.object({ page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(25) });
 function sid(request: Request) {
   return Object.fromEntries((request.headers.cookie ?? "").split(";").map((value) => value.trim().split("=", 2)).filter(([key, value]) => key && value)).sid;
 }
-export function createReportRouter(auth: AuthService, service: ReportService, cashFlow?: CashFlowService, taxSummary?: TaxSummaryService, costCenterActivity?: CostCenterActivityService) {
+export function createReportRouter(auth: AuthService, service: ReportService, cashFlow?: CashFlowService, taxSummary?: TaxSummaryService, costCenterActivity?: CostCenterActivityService, inventoryCount?: InventoryCountService) {
   const router = Router();
   const authorize = (request: Request, permission: string, requireCsrf = false) => auth.authorize({ sid: sid(request), csrfToken: request.header("X-CSRF-Token") ?? undefined, permission, requireCsrf });
+  if (inventoryCount) {
+    router.get("/reports/inventory-counts", async (request, response) => {
+      const context = await authorize(request, "inventory_counts.manage");
+      const parameters = inventoryCountListQuery.parse(request.query);
+      const result = await inventoryCount.listSessions(context, parameters);
+      response.json({ data: result.data, meta: { ...parameters, total: result.total, totalPages: Math.ceil(result.total / parameters.pageSize) } });
+    });
+    router.get("/reports/inventory-counts/:sessionId/pdf", async (request, response) => {
+      const context = await authorize(request, "inventory_counts.manage");
+      const sessionId = id.parse(request.params.sessionId);
+      const report = await inventoryCount.report(context, sessionId);
+      const content = await inventoryCountReportPdf(report, await service.companyName(context));
+      await service.recordInventoryCountExport(context, report.session.id, report.rows.length);
+      response.setHeader("Content-Type", "application/pdf");
+      response.setHeader("Content-Disposition", `inline; filename="inventory-count-${report.session.id}.pdf"`);
+      response.setHeader("X-Report-Row-Count", String(report.rows.length));
+      response.send(content);
+    });
+  }
   router.get("/reports/dashboard", async (request, response) => {
     const context = await authorize(request, "dashboard.view");
     response.json(await service.dashboard(context, query.parse(request.query)));
@@ -183,6 +205,11 @@ export function createReportRouter(auth: AuthService, service: ReportService, ca
     }
     if (error instanceof ReportError) {
       response.status(404).json({ status: 404, code: error.reason });
+      return;
+    }
+    if (error instanceof InventoryCountError) {
+      const status = error.reason === "NOT_FOUND" ? 404 : 422;
+      response.status(status).json({ status, code: "BUSINESS_RULE_VIOLATION", reason: error.reason });
       return;
     }
     if (error instanceof CashFlowError) {

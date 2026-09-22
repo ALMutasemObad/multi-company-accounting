@@ -520,7 +520,7 @@ export default function App() {
             {activeView === "accounts" && <AccountsPage notify={notify} />}
             {activeRoute.view === "treasury" && <TreasuryPage notify={notify} section={activeRoute.section} />}
             {activeRoute.view === "inventory" && <InventoryPage notify={notify} section={activeRoute.section} onSectionChange={(section) => navigateRoute({ view: "inventory", section })} />}
-            {activeView === "reports" && <ReportsPage />}
+            {activeView === "reports" && <ReportsPage canViewFinancialReports={navigationAccess.permissionSet.has("reports.cash_flow.view")} canManageInventoryCounts={navigationAccess.permissionSet.has("inventory_counts.manage")} canExportInventoryCountExcel={navigationAccess.permissionSet.has("inventory_movements.view")} />}
             {activeView === "imports" && <DataImportsPage notify={notify} />}
             {activeView === "admin" && <AdminPage notify={notify} />}
             {activeView === "audit" && <AuditLogsPage notify={notify} onNavigate={navigate} />}
