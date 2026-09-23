@@ -100,7 +100,7 @@ const routers = [
   { prefix: '', router: createSalesInvoiceRouter(stub, stub) },
   { prefix: '', router: createSellingProfileRouter(stub, stub) },
   { prefix: '', router: createPurchaseInvoiceRouter(stub, stub) },
-  { prefix: '', router: createReportRouter(stub, stub, stub, stub, stub) },
+  { prefix: '', router: createReportRouter(stub, stub, stub, stub, stub, stub) },
   { prefix: '', router: createDataImportRouter(stub, stub) },
   { prefix: '', router: createPosRouter(stub, stub) },
   { prefix: '', router: createCashierContextRouter(stub, stub) },
