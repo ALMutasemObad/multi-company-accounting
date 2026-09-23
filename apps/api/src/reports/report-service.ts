@@ -84,6 +84,23 @@ export function monthlyCashFlow(receipts: CashMovement[], payments: CashMovement
 export class ReportService {
   constructor(private readonly prisma: PrismaClient) {}
 
+  async companyName(context: ActorContext) {
+    const company = await this.prisma.company.findUnique({ where: { id: context.companyId }, select: { name: true } });
+    if (!company) throw new ReportError("NOT_FOUND");
+    return company.name;
+  }
+
+  async recordInventoryCountExport(context: ActorContext, sessionId: string, rowCount: number) {
+    await appendAudit(this.prisma, { data: {
+      companyId: context.companyId,
+      actorUserId: context.userId,
+      action: "INVENTORY_COUNT_REPORT_EXPORTED",
+      entityType: "INVENTORY_COUNT_SESSION",
+      entityId: sessionId,
+      details: { format: "PDF", rowCount } as Prisma.InputJsonObject,
+    } });
+  }
+
   async dashboard(context: ActorContext, range: ReportRange) {
     const documentDate = { gte: asDate(range.dateFrom), lte: asDate(range.dateTo) };
     const [company, suppliers, customers, draftPayments, draftReceipts, receiptMonths, paymentMonths, recentReceipts, recentPayments] = await this.prisma.$transaction([

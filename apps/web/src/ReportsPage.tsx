@@ -1,6 +1,8 @@
 import {
   activeIntlLocale,
+  localizedCopyFor,
   localizedReferenceName,
+  useI18n,
   translate as t } from "./i18n";
 import { Fragment,
   type KeyboardEvent,
@@ -33,6 +35,8 @@ import type { Account,
   TaxSummaryStatus,
   TrialBalanceReport } from "./types";
 import { ReferenceCombobox } from "./ReferenceCombobox";
+import { InventoryCountReportsPanel } from "./report-center/InventoryCountReportsPanel";
+import { reportCenterCopy } from "./i18n/locales/report-center";
 import { Button,
   EmptyState,
   Pagination,
@@ -41,15 +45,21 @@ import { Button,
   Modal,
 } from "./ui";
 
-type Tab = "cash" | "tax" | "costCenters" | "trial" | "journal" | "ledger" | "position" | "income";
+type Tab = "cash" | "tax" | "costCenters" | "trial" | "journal" | "ledger" | "position" | "income" | "inventory";
 
 const reportTabOrder: readonly Tab[] = ["cash", "tax", "costCenters", "trial", "journal", "ledger", "position", "income"];
 const reportTabId = (tab: Tab) => `reports-tab-${tab}`;
 const reportPanelId = "reports-panel";
 
-export function ReportsPage() {
+export function ReportsPage({ canViewFinancialReports = true, canManageInventoryCounts = false, canExportInventoryCountExcel = false }: { canViewFinancialReports?: boolean; canManageInventoryCounts?: boolean; canExportInventoryCountExcel?: boolean }) {
+  const { locale } = useI18n();
+  const reportLabels = localizedCopyFor(reportCenterCopy, locale, "ar");
   const initial = currentYearRange();
-  const [tab, setTab] = useState<Tab>("cash");
+  const [tab, setTab] = useState<Tab>(canViewFinancialReports ? "cash" : "inventory");
+  const availableTabOrder: readonly Tab[] = canViewFinancialReports
+    ? (canManageInventoryCounts ? [...reportTabOrder, "inventory"] : reportTabOrder)
+    : ["inventory"];
+  useEffect(() => { if (!canViewFinancialReports) setTab("inventory"); }, [canViewFinancialReports]);
   const [dateFrom, setDateFrom] = useState(initial.dateFrom);
   const [dateTo, setDateTo] = useState(initial.dateTo);
   const [compareEnabled, setCompareEnabled] = useState(false);
@@ -185,24 +195,24 @@ export function ReportsPage() {
   }
 
   function moveTabFocus(event: KeyboardEvent<HTMLButtonElement>, current: Tab) {
-    const currentIndex = reportTabOrder.indexOf(current);
+    const currentIndex = availableTabOrder.indexOf(current);
     const rtl = getComputedStyle(event.currentTarget).direction === "rtl";
     let nextIndex: number | null = null;
     if (event.key === "Home") nextIndex = 0;
-    if (event.key === "End") nextIndex = reportTabOrder.length - 1;
-    if (event.key === "ArrowRight") nextIndex = (currentIndex + (rtl ? -1 : 1) + reportTabOrder.length) % reportTabOrder.length;
-    if (event.key === "ArrowLeft") nextIndex = (currentIndex + (rtl ? 1 : -1) + reportTabOrder.length) % reportTabOrder.length;
+    if (event.key === "End") nextIndex = availableTabOrder.length - 1;
+    if (event.key === "ArrowRight") nextIndex = (currentIndex + (rtl ? -1 : 1) + availableTabOrder.length) % availableTabOrder.length;
+    if (event.key === "ArrowLeft") nextIndex = (currentIndex + (rtl ? 1 : -1) + availableTabOrder.length) % availableTabOrder.length;
     if (nextIndex == null) return;
     event.preventDefault();
-    const nextTab = reportTabOrder[nextIndex]!;
+    const nextTab = availableTabOrder[nextIndex]!;
     setTab(nextTab);
     requestAnimationFrame(() => document.getElementById(reportTabId(nextTab))?.focus());
   }
 
   const comparisonInvalid = (tab === "position" || tab === "income") && compareEnabled && (!compareDateFrom || !compareDateTo || compareDateFrom > compareDateTo);
   const invalid = !dateFrom || !dateTo || dateFrom > dateTo || comparisonInvalid || (tab === "ledger" && !statementSubjectId);
-  const hasData = tab === "cash" ? cashFlow : tab === "tax" ? taxSummary : tab === "costCenters" ? costCenterActivity : tab === "trial" ? trial : tab === "journal" ? journal : tab === "ledger" ? ledger : tab === "position" ? position : income;
-  const reportTabs: Array<{ tab: Tab; label: string }> = [
+  const hasData = tab === "inventory" ? true : tab === "cash" ? cashFlow : tab === "tax" ? taxSummary : tab === "costCenters" ? costCenterActivity : tab === "trial" ? trial : tab === "journal" ? journal : tab === "ledger" ? ledger : tab === "position" ? position : income;
+  const financialTabs: Array<{ tab: Tab; label: string }> = [
     { tab: "cash", label: t("pages.reports.006") },
     { tab: "tax", label: t("taxSummary.tab") },
     { tab: "costCenters", label: t("costCenterActivity.tab") },
@@ -212,9 +222,13 @@ export function ReportsPage() {
     { tab: "position", label: t("pages.reports.009") },
     { tab: "income", label: t("pages.reports.010") },
   ];
+  const reportTabs: Array<{ tab: Tab; label: string }> = [
+    ...(canViewFinancialReports ? financialTabs : []),
+    ...(canManageInventoryCounts ? [{ tab: "inventory" as const, label: reportLabels.countTab }] : []),
+  ];
   return <section className="workspace-page reports-page">
-    <PageHeader kicker={t("pages.reports.003")} title={t("pages.reports.004")} description={t("pages.reports.005")} />
-    <div className="section-tabs report-tabs" role="tablist" aria-label={t("pages.reports.004")}>
+    <PageHeader kicker={t("pages.reports.003")} title={reportLabels.title} description={reportLabels.description} />
+    <div className="section-tabs report-tabs" role="tablist" aria-label={reportLabels.title}>
       {reportTabs.map((item) => <button
         key={item.tab}
         type="button"
@@ -229,6 +243,8 @@ export function ReportsPage() {
       >{item.label}</button>)}
     </div>
     <div id={reportPanelId} role="tabpanel" aria-labelledby={reportTabId(tab)}>
+    {tab === "inventory" && canManageInventoryCounts && <InventoryCountReportsPanel canExportExcel={canExportInventoryCountExcel} />}
+    {tab !== "inventory" && <>
     <div className="report-toolbar">
       {tab !== "position" && <label><span>{t("pages.audit-logs.018")}</span><input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label>}
       <label><span>{tab === "position" ? t("pages.purchase-invoices.112") : t("pages.audit-logs.019")}</span><input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label>
@@ -266,6 +282,7 @@ export function ReportsPage() {
       {tab === "income" && income && <IncomeStatementView report={income} onLedger={(id) => void openLedger(id)} onExport={(format) => void exportReport(format)} />}
       {ledgerLoading && <Spinner label={t("pages.reports.037")} />}
       {tab !== "ledger" && ledger && <LedgerView report={ledger} onClose={() => setLedger(null)} />}
+    </>}
     </>}
     </div>
     {mappingOpen && <CashFlowMappingModal onClose={() => setMappingOpen(false)} onChanged={() => void load()} />}

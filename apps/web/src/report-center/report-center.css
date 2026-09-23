@@ -1,0 +1,18 @@
+.report-center-counts { min-width: 0; }
+.report-center-counts > header { padding: 20px 24px; }
+.report-center-counts > header h2, .report-center-counts > header p { margin: 0; }
+.report-center-counts > header p { margin-top: 8px; color: var(--muted); }
+.report-center-records { display: grid; gap: 12px; padding: 0 24px 20px; }
+.report-center-record { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; padding: 16px; border: 1px solid var(--border); border-radius: 14px; }
+.report-center-record-main { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 22px; }
+.report-center-record-main strong { font-size: 1.15rem; }
+.report-center-record-main span { color: var(--muted); }
+.report-center-record-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.report-center-record-actions .button { text-decoration: none; }
+.report-center-pagination { display: flex; justify-content: center; align-items: center; gap: 12px; padding: 12px; border-top: 1px solid var(--border); }
+.report-center-empty { padding: 20px 24px; }
+@media (max-width: 700px) {
+  .report-center-records { padding: 0 12px 16px; }
+  .report-center-record, .report-center-record-main, .report-center-record-actions { width: 100%; }
+  .report-center-record-main { display: grid; }
+}

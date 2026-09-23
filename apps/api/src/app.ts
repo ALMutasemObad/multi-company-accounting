@@ -459,7 +459,7 @@ export function createApp(config: AppConfig, services: AppServices = {}) {
   if (services.auth && services.taxes) app.use('/api/v1', createTaxRouter(services.auth, services.taxes));
   if (services.auth && services.salesInvoices) app.use('/api/v1', createSalesInvoiceRouter(services.auth, services.salesInvoices));
   if (services.auth && services.purchaseInvoices) app.use('/api/v1', createPurchaseInvoiceRouter(services.auth, services.purchaseInvoices));
-  if (services.auth && services.reports) app.use('/api/v1', createReportRouter(services.auth, services.reports, services.cashFlow, services.taxSummary, services.costCenterActivity));
+  if (services.auth && services.reports) app.use('/api/v1', createReportRouter(services.auth, services.reports, services.cashFlow, services.taxSummary, services.costCenterActivity, services.inventoryMovements?.inventoryCount));
   if (services.auth && services.dataImports) app.use('/api/v1', createDataImportRouter(services.auth, services.dataImports));
   if (services.auth && services.pos) app.use('/api/v1', createPosRouter(services.auth, services.pos, services.posRecovery));
   if (services.auth && services.posContext) app.use('/api/v1', createCashierContextRouter(services.auth, services.posContext));
