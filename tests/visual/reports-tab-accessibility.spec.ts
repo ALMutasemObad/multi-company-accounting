@@ -4,7 +4,7 @@ const auditedProjects = new Set(["mobile-390", "desktop-1440"]);
 const tabIds = ["cash", "tax", "costCenters", "trial", "journal", "ledger", "position", "income"] as const;
 
 async function expectSelectedTab(page: Page, selectedIndex: number) {
-  const tablist = page.getByRole("tablist", { name: "التقارير المالية" });
+  const tablist = page.getByRole("tablist", { name: "مركز التقارير" });
   const tabs = tablist.getByRole("tab");
   for (const [index, tabId] of tabIds.entries()) {
     const item = tabs.nth(index);
@@ -30,7 +30,7 @@ test("reports tabs expose one labelled, keyboard-navigable active panel", async 
   await page.addInitScript(() => window.localStorage.setItem("mcap.locale", "ar"));
   await page.goto("/?qa=reports#reports");
 
-  const tablist = page.getByRole("tablist", { name: "التقارير المالية" });
+  const tablist = page.getByRole("tablist", { name: "مركز التقارير" });
   await expect(tablist).toBeVisible();
   const tabs = tablist.getByRole("tab");
   await expect(tabs).toHaveCount(tabIds.length);
