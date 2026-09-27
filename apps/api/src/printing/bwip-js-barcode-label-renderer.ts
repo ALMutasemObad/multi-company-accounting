@@ -33,7 +33,7 @@ export class BwipJsBarcodeLabelRenderer implements BarcodeLabelRendererPort {
     const maxWidth = input.profile === "compact-75x50" ? 568 : 368;
     try {
       let smallestSvg = "";
-      for (const scale of [4, 3, 2]) {
+      for (const scale of [4, 3, 2, 1]) {
         const isLinear = input.symbology !== "QR";
         const svg = toSVG({
           bcid,

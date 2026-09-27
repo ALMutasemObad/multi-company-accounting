@@ -1,5 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
-import { ApiError, api, downloadFile } from "./api";
+import { ApiError, api, downloadFile, fetchFileBlob } from "./api";
 import { allows, type PermissionPolicy } from "./authorization";
 import { Can, useAuthorization } from "./authorization-context";
 import {
@@ -502,6 +502,12 @@ function BarcodeManager({ item, notify, onClose }: { item: InventoryItem; notify
   const [creating, setCreating] = useState(false);
   const [busyBarcodeId, setBusyBarcodeId] = useState("");
   const [downloadingBarcodeId, setDownloadingBarcodeId] = useState("");
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [previewBarcode, setPreviewBarcode] = useState("");
+  const [previewSettings, setPreviewSettings] = useState<BarcodeSettings | null>(null);
+  const [previewItem, setPreviewItem] = useState<InventoryItem | null>(null);
+
+  useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
 
   const load = useCallback(async () => {
     if (!canView) return;
@@ -604,6 +610,31 @@ function BarcodeManager({ item, notify, onClose }: { item: InventoryItem; notify
     }
   }
 
+  async function viewCompactLabel(barcode: InventoryItemBarcode) {
+    if (!canPrintInventoryBarcode(permissionSet, item.isActive, barcode.isActive)
+      || busyBarcodeId || downloadingBarcodeId) return;
+    setBusyBarcodeId(barcode.id);
+    setCommandError("");
+    setPreviewUrl("");
+    setPreviewSettings(null);
+    setPreviewItem(null);
+    try {
+      const [blob, settings, currentItem] = await Promise.all([
+        fetchFileBlob(`/inventory-items/${encodeURIComponent(item.id)}/barcodes/${encodeURIComponent(barcode.id)}/label.png`),
+        api<BarcodeSettings>("/inventory-barcode-settings", { cache: "no-store" }),
+        api<InventoryItem>(`/inventory-items/${encodeURIComponent(item.id)}`, { cache: "no-store" }),
+      ]);
+      setPreviewUrl(URL.createObjectURL(blob));
+      setPreviewBarcode(barcode.value);
+      setPreviewSettings(settings);
+      setPreviewItem(currentItem);
+    } catch (cause) {
+      setCommandError(cause instanceof Error ? cause.message : t("inventory.barcodes.labelDownloadError"));
+    } finally {
+      setBusyBarcodeId("");
+    }
+  }
+
   return <Modal title={t("inventory.barcodes.title", { item: localizedReferenceName(item) })} description={t("inventory.barcodes.description", { code: item.primaryBarcode?.value ?? "—" })} onClose={onClose} wide>
     <div className="barcode-manager-toolbar">
       <select aria-label={t("inventory.barcodes.statusFilter")} value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }}>
@@ -616,7 +647,20 @@ function BarcodeManager({ item, notify, onClose }: { item: InventoryItem; notify
     {item.publicationIdentifier && <div className="inline-notice neutral">{t("inventory.barcodes.publicationIdentifierNote", { value: item.publicationIdentifier })}</div>}
     {creating && canManage && <BarcodeCreateForm itemId={item.id} publicationIdentifier={item.publicationIdentifier} canManage={canManage} onCancel={() => setCreating(false)} onCreated={async () => { notify(t("inventory.barcodes.created")); await load(); setCreating(false); }} />}
     {commandError && <div className="inline-notice" role="alert">{commandError}</div>}
-    {error ? <ErrorPanel error={error} retry={load} /> : loading ? <Spinner label={t("inventory.barcodes.loading")} /> : !barcodes.length ? <EmptyState title={t("inventory.barcodes.emptyTitle")} description={t("inventory.barcodes.emptyDescription")} /> : <div className="data-table-wrap flat barcode-table" role="region" tabIndex={0} aria-label={t("inventory.barcodes.tableLabel")}><table className="data-table"><thead><tr><th>{t("inventory.barcodes.value")}</th><th>{t("inventory.barcodes.symbology")}</th><th>{t("inventory.barcodes.primary")}</th><th>{t("inventory.status")}</th><th>{t("inventory.actions")}</th></tr></thead><tbody>{barcodes.map((barcode) => <tr key={barcode.id}><td><strong dir="ltr">{barcode.value}</strong></td><td><span className="code-pill" dir="ltr">{t(`inventory.barcodes.symbologies.${barcode.symbology}`)}</span></td><td><span className={`status-chip ${barcode.isPrimary ? "active" : "inactive"}`}>{t(barcode.isPrimary ? "inventory.barcodes.primaryYes" : "inventory.barcodes.primaryNo")}</span></td><td><Status active={barcode.isActive} /></td><td><div className="inline-actions">{canPrintInventoryBarcode(permissionSet, item.isActive, barcode.isActive) && <Button variant="ghost" icon="print" disabled={Boolean(busyBarcodeId || downloadingBarcodeId)} onClick={() => void downloadLabel(barcode)}>{downloadingBarcodeId === barcode.id ? t("inventory.barcodes.labelDownloading") : t("inventory.barcodes.downloadLabel")}</Button>}{canPrintInventoryBarcode(permissionSet, item.isActive, barcode.isActive) && <Button variant="ghost" icon="print" disabled={Boolean(busyBarcodeId || downloadingBarcodeId)} onClick={() => void downloadCompactLabel(barcode)}>{t("inventory.barcodes.printCompactLabel")}</Button>}{canManage && barcode.isActive && !barcode.isPrimary && <Button variant="ghost" icon="check" disabled={Boolean(busyBarcodeId || downloadingBarcodeId)} onClick={() => void setPrimary(barcode)}>{t("inventory.barcodes.setPrimary")}</Button>}{canManage && barcode.isActive && <Button variant="ghost" icon="ban" disabled={Boolean(busyBarcodeId || downloadingBarcodeId)} onClick={() => void deactivate(barcode)}>{t("inventory.barcodes.deactivate")}</Button>}</div></td></tr>)}</tbody></table></div>}
+    {previewUrl && previewSettings && previewItem && <section className="barcode-label-preview" aria-label={t("inventory.barcodes.previewTitle", { value: previewBarcode })}>
+      <div className="barcode-label-preview-heading"><strong>{t("inventory.barcodes.previewTitle", { value: previewBarcode })}</strong><Button variant="ghost" onClick={() => { setPreviewUrl(""); setPreviewBarcode(""); setPreviewSettings(null); setPreviewItem(null); }}>{t("common.close")}</Button></div>
+      <div className={`barcode-label-preview-paper size-${previewSettings.labelSize}`}>
+        {previewSettings.showItemName && <strong className="barcode-label-preview-name">{previewItem.nameAr}</strong>}
+        {(previewSettings.showPeriodicalYear && previewItem.periodicalYear || previewSettings.showIssueNumber && previewItem.issueNumber || previewSettings.showPublicationYear && previewItem.publicationYear) && <span className="barcode-label-preview-details" dir="rtl">{[
+          previewSettings.showPeriodicalYear && previewItem.periodicalYear && t("inventory.barcodes.previewPeriodicalYear", { value: previewItem.periodicalYear }),
+          previewSettings.showIssueNumber && previewItem.issueNumber && t("inventory.barcodes.previewIssueNumber", { value: previewItem.issueNumber }),
+          previewSettings.showPublicationYear && previewItem.publicationYear && String(previewItem.publicationYear),
+        ].filter(Boolean).join(" ، ")}</span>}
+        <img src={previewUrl} alt={t("inventory.barcodes.previewTitle", { value: previewBarcode })} />
+      </div>
+      <p className="barcode-label-preview-note">{t("inventory.barcodes.previewNote")}</p>
+    </section>}
+    {error ? <ErrorPanel error={error} retry={load} /> : loading ? <Spinner label={t("inventory.barcodes.loading")} /> : !barcodes.length ? <EmptyState title={t("inventory.barcodes.emptyTitle")} description={t("inventory.barcodes.emptyDescription")} /> : <div className="data-table-wrap flat barcode-table" role="region" tabIndex={0} aria-label={t("inventory.barcodes.tableLabel")}><table className="data-table"><thead><tr><th>{t("inventory.barcodes.value")}</th><th>{t("inventory.barcodes.symbology")}</th><th>{t("inventory.barcodes.primary")}</th><th>{t("inventory.status")}</th><th>{t("inventory.actions")}</th></tr></thead><tbody>{barcodes.map((barcode) => <tr key={barcode.id}><td><strong dir="ltr">{barcode.value}</strong></td><td><span className="code-pill" dir="ltr">{t(`inventory.barcodes.symbologies.${barcode.symbology}`)}</span></td><td><span className={`status-chip ${barcode.isPrimary ? "active" : "inactive"}`}>{t(barcode.isPrimary ? "inventory.barcodes.primaryYes" : "inventory.barcodes.primaryNo")}</span></td><td><Status active={barcode.isActive} /></td><td><div className="inline-actions">{canPrintInventoryBarcode(permissionSet, item.isActive, barcode.isActive) && <Button variant="ghost" icon="print" disabled={Boolean(busyBarcodeId || downloadingBarcodeId)} onClick={() => void downloadLabel(barcode)}>{downloadingBarcodeId === barcode.id ? t("inventory.barcodes.labelDownloading") : t("inventory.barcodes.downloadLabel")}</Button>}{canPrintInventoryBarcode(permissionSet, item.isActive, barcode.isActive) && <Button variant="ghost" disabled={Boolean(busyBarcodeId || downloadingBarcodeId)} onClick={() => void viewCompactLabel(barcode)}>{t("inventory.barcodes.viewCompactLabel")}</Button>}{canPrintInventoryBarcode(permissionSet, item.isActive, barcode.isActive) && <Button variant="ghost" icon="print" disabled={Boolean(busyBarcodeId || downloadingBarcodeId)} onClick={() => void downloadCompactLabel(barcode)}>{t("inventory.barcodes.printCompactLabel")}</Button>}{canManage && barcode.isActive && !barcode.isPrimary && <Button variant="ghost" icon="check" disabled={Boolean(busyBarcodeId || downloadingBarcodeId)} onClick={() => void setPrimary(barcode)}>{t("inventory.barcodes.setPrimary")}</Button>}{canManage && barcode.isActive && <Button variant="ghost" icon="ban" disabled={Boolean(busyBarcodeId || downloadingBarcodeId)} onClick={() => void deactivate(barcode)}>{t("inventory.barcodes.deactivate")}</Button>}</div></td></tr>)}</tbody></table></div>}
     <Pagination {...meta} page={page} onChange={setPage} />
   </Modal>;
 }

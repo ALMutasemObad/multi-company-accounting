@@ -39,12 +39,32 @@ describe("50 x 25 mm barcode labels", () => {
     expect(pdf.toString("latin1")).not.toContain("/Subtype /Image");
   });
 
-  it("rejects a long symbol instead of shrinking its modules into an unreadable label", async () => {
+  it("fits a longer Code 128 value at native one-dot modules", async () => {
     const svg = renderer.renderSvg({
       symbology: "CODE_128", value: "BK-9E5C5A698405DE98", profile: "compact-50x25",
     });
-    expect(() => renderCompactBarcodeLabelPdf({
+    expect(Number(svg.match(/^<svg viewBox="0 0 ([\d.]+) /u)?.[1])).toBeLessThanOrEqual(368);
+    const pdf = await renderCompactBarcodeLabelPdf({
       svg, value: "BK-9E5C5A698405DE98", itemName: "مجلة تاريخية", issueNumber: null, periodicalYear: null, publicationYear: null,
+    });
+    expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
+  });
+
+  it("fits the al-Darah issue with name and details by reducing only bar height", async () => {
+    const svg = renderer.renderSvg({ symbology: "CODE_128", value: "13190148", profile: "compact-50x25" });
+    const pdf = await renderCompactBarcodeLabelPdf({
+      svg, value: "13190148", itemName: "الدارة", issueNumber: "الرابع", periodicalYear: "الحادية والخمسون", publicationYear: null,
+      settings: { ...defaultBarcodeLabelSettings, showItemName: true, showIssueNumber: true, showPeriodicalYear: true },
+    });
+    expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
+    expect(pdf.toString("latin1")).toContain(`0 0 ${COMPACT_LABEL_WIDTH_PT.toFixed(6)} ${COMPACT_LABEL_HEIGHT_PT.toFixed(6)}`);
+  });
+
+  it("still refuses a one-dimensional barcode that exceeds the physical width even at one dot", () => {
+    const value = "BK-" + "A".repeat(80);
+    const svg = renderer.renderSvg({ symbology: "CODE_128", value, profile: "compact-50x25" });
+    expect(() => renderCompactBarcodeLabelPdf({
+      svg, value, itemName: "مجلة تاريخية", issueNumber: null, periodicalYear: null, publicationYear: null,
     })).toThrow(CompactLabelTooWideError);
   });
 

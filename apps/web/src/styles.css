@@ -1218,6 +1218,15 @@ h1, h2, h3, .brand strong { font-family: "Cairo", "Noto Sans Devanagari", Tahoma
 .barcode-create-form .form-error { margin: 0; }
 .barcode-create-form .form-actions { padding-top: 0; }
 .barcode-table td:first-child strong { overflow-wrap: anywhere; }
+.barcode-label-preview { margin: 16px 0; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: #f7faf8; }
+.barcode-label-preview-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.barcode-label-preview-heading strong { overflow-wrap: anywhere; }
+.barcode-label-preview-paper { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; box-sizing: border-box; width: min(100%, 500px); min-height: 250px; margin-inline: auto; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: white; color: #111; text-align: center; }
+.barcode-label-preview-paper.size-75x50 { width: min(100%, 450px); min-height: 300px; }
+.barcode-label-preview-name { max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 1rem; }
+.barcode-label-preview-details { font-size: .9rem; }
+.barcode-label-preview-paper img { display: block; width: min(100%, 420px); max-height: 150px; object-fit: contain; }
+.barcode-label-preview-note { margin: 12px 0 0; color: var(--muted); text-align: center; }
 
 .pos-layout { display: grid; gap: 20px; }
 .pos-checkout-form, .pos-history { overflow: hidden; }

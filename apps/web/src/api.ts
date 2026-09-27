@@ -261,21 +261,30 @@ export type DownloadOptions = RequestPolicy & {
   beforeSave?: (response: Response, signal: AbortSignal) => void | Promise<void>;
 };
 
+async function requestFile(path: string, signal: AbortSignal, headers?: HeadersInit) {
+  const response = await fetch(`/api/v1${path}`, { credentials: "include", ...(headers === undefined ? {} : { headers }), cache: "no-store", signal });
+  assertRequestActive(signal);
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    assertRequestActive(signal);
+    if (isSessionExpiry(path, response.status, body?.code, body?.reason)) {
+      clearCsrfToken();
+      expireSession();
+    }
+    throw new ApiError(messageForError(body.code, body.reason), response.status, body.code, body.reason);
+  }
+  const blob = await response.blob();
+  assertRequestActive(signal);
+  return { response, blob };
+}
+
+export async function fetchFileBlob(path: string, options: RequestPolicy = {}): Promise<Blob> {
+  return withinSessionRequest(async (signal) => (await requestFile(path, signal)).blob, options);
+}
+
 export async function downloadFile(path: string, fallbackFilename: string, options: DownloadOptions = {}) {
   return withinSessionRequest(async (signal) => {
-    const response = await fetch(`/api/v1${path}`, { credentials: "include", ...(options.headers === undefined ? {} : { headers: options.headers }), signal });
-    assertRequestActive(signal);
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
-      assertRequestActive(signal);
-      if (isSessionExpiry(path, response.status, body?.code, body?.reason)) {
-        clearCsrfToken();
-        expireSession();
-      }
-      throw new ApiError(messageForError(body.code, body.reason), response.status, body.code, body.reason);
-    }
-    const blob = await response.blob();
-    assertRequestActive(signal);
+    const { response, blob } = await requestFile(path, signal, options.headers);
     // A scoped caller checks response identity and its current view before any browser save.
     await options.beforeSave?.(response, signal);
     assertRequestActive(signal);

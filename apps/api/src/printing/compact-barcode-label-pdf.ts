@@ -25,7 +25,7 @@ export function rtlSafeArabicDigits(value: string) {
     [...digits].reverse().map((digit) => "٠١٢٣٤٥٦٧٨٩"[Number(digit)]!).join(""));
 }
 
-/** Keeps every barcode module at its 203-DPI size; a long value needs a shorter label barcode. */
+/** Place a vector barcode on the requested physical label without rasterizing its bars. */
 export function renderCompactBarcodeLabelPdf(input: {
   svg: string;
   value: string;
@@ -55,9 +55,13 @@ export function renderCompactBarcodeLabelPdf(input: {
   const barcodeY = !settings.showItemName && !details
     ? (pageHeight - heightPt) / 2
     : (settings.showItemName ? 15 : 3) + (details ? 10 : 0);
-  if (widthPt > pageWidth - 2 * marginPt || barcodeY + heightPt > pageHeight - marginPt) {
+  const availableHeightPt = pageHeight - marginPt - barcodeY;
+  if (widthPt > pageWidth - 2 * marginPt || availableHeightPt <= 0) {
     throw new CompactLabelTooWideError();
   }
+  // Text and metadata consume vertical room, not horizontal room. Reduce the
+  // barcode's height only when needed; its 203-DPI module widths stay intact.
+  const heightScale = Math.min(1, availableHeightPt / heightPt);
   return new Promise((resolve, reject) => {
     const pdf = new PDFDocument({
       size: [pageWidth, pageHeight],
@@ -84,7 +88,8 @@ export function renderCompactBarcodeLabelPdf(input: {
     });
     // Keep bars and their human-readable text as PDF paths. Rasterizing a PNG
     // through a browser and the 203-DPI Zebra driver distorted narrow bars.
-    pdf.save().translate((pageWidth - widthPt) / 2, barcodeY).scale(72 / PIXELS_PER_INCH);
+    pdf.save().translate((pageWidth - widthPt) / 2, barcodeY)
+      .scale(72 / PIXELS_PER_INCH, heightScale * 72 / PIXELS_PER_INCH);
     const paths = [...input.svg.matchAll(/<path\b([^>]*)\/>/gu)];
     if (!paths.length) throw new Error("INVALID_BARCODE_VECTOR");
     for (const [, rawAttributes] of paths) {
