@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { InventoryBarcodeLabelQueryPort } from "../inventory/inventory-barcode-label-query-port.js";
 import type { ActorContext } from "../platform/actor-context.js";
 import {
@@ -101,7 +102,16 @@ export class BarcodeLabelService {
     });
     return {
       buffer,
-      filename: `inventory-item-${barcode.inventoryItemId}-barcode-${barcode.barcodeId}-${settings.labelSize}.pdf`,
+      // A changed item or label setting must not reuse an older download's name.
+      // The short digest also avoids exposing catalog text in the filename.
+      filename: `inventory-item-${barcode.inventoryItemId}-barcode-${barcode.barcodeId}-${settings.labelSize}-${createHash("sha256").update(JSON.stringify({
+        value: barcode.value,
+        itemName: barcode.itemName,
+        issueNumber: barcode.issueNumber,
+        periodicalYear: barcode.periodicalYear,
+        publicationYear: barcode.publicationYear,
+        settings,
+      })).digest("hex").slice(0, 12)}.pdf`,
     };
   }
 }
