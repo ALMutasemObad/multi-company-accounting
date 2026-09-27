@@ -18,6 +18,13 @@ export class CompactLabelTooWideError extends Error {
   constructor() { super("LABEL_TOO_WIDE"); }
 }
 
+export function rtlSafeArabicDigits(value: string) {
+  return value.replace(/[0-9]+/gu, (digits) =>
+    // PDFKit's Arabic shaping reverses numeral runs in RTL text. Supply each
+    // run in reverse so the visible PDF preserves the catalog's number order.
+    [...digits].reverse().map((digit) => "٠١٢٣٤٥٦٧٨٩"[Number(digit)]!).join(""));
+}
+
 /** Keeps every barcode module at its 203-DPI size; a long value needs a shorter label barcode. */
 export function renderCompactBarcodeLabelPdf(input: {
   svg: string;
@@ -43,7 +50,8 @@ export function renderCompactBarcodeLabelPdf(input: {
     settings.showPeriodicalYear && input.periodicalYear && (/^السنة\s/u.test(input.periodicalYear) ? input.periodicalYear : `السنة ${input.periodicalYear}`),
     settings.showIssueNumber && input.issueNumber && (/^العدد\s/u.test(input.issueNumber) ? input.issueNumber : `العدد ${input.issueNumber}`),
     settings.showPublicationYear && input.publicationYear && String(input.publicationYear),
-  ].filter(Boolean).join(" ، ").replace(/[0-9]/gu, (digit) => "٠١٢٣٤٥٦٧٨٩"[Number(digit)]!);
+  ].filter(Boolean).join(" ، ");
+  const printableDetails = rtlSafeArabicDigits(details);
   const barcodeY = !settings.showItemName && !details
     ? (pageHeight - heightPt) / 2
     : (settings.showItemName ? 15 : 3) + (details ? 10 : 0);
@@ -70,7 +78,7 @@ export function renderCompactBarcodeLabelPdf(input: {
         lineBreak: false,
         features: ["rtla"],
       });
-    if (details) pdf.font("Arabic").fontSize(6).text(details, marginPt, settings.showItemName ? 15 : 3, {
+    if (details) pdf.font("Arabic").fontSize(6).text(printableDetails, marginPt, settings.showItemName ? 15 : 3, {
       width: pageWidth - 2 * marginPt, height: 9,
       align: "center", lineBreak: false, ellipsis: true, features: ["rtla"],
     });

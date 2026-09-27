@@ -5,6 +5,7 @@ import {
   COMPACT_LABEL_WIDTH_PT,
   CompactLabelTooWideError,
   renderCompactBarcodeLabelPdf,
+  rtlSafeArabicDigits,
 } from "../src/printing/compact-barcode-label-pdf.js";
 import { defaultBarcodeLabelSettings } from "../src/printing/barcode-label-settings.js";
 
@@ -19,6 +20,11 @@ describe("50 x 25 mm barcode labels", () => {
       showPeriodicalYear: false,
       showBarcodeText: true,
     });
+  });
+
+  it("compensates for PDFKit reversing numeral runs in Arabic detail text", () => {
+    expect(rtlSafeArabicDigits("السنة العشرين ، العدد 25 ، 1980"))
+      .toBe("السنة العشرين ، العدد ٥٢ ، ٠٨٩١");
   });
 
   it("uses an exact-size PDF page and a native 203-DPI barcode", async () => {
