@@ -7,6 +7,7 @@ import {
   BarcodeLabelError,
   type BarcodeLabelService,
 } from "../src/printing/barcode-label-service.js";
+import { defaultBarcodeLabelSettings } from "../src/printing/barcode-label-settings.js";
 
 const context = { companyId: 5n, userId: 7n };
 const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0]);
@@ -14,12 +15,19 @@ const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0]);
 function fixture() {
   const authorize = vi.fn().mockResolvedValue(context);
   const labels = {
+    getSettings: vi.fn().mockResolvedValue(defaultBarcodeLabelSettings),
+    saveSettings: vi.fn().mockImplementation(async (_context, value) => value),
     download: vi.fn().mockResolvedValue({
       buffer: png,
       filename: "inventory-item-11-barcode-31.png",
     }),
+    downloadCompactPdf: vi.fn().mockResolvedValue({
+      buffer: Buffer.from("%PDF-1.3"),
+      filename: "inventory-item-11-barcode-31-50x25.pdf",
+    }),
   } as unknown as BarcodeLabelService;
   const app = express();
+  app.use(express.json());
   app.use(createBarcodeLabelRouter(
     { authorize } as unknown as AuthService,
     labels,
@@ -31,6 +39,16 @@ function fixture() {
 }
 
 describe("barcode label download router", () => {
+  it("reads and updates tenant settings with separate view/manage permissions", async () => {
+    const { app, authorize, labels } = fixture();
+    await request(app).get("/inventory-barcode-settings").expect(200, defaultBarcodeLabelSettings);
+    expect(authorize).toHaveBeenCalledWith({ sid: undefined, permission: "inventory_barcodes.view", requireCsrf: false });
+    const updated = { ...defaultBarcodeLabelSettings, labelSize: "75x50", showItemName: false };
+    await request(app).put("/inventory-barcode-settings").set("X-CSRF-Token", "token").send(updated).expect(200, updated);
+    expect(authorize).toHaveBeenCalledWith({ sid: undefined, permission: "inventory_barcodes.manage", csrfToken: "token", requireCsrf: true });
+    expect(labels.saveSettings).toHaveBeenCalledWith(context, updated);
+    await request(app).put("/inventory-barcode-settings").send({ ...updated, labelSize: "1000x1000" }).expect(400);
+  });
   it("uses the print permission and returns a no-store PNG with a safe filename", async () => {
     const { app, authorize, labels } = fixture();
     const response = await request(app)
@@ -68,5 +86,18 @@ describe("barcode label download router", () => {
       .expect(404);
     expect(response.body).toEqual({ status: 404, code: "NOT_FOUND" });
     expect(response.headers["cache-control"]).toBe("no-store");
+  });
+
+  it("returns a 50 x 25 mm PDF and reports overlong barcodes without printing", async () => {
+    const { app, labels } = fixture();
+    const response = await request(app)
+      .get("/inventory-items/11/barcodes/31/label-50x25.pdf")
+      .expect(200);
+    expect(labels.downloadCompactPdf).toHaveBeenCalledWith(context, 11n, 31n);
+    expect(response.headers["content-type"]).toMatch(/^application\/pdf/u);
+    expect(response.headers["cache-control"]).toBe("no-store");
+    vi.mocked(labels.downloadCompactPdf).mockRejectedValueOnce(new BarcodeLabelError("LABEL_TOO_WIDE"));
+    await request(app).get("/inventory-items/11/barcodes/31/label-50x25.pdf")
+      .expect(422, { status: 422, code: "LABEL_TOO_WIDE" });
   });
 });

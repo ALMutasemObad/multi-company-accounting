@@ -23,7 +23,7 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 391, requestBodies: 195, responseBodies: 2561 });
+    expect(openApiContractCoverage).toEqual({ operations: 396, requestBodies: 198, responseBodies: 2585 });
     expect(openApiOperationRoutes).toMatchObject({
       'GET /pos/context/identity': 'getPosContextIdentity',
       'GET /auth/social/accounts': 'getCurrentSocialAccounts',
@@ -48,10 +48,18 @@ describe('generated OpenAPI request guards', () => {
       'POST /external-stock-position-events/{eventId}/reverse': 'reverseExternalStockPositionEvent',
       'GET /inventory-count-sessions': 'listInventoryCountSessions',
       'POST /inventory-count-sessions/{sessionId}/approve': 'approveInventoryCountSession',
+      'GET /inventory-barcode-settings': 'getInventoryBarcodeSettings',
+      'PUT /inventory-barcode-settings': 'updateInventoryBarcodeSettings',
+      'POST /inventory-items/catalog-import/preview': 'previewInventoryCatalogImport',
+      'POST /inventory-items/catalog-import/commit': 'commitInventoryCatalogImport',
+      'GET /inventory-items/{inventoryItemId}/barcodes/{barcodeId}/label-50x25.pdf': 'printInventoryBarcodeCompactLabel',
       'POST /auth/social/onboarding': 'completeSocialOnboarding',
       'DELETE /auth/social/onboarding': 'cancelSocialOnboarding',
     });
-    expect(guardedOpenApiOperations).toHaveLength(195);
+    expect(guardedOpenApiOperations).toHaveLength(198);
+    expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
+      'updateInventoryBarcodeSettings', 'previewInventoryCatalogImport', 'commitInventoryCatalogImport',
+    ]));
     expect(guardedOpenApiOperations).toContain('unlinkCurrentSocialAccount');
     expect(guardedOpenApiOperations).toContain('completeSocialOnboarding');
     expect(guardedOpenApiOperations).toContain('createOrganizationCompany');

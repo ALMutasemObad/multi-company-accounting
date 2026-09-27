@@ -389,8 +389,8 @@ export class InventoryCountService {
           const counted = parseQuantity(row.countedQuantity);
           const variance = counted.minus(line.bookQuantity);
           const reason = trimmed(row.varianceReason, 500);
-          if (!variance.isZero() && !reason) throw new InventoryCountError("INVALID_VARIANCE_REASON");
           if ((line._count?.entries ?? 0) > 0 && line.countedQuantity && !counted.equals(line.countedQuantity)) {
+            if (!reason) throw new InventoryCountError("INVALID_VARIANCE_REASON");
             await tx.stockCountEntry.create({
               data: {
                 companyId: context.companyId,
@@ -554,8 +554,6 @@ export class InventoryCountService {
     return this.transition(context, sessionId, expectedVersion, "DRAFT", async (tx, now) => {
       const remaining = await tx.stockCountLine.count({ where: { companyId: context.companyId, sessionId, countedQuantity: null } });
       if (remaining !== 0) throw new InventoryCountError("INCOMPLETE_COUNT");
-      const unexplained = await tx.stockCountLine.count({ where: { companyId: context.companyId, sessionId, varianceQuantity: { not: 0 }, varianceReason: null } });
-      if (unexplained !== 0) throw new InventoryCountError("INVALID_VARIANCE_REASON");
       return { status: "SUBMITTED" as const, submittedById: context.userId, submittedAt: now };
     });
   }

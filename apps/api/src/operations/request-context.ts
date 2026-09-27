@@ -100,6 +100,7 @@ export type RequestContextOptions = {
   readDeadlineMs: number;
   writeDeadlineMs: number;
   registrationWriteDeadlineMs: number;
+  catalogImportWriteDeadlineMs?: number;
   now?: () => number;
   metrics?: OperationalMetricsSink;
 };
@@ -128,11 +129,15 @@ export function requestContextMiddleware(options: RequestContextOptions): Reques
   return (request, response, next) => {
     const requestId = typeof response.locals.requestId === 'string' ? response.locals.requestId : 'missing-request-id';
     const requestClass = classifyRequest(request.method, request.path);
+    const isCatalogImportCommit = request.method.toUpperCase() === 'POST'
+      && request.path === '/api/v1/inventory-items/catalog-import/commit';
     const budgetMs = requestClass === 'READ'
       ? options.readDeadlineMs
       : requestClass === 'REGISTRATION_WRITE'
         ? options.registrationWriteDeadlineMs
-        : options.writeDeadlineMs;
+        : isCatalogImportCommit && options.catalogImportWriteDeadlineMs
+          ? options.catalogImportWriteDeadlineMs
+          : options.writeDeadlineMs;
     const startedAt = now();
     const controller = new AbortController();
     const context: RequestExecutionContext = {

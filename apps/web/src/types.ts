@@ -623,6 +623,9 @@ export type InventoryItem = {
   publisher: string | null;
   publicationYear: number | null;
   edition: string | null;
+  publicationIdentifier: string | null;
+  issueNumber: string | null;
+  periodicalYear: string | null;
   primaryBarcode: null | { value: string; symbology: InventoryBarcodeSymbology };
   isActive: boolean;
   version: number;

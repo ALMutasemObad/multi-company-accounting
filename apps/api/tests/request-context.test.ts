@@ -33,6 +33,20 @@ describe('HTTP request execution context', () => {
     expect(classifyRequest('GET', '/api/v1/auth/social/onboarding/options')).toBe('READ');
   });
 
+  it('extends only catalog-import commit without extending normal writes', async () => {
+    const app = express();
+    app.use(requestContextMiddleware({ readDeadlineMs: 1_000, writeDeadlineMs: 2_000,
+      registrationWriteDeadlineMs: 3_000, catalogImportWriteDeadlineMs: 60_000 }));
+    const budget = (_request: express.Request, response: express.Response) => {
+      const context = currentRequestContext()!;
+      response.json({ budgetMs: context.deadlineAt - context.startedAt });
+    };
+    app.post('/api/v1/inventory-items/catalog-import/commit', budget);
+    app.post('/api/v1/inventory-items/catalog-import/preview', budget);
+    await request(app).post('/api/v1/inventory-items/catalog-import/commit').expect(200, { budgetMs: 60_000 });
+    await request(app).post('/api/v1/inventory-items/catalog-import/preview').expect(200, { budgetMs: 2_000 });
+  });
+
   it('propagates one absolute deadline and request identifier through async work', async () => {
     const app = withRequestContext(1_000);
     app.get('/context', async (_request, response) => {

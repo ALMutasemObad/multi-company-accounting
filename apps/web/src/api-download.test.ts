@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, downloadFile, downloadPdf } from "./api";
+import { ApiError, downloadFile, downloadPdf, fetchFileBlob } from "./api";
 import { loadLocale } from "./i18n/core";
 
 function deferred<T>() {
@@ -41,6 +41,15 @@ describe("existing download owner with optional context guard (no browser or HTT
     expect(f.anchor.click).toHaveBeenCalledTimes(1); expect(f.anchor.remove).toHaveBeenCalledTimes(1);
     expect(f.revokeObjectURL).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1000); expect(f.revokeObjectURL).toHaveBeenCalledExactlyOnceWith("blob:fixture");
+  });
+
+  it("fetches a fresh PDF blob for in-page preview without starting a download", async () => {
+    const f = fixture();
+    const blob = await fetchFileBlob("/inventory-items/1/barcodes/2/label-50x25.pdf");
+    expect(await blob.text()).toBe("fixture pdf");
+    expect(f.fetchMock).toHaveBeenCalledExactlyOnceWith("/api/v1/inventory-items/1/barcodes/2/label-50x25.pdf", expect.objectContaining({ credentials: "include", cache: "no-store" }));
+    expect(f.createElement).not.toHaveBeenCalled();
+    expect(f.createObjectURL).not.toHaveBeenCalled();
   });
 
   it.each(["file", "pdf"])("retains the %s fallback filename", async kind => {

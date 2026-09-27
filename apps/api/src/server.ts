@@ -39,6 +39,7 @@ import { TreasuryService } from './treasury/treasury-service.js';
 import { DataImportService } from './imports/data-import-service.js';
 import { InventoryService } from './inventory/inventory-service.js';
 import { InventoryCatalogService } from './inventory/inventory-catalog-service.js';
+import { InventoryCatalogImportService } from './inventory/inventory-catalog-import-service.js';
 import { InventoryBarcodeService } from './inventory/inventory-barcode-service.js';
 import { InventoryMovementService } from './inventory/inventory-movement-service.js';
 import { InventoryAgingReportService } from './inventory/inventory-aging-report/inventory-aging-report-service.js';
@@ -398,6 +399,7 @@ async function startServer() {
     ...(bankReconciliation ? { bankReconciliation } : {}),
     inventory: new InventoryService(database),
     inventoryCatalog,
+    inventoryCatalogImport: new InventoryCatalogImportService(database),
     productImages,
     inventoryBarcodes,
     inventoryMovements,

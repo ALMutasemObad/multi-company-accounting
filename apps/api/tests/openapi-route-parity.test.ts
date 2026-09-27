@@ -27,6 +27,7 @@ import { createTreasuryRouter } from '../src/treasury/treasury-router.js';
 import { createDataImportRouter } from '../src/imports/data-import-router.js';
 import { createInventoryRouter } from '../src/inventory/inventory-router.js';
 import { createInventoryCatalogRouter } from '../src/inventory/inventory-catalog-router.js';
+import { createInventoryCatalogImportRouter } from '../src/inventory/inventory-catalog-import-router.js';
 import { createInventoryBarcodeRouter } from '../src/inventory/inventory-barcode-router.js';
 import { createInventoryMovementRouter } from '../src/inventory/inventory-movement-router.js';
 import { createInventoryAgingReportRouter } from '../src/inventory/inventory-aging-report/inventory-aging-report-router.js';
@@ -89,6 +90,7 @@ const routers = [
   { prefix: '', router: createBankReconciliationRouter(stub, stub) },
   { prefix: '', router: createInventoryRouter(stub, stub) },
   { prefix: '', router: createInventoryCatalogRouter(stub, stub) },
+  { prefix: '', router: createInventoryCatalogImportRouter(stub, stub) },
   { prefix: '', router: createInventoryBarcodeRouter(stub, stub) },
   { prefix: '', router: createInventoryMovementRouter(stub, stub) },
   { prefix: '', router: createInventoryAgingReportRouter(stub, stub) },

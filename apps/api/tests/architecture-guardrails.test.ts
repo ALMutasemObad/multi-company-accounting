@@ -422,11 +422,12 @@ describe("core accounting architecture guardrails", () => {
     expect(webNavigation).toContain('!access.moduleSet.has(item.module)');
   });
 
-  it("keeps open-source bank file parsers behind Treasury adapters", async () => {
+  it("keeps file parsers inside their owning Inventory and Treasury contexts", async () => {
     const sources = await allTypeScriptSources();
     const parserImport = /from\s+["'](?:csv-parse(?:\/sync)?|fast-xml-parser)["']/u;
     const importers = sources.filter(({ content }) => parserImport.test(content)).map(({ path }) => path).sort();
     expect(importers).toEqual([
+      "inventory/inventory-catalog-import-service.ts",
       "treasury/reconciliation/adapters/camt053-bank-statement-adapter.ts",
       "treasury/reconciliation/adapters/csv-bank-statement-adapter.ts",
     ]);

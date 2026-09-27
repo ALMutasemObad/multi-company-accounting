@@ -618,6 +618,7 @@ model Company {
   inventoryItems                    InventoryItem[]
   inventoryItemImages               InventoryItemImage[]
   inventoryItemBarcodes             InventoryItemBarcode[]
+  inventoryBarcodeSettings          InventoryBarcodeSettings?
   stockCountEntries                 StockCountEntry[]
   inventoryMovementSequence         InventoryMovementSequence?
   inventoryMovements                InventoryMovement[]
@@ -2592,6 +2593,10 @@ model InventoryItem {
   publisher              String?                   @db.VarChar(200)
   publicationYear        Int?                      @map("publication_year") @db.UnsignedSmallInt
   edition                String?                   @db.VarChar(120)
+  publicationIdentifier  String?                   @map("publication_identifier") @db.VarChar(40)
+  issueNumber            String?                   @map("issue_number") @db.VarChar(40)
+  periodicalYear         String?                   @map("periodical_year") @db.VarChar(40)
+  importSourceKey        String?                   @map("import_source_key") @db.VarChar(120)
   isActive               Boolean                   @default(true) @map("is_active")
   version                Int                       @default(0) @db.UnsignedInt
   createdAt              DateTime                  @default(now()) @map("created_at")
@@ -2612,6 +2617,8 @@ model InventoryItem {
   @@unique([id, companyId])
   @@index([companyId, unitOfMeasureId, isActive])
   @@index([companyId, isActive, nameAr])
+  @@index([companyId, publicationIdentifier], map: "inventory_items_company_publication_identifier_idx")
+  @@unique([companyId, importSourceKey], map: "inventory_items_company_import_source_key_key")
   @@map("inventory_items")
 }
 
@@ -2659,6 +2666,21 @@ model InventoryItemBarcode {
   @@index([companyId, inventoryItemId, id], map: "inventory_barcodes_company_item_id_idx")
   @@index([companyId, inventoryItemId, isActive, id], map: "inventory_barcodes_company_item_active_id_idx")
   @@map("inventory_item_barcodes")
+}
+
+model InventoryBarcodeSettings {
+  companyId           BigInt                    @id @map("company_id") @db.UnsignedBigInt
+  labelSize           String                    @default("50x25") @map("label_size") @db.VarChar(10)
+  defaultSymbology    InventoryBarcodeSymbology @default(CODE_128) @map("default_symbology")
+  showItemName        Boolean                   @default(false) @map("show_item_name")
+  showPublicationYear Boolean                   @default(false) @map("show_publication_year")
+  showIssueNumber     Boolean                   @default(false) @map("show_issue_number")
+  showPeriodicalYear  Boolean                   @default(false) @map("show_periodical_year")
+  showBarcodeText     Boolean                   @default(true) @map("show_barcode_text")
+  updatedAt           DateTime                  @updatedAt @map("updated_at")
+  company             Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@map("inventory_barcode_settings")
 }
 
 model InventoryMovementSequence {

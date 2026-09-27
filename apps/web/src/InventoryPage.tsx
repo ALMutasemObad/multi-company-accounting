@@ -1,5 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
-import { api, downloadFile } from "./api";
+import { ApiError, api, downloadFile, fetchFileBlob } from "./api";
 import { allows, type PermissionPolicy } from "./authorization";
 import { Can, useAuthorization } from "./authorization-context";
 import {
@@ -8,6 +8,7 @@ import {
   canPrintInventoryBarcode,
   canViewInventoryBarcodes,
   inventoryBarcodeLabelFilename,
+  inventoryCompactLabelFilename,
   inventoryBarcodeSymbologies,
 } from "./barcode";
 import { activeIntlLocale, localizedCopyFor, localizedReferenceName, translate as t, useI18n } from "./i18n";
@@ -24,6 +25,8 @@ import { inventoryCountCopy } from "./i18n/locales/inventory-count";
 import { ExternalStockPositionsPanel } from "./inventory-compliance-mvp/ExternalStockPositionsPanel";
 import { InventoryCountPanel } from "./inventory-compliance-mvp/InventoryCountPanel";
 import { inventoryRequestKey } from "./inventory-compliance-mvp/inventory-client-id";
+import { BarcodeSettingsPanel, type BarcodeSettings } from "./BarcodeSettingsPanel";
+import { CatalogImportModal } from "./CatalogImportModal";
 
 type Notice = (message: string, tone?: "success" | "error") => void;
 type Tab = InventorySection | "valuation-report" | "external-stock" | "inventory-count";
@@ -52,6 +55,7 @@ export function InventoryPage({ notify, section, onSectionChange }: {
     {tab === "warehouses" && <WarehousesPanel notify={notify} />}
     {tab === "units" && <UnitsPanel notify={notify} />}
     {tab === "items" && <ItemsPanel notify={notify} />}
+    {tab === "barcode-settings" && <BarcodeSettingsPanel notify={notify} />}
     {tab === "valuation-report" && <InventoryValuationReportPanel notify={notify} />}
     {tab === "external-stock" && <ExternalStockPositionsPanel notify={notify} />}
     {tab === "inventory-count" && <InventoryCountPanel notify={notify} canEnter={allows(permissionSet, inventoryPermissionPolicies.enterCount)} canManage={allows(permissionSet, inventoryPermissionPolicies.manageCounts)} />}
@@ -411,6 +415,11 @@ function ItemsPanel({ notify }: { notify: Notice }) {
   const [error, setError] = useState("");
   const [form, setForm] = useState<InventoryItem | "new" | null>(null);
   const [barcodeItem, setBarcodeItem] = useState<InventoryItem | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [deactivationTarget, setDeactivationTarget] = useState<InventoryItem | null>(null);
+  const [deactivationReason, setDeactivationReason] = useState("");
+  const [deactivationError, setDeactivationError] = useState("");
+  const [deactivating, setDeactivating] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -440,16 +449,23 @@ function ItemsPanel({ notify }: { notify: Notice }) {
     if (!canManageCatalog) setForm(null);
   }, [canManageCatalog]);
 
-  async function deactivate(item: InventoryItem) {
-    if (!canManageCatalog) return;
-    const reason = window.prompt(t("inventory.items.deactivatePrompt", { name: localizedReferenceName(item) }));
-    if (!reason || reason.trim().length < 3) return;
+  async function deactivate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const item = deactivationTarget;
+    const reason = deactivationReason.trim();
+    if (!canManageCatalog || !item || reason.length < 3 || deactivating) return;
+    setDeactivating(true);
+    setDeactivationError("");
     try {
-      await api(`/inventory-items/${item.id}/deactivate`, { method: "POST", body: JSON.stringify({ version: item.version, reason: reason.trim() }) });
+      await api(`/inventory-items/${item.id}/deactivate`, { method: "POST", body: JSON.stringify({ version: item.version, reason }) });
+      setDeactivationTarget(null);
+      setDeactivationReason("");
       notify(t("inventory.items.deactivated"));
       await load();
     } catch (cause) {
-      notify(cause instanceof Error ? cause.message : t("inventory.items.deactivateError"), "error");
+      setDeactivationError(cause instanceof Error ? cause.message : t("inventory.items.deactivateError"));
+    } finally {
+      setDeactivating(false);
     }
   }
 
@@ -459,13 +475,16 @@ function ItemsPanel({ notify }: { notify: Notice }) {
       <select aria-label={t("inventory.status")} value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }}><option value="">{t("inventory.status")}</option><option value="true">{t("inventory.active")}</option><option value="false">{t("inventory.inactive")}</option></select>
       <select aria-label={t("inventory.items.unitFilter")} value={unitFilter} onChange={(event) => { setPage(1); setUnitFilter(event.target.value); }}><option value="">{t("inventory.items.allUnits")}</option>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.code} — {localizedReferenceName(unit)}</option>)}</select>
       <Can policy={inventoryPermissionPolicies.manageCatalog}><Button icon="plus" disabled={!units.length} onClick={() => { if (canManageCatalog) setForm("new"); }}>{t("inventory.items.create")}</Button></Can>
+      <Can policy={inventoryPermissionPolicies.manageCatalog}><Button variant="ghost" disabled={!units.length} onClick={() => setImportOpen(true)}>{t("inventory.import.open")}</Button></Can>
     </div>
     {!loading && !units.length && <div className="inline-notice neutral">{t("inventory.items.unitRequired")}</div>}
-    {error ? <ErrorPanel error={error} retry={load} /> : loading ? <Spinner label={t("inventory.items.loading")} /> : !items.length ? <EmptyState title={t("inventory.items.emptyTitle")} description={t("inventory.items.emptyDescription")} action={units.length ? <Can policy={inventoryPermissionPolicies.manageCatalog}><Button icon="plus" onClick={() => { if (canManageCatalog) setForm("new"); }}>{t("inventory.items.create")}</Button></Can> : undefined} /> : <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("inventory.items.image")}</th><th>{t("inventory.items.name")}</th><th>{t("inventory.items.primaryBarcode")}</th><th>{t("inventory.items.bookDetails")}</th><th>{t("inventory.items.unit")}</th><th>{t("inventory.status")}</th><th>{t("inventory.actions")}</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><ProductThumbnail src={item.image?.thumbnailUrl} alt={localizedReferenceName(item)} /></td><td><strong>{localizedReferenceName(item)}</strong>{item.nameEn && <small dir="ltr">{item.nameEn}</small>}</td><td><strong dir="ltr">{item.primaryBarcode?.value ?? "—"}</strong></td><td>{[item.author, item.publisher, item.publicationYear, item.edition].filter(Boolean).join(" · ") || item.description || "—"}</td><td><span className="code-pill" dir="ltr">{item.unitOfMeasure.code}</span><small>{localizedReferenceName(item.unitOfMeasure)}</small></td><td><Status active={item.isActive} /></td><td><div className="inline-actions"><Can policy={inventoryPermissionPolicies.manageCatalog}><Button variant="ghost" icon="edit" onClick={() => { if (canManageCatalog) setForm(item); }}>{t("inventory.edit")}</Button></Can>{canViewSelling && <Button variant="ghost" onClick={() => setSellingItem(item)}>{localizedCopyFor(sellingWorkspace, locale, "ar").open}</Button>}<Can policy={barcodePermissionPolicies.view}><Button variant="ghost" icon="inventory" onClick={() => setBarcodeItem(item)}>{t("inventory.barcodes.manage")}</Button></Can>{item.isActive && <Can policy={inventoryPermissionPolicies.manageCatalog}><Button variant="ghost" icon="ban" onClick={() => void deactivate(item)}>{t("inventory.deactivate")}</Button></Can>}</div></td></tr>)}</tbody></table></div>}
+    {error ? <ErrorPanel error={error} retry={load} /> : loading ? <Spinner label={t("inventory.items.loading")} /> : !items.length ? <EmptyState title={t("inventory.items.emptyTitle")} description={t("inventory.items.emptyDescription")} action={units.length ? <Can policy={inventoryPermissionPolicies.manageCatalog}><Button icon="plus" onClick={() => { if (canManageCatalog) setForm("new"); }}>{t("inventory.items.create")}</Button></Can> : undefined} /> : <div className="data-table-wrap" role="region" tabIndex={0} aria-label={t("common.scrollableTable")}><table className="data-table"><thead><tr><th>{t("inventory.items.image")}</th><th>{t("inventory.items.name")}</th><th>{t("inventory.items.primaryBarcode")}</th><th>{t("inventory.items.bookDetails")}</th><th>{t("inventory.items.unit")}</th><th>{t("inventory.status")}</th><th>{t("inventory.actions")}</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><ProductThumbnail src={item.image?.thumbnailUrl} alt={localizedReferenceName(item)} /></td><td><strong>{localizedReferenceName(item)}</strong>{item.nameEn && <small dir="ltr">{item.nameEn}</small>}</td><td><strong dir="ltr">{item.primaryBarcode?.value ?? "—"}</strong></td><td>{[item.author, item.publisher, item.publicationIdentifier, item.issueNumber && `${t("inventory.items.issueNumber")}: ${item.issueNumber}`, item.periodicalYear && `${t("inventory.items.periodicalYear")}: ${item.periodicalYear}`, item.publicationYear, item.edition].filter(Boolean).join(" · ") || item.description || "—"}</td><td><span className="code-pill" dir="ltr">{item.unitOfMeasure.code}</span><small>{localizedReferenceName(item.unitOfMeasure)}</small></td><td><Status active={item.isActive} /></td><td><div className="inline-actions"><Can policy={inventoryPermissionPolicies.manageCatalog}><Button variant="ghost" icon="edit" onClick={() => { if (canManageCatalog) setForm(item); }}>{t("inventory.edit")}</Button></Can>{canViewSelling && <Button variant="ghost" onClick={() => setSellingItem(item)}>{localizedCopyFor(sellingWorkspace, locale, "ar").open}</Button>}<Can policy={barcodePermissionPolicies.view}><Button variant="ghost" icon="inventory" onClick={() => setBarcodeItem(item)}>{t("inventory.barcodes.manage")}</Button></Can>{item.isActive && <Can policy={inventoryPermissionPolicies.manageCatalog}><Button variant="ghost" icon="ban" onClick={() => { setDeactivationTarget(item); setDeactivationReason(""); setDeactivationError(""); }}>{t("inventory.deactivate")}</Button></Can>}</div></td></tr>)}</tbody></table></div>}
     <Pagination {...meta} page={page} onChange={setPage} />
     {form && canManageCatalog && <ItemForm item={form === "new" ? null : form} units={units} onClose={() => setForm(null)} onSaved={async () => { const created = form === "new"; setForm(null); notify(t(created ? "inventory.items.created" : "inventory.items.updated")); await load(); }} />}
     {barcodeItem && canViewBarcodes && <BarcodeManager item={barcodeItem} notify={notify} onClose={() => setBarcodeItem(null)} />}
+    {importOpen && canManageCatalog && <CatalogImportModal units={units} onClose={() => setImportOpen(false)} onImported={async (created, skipped) => { setImportOpen(false); notify(t("inventory.import.completed", { created, skipped })); await load(); }} />}
     {sellingItem && canViewSelling && <ItemSellingProfileWorkspace item={sellingItem} onClose={() => setSellingItem(null)} />}
+    {deactivationTarget && canManageCatalog && <Modal title={t("inventory.deactivate")} description={localizedReferenceName(deactivationTarget)} onClose={() => { if (!deactivating) setDeactivationTarget(null); }}><form className="document-form" onSubmit={(event) => void deactivate(event)}>{deactivationError && <div className="form-error" role="alert">{deactivationError}</div>}<label><span>{t("inventory.items.deactivatePrompt", { name: localizedReferenceName(deactivationTarget) })}</span><input value={deactivationReason} onChange={(event) => setDeactivationReason(event.target.value)} minLength={3} maxLength={500} required autoFocus /></label><div className="form-actions"><Button type="button" variant="ghost" disabled={deactivating} onClick={() => setDeactivationTarget(null)}>{t("common.cancel")}</Button><Button type="submit" variant="danger" disabled={deactivating || deactivationReason.trim().length < 3}>{deactivating ? t("common.saving") : t("inventory.deactivate")}</Button></div></form></Modal>}
   </>;
 }
 
@@ -483,6 +502,12 @@ function BarcodeManager({ item, notify, onClose }: { item: InventoryItem; notify
   const [creating, setCreating] = useState(false);
   const [busyBarcodeId, setBusyBarcodeId] = useState("");
   const [downloadingBarcodeId, setDownloadingBarcodeId] = useState("");
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [previewBarcode, setPreviewBarcode] = useState("");
+  const [previewSettings, setPreviewSettings] = useState<BarcodeSettings | null>(null);
+  const [previewItem, setPreviewItem] = useState<InventoryItem | null>(null);
+
+  useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
 
   const load = useCallback(async () => {
     if (!canView) return;
@@ -568,6 +593,48 @@ function BarcodeManager({ item, notify, onClose }: { item: InventoryItem; notify
     }
   }
 
+  async function downloadCompactLabel(barcode: InventoryItemBarcode) {
+    if (!canPrintInventoryBarcode(permissionSet, item.isActive, barcode.isActive)
+      || busyBarcodeId || downloadingBarcodeId) return;
+    setDownloadingBarcodeId(barcode.id);
+    setCommandError("");
+    try {
+      await downloadFile(
+        `/inventory-items/${encodeURIComponent(item.id)}/barcodes/${encodeURIComponent(barcode.id)}/label-50x25.pdf`,
+        inventoryCompactLabelFilename(item.id, barcode.id),
+      );
+    } catch (cause) {
+      setCommandError(cause instanceof ApiError && cause.code === "LABEL_TOO_WIDE" ? t("inventory.barcodes.labelTooWide") : cause instanceof Error ? cause.message : t("inventory.barcodes.labelDownloadError"));
+    } finally {
+      setDownloadingBarcodeId("");
+    }
+  }
+
+  async function viewCompactLabel(barcode: InventoryItemBarcode) {
+    if (!canPrintInventoryBarcode(permissionSet, item.isActive, barcode.isActive)
+      || busyBarcodeId || downloadingBarcodeId) return;
+    setBusyBarcodeId(barcode.id);
+    setCommandError("");
+    setPreviewUrl("");
+    setPreviewSettings(null);
+    setPreviewItem(null);
+    try {
+      const [blob, settings, currentItem] = await Promise.all([
+        fetchFileBlob(`/inventory-items/${encodeURIComponent(item.id)}/barcodes/${encodeURIComponent(barcode.id)}/label.png`),
+        api<BarcodeSettings>("/inventory-barcode-settings", { cache: "no-store" }),
+        api<InventoryItem>(`/inventory-items/${encodeURIComponent(item.id)}`, { cache: "no-store" }),
+      ]);
+      setPreviewUrl(URL.createObjectURL(blob));
+      setPreviewBarcode(barcode.value);
+      setPreviewSettings(settings);
+      setPreviewItem(currentItem);
+    } catch (cause) {
+      setCommandError(cause instanceof Error ? cause.message : t("inventory.barcodes.labelDownloadError"));
+    } finally {
+      setBusyBarcodeId("");
+    }
+  }
+
   return <Modal title={t("inventory.barcodes.title", { item: localizedReferenceName(item) })} description={t("inventory.barcodes.description", { code: item.primaryBarcode?.value ?? "—" })} onClose={onClose} wide>
     <div className="barcode-manager-toolbar">
       <select aria-label={t("inventory.barcodes.statusFilter")} value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }}>
@@ -577,19 +644,34 @@ function BarcodeManager({ item, notify, onClose }: { item: InventoryItem; notify
       </select>
       {canManage && <Button icon="plus" onClick={() => setCreating((value) => !value)}>{creating ? t("common.cancel") : t("inventory.barcodes.add")}</Button>}
     </div>
-    {creating && canManage && <BarcodeCreateForm itemId={item.id} canManage={canManage} onCancel={() => setCreating(false)} onCreated={async () => { notify(t("inventory.barcodes.created")); await load(); setCreating(false); }} />}
+    {item.publicationIdentifier && <div className="inline-notice neutral">{t("inventory.barcodes.publicationIdentifierNote", { value: item.publicationIdentifier })}</div>}
+    {creating && canManage && <BarcodeCreateForm itemId={item.id} publicationIdentifier={item.publicationIdentifier} canManage={canManage} onCancel={() => setCreating(false)} onCreated={async () => { notify(t("inventory.barcodes.created")); await load(); setCreating(false); }} />}
     {commandError && <div className="inline-notice" role="alert">{commandError}</div>}
-    {error ? <ErrorPanel error={error} retry={load} /> : loading ? <Spinner label={t("inventory.barcodes.loading")} /> : !barcodes.length ? <EmptyState title={t("inventory.barcodes.emptyTitle")} description={t("inventory.barcodes.emptyDescription")} /> : <div className="data-table-wrap flat barcode-table" role="region" tabIndex={0} aria-label={t("inventory.barcodes.tableLabel")}><table className="data-table"><thead><tr><th>{t("inventory.barcodes.value")}</th><th>{t("inventory.barcodes.symbology")}</th><th>{t("inventory.barcodes.primary")}</th><th>{t("inventory.status")}</th><th>{t("inventory.actions")}</th></tr></thead><tbody>{barcodes.map((barcode) => <tr key={barcode.id}><td><strong dir="ltr">{barcode.value}</strong></td><td><span className="code-pill" dir="ltr">{t(`inventory.barcodes.symbologies.${barcode.symbology}`)}</span></td><td><span className={`status-chip ${barcode.isPrimary ? "active" : "inactive"}`}>{t(barcode.isPrimary ? "inventory.barcodes.primaryYes" : "inventory.barcodes.primaryNo")}</span></td><td><Status active={barcode.isActive} /></td><td><div className="inline-actions">{canPrintInventoryBarcode(permissionSet, item.isActive, barcode.isActive) && <Button variant="ghost" icon="print" disabled={Boolean(busyBarcodeId || downloadingBarcodeId)} onClick={() => void downloadLabel(barcode)}>{downloadingBarcodeId === barcode.id ? t("inventory.barcodes.labelDownloading") : t("inventory.barcodes.downloadLabel")}</Button>}{canManage && barcode.isActive && !barcode.isPrimary && <Button variant="ghost" icon="check" disabled={Boolean(busyBarcodeId || downloadingBarcodeId)} onClick={() => void setPrimary(barcode)}>{t("inventory.barcodes.setPrimary")}</Button>}{canManage && barcode.isActive && <Button variant="ghost" icon="ban" disabled={Boolean(busyBarcodeId || downloadingBarcodeId)} onClick={() => void deactivate(barcode)}>{t("inventory.barcodes.deactivate")}</Button>}</div></td></tr>)}</tbody></table></div>}
+    {previewUrl && previewSettings && previewItem && <section className="barcode-label-preview" aria-label={t("inventory.barcodes.previewTitle", { value: previewBarcode })}>
+      <div className="barcode-label-preview-heading"><strong>{t("inventory.barcodes.previewTitle", { value: previewBarcode })}</strong><Button variant="ghost" onClick={() => { setPreviewUrl(""); setPreviewBarcode(""); setPreviewSettings(null); setPreviewItem(null); }}>{t("common.close")}</Button></div>
+      <div className={`barcode-label-preview-paper size-${previewSettings.labelSize}`}>
+        {previewSettings.showItemName && <strong className="barcode-label-preview-name">{previewItem.nameAr}</strong>}
+        {(previewSettings.showPeriodicalYear && previewItem.periodicalYear || previewSettings.showIssueNumber && previewItem.issueNumber || previewSettings.showPublicationYear && previewItem.publicationYear) && <span className="barcode-label-preview-details" dir="rtl">{[
+          previewSettings.showPeriodicalYear && previewItem.periodicalYear && t("inventory.barcodes.previewPeriodicalYear", { value: previewItem.periodicalYear }),
+          previewSettings.showIssueNumber && previewItem.issueNumber && t("inventory.barcodes.previewIssueNumber", { value: previewItem.issueNumber }),
+          previewSettings.showPublicationYear && previewItem.publicationYear && String(previewItem.publicationYear),
+        ].filter(Boolean).join(" ، ")}</span>}
+        <img src={previewUrl} alt={t("inventory.barcodes.previewTitle", { value: previewBarcode })} />
+      </div>
+      <p className="barcode-label-preview-note">{t("inventory.barcodes.previewNote")}</p>
+    </section>}
+    {error ? <ErrorPanel error={error} retry={load} /> : loading ? <Spinner label={t("inventory.barcodes.loading")} /> : !barcodes.length ? <EmptyState title={t("inventory.barcodes.emptyTitle")} description={t("inventory.barcodes.emptyDescription")} /> : <div className="data-table-wrap flat barcode-table" role="region" tabIndex={0} aria-label={t("inventory.barcodes.tableLabel")}><table className="data-table"><thead><tr><th>{t("inventory.barcodes.value")}</th><th>{t("inventory.barcodes.symbology")}</th><th>{t("inventory.barcodes.primary")}</th><th>{t("inventory.status")}</th><th>{t("inventory.actions")}</th></tr></thead><tbody>{barcodes.map((barcode) => <tr key={barcode.id}><td><strong dir="ltr">{barcode.value}</strong></td><td><span className="code-pill" dir="ltr">{t(`inventory.barcodes.symbologies.${barcode.symbology}`)}</span></td><td><span className={`status-chip ${barcode.isPrimary ? "active" : "inactive"}`}>{t(barcode.isPrimary ? "inventory.barcodes.primaryYes" : "inventory.barcodes.primaryNo")}</span></td><td><Status active={barcode.isActive} /></td><td><div className="inline-actions">{canPrintInventoryBarcode(permissionSet, item.isActive, barcode.isActive) && <Button variant="ghost" icon="print" disabled={Boolean(busyBarcodeId || downloadingBarcodeId)} onClick={() => void downloadLabel(barcode)}>{downloadingBarcodeId === barcode.id ? t("inventory.barcodes.labelDownloading") : t("inventory.barcodes.downloadLabel")}</Button>}{canPrintInventoryBarcode(permissionSet, item.isActive, barcode.isActive) && <Button variant="ghost" disabled={Boolean(busyBarcodeId || downloadingBarcodeId)} onClick={() => void viewCompactLabel(barcode)}>{t("inventory.barcodes.viewCompactLabel")}</Button>}{canPrintInventoryBarcode(permissionSet, item.isActive, barcode.isActive) && <Button variant="ghost" icon="print" disabled={Boolean(busyBarcodeId || downloadingBarcodeId)} onClick={() => void downloadCompactLabel(barcode)}>{t("inventory.barcodes.printCompactLabel")}</Button>}{canManage && barcode.isActive && !barcode.isPrimary && <Button variant="ghost" icon="check" disabled={Boolean(busyBarcodeId || downloadingBarcodeId)} onClick={() => void setPrimary(barcode)}>{t("inventory.barcodes.setPrimary")}</Button>}{canManage && barcode.isActive && <Button variant="ghost" icon="ban" disabled={Boolean(busyBarcodeId || downloadingBarcodeId)} onClick={() => void deactivate(barcode)}>{t("inventory.barcodes.deactivate")}</Button>}</div></td></tr>)}</tbody></table></div>}
     <Pagination {...meta} page={page} onChange={setPage} />
   </Modal>;
 }
 
-function BarcodeCreateForm({ itemId, canManage, onCancel, onCreated }: { itemId: string; canManage: boolean; onCancel: () => void; onCreated: () => Promise<void> }) {
+function BarcodeCreateForm({ itemId, publicationIdentifier, canManage, onCancel, onCreated }: { itemId: string; publicationIdentifier: string | null; canManage: boolean; onCancel: () => void; onCreated: () => Promise<void> }) {
   const [symbology, setSymbology] = useState<InventoryBarcodeSymbology>("CODE_128");
   const [value, setValue] = useState("");
   const [isPrimary, setIsPrimary] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  useEffect(() => { let active = true; void api<BarcodeSettings>("/inventory-barcode-settings").then((settings) => { if (active) setSymbology(settings.defaultSymbology); }).catch(() => {}); return () => { active = false; }; }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -615,6 +697,7 @@ function BarcodeCreateForm({ itemId, canManage, onCancel, onCreated }: { itemId:
     <div className="form-grid">
       <label><span>{t("inventory.barcodes.symbology")}</span><select value={symbology} onChange={(event) => setSymbology(event.target.value as InventoryBarcodeSymbology)}>{inventoryBarcodeSymbologies.map((option) => <option key={option} value={option}>{t(`inventory.barcodes.symbologies.${option}`)}</option>)}</select></label>
       <label><span>{t("inventory.barcodes.value")}</span><input dir="ltr" inputMode="text" autoComplete="off" maxLength={255} value={value} onChange={(event) => setValue(event.target.value)} required /></label>
+      {publicationIdentifier && <Button type="button" variant="secondary" onClick={() => setValue(publicationIdentifier)}>{t("inventory.barcodes.usePublicationIdentifier")}</Button>}
       <label className="checkbox-line"><input type="checkbox" checked={isPrimary} onChange={(event) => setIsPrimary(event.target.checked)} />{t("inventory.barcodes.makePrimary")}</label>
     </div>
     <div className="form-actions"><Button type="button" variant="ghost" onClick={onCancel}>{t("common.cancel")}</Button><Button type="submit" disabled={saving || !value.trim()}>{saving ? t("common.saving") : t("inventory.barcodes.add")}</Button></div>
@@ -705,8 +788,12 @@ function ItemForm({ item, units, onClose, onSaved }: { item: InventoryItem | nul
   const [publisher, setPublisher] = useState(item?.publisher ?? "");
   const [publicationYear, setPublicationYear] = useState(item?.publicationYear?.toString() ?? "");
   const [edition, setEdition] = useState(item?.edition ?? "");
+  const [publicationIdentifier, setPublicationIdentifier] = useState(item?.publicationIdentifier ?? "");
+  const [issueNumber, setIssueNumber] = useState(item?.issueNumber ?? "");
+  const [periodicalYear, setPeriodicalYear] = useState(item?.periodicalYear ?? "");
   const [primaryBarcodeValue, setPrimaryBarcodeValue] = useState(item?.primaryBarcode?.value ?? "");
   const [primaryBarcodeSymbology, setPrimaryBarcodeSymbology] = useState<InventoryBarcodeSymbology>(item?.primaryBarcode?.symbology ?? "EAN_13");
+  useEffect(() => { if (item) return; let active = true; void api<BarcodeSettings>("/inventory-barcode-settings").then((settings) => { if (active) setPrimaryBarcodeSymbology(settings.defaultSymbology); }).catch(() => {}); return () => { active = false; }; }, [item]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [pendingImage, setPendingImage] = useState<File | null>(null);
@@ -722,7 +809,7 @@ function ItemForm({ item, units, onClose, onSaved }: { item: InventoryItem | nul
     let catalogSaved = false;
     try {
       const target = persistedItem;
-      const saved = await api<InventoryItem>(target ? `/inventory-items/${target.id}` : "/inventory-items", { method: target ? "PATCH" : "POST", body: JSON.stringify({ ...(target ? { version: target.version, ...(unitOfMeasureId === target.unitOfMeasure.id ? {} : { unitOfMeasureId }) } : { unitOfMeasureId, primaryBarcodeValue: primaryBarcodeValue.trim() || null, primaryBarcodeSymbology }), nameAr: nameAr.trim(), nameEn: nameEn.trim() || null, description: description.trim() || null, author: author.trim() || null, publisher: publisher.trim() || null, publicationYear: publicationYear ? Number(publicationYear) : null, edition: edition.trim() || null }) });
+      const saved = await api<InventoryItem>(target ? `/inventory-items/${target.id}` : "/inventory-items", { method: target ? "PATCH" : "POST", body: JSON.stringify({ ...(target ? { version: target.version, ...(unitOfMeasureId === target.unitOfMeasure.id ? {} : { unitOfMeasureId }) } : { unitOfMeasureId, primaryBarcodeValue: primaryBarcodeValue.trim() || null, primaryBarcodeSymbology }), nameAr: nameAr.trim(), nameEn: nameEn.trim() || null, description: description.trim() || null, author: author.trim() || null, publisher: publisher.trim() || null, publicationYear: publicationYear ? Number(publicationYear) : null, edition: edition.trim() || null, publicationIdentifier: publicationIdentifier.trim() || null, issueNumber: issueNumber.trim() || null, periodicalYear: periodicalYear.trim() || null }) });
       setPersistedItem(saved);
       catalogSaved = true;
       if (pendingImage) await api(`/inventory-items/${saved.id}/image`, { method: "PUT", headers: { "Content-Type": pendingImage.type, ...(expectedImageVersion ? { "If-Match": `"product-image-v${expectedImageVersion}"` } : { "If-None-Match": "*" }) }, body: pendingImage });
@@ -735,7 +822,7 @@ function ItemForm({ item, units, onClose, onSaved }: { item: InventoryItem | nul
     }
   }
 
-  return <Modal title={item ? t("inventory.items.editTitle") : t("inventory.items.create")} description={t("inventory.items.formDescription")} onClose={onClose}><form className="document-form" onSubmit={submit}>{error && <div className="form-error" role="alert">{error}</div>}<div className="form-grid">{item ? <label><span>{t("inventory.code")}</span><input dir="ltr" value={item.code} readOnly /></label> : <div className="inline-notice neutral full">{t("common.autoGeneratedCode")}</div>}<label><span>{t("inventory.items.unit")}</span><select value={unitOfMeasureId} onChange={(event) => setUnitOfMeasureId(event.target.value)} required>{choices.map((unit) => <option key={unit.id} value={unit.id} disabled={!unit.isActive}>{unit.code} — {localizedReferenceName(unit)}</option>)}</select></label><label><span>{t("inventory.nameAr")}</span><input value={nameAr} onChange={(event) => setNameAr(event.target.value)} maxLength={200} required autoFocus /></label><label><span>{t("inventory.nameEn")}</span><input dir="ltr" value={nameEn} onChange={(event) => setNameEn(event.target.value)} maxLength={200} /></label><label><span>{t("inventory.items.author")}</span><input value={author} onChange={(event) => setAuthor(event.target.value)} maxLength={200} /></label><label><span>{t("inventory.items.publisher")}</span><input value={publisher} onChange={(event) => setPublisher(event.target.value)} maxLength={200} /></label><label><span>{t("inventory.items.publicationYear")}</span><input dir="ltr" inputMode="numeric" type="number" min="1000" max="9999" value={publicationYear} onChange={(event) => setPublicationYear(event.target.value)} /></label><label><span>{t("inventory.items.edition")}</span><input value={edition} onChange={(event) => setEdition(event.target.value)} maxLength={120} /></label>{!item && <><label><span>{t("inventory.items.primaryBarcode")}</span><input dir="ltr" value={primaryBarcodeValue} onChange={(event) => setPrimaryBarcodeValue(event.target.value.trim())} maxLength={255} placeholder={t("inventory.items.barcodeAutoHint")} /></label><label><span>{t("inventory.barcodes.symbology")}</span><select value={primaryBarcodeSymbology} onChange={(event) => setPrimaryBarcodeSymbology(event.target.value as InventoryBarcodeSymbology)}>{inventoryBarcodeSymbologies.map((option) => <option key={option} value={option}>{t(`inventory.barcodes.symbologies.${option}`)}</option>)}</select></label></>}<label className="full"><span>{t("inventory.items.description")}</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} maxLength={500} rows={3} /></label><div className="full"><ProductImageField value={persistedItem?.image?.thumbnailUrl} onUpload={async (file) => { setPendingImage(file); setRemoveImage(false); }} onRemove={async () => { setPendingImage(null); setRemoveImage(true); }} disabled={saving} /></div></div><FormActions saving={saving} onClose={onClose} /></form></Modal>;
+  return <Modal title={item ? t("inventory.items.editTitle") : t("inventory.items.create")} description={t("inventory.items.formDescription")} onClose={onClose}><form className="document-form" onSubmit={submit}>{error && <div className="form-error" role="alert">{error}</div>}<div className="form-grid">{item ? <label><span>{t("inventory.code")}</span><input dir="ltr" value={item.code} readOnly /></label> : <div className="inline-notice neutral full">{t("common.autoGeneratedCode")}</div>}<label><span>{t("inventory.items.unit")}</span><select value={unitOfMeasureId} onChange={(event) => setUnitOfMeasureId(event.target.value)} required>{choices.map((unit) => <option key={unit.id} value={unit.id} disabled={!unit.isActive}>{unit.code} — {localizedReferenceName(unit)}</option>)}</select></label><label><span>{t("inventory.nameAr")}</span><input value={nameAr} onChange={(event) => setNameAr(event.target.value)} maxLength={200} required autoFocus /></label><label><span>{t("inventory.nameEn")}</span><input dir="ltr" value={nameEn} onChange={(event) => setNameEn(event.target.value)} maxLength={200} /></label><label><span>{t("inventory.items.author")}</span><input value={author} onChange={(event) => setAuthor(event.target.value)} maxLength={200} /></label><label><span>{t("inventory.items.publisher")}</span><input value={publisher} onChange={(event) => setPublisher(event.target.value)} maxLength={200} /></label><label><span>{t("inventory.items.publicationIdentifier")}</span><input dir="ltr" name="publication-identifier" onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); event.currentTarget.form?.querySelector<HTMLInputElement>('[name="issue-number"]')?.focus(); } }} value={publicationIdentifier} onChange={(event) => setPublicationIdentifier(event.target.value)} maxLength={40} /></label><label><span>{t("inventory.items.issueNumber")}</span><input dir="ltr" name="issue-number" onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); event.currentTarget.form?.querySelector<HTMLInputElement>('[name="periodical-year"]')?.focus(); } }} value={issueNumber} onChange={(event) => setIssueNumber(event.target.value)} maxLength={40} /></label><label><span>{t("inventory.items.periodicalYear")}</span><input name="periodical-year" value={periodicalYear} onChange={(event) => setPeriodicalYear(event.target.value)} maxLength={40} placeholder={t("inventory.items.periodicalYearHint")} /></label><label><span>{t("inventory.items.publicationYear")}</span><input dir="ltr" inputMode="numeric" type="number" min="1000" max="9999" value={publicationYear} onChange={(event) => setPublicationYear(event.target.value)} /></label><label><span>{t("inventory.items.edition")}</span><input value={edition} onChange={(event) => setEdition(event.target.value)} maxLength={120} /></label>{!item && <><label><span>{t("inventory.items.primaryBarcode")}</span><input dir="ltr" onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); event.currentTarget.form?.querySelector<HTMLTextAreaElement>("textarea")?.focus(); } }} value={primaryBarcodeValue} onChange={(event) => setPrimaryBarcodeValue(event.target.value.trim())} maxLength={255} placeholder={t("inventory.items.barcodeAutoHint")} /></label><label><span>{t("inventory.barcodes.symbology")}</span><select value={primaryBarcodeSymbology} onChange={(event) => setPrimaryBarcodeSymbology(event.target.value as InventoryBarcodeSymbology)}>{inventoryBarcodeSymbologies.map((option) => <option key={option} value={option}>{t(`inventory.barcodes.symbologies.${option}`)}</option>)}</select></label></>}<label className="full"><span>{t("inventory.items.description")}</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} maxLength={500} rows={3} /></label><div className="full"><ProductImageField value={persistedItem?.image?.thumbnailUrl} onUpload={async (file) => { setPendingImage(file); setRemoveImage(false); }} onRemove={async () => { setPendingImage(null); setRemoveImage(true); }} disabled={saving} /></div></div><FormActions saving={saving} onClose={onClose} /></form></Modal>;
 }
 
 function ProductThumbnail({ src, alt }: { src?: string | null; alt: string }) {

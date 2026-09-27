@@ -23,6 +23,7 @@ describe("inventory barcode B1 architecture", () => {
       .sort();
     expect(writers).toEqual([
       "apps/api/src/inventory/inventory-barcode-service.ts",
+      "apps/api/src/inventory/inventory-catalog-import-service.ts",
       "apps/api/src/inventory/inventory-catalog-service.ts",
     ]);
   });

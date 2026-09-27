@@ -445,7 +445,7 @@ export class InventoryMovementService implements InventoryInvoiceStockPort {
           select: { id: true },
         });
         if (laterMovement) throw new InventoryMovementError("COUNT_MOVED_SINCE_SNAPSHOT");
-        if (session.lines.some((line) => line.countedQuantity === null || !line.varianceReason)) throw new InventoryMovementError("INVALID_STATE");
+        if (session.lines.some((line) => line.countedQuantity === null)) throw new InventoryMovementError("INVALID_STATE");
 
         const surplusLines: InventoryMovementLineInput[] = [];
         const shortageLines: InventoryMovementLineInput[] = [];

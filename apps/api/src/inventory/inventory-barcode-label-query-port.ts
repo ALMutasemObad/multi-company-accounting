@@ -5,6 +5,10 @@ export type PrintableInventoryBarcode = {
   barcodeId: bigint;
   symbology: InventoryBarcodeSymbology;
   value: string;
+  itemName: string;
+  publicationYear: number | null;
+  issueNumber: string | null;
+  periodicalYear: string | null;
 };
 
 /** Inventory-owned read contract consumed by Printing & Document Output. */

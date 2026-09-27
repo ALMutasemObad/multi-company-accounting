@@ -7190,6 +7190,124 @@ paths:
       x-permission: inventory_barcodes.print
       security:
       - SessionCookie: []
+  /inventory-barcode-settings:
+    get:
+      tags: [Inventory]
+      summary: إعدادات ملصقات باركود الشركة الحالية
+      operationId: getInventoryBarcodeSettings
+      responses:
+        '200':
+          description: الإعدادات الفعالة، أو القيم الافتراضية إن لم تحفظ بعد.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InventoryBarcodeSettings' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: inventory_barcodes.view
+      security:
+      - SessionCookie: []
+    put:
+      tags: [Inventory]
+      summary: تحديث إعدادات ملصقات باركود الشركة الحالية
+      operationId: updateInventoryBarcodeSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InventoryBarcodeSettings' }
+      responses:
+        '200':
+          description: الإعدادات المحفوظة.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InventoryBarcodeSettings' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: inventory_barcodes.manage
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+  /inventory-items/catalog-import/preview:
+    post:
+      tags: [Inventory]
+      summary: معاينة استيراد كتالوج الأصناف من Excel أو CSV دون أثر مخزني
+      operationId: previewInventoryCatalogImport
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InventoryCatalogImportRequest' }
+      responses:
+        '200':
+          description: ملخص الصفوف مع أخطاء التحقق، دون كتابة أصناف.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InventoryCatalogImportPreview' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: inventory_catalog.manage
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+  /inventory-items/catalog-import/commit:
+    post:
+      tags: [Inventory]
+      summary: اعتماد استيراد كتالوج الأصناف فقط دون رصيد أو حركة
+      operationId: commitInventoryCatalogImport
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InventoryCatalogImportCommitRequest' }
+      responses:
+        '200':
+          description: نتيجة إنشاء الأصناف وتخطي المصادر المستوردة سابقًا.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InventoryCatalogImportCommitResult' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: inventory_catalog.manage
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+  /inventory-items/{inventoryItemId}/barcodes/{barcodeId}/label-50x25.pdf:
+    get:
+      tags: [Printing]
+      summary: تنزيل ملصق PDF وفق إعدادات ملصقات الشركة للطابعة الحرارية
+      description: المقاس الافتراضي 50 × 25 مم، ويمكن تغييره إلى 75 × 50 مم. يحافظ على كثافة الباركود 203 DPI دون تصغير وحداته. يعيد 422 إذا كان الرمز أطول من عرض الملصق.
+      operationId: printInventoryBarcodeCompactLabel
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: inventoryItemId
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[1-9][0-9]*$' }
+      - name: barcodeId
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[1-9][0-9]*$' }
+      responses:
+        '200':
+          description: صفحة PDF واحدة بالمقاس والإظهار المحددين للشركة لباركود الصنف النشط.
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      x-permission: inventory_barcodes.print
+      security:
+      - SessionCookie: []
   /inventory-barcodes/resolve:
     post:
       tags:
@@ -16291,6 +16409,8 @@ components:
       - publisher
       - publicationYear
       - edition
+      - publicationIdentifier
+      - issueNumber
       - primaryBarcode
       - isActive
       - version
@@ -16330,6 +16450,18 @@ components:
         edition:
           type: [string, 'null']
           maxLength: 120
+        publicationIdentifier:
+          type: [string, 'null']
+          maxLength: 40
+          description: معرّف النشر المطبوع مثل ISBN أو ISSN، قد يتكرر بين أعداد السلسلة ولا يستخدم للحسم عند المسح.
+        issueNumber:
+          type: [string, 'null']
+          maxLength: 40
+          description: رقم العدد أو الجزء كما يظهر في النشرة.
+        periodicalYear:
+          type: [string, 'null']
+          maxLength: 40
+          description: سنة الدورية أو المجلد مثل السنة الثالثة، مستقلة عن سنة النشر الميلادية.
         primaryBarcode:
           oneOf:
           - type: object
@@ -16384,6 +16516,15 @@ components:
         edition:
           type: [string, 'null']
           maxLength: 120
+        publicationIdentifier:
+          type: [string, 'null']
+          maxLength: 40
+        issueNumber:
+          type: [string, 'null']
+          maxLength: 40
+        periodicalYear:
+          type: [string, 'null']
+          maxLength: 40
         primaryBarcodeValue:
           type: [string, 'null']
           minLength: 1
@@ -16427,6 +16568,15 @@ components:
         edition:
           type: [string, 'null']
           maxLength: 120
+        publicationIdentifier:
+          type: [string, 'null']
+          maxLength: 40
+        issueNumber:
+          type: [string, 'null']
+          maxLength: 40
+        periodicalYear:
+          type: [string, 'null']
+          maxLength: 40
     InventoryCatalogDeactivateRequest:
       type: object
       additionalProperties: false
@@ -16446,6 +16596,74 @@ components:
       type: string
       enum: [EAN_13, EAN_8, UPC_A, CODE_128, QR]
       description: الأنواع المدعومة في B1. لا يعني CODE_128 دعم GS1-128 أو FNC1 أو Application Identifiers.
+    InventoryCatalogImportRequest:
+      type: object
+      additionalProperties: false
+      required: [contentBase64, sourceFormat, unitOfMeasureId]
+      properties:
+        contentBase64: { type: string, minLength: 4, maxLength: 720000 }
+        sourceFormat: { type: string, enum: [CSV, XLSX] }
+        unitOfMeasureId: { type: string, pattern: '^[1-9][0-9]*$' }
+    InventoryCatalogImportCommitRequest:
+      type: object
+      additionalProperties: false
+      required: [contentBase64, sourceFormat, unitOfMeasureId, previewHash]
+      properties:
+        contentBase64: { type: string, minLength: 4, maxLength: 720000 }
+        sourceFormat: { type: string, enum: [CSV, XLSX] }
+        unitOfMeasureId: { type: string, pattern: '^[1-9][0-9]*$' }
+        previewHash: { type: string, pattern: '^[a-f0-9]{64}$' }
+    InventoryCatalogImportPreview:
+      type: object
+      additionalProperties: false
+      required: [previewHash, rowCount, createCount, skipCount, errors, rows]
+      properties:
+        previewHash: { type: string }
+        rowCount: { type: integer, minimum: 0 }
+        createCount: { type: integer, minimum: 0 }
+        skipCount: { type: integer, minimum: 0 }
+        errors:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [row, column, code]
+            properties:
+              row: { type: integer }
+              column: { type: string }
+              code: { type: string }
+        rows:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [row, sourceKey, nameAr, status]
+            properties:
+              row: { type: integer }
+              sourceKey: { type: string }
+              nameAr: { type: string }
+              status: { type: string, enum: [CREATE, SKIP, ERROR] }
+    InventoryCatalogImportCommitResult:
+      type: object
+      additionalProperties: false
+      required: [created, skipped]
+      properties:
+        created: { type: integer, minimum: 0 }
+        skipped: { type: integer, minimum: 0 }
+    InventoryBarcodeSettings:
+      type: object
+      additionalProperties: false
+      required: [labelSize, defaultSymbology, showItemName, showPublicationYear, showIssueNumber, showPeriodicalYear, showBarcodeText]
+      properties:
+        labelSize:
+          type: string
+          enum: ['50x25', '75x50']
+        defaultSymbology: { $ref: '#/components/schemas/InventoryBarcodeSymbology' }
+        showItemName: { type: boolean }
+        showPublicationYear: { type: boolean }
+        showIssueNumber: { type: boolean }
+        showPeriodicalYear: { type: boolean }
+        showBarcodeText: { type: boolean }
     InventoryItemBarcode:
       type: object
       additionalProperties: false

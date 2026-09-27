@@ -9,6 +9,8 @@ import {
   type BarcodeLabelAuditPort,
   type BarcodeLabelRendererPort,
 } from "../src/printing/barcode-label-ports.js";
+import { defaultBarcodeLabelSettings } from "../src/printing/barcode-label-settings.js";
+import { BwipJsBarcodeLabelRenderer } from "../src/printing/bwip-js-barcode-label-renderer.js";
 
 const context = { companyId: 5n, userId: 7n };
 const rawValue = "0012345678905";
@@ -22,11 +24,13 @@ const source = {
 function fixture() {
   const findPrintableBarcode = vi.fn().mockResolvedValue(source);
   const render = vi.fn().mockResolvedValue(Buffer.from("png"));
+  const renderSvg = vi.fn().mockReturnValue('<svg viewBox="0 0 10 10"><path d="M0 0L1 1" /></svg>');
   const recordDownload = vi.fn().mockResolvedValue(undefined);
   const service = new BarcodeLabelService(
     { findPrintableBarcode } satisfies InventoryBarcodeLabelQueryPort,
-    { render } satisfies BarcodeLabelRendererPort,
+    { render, renderSvg } satisfies BarcodeLabelRendererPort,
     { recordDownload } satisfies BarcodeLabelAuditPort,
+    { get: vi.fn().mockResolvedValue(defaultBarcodeLabelSettings), save: vi.fn().mockResolvedValue(defaultBarcodeLabelSettings) },
   );
   return { service, findPrintableBarcode, render, recordDownload };
 }
@@ -73,5 +77,33 @@ describe("barcode label orchestration", () => {
       new BarcodeLabelError("RENDER_FAILED"),
     );
     expect(recordDownload).not.toHaveBeenCalled();
+  });
+
+  it("downloads the current catalog title under a new filename after an item edit", async () => {
+    let itemName = "الدارة";
+    const service = new BarcodeLabelService(
+      { findPrintableBarcode: vi.fn(async () => ({
+        inventoryItemId: 236n,
+        barcodeId: 47n,
+        symbology: "CODE_128" as const,
+        value: "13190148",
+        itemName,
+        issueNumber: "4",
+        periodicalYear: "51",
+        publicationYear: null,
+      })) },
+      new BwipJsBarcodeLabelRenderer(),
+      { recordDownload: vi.fn(async () => {}) },
+      { get: vi.fn(async () => ({ ...defaultBarcodeLabelSettings, showItemName: true })), save: vi.fn() },
+    );
+
+    const before = await service.downloadCompactPdf(context, 236n, 47n);
+    itemName = "مجلة الدارة";
+    const after = await service.downloadCompactPdf(context, 236n, 47n);
+
+    expect(before.buffer.subarray(0, 5).toString()).toBe("%PDF-");
+    expect(after.buffer.subarray(0, 5).toString()).toBe("%PDF-");
+    expect(after.filename).not.toBe(before.filename);
+    expect(after.filename).toMatch(/^inventory-item-236-barcode-47-50x25-[a-f0-9]{12}\.pdf$/);
   });
 });

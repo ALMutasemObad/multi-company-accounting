@@ -1,13 +1,13 @@
 import { resolveAuthorizedView, views, type NavigationAccess, type View } from './app-navigation';
 
-export type InventorySection = 'warehouses' | 'balances' | 'movements' | 'units' | 'items';
+export type InventorySection = 'warehouses' | 'balances' | 'movements' | 'units' | 'items' | 'barcode-settings';
 export type TreasurySection = 'accounts' | 'methods';
 export type PageRoute =
   | { view: 'inventory'; section?: InventorySection }
   | { view: 'treasury'; section?: TreasurySection }
   | { view: Exclude<View, 'inventory' | 'treasury'>; section?: never };
 
-const inventorySections: readonly InventorySection[] = ['warehouses', 'balances', 'movements', 'units', 'items'];
+const inventorySections: readonly InventorySection[] = ['warehouses', 'balances', 'movements', 'units', 'items', 'barcode-settings'];
 const treasurySections: readonly TreasurySection[] = ['accounts', 'methods'];
 
 export function visibleInventorySections(permissions: ReadonlySet<string>): InventorySection[] {
@@ -15,6 +15,7 @@ export function visibleInventorySections(permissions: ReadonlySet<string>): Inve
     if (!permissions.has('warehouses.view')) return false;
     if (section === 'warehouses') return true;
     if (!permissions.has('inventory_catalog.view')) return false;
+    if (section === 'barcode-settings') return permissions.has('inventory_barcodes.view');
     return section === 'units' || section === 'items' || permissions.has('inventory_movements.view');
   });
 }

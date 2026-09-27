@@ -11,8 +11,12 @@ import {
 } from "../generate-openapi-guards.mjs";
 
 test("generated OpenAPI guards are committed and current", () => {
-  assert.equal(guardedOperationIds.length, 195);
-  assert.equal(responseOperationIds.length, 391);
+  assert.equal(guardedOperationIds.length, 198);
+  assert.equal(responseOperationIds.length, 396);
+  for (const operation of ['previewInventoryCatalogImport', 'commitInventoryCatalogImport']) {
+    assert.ok(guardedOperationIds.includes(operation));
+    assert.ok(responseOperationIds.includes(operation));
+  }
   for (const operation of ['getCompanyProfile', 'updateCompanyProfile', 'getCompanyCompliance', 'updateCompanyCompliance']) {
     assert.ok(responseOperationIds.includes(operation));
   }
@@ -115,7 +119,7 @@ test("guard generation reflects request constraints from the contract", () => {
 
 test("guard generation covers request transforms and response schemas", () => {
   const generated = buildGeneratedSource();
-  assert.match(generated, /openApiContractCoverage = \{ operations: 391, requestBodies: 195, responseBodies: 2561 \}/u);
+  assert.match(generated, /openApiContractCoverage = \{ operations: 396, requestBodies: 198, responseBodies: 2585 \}/u);
   assert.match(generated, /"receivableItemId": z\.string\(\).*\.transform\(\(value\) => BigInt\(value\)\)/u);
   assert.match(generated, /export const openApiResponseBodySchemas = \{/u);
 });
