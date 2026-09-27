@@ -15,6 +15,7 @@ export class PrismaBarcodeLabelSettingsAdapter implements BarcodeLabelSettingsPo
       showItemName: stored.showItemName,
       showPublicationYear: stored.showPublicationYear,
       showIssueNumber: stored.showIssueNumber,
+      showPeriodicalYear: stored.showPeriodicalYear,
       showBarcodeText: stored.showBarcodeText,
     };
   }

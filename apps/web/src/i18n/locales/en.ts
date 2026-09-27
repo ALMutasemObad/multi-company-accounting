@@ -465,6 +465,8 @@ export const en = {
   "inventory.items.edition": "Edition (optional)",
   "inventory.items.publicationIdentifier": "Publication identifier ISBN/ISSN (optional)",
   "inventory.items.issueNumber": "Issue number (optional)",
+  "inventory.items.periodicalYear": "Periodical year (optional)",
+  "inventory.items.periodicalYearHint": "Example: third or 3",
   "inventory.items.primaryBarcode": "Unique scan barcode",
   "inventory.items.barcodeAutoHint": "Leave blank to generate an internal barcode",
   "inventory.items.bookDetails": "Book details",

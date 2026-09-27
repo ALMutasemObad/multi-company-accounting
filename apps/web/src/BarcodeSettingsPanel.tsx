@@ -12,6 +12,7 @@ export type BarcodeSettings = {
   showItemName: boolean;
   showPublicationYear: boolean;
   showIssueNumber: boolean;
+  showPeriodicalYear: boolean;
   showBarcodeText: boolean;
 };
 
@@ -32,7 +33,7 @@ export function BarcodeSettingsPanel({ notify }: { notify: (message: string, ton
     return () => { active = false; };
   }, []);
 
-  function toggle(key: "showItemName" | "showPublicationYear" | "showIssueNumber" | "showBarcodeText", checked: boolean) {
+  function toggle(key: "showItemName" | "showPublicationYear" | "showIssueNumber" | "showPeriodicalYear" | "showBarcodeText", checked: boolean) {
     setSettings((current) => current && { ...current, [key]: checked });
   }
 
@@ -62,6 +63,7 @@ export function BarcodeSettingsPanel({ notify }: { notify: (message: string, ton
         <label className="checkbox-line"><input type="checkbox" disabled={!canManage} checked={settings.showItemName} onChange={(event) => toggle("showItemName", event.target.checked)} />{t("inventory.barcodes.showItemName")}</label>
         <label className="checkbox-line"><input type="checkbox" disabled={!canManage} checked={settings.showPublicationYear} onChange={(event) => toggle("showPublicationYear", event.target.checked)} />{t("inventory.barcodes.showPublicationYear")}</label>
         <label className="checkbox-line"><input type="checkbox" disabled={!canManage} checked={settings.showIssueNumber} onChange={(event) => toggle("showIssueNumber", event.target.checked)} />{t("inventory.barcodes.showIssueNumber")}</label>
+        <label className="checkbox-line"><input type="checkbox" disabled={!canManage} checked={settings.showPeriodicalYear} onChange={(event) => toggle("showPeriodicalYear", event.target.checked)} />{t("inventory.barcodes.showPeriodicalYear")}</label>
         <label className="checkbox-line"><input type="checkbox" disabled={!canManage} checked={settings.showBarcodeText} onChange={(event) => toggle("showBarcodeText", event.target.checked)} />{t("inventory.barcodes.showBarcodeText")}</label>
       </div>
       {canManage && <div className="form-actions"><Button type="submit" disabled={saving}>{saving ? t("common.saving") : t("common.save")}</Button></div>}

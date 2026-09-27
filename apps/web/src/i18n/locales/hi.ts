@@ -703,6 +703,8 @@ export const hi = {
   "inventory.items.edition": "संस्करण (वैकल्पिक)",
   "inventory.items.publicationIdentifier": "प्रकाशन पहचान ISBN/ISSN (वैकल्पिक)",
   "inventory.items.issueNumber": "अंक संख्या (वैकल्पिक)",
+  "inventory.items.periodicalYear": "पत्रिका वर्ष (वैकल्पिक)",
+  "inventory.items.periodicalYearHint": "उदाहरण: तीसरा या 3",
   "inventory.items.primaryBarcode": "अद्वितीय स्कैन बारकोड",
   "inventory.items.barcodeAutoHint": "आंतरिक बारकोड बनाने के लिए खाली छोड़ें",
   "inventory.items.bookDetails": "पुस्तक विवरण",

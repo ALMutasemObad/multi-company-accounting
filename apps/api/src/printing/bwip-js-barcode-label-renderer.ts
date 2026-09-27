@@ -1,4 +1,4 @@
-import { toBuffer } from "@bwip-js/node";
+import { toBuffer, toSVG } from "@bwip-js/node";
 import type { InventoryBarcodeSymbology } from "../inventory/barcode-codec.js";
 import type {
   BarcodeLabelRendererPort,
@@ -27,6 +27,44 @@ export class BarcodeLabelRenderingError extends Error {
  * encoder flags, or arbitrary barcode types.
  */
 export class BwipJsBarcodeLabelRenderer implements BarcodeLabelRendererPort {
+  renderSvg(input: BarcodeLabelRenderInput): string {
+    const bcid = barcodeWriterTypes[input.symbology];
+    if (!bcid) throw new BarcodeLabelRenderingError();
+    const maxWidth = input.profile === "compact-75x50" ? 568 : 368;
+    try {
+      let smallestSvg = "";
+      for (const scale of [4, 3, 2]) {
+        const isLinear = input.symbology !== "QR";
+        const svg = toSVG({
+          bcid,
+          text: input.value,
+          scale,
+          ...(isLinear
+            ? {
+                height: 9,
+                includetext: input.showText ?? true,
+                textxalign: "center" as const,
+                ...(input.symbology === "CODE_128" ? { textyoffset: -4 } : {}),
+                textsize: input.profile === "compact-75x50" ? 10 : 9,
+                paddingwidth: 12,
+                paddingheight: 3,
+              }
+            : { paddingwidth: 8, paddingheight: 8 }),
+          backgroundcolor: "FFFFFF",
+          barcolor: "000000",
+        });
+        const width = Number(svg.match(/^<svg viewBox="0 0 ([\d.]+) /u)?.[1]);
+        if (!Number.isFinite(width) || svg.length > MAX_LABEL_BYTES) throw new BarcodeLabelRenderingError();
+        if (width <= maxWidth) return svg;
+        smallestSvg = svg;
+      }
+      // Let the PDF layout report LABEL_TOO_WIDE with its normal 422 response.
+      return smallestSvg;
+    } catch {
+      throw new BarcodeLabelRenderingError();
+    }
+  }
+
   async render(input: BarcodeLabelRenderInput): Promise<Buffer> {
     const bcid = barcodeWriterTypes[input.symbology];
     if (!bcid) throw new BarcodeLabelRenderingError();

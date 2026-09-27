@@ -8,6 +8,7 @@ export type PrintableInventoryBarcode = {
   itemName: string;
   publicationYear: number | null;
   issueNumber: string | null;
+  periodicalYear: string | null;
 };
 
 /** Inventory-owned read contract consumed by Printing & Document Output. */

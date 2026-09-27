@@ -463,6 +463,8 @@ export const ar = {
   "inventory.items.edition": "الطبعة (اختياري)",
   "inventory.items.publicationIdentifier": "معرّف النشر ISBN/ISSN (اختياري)",
   "inventory.items.issueNumber": "رقم العدد (اختياري)",
+  "inventory.items.periodicalYear": "سنة الدورية (اختياري)",
+  "inventory.items.periodicalYearHint": "مثال: الثالثة أو 3",
   "inventory.items.primaryBarcode": "باركود المسح الفريد",
   "inventory.items.barcodeAutoHint": "اتركه فارغًا لتوليد باركود داخلي",
   "inventory.items.bookDetails": "بيانات الكتاب",

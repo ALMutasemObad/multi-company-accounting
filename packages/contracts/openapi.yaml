@@ -16458,6 +16458,10 @@ components:
           type: [string, 'null']
           maxLength: 40
           description: رقم العدد أو الجزء كما يظهر في النشرة.
+        periodicalYear:
+          type: [string, 'null']
+          maxLength: 40
+          description: سنة الدورية أو المجلد مثل السنة الثالثة، مستقلة عن سنة النشر الميلادية.
         primaryBarcode:
           oneOf:
           - type: object
@@ -16518,6 +16522,9 @@ components:
         issueNumber:
           type: [string, 'null']
           maxLength: 40
+        periodicalYear:
+          type: [string, 'null']
+          maxLength: 40
         primaryBarcodeValue:
           type: [string, 'null']
           minLength: 1
@@ -16565,6 +16572,9 @@ components:
           type: [string, 'null']
           maxLength: 40
         issueNumber:
+          type: [string, 'null']
+          maxLength: 40
+        periodicalYear:
           type: [string, 'null']
           maxLength: 40
     InventoryCatalogDeactivateRequest:
@@ -16643,7 +16653,7 @@ components:
     InventoryBarcodeSettings:
       type: object
       additionalProperties: false
-      required: [labelSize, defaultSymbology, showItemName, showPublicationYear, showIssueNumber, showBarcodeText]
+      required: [labelSize, defaultSymbology, showItemName, showPublicationYear, showIssueNumber, showPeriodicalYear, showBarcodeText]
       properties:
         labelSize:
           type: string
@@ -16652,6 +16662,7 @@ components:
         showItemName: { type: boolean }
         showPublicationYear: { type: boolean }
         showIssueNumber: { type: boolean }
+        showPeriodicalYear: { type: boolean }
         showBarcodeText: { type: boolean }
     InventoryItemBarcode:
       type: object

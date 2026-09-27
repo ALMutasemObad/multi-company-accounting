@@ -150,14 +150,14 @@ describe("inventory count MVP", () => {
     };
     const service = buildService(tx);
     const result = await service.bulkEnterCounts(context, 20n, [
-      { lineId: 1n, expectedVersion: 2, countedQuantity: "1002", varianceReason: "نسختان زائدتان" },
+      { lineId: 1n, expectedVersion: 2, countedQuantity: "1002" },
       { lineId: 2n, expectedVersion: 3, countedQuantity: "1000" },
       { lineId: 999n, expectedVersion: 0, countedQuantity: "1000" },
     ]);
 
     expect(writes).toHaveLength(1);
     expect(writes[0]).toMatchObject({ data: {
-      countedById: 11n, countedByNameSnapshot: "ليان", version: { increment: 1 },
+      countedById: 11n, countedByNameSnapshot: "ليان", varianceReason: null, version: { increment: 1 },
     } });
     expect(result.conflicts).toEqual([
       { lineId: "2", expectedVersion: 3, actualVersion: 4 },
@@ -167,7 +167,7 @@ describe("inventory count MVP", () => {
     expect(tx.$queryRaw).toHaveBeenCalledTimes(2);
   });
 
-  it("rejects duplicate bulk rows and non-zero variance without a reason", async () => {
+  it("rejects duplicate rows and requires an explanation only for overriding a recorded count", async () => {
     const service = buildService({});
     await expect(service.bulkEnterCounts(context, 1n, [
       { lineId: 2n, expectedVersion: 0, countedQuantity: "1" },
@@ -178,7 +178,7 @@ describe("inventory count MVP", () => {
       $queryRaw: vi.fn(),
       stockCountSession: { findFirst: vi.fn().mockResolvedValue({ id: 1n, status: "DRAFT" }) },
       stockCountLine: {
-        findMany: vi.fn().mockResolvedValue([{ id: 2n, version: 0, bookQuantity: new Prisma.Decimal(10) }]),
+        findMany: vi.fn().mockResolvedValue([{ id: 2n, version: 0, bookQuantity: new Prisma.Decimal(10), countedQuantity: new Prisma.Decimal(10), _count: { entries: 1 } }]),
       },
       user: { findUnique: vi.fn().mockResolvedValue({ displayName: "ليان" }) },
     });

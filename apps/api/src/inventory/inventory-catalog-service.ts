@@ -48,6 +48,7 @@ export type InventoryItemInput = {
   edition?: string | null | undefined;
   publicationIdentifier?: string | null | undefined;
   issueNumber?: string | null | undefined;
+  periodicalYear?: string | null | undefined;
   primaryBarcodeValue?: string | null | undefined;
   primaryBarcodeSymbology?: InventoryBarcodeSymbology | undefined;
 };
@@ -64,6 +65,7 @@ export type InventoryItemUpdate = {
   edition?: string | null | undefined;
   publicationIdentifier?: string | null | undefined;
   issueNumber?: string | null | undefined;
+  periodicalYear?: string | null | undefined;
 };
 
 const itemInclude = {
@@ -491,6 +493,7 @@ export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
               edition: nullableTrimmed(input.edition) ?? null,
               publicationIdentifier: nullableTrimmed(input.publicationIdentifier) ?? null,
               issueNumber: nullableTrimmed(input.issueNumber) ?? null,
+              periodicalYear: nullableTrimmed(input.periodicalYear) ?? null,
             },
             include: itemInclude,
           });
@@ -545,6 +548,7 @@ export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
             ...(input.edition === undefined ? {} : { edition: nullableTrimmed(input.edition) ?? null }),
             ...(input.publicationIdentifier === undefined ? {} : { publicationIdentifier: nullableTrimmed(input.publicationIdentifier) ?? null }),
             ...(input.issueNumber === undefined ? {} : { issueNumber: nullableTrimmed(input.issueNumber) ?? null }),
+            ...(input.periodicalYear === undefined ? {} : { periodicalYear: nullableTrimmed(input.periodicalYear) ?? null }),
             version: { increment: 1 },
           },
         });
@@ -646,6 +650,7 @@ export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
     edition: string | null;
     publicationIdentifier: string | null;
     issueNumber: string | null;
+    periodicalYear: string | null;
     isActive: boolean;
     version: number;
     image: { version: number } | null;
@@ -664,6 +669,7 @@ export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
       edition: value.edition,
       publicationIdentifier: value.publicationIdentifier,
       issueNumber: value.issueNumber,
+      periodicalYear: value.periodicalYear,
       primaryBarcode: value.barcodes[0] ?? null,
       isActive: value.isActive,
       version: value.version,

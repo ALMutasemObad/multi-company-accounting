@@ -10,6 +10,7 @@ const settingsInput = z.strictObject({
   showItemName: z.boolean(),
   showPublicationYear: z.boolean(),
   showIssueNumber: z.boolean(),
+  showPeriodicalYear: z.boolean(),
   showBarcodeText: z.boolean(),
 });
 const sid = (request: Request) => Object.fromEntries(

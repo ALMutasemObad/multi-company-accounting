@@ -2595,6 +2595,7 @@ model InventoryItem {
   edition                String?                   @db.VarChar(120)
   publicationIdentifier  String?                   @map("publication_identifier") @db.VarChar(40)
   issueNumber            String?                   @map("issue_number") @db.VarChar(40)
+  periodicalYear         String?                   @map("periodical_year") @db.VarChar(40)
   importSourceKey        String?                   @map("import_source_key") @db.VarChar(120)
   isActive               Boolean                   @default(true) @map("is_active")
   version                Int                       @default(0) @db.UnsignedInt
@@ -2674,6 +2675,7 @@ model InventoryBarcodeSettings {
   showItemName        Boolean                   @default(false) @map("show_item_name")
   showPublicationYear Boolean                   @default(false) @map("show_publication_year")
   showIssueNumber     Boolean                   @default(false) @map("show_issue_number")
+  showPeriodicalYear  Boolean                   @default(false) @map("show_periodical_year")
   showBarcodeText     Boolean                   @default(true) @map("show_barcode_text")
   updatedAt           DateTime                  @updatedAt @map("updated_at")
   company             Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)

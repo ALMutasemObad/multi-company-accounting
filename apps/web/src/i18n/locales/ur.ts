@@ -703,6 +703,8 @@ export const ur = {
   "inventory.items.edition": "ایڈیشن (اختیاری)",
   "inventory.items.publicationIdentifier": "اشاعت کا شناختی نمبر ISBN/ISSN (اختیاری)",
   "inventory.items.issueNumber": "شمارہ نمبر (اختیاری)",
+  "inventory.items.periodicalYear": "سالِ اشاعتِ دوریہ (اختیاری)",
+  "inventory.items.periodicalYearHint": "مثال: تیسرا یا 3",
   "inventory.items.primaryBarcode": "منفرد اسکین بارکوڈ",
   "inventory.items.barcodeAutoHint": "اندرونی بارکوڈ بنانے کے لیے خالی چھوڑیں",
   "inventory.items.bookDetails": "کتاب کی تفصیلات",

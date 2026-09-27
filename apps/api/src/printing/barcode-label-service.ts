@@ -74,17 +74,18 @@ export class BarcodeLabelService {
     const settings = await this.settings.get(context.companyId);
     let buffer: Buffer;
     try {
-      const png = await this.renderer.render({
+      const svg = this.renderer.renderSvg({
         symbology: barcode.symbology,
         value: barcode.value,
-        profile: "compact-50x25",
+        profile: settings.labelSize === "75x50" ? "compact-75x50" : "compact-50x25",
         showText: settings.showBarcodeText,
       });
       buffer = await renderCompactBarcodeLabelPdf({
-        png,
+        svg,
         value: barcode.value,
         itemName: barcode.itemName,
         issueNumber: barcode.issueNumber,
+        periodicalYear: barcode.periodicalYear,
         publicationYear: barcode.publicationYear,
         settings,
       });

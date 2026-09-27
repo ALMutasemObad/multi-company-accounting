@@ -1,15 +1,8 @@
 import { Router, type ErrorRequestHandler, type Request } from "express";
-import { z, ZodError } from "zod";
+import { ZodError } from "zod";
 import type { AuthService } from "../auth/auth-service.js";
+import { commitInventoryCatalogImportRequestSchema, previewInventoryCatalogImportRequestSchema } from "../generated/openapi-request-guards.js";
 import { InventoryCatalogImportError, InventoryCatalogImportService } from "./inventory-catalog-import-service.js";
-
-const positiveId = z.string().regex(/^[1-9][0-9]*$/u).transform(BigInt);
-const fileInput = z.object({
-  contentBase64: z.string().min(1).max(700_000),
-  sourceFormat: z.enum(["CSV", "XLSX"]),
-  unitOfMeasureId: positiveId,
-}).strict();
-const commitInput = fileInput.extend({ previewHash: z.string().regex(/^[a-f0-9]{64}$/u) });
 
 function sid(request: Request) {
   return Object.fromEntries(
@@ -26,12 +19,12 @@ export function createInventoryCatalogImportRouter(auth: AuthService, service: I
   });
   router.post("/inventory-items/catalog-import/preview", async (request, response) => {
     const context = await authorize(request);
-    const input = fileInput.parse(request.body);
+    const input = previewInventoryCatalogImportRequestSchema.parse(request.body);
     response.json(await service.preview(context, input));
   });
   router.post("/inventory-items/catalog-import/commit", async (request, response) => {
     const context = await authorize(request);
-    const { previewHash, ...input } = commitInput.parse(request.body);
+    const { previewHash, ...input } = commitInventoryCatalogImportRequestSchema.parse(request.body);
     response.json(await service.commit(context, input, previewHash));
   });
   const errors: ErrorRequestHandler = (error, _request, response, next) => {

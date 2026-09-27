@@ -26,7 +26,7 @@ implements InventoryBarcodeLabelQueryPort {
         inventoryItemId: true,
         symbology: true,
         value: true,
-        inventoryItem: { select: { nameAr: true, publicationYear: true, issueNumber: true } },
+        inventoryItem: { select: { nameAr: true, publicationYear: true, issueNumber: true, periodicalYear: true } },
       },
     });
 
@@ -40,6 +40,7 @@ implements InventoryBarcodeLabelQueryPort {
           itemName: barcode.inventoryItem.nameAr,
           publicationYear: barcode.inventoryItem.publicationYear,
           issueNumber: barcode.inventoryItem.issueNumber,
+          periodicalYear: barcode.inventoryItem.periodicalYear,
         };
   }
 }

@@ -25,16 +25,17 @@ type CatalogRow = {
   publicationIdentifier: string | null;
   publicationYear: number | null;
   issueNumber: string | null;
+  periodicalYear: string | null;
   publisher: string | null;
   edition: string | null;
 };
 
 const MAX_BYTES = 512 * 1024;
 const MAX_ROWS = 500;
-const HEADERS = ["source_key", "name_ar", "author", "publication_identifier", "publication_year", "issue_number", "publisher", "edition"] as const;
+const HEADERS = ["source_key", "name_ar", "author", "publication_identifier", "publication_year", "issue_number", "periodical_year", "publisher", "edition"] as const;
 const LIMITS: Record<string, number> = {
   source_key: 120, name_ar: 200, author: 200, publication_identifier: 40,
-  issue_number: 40, publisher: 200, edition: 120,
+  issue_number: 40, periodical_year: 40, publisher: 200, edition: 120,
 };
 
 export class InventoryCatalogImportError extends Error {
@@ -148,7 +149,7 @@ export async function parseCatalogImportFile(input: CatalogImportInput) {
     return {
       row, sourceKey, nameAr: values.name_ar ?? "", author: optional("author"),
       publicationIdentifier: optional("publication_identifier"), publicationYear: /^[1-9][0-9]{0,3}$/u.test(year) ? Number(year) : null,
-      issueNumber: optional("issue_number"), publisher: optional("publisher"), edition: optional("edition"),
+      issueNumber: optional("issue_number"), periodicalYear: optional("periodical_year"), publisher: optional("publisher"), edition: optional("edition"),
     };
   });
   return { file, rows, errors };
@@ -227,7 +228,7 @@ export class InventoryCatalogImportService {
             companyId: context.companyId, unitOfMeasureId: input.unitOfMeasureId, code,
             importSourceKey: row.sourceKey, nameAr: row.nameAr, author: row.author,
             publicationIdentifier: row.publicationIdentifier, publicationYear: row.publicationYear,
-            issueNumber: row.issueNumber, publisher: row.publisher, edition: row.edition,
+            issueNumber: row.issueNumber, periodicalYear: row.periodicalYear, publisher: row.publisher, edition: row.edition,
           } });
           const encoded = encodeBarcode("CODE_128", barcode);
           await tx.inventoryItemBarcode.create({ data: {

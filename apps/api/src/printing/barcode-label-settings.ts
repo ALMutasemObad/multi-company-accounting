@@ -8,6 +8,7 @@ export type BarcodeLabelSettings = {
   showItemName: boolean;
   showPublicationYear: boolean;
   showIssueNumber: boolean;
+  showPeriodicalYear: boolean;
   showBarcodeText: boolean;
 };
 
@@ -17,6 +18,7 @@ export const defaultBarcodeLabelSettings: BarcodeLabelSettings = {
   showItemName: false,
   showPublicationYear: false,
   showIssueNumber: false,
+  showPeriodicalYear: false,
   showBarcodeText: true,
 };
 

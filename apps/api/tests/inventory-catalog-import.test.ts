@@ -48,6 +48,17 @@ describe("inventory catalog file import", () => {
       .rejects.toMatchObject({ reason: "INVALID_HEADERS", errors: [{ row: 1, column: "quantity", code: "UNKNOWN_HEADER" }] });
   });
 
+  it("keeps periodical age separate from Gregorian publication year", async () => {
+    const { service, tx } = harness();
+    const input = csv("source_key,name_ar,publication_year,issue_number,periodical_year\na,مجلة,2020,العدد الثاني,السنة الثالثة\n");
+    const preview = await service.preview(context, input);
+    expect(preview.errors).toEqual([]);
+    await service.commit(context, input, preview.previewHash);
+    expect(tx.inventoryItem.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      publicationYear: 2020, issueNumber: "العدد الثاني", periodicalYear: "السنة الثالثة",
+    }) });
+  });
+
   it("limits the file to 500 data rows", async () => {
     const lines = Array.from({ length: 501 }, (_, index) => `${index + 1},كتاب`);
     await expect(parseCatalogImportFile(csv(`source_key,name_ar\n${lines.join("\n")}\n`)))

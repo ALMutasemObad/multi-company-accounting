@@ -23,10 +23,11 @@ const source = {
 function fixture() {
   const findPrintableBarcode = vi.fn().mockResolvedValue(source);
   const render = vi.fn().mockResolvedValue(Buffer.from("png"));
+  const renderSvg = vi.fn().mockReturnValue('<svg viewBox="0 0 10 10"><path d="M0 0L1 1" /></svg>');
   const recordDownload = vi.fn().mockResolvedValue(undefined);
   const service = new BarcodeLabelService(
     { findPrintableBarcode } satisfies InventoryBarcodeLabelQueryPort,
-    { render } satisfies BarcodeLabelRendererPort,
+    { render, renderSvg } satisfies BarcodeLabelRendererPort,
     { recordDownload } satisfies BarcodeLabelAuditPort,
     { get: vi.fn().mockResolvedValue(defaultBarcodeLabelSettings), save: vi.fn().mockResolvedValue(defaultBarcodeLabelSettings) },
   );

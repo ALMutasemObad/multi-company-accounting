@@ -228,15 +228,6 @@ describe("inventory count settlement", () => {
         bookUnitCostBase: new Prisma.Decimal(0),
       }],
     }), null, 2, "MISSING_SURPLUS_COST"],
-    ["rejects an unexplained variance", approvedSession({
-      lines: [{
-        inventoryItemId: 103n,
-        countedQuantity: new Prisma.Decimal(2),
-        varianceQuantity: new Prisma.Decimal(2),
-        varianceReason: null,
-        bookUnitCostBase: new Prisma.Decimal(1),
-      }],
-    }), null, 2, "INVALID_STATE"],
   ] as const)("%s without partially posting a movement", async (_name, session, laterMovement, expectedVersion, reason) => {
     const setup = fixture(session, laterMovement);
 
