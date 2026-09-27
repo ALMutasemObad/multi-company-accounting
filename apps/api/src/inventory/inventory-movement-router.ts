@@ -159,6 +159,17 @@ export function createInventoryMovementRouter(
     response.json({ data: result.data, meta: meta(query, result.summary.total), summary: result.summary });
   });
 
+  router.get("/inventory-count-sessions/:sessionId/lookup", async (request, response) => {
+    const context = await authorize(request, "inventory_counts.enter", false);
+    const query = z.object({
+      query: z.string().trim().min(1).max(200),
+      page: z.coerce.number().int().min(1).default(1),
+    }).parse(request.query);
+    response.json(await service.inventoryCount.lookupItems(
+      context, id.parse(request.params.sessionId), query.query, query.page,
+    ));
+  });
+
   router.post("/inventory-count-sessions/:sessionId/counts", async (request, response) => {
     const context = await authorize(request, "inventory_counts.manage", true);
     const input = bodies.enterInventoryCountQuantities.parse(request.body);

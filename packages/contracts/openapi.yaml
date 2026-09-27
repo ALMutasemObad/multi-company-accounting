@@ -7652,6 +7652,36 @@ paths:
         '500': { $ref: '#/components/responses/InternalError' }
       x-permission: inventory_movements.view
       security: [{ SessionCookie: [] }]
+  /inventory-count-sessions/{sessionId}/lookup:
+    get:
+      tags: [Inventory]
+      summary: البحث عن كتاب للجرد بباركود المسح أو معرّف النشر أو الرمز أو العنوان
+      operationId: lookupInventoryCountItem
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/InventoryCountSessionId'
+      - { name: query, in: query, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
+      - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+      responses:
+        '200':
+          description: جميع المطابقات في الشركة مرتبة على صفحات، مع الكمية المعدودة سابقًا دون الرصيد الدفتري
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data, total, page]
+                properties:
+                  data: { type: array, items: { type: object } }
+                  total: { type: integer, minimum: 0 }
+                  page: { type: integer, minimum: 1 }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: inventory_counts.enter
+      security: [{ SessionCookie: [] }]
   /inventory-count-sessions/{sessionId}/counts:
     post:
       tags: [Inventory]

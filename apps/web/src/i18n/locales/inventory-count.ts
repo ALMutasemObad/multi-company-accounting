@@ -1,5 +1,6 @@
 export const inventoryCountCopy = {
   ar: {
+    matchesTitle: "اختر الكتاب أو العدد الصحيح", matchesFound: "وجدت {count} أصناف بهذا الرقم؛ اختر الصنف المطلوب قبل إدخال الكمية.", lookupHint: "ابحث بالباركود أو ISBN أو رمز الكتاب أو اسمه.",
     externalStockTab: "الأمانات والبضاعة بالطريق", countTab: "جرد المكتبة",
     statusDraft: "قيد الجرد", statusSubmitted: "بانتظار الاعتماد", statusApproved: "معتمد", statusSettled: "تمت التسوية",
     sessionsLoadError: "تعذر تحميل جلسات الجرد.", linesLoadError: "تعذر تحميل بنود الجرد.", saveError: "تعذر حفظ كميات الجرد.", transitionError: "تعذر تحديث حالة الجرد.",
@@ -18,6 +19,7 @@ export const inventoryCountCopy = {
     stationTitle: "محطة العد السريع", stationDescription: "امسح الباركود أو اكتب رمز الكتاب، ثم أدخل كمية هذه الدفعة واحفظ.", barcodeOrCode: "باركود أو رقم الكتاب", resolve: "استدعاء الكتاب", locationReference: "مرجع الموقع أو المجموعة (اختياري)", locationReferenceHint: "مثال: الرف 3، الصندوق 12، دفعة أحمد", batchQuantity: "كمية هذه الدفعة", addAndNext: "حفظ والتالي", itemNotFound: "الكتاب غير موجود. يمكنك إضافته الآن دون مغادرة الجلسة.", quickAdd: "إضافة كتاب جديد", quickAddTitle: "إضافة كتاب أثناء الجرد", titleRequired: "اسم الكتاب", author: "المؤلف", publisher: "دار النشر", publicationYear: "سنة النشر", edition: "الطبعة", addedAndReady: "تم إنشاء الكتاب. أدخل كمية الدفعة.", entrySaved: "تمت إضافة الكمية إلى إجمالي العنوان.", countedSoFar: "المجرود حتى الآن", blindCountNote: "لا تظهر الكمية الدفترية للعاد؛ يراجع المشرف الفروقات في الجدول.", downloadReport: "تصدير محضر الفروقات Excel", unknownCode: "لم يتم العثور على هذا الباركود أو الرمز.",
   },
   en: {
+    matchesTitle: "Choose the correct book or issue", matchesFound: "Found {count} matching items. Choose one before entering the quantity.", lookupHint: "Search by barcode, ISBN, book code or title.",
     externalStockTab: "Custody and in-transit stock", countTab: "Library count",
     statusDraft: "Counting", statusSubmitted: "Awaiting approval", statusApproved: "Approved", statusSettled: "Settled",
     sessionsLoadError: "Could not load count sessions.", linesLoadError: "Could not load count lines.", saveError: "Could not save counted quantities.", transitionError: "Could not update the count status.",
@@ -36,6 +38,7 @@ export const inventoryCountCopy = {
     stationTitle: "Quick count station", stationDescription: "Scan a barcode or enter a book code, then enter this batch quantity.", barcodeOrCode: "Barcode or book code", resolve: "Find book", locationReference: "Location or group reference (optional)", locationReferenceHint: "Example: shelf 3, box 12, Ahmed batch", batchQuantity: "This batch quantity", addAndNext: "Save and next", itemNotFound: "Book not found. Add it without leaving the session.", quickAdd: "Add new book", quickAddTitle: "Add book during count", titleRequired: "Book title", author: "Author", publisher: "Publisher", publicationYear: "Publication year", edition: "Edition", addedAndReady: "Book created. Enter the batch quantity.", entrySaved: "Quantity added to the title total.", countedSoFar: "Counted so far", blindCountNote: "Book quantity is hidden from counters; supervisors review variances in the table.", downloadReport: "Export variance record (Excel)", unknownCode: "No item was found for this barcode or code.",
   },
   ur: {
+    matchesTitle: "صحیح کتاب یا شمارہ منتخب کریں", matchesFound: "اس نمبر کے لیے {count} آئٹمز ملے۔ مقدار درج کرنے سے پہلے ایک منتخب کریں۔", lookupHint: "بارکوڈ، ISBN، کتاب کوڈ یا نام سے تلاش کریں۔",
     externalStockTab: "امانت اور راستے میں موجود اسٹاک", countTab: "لائبریری گنتی",
     statusDraft: "گنتی جاری", statusSubmitted: "منظوری کا منتظر", statusApproved: "منظور شدہ", statusSettled: "تصفیہ شدہ",
     sessionsLoadError: "گنتی کے سیشن لوڈ نہیں ہو سکے۔", linesLoadError: "گنتی کی سطریں لوڈ نہیں ہو سکیں۔", saveError: "گنتی کی مقدار محفوظ نہیں ہو سکی۔", transitionError: "گنتی کی حالت تبدیل نہیں ہو سکی۔",
@@ -54,6 +57,7 @@ export const inventoryCountCopy = {
     stationTitle: "فوری گنتی اسٹیشن", stationDescription: "بارکوڈ اسکین کریں یا کتاب کا کوڈ درج کریں، پھر اس بیچ کی مقدار محفوظ کریں۔", barcodeOrCode: "بارکوڈ یا کتاب کا کوڈ", resolve: "کتاب تلاش کریں", locationReference: "مقام یا گروپ حوالہ (اختیاری)", locationReferenceHint: "مثال: شیلف 3، باکس 12", batchQuantity: "اس بیچ کی مقدار", addAndNext: "محفوظ اور اگلا", itemNotFound: "کتاب نہیں ملی۔ اسے اسی سیشن سے شامل کریں۔", quickAdd: "نئی کتاب شامل کریں", quickAddTitle: "گنتی کے دوران کتاب شامل کریں", titleRequired: "کتاب کا نام", author: "مصنف", publisher: "ناشر", publicationYear: "اشاعت کا سال", edition: "ایڈیشن", addedAndReady: "کتاب بن گئی۔ مقدار درج کریں۔", entrySaved: "مقدار عنوان کے کل میں شامل ہو گئی۔", countedSoFar: "اب تک گنتی", blindCountNote: "کارکن کو کتابی مقدار نہیں دکھائی جاتی؛ نگران فرق کا جائزہ لیتا ہے۔", downloadReport: "فرق رپورٹ Excel", unknownCode: "یہ بارکوڈ یا کوڈ نہیں ملا۔",
   },
   hi: {
+    matchesTitle: "सही पुस्तक या अंक चुनें", matchesFound: "इस संख्या के लिए {count} आइटम मिले। मात्रा दर्ज करने से पहले एक चुनें।", lookupHint: "बारकोड, ISBN, पुस्तक कोड या नाम से खोजें।",
     externalStockTab: "अभिरक्षा और मार्ग में स्टॉक", countTab: "पुस्तकालय गणना",
     statusDraft: "गणना जारी", statusSubmitted: "अनुमोदन की प्रतीक्षा", statusApproved: "अनुमोदित", statusSettled: "समायोजित",
     sessionsLoadError: "गणना सत्र लोड नहीं हुए।", linesLoadError: "गणना पंक्तियाँ लोड नहीं हुईं।", saveError: "गणना मात्रा सहेजी नहीं गई।", transitionError: "गणना स्थिति बदली नहीं जा सकी।",
