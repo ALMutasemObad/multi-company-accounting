@@ -33,23 +33,24 @@ export class BwipJsBarcodeLabelRenderer implements BarcodeLabelRendererPort {
 
     try {
       const isLinear = input.symbology !== "QR";
+      const compact = input.profile === "compact-50x25";
       const png = await toBuffer({
         bcid,
         text: input.value,
-        scale: isLinear ? 3 : 4,
+        scale: compact ? 2 : isLinear ? 3 : 4,
         ...(isLinear
           ? {
-              height: 16,
-              includetext: true,
+              height: compact ? 9 : 16,
+              includetext: input.showText ?? true,
               textxalign: "center" as const,
-              textsize: 9,
-              paddingwidth: 36,
-              paddingheight: 8,
+              textsize: compact ? 8 : 9,
+              paddingwidth: compact ? 12 : 36,
+              paddingheight: compact ? 3 : 8,
               textcolor: "000000",
             }
           : {
-              paddingwidth: 16,
-              paddingheight: 16,
+              paddingwidth: compact ? 8 : 16,
+              paddingheight: compact ? 8 : 16,
             }),
         backgroundcolor: "FFFFFF",
         barcolor: "000000",

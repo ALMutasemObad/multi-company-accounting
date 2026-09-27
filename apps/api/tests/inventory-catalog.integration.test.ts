@@ -166,6 +166,28 @@ describe.runIf(enabled)("Inventory catalog ownership, concurrency and company is
     expect(created.every(({ code }) => /^ITM-[0-9]{6,}$/u.test(code))).toBe(true);
   });
 
+  it("allows a shared serial identifier but keeps every issue's scan barcode unique", async () => {
+    const unit = await createUnit("cpy", "نسخة");
+    const created = await Promise.all(["1", "2"].map(async (issueNumber) => {
+      const result = await agent.post("/api/v1/inventory-items")
+        .set("X-CSRF-Token", csrf)
+        .send({ unitOfMeasureId: unit.id, nameAr: "مجلة الدارة", publicationIdentifier: "13190148", issueNumber, publicationYear: 2026 })
+        .expect(201);
+      itemIds.push(BigInt(result.body.id));
+      return result.body;
+    }));
+    expect(created.map((item) => item.publicationIdentifier)).toEqual(["13190148", "13190148"]);
+    expect(new Set(created.map((item) => item.primaryBarcode.value)).size).toBe(2);
+    expect(created.every((item) => /^BK-[0-9]{6,}$/u.test(item.primaryBarcode.value))).toBe(true);
+    const matches = await agent.get("/api/v1/inventory-items")
+      .query({ search: "13190148", pageSize: 100 }).expect(200);
+    expect(matches.body.data.filter((item: { id: string }) => created.some((row) => row.id === item.id))).toHaveLength(2);
+    await agent.post("/api/v1/inventory-items")
+      .set("X-CSRF-Token", csrf)
+      .send({ unitOfMeasureId: unit.id, nameAr: "عدد مكرر الباركود", primaryBarcodeValue: created[0].primaryBarcode.value, primaryBarcodeSymbology: "CODE_128" })
+      .expect(409);
+  });
+
   it("allows one optimistic update and blocks disabling a unit used by an active item", async () => {
     const unit = await createUnit("kg", "كيلوجرام");
     const item = await createItem(unit.id, "مادة موزونة");

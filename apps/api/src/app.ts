@@ -90,6 +90,8 @@ import type { InventoryService } from './inventory/inventory-service.js';
 import { createInventoryRouter } from './inventory/inventory-router.js';
 import type { InventoryCatalogService } from './inventory/inventory-catalog-service.js';
 import { createInventoryCatalogRouter } from './inventory/inventory-catalog-router.js';
+import type { InventoryCatalogImportService } from './inventory/inventory-catalog-import-service.js';
+import { createInventoryCatalogImportRouter } from './inventory/inventory-catalog-import-router.js';
 import type { ProductImageService } from './inventory/product-image-service.js';
 import { createProductImageRouter } from './inventory/product-image-router.js';
 import type { InventoryBarcodeService } from './inventory/inventory-barcode-service.js';
@@ -219,6 +221,7 @@ export type AppServices = {
   bankReconciliation?: BankReconciliationService;
   inventory?: InventoryService;
   inventoryCatalog?: InventoryCatalogService;
+  inventoryCatalogImport?: InventoryCatalogImportService;
   productImages?: ProductImageService;
   inventoryBarcodes?: InventoryBarcodeService;
   inventoryMovements?: InventoryMovementService;
@@ -266,6 +269,7 @@ export function createApp(config: AppConfig, services: AppServices = {}) {
     readDeadlineMs: config.API_READ_DEADLINE_MS ?? 10_000,
     writeDeadlineMs: config.API_WRITE_DEADLINE_MS ?? 15_000,
     registrationWriteDeadlineMs: config.API_REGISTRATION_WRITE_DEADLINE_MS ?? 65_000,
+    catalogImportWriteDeadlineMs: Math.min(60_000, (config.HTTP_REQUEST_TIMEOUT_MS ?? 70_000) - 2_000),
     metrics,
   }));
   if (config.NODE_ENV !== 'production') app.use(createOpenApiResponseValidator());
@@ -444,6 +448,7 @@ export function createApp(config: AppConfig, services: AppServices = {}) {
     ),
   ));
   if (services.auth && services.inventory) app.use('/api/v1', createInventoryRouter(services.auth, services.inventory));
+  if (services.auth && services.inventoryCatalogImport) app.use('/api/v1', createInventoryCatalogImportRouter(services.auth, services.inventoryCatalogImport));
   if (services.auth && services.inventoryCatalog) app.use('/api/v1', createInventoryCatalogRouter(services.auth, services.inventoryCatalog));
   if (services.auth && services.productImages) app.use('/api/v1', createProductImageRouter(
     services.auth,

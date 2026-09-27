@@ -9,6 +9,7 @@ import {
   type BarcodeLabelAuditPort,
   type BarcodeLabelRendererPort,
 } from "../src/printing/barcode-label-ports.js";
+import { defaultBarcodeLabelSettings } from "../src/printing/barcode-label-settings.js";
 
 const context = { companyId: 5n, userId: 7n };
 const rawValue = "0012345678905";
@@ -27,6 +28,7 @@ function fixture() {
     { findPrintableBarcode } satisfies InventoryBarcodeLabelQueryPort,
     { render } satisfies BarcodeLabelRendererPort,
     { recordDownload } satisfies BarcodeLabelAuditPort,
+    { get: vi.fn().mockResolvedValue(defaultBarcodeLabelSettings), save: vi.fn().mockResolvedValue(defaultBarcodeLabelSettings) },
   );
   return { service, findPrintableBarcode, render, recordDownload };
 }

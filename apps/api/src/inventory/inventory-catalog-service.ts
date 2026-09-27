@@ -1,5 +1,4 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
-import { randomUUID } from "node:crypto";
 import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import { reserveMasterDataCode } from "../platform/master-data-code-service.js";
 import { TransactionExecutor } from "../platform/transaction-executor.js";
@@ -47,6 +46,8 @@ export type InventoryItemInput = {
   publisher?: string | null | undefined;
   publicationYear?: number | null | undefined;
   edition?: string | null | undefined;
+  publicationIdentifier?: string | null | undefined;
+  issueNumber?: string | null | undefined;
   primaryBarcodeValue?: string | null | undefined;
   primaryBarcodeSymbology?: InventoryBarcodeSymbology | undefined;
 };
@@ -61,6 +62,8 @@ export type InventoryItemUpdate = {
   publisher?: string | null | undefined;
   publicationYear?: number | null | undefined;
   edition?: string | null | undefined;
+  publicationIdentifier?: string | null | undefined;
+  issueNumber?: string | null | undefined;
 };
 
 const itemInclude = {
@@ -321,6 +324,8 @@ export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
               { nameAr: { contains: input.search } },
               { nameEn: { contains: input.search } },
               { description: { contains: input.search } },
+              { publicationIdentifier: { contains: input.search } },
+              { issueNumber: { contains: input.search } },
             ],
           }
         : {}),
@@ -449,25 +454,29 @@ export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
         { operation: "CREATE_INVENTORY_ITEM", companyId: context.companyId },
         async (tx) => {
           await this.requireActiveUnit(tx, context.companyId, input.unitOfMeasureId);
-          const encoded = encodeBarcode(
-            input.primaryBarcodeValue?.trim()
-              ? (input.primaryBarcodeSymbology ?? "CODE_128")
-              : "CODE_128",
-            input.primaryBarcodeValue?.trim() || `BK-${randomUUID().replaceAll("-", "").slice(0, 16).toUpperCase()}`,
-          );
-          if (await tx.inventoryItemBarcode.findFirst({
-            where: { companyId: context.companyId, normalizedValue: encoded.normalizedValue },
-            select: { id: true },
-          })) throw new InventoryCatalogError("BARCODE_EXISTS");
           let code = "";
           for (let attempt = 0; attempt < 100; attempt += 1) {
             const candidate = await reserveMasterDataCode(tx, context.companyId, "INVENTORY_ITEM");
             const exists = await tx.inventoryItem.findFirst({
               where: { companyId: context.companyId, code: candidate }, select: { id: true },
             });
-            if (!exists) { code = candidate; break; }
+            const generatedBarcodeTaken = !input.primaryBarcodeValue?.trim() && await tx.inventoryItemBarcode.findFirst({
+              where: { companyId: context.companyId, normalizedValue: `BK-${candidate.slice(4)}` },
+              select: { id: true },
+            });
+            if (!exists && !generatedBarcodeTaken) { code = candidate; break; }
           }
           if (!code) throw new Error("INVENTORY_ITEM_SEQUENCE_EXHAUSTED");
+          const encoded = encodeBarcode(
+            input.primaryBarcodeValue?.trim()
+              ? (input.primaryBarcodeSymbology ?? "CODE_128")
+              : "CODE_128",
+            input.primaryBarcodeValue?.trim() || `BK-${code.slice(4)}`,
+          );
+          if (await tx.inventoryItemBarcode.findFirst({
+            where: { companyId: context.companyId, normalizedValue: encoded.normalizedValue },
+            select: { id: true },
+          })) throw new InventoryCatalogError("BARCODE_EXISTS");
           const value = await tx.inventoryItem.create({
             data: {
               companyId: context.companyId,
@@ -480,6 +489,8 @@ export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
               publisher: nullableTrimmed(input.publisher) ?? null,
               publicationYear: input.publicationYear ?? null,
               edition: nullableTrimmed(input.edition) ?? null,
+              publicationIdentifier: nullableTrimmed(input.publicationIdentifier) ?? null,
+              issueNumber: nullableTrimmed(input.issueNumber) ?? null,
             },
             include: itemInclude,
           });
@@ -532,6 +543,8 @@ export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
             ...(input.publisher === undefined ? {} : { publisher: nullableTrimmed(input.publisher) ?? null }),
             ...(input.publicationYear === undefined ? {} : { publicationYear: input.publicationYear }),
             ...(input.edition === undefined ? {} : { edition: nullableTrimmed(input.edition) ?? null }),
+            ...(input.publicationIdentifier === undefined ? {} : { publicationIdentifier: nullableTrimmed(input.publicationIdentifier) ?? null }),
+            ...(input.issueNumber === undefined ? {} : { issueNumber: nullableTrimmed(input.issueNumber) ?? null }),
             version: { increment: 1 },
           },
         });
@@ -631,6 +644,8 @@ export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
     publisher: string | null;
     publicationYear: number | null;
     edition: string | null;
+    publicationIdentifier: string | null;
+    issueNumber: string | null;
     isActive: boolean;
     version: number;
     image: { version: number } | null;
@@ -647,6 +662,8 @@ export class InventoryCatalogService implements InventoryInvoiceCatalogPort {
       publisher: value.publisher,
       publicationYear: value.publicationYear,
       edition: value.edition,
+      publicationIdentifier: value.publicationIdentifier,
+      issueNumber: value.issueNumber,
       primaryBarcode: value.barcodes[0] ?? null,
       isActive: value.isActive,
       version: value.version,

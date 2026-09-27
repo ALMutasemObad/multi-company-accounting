@@ -73,6 +73,11 @@ export function inventoryBarcodeLabelFilename(itemId: string, barcodeId: string)
   return `inventory-barcode-${safeId(itemId)}-${safeId(barcodeId)}.png`;
 }
 
+export function inventoryCompactLabelFilename(itemId: string, barcodeId: string) {
+  const safeId = (value: string) => /^[1-9][0-9]*$/u.test(value) ? value : "unknown";
+  return `inventory-barcode-${safeId(itemId)}-${safeId(barcodeId)}-label.pdf`;
+}
+
 export function appendBarcodeScanToQueue(
   current: readonly QueuedBarcodeScan[],
   rawValue: string,
