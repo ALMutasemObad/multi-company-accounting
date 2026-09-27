@@ -1,18 +1,10 @@
 import { Router, type ErrorRequestHandler, type Request } from "express";
 import { z, ZodError } from "zod";
 import type { AuthService } from "../auth/auth-service.js";
+import { updateInventoryBarcodeSettingsRequestSchema } from "../generated/openapi-request-guards.js";
 import { BarcodeLabelError, type BarcodeLabelService } from "./barcode-label-service.js";
 
 const id = z.string().regex(/^[1-9][0-9]*$/u).transform(BigInt);
-const settingsInput = z.strictObject({
-  labelSize: z.enum(["50x25", "75x50"]),
-  defaultSymbology: z.enum(["EAN_13", "EAN_8", "UPC_A", "CODE_128", "QR"]),
-  showItemName: z.boolean(),
-  showPublicationYear: z.boolean(),
-  showIssueNumber: z.boolean(),
-  showPeriodicalYear: z.boolean(),
-  showBarcodeText: z.boolean(),
-});
 const sid = (request: Request) => Object.fromEntries(
   (request.headers.cookie ?? "")
     .split(";")
@@ -35,7 +27,7 @@ export function createBarcodeLabelRouter(
   router.put("/inventory-barcode-settings", async (request, response) => {
     response.setHeader("Cache-Control", "no-store");
     const context = await auth.authorize({ sid: sid(request), permission: "inventory_barcodes.manage", csrfToken: request.headers["x-csrf-token"] as string | undefined, requireCsrf: true });
-    response.json(await labels.saveSettings(context, settingsInput.parse(request.body)));
+    response.json(await labels.saveSettings(context, updateInventoryBarcodeSettingsRequestSchema.parse(request.body)));
   });
 
   router.get(
