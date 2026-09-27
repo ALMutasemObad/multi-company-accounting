@@ -2567,7 +2567,7 @@ export const localeDictionary = {
   "inventory.import.title": "کتابوں اور اشیا کا کیٹلاگ درآمد کریں",
   "inventory.import.description": "Excel یا CSV سے صرف اشیا بنیں گی؛ مقدار یا اسٹاک کی حرکت درج نہیں ہوگی۔ پہلے پیش نظارہ دیکھیں۔",
   "inventory.import.file": "Excel یا CSV فائل",
-  "inventory.import.columns": "لازمی کالم: source_key اور name_ar۔ اختیاری: author, publication_identifier, publication_year, issue_number, publisher, edition۔",
+  "inventory.import.columns": "لازمی کالم: source_key اور name_ar۔ اختیاری: author, publication_identifier, publication_year, issue_number, periodical_year, publisher, edition۔",
   "inventory.import.fileTooLarge": "فائل 512 KB کی حد سے بڑی ہے۔",
   "inventory.import.invalidFormat": "XLSX یا CSV فائل منتخب کریں۔",
   "inventory.import.previewError": "فائل کا پیش نظارہ نہیں مل سکا۔",

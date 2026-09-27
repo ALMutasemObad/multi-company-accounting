@@ -2567,7 +2567,7 @@ export const localeDictionary = {
   "inventory.import.title": "Import book and item catalog",
   "inventory.import.description": "Create catalog items from Excel or CSV only; no quantities, balances or movements are posted. Preview before committing.",
   "inventory.import.file": "Excel or CSV file",
-  "inventory.import.columns": "Required columns: source_key and name_ar. Optional: author, publication_identifier, publication_year, issue_number, publisher, edition.",
+  "inventory.import.columns": "Required columns: source_key and name_ar. Optional: author, publication_identifier, publication_year, issue_number, periodical_year, publisher, edition.",
   "inventory.import.fileTooLarge": "File exceeds the 512 KB limit.",
   "inventory.import.invalidFormat": "Choose an XLSX or CSV file.",
   "inventory.import.previewError": "Could not preview the file.",

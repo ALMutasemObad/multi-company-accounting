@@ -547,7 +547,7 @@ export const hi = {
   "inventory.import.title": "पुस्तक और आइटम कैटलॉग आयात करें",
   "inventory.import.description": "Excel या CSV से केवल आइटम बनाएं; मात्रा या स्टॉक मूवमेंट दर्ज नहीं होंगे। पहले पूर्वावलोकन देखें।",
   "inventory.import.file": "Excel या CSV फ़ाइल",
-  "inventory.import.columns": "आवश्यक कॉलम: source_key और name_ar। वैकल्पिक: author, publication_identifier, publication_year, issue_number, publisher, edition।",
+  "inventory.import.columns": "आवश्यक कॉलम: source_key और name_ar। वैकल्पिक: author, publication_identifier, publication_year, issue_number, periodical_year, publisher, edition।",
   "inventory.import.fileTooLarge": "फ़ाइल 512 KB सीमा से बड़ी है।",
   "inventory.import.invalidFormat": "XLSX या CSV फ़ाइल चुनें।",
   "inventory.import.previewError": "फ़ाइल का पूर्वावलोकन नहीं हो सका।",

@@ -307,7 +307,7 @@ export const ar = {
   "inventory.import.title": "استيراد كتالوج الكتب والأصناف",
   "inventory.import.description": "أنشئ الأصناف من Excel أو CSV فقط؛ لن تُسجل كميات أو أرصدة أو حركات. اعرض المعاينة قبل الاعتماد.",
   "inventory.import.file": "ملف Excel أو CSV",
-  "inventory.import.columns": "الأعمدة المطلوبة: source_key و name_ar. الأعمدة الاختيارية: author و publication_identifier و publication_year و issue_number و publisher و edition.",
+  "inventory.import.columns": "الأعمدة المطلوبة: source_key و name_ar. الأعمدة الاختيارية: author و publication_identifier و publication_year و issue_number و periodical_year و publisher و edition.",
   "inventory.import.fileTooLarge": "الملف أكبر من الحد المسموح (512 كيلوبايت).",
   "inventory.import.invalidFormat": "اختر ملف XLSX أو CSV.",
   "inventory.import.previewError": "تعذرت معاينة الملف.",
