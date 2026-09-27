@@ -129,6 +129,53 @@
   background: var(--surface);
 }
 
+.count-lookup-hint,
+.count-lookup-results p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.count-lookup-results,
+.count-lookup-list {
+  display: grid;
+  gap: 10px;
+}
+
+.count-lookup-list {
+  max-height: 360px;
+  overflow: auto;
+}
+
+.count-lookup-choice {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid #b9d8d2;
+  border-radius: 12px;
+  background: var(--surface);
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.count-lookup-choice:hover,
+.count-lookup-choice:focus-visible {
+  border-color: #257765;
+  outline: 2px solid #257765;
+}
+
+.count-lookup-choice span,
+.count-lookup-choice small {
+  color: var(--muted);
+}
+
+.count-lookup-pages {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .inventory-count-workspace .data-table input {
   min-width: 120px;
 }

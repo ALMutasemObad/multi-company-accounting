@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { ActorContext } from "../../platform/actor-context.js";
 import { IdempotentCommandExecutor } from "../../platform/idempotent-command-executor.js";
 import { TransactionExecutor } from "../../platform/transaction-executor.js";
+import { normalizeBarcodeLookup } from "../barcode-codec.js";
 
 export type InventoryCountErrorReason =
   | "NOT_FOUND"
@@ -96,6 +97,13 @@ const assertDistinctRows = (rows: BulkCountRow[]) => {
 };
 
 const numericBigIntSort = (left: bigint, right: bigint) => (left < right ? -1 : left > right ? 1 : 0);
+
+const lookupItemSelect = {
+  id: true, code: true, nameAr: true, author: true, publisher: true,
+  publicationIdentifier: true, issueNumber: true, periodicalYear: true, publicationYear: true,
+  unitOfMeasure: { select: { code: true } },
+  barcodes: { where: { isPrimary: true, isActive: true }, select: { value: true }, take: 1 },
+} satisfies Prisma.InventoryItemSelect;
 
 const sessionSelect = {
   id: true,
@@ -202,6 +210,51 @@ export class InventoryCountService {
       })),
       summary: await this.summary(context, sessionId, 0),
     };
+  }
+
+  async lookupItems(context: ActorContext, sessionId: bigint, query: string, page: number) {
+    const session = await this.prisma.stockCountSession.findFirst({
+      where: { id: sessionId, companyId: context.companyId }, select: { status: true },
+    });
+    if (!session) throw new InventoryCountError("NOT_FOUND");
+    if (session.status !== "DRAFT") throw new InventoryCountError("INVALID_STATE");
+
+    const value = query.trim().normalize("NFC")
+      .replace(/[\u0660-\u0669]/gu, (digit) => String("\u0660\u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668\u0669".indexOf(digit)))
+      .replace(/[\u06f0-\u06f9]/gu, (digit) => String("\u06f0\u06f1\u06f2\u06f3\u06f4\u06f5\u06f6\u06f7\u06f8\u06f9".indexOf(digit)));
+    const compactIdentifier = /^[-\s\d]+$/u.test(value) ? value.replace(/[-\s]/gu, "") : value;
+    let normalizedBarcode: string | null = null;
+    try { normalizedBarcode = normalizeBarcodeLookup(value); } catch { /* Text searches need no barcode normalization. */ }
+    const exactWhere: Prisma.InventoryItemWhereInput = {
+      companyId: context.companyId, isActive: true,
+      OR: [
+        { code: value },
+        { publicationIdentifier: { in: [...new Set([value, compactIdentifier])] } },
+        ...(normalizedBarcode ? [{ barcodes: { some: { normalizedValue: normalizedBarcode, isActive: true } } }] : []),
+      ],
+    };
+    const exactTotal = await this.prisma.inventoryItem.count({ where: exactWhere });
+    const where: Prisma.InventoryItemWhereInput = exactTotal ? exactWhere : {
+      companyId: context.companyId, isActive: true,
+      OR: [{ nameAr: { contains: value } }, { nameEn: { contains: value } }, { author: { contains: value } }],
+    };
+    const total = exactTotal || await this.prisma.inventoryItem.count({ where });
+    const items = total ? await this.prisma.inventoryItem.findMany({
+      where, select: lookupItemSelect, orderBy: [{ nameAr: "asc" }, { issueNumber: "asc" }, { id: "asc" }],
+      skip: (page - 1) * 50, take: 50,
+    }) : [];
+    const lines = items.length ? await this.prisma.stockCountLine.findMany({
+      where: { companyId: context.companyId, sessionId, inventoryItemId: { in: items.map((item) => item.id) } },
+      select: { inventoryItemId: true, countedQuantity: true },
+    }) : [];
+    const counted = new Map(lines.map((line) => [line.inventoryItemId.toString(), line.countedQuantity?.toString() ?? null]));
+    return { total, page, data: items.map((item) => ({
+      id: item.id.toString(), nameAr: item.nameAr, code: item.code,
+      author: item.author, publisher: item.publisher, publicationIdentifier: item.publicationIdentifier,
+      issueNumber: item.issueNumber, periodicalYear: item.periodicalYear, publicationYear: item.publicationYear,
+      barcode: item.barcodes[0]?.value ?? null, unitCode: item.unitOfMeasure.code,
+      countedQuantity: counted.get(item.id.toString()) ?? null,
+    })) };
   }
 
   async createSession(

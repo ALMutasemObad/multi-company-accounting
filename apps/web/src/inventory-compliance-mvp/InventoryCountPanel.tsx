@@ -20,6 +20,13 @@ type CountLine = {
   bookQuantity: string; bookUnitCostBase: string; countedQuantity: string | null; varianceQuantity: string | null; varianceReason: string | null; version: number;
 };
 type Summary = { total: number; counted: number; remaining: number; surplus: number; shortage: number; conflicts: number };
+type CountLookupItem = {
+  id: string; nameAr: string; code: string; barcode: string | null; unitCode: string;
+  author: string | null; publisher: string | null; publicationIdentifier: string | null;
+  issueNumber: string | null; periodicalYear: string | null; publicationYear: number | null;
+  countedQuantity: string | null;
+};
+type CountLookupResult = { data: CountLookupItem[]; total: number; page: number };
 type VarianceReasonCode = "" | "DAMAGED" | "MISSING" | "MISPLACED" | "BOOK_ERROR" | "UNRECORDED_RECEIPT" | "UNRECORDED_ISSUE" | "DUPLICATE_COUNT" | "OTHER";
 type Draft = { quantity: string; reasonCode: VarianceReasonCode; reasonDetails: string; version: number };
 type InventoryCountLocalizedCopy = { [Key in keyof typeof inventoryCountCopy.ar]: string };
@@ -181,7 +188,7 @@ export function InventoryCountPanel({ notify, canEnter, canManage }: { notify: N
       <p>{copy.permissionsRefreshHint}</p>
     </div>}
     {canManage && session && <><div className="detail-grid"><div><span>{copy.state}</span><strong>{statusLabel[session.status]}</strong></div><div><span>{copy.countDate}</span><strong dir="ltr">{session.countDate}</strong></div><div><span>{copy.lastReceipt}</span><strong dir="ltr">{session.cutoff?.receipt?.number ?? "—"}</strong></div><div><span>{copy.lastIssue}</span><strong dir="ltr">{session.cutoff?.issue?.number ?? "—"}</strong></div></div><div className="summary-cards"><SummaryCard label={copy.totalItems} value={summary.total} /><SummaryCard label={copy.counted} value={summary.counted} /><SummaryCard label={copy.remaining} value={summary.remaining} /><SummaryCard label={copy.surplus} value={summary.surplus} /><SummaryCard label={copy.shortage} value={summary.shortage} /><SummaryCard label={copy.conflicts} value={conflicts.size || summary.conflicts} /></div></>}
-    {canEnter && session?.status === "DRAFT" && <QuickCountStation copy={copy} session={session} notify={notify} onSaved={canManage ? loadLines : async () => undefined} />}
+    {canEnter && session?.status === "DRAFT" && <QuickCountStation key={session.id} copy={copy} session={session} notify={notify} onSaved={canManage ? loadLines : async () => undefined} />}
     {conflicts.size > 0 && <div className="inline-notice" role="alert">{copy.conflictAlert}<Button variant="secondary" onClick={() => void loadLines()}>{copy.reload}</Button></div>}
     {error && <div className="error-panel" role="alert"><p>{error}</p>{lines.length === 0 && <Button variant="secondary" onClick={() => void loadLines()}>{copy.retry}</Button>}</div>}
     {canManage && (loading ? <Spinner label={copy.loading} /> : !session ? <EmptyState title={copy.noSession} description={copy.noSessionDescription} /> : !lines.length ? <EmptyState title={copy.noLines} description={copy.noLinesDescription} /> : <div className="data-table-wrap" role="region" tabIndex={0} aria-label={copy.tableLabel}><table className="data-table"><thead><tr><th>{copy.item}</th><th>{copy.location}</th><th>{copy.shelf}</th><th>{copy.bookQuantity}</th><th>{copy.countedQuantity}</th><th>{copy.variance}</th><th>{copy.varianceReason}</th></tr></thead><tbody>{lines.map((line, index) => {
@@ -208,31 +215,42 @@ function SummaryCard({ label, value }: { label: string; value: number }) { retur
 
 function QuickCountStation({ copy, session, notify, onSaved }: { copy: InventoryCountLocalizedCopy; session: CountSession; notify: Notice; onSaved: () => Promise<void> }) {
   const codeRef = useRef<HTMLInputElement>(null); const quantityRef = useRef<HTMLInputElement>(null);
+  const lookupEpoch = useRef(0);
   const [code, setCode] = useState(""); const [quantity, setQuantity] = useState(""); const [locationReference, setLocationReference] = useState("");
-  const [item, setItem] = useState<ResolvedInventoryBarcode["inventoryItem"] | InventoryItem | null>(null);
+  const [item, setItem] = useState<ResolvedInventoryBarcode["inventoryItem"] | InventoryItem | CountLookupItem | null>(null);
   const [countedSoFar, setCountedSoFar] = useState<string | null>(null); const [unknownBarcode, setUnknownBarcode] = useState("");
+  const [matches, setMatches] = useState<CountLookupItem[]>([]); const [matchTotal, setMatchTotal] = useState(0); const [matchPage, setMatchPage] = useState(1);
   const [busy, setBusy] = useState(false); const [error, setError] = useState("");
 
-  async function resolve(event: FormEvent) {
-    event.preventDefault(); const value = code.trim(); if (!value) return;
-    setBusy(true); setError(""); setUnknownBarcode(""); setItem(null);
-    try {
-      const resolved = await api<ResolvedInventoryBarcode>("/inventory-barcodes/resolve", { method: "POST", body: JSON.stringify({ value }) });
-      setItem(resolved.inventoryItem); queueMicrotask(() => quantityRef.current?.focus());
-    } catch {
-      setUnknownBarcode(value); setError(copy.unknownCode);
-    } finally { setBusy(false); }
+  function choose(candidate: CountLookupItem, invalidatePending = true) {
+    if (invalidatePending) { lookupEpoch.current += 1; setBusy(false); }
+    setItem(candidate); setCountedSoFar(candidate.countedQuantity); setMatches([]); setMatchTotal(0);
+    queueMicrotask(() => quantityRef.current?.focus());
   }
+  async function lookup(value: string, page: number) {
+    const epoch = ++lookupEpoch.current;
+    setBusy(true); setError(""); setUnknownBarcode(""); setItem(null); setCountedSoFar(null);
+    try {
+      const result = await api<CountLookupResult>(`/inventory-count-sessions/${session.id}/lookup?query=${encodeURIComponent(value)}&page=${page}`);
+      if (epoch !== lookupEpoch.current) return;
+      if (result.total === 1 && result.data[0]) choose(result.data[0], false);
+      else if (result.total > 1) { setMatches(result.data); setMatchTotal(result.total); setMatchPage(page); }
+      else { setMatches([]); setMatchTotal(0); setUnknownBarcode(value); setError(copy.unknownCode); }
+    } catch (cause) {
+      if (epoch === lookupEpoch.current) setError(cause instanceof Error ? cause.message : copy.saveError);
+    } finally { if (epoch === lookupEpoch.current) setBusy(false); }
+  }
+  async function resolve(event: FormEvent) { event.preventDefault(); const value = code.trim(); if (value) await lookup(value, 1); }
   async function save(event: FormEvent) {
     event.preventDefault(); if (!item || !quantityPattern.test(quantity)) { setError(copy.invalidQuantity); quantityRef.current?.focus(); return; }
     setBusy(true); setError("");
     try {
-      const result = await api<{ duplicate: boolean; line: { countedQuantity: string | null } }>(`/inventory-count-sessions/${session.id}/entries`, { method: "POST", body: JSON.stringify({ inventoryItemId: item.id, quantity, locationReference: locationReference.trim() || null, entryKey: inventoryClientId() }) });
-      setCountedSoFar(result.line.countedQuantity); notify(copy.entrySaved); setCode(""); setQuantity(""); setItem(null); await onSaved(); queueMicrotask(() => codeRef.current?.focus());
+      await api<{ duplicate: boolean; line: { countedQuantity: string | null } }>(`/inventory-count-sessions/${session.id}/entries`, { method: "POST", body: JSON.stringify({ inventoryItemId: item.id, quantity, locationReference: locationReference.trim() || null, entryKey: inventoryClientId() }) });
+      setCountedSoFar(null); setMatches([]); notify(copy.entrySaved); setCode(""); setQuantity(""); setItem(null); await onSaved(); queueMicrotask(() => codeRef.current?.focus());
     } catch (cause) { setError(cause instanceof Error ? cause.message : copy.saveError); }
     finally { setBusy(false); }
   }
-  return <section className="quick-count-station" aria-labelledby="quick-count-title"><div className="quick-count-heading"><div><h3 id="quick-count-title">{copy.stationTitle}</h3><p>{copy.stationDescription}</p></div><small>{copy.blindCountNote}</small></div>{error && <div className="form-error" role="alert">{error}</div>}<form className="quick-count-grid" onSubmit={item ? save : resolve}><label><span>{copy.barcodeOrCode}</span><input ref={codeRef} dir="ltr" autoComplete="off" value={code} onChange={(event) => { setCode(event.target.value); setItem(null); setError(""); setUnknownBarcode(""); }} autoFocus /></label><label><span>{copy.locationReference}</span><input value={locationReference} onChange={(event) => setLocationReference(event.target.value)} maxLength={200} placeholder={copy.locationReferenceHint} /></label>{item && <><div className="quick-count-item"><strong>{item.nameAr}</strong><span dir="ltr">{code}</span>{countedSoFar !== null && <small>{copy.countedSoFar}: {countedSoFar}</small>}</div><label><span>{copy.batchQuantity}</span><input ref={quantityRef} dir="ltr" inputMode="decimal" value={quantity} onChange={(event) => setQuantity(normalizeQuantity(event.target.value))} /></label></>}<Button type="submit" disabled={busy || !code.trim() || (Boolean(item) && !quantity)}>{item ? copy.addAndNext : copy.resolve}</Button></form>{unknownBarcode && <QuickAddBook copy={copy} barcode={unknownBarcode} onClose={() => { setUnknownBarcode(""); setError(""); queueMicrotask(() => codeRef.current?.focus()); }} onCreated={(created) => { setItem(created); setUnknownBarcode(""); setError(""); notify(copy.addedAndReady); queueMicrotask(() => quantityRef.current?.focus()); }} />}</section>;
+  return <section className="quick-count-station" aria-labelledby="quick-count-title"><div className="quick-count-heading"><div><h3 id="quick-count-title">{copy.stationTitle}</h3><p>{copy.stationDescription}</p></div><small>{copy.blindCountNote}</small></div>{error && <div className="form-error" role="alert">{error}</div>}<form className="quick-count-grid" onSubmit={item ? save : resolve}><label><span>{copy.barcodeOrCode}</span><input ref={codeRef} dir="ltr" autoComplete="off" value={code} onChange={(event) => { lookupEpoch.current += 1; setBusy(false); setCode(event.target.value); setItem(null); setMatches([]); setMatchTotal(0); setCountedSoFar(null); setError(""); setUnknownBarcode(""); }} autoFocus /></label><label><span>{copy.locationReference}</span><input value={locationReference} onChange={(event) => setLocationReference(event.target.value)} maxLength={200} placeholder={copy.locationReferenceHint} /></label>{item && <><div className="quick-count-item"><strong>{item.nameAr}</strong><span dir="ltr">{code}</span>{"issueNumber" in item && [item.periodicalYear, item.issueNumber].filter(Boolean).length > 0 && <small>{[item.periodicalYear, item.issueNumber].filter(Boolean).join(" · ")}</small>}{countedSoFar !== null && <small>{copy.countedSoFar}: {countedSoFar}</small>}</div><label><span>{copy.batchQuantity}</span><input ref={quantityRef} dir="ltr" inputMode="decimal" value={quantity} onChange={(event) => setQuantity(normalizeQuantity(event.target.value))} /></label></>}<Button type="submit" disabled={busy || !code.trim() || (Boolean(item) && !quantity)}>{item ? copy.addAndNext : copy.resolve}</Button></form><p className="count-lookup-hint">{copy.lookupHint}</p>{matchTotal > 1 && <div className="count-lookup-results" role="region" aria-label={copy.matchesTitle}><p>{copy.matchesFound.replace("{count}", String(matchTotal))}</p><div className="count-lookup-list">{matches.map((candidate) => <button type="button" key={candidate.id} className="count-lookup-choice" onClick={() => choose(candidate)}><strong>{candidate.nameAr}</strong><span>{[candidate.periodicalYear, candidate.issueNumber, candidate.publicationYear, candidate.author].filter(Boolean).join(" · ") || candidate.publisher || "—"}</span><small dir="ltr">{candidate.barcode ?? candidate.code}{candidate.countedQuantity !== null ? ` · ${copy.countedSoFar}: ${candidate.countedQuantity}` : ""}</small></button>)}</div>{matchTotal > 50 && <div className="count-lookup-pages"><Button type="button" variant="ghost" disabled={busy || matchPage === 1} onClick={() => void lookup(code.trim(), matchPage - 1)}>{copy.previous}</Button><span>{copy.page.replace("{page}", String(matchPage))}</span><Button type="button" variant="ghost" disabled={busy || matchPage * 50 >= matchTotal} onClick={() => void lookup(code.trim(), matchPage + 1)}>{copy.next}</Button></div>}</div>}{unknownBarcode && <QuickAddBook copy={copy} barcode={unknownBarcode} onClose={() => { setUnknownBarcode(""); setError(""); queueMicrotask(() => codeRef.current?.focus()); }} onCreated={(created) => { setItem(created); setUnknownBarcode(""); setError(""); notify(copy.addedAndReady); queueMicrotask(() => quantityRef.current?.focus()); }} />}</section>;
 }
 
 function QuickAddBook({ copy, barcode, onClose, onCreated }: { copy: InventoryCountLocalizedCopy; barcode: string; onClose: () => void; onCreated: (item: InventoryItem) => void }) {

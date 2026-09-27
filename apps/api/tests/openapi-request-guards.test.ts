@@ -23,7 +23,7 @@ import {
 
 describe('generated OpenAPI request guards', () => {
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 396, requestBodies: 198, responseBodies: 2585 });
+    expect(openApiContractCoverage).toEqual({ operations: 397, requestBodies: 198, responseBodies: 2591 });
     expect(openApiOperationRoutes).toMatchObject({
       'GET /pos/context/identity': 'getPosContextIdentity',
       'GET /auth/social/accounts': 'getCurrentSocialAccounts',
@@ -41,6 +41,7 @@ describe('generated OpenAPI request guards', () => {
       'PATCH /company-compliance': 'updateCompanyCompliance',
       'GET /inventory-valuation-report': 'getInventoryValuationReport',
       'GET /inventory-valuation-report.xlsx': 'exportInventoryValuationReportXlsx',
+      'GET /inventory-count-sessions/{sessionId}/lookup': 'lookupInventoryCountItem',
       'GET /inventory-aging-report': 'getInventoryAgingReport',
       'GET /inventory-aging-report.xlsx': 'exportInventoryAgingReportXlsx',
       'GET /external-stock-positions.xlsx': 'exportExternalStockPositionsXlsx',

@@ -32,6 +32,7 @@ const routerFixture = () => {
     createSession: vi.fn().mockResolvedValue({ id: "90", status: "DRAFT" }),
     getSession: vi.fn().mockResolvedValue({ id: "90", status: "DRAFT", summary: { total: 300, counted: 0, remaining: 300 } }),
     listLines: vi.fn().mockResolvedValue({ data: [{ id: "1", code: "BOOK-001" }], summary: { total: 300, counted: 10, remaining: 290, surplus: 1, shortage: 2, conflicts: 0 } }),
+    lookupItems: vi.fn().mockResolvedValue({ data: [{ id: "10", nameAr: "كتاب", issueNumber: "الأول" }], total: 1, page: 1 }),
     bulkEnterCounts: vi.fn().mockResolvedValue({ conflicts: [], summary: { total: 300, counted: 11, remaining: 289, surplus: 1, shortage: 2, conflicts: 0 } }),
     submit: vi.fn().mockResolvedValue({ id: "90", status: "SUBMITTED", version: 1 }),
     approve: vi.fn().mockResolvedValue({ id: "90", status: "APPROVED", version: 2 }),
@@ -227,6 +228,18 @@ describe("inventory count MVP", () => {
     expect(inventoryCount.listSessions).toHaveBeenCalledWith(context, { page: 1, pageSize: 25, status: "DRAFT", warehouseId: 3n });
     expect(inventoryCount.listLines).toHaveBeenCalledWith(context, 90n, { page: 1, pageSize: 500, search: "BOOK" });
     expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ permission: "inventory_movements.view", requireCsrf: false }));
+  });
+
+  it("looks up books with the counter permission, without requiring catalog management", async () => {
+    const { app, authorize, inventoryCount } = routerFixture();
+    const response = await request(app)
+      .get("/inventory-count-sessions/90/lookup?query=9786038291986&page=1")
+      .set("Cookie", "sid=session-token");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ total: 1, data: [{ id: "10" }] });
+    expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ permission: "inventory_counts.enter", requireCsrf: false }));
+    expect(inventoryCount.lookupItems).toHaveBeenCalledWith(context, 90n, "9786038291986", 1);
   });
 
   it("requires create permission, CSRF and idempotency for a session snapshot", async () => {
