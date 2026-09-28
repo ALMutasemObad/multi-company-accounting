@@ -366,7 +366,7 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
   test(`${locale}: all 33 screens satisfy the responsive interface contract`, async ({ page }) => {
     const runtimeErrors: string[] = [];
     const posRequests: Request[] = [];
-    const posResponses: Response[] = [];
+    const posResponses: { response: Response; body: Promise<{ data: any; error: string | null }> }[] = [];
     const posWrites: string[] = [];
     let visitingPos = false;
     page.on('request', request => {
@@ -375,7 +375,12 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
       if (path.startsWith('/api/v1/') && !['GET', 'HEAD'].includes(request.method())
         && (visitingPos || path.startsWith('/api/v1/pos/'))) posWrites.push(`${request.method()} ${path}`);
     });
-    page.on('response', response => { if (new URL(response.url()).pathname.startsWith('/api/v1/pos/')) posResponses.push(response); });
+    page.on('response', response => {
+      if (!new URL(response.url()).pathname.startsWith('/api/v1/pos/')) return;
+      // Capture the body before the next screen navigates away from this response.
+      const body = response.json().then(data => ({ data, error: null }), error => ({ data: null, error: String(error) }));
+      posResponses.push({ response, body });
+    });
     page.on('pageerror', (error) => runtimeErrors.push(error.message));
     await configureLocale(page, locale);
 
@@ -413,7 +418,7 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
           const identityPath = '/api/v1/pos/context/identity';
           const salesPath = '/api/v1/pos/sales';
           for (const path of [identityPath, salesPath]) {
-            await expect.poll(() => posResponses.filter(response => new URL(response.url()).pathname === path).length).toBeGreaterThan(0);
+            await expect.poll(() => posResponses.filter(({ response }) => new URL(response.url()).pathname === path).length).toBeGreaterThan(0);
           }
           for (const request of posRequests) {
             const url = new URL(request.url());
@@ -422,9 +427,10 @@ for (const locale of ['ar', 'en', 'ur', 'hi'] as const) {
             expect(request.headers()['x-pos-expected-company-id']).toBe('1');
             if (url.pathname === identityPath) expect(url.searchParams.get('purpose')).toBeNull();
           }
-          for (const response of posResponses) {
+          for (const { response, body: capturedBody } of posResponses) {
             expect(response.status()).toBe(200);
-            const body = await response.json();
+            const { data: body, error } = await capturedBody;
+            expect(error).toBeNull();
             expect(body.posContext).toEqual({ userId: '1', companyId: '1' });
             if (new URL(response.url()).pathname === salesPath) expect(body.data).toEqual([]);
           }
