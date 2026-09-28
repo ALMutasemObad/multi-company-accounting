@@ -211,7 +211,7 @@ test("confirmed success stays clear if saving its acknowledgement fails; the ret
   await page.route("**/api/v1/subscription/billing/payments/*/cancel", (route) => { writes++; return route.fulfill({ json: { payment: { ...payment, state: "CANCELLED", version: 2 } } }); });
   await page.goto("/tests/track-e/");
   await panel(page).getByRole("button", { name: "Cancel attempt", exact: true }).click();
-  await expect(panel(page).getByRole("status")).toContainText("confirmed");
+  await expect(panel(page).locator(".billing-recovery-notice")).toContainText("confirmed");
   await expect(panel(page).getByRole("alert")).toContainText("could not be safely saved");
   await expect(panel(page).getByRole("alert")).not.toContainText("result is uncertain");
   await expect(panel(page).getByRole("button", { name: "Cancel attempt", exact: true })).toBeDisabled();
