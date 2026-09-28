@@ -1,9 +1,6 @@
-import { createRequire } from "node:module";
-
-const require = createRequire(import.meta.url);
-const arabicRegular = require.resolve("@fontsource/noto-sans-arabic/files/noto-sans-arabic-arabic-400-normal.woff");
-const arabicBold = require.resolve("@fontsource/noto-sans-arabic/files/noto-sans-arabic-arabic-700-normal.woff");
+import { fileURLToPath } from "node:url";
+const fullArabic = fileURLToPath(new URL("./fonts/NotoSansArabic.ttf", import.meta.url));
 
 export function registerReportFonts(pdf: PDFKit.PDFDocument) {
-  pdf.registerFont("Arabic", arabicRegular).registerFont("ArabicBold", arabicBold);
+  pdf.registerFont("Arabic", fullArabic).registerFont("ArabicBold", fullArabic);
 }

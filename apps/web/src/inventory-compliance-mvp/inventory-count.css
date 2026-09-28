@@ -47,7 +47,7 @@
 
 .inventory-count-workspace .summary-cards {
   display: grid;
-  grid-template-columns: repeat(6, minmax(110px, 1fr));
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
   gap: 10px;
 }
 
@@ -114,6 +114,31 @@
   display: grid;
   gap: 6px;
 }
+
+.quick-count-grid .count-note-field {
+  grid-column: 1 / -2;
+}
+
+.count-history-list {
+  display: grid;
+  gap: 10px;
+  max-height: min(60vh, 600px);
+  overflow-y: auto;
+}
+
+.count-history-entry {
+  display: grid;
+  grid-template-columns: minmax(200px, 2fr) minmax(160px, 1fr) auto;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.count-history-entry > div { display: grid; gap: 4px; }
+.count-history-entry small { color: var(--muted); }
+.count-history-entry p { grid-column: 1 / -1; margin: 0; }
 
 .quick-count-grid input,
 .quick-count-grid select {
@@ -208,4 +233,7 @@
   .quick-count-grid {
     grid-template-columns: 1fr;
   }
+
+  .quick-count-grid .count-note-field { grid-column: auto; }
+  .count-history-entry { grid-template-columns: 1fr; }
 }

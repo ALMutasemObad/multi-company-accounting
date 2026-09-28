@@ -13,6 +13,7 @@ describe("inventory count report", () => {
         committee: [{ name: "أحمد", role: "رئيس اللجنة" }],
         approvedByName: "مدير المخزون",
         approvedAt: "2026-09-22T10:00:00.000Z",
+        summary: { total: 4, counted: 2, remaining: 2, countedCopies: "1035" },
         settlement: { date: "2026-09-22", surplusMovementId: "81", shortageMovementId: "82" },
       },
       rows: [],

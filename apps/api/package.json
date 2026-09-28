@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node scripts/copy-report-font.mjs",
     "start": "node dist/server.js",
     "test": "vitest run",
     "test:db": "vitest run --no-file-parallelism",
