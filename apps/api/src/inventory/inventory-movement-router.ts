@@ -187,8 +187,20 @@ export function createInventoryMovementRouter(
 
   router.get("/inventory-count-sessions/:sessionId/entries", async (request, response) => {
     const context = await authorize(request, "inventory_counts.manage", false);
-    const query = z.object({ lineId: id.optional() }).parse(request.query);
-    response.json({ data: await service.inventoryCount.listEntries(context, id.parse(request.params.sessionId), query.lineId) });
+    const query = z.object({ lineId: id.optional(), page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(50) }).parse(request.query);
+    response.json(await service.inventoryCount.listEntries(context, id.parse(request.params.sessionId), query));
+  });
+
+  router.post("/inventory-count-sessions/:sessionId/entries/:entryId/reverse", async (request, response) => {
+    const context = await authorize(request, "inventory_counts.manage", true);
+    const input = bodies.reverseInventoryCountEntry.parse(request.body);
+    response.json(await service.inventoryCount.reverseEntry(context, id.parse(request.params.sessionId), id.parse(request.params.entryId), input.reason));
+  });
+
+  router.get("/inventory-count-sessions/:sessionId/daily-activity", async (request, response) => {
+    const context = await authorize(request, "inventory_counts.manage", false);
+    const query = z.object({ day: isoDate, utcOffsetMinutes: z.coerce.number().int().min(-720).max(840) }).parse(request.query);
+    response.json(await service.inventoryCount.dailyActivity(context, id.parse(request.params.sessionId), query.day, query.utcOffsetMinutes));
   });
 
   router.get("/inventory-count-sessions/:sessionId/report.xlsx", async (request, response) => {
@@ -197,6 +209,14 @@ export function createInventoryMovementRouter(
     response.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     response.setHeader("Content-Disposition", `attachment; filename=inventory-count-${report.session.id}.xlsx`);
     response.send(inventoryCountReportXlsx(report));
+  });
+
+  router.get("/inventory-count-sessions/:sessionId/uncounted.xlsx", async (request, response) => {
+    const context = await authorize(request, "inventory_counts.manage", false);
+    const report = await service.inventoryCount.report(context, id.parse(request.params.sessionId), "uncounted");
+    response.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    response.setHeader("Content-Disposition", `attachment; filename=inventory-uncounted-${report.session.id}.xlsx`);
+    response.send(inventoryCountReportXlsx(report, "uncounted"));
   });
 
   router.post("/inventory-count-sessions/:sessionId/submit", async (request, response) => {
@@ -370,6 +390,7 @@ export function createInventoryMovementRouter(
             "IDEMPOTENCY_MISMATCH",
             "IDEMPOTENCY_IN_PROGRESS",
             "INVALID_STATE",
+            "ENTRY_ALREADY_REVERSED",
           ].includes(error.reason)
           ? 409
           : 422;

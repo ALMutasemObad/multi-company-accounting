@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { Prisma } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import express, { type ErrorRequestHandler } from "express";
 import request from "supertest";
 import type { AuthService } from "../src/auth/auth-service.js";
@@ -33,6 +33,9 @@ const routerFixture = () => {
     getSession: vi.fn().mockResolvedValue({ id: "90", status: "DRAFT", summary: { total: 300, counted: 0, remaining: 300 } }),
     listLines: vi.fn().mockResolvedValue({ data: [{ id: "1", code: "BOOK-001" }], summary: { total: 300, counted: 10, remaining: 290, surplus: 1, shortage: 2, conflicts: 0 } }),
     lookupItems: vi.fn().mockResolvedValue({ data: [{ id: "10", nameAr: "كتاب", issueNumber: "الأول" }], total: 1, page: 1 }),
+    listEntries: vi.fn().mockResolvedValue({ data: [], total: 0, page: 1 }),
+    dailyActivity: vi.fn().mockResolvedValue({ day: "2026-09-28", countedCopies: "0", countedTitles: 0 }),
+    reverseEntry: vi.fn().mockResolvedValue({ line: { countedQuantity: "0" } }),
     bulkEnterCounts: vi.fn().mockResolvedValue({ conflicts: [], summary: { total: 300, counted: 11, remaining: 289, surplus: 1, shortage: 2, conflicts: 0 } }),
     submit: vi.fn().mockResolvedValue({ id: "90", status: "SUBMITTED", version: 1 }),
     approve: vi.fn().mockResolvedValue({ id: "90", status: "APPROVED", version: 2 }),
@@ -50,6 +53,13 @@ const routerFixture = () => {
 };
 
 describe("inventory count MVP", () => {
+  it("requires management permission and CSRF for a reversible audit entry", async () => {
+    const { app, authorize, inventoryCount } = routerFixture();
+    const response = await request(app).post("/inventory-count-sessions/20/entries/8/reverse").set("Cookie", "sid=fixture").send({ reason: "خطأ إدخال" });
+    expect(response.status).toBe(200);
+    expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ permission: "inventory_counts.manage", requireCsrf: true }));
+    expect(inventoryCount.reverseEntry).toHaveBeenCalledWith(context, 20n, 8n, "خطأ إدخال");
+  });
   it("creates a company-scoped 300-title snapshot with cutoff and location snapshots", async () => {
     const items = Array.from({ length: 300 }, (_, index) => ({
       id: BigInt(index + 1),
@@ -146,7 +156,9 @@ describe("inventory count MVP", () => {
           .mockResolvedValueOnce(299)
           .mockResolvedValueOnce(1)
           .mockResolvedValueOnce(0),
+        aggregate: vi.fn().mockResolvedValue({ _sum: { countedQuantity: new Prisma.Decimal(1002) } }),
       },
+      stockCountEntry: { create: vi.fn().mockResolvedValue({ id: 1n }) },
       user: { findUnique: vi.fn().mockResolvedValue({ displayName: "ليان" }) },
     };
     const service = buildService(tx);
@@ -164,7 +176,7 @@ describe("inventory count MVP", () => {
       { lineId: "2", expectedVersion: 3, actualVersion: 4 },
       { lineId: "999", expectedVersion: 0, actualVersion: null },
     ]);
-    expect(result.summary).toEqual({ total: 300, counted: 299, remaining: 1, surplus: 1, shortage: 0, conflicts: 2 });
+    expect(result.summary).toEqual({ total: 300, counted: 299, remaining: 1, surplus: 1, shortage: 0, conflicts: 2, countedCopies: "1002" });
     expect(tx.$queryRaw).toHaveBeenCalledTimes(2);
   });
 
@@ -186,6 +198,77 @@ describe("inventory count MVP", () => {
     await expect(varianceService.bulkEnterCounts(context, 1n, [
       { lineId: 2n, expectedVersion: 0, countedQuantity: "9" },
     ])).rejects.toEqual(new InventoryCountError("INVALID_VARIANCE_REASON"));
+  });
+
+  it("accepts a negative count correction but never makes the title total negative", async () => {
+    const create = vi.fn().mockResolvedValue({ id: 8n });
+    const update = vi.fn().mockResolvedValue({ id: 4n });
+    const line = { id: 4n, inventoryItemId: 5n, itemCodeSnapshot: "BK-5", itemTitleSnapshot: "كتاب", countedQuantity: new Prisma.Decimal(10), bookQuantity: new Prisma.Decimal(20), version: 1 };
+    const service = buildService({
+      stockCountSession: { findFirst: vi.fn().mockResolvedValue({ status: "DRAFT" }) },
+      stockCountEntry: { findFirst: vi.fn().mockResolvedValue(null), create },
+      stockCountLine: { findFirst: vi.fn().mockResolvedValue(line), findFirstOrThrow: vi.fn().mockResolvedValue(line), update },
+      user: { findUnique: vi.fn().mockResolvedValue({ displayName: "سارة" }) },
+    });
+    await service.addEntry(context, 20n, { inventoryItemId: 5n, quantity: "-5", note: "تصحيح عد", entryKey: "negative-entry-001" });
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ quantity: new Prisma.Decimal(-5), note: "تصحيح عد" }) }));
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ countedQuantity: new Prisma.Decimal(5) }) }));
+    await expect(service.addEntry(context, 20n, { inventoryItemId: 5n, quantity: "-11", entryKey: "negative-entry-002" })).rejects.toMatchObject({ reason: "INVALID_COUNT" });
+  });
+
+  it("reverses only the latest active entry and keeps an audit trail", async () => {
+    const markReversed = vi.fn().mockResolvedValue({ id: 8n });
+    const updateLine = vi.fn().mockResolvedValue({ id: 4n });
+    const line = { id: 4n, inventoryItemId: 5n, itemCodeSnapshot: "BK-5", itemTitleSnapshot: "كتاب", countedQuantity: new Prisma.Decimal(15), bookQuantity: new Prisma.Decimal(20), version: 2 };
+    const service = buildService({
+      stockCountSession: { findFirst: vi.fn().mockResolvedValue({ status: "DRAFT" }) },
+      stockCountEntry: {
+        findFirst: vi.fn().mockResolvedValueOnce({ id: 8n, lineId: 4n, quantity: new Prisma.Decimal(-5), reversedAt: null, entryKind: "BATCH" }).mockResolvedValueOnce({ id: 8n }),
+        count: vi.fn().mockResolvedValue(1), update: markReversed,
+      },
+      stockCountLine: { findFirstOrThrow: vi.fn().mockResolvedValue(line), update: updateLine, findFirst: vi.fn().mockResolvedValue(line) },
+      user: { findUnique: vi.fn().mockResolvedValue({ displayName: "المشرف" }) },
+    });
+    await service.reverseEntry(context, 20n, 8n, "تصحيح خطأ إدخال");
+    expect(markReversed).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ reversedById: 11n, reversalReason: "تصحيح خطأ إدخال" }) }));
+    expect(updateLine).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ countedQuantity: new Prisma.Decimal(20) }) }));
+  });
+
+  it("selects counted rows for the record and uncounted rows for the separate export", async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const database = {
+      $transaction: vi.fn(async (callback: (tx: unknown) => unknown) => callback(database)),
+      stockCountSession: { findFirst: vi.fn().mockResolvedValue({ id: 7n, countDate: new Date("2026-09-28"), status: "DRAFT", warehouse: { code: "WH", nameAr: "المكتبة" }, committeeMembers: [], lastReceiptMovementNumber: null, lastIssueMovementNumber: null, approvedByName: null, approvedAt: null, settlementDate: null, settledAt: null }) },
+      stockCountLine: {
+        findMany,
+        count: vi.fn().mockResolvedValueOnce(4).mockResolvedValueOnce(2).mockResolvedValueOnce(0).mockResolvedValueOnce(0).mockResolvedValueOnce(4).mockResolvedValueOnce(2).mockResolvedValueOnce(0).mockResolvedValueOnce(0),
+        aggregate: vi.fn().mockResolvedValue({ _sum: { countedQuantity: new Prisma.Decimal(1035) } }),
+      },
+    };
+    const service = new InventoryCountService(database as unknown as PrismaClient);
+    const record = await service.report(context, 7n);
+    const uncounted = await service.report(context, 7n, "uncounted");
+    expect(record.session.summary).toMatchObject({ total: 4, counted: 2, remaining: 2, countedCopies: "1035" });
+    expect(uncounted.session.summary).toMatchObject({ total: 4, counted: 2, remaining: 2 });
+    expect(findMany.mock.calls[0]?.[0]?.where.countedQuantity).toEqual({ not: null });
+    expect(findMany.mock.calls[1]?.[0]?.where.countedQuantity).toBeNull();
+  });
+
+  it("counts today's active copies and distinct titles using the caller's local day", async () => {
+    const findMany = vi.fn().mockResolvedValue([
+      { lineId: 1n, quantity: new Prisma.Decimal(250) },
+      { lineId: 1n, quantity: new Prisma.Decimal(-5) },
+      { lineId: 2n, quantity: new Prisma.Decimal(50) },
+    ]);
+    const service = new InventoryCountService({
+      stockCountSession: { findFirst: vi.fn().mockResolvedValue({ id: 7n }) },
+      stockCountEntry: { findMany },
+    } as unknown as PrismaClient);
+    await expect(service.dailyActivity(context, 7n, "2026-09-28", 180)).resolves.toEqual({ day: "2026-09-28", countedCopies: "295", countedTitles: 2 });
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({
+      companyId: 7n, sessionId: 7n, reversedAt: null,
+      createdAt: { gte: new Date("2026-09-27T21:00:00.000Z"), lt: new Date("2026-09-28T21:00:00.000Z") },
+    }) }));
   });
 
   it("requires all lines before submit and committee/name before approval", async () => {

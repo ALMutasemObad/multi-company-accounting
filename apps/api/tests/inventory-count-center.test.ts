@@ -14,10 +14,11 @@ const report: InventoryCountReport = {
     id: "7", countDate: "2026-09-22", status: "APPROVED", warehouse: { code: "WH-000001", nameAr: "المكتبة العامة" },
     cutoff: { receiptNumber: "IMV-00000006", issueNumber: "IMV-00000005" },
     committee: [{ name: "أحمد", role: "عضو" }], approvedByName: "المشرف", approvedAt: "2026-09-23T00:00:00.000Z", settlement: null,
+    summary: { total: 4, counted: 2, remaining: 2, countedCopies: "1035" },
   },
   rows: [
-    { code: "ITM-000001", barcode: "112233445566", title: "الجريمة والعقاب", unitCode: "COPY", locationReference: null, bookQuantity: "36", countedQuantity: "35", varianceQuantity: "-1", unitCostBase: "1.0000", varianceValueBase: "-1.0000", varianceReason: "DAMAGED", countedBy: "أحمد" },
-    { code: "ITM-000002", barcode: "9780123456789", title: "سلسلة كيف نحب أدب الطبيعة", unitCode: "COPY", locationReference: "صندوق 2", bookQuantity: "1000", countedQuantity: "1000", varianceQuantity: "0", unitCostBase: "2.0000", varianceValueBase: "0.0000", varianceReason: "", countedBy: "ليلى" },
+    { code: "ITM-000001", publicationIdentifier: "9786038291986", barcode: "112233445566", title: "الجريمة والعقاب", unitCode: "COPY", locationReference: null, bookQuantity: "36", countedQuantity: "35", varianceQuantity: "-1", unitCostBase: "1.0000", varianceValueBase: "-1.0000", varianceReason: "DAMAGED", countedBy: "أحمد" },
+    { code: "ITM-000002", publicationIdentifier: null, barcode: "9780123456789", title: "سلسلة Antame Comics: كيف نحب أدب الطبيعة", unitCode: "COPY", locationReference: "صندوق 2", bookQuantity: "1000", countedQuantity: "1000", varianceQuantity: "0", unitCostBase: "2.0000", varianceValueBase: "0.0000", varianceReason: "", countedBy: "ليلى" },
   ],
 };
 
@@ -26,8 +27,9 @@ describe("inventory count report center", () => {
     const profile = inventoryCountPdfProfile(report, "شركة المكتبة");
     expect(profile.bodyRows).toHaveLength(2);
     expect(profile.bodyRows[0]?.[0]?.value).toBe("الجريمة والعقاب");
-    expect(profile.bodyRows[0]?.[1]?.value).toBe("112233445566");
-    expect(profile.bodyRows[0]?.[6]?.value).toBe("تالف");
+    expect(profile.bodyRows[0]?.[1]?.value).toBe("9786038291986");
+    expect(profile.bodyRows[0]?.[2]?.value).toBe("112233445566");
+    expect(profile.bodyRows[0]?.[7]?.value).toBe("تالف");
     expect(profile.metadataGroups?.flat().map((field) => field.value).join(" ")).toContain("المشرف");
     expect(profile.columnWidths?.reduce((sum, width) => sum + width, 0)).toBe(770);
     const pdf = await inventoryCountReportPdf(report, "شركة المكتبة");
@@ -40,7 +42,7 @@ describe("inventory count report center", () => {
     const many: InventoryCountReport = { ...report, rows: Array.from({ length: 300 }, (_, index) => ({ ...report.rows[0]!, title: `كتاب الجرد رقم ${index + 1}`, barcode: String(10_000_000_000 + index) })) };
     const profile = inventoryCountPdfProfile(many, "شركة المكتبة");
     expect(profile.bodyRows).toHaveLength(300);
-    expect(profile.metadataGroups?.flat().find((field) => field.label === "إجمالي الأصناف")?.value).toBe("300");
+    expect(profile.metadataGroups?.flat().find((field) => field.label === "إجمالي العناوين")?.value).toBe("4");
     const pdf = await inventoryCountReportPdf(many, "شركة المكتبة");
     expect((pdf.toString("latin1").match(/\/Type \/Page\b/gu) ?? []).length).toBeGreaterThan(1);
   });

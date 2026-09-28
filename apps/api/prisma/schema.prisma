@@ -847,6 +847,7 @@ model User {
   stockCountSessionsSettled            StockCountSession[]                @relation("StockCountSettledBy")
   stockCountLinesCounted               StockCountLine[]                   @relation("StockCountLineCountedBy")
   stockCountEntriesCreated             StockCountEntry[]                  @relation("StockCountEntryCreatedBy")
+  stockCountEntriesReversed            StockCountEntry[]                  @relation("StockCountEntryReversedBy")
   bankStatementImportsCreated          BankStatementImport[]              @relation("BankStatementImportCreatedBy")
   bankStatementLinesClassified         BankStatementLine[]                @relation("BankStatementLineClassifiedBy")
   bankReconciliationSessionsCreated    BankReconciliationSession[]        @relation("BankReconciliationSessionCreatedBy")
@@ -2917,6 +2918,11 @@ model StockCountEntry {
   entryKey             String            @map("entry_key") @db.VarChar(100)
   quantity             Decimal           @db.Decimal(19, 6)
   locationReference   String?           @map("location_reference") @db.VarChar(200)
+  note                String?           @db.VarChar(500)
+  entryKind           String            @default("BATCH") @map("entry_kind") @db.VarChar(24)
+  reversedAt          DateTime?         @map("reversed_at")
+  reversedById        BigInt?           @map("reversed_by_id") @db.UnsignedBigInt
+  reversalReason      String?           @map("reversal_reason") @db.VarChar(500)
   counterNameSnapshot String            @map("counter_name_snapshot") @db.VarChar(160)
   createdById         BigInt             @map("created_by_id") @db.UnsignedBigInt
   createdAt           DateTime           @default(now()) @map("created_at")
@@ -2924,6 +2930,7 @@ model StockCountEntry {
   session             StockCountSession  @relation(fields: [sessionId, companyId], references: [id, companyId], onDelete: Cascade, onUpdate: Restrict)
   line                StockCountLine     @relation(fields: [lineId, companyId], references: [id, companyId], onDelete: Cascade, onUpdate: Restrict)
   createdBy           User               @relation("StockCountEntryCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  reversedBy          User?              @relation("StockCountEntryReversedBy", fields: [reversedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
   @@unique([companyId, entryKey], map: "stock_count_entries_company_key")
   @@index([companyId, sessionId, createdAt], map: "stock_count_entries_session_created_idx")

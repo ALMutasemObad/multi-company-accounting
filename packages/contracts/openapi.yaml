@@ -7708,7 +7708,7 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/BusinessRuleViolation' }
         '500': { $ref: '#/components/responses/InternalError' }
-      x-permission: inventory_movements.create
+      x-permission: inventory_counts.manage
       security: [{ SessionCookie: [], CsrfToken: [] }]
   /inventory-count-sessions/{sessionId}/entries:
     get:
@@ -7719,13 +7719,15 @@ paths:
       - $ref: '#/components/parameters/RequestId'
       - $ref: '#/components/parameters/InventoryCountSessionId'
       - { name: lineId, in: query, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
+      - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+      - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
       responses:
         '200': { description: إدخالات العد, content: { application/json: { schema: { type: object } } } }
         '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
-      x-permission: inventory_movements.view
+      x-permission: inventory_counts.manage
       security: [{ SessionCookie: [] }]
     post:
       tags: [Inventory]
@@ -7744,8 +7746,9 @@ paths:
               required: [inventoryItemId, quantity, entryKey]
               properties:
                 inventoryItemId: { type: string, pattern: '^[1-9][0-9]*$' }
-                quantity: { type: string, pattern: '^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,6})?$' }
+                quantity: { type: string, pattern: '^-?(?:0|[1-9][0-9]*)(?:\.[0-9]{1,6})?$' }
                 locationReference: { type: [string, 'null'], maxLength: 200 }
+                note: { type: [string, 'null'], maxLength: 500 }
                 entryKey: { type: string, minLength: 8, maxLength: 100 }
       responses:
         '201': { description: تم تسجيل الدفعة وتحديث الإجمالي, content: { application/json: { schema: { type: object } } } }
@@ -7755,8 +7758,71 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/BusinessRuleViolation' }
-      x-permission: inventory_movements.create
+      x-permission: inventory_counts.enter
       security: [{ SessionCookie: [], CsrfToken: [] }]
+  /inventory-count-sessions/{sessionId}/entries/{entryId}/reverse:
+    post:
+      tags: [Inventory]
+      summary: التراجع الموثق عن آخر إدخال لصنف أثناء الجرد
+      operationId: reverseInventoryCountEntry
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/InventoryCountSessionId'
+      - { name: entryId, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        '200': { description: تم التراجع مع إبقاء أثر العملية, content: { application/json: { schema: { type: object } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: inventory_counts.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+  /inventory-count-sessions/{sessionId}/daily-activity:
+    get:
+      tags: [Inventory]
+      summary: إحصاءات نسخ وعناوين الجرد في يوم محدد
+      operationId: getInventoryCountDailyActivity
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/InventoryCountSessionId'
+      - { name: day, in: query, required: true, schema: { type: string, format: date } }
+      - { name: utcOffsetMinutes, in: query, required: true, schema: { type: integer, minimum: -720, maximum: 840 } }
+      responses:
+        '200': { description: ملخص إدخالات اليوم, content: { application/json: { schema: { type: object } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: inventory_counts.manage
+      security: [{ SessionCookie: [] }]
+  /inventory-count-sessions/{sessionId}/uncounted.xlsx:
+    get:
+      tags: [Inventory]
+      summary: تصدير الأصناف التي لم تُجرد بعد
+      operationId: exportUncountedInventoryItemsXlsx
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/InventoryCountSessionId'
+      responses:
+        '200': { description: ملف Excel, content: { application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: { schema: { type: string, format: binary } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: inventory_counts.manage
+      security: [{ SessionCookie: [] }]
   /inventory-count-sessions/{sessionId}/report.xlsx:
     get:
       tags: [Inventory]

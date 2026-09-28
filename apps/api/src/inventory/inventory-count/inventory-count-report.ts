@@ -7,10 +7,11 @@ export type InventoryCountReport = {
     cutoff: { receiptNumber: string | null; issueNumber: string | null };
     committee: Array<{ name: string; role: string | null }>;
     approvedByName: string | null; approvedAt: string | null;
+    summary: { total: number; counted: number; remaining: number; countedCopies: string };
     settlement: { date: string; surplusMovementId: string | null; shortageMovementId: string | null } | null;
   };
   rows: Array<{
-    code: string; barcode: string | null; title: string; unitCode: string; locationReference: string | null;
+    code: string; barcode: string | null; publicationIdentifier: string | null; title: string; unitCode: string; locationReference: string | null;
     bookQuantity: string; countedQuantity: string; varianceQuantity: string;
     unitCostBase: string; varianceValueBase: string; varianceReason: string; countedBy: string;
   }>;
@@ -33,22 +34,24 @@ const reasonLabel = (value: string) => {
   return code === "OTHER" && details.length ? `${label}: ${details.join(":").trim()}` : label;
 };
 
-export function inventoryCountReportXlsx(report: InventoryCountReport) {
+export function inventoryCountReportXlsx(report: InventoryCountReport, selection: "counted" | "uncounted" = "counted") {
   const rows: TabularRows = [
-    [{ value: "محضر جرد وتسوية فروقات المخزون", style: 1 }],
+    [{ value: selection === "counted" ? "محضر جرد وتسوية فروقات المخزون" : "الأصناف التي لم تُجرد بعد", style: 1 }],
     [{ value: "المستودع", style: 3 }, { value: `${report.session.warehouse.code} - ${report.session.warehouse.nameAr}` }],
     [{ value: "تاريخ الجرد", style: 3 }, { value: report.session.countDate }, { value: "الحالة", style: 3 }, { value: report.session.status }],
+    [{ value: "العناوين المجرودة", style: 3 }, { value: String(report.session.summary.counted), numeric: true }, { value: "النسخ المجرودة", style: 3 }, { value: report.session.summary.countedCopies, numeric: true }],
+    [{ value: "العناوين المتبقية", style: 3 }, { value: String(report.session.summary.remaining), numeric: true }, { value: "إجمالي العناوين", style: 3 }, { value: String(report.session.summary.total), numeric: true }],
     [{ value: "آخر سند إدخال حتى تاريخ الجرد", style: 3 }, { value: report.session.cutoff.receiptNumber ?? "لا يوجد" }, { value: "آخر سند صرف حتى تاريخ الجرد", style: 3 }, { value: report.session.cutoff.issueNumber ?? "لا يوجد" }],
     [{ value: "لجنة الجرد", style: 3 }, { value: report.session.committee.map((member) => member.role ? `${member.name} (${member.role})` : member.name).join("، ") || "غير مسجلة" }],
     [{ value: "الاعتماد", style: 3 }, { value: report.session.approvedByName ? `${report.session.approvedByName}${report.session.approvedAt ? ` - ${report.session.approvedAt}` : ""}` : "غير معتمد" }],
     [{ value: "التسوية", style: 3 }, { value: report.session.settlement ? `تاريخ ${report.session.settlement.date}؛ حركة الزيادة ${report.session.settlement.surplusMovementId ?? "لا يوجد"}؛ حركة النقص ${report.session.settlement.shortageMovementId ?? "لا يوجد"}` : "لم ترحّل" }],
-    ["الردمك / الباركود", "الصنف", "الوحدة", "مرجع الموقع/المجموعة", "الرصيد الدفتري", "الرصيد الفعلي", "فرق الكمية", "تكلفة الوحدة", "قيمة الفرق", "سبب الفرق", "آخر من أدخل"].map((value) => ({ value, style: 2 })),
+    ["معرّف النشر ISBN/ISSN", "الباركود", "الصنف", "الوحدة", "مرجع الموقع/المجموعة", "الرصيد الدفتري", "الرصيد الفعلي", "فرق الكمية", "تكلفة الوحدة", "قيمة الفرق", "سبب الفرق", "آخر من أدخل"].map((value) => ({ value, style: 2 })),
     ...report.rows.map((row) => [
-      { value: row.barcode ?? "" }, { value: row.title }, { value: row.unitCode }, { value: row.locationReference ?? "" },
+      { value: row.publicationIdentifier ?? "" }, { value: row.barcode ?? "" }, { value: row.title }, { value: row.unitCode }, { value: row.locationReference ?? "" },
       { value: row.bookQuantity, numeric: true }, { value: row.countedQuantity, numeric: Boolean(row.countedQuantity) },
       { value: row.varianceQuantity, numeric: Boolean(row.varianceQuantity) }, { value: row.unitCostBase, numeric: true },
       { value: row.varianceValueBase, numeric: Boolean(row.varianceValueBase) }, { value: reasonLabel(row.varianceReason) }, { value: row.countedBy },
     ]),
   ];
-  return tableToXlsx(rows, "فروقات الجرد");
+  return tableToXlsx(rows, selection === "counted" ? "محضر الجرد" : "غير المجرودة");
 }

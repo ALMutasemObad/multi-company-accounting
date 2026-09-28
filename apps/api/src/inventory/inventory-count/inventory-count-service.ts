@@ -17,7 +17,8 @@ export type InventoryCountErrorReason =
   | "VERSION_CONFLICT"
   | "DUPLICATE_LINE"
   | "IDEMPOTENCY_MISMATCH"
-  | "IDEMPOTENCY_IN_PROGRESS";
+  | "IDEMPOTENCY_IN_PROGRESS"
+  | "ENTRY_ALREADY_REVERSED";
 
 export class InventoryCountError extends Error {
   constructor(public readonly reason: InventoryCountErrorReason) {
@@ -52,6 +53,7 @@ export type CountEntryInput = {
   inventoryItemId: bigint;
   quantity: string;
   locationReference?: string | null | undefined;
+  note?: string | null | undefined;
   entryKey: string;
 };
 export type InventoryCountSummary = {
@@ -61,6 +63,7 @@ export type InventoryCountSummary = {
   surplus: number;
   shortage: number;
   conflicts: number;
+  countedCopies: string;
 };
 
 const trimmed = (value: string | null | undefined, max: number) => {
@@ -74,6 +77,14 @@ const parseQuantity = (value: string) => {
     throw new InventoryCountError("INVALID_COUNT");
   }
   return new Prisma.Decimal(normalized);
+};
+
+const parseEntryQuantity = (value: string) => {
+  const normalized = value.trim();
+  if (!/^-?(?:0|[1-9]\d*)(?:\.\d{1,6})?$/u.test(normalized)) throw new InventoryCountError("INVALID_COUNT");
+  const quantity = new Prisma.Decimal(normalized);
+  if (quantity.isZero()) throw new InventoryCountError("INVALID_COUNT");
+  return quantity;
 };
 
 const normalizeCommittee = (members: CommitteeMemberInput[]) => {
@@ -387,7 +398,7 @@ export class InventoryCountService {
         { shelfSnapshot: { contains: input.search.trim() } },
       ] } : {}),
     };
-    const [lines, total, counted, surplus, shortage] = await this.prisma.$transaction([
+    const [lines, total, counted, surplus, shortage, copies] = await this.prisma.$transaction([
       this.prisma.stockCountLine.findMany({
         where,
         include: { inventoryItem: { select: { barcodes: { where: { isActive: true }, orderBy: [{ isPrimary: "desc" }, { id: "asc" }], take: 1, select: { value: true } } } } },
@@ -399,6 +410,7 @@ export class InventoryCountService {
       this.prisma.stockCountLine.count({ where: { companyId: context.companyId, sessionId, countedQuantity: { not: null } } }),
       this.prisma.stockCountLine.count({ where: { companyId: context.companyId, sessionId, varianceQuantity: { gt: 0 } } }),
       this.prisma.stockCountLine.count({ where: { companyId: context.companyId, sessionId, varianceQuantity: { lt: 0 } } }),
+      this.prisma.stockCountLine.aggregate({ where: { companyId: context.companyId, sessionId, countedQuantity: { not: null } }, _sum: { countedQuantity: true } }),
     ]);
     return {
       data: lines.map((line) => ({
@@ -409,7 +421,7 @@ export class InventoryCountService {
         countedQuantity: line.countedQuantity?.toString() ?? null, varianceQuantity: line.varianceQuantity?.toString() ?? null,
         varianceReason: line.varianceReason, countedByName: line.countedByNameSnapshot, countedAt: line.countedAt?.toISOString() ?? null, version: line.version,
       })),
-      summary: { total, counted, remaining: total - counted, surplus, shortage, conflicts: 0 } satisfies InventoryCountSummary,
+      summary: { total, counted, remaining: total - counted, surplus, shortage, conflicts: 0, countedCopies: copies._sum.countedQuantity?.toString() ?? "0" } satisfies InventoryCountSummary,
     };
   }
 
@@ -427,7 +439,7 @@ export class InventoryCountService {
         await tx.$queryRaw(Prisma.sql`SELECT id FROM stock_count_lines WHERE company_id = ${context.companyId} AND session_id = ${sessionId} AND id IN (${Prisma.join(ids)}) ORDER BY id FOR UPDATE`);
         const current = await tx.stockCountLine.findMany({
           where: { companyId: context.companyId, sessionId, id: { in: ids } },
-          include: { _count: { select: { entries: true } } },
+          include: { _count: { select: { entries: { where: { reversedAt: null } } } } },
           orderBy: { id: "asc" },
         });
         const byId = new Map(current.map((line) => [line.id.toString(), line]));
@@ -444,19 +456,18 @@ export class InventoryCountService {
           const reason = trimmed(row.varianceReason, 500);
           if ((line._count?.entries ?? 0) > 0 && line.countedQuantity && !counted.equals(line.countedQuantity)) {
             if (!reason) throw new InventoryCountError("INVALID_VARIANCE_REASON");
-            await tx.stockCountEntry.create({
-              data: {
-                companyId: context.companyId,
-                sessionId,
-                lineId: line.id,
-                entryKey: `CORRECTION-${randomUUID()}`,
-                quantity: counted.minus(line.countedQuantity),
-                locationReference: `تصحيح مشرف: ${reason ?? "مطابقة الإجمالي"}`.slice(0, 200),
-                counterNameSnapshot: counterName,
-                createdById: context.userId,
-              },
-            });
           }
+          if (!line.countedQuantity || !counted.equals(line.countedQuantity)) await tx.stockCountEntry.create({
+            data: {
+              companyId: context.companyId, sessionId, lineId: line.id,
+              entryKey: `MANUAL-${randomUUID()}`,
+              quantity: counted.minus(line.countedQuantity ?? new Prisma.Decimal(0)),
+              entryKind: line.countedQuantity === null ? "MANUAL" : "CORRECTION",
+              locationReference: line.countedQuantity === null ? null : "تعديل مشرف",
+              note: reason,
+              counterNameSnapshot: counterName, createdById: context.userId,
+            },
+          });
           const updated = await tx.stockCountLine.updateMany({
             where: { id: row.lineId, companyId: context.companyId, sessionId, version: row.expectedVersion },
             data: {
@@ -477,9 +488,9 @@ export class InventoryCountService {
   }
 
   async addEntry(context: ActorContext, sessionId: bigint, input: CountEntryInput) {
-    const quantity = parseQuantity(input.quantity);
-    if (quantity.isZero()) throw new InventoryCountError("INVALID_COUNT");
+    const quantity = parseEntryQuantity(input.quantity);
     const locationReference = trimmed(input.locationReference, 200);
+    const note = trimmed(input.note, 500);
     const entryKey = input.entryKey.trim().slice(0, 100);
     if (entryKey.length < 8) throw new InventoryCountError("INVALID_COUNT");
     return this.transactions.execute(
@@ -489,8 +500,16 @@ export class InventoryCountService {
         const session = await tx.stockCountSession.findFirst({ where: { id: sessionId, companyId: context.companyId }, select: { status: true } });
         if (!session) throw new InventoryCountError("NOT_FOUND");
         if (session.status !== "DRAFT") throw new InventoryCountError("INVALID_STATE");
-        const existing = await tx.stockCountEntry.findFirst({ where: { companyId: context.companyId, entryKey }, select: { lineId: true } });
-        if (existing) return this.entryResult(tx, context, sessionId, existing.lineId, true);
+        const existing = await tx.stockCountEntry.findFirst({ where: { companyId: context.companyId, entryKey }, select: {
+          lineId: true, sessionId: true, quantity: true, locationReference: true, note: true,
+          line: { select: { inventoryItemId: true } },
+        } });
+        if (existing) {
+          if (existing.sessionId !== sessionId || existing.line.inventoryItemId !== input.inventoryItemId || !existing.quantity.equals(quantity) || existing.locationReference !== locationReference || existing.note !== note) {
+            throw new InventoryCountError("IDEMPOTENCY_MISMATCH");
+          }
+          return this.entryResult(tx, context, sessionId, existing.lineId, true);
+        }
         let line = await tx.stockCountLine.findFirst({
           where: { companyId: context.companyId, sessionId, inventoryItemId: input.inventoryItemId },
         });
@@ -514,6 +533,7 @@ export class InventoryCountService {
         const locked = await tx.stockCountLine.findFirstOrThrow({ where: { id: line.id, companyId: context.companyId } });
         const counterName = await this.resolveCounterName(tx, context.userId);
         const total = (locked.countedQuantity ?? new Prisma.Decimal(0)).plus(quantity);
+        if (total.isNegative()) throw new InventoryCountError("INVALID_COUNT");
         const variance = total.minus(locked.bookQuantity);
         await tx.stockCountEntry.create({
           data: {
@@ -523,6 +543,7 @@ export class InventoryCountService {
             entryKey,
             quantity,
             locationReference,
+            note,
             counterNameSnapshot: counterName,
             createdById: context.userId,
           },
@@ -544,28 +565,86 @@ export class InventoryCountService {
     );
   }
 
-  async listEntries(context: ActorContext, sessionId: bigint, lineId?: bigint) {
+  async listEntries(context: ActorContext, sessionId: bigint, input: { lineId?: bigint | undefined; page: number; pageSize: number }) {
     const session = await this.prisma.stockCountSession.findFirst({ where: { id: sessionId, companyId: context.companyId }, select: { id: true } });
     if (!session) throw new InventoryCountError("NOT_FOUND");
-    const entries = await this.prisma.stockCountEntry.findMany({
-      where: { companyId: context.companyId, sessionId, ...(lineId ? { lineId } : {}) },
-      include: { line: { select: { itemCodeSnapshot: true, itemTitleSnapshot: true } } },
+    const where = { companyId: context.companyId, sessionId, ...(input.lineId ? { lineId: input.lineId } : {}) };
+    const [entries, total] = await this.prisma.$transaction([
+      this.prisma.stockCountEntry.findMany({
+      where,
+      include: { line: { select: { itemCodeSnapshot: true, itemTitleSnapshot: true, inventoryItem: { select: { publicationIdentifier: true, barcodes: { where: { isPrimary: true, isActive: true }, take: 1, select: { value: true } } } } } } },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      take: 500,
-    });
-    return entries.map((entry) => ({
+      skip: (input.page - 1) * input.pageSize, take: input.pageSize,
+    }), this.prisma.stockCountEntry.count({ where }),
+    ]);
+    const latest = entries.length ? await this.prisma.stockCountEntry.groupBy({
+      by: ["lineId"], where: { companyId: context.companyId, sessionId, reversedAt: null, lineId: { in: entries.map((entry) => entry.lineId) } },
+      _max: { id: true },
+    }) : [];
+    const latestByLine = new Map(latest.map((value) => [value.lineId.toString(), value._max.id?.toString()]));
+    return { total, page: input.page, data: entries.map((entry) => ({
       id: entry.id.toString(),
       lineId: entry.lineId.toString(),
       code: entry.line.itemCodeSnapshot,
       title: entry.line.itemTitleSnapshot,
+      publicationIdentifier: entry.line.inventoryItem.publicationIdentifier,
+      barcode: entry.line.inventoryItem.barcodes[0]?.value ?? null,
       quantity: entry.quantity.toString(),
       locationReference: entry.locationReference,
+      note: entry.note,
+      entryKind: entry.entryKind,
       counterName: entry.counterNameSnapshot,
       createdAt: entry.createdAt.toISOString(),
-    }));
+      reversedAt: entry.reversedAt?.toISOString() ?? null,
+      reversalReason: entry.reversalReason,
+      canReverse: entry.reversedAt === null && latestByLine.get(entry.lineId.toString()) === entry.id.toString(),
+    })) };
   }
 
-  async report(context: ActorContext, sessionId: bigint) {
+  async reverseEntry(context: ActorContext, sessionId: bigint, entryId: bigint, reason: string) {
+    const reversalReason = trimmed(reason, 500);
+    if (!reversalReason) throw new InventoryCountError("INVALID_COUNT");
+    return this.transactions.execute({ operation: "REVERSE_STOCK_COUNT_ENTRY", companyId: context.companyId }, async (tx) => {
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM stock_count_sessions WHERE id = ${sessionId} AND company_id = ${context.companyId} FOR UPDATE`);
+      const session = await tx.stockCountSession.findFirst({ where: { id: sessionId, companyId: context.companyId }, select: { status: true } });
+      if (!session) throw new InventoryCountError("NOT_FOUND");
+      if (session.status !== "DRAFT") throw new InventoryCountError("INVALID_STATE");
+      const entry = await tx.stockCountEntry.findFirst({ where: { id: entryId, sessionId, companyId: context.companyId } });
+      if (!entry) throw new InventoryCountError("NOT_FOUND");
+      if (entry.reversedAt) throw new InventoryCountError("ENTRY_ALREADY_REVERSED");
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM stock_count_lines WHERE id = ${entry.lineId} AND company_id = ${context.companyId} FOR UPDATE`);
+      const line = await tx.stockCountLine.findFirstOrThrow({ where: { id: entry.lineId, sessionId, companyId: context.companyId } });
+      const latest = await tx.stockCountEntry.findFirst({ where: { lineId: line.id, companyId: context.companyId, reversedAt: null }, orderBy: { id: "desc" }, select: { id: true } });
+      if (latest?.id !== entry.id) throw new InventoryCountError("VERSION_CONFLICT");
+      const total = (line.countedQuantity ?? new Prisma.Decimal(0)).minus(entry.quantity);
+      if (total.isNegative()) throw new InventoryCountError("INVALID_COUNT");
+      const prior = await tx.stockCountEntry.count({ where: { lineId: line.id, companyId: context.companyId, reversedAt: null, id: { not: entry.id } } });
+      const counted = prior === 0 && total.isZero() ? null : total;
+      await tx.stockCountEntry.update({ where: { id: entry.id }, data: { reversedAt: new Date(), reversedById: context.userId, reversalReason } });
+      const counterName = await this.resolveCounterName(tx, context.userId);
+      await tx.stockCountLine.update({ where: { id: line.id }, data: {
+        countedQuantity: counted, varianceQuantity: counted?.minus(line.bookQuantity) ?? null,
+        varianceReason: null, countedById: context.userId, countedByNameSnapshot: counterName,
+        countedAt: new Date(), version: { increment: 1 },
+      } });
+      return this.entryResult(tx, context, sessionId, line.id, false);
+    });
+  }
+
+  async dailyActivity(context: ActorContext, sessionId: bigint, day: string, utcOffsetMinutes: number) {
+    const session = await this.prisma.stockCountSession.findFirst({ where: { id: sessionId, companyId: context.companyId }, select: { id: true } });
+    if (!session) throw new InventoryCountError("NOT_FOUND");
+    const start = new Date(Date.parse(`${day}T00:00:00.000Z`) - utcOffsetMinutes * 60_000);
+    const end = new Date(start.getTime() + 86_400_000);
+    const entries = await this.prisma.stockCountEntry.findMany({ where: {
+      companyId: context.companyId, sessionId, reversedAt: null,
+      entryKind: { in: ["BATCH", "MANUAL"] },
+      createdAt: { gte: start, lt: end },
+    }, select: { lineId: true, quantity: true } });
+    return { day, countedCopies: entries.reduce((sum, entry) => sum.plus(entry.quantity), new Prisma.Decimal(0)).toString(), countedTitles: new Set(entries.map((entry) => entry.lineId.toString())).size };
+  }
+
+  async report(context: ActorContext, sessionId: bigint, selection: "counted" | "uncounted" = "counted") {
     const session = await this.prisma.stockCountSession.findFirst({
       where: { id: sessionId, companyId: context.companyId },
       include: {
@@ -574,17 +653,18 @@ export class InventoryCountService {
       },
     });
     if (!session) throw new InventoryCountError("NOT_FOUND");
-    const lines = await this.prisma.stockCountLine.findMany({
-      where: { companyId: context.companyId, sessionId },
-      include: { inventoryItem: { select: { barcodes: { where: { isActive: true }, orderBy: [{ isPrimary: "desc" }, { id: "asc" }], take: 1, select: { value: true } } } } },
+    const [lines, summary] = await Promise.all([this.prisma.stockCountLine.findMany({
+      where: { companyId: context.companyId, sessionId, countedQuantity: selection === "counted" ? { not: null } : null },
+      include: { inventoryItem: { select: { publicationIdentifier: true, barcodes: { where: { isActive: true }, orderBy: [{ isPrimary: "desc" }, { id: "asc" }], take: 1, select: { value: true } } } } },
       orderBy: [{ itemTitleSnapshot: "asc" }, { id: "asc" }],
-    });
+    }), this.summary(context, sessionId, 0)]);
     return {
       session: {
         id: session.id.toString(), countDate: session.countDate.toISOString().slice(0, 10), status: session.status, warehouse: session.warehouse,
         cutoff: { receiptNumber: session.lastReceiptMovementNumber, issueNumber: session.lastIssueMovementNumber },
         committee: session.committeeMembers.map((member) => ({ name: member.memberName, role: member.memberRole })),
         approvedByName: session.approvedByName,
+        summary,
         approvedAt: session.approvedAt?.toISOString() ?? null,
         settlement: session.settlementDate && session.settledAt ? {
           date: session.settlementDate.toISOString().slice(0, 10),
@@ -593,7 +673,7 @@ export class InventoryCountService {
         } : null,
       },
       rows: lines.map((line) => ({
-        code: line.itemCodeSnapshot, barcode: line.inventoryItem.barcodes[0]?.value ?? null, title: line.itemTitleSnapshot, unitCode: line.unitCodeSnapshot,
+        code: line.itemCodeSnapshot, barcode: line.inventoryItem.barcodes[0]?.value ?? null, publicationIdentifier: line.inventoryItem.publicationIdentifier, title: line.itemTitleSnapshot, unitCode: line.unitCodeSnapshot,
         locationReference: line.locationSnapshot ?? line.shelfSnapshot,
         bookQuantity: line.bookQuantity.toString(), countedQuantity: line.countedQuantity?.toString() ?? "",
         varianceQuantity: line.varianceQuantity?.toString() ?? "", unitCostBase: line.bookUnitCostBase.toString(),
@@ -665,12 +745,13 @@ export class InventoryCountService {
 
   private async summaryInTransaction(tx: Prisma.TransactionClient, context: ActorContext, sessionId: bigint, conflicts: number): Promise<InventoryCountSummary> {
     const where = { companyId: context.companyId, sessionId };
-    const [total, counted, surplus, shortage] = await Promise.all([
+    const [total, counted, surplus, shortage, copies] = await Promise.all([
       tx.stockCountLine.count({ where }),
       tx.stockCountLine.count({ where: { ...where, countedQuantity: { not: null } } }),
       tx.stockCountLine.count({ where: { ...where, varianceQuantity: { gt: 0 } } }),
       tx.stockCountLine.count({ where: { ...where, varianceQuantity: { lt: 0 } } }),
+      tx.stockCountLine.aggregate({ where: { ...where, countedQuantity: { not: null } }, _sum: { countedQuantity: true } }),
     ]);
-    return { total, counted, remaining: total - counted, surplus, shortage, conflicts };
+    return { total, counted, remaining: total - counted, surplus, shortage, conflicts, countedCopies: copies._sum.countedQuantity?.toString() ?? "0" };
   }
 }

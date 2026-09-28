@@ -17,37 +17,41 @@ function varianceReason(value: string) {
 }
 
 function arabicTextDigits(value: string) {
-  return /[\u0600-\u06ff]/u.test(value) ? value.replace(/\d/gu, (digit) => "٠١٢٣٤٥٦٧٨٩"[Number(digit)]!) : value;
+  const legible = value.replace(/\uFFFD/gu, "؟");
+  // PDFKit reverses Latin runs inside RTL lines visually; reverse only those runs before shaping.
+  return /[\u0600-\u06ff]/u.test(legible)
+    ? legible.replace(/\d/gu, (digit) => "٠١٢٣٤٥٦٧٨٩"[Number(digit)]!).replace(/[A-Za-z]+(?:\s+[A-Za-z]+)*/gu, (run) => [...run].reverse().join(""))
+    : legible;
 }
 
 export function inventoryCountPdfProfile(report: InventoryCountReport, companyName: string): PdfTableProfile {
   const session = report.session;
-  const counted = report.rows.filter((row) => row.countedQuantity !== "").length;
   const committee = arabicTextDigits(session.committee.map((member) => member.role ? `${member.name}، ${member.role}` : member.name).join("؛ ") || "غير مسجلة");
   return {
     companyName,
     title: "محضر جرد المخزون",
     direction: "RTL",
-    columnWidths: [210, 120, 60, 70, 70, 60, 100, 80],
+    columnWidths: [180, 102, 95, 45, 62, 62, 55, 92, 77],
     metadataGroups: [
-      [{ label: "رقم الجلسة", value: session.id }, { label: "تاريخ الجرد", value: session.countDate }, { label: "المستودع", value: arabicTextDigits(session.warehouse.nameAr) }, { label: "الحالة", value: statusLabel[session.status] ?? session.status }],
-      [{ label: "إجمالي الأصناف", value: String(report.rows.length) }, { label: "تم جردها", value: String(counted) }, { label: "غير مجرودة", value: String(report.rows.length - counted) }, { label: "تاريخ التسوية", value: session.settlement?.date ?? "لم ترحّل" }],
-      [{ label: "آخر سند إدخال قبل الجرد", value: session.cutoff.receiptNumber ?? "لا يوجد" }, { label: "آخر سند صرف قبل الجرد", value: session.cutoff.issueNumber ?? "لا يوجد" }],
-      [{ label: "لجنة الجرد", value: committee }, { label: "المعتمد", value: session.approvedByName ? arabicTextDigits(session.approvedByName) : "لم يعتمد بعد" }, { label: "تاريخ الاعتماد", value: session.approvedAt?.slice(0, 10) ?? "—" }],
+      [{ label: "الجلسة", value: session.id }, { label: "تاريخ الجرد", value: session.countDate }, { label: "المستودع", value: arabicTextDigits(session.warehouse.nameAr) }, { label: "الحالة", value: statusLabel[session.status] ?? session.status }],
+      [{ label: "العناوين المجرودة", value: String(session.summary.counted) }, { label: "النسخ المجرودة", value: session.summary.countedCopies }, { label: "العناوين المتبقية", value: String(session.summary.remaining) }, { label: "إجمالي العناوين", value: String(session.summary.total) }],
+      [{ label: "آخر استلام قبل الجرد", value: session.cutoff.receiptNumber ?? "لا يوجد" }, { label: "آخر صرف قبل الجرد", value: session.cutoff.issueNumber ?? "لا يوجد" }, { label: "المعتمد", value: session.approvedByName ? arabicTextDigits(session.approvedByName) : "لم يعتمد بعد" }],
     ],
-    headerRows: [["الصنف", "الردمك أو الباركود", "الوحدة", "الدفتري", "الفعلي", "الفرق", "سبب الفرق", "الموقع"].map((value) => ({ value, style: 2 }))],
+    metadataLines: [`لجنة الجرد: ${committee}    |    التسوية: ${session.settlement?.date ?? "لم ترحّل"}`],
+    headerRows: [["الصنف", "معرّف النشر", "الباركود", "الوحدة", "الدفتري", "الفعلي", "الفرق", "سبب الفرق", "الموقع"].map((value) => ({ value, style: 2 }))],
     bodyRows: report.rows.map((row) => [
       { value: arabicTextDigits(row.title) },
+      { value: row.publicationIdentifier ?? "—" },
       { value: row.barcode ?? "—" },
       { value: row.unitCode },
       { value: row.bookQuantity, numeric: true },
-      { value: row.countedQuantity || "لم يُجرد", numeric: row.countedQuantity !== "" },
+      { value: row.countedQuantity, numeric: true },
       { value: row.varianceQuantity || "—", numeric: row.varianceQuantity !== "" },
       { value: varianceReason(row.varianceReason) },
       { value: arabicTextDigits(row.locationReference ?? "—") },
     ]),
     closingLines: [
-      "أُعد هذا المحضر من جميع بنود جلسة الجرد؛ وتُراجع الفروقات وأسبابها قبل التسوية.",
+      "يعرض هذا المحضر الأصناف المجرودة فقط؛ وتُراجع الفروقات قبل التسوية.",
     ],
     signatureLabels: ["توقيع أعضاء لجنة الجرد", "توقيع المعتمد"],
   };
