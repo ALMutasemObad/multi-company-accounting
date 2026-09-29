@@ -6,6 +6,7 @@ import type { GroupCompanyOnboardingService } from "./group-company-onboarding-s
 import { GroupCompanyOnboardingError } from "./group-company-onboarding-ports.js";
 import { OrganizationIdempotencyError } from "../platform/organization-idempotent-command-executor.js";
 import { SubscriptionStartPolicyError } from "../platform-subscriptions/new-company-start-policy.js";
+import { logEvent } from "../operations/logger.js";
 import {
   OrganizationMembershipError,
   type OrganizationMembershipService,
@@ -85,11 +86,18 @@ export function createOrganizationOwnerRouter(auth: AuthService, service: Organi
     ));
   });
 
-  const errors: ErrorRequestHandler = (error, _request, response, next) => {
+  const errors: ErrorRequestHandler = (error, request, response, next) => {
     if (error instanceof GroupCompanyOnboardingError || error instanceof SubscriptionStartPolicyError || error instanceof OrganizationIdempotencyError) {
       const status = error instanceof OrganizationIdempotencyError ? 409 : error instanceof GroupCompanyOnboardingError && error.reason === "INVALID_COMPANY_OPTION" ? 422 : 503;
       const code = error instanceof OrganizationIdempotencyError ? error.reason : status === 503 ? "COMPANY_SETUP_UNAVAILABLE" : "BUSINESS_RULE_VIOLATION";
-      response.status(status).json({ type: "about:blank", title: "Company creation could not complete", status, code });
+      if (status === 503) logEvent("error", "group_company_setup_unavailable", {
+        requestId: response.locals.requestId,
+        operation: request.method === "GET" ? "GROUP_COMPANY_OPTIONS" : "CREATE_GROUP_COMPANY",
+        source: error instanceof SubscriptionStartPolicyError ? "START_PLAN_POLICY" : "GROUP_COMPANY_ONBOARDING",
+        reason: error.reason,
+      });
+      response.status(status).json({ type: "about:blank", title: "Company creation could not complete", status, code,
+        requestId: response.locals.requestId });
       return;
     }
     if (error instanceof ZodError) {
