@@ -1,10 +1,11 @@
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import type { AuditAppendPort } from "../platform/audit-append-port.js";
 import type { AccountingCompanyProvisioningPort, TreasuryCompanyProvisioningPort } from "../platform/company-provisioning-ports.js";
 import { OrganizationIdempotentCommandExecutor } from "../platform/organization-idempotent-command-executor.js";
 import { TransactionExecutor } from "../platform/transaction-executor.js";
 import type { PlatformSubscriptionCompanyProvisioningPort } from "../platform-subscriptions/platform-entitlement-ports.js";
+import { SubscriptionStartPolicyError } from "../platform-subscriptions/new-company-start-policy.js";
 import type { RegistrationAccountingPort } from "../registration/registration-owner-ports.js";
 import { GroupCompanyOnboardingError, type GroupCompanyInput, type GroupCompanyResult, type GroupCompanyIdentityPort, type GroupCompanyTenantPort } from "./group-company-onboarding-ports.js";
 
@@ -18,14 +19,21 @@ export class GroupCompanyOnboardingService {
   constructor(prisma: PrismaClient, private readonly ports: {
     tenant: GroupCompanyTenantPort; identity: GroupCompanyIdentityPort;
     accounting: AccountingCompanyProvisioningPort; accountingOptions: RegistrationAccountingPort; treasury: TreasuryCompanyProvisioningPort;
-    subscriptions: PlatformSubscriptionCompanyProvisioningPort; audit: AuditAppendPort;
+    subscriptions: PlatformSubscriptionCompanyProvisioningPort & {
+      eligibleStartCurrency(tx: Prisma.TransactionClient, effectiveAt: Date): Promise<string>;
+    }; audit: AuditAppendPort;
   }) { this.commands = new OrganizationIdempotentCommandExecutor(prisma); this.transactions = new TransactionExecutor(prisma); }
 
   async options(userId: bigint, organizationId: bigint) {
-    await this.transactions.execute({ operation: "GROUP_COMPANY_OPTIONS" }, tx => this.ports.identity.authorizeOwner(tx, userId, organizationId));
+    const eligibleCurrency = await this.transactions.execute({ operation: "GROUP_COMPANY_OPTIONS" }, async tx => {
+      await this.ports.identity.authorizeOwner(tx, userId, organizationId);
+      return this.ports.subscriptions.eligibleStartCurrency(tx, new Date());
+    });
     const [currencies, businessActivities] = await Promise.all([this.ports.tenant.currencies(), this.ports.tenant.businessActivities()]);
+    const allowedCurrencies = currencies.filter(currency => currency.code === eligibleCurrency);
+    if (allowedCurrencies.length !== 1) throw new SubscriptionStartPolicyError("PLAN_NOT_ELIGIBLE");
     return {
-      currencies, countries: this.ports.tenant.countries(), businessActivities,
+      currencies: allowedCurrencies, countries: this.ports.tenant.countries(), businessActivities,
       chartTemplates: this.ports.accountingOptions.listChartTemplates(),
       timezones: [...new Set(["UTC", ...Intl.supportedValuesOf("timeZone")])],
     };

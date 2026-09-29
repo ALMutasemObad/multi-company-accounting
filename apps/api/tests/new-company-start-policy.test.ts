@@ -222,6 +222,43 @@ describe('new-company start plan eligibility', () => {
 });
 
 describe('PrismaNewCompanySubscriptionProvisioningAdapter', () => {
+  it('preflights the configured eligible currency without writing subscriptions or catalog rows', async () => {
+    const fixture = adapterFixture();
+    const adapter = new PrismaNewCompanySubscriptionProvisioningAdapter(versionId.toString());
+    await expect(adapter.eligibleStartCurrency(fixture.tx, effectiveAt)).resolves.toBe('SAR');
+    expect(fixture.planFind).toHaveBeenCalledExactlyOnceWith({ where: { id: versionId },
+      include: { plan: true, entitlements: { include: { module: { include: { dependencies: true } } } } } });
+    expect(fixture.subscriptionFind).not.toHaveBeenCalled();
+    for (const write of fixture.writes) expect(write).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, '', 'bad-id'])('does not query or write when preflight configuration is invalid (%s)', async configuration => {
+    const fixture = adapterFixture();
+    await expect(new PrismaNewCompanySubscriptionProvisioningAdapter(configuration)
+      .eligibleStartCurrency(fixture.tx, effectiveAt)).rejects.toBeInstanceOf(SubscriptionStartPolicyError);
+    expect(fixture.planFind).not.toHaveBeenCalled();
+    for (const write of fixture.writes) expect(write).not.toHaveBeenCalled();
+  });
+
+  it.each([null, startPlan({ recurringFee: new Prisma.Decimal('1') }), startPlan({ currencyCode: 'sar' })])
+    ('rejects an absent or ineligible configured plan during preflight', async plan => {
+      const fixture = adapterFixture(plan);
+      await expect(new PrismaNewCompanySubscriptionProvisioningAdapter(versionId.toString())
+        .eligibleStartCurrency(fixture.tx, effectiveAt)).rejects.toThrowError(new SubscriptionStartPolicyError('PLAN_NOT_ELIGIBLE'));
+      for (const write of fixture.writes) expect(write).not.toHaveBeenCalled();
+    });
+
+  it('rechecks the plan at creation after a successful options preflight', async () => {
+    const fixture = adapterFixture();
+    const adapter = new PrismaNewCompanySubscriptionProvisioningAdapter(versionId.toString());
+    await expect(adapter.eligibleStartCurrency(fixture.tx, effectiveAt)).resolves.toBe('SAR');
+    fixture.planFind.mockResolvedValueOnce(startPlan({ currencyCode: 'USD' }));
+    await expect(adapter.provisionNewCompanyAccess(fixture.tx, provisioningInput))
+      .rejects.toThrowError(new SubscriptionStartPolicyError('PLAN_NOT_ELIGIBLE'));
+    expect(fixture.planFind).toHaveBeenCalledTimes(2);
+    for (const write of fixture.writes) expect(write).not.toHaveBeenCalled();
+  });
+
   it('creates one company-scoped subscription with PLAN rights and operator-configured provenance', async () => {
     const plan = startPlan({ trialDays: 11 });
     plan.entitlements.push(entitlement(3n, 'POS', [2n], 'OPTIONAL'));

@@ -9,6 +9,16 @@ import { configuredStartPlanVersionId, validateNewCompanyStartPlan } from "./new
 export class PrismaNewCompanySubscriptionProvisioningAdapter implements PlatformSubscriptionCompanyProvisioningPort {
   constructor(private readonly configuredVersionId?: string) {}
 
+  /** Read-only preflight for onboarding options; creation still rechecks in its own transaction. */
+  async eligibleStartCurrency(tx: Prisma.TransactionClient, effectiveAt: Date): Promise<string> {
+    const targetPlanVersionId = configuredStartPlanVersionId(this.configuredVersionId);
+    const plan = await tx.platformPlanVersion.findUnique({
+      where: { id: targetPlanVersionId },
+      include: { plan: true, entitlements: { include: { module: { include: { dependencies: true } } } } },
+    });
+    return validateNewCompanyStartPlan(plan, effectiveAt, plan?.currencyCode ?? "").version.currencyCode;
+  }
+
   async provisionNewCompanyAccess(tx: Prisma.TransactionClient, input: PlatformSubscriptionCompanyProvisioningInput) {
     const existing = await tx.platformSubscription.findUnique({
       where: { companyId: input.companyId }, select: { id: true },

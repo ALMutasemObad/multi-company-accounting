@@ -193,6 +193,7 @@ describe.runIf(enabled)("group company creation on a real database", () => {
       businessActivities: expect.arrayContaining([expect.objectContaining({ code: "RETAIL_TRADE" })]),
       chartTemplates: expect.arrayContaining([expect.objectContaining({ code: "RETAIL_INVENTORY" })]),
     });
+    expect(options.body.currencies.map((currency: { code: string }) => currency.code)).toEqual(["SAR"]);
     await agent.post(path).set("Idempotency-Key", randomUUID()).send(input).expect(403);
     await agent.post(path).set("X-CSRF-Token", login.body.csrfToken).send(input).expect(400);
     await agent.post(path).set("X-CSRF-Token", login.body.csrfToken).set("Idempotency-Key", randomUUID()).send({ ...input, organizationName: "Do not rename", adminEmail: "other@example.test" }).expect(400);
