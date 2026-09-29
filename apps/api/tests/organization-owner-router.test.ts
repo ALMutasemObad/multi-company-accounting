@@ -2,6 +2,7 @@ import express from "express";
 import request from "supertest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuthService } from "../src/auth/auth-service.js";
+import { problemResponseComponentSchema } from "../src/generated/openapi-request-guards.js";
 import type { GroupCompanyOnboardingService } from "../src/organizations/group-company-onboarding-service.js";
 import { GroupCompanyOnboardingError } from "../src/organizations/group-company-onboarding-ports.js";
 import { createOrganizationOwnerRouter } from "../src/organizations/organization-owner-router.js";
@@ -93,6 +94,10 @@ describe("organization owner HTTP boundary", () => {
     expect(response.status).toBe(503);
     expect(response.headers["x-request-id"]).toBe("group-options-12345678");
     expect(response.body).toMatchObject({ code: "COMPANY_SETUP_UNAVAILABLE", requestId: "group-options-12345678" });
+    expect(problemResponseComponentSchema.parse(response.body)).toMatchObject({
+      code: "COMPANY_SETUP_UNAVAILABLE", requestId: "group-options-12345678",
+    });
+    expect(problemResponseComponentSchema.safeParse({ code: "COMPANY_SETUP_UNAVAILABLE", requestId: "bad id" }).success).toBe(false);
     expect(response.body).not.toHaveProperty("reason");
     expect(options).toHaveBeenCalledWith(7n, 1n);
     expect(logs).toHaveBeenCalledOnce();

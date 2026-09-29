@@ -1,7 +1,9 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { api, beginLogin } from "./api";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { api, ApiError, beginLogin } from "./api";
+import { loadLocale } from "./i18n";
 
 describe("login bootstrap", () => {
+  beforeAll(async () => { await loadLocale("ar"); });
   afterEach(() => vi.unstubAllGlobals());
 
   it("deduplicates concurrent CSRF requests from React Strict Mode", async () => {
@@ -37,5 +39,37 @@ describe("login bootstrap", () => {
     expect(request.body).toBe(file);
     expect(new Headers(request.headers).get("Content-Type")).toBe("image/png");
     expect(new Headers(request.headers).get("If-None-Match")).toBe("*");
+  });
+
+  it("keeps the validated response-header request ID on an API error", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      code: "COMPANY_SETUP_UNAVAILABLE", requestId: "different-body-12345678",
+    }), { status: 503, headers: { "Content-Type": "application/json", "X-Request-ID": "group-create-12345678" } })));
+
+    await expect(api("/organizations/1/company-options")).rejects.toMatchObject({
+      status: 503, code: "COMPANY_SETUP_UNAVAILABLE", requestId: "group-create-12345678",
+    });
+  });
+
+  it("uses a safe body request ID only when the header is unavailable", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      code: "COMPANY_SETUP_UNAVAILABLE", requestId: "group-body-12345678",
+    }), { status: 503, headers: { "Content-Type": "application/json" } })));
+
+    await expect(api("/organizations/1/company-options")).rejects.toMatchObject({ requestId: "group-body-12345678" });
+  });
+
+  it("does not reflect an unsafe or malformed request ID in a client error", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      code: "COMPANY_SETUP_UNAVAILABLE", requestId: "unsafe id with spaces",
+    }), { status: 503, headers: { "Content-Type": "application/json", "X-Request-ID": "short" } })));
+
+    try {
+      await api("/organizations/1/company-options");
+      expect.fail("Expected a rejected API response");
+    } catch (cause) {
+      expect(cause).toBeInstanceOf(ApiError);
+      expect((cause as ApiError).requestId).toBeUndefined();
+    }
   });
 });
