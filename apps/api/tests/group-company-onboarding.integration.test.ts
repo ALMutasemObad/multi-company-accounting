@@ -74,6 +74,39 @@ describe.runIf(enabled)("group company creation on a real database", () => {
     expect((await createOrganizationMembershipService(db!).dashboard(user.id, organization.id, 30)).companies.map(row => row.id)).toEqual([created.company.id]);
   });
 
+  it("reproduces the reported AED selection and rolls back a mismatched start plan before a compatible retry", async () => {
+    await db!.currency.upsert({
+      where: { scopeKey_code: { scopeKey: "GLOBAL", code: "AED" } },
+      update: { isActive: true },
+      create: { code: "AED", nameAr: "درهم إماراتي", decimals: 2, scopeKey: "GLOBAL", scope: "GLOBAL" },
+    });
+    const aedPlan = await createStartPlanFixture(db!, "AED");
+    const { organization, user } = await fixture();
+    const reportedInput = {
+      companyName: "شركة تجريبية", phone: "11111111", countryCode: "YE",
+      primaryBusinessActivityCode: "MANUFACTURING", chartTemplateCode: "PROFESSIONAL_SERVICES",
+      timezone: "Asia/Riyadh", baseCurrencyCode: "AED",
+    };
+    const key = randomUUID();
+    await expect(service().create(user.id, organization.id, key, reportedInput))
+      .rejects.toMatchObject({ reason: "PLAN_NOT_ELIGIBLE" });
+    expect(await db!.company.count({ where: { organizationId: organization.id } })).toBe(0);
+    expect(await db!.organizationIdempotencyRecord.count({ where: { organizationId: organization.id } })).toBe(0);
+
+    const compatible = createGroupCompanyOnboardingService(db!, aedPlan.version.id.toString());
+    const options = await compatible.options(user.id, organization.id);
+    expect(options.currencies.map(currency => currency.code)).toEqual(["AED"]);
+    const created = await compatible.create(user.id, organization.id, key, reportedInput);
+    const companyId = BigInt(created.company.id);
+    expect(created.company).toMatchObject({ name: reportedInput.companyName, baseCurrencyCode: "AED" });
+    expect(await db!.companyProfile.findUnique({ where: { companyId } })).toMatchObject({
+      countryCode: "YE", phone: reportedInput.phone, initialChartTemplateCode: "PROFESSIONAL_SERVICES",
+    });
+    expect(await db!.platformSubscription.findUnique({ where: { companyId } }))
+      .toMatchObject({ planVersionId: aedPlan.version.id, status: "ACTIVE" });
+    expect(await db!.organizationIdempotencyRecord.count({ where: { organizationId: organization.id } })).toBe(1);
+  }, 60_000);
+
   it("replays concurrent identical requests, rejects payload mismatch, and replays after 24 hours", async () => {
     const { organization, user } = await fixture();
     const key = randomUUID();
