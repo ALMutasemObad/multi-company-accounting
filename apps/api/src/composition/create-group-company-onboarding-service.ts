@@ -8,10 +8,17 @@ import { TreasuryCompanyProvisioningAdapter } from "../treasury/company-provisio
 import { GroupCompanyOnboardingIdentityAdapter } from "../users/group-company-onboarding-identity-adapter.js";
 import { RegistrationAccountingAdapter } from "../accounts/registration-accounting-adapter.js";
 
-export function createGroupCompanyOnboardingService(prisma: PrismaClient, startPlanVersionId = process.env.PLATFORM_SUBSCRIPTION_START_PLAN_VERSION_ID) {
+export function createGroupCompanyOnboardingService(
+  prisma: PrismaClient,
+  startPlanVersionId?: string,
+  startPlanVersionsByCurrency?: string,
+) {
+  const explicitPolicy = startPlanVersionId !== undefined || startPlanVersionsByCurrency !== undefined;
+  const singleId = explicitPolicy ? startPlanVersionId : process.env.PLATFORM_SUBSCRIPTION_START_PLAN_VERSION_ID;
+  const currencyMap = explicitPolicy ? startPlanVersionsByCurrency : process.env.PLATFORM_SUBSCRIPTION_START_PLAN_VERSION_IDS_BY_CURRENCY;
   return new GroupCompanyOnboardingService(prisma, {
     tenant: new GroupCompanyOnboardingTenantAdapter(prisma), identity: new GroupCompanyOnboardingIdentityAdapter(),
     accounting: new AccountingCompanyProvisioningAdapter(), accountingOptions: new RegistrationAccountingAdapter(), treasury: new TreasuryCompanyProvisioningAdapter(),
-    subscriptions: new PrismaNewCompanySubscriptionProvisioningAdapter(startPlanVersionId), audit: new PrismaAuditAppendAdapter(),
+    subscriptions: new PrismaNewCompanySubscriptionProvisioningAdapter(singleId, currencyMap), audit: new PrismaAuditAppendAdapter(),
   });
 }

@@ -3,20 +3,32 @@ import type {
   PlatformSubscriptionCompanyProvisioningInput,
   PlatformSubscriptionCompanyProvisioningPort,
 } from "./platform-entitlement-ports.js";
-import { configuredStartPlanVersionId, validateNewCompanyStartPlan } from "./new-company-start-policy.js";
+import { configuredStartPlanVersions, SubscriptionStartPolicyError, validateNewCompanyStartPlan } from "./new-company-start-policy.js";
 
 /** Operational onboarding only; the caller owns the serializable provisioning transaction and retries. */
 export class PrismaNewCompanySubscriptionProvisioningAdapter implements PlatformSubscriptionCompanyProvisioningPort {
-  constructor(private readonly configuredVersionId?: string) {}
+  constructor(private readonly configuredVersionId?: string, private readonly configuredCurrencyVersions?: string) {}
 
   /** Read-only preflight for onboarding options; creation still rechecks in its own transaction. */
-  async eligibleStartCurrency(tx: Prisma.TransactionClient, effectiveAt: Date): Promise<string> {
-    const targetPlanVersionId = configuredStartPlanVersionId(this.configuredVersionId);
-    const plan = await tx.platformPlanVersion.findUnique({
-      where: { id: targetPlanVersionId },
+  async eligibleStartCurrencies(tx: Prisma.TransactionClient, effectiveAt: Date): Promise<string[]> {
+    const configuration = configuredStartPlanVersions(this.configuredVersionId, this.configuredCurrencyVersions);
+    if (configuration.kind === "single") {
+      const plan = await this.findVersion(tx, configuration.id);
+      return [validateNewCompanyStartPlan(plan, effectiveAt, plan?.currencyCode ?? "").version.currencyCode];
+    }
+    const currencies: string[] = [];
+    for (const [code, id] of configuration.ids) {
+      validateNewCompanyStartPlan(await this.findVersion(tx, id), effectiveAt, code);
+      currencies.push(code);
+    }
+    return currencies;
+  }
+
+  private findVersion(tx: Prisma.TransactionClient, id: bigint) {
+    return tx.platformPlanVersion.findUnique({
+      where: { id },
       include: { plan: true, entitlements: { include: { module: { include: { dependencies: true } } } } },
     });
-    return validateNewCompanyStartPlan(plan, effectiveAt, plan?.currencyCode ?? "").version.currencyCode;
   }
 
   async provisionNewCompanyAccess(tx: Prisma.TransactionClient, input: PlatformSubscriptionCompanyProvisioningInput) {
@@ -25,11 +37,10 @@ export class PrismaNewCompanySubscriptionProvisioningAdapter implements Platform
     });
     // Replays and historical subscriptions never change, even if the current start policy is unavailable.
     if (existing) return;
-    const targetPlanVersionId = configuredStartPlanVersionId(this.configuredVersionId);
-    const plan = await tx.platformPlanVersion.findUnique({
-      where: { id: targetPlanVersionId },
-      include: { plan: true, entitlements: { include: { module: { include: { dependencies: true } } } } },
-    });
+    const configuration = configuredStartPlanVersions(this.configuredVersionId, this.configuredCurrencyVersions);
+    const targetPlanVersionId = configuration.kind === "single" ? configuration.id : configuration.ids.get(input.baseCurrencyCode);
+    if (targetPlanVersionId === undefined) throw new SubscriptionStartPolicyError("PLAN_NOT_ELIGIBLE");
+    const plan = await this.findVersion(tx, targetPlanVersionId);
     const { version, modules } = validateNewCompanyStartPlan(plan, input.effectiveFrom, input.baseCurrencyCode);
     const trialEndsAt = version.trialDays > 0
       ? new Date(input.effectiveFrom.getTime() + version.trialDays * 86_400_000) : null;

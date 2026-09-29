@@ -15,13 +15,13 @@ function fixture() {
   const tx = {} as Prisma.TransactionClient;
   const prisma = { $transaction: vi.fn(async (work: (client: Prisma.TransactionClient) => Promise<unknown>) => work(tx)) } as unknown as PrismaClient;
   const authorizeOwner = vi.fn().mockResolvedValue(undefined);
-  const eligibleStartCurrency = vi.fn().mockResolvedValue("SAR");
+  const eligibleStartCurrencies = vi.fn().mockResolvedValue(["SAR"]);
   const currencies = vi.fn().mockResolvedValue([
     { code: "AED", nameAr: "درهم إماراتي" },
     { code: "SAR", nameAr: "ريال سعودي" },
   ]);
   const ports = {
-    identity: { authorizeOwner }, subscriptions: { eligibleStartCurrency },
+    identity: { authorizeOwner }, subscriptions: { eligibleStartCurrencies },
     tenant: {
       currencies,
       businessActivities: vi.fn().mockResolvedValue([{ code: "MANUFACTURING", nameAr: "إنتاج وتصنيع", nameEn: "Manufacturing" }]),
@@ -34,7 +34,7 @@ function fixture() {
   const app = express();
   app.use(requestLogger(false));
   app.use(createOrganizationOwnerRouter(auth as unknown as AuthService, {} as OrganizationMembershipService, onboarding));
-  return { app, tx, auth, authorizeOwner, eligibleStartCurrency, currencies };
+  return { app, tx, auth, authorizeOwner, eligibleStartCurrencies, currencies };
 }
 
 describe("group company options through the HTTP and application boundaries", () => {
@@ -53,12 +53,12 @@ describe("group company options through the HTTP and application boundaries", ()
     expect(response.body.chartTemplates).toEqual([{ code: "PROFESSIONAL_SERVICES", nameAr: "دليل الخدمات المهنية" }]);
     expect(test.auth.authenticate).toHaveBeenCalledWith({ sid: "session-token", csrfToken: undefined, requireCsrf: false });
     expect(test.authorizeOwner).toHaveBeenCalledExactlyOnceWith(test.tx, 7n, 1n);
-    expect(test.eligibleStartCurrency).toHaveBeenCalledOnce();
+    expect(test.eligibleStartCurrencies).toHaveBeenCalledOnce();
   });
 
   it("returns one correlated, non-disclosing 503 when the configured start plan is unavailable", async () => {
     const test = fixture();
-    test.eligibleStartCurrency.mockRejectedValueOnce(new SubscriptionStartPolicyError("NOT_CONFIGURED"));
+    test.eligibleStartCurrencies.mockRejectedValueOnce(new SubscriptionStartPolicyError("NOT_CONFIGURED"));
     const logs = vi.spyOn(console, "error").mockImplementation(() => {});
     const response = await request(test.app).get("/organizations/1/company-options")
       .set("X-Request-ID", "group-unavailable-12345678");
@@ -97,7 +97,7 @@ describe("group company options through the HTTP and application boundaries", ()
     const response = await request(test.app).get("/organizations/1/company-options");
 
     expect(response.status).toBe(403);
-    expect(test.eligibleStartCurrency).not.toHaveBeenCalled();
+    expect(test.eligibleStartCurrencies).not.toHaveBeenCalled();
     expect(test.currencies).not.toHaveBeenCalled();
     expect(logs).not.toHaveBeenCalled();
   });

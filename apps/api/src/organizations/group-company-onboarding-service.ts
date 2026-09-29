@@ -20,18 +20,18 @@ export class GroupCompanyOnboardingService {
     tenant: GroupCompanyTenantPort; identity: GroupCompanyIdentityPort;
     accounting: AccountingCompanyProvisioningPort; accountingOptions: RegistrationAccountingPort; treasury: TreasuryCompanyProvisioningPort;
     subscriptions: PlatformSubscriptionCompanyProvisioningPort & {
-      eligibleStartCurrency(tx: Prisma.TransactionClient, effectiveAt: Date): Promise<string>;
+      eligibleStartCurrencies(tx: Prisma.TransactionClient, effectiveAt: Date): Promise<string[]>;
     }; audit: AuditAppendPort;
   }) { this.commands = new OrganizationIdempotentCommandExecutor(prisma); this.transactions = new TransactionExecutor(prisma); }
 
   async options(userId: bigint, organizationId: bigint) {
-    const eligibleCurrency = await this.transactions.execute({ operation: "GROUP_COMPANY_OPTIONS" }, async tx => {
+    const eligibleCurrencies = await this.transactions.execute({ operation: "GROUP_COMPANY_OPTIONS" }, async tx => {
       await this.ports.identity.authorizeOwner(tx, userId, organizationId);
-      return this.ports.subscriptions.eligibleStartCurrency(tx, new Date());
+      return this.ports.subscriptions.eligibleStartCurrencies(tx, new Date());
     });
     const [currencies, businessActivities] = await Promise.all([this.ports.tenant.currencies(), this.ports.tenant.businessActivities()]);
-    const allowedCurrencies = currencies.filter(currency => currency.code === eligibleCurrency);
-    if (allowedCurrencies.length !== 1) throw new SubscriptionStartPolicyError("PLAN_NOT_ELIGIBLE");
+    const allowedCurrencies = currencies.filter(currency => eligibleCurrencies.includes(currency.code));
+    if (allowedCurrencies.length !== eligibleCurrencies.length) throw new SubscriptionStartPolicyError("PLAN_NOT_ELIGIBLE");
     return {
       currencies: allowedCurrencies, countries: this.ports.tenant.countries(), businessActivities,
       chartTemplates: this.ports.accountingOptions.listChartTemplates(),

@@ -108,9 +108,10 @@ describe.runIf(enabled)("group company creation on a real database", () => {
     expect(await db!.company.count({ where: { organizationId: organization.id } })).toBe(0);
     expect(await db!.organizationIdempotencyRecord.count({ where: { organizationId: organization.id } })).toBe(0);
 
-    const compatible = createGroupCompanyOnboardingService(db!, aedPlan.version.id.toString());
+    const compatible = createGroupCompanyOnboardingService(db!, undefined,
+      `SAR:${plan.version.id},AED:${aedPlan.version.id}`);
     const options = await compatible.options(user.id, organization.id);
-    expect(options.currencies.map(currency => currency.code)).toEqual(["AED"]);
+    expect(options.currencies.map(currency => currency.code)).toEqual(["AED", "SAR"]);
     const created = await compatible.create(user.id, organization.id, key, reportedInput);
     const companyId = BigInt(created.company.id);
     expect(created.company).toMatchObject({ name: reportedInput.companyName, baseCurrencyCode: "AED" });
@@ -120,6 +121,11 @@ describe.runIf(enabled)("group company creation on a real database", () => {
     expect(await db!.platformSubscription.findUnique({ where: { companyId } }))
       .toMatchObject({ planVersionId: aedPlan.version.id, status: "ACTIVE" });
     expect(await db!.organizationIdempotencyRecord.count({ where: { organizationId: organization.id } })).toBe(1);
+
+    const second = await fixture();
+    const sarCreated = await compatible.create(second.user.id, second.organization.id, randomUUID(), input);
+    expect(await db!.platformSubscription.findUnique({ where: { companyId: BigInt(sarCreated.company.id) } }))
+      .toMatchObject({ planVersionId: plan.version.id, status: "ACTIVE" });
   }, 60_000);
 
   it("replays concurrent identical requests, rejects payload mismatch, and replays after 24 hours", async () => {
