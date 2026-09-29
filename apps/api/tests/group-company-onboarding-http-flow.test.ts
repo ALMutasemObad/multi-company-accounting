@@ -102,3 +102,67 @@ describe("group company options through the HTTP and application boundaries", ()
     expect(logs).not.toHaveBeenCalled();
   });
 });
+
+describe("the reported group-company selection through the creation route", () => {
+  const reportedSelection = {
+    companyName: "شركة تجريبية", phone: "11111111", countryCode: "YE",
+    primaryBusinessActivityCode: "MANUFACTURING", chartTemplateCode: "PROFESSIONAL_SERVICES",
+    timezone: "Asia/Riyadh", baseCurrencyCode: "AED",
+  };
+
+  function creationFixture(startCurrency: string) {
+    const tx = {
+      organizationIdempotencyRecord: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({ id: 15n }),
+        update: vi.fn().mockResolvedValue(undefined),
+      },
+    } as unknown as Prisma.TransactionClient;
+    const prisma = { $transaction: vi.fn(async (work: (client: Prisma.TransactionClient) => Promise<unknown>) => work(tx)) } as unknown as PrismaClient;
+    const createCompany = vi.fn().mockResolvedValue({ id: 20n, code: "company-code", name: reportedSelection.companyName,
+      timezone: reportedSelection.timezone, baseCurrencyCode: "AED", createdAt: new Date("2026-09-29T00:00:00.000Z") });
+    const provisionNewCompanyAccess = vi.fn(async (_tx: Prisma.TransactionClient, input: { baseCurrencyCode: string }) => {
+      if (input.baseCurrencyCode !== startCurrency) throw new SubscriptionStartPolicyError("PLAN_NOT_ELIGIBLE");
+    });
+    const ports = {
+      identity: { authorizeOwner: vi.fn().mockResolvedValue(undefined), grantNewCompanyAdministrator: vi.fn().mockResolvedValue(undefined) },
+      tenant: { createCompany },
+      accounting: { provisionAccounting: vi.fn().mockResolvedValue(undefined) },
+      accountingOptions: { isAllowedOnboardingChartTemplate: vi.fn().mockReturnValue(true) },
+      treasury: { provisionTreasury: vi.fn().mockResolvedValue(undefined) },
+      subscriptions: { provisionNewCompanyAccess },
+      audit: { append: vi.fn().mockResolvedValue(undefined) },
+    } as unknown as Ports;
+    const app = express();
+    app.use(express.json());
+    app.use(requestLogger(false));
+    app.use(createOrganizationOwnerRouter({ authenticate: vi.fn(async () => ({ userId: 7n })) } as unknown as AuthService,
+      {} as OrganizationMembershipService, new GroupCompanyOnboardingService(prisma, ports)));
+    return { app, createCompany, provisionNewCompanyAccess };
+  }
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it("accepts the reported country, activity, chart and timezone when the start-plan currency is AED", async () => {
+    const test = creationFixture("AED");
+    const response = await request(test.app).post("/organizations/1/companies")
+      .set("Idempotency-Key", "reported-selection-12345").send(reportedSelection);
+    expect(response.status).toBe(201);
+    expect(response.body.company).toMatchObject({ name: reportedSelection.companyName, baseCurrencyCode: "AED" });
+    expect(test.createCompany).toHaveBeenCalledOnce();
+    expect(test.provisionNewCompanyAccess).toHaveBeenCalledOnce();
+  });
+
+  it("correlates a 503 for that selection when the configured start-plan currency is different", async () => {
+    const test = creationFixture("SAR");
+    const logs = vi.spyOn(console, "error").mockImplementation(() => {});
+    const response = await request(test.app).post("/organizations/1/companies")
+      .set("Idempotency-Key", "reported-selection-12345")
+      .set("X-Request-ID", "reported-selection-error-12345")
+      .send(reportedSelection);
+    expect(response.status).toBe(503);
+    expect(response.body).toMatchObject({ code: "COMPANY_SETUP_UNAVAILABLE", requestId: "reported-selection-error-12345" });
+    expect(test.provisionNewCompanyAccess).toHaveBeenCalledOnce();
+    expect(JSON.parse(logs.mock.calls[0]![0] as string)).toMatchObject({ source: "START_PLAN_POLICY", reason: "PLAN_NOT_ELIGIBLE" });
+  });
+});
