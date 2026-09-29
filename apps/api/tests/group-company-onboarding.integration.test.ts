@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
+import type { Server } from "node:http";
 import { hash, verify } from "argon2";
+import { chromium, expect as browserExpect, type Browser, type Page } from "@playwright/test";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDatabase } from "../src/database.js";
 import { createGroupCompanyOnboardingService } from "../src/composition/create-group-company-onboarding-service.js";
 import { createOrganizationMembershipService } from "../src/composition/create-organization-membership-service.js";
+import { createPlatformOperationsService } from "../src/composition/create-platform-operations-service.js";
 import { permissionDefinitions } from "../src/platform/reference-data.js";
 import { createStartPlanFixture } from "./subscription-start-plan-fixture.js";
 import { GroupCompanyOnboardingService } from "../src/organizations/group-company-onboarding-service.js";
@@ -15,6 +18,8 @@ import { RegistrationAccountingAdapter } from "../src/accounts/registration-acco
 import { TreasuryCompanyProvisioningAdapter } from "../src/treasury/company-provisioning-adapter.js";
 import { PrismaNewCompanySubscriptionProvisioningAdapter } from "../src/platform-subscriptions/prisma-new-company-subscription-provisioning-adapter.js";
 import { PrismaAuditAppendAdapter } from "../src/audit/prisma-audit-append-adapter.js";
+import { PlatformBillingService } from "../src/platform-operations/platform-billing-service.js";
+import { PrismaPlatformAnalyticsQueryAdapter } from "../src/platform-operations/prisma-platform-analytics-query-adapter.js";
 import { AuthService } from "../src/auth/auth-service.js";
 import { PrismaAuthStore } from "../src/auth/prisma-auth-store.js";
 import { testAuthOptions } from "./helpers/test-auth-options.js";
@@ -22,6 +27,15 @@ import { createApp } from "../src/app.js";
 
 const enabled = process.env.RUN_DB_TESTS === "true" && Boolean(process.env.DATABASE_URL);
 const db = enabled ? createDatabase(process.env.DATABASE_URL!) : null;
+function assertBrowserDisposableDatabase() {
+  const databaseUrl = new URL(process.env.DATABASE_URL!);
+  const databaseName = databaseUrl.pathname.slice(1);
+  if (databaseUrl.protocol !== "mysql:" || databaseUrl.hostname !== "127.0.0.1"
+    || !/^test_[a-z0-9_]+$/u.test(databaseName) || databaseUrl.search || databaseUrl.hash
+    || process.env.GROUP_COMPANY_REAL_BROWSER_DISPOSABLE_DATABASE !== databaseName) {
+    throw new Error("Real group-company browser test requires an acknowledged loopback test_ database");
+  }
+}
 const input = {
   companyName: "New company", phone: "+966500000000", countryCode: "SA",
   primaryBusinessActivityCode: "RETAIL_TRADE", chartTemplateCode: "RETAIL_INVENTORY",
@@ -45,6 +59,7 @@ describe.runIf(enabled)("group company creation on a real database", () => {
     return { organization, user };
   }
   beforeAll(async () => {
+    if (process.env.RUN_GROUP_COMPANY_REAL_BROWSER_TESTS === "true") assertBrowserDisposableDatabase();
     // Minimal fixture setup: do not run a global seed that also rewrites existing roles.
     await db!.currency.upsert({ where: { scopeKey_code: { scopeKey: "GLOBAL", code: "SAR" } }, update: {}, create: { code: "SAR", nameAr: "ريال سعودي", decimals: 2, scopeKey: "GLOBAL", scope: "GLOBAL" } });
     await db!.permission.createMany({ data: permissionDefinitions.map(([code, module, descriptionAr]) => ({ code, module, descriptionAr })), skipDuplicates: true });
@@ -239,4 +254,84 @@ describe.runIf(enabled)("group company creation on a real database", () => {
     expect(companies.body.data.map((row: { id: string }) => row.id)).toContain(created.body.company.id);
     await agent.put("/api/v1/auth/context").set("X-CSRF-Token", login.body.csrfToken).send({ companyId: created.body.company.id }).expect(204);
   }, 60_000);
+
+  it.runIf(process.env.RUN_GROUP_COMPANY_REAL_BROWSER_TESTS === "true")(
+    "replays a committed creation through the real browser and API after its first reply is hidden",
+    async () => {
+      assertBrowserDisposableDatabase();
+      const { organization, user } = await fixture();
+      const auth = new AuthService(new PrismaAuthStore(db!), { verify }, testAuthOptions(db!));
+      const analytics = new PrismaPlatformAnalyticsQueryAdapter(db!);
+      const platformOperations = await createPlatformOperationsService(db!, analytics, {
+        NODE_ENV: "test", PLATFORM_OPERATOR_USER_IDS: "", PLATFORM_OPERATOR_EMAILS: "",
+      });
+      const platformBilling = new PlatformBillingService(db!, platformOperations, analytics, new PrismaAuditAppendAdapter());
+      const port = 3208;
+      const origin = `http://127.0.0.1:${port}`;
+      const app = createApp({
+        NODE_ENV: "test", PORT: port, WEB_ORIGIN: origin, SESSION_COOKIE_SECURE: false,
+        PRE_AUTH_TTL_MINUTES: 10, SESSION_TTL_HOURS: 12, DATABASE_URL: process.env.DATABASE_URL!,
+        SERVE_WEB_ASSETS: true,
+      }, {
+        auth, organizationMemberships: createOrganizationMembershipService(db!), groupCompanyOnboarding: service(),
+        platformOperations, platformBilling,
+      });
+      const server = await new Promise<Server>((resolve, reject) => {
+        const listener = app.listen(port, "127.0.0.1", () => resolve(listener));
+        listener.once("error", reject);
+      });
+      let browser: Browser | undefined;
+      let page: Page | undefined;
+      const companyName = `Browser company ${randomUUID().slice(0, 8)}`;
+      const calls: Array<{ key: string | undefined; body: string | null; companyId: string | undefined; status: number }> = [];
+      try {
+        browser = await chromium.launch({ headless: true });
+        page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+        await page.route(`**/api/v1/organizations/${organization.id}/companies`, async route => {
+          if (route.request().method() !== "POST") { await route.continue(); return; }
+          const response = await route.fetch();
+          const payload = await response.json() as { company?: { id?: string } };
+          calls.push({
+            key: route.request().headers()["idempotency-key"], body: route.request().postData(),
+            companyId: payload.company?.id, status: response.status(),
+          });
+          if (calls.length === 1) {
+            await route.fulfill({ status: 503, headers: { "X-Request-ID": "group-browser-test-12345678" },
+              json: { code: "COMPANY_SETUP_UNAVAILABLE", requestId: "group-browser-test-12345678" } });
+          } else {
+            await route.fulfill({ response });
+          }
+        });
+        await page.goto(origin);
+        const login = page.locator(".login-card");
+        await browserExpect(login).toBeVisible();
+        await login.locator('[name="email"]').fill(user.emailNormalized);
+        await login.locator('[name="password"]').fill("test-only-owner-password");
+        await login.locator('button[type="submit"]').click();
+        await browserExpect(page.getByRole("heading", { name: "لوحة مالك المجموعة" })).toBeVisible();
+        const panel = page.locator(".group-company-create");
+        await browserExpect(panel.locator('input[name="companyName"]')).toBeVisible();
+        await panel.locator('input[name="companyName"]').fill(companyName);
+        await panel.locator('input[name="phone"]').fill("+966500000000");
+        await panel.locator('button[type="submit"]').click();
+        await browserExpect(panel.getByText("group-browser-test-12345678")).toBeVisible();
+        await browserExpect(panel.locator('input[name="companyName"]')).toBeDisabled();
+        await panel.locator('button[type="submit"]').click();
+        await browserExpect.poll(() => calls.length).toBe(2);
+        await browserExpect.poll(() => calls[1]?.status).toBe(201);
+        await browserExpect(panel.getByText(`تم إنشاء شركة ${companyName}.`)).toBeVisible();
+        expect(calls[0]?.status).toBe(201);
+        expect(calls[0]?.key).toMatch(/^[0-9a-f-]{36}$/u);
+        expect(calls[1]).toEqual(calls[0]);
+        expect(await db!.company.count({ where: { organizationId: organization.id } })).toBe(1);
+        expect(await db!.organizationIdempotencyRecord.count({ where: { organizationId: organization.id } })).toBe(1);
+        expect(await db!.platformSubscription.findUnique({ where: { companyId: BigInt(calls[0]!.companyId!) } }))
+          .toMatchObject({ planVersionId: plan.version.id, status: "ACTIVE" });
+      } finally {
+        await page?.close();
+        await browser?.close();
+        await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+      }
+    }, 90_000,
+  );
 });
