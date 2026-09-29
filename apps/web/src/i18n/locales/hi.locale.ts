@@ -77,6 +77,7 @@ export const localeDictionary = {
   "organization.create.refresh": "कंपनी सूची रीफ़्रेश करें",
   "organization.create.another": "एक और कंपनी बनाएँ",
   "organization.create.retryHint": "परिणाम की पुष्टि के लिए यहाँ उसी अनुरोध से फिर प्रयास करें। परिणाम स्पष्ट होने तक यह स्क्रीन खुली रखें।",
+  "organization.create.requestId": "अनुरोध आईडी:",
   "organization.registration.received": "अनुरोध प्राप्त हुआ",
   "organization.registration.nextSteps": "यदि ईमेल नए पंजीकरण के लिए पात्र है, तो आपको सत्यापन संदेश मिलेगा। यदि आपका खाता पहले से है, तो साइन इन करें या पासवर्ड रीसेट करें, फिर कंपनी बनाने के लिए समूह कार्यक्षेत्र खोलें। यह संदेश ईमेल भेजे जाने की पुष्टि नहीं करता।",
   "organization.registration.recover": "मौजूदा खाते का पासवर्ड रीसेट करें",

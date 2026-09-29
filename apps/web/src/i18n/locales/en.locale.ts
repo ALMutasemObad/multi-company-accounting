@@ -77,6 +77,7 @@ export const localeDictionary = {
   "organization.create.refresh": "Refresh company list",
   "organization.create.another": "Create another company",
   "organization.create.retryHint": "Retry here with the same request to confirm the outcome. Keep this screen open until the outcome is clear.",
+  "organization.create.requestId": "Request ID:",
   "organization.registration.received": "Request received",
   "organization.registration.nextSteps": "If the email is eligible for a new registration, you will receive a verification message. If you already have an account, sign in or reset your password, then open the group workspace to create a company. This message does not confirm email delivery.",
   "organization.registration.recover": "Reset your existing account password",

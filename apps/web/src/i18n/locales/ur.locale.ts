@@ -77,6 +77,7 @@ export const localeDictionary = {
   "organization.create.refresh": "کمپنیوں کی فہرست تازہ کریں",
   "organization.create.another": "ایک اور کمپنی بنائیں",
   "organization.create.retryHint": "نتیجہ جاننے کے لیے اسی درخواست کے ساتھ یہاں دوبارہ کوشش کریں۔ نتیجہ واضح ہونے تک یہ اسکرین کھلی رکھیں۔",
+  "organization.create.requestId": "درخواست کی شناخت:",
   "organization.registration.received": "درخواست موصول ہو گئی",
   "organization.registration.nextSteps": "اگر ای میل نئی رجسٹریشن کے لیے اہل ہے تو تصدیقی پیغام آئے گا۔ اگر آپ کا اکاؤنٹ موجود ہے تو سائن ان کریں یا پاس ورڈ بحال کریں، پھر کمپنی بنانے کے لیے گروپ ورک اسپیس کھولیں۔ یہ پیغام ای میل بھیجے جانے کی تصدیق نہیں کرتا۔",
   "organization.registration.recover": "موجودہ اکاؤنٹ کا پاس ورڈ بحال کریں",
