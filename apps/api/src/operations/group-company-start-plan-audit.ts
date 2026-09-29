@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import {
-  configuredStartPlanVersionId,
+  configuredStartPlanVersions,
   SubscriptionStartPolicyError,
   validateNewCompanyStartPlan,
 } from "../platform-subscriptions/new-company-start-policy.js";
@@ -8,7 +8,7 @@ import {
 export type GroupCompanyStartPlanAuditResult = {
   status: "READY" | "NOT_CONFIGURED" | "INVALID_CONFIGURATION" | "PLAN_NOT_FOUND"
     | "PLAN_NOT_ELIGIBLE" | "PLAN_CURRENCY_NOT_ACTIVE" | "REQUESTED_CURRENCY_INVALID"
-    | "REQUESTED_CURRENCY_MISMATCH";
+    | "REQUESTED_CURRENCY_MISMATCH" | "REQUESTED_CURRENCY_NOT_CONFIGURED";
   planCurrency?: string;
   requestedCurrency?: string;
 };
@@ -21,14 +21,25 @@ export async function auditGroupCompanyStartPlan(
   configuredVersionId: string | undefined,
   requestedCurrency: string | undefined,
   effectiveAt = new Date(),
+  configuredCurrencyVersions?: string,
 ): Promise<GroupCompanyStartPlanAuditResult> {
   if (requestedCurrency !== undefined && !/^[A-Z]{3}$/.test(requestedCurrency)) {
     return { status: "REQUESTED_CURRENCY_INVALID" };
   }
 
   let versionId: bigint;
+  let mappedCurrency: string | undefined;
   try {
-    versionId = configuredStartPlanVersionId(configuredVersionId);
+    const configuration = configuredStartPlanVersions(configuredVersionId, configuredCurrencyVersions);
+    if (configuration.kind === "currency-map") {
+      if (!requestedCurrency) return { status: "REQUESTED_CURRENCY_INVALID" };
+      const mapped = configuration.ids.get(requestedCurrency);
+      if (mapped === undefined) return { status: "REQUESTED_CURRENCY_NOT_CONFIGURED", requestedCurrency };
+      versionId = mapped;
+      mappedCurrency = requestedCurrency;
+    } else {
+      versionId = configuration.id;
+    }
   } catch (error) {
     if (error instanceof SubscriptionStartPolicyError && error.reason !== "PLAN_NOT_ELIGIBLE") {
       return { status: error.reason };
@@ -44,7 +55,7 @@ export async function auditGroupCompanyStartPlan(
 
   const planCurrency = version.currencyCode;
   try {
-    validateNewCompanyStartPlan(version, effectiveAt, planCurrency);
+    validateNewCompanyStartPlan(version, effectiveAt, mappedCurrency ?? planCurrency);
   } catch (error) {
     if (error instanceof SubscriptionStartPolicyError && error.reason === "PLAN_NOT_ELIGIBLE") {
       return { status: "PLAN_NOT_ELIGIBLE", planCurrency };

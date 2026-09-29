@@ -90,4 +90,40 @@ describe("read-only group-company start-plan audit", () => {
     expect(await auditGroupCompanyStartPlan(test.catalog, "13", "AED", now))
       .toEqual({ status: "READY", planCurrency: "AED", requestedCurrency: "AED" });
   });
+
+  it("audits the explicitly mapped AED version without reading the SAR version", async () => {
+    const test = fixture(eligibleVersion("AED"));
+    expect(await auditGroupCompanyStartPlan(test.catalog, undefined, "AED", now, "SAR:12,AED:13"))
+      .toEqual({ status: "READY", planCurrency: "AED", requestedCurrency: "AED" });
+    expect(test.planFind).toHaveBeenCalledExactlyOnceWith({ where: { id: 13n },
+      include: { plan: true, entitlements: { include: { module: { include: { dependencies: true } } } } } });
+  });
+
+  it("rejects a mapped version when its immutable currency disagrees with its map key", async () => {
+    const test = fixture(eligibleVersion("SAR"));
+    expect(await auditGroupCompanyStartPlan(test.catalog, undefined, "AED", now, "SAR:12,AED:13"))
+      .toEqual({ status: "PLAN_NOT_ELIGIBLE", planCurrency: "SAR" });
+    expect(test.currencyFind).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unmapped requested currency without a database read", async () => {
+    const test = fixture();
+    expect(await auditGroupCompanyStartPlan(test.catalog, undefined, "USD", now, "SAR:12,AED:13"))
+      .toEqual({ status: "REQUESTED_CURRENCY_NOT_CONFIGURED", requestedCurrency: "USD" });
+    expect(test.planFind).not.toHaveBeenCalled();
+  });
+
+  it("requires a requested currency when auditing a currency map", async () => {
+    const test = fixture();
+    expect(await auditGroupCompanyStartPlan(test.catalog, undefined, undefined, now, "SAR:12,AED:13"))
+      .toEqual({ status: "REQUESTED_CURRENCY_INVALID" });
+    expect(test.planFind).not.toHaveBeenCalled();
+  });
+
+  it("rejects conflicting configured policies before a database read", async () => {
+    const test = fixture();
+    expect(await auditGroupCompanyStartPlan(test.catalog, "13", "AED", now, "SAR:12,AED:13"))
+      .toEqual({ status: "INVALID_CONFIGURATION" });
+    expect(test.planFind).not.toHaveBeenCalled();
+  });
 });

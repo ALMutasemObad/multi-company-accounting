@@ -16,6 +16,8 @@ if (!databaseUrl) {
       database,
       process.env.PLATFORM_SUBSCRIPTION_START_PLAN_VERSION_ID,
       process.env.GROUP_COMPANY_AUDIT_CURRENCY_CODE,
+      new Date(),
+      process.env.PLATFORM_SUBSCRIPTION_START_PLAN_VERSION_IDS_BY_CURRENCY,
     );
     process.stdout.write(`${JSON.stringify(result)}\n`);
     process.exitCode = result.status === "READY" ? 0 : 1;

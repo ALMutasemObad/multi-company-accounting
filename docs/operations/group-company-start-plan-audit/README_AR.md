@@ -4,11 +4,13 @@
 
 هذه أداة تشغيلية محلية مبنية من `origin/main` عند `381dfde`. تقرأ معرف إصدار باقة البداية من بيئة العملية، وتستخدم سياسة الأهلية نفسها التي يستخدمها تجهيز الشركة لفحص الإصدار وعملته وحالة العملة في الكتالوج العام. يمكن مقارنة العملة المطلوبة في البلاغ، مثل `AED`، بعملة الإصدار. لا تقرأ سجلات المستخدمين أو الشركات، ولا تنشئ شركة أو خطة أو اشتراكًا، ولا تكتب قاعدة البيانات. لا تشرح سبب كل بند فرعي داخل `PLAN_NOT_ELIGIBLE`؛ يلزم فحص مخوّل إضافي له.
 
-تشغّل فقط على نسخة مبنية تحتوي `apps/api/dist/operations/group-company-start-plan-audit-cli.js`، وبحساب قاعدة يملك `SELECT` على الجداول المطلوبة، وببيئة تحتوي `DATABASE_URL` و`PLATFORM_SUBSCRIPTION_START_PLAN_VERSION_ID`. ضع العملة المراد التحقق منها في `GROUP_COMPANY_AUDIT_CURRENCY_CODE`، ثم شغّل الأداة من جذر حزمة التطبيق:
+تشغّل فقط على نسخة مبنية تحتوي `apps/api/dist/operations/group-company-start-plan-audit-cli.js`، وبحساب قاعدة يملك `SELECT` على الجداول المطلوبة، وببيئة تحتوي `DATABASE_URL` وأحد إعدادي البداية: `PLATFORM_SUBSCRIPTION_START_PLAN_VERSION_ID` للإصدار الوحيد، أو `PLATFORM_SUBSCRIPTION_START_PLAN_VERSION_IDS_BY_CURRENCY` لخريطة كاملة مثل `SAR:8,AED:9` دون ضبط الإعداد الأول معها. ضع العملة المراد التحقق منها في `GROUP_COMPANY_AUDIT_CURRENCY_CODE`، ثم شغّل الأداة من جذر حزمة التطبيق:
 
 ```sh
 GROUP_COMPANY_AUDIT_CURRENCY_CODE=AED node apps/api/dist/operations/group-company-start-plan-audit-cli.js
 ```
+
+عند استخدام الخريطة، شغّل الفحص مرتين، مرة لكل من `SAR` و`AED`؛ النتيجة `READY` لكل عملة مطلوبة قبل تفعيل إنشاء الشركات. لا تستخدم أرقام المثال دون مطابقتها بإصدارات منشورة فعلًا. تعيد الأداة `REQUESTED_CURRENCY_NOT_CONFIGURED` إذا لم تُدرج العملة المطلوبة، و`INVALID_CONFIGURATION` إذا ضُبط إعداد الإصدار الوحيد والخريطة معًا. لا ينشر الفحص باقة أو يغيّر متغيرات التطبيق.
 
 لا تضع رابط قاعدة البيانات أو كلمة مرورها في الأمر أو بلاغ الدعم. النتيجة JSON صغيرة برمز حالة وعملة الإصدار فقط؛ لا تُطبع معرفات الخطة أو عنوان الاتصال أو استثناءات المحرك. رمز الخروج `0` يعني `READY`، و`1` يعني أن الباقة أو العملة غير جاهزة، و`2` يعني غياب اتصال قاعدة أو فشل قراءتها. من الرموز المفيدة: `NOT_CONFIGURED` و`PLAN_NOT_FOUND` و`PLAN_NOT_ELIGIBLE` و`PLAN_CURRENCY_NOT_ACTIVE` و`REQUESTED_CURRENCY_MISMATCH`.
 
