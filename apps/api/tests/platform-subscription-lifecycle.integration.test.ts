@@ -91,6 +91,34 @@ describe.runIf(enabled)("SUB-3 subscription lifecycle on a supported database", 
     await prisma.$disconnect();
   });
 
+  it("adds an included module when editing an empty free-plan draft", async () => {
+    const created = await catalog().createPlan({ userId }, {
+      code: `FREE_START_${randomUUID().replaceAll("-", "").slice(0, 10).toUpperCase()}`,
+      displayName: "Free start", description: "Temporary free start",
+      billingCycle: "MONTHLY", currencyCode: "SAR", recurringFee: "0",
+      includedUsers: 1_000_000, pricePerAdditionalUser: "0",
+      includedEmployees: 1_000_000, pricePerAdditionalEmployee: "0",
+      includedPostedDocuments: 1_000_000, pricePerAdditionalPostedDocument: "0",
+      taxRate: "0", paymentTermsDays: 0, trialDays: 0,
+      effectiveFrom: "2049-01-01T00:00:00.000Z", selfServicePolicy: "IMMEDIATE_FREE", modules: [],
+    });
+    catalogPlanIds.push(BigInt(created.plan.id));
+    const draft = created.version;
+    const updated = await catalog().updateDraft({ userId }, BigInt(draft.id), {
+      displayName: draft.displayName, description: draft.description, billingCycle: draft.billingCycle,
+      currencyCode: draft.currencyCode, recurringFee: draft.recurringFee,
+      includedUsers: draft.includedUsers, pricePerAdditionalUser: draft.pricePerAdditionalUser,
+      includedEmployees: draft.includedEmployees, pricePerAdditionalEmployee: draft.pricePerAdditionalEmployee,
+      includedPostedDocuments: draft.includedPostedDocuments,
+      pricePerAdditionalPostedDocument: draft.pricePerAdditionalPostedDocument,
+      taxRate: draft.taxRate, paymentTermsDays: draft.paymentTermsDays, trialDays: draft.trialDays,
+      effectiveFrom: draft.effectiveFrom, selfServicePolicy: draft.selfServicePolicy,
+      version: draft.version,
+      modules: [{ moduleId: coreModuleId, selectionMode: "INCLUDED", additionalRecurringFee: null }],
+    });
+    expect(updated.version.modules).toEqual([expect.objectContaining({ code: "CORE_ACCOUNTING", selectionMode: "INCLUDED" })]);
+  });
+
   it("publishes a safe opt-in public projection and rejects stale visibility writes without changing financial terms", async () => {
     const paid = await createPublishedPlan({
       recurringFee: "123.4567", policy: "REQUEST_ONLY", code: `PUBLIC_${randomUUID().replaceAll("-", "").slice(0, 10).toUpperCase()}`,
