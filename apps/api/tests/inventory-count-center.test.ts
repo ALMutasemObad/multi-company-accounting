@@ -17,8 +17,8 @@ const report: InventoryCountReport = {
     summary: { total: 4, counted: 2, remaining: 2, countedCopies: "1035" },
   },
   rows: [
-    { code: "ITM-000001", publicationIdentifier: "9786038291986", barcode: "112233445566", title: "الجريمة والعقاب", unitCode: "COPY", locationReference: null, bookQuantity: "36", countedQuantity: "35", varianceQuantity: "-1", unitCostBase: "1.0000", varianceValueBase: "-1.0000", varianceReason: "DAMAGED", countedBy: "أحمد" },
-    { code: "ITM-000002", publicationIdentifier: null, barcode: "9780123456789", title: "سلسلة Antame Comics: كيف نحب أدب الطبيعة", unitCode: "COPY", locationReference: "صندوق 2", bookQuantity: "1000", countedQuantity: "1000", varianceQuantity: "0", unitCostBase: "2.0000", varianceValueBase: "0.0000", varianceReason: "", countedBy: "ليلى" },
+    { code: "ITM-000001", publicationIdentifier: "9786038291986", barcode: "112233445566", title: "الجريمة والعقاب", unitCode: "COPY", locationReference: null, bookQuantity: "36", countedQuantity: "35", varianceQuantity: "-1", unitCostBase: "1.0000", varianceValueBase: "-1.0000", varianceReason: "DAMAGED", countedBy: "أحمد", notes: [] },
+    { code: "ITM-000002", publicationIdentifier: null, barcode: "9780123456789", title: "سلسلة Antame Comics: كيف نحب أدب الطبيعة", unitCode: "COPY", locationReference: "صندوق 2", bookQuantity: "1000", countedQuantity: "1000", varianceQuantity: "0", unitCostBase: "2.0000", varianceValueBase: "0.0000", varianceReason: "", countedBy: "ليلى", notes: [] },
   ],
 };
 
@@ -33,7 +33,6 @@ describe("inventory count report center", () => {
     expect(profile.metadataGroups?.flat().map((field) => field.value).join(" ")).toContain("المشرف");
     expect(profile.columnWidths?.reduce((sum, width) => sum + width, 0)).toBe(770);
     const pdf = await inventoryCountReportPdf(report, "شركة المكتبة");
-    if (process.env.REPORT_PDF_QA_PATH) await writeFile(process.env.REPORT_PDF_QA_PATH, pdf);
     expect(pdf.subarray(0, 4).toString()).toBe("%PDF");
     expect((pdf.toString("latin1").match(/\/Type \/Page\b/gu) ?? [])).toHaveLength(1);
   });
@@ -45,6 +44,22 @@ describe("inventory count report center", () => {
     expect(profile.metadataGroups?.flat().find((field) => field.label === "إجمالي العناوين")?.value).toBe("4");
     const pdf = await inventoryCountReportPdf(many, "شركة المكتبة");
     expect((pdf.toString("latin1").match(/\/Type \/Page\b/gu) ?? []).length).toBeGreaterThan(1);
+  });
+
+  it("keeps multiple long notes in the PDF under their title and publication identifier", async () => {
+    const first = "بداية الملاحظة " + "أ".repeat(460) + " نهاية الملاحظة";
+    const second = "ملاحظة أخرى للعنوان نفسه";
+    const withNotes: InventoryCountReport = { ...report, rows: [{ ...report.rows[0]!, notes: [first, second] }] };
+    const profile = inventoryCountPdfProfile(withNotes, "شركة المكتبة");
+    expect(profile.bodyRows.length).toBeGreaterThan(2);
+    expect(profile.bodyRows.every((row) => row[1]?.value === "9786038291986")).toBe(true);
+    const visibleNotes = profile.bodyRows.map((row) => row[9]?.value).join(" ");
+    expect(visibleNotes).toContain("بداية الملاحظة");
+    expect(visibleNotes).toContain("نهاية الملاحظة");
+    expect(visibleNotes).toContain(second);
+    const pdf = await inventoryCountReportPdf(withNotes, "شركة المكتبة");
+    if (process.env.REPORT_PDF_QA_PATH) await writeFile(process.env.REPORT_PDF_QA_PATH, pdf);
+    expect(pdf.subarray(0, 4).toString()).toBe("%PDF");
   });
 
   it("authorizes the company-scoped report before producing PDF", async () => {

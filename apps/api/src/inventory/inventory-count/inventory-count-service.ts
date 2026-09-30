@@ -164,6 +164,26 @@ const toSessionDto = (session: Prisma.StockCountSessionGetPayload<{ select: type
   } : null,
 });
 
+const countEntryInclude = {
+  line: { select: { itemCodeSnapshot: true, itemTitleSnapshot: true, inventoryItem: { select: {
+    publicationIdentifier: true,
+    barcodes: { where: { isPrimary: true, isActive: true }, take: 1, select: { value: true } },
+  } } } },
+} as const satisfies Prisma.StockCountEntryInclude;
+
+function countEntryWhere(context: ActorContext, sessionId: bigint, input: { lineId?: bigint | undefined; search?: string | undefined }): Prisma.StockCountEntryWhereInput {
+  const search = input.search?.trim();
+  return {
+    companyId: context.companyId, sessionId, ...(input.lineId ? { lineId: input.lineId } : {}),
+    ...(search ? { OR: [
+      { line: { itemTitleSnapshot: { contains: search } } },
+      { line: { inventoryItem: { publicationIdentifier: { contains: search } } } },
+      { line: { inventoryItem: { barcodes: { some: { isActive: true, value: { contains: search } } } } } },
+      { note: { contains: search } },
+    ] } : {}),
+  };
+}
+
 export class InventoryCountService {
   private readonly transactions: TransactionExecutor;
   private readonly idempotency: IdempotentCommandExecutor;
@@ -565,14 +585,14 @@ export class InventoryCountService {
     );
   }
 
-  async listEntries(context: ActorContext, sessionId: bigint, input: { lineId?: bigint | undefined; page: number; pageSize: number }) {
+  async listEntries(context: ActorContext, sessionId: bigint, input: { lineId?: bigint | undefined; search?: string | undefined; page: number; pageSize: number }) {
     const session = await this.prisma.stockCountSession.findFirst({ where: { id: sessionId, companyId: context.companyId }, select: { id: true } });
     if (!session) throw new InventoryCountError("NOT_FOUND");
-    const where = { companyId: context.companyId, sessionId, ...(input.lineId ? { lineId: input.lineId } : {}) };
+    const where = countEntryWhere(context, sessionId, input);
     const [entries, total] = await this.prisma.$transaction([
       this.prisma.stockCountEntry.findMany({
       where,
-      include: { line: { select: { itemCodeSnapshot: true, itemTitleSnapshot: true, inventoryItem: { select: { publicationIdentifier: true, barcodes: { where: { isPrimary: true, isActive: true }, take: 1, select: { value: true } } } } } } },
+      include: countEntryInclude,
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       skip: (input.page - 1) * input.pageSize, take: input.pageSize,
     }), this.prisma.stockCountEntry.count({ where }),
@@ -599,6 +619,25 @@ export class InventoryCountService {
       reversalReason: entry.reversalReason,
       canReverse: entry.reversedAt === null && latestByLine.get(entry.lineId.toString()) === entry.id.toString(),
     })) };
+  }
+
+  async exportEntries(context: ActorContext, sessionId: bigint, input: { lineId?: bigint | undefined; search?: string | undefined }) {
+    const session = await this.prisma.stockCountSession.findFirst({ where: { id: sessionId, companyId: context.companyId }, select: { id: true } });
+    if (!session) throw new InventoryCountError("NOT_FOUND");
+    const entries = await this.prisma.stockCountEntry.findMany({
+      where: countEntryWhere(context, sessionId, input), include: countEntryInclude,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    });
+    const data = entries.map((entry) => ({
+      code: entry.line.itemCodeSnapshot, title: entry.line.itemTitleSnapshot,
+      publicationIdentifier: entry.line.inventoryItem.publicationIdentifier,
+      barcode: entry.line.inventoryItem.barcodes[0]?.value ?? null,
+      quantity: entry.quantity.toString(), locationReference: entry.locationReference,
+      note: entry.note, counterName: entry.counterNameSnapshot,
+      createdAt: entry.createdAt.toISOString(), reversedAt: entry.reversedAt?.toISOString() ?? null,
+      reversalReason: entry.reversalReason,
+    }));
+    return { data, total: data.length };
   }
 
   async reverseEntry(context: ActorContext, sessionId: bigint, entryId: bigint, reason: string) {
@@ -658,6 +697,20 @@ export class InventoryCountService {
       include: { inventoryItem: { select: { publicationIdentifier: true, barcodes: { where: { isActive: true }, orderBy: [{ isPrimary: "desc" }, { id: "asc" }], take: 1, select: { value: true } } } } },
       orderBy: [{ itemTitleSnapshot: "asc" }, { id: "asc" }],
     }), this.summary(context, sessionId, 0)]);
+    const notes = selection === "counted" && lines.length ? await this.prisma.stockCountEntry.findMany({
+      where: { companyId: context.companyId, sessionId, reversedAt: null, note: { not: null }, lineId: { in: lines.map((line) => line.id) } },
+      select: { lineId: true, note: true, quantity: true, counterNameSnapshot: true, createdAt: true },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    }) : [];
+    const notesByLine = new Map<string, string[]>();
+    for (const entry of notes) {
+      const text = entry.note?.trim();
+      if (!text) continue;
+      const key = entry.lineId.toString();
+      const values = notesByLine.get(key) ?? [];
+      values.push(`${entry.quantity.toString()} · ${entry.counterNameSnapshot} · ${entry.createdAt.toISOString()}: ${text}`);
+      notesByLine.set(key, values);
+    }
     return {
       session: {
         id: session.id.toString(), countDate: session.countDate.toISOString().slice(0, 10), status: session.status, warehouse: session.warehouse,
@@ -678,7 +731,7 @@ export class InventoryCountService {
         bookQuantity: line.bookQuantity.toString(), countedQuantity: line.countedQuantity?.toString() ?? "",
         varianceQuantity: line.varianceQuantity?.toString() ?? "", unitCostBase: line.bookUnitCostBase.toString(),
         varianceValueBase: line.varianceQuantity?.times(line.bookUnitCostBase).toFixed(4) ?? "",
-        varianceReason: line.varianceReason ?? "", countedBy: line.countedByNameSnapshot ?? "",
+        varianceReason: line.varianceReason ?? "", countedBy: line.countedByNameSnapshot ?? "", notes: notesByLine.get(line.id.toString()) ?? [],
       })),
     };
   }

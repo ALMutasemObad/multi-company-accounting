@@ -34,6 +34,7 @@ const routerFixture = () => {
     listLines: vi.fn().mockResolvedValue({ data: [{ id: "1", code: "BOOK-001" }], summary: { total: 300, counted: 10, remaining: 290, surplus: 1, shortage: 2, conflicts: 0 } }),
     lookupItems: vi.fn().mockResolvedValue({ data: [{ id: "10", nameAr: "كتاب", issueNumber: "الأول" }], total: 1, page: 1 }),
     listEntries: vi.fn().mockResolvedValue({ data: [], total: 0, page: 1 }),
+    exportEntries: vi.fn().mockResolvedValue({ data: [], total: 0 }),
     dailyActivity: vi.fn().mockResolvedValue({ day: "2026-09-28", countedCopies: "0", countedTitles: 0 }),
     reverseEntry: vi.fn().mockResolvedValue({ line: { countedQuantity: "0" } }),
     bulkEnterCounts: vi.fn().mockResolvedValue({ conflicts: [], summary: { total: 300, counted: 11, remaining: 289, surplus: 1, shortage: 2, conflicts: 0 } }),
@@ -53,6 +54,63 @@ const routerFixture = () => {
 };
 
 describe("inventory count MVP", () => {
+  it("filters count history across the session and exports matching notes with management permission", async () => {
+    const { app, authorize, inventoryCount } = routerFixture();
+    inventoryCount.exportEntries.mockResolvedValue({ data: [{
+      code: "BOOK-001", title: "عنوان عربي", publicationIdentifier: "9786038291986", barcode: null,
+      quantity: "2", locationReference: null, note: "=HYPERLINK(\"https://example.invalid\")",
+      counterName: "أحمد", createdAt: "2026-09-30T09:00:00.000Z", reversedAt: null, reversalReason: null,
+    }], total: 1 });
+    const listed = await request(app).get("/inventory-count-sessions/20/entries?search=%D9%85%D9%84%D8%A7%D8%AD%D8%B8%D8%A9&page=2&pageSize=50").set("Cookie", "sid=fixture");
+    expect(listed.status).toBe(200);
+    expect(inventoryCount.listEntries).toHaveBeenCalledWith(context, 20n, { search: "ملاحظة", page: 2, pageSize: 50 });
+    const exported = await request(app).get("/inventory-count-sessions/20/entries.xlsx?search=%D9%85%D9%84%D8%A7%D8%AD%D8%B8%D8%A9").set("Cookie", "sid=fixture");
+    expect(exported.status).toBe(200);
+    expect(exported.headers["content-type"]).toContain("spreadsheetml.sheet");
+    expect(inventoryCount.exportEntries).toHaveBeenCalledWith(context, 20n, { search: "ملاحظة" });
+    expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ permission: "inventory_counts.manage", requireCsrf: false }));
+  });
+
+  it("filters the entire count-entry query by title, publication identifier or note before pagination", async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const count = vi.fn().mockResolvedValue(0);
+    const prisma = {
+      stockCountSession: { findFirst: vi.fn().mockResolvedValue({ id: 20n }) },
+      stockCountEntry: { findMany, count },
+      $transaction: async (queries: unknown[]) => Promise.all(queries),
+    };
+    const service = Object.create(InventoryCountService.prototype) as InventoryCountService;
+    Object.assign(service, { prisma });
+    await service.listEntries(context, 20n, { search: " 978603 ", page: 2, pageSize: 50 });
+    const query = findMany.mock.calls[0]?.[0];
+    expect(query.where).toMatchObject({ companyId: 7n, sessionId: 20n, OR: [
+      { line: { itemTitleSnapshot: { contains: "978603" } } },
+      { line: { inventoryItem: { publicationIdentifier: { contains: "978603" } } } },
+      { line: { inventoryItem: { barcodes: { some: { isActive: true, value: { contains: "978603" } } } } } },
+      { note: { contains: "978603" } },
+    ] });
+    expect(query).toMatchObject({ skip: 50, take: 50 });
+    expect(count).toHaveBeenCalledWith({ where: query.where });
+  });
+
+  it("exports every filtered count-history entry without a screen-page limit", async () => {
+    const service = Object.create(InventoryCountService.prototype) as InventoryCountService;
+    const findMany = vi.fn().mockResolvedValue(Array.from({ length: 101 }, (_, index) => ({
+      line: { itemCodeSnapshot: `BOOK-${index}`, itemTitleSnapshot: "عنوان عربي", inventoryItem: { publicationIdentifier: "9786038291986", barcodes: [] } },
+      quantity: new Prisma.Decimal(1), locationReference: null, note: "ملاحظة", counterNameSnapshot: "أحمد",
+      createdAt: new Date("2026-09-30T09:00:00Z"), reversedAt: null, reversalReason: null,
+    })));
+    Object.assign(service, { prisma: {
+      stockCountSession: { findFirst: vi.fn().mockResolvedValue({ id: 20n }) },
+      stockCountEntry: { findMany },
+    } });
+    const result = await service.exportEntries(context, 20n, { search: "ملاحظة" });
+    expect(result.data).toHaveLength(101);
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ companyId: 7n, sessionId: 20n }), orderBy: [{ createdAt: "desc" }, { id: "desc" }] }));
+    expect(findMany.mock.calls[0]?.[0]).not.toHaveProperty("take");
+    expect(findMany.mock.calls[0]?.[0]).not.toHaveProperty("skip");
+  });
+
   it("requires management permission and CSRF for a reversible audit entry", async () => {
     const { app, authorize, inventoryCount } = routerFixture();
     const response = await request(app).post("/inventory-count-sessions/20/entries/8/reverse").set("Cookie", "sid=fixture").send({ reason: "خطأ إدخال" });

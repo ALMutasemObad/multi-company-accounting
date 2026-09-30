@@ -24,6 +24,17 @@ function arabicTextDigits(value: string) {
     : legible;
 }
 
+function noteChunks(notes: readonly string[]) {
+  return notes.flatMap((note, index) => {
+    const characters = Array.from(note);
+    const parts: string[] = [];
+    for (let offset = 0; offset < characters.length; offset += 140) {
+      parts.push(`${offset ? `تابع ${index + 1}: ` : `${index + 1}. `}${characters.slice(offset, offset + 140).join("")}`);
+    }
+    return parts;
+  });
+}
+
 export function inventoryCountPdfProfile(report: InventoryCountReport, companyName: string): PdfTableProfile {
   const session = report.session;
   const committee = arabicTextDigits(session.committee.map((member) => member.role ? `${member.name}، ${member.role}` : member.name).join("؛ ") || "غير مسجلة");
@@ -31,25 +42,31 @@ export function inventoryCountPdfProfile(report: InventoryCountReport, companyNa
     companyName,
     title: "محضر جرد المخزون",
     direction: "RTL",
-    columnWidths: [180, 102, 95, 45, 62, 62, 55, 92, 77],
+    columnWidths: [145, 90, 80, 40, 50, 50, 50, 75, 60, 130],
     metadataGroups: [
       [{ label: "الجلسة", value: session.id }, { label: "تاريخ الجرد", value: session.countDate }, { label: "المستودع", value: arabicTextDigits(session.warehouse.nameAr) }, { label: "الحالة", value: statusLabel[session.status] ?? session.status }],
       [{ label: "العناوين المجرودة", value: String(session.summary.counted) }, { label: "النسخ المجرودة", value: session.summary.countedCopies }, { label: "العناوين المتبقية", value: String(session.summary.remaining) }, { label: "إجمالي العناوين", value: String(session.summary.total) }],
       [{ label: "آخر استلام قبل الجرد", value: session.cutoff.receiptNumber ?? "لا يوجد" }, { label: "آخر صرف قبل الجرد", value: session.cutoff.issueNumber ?? "لا يوجد" }, { label: "المعتمد", value: session.approvedByName ? arabicTextDigits(session.approvedByName) : "لم يعتمد بعد" }],
     ],
     metadataLines: [`لجنة الجرد: ${committee}    |    التسوية: ${session.settlement?.date ?? "لم ترحّل"}`],
-    headerRows: [["الصنف", "معرّف النشر", "الباركود", "الوحدة", "الدفتري", "الفعلي", "الفرق", "سبب الفرق", "الموقع"].map((value) => ({ value, style: 2 }))],
-    bodyRows: report.rows.map((row) => [
-      { value: arabicTextDigits(row.title) },
-      { value: row.publicationIdentifier ?? "—" },
-      { value: row.barcode ?? "—" },
-      { value: row.unitCode },
-      { value: row.bookQuantity, numeric: true },
-      { value: row.countedQuantity, numeric: true },
-      { value: row.varianceQuantity || "—", numeric: row.varianceQuantity !== "" },
-      { value: varianceReason(row.varianceReason) },
-      { value: arabicTextDigits(row.locationReference ?? "—") },
-    ]),
+    headerRows: [["الصنف", "معرّف النشر", "الباركود", "الوحدة", "الدفتري", "الفعلي", "الفرق", "سبب الفرق", "الموقع", "ملاحظات العد"].map((value) => ({ value, style: 2 }))],
+    bodyRows: report.rows.flatMap((row) => {
+      const chunks = noteChunks(row.notes).map(arabicTextDigits);
+      const identity = [{ value: arabicTextDigits(row.title) }, { value: row.publicationIdentifier ?? "—" }];
+      return [[
+        ...identity,
+        { value: row.barcode ?? "—" },
+        { value: row.unitCode },
+        { value: row.bookQuantity, numeric: true },
+        { value: row.countedQuantity, numeric: true },
+        { value: row.varianceQuantity || "—", numeric: row.varianceQuantity !== "" },
+        { value: varianceReason(row.varianceReason) },
+        { value: arabicTextDigits(row.locationReference ?? "—") },
+        { value: chunks[0] ?? "—" },
+      ], ...chunks.slice(1).map((chunk) => [
+        ...identity, ...Array.from({ length: 7 }, () => ({ value: "" })), { value: chunk },
+      ])];
+    }),
     closingLines: [
       "يعرض هذا المحضر الأصناف المجرودة فقط؛ وتُراجع الفروقات قبل التسوية.",
     ],
