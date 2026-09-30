@@ -263,10 +263,10 @@ function CountHistory({ copy, session, onClose, onChanged, notify }: { copy: Inv
   return <Modal title={copy.history} description={copy.historyDescription} onClose={onClose} wide>
     <div className="count-history-controls">
       <form className="search-box" onSubmit={(event) => { event.preventDefault(); setPage(1); setSubmittedSearch(search.trim()); }}>
-        <input aria-label={copy.searchLabel} value={search} onChange={(event) => setSearch(event.target.value)} placeholder={copy.lookupHint} maxLength={160} />
+        <input aria-label={copy.historySearchLabel} value={search} onChange={(event) => setSearch(event.target.value)} placeholder={copy.historySearchPlaceholder} maxLength={160} />
         <button type="submit">{copy.search}</button>
       </form>
-      <Button variant="secondary" disabled={exporting || loading} onClick={() => void exportHistory()}>{copy.downloadReport}</Button>
+      <Button variant="secondary" disabled={exporting || loading} onClick={() => void exportHistory()}>{copy.historyExport}</Button>
     </div>
     {error && <div className="form-error" role="alert">{error}</div>}
     {loading ? <Spinner label={copy.loading} /> : <div className="count-history-list">{entries.map((entry) => <div className="count-history-entry" key={entry.id}>
