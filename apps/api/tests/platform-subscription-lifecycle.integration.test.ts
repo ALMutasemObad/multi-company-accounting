@@ -91,7 +91,11 @@ describe.runIf(enabled)("SUB-3 subscription lifecycle on a supported database", 
     await prisma.$disconnect();
   });
 
-  it("adds an included module when editing an empty free-plan draft", async () => {
+  it("adds every active module when editing an empty free-plan draft", async () => {
+    const activeModules = await prisma!.platformModule.findMany({
+      where: { isActive: true }, select: { id: true, code: true }, orderBy: { id: "asc" },
+    });
+    expect(activeModules.some((module) => module.id === coreModuleId)).toBe(true);
     const created = await catalog().createPlan({ userId }, {
       code: `FREE_START_${randomUUID().replaceAll("-", "").slice(0, 10).toUpperCase()}`,
       displayName: "Free start", description: "Temporary free start",
@@ -114,9 +118,13 @@ describe.runIf(enabled)("SUB-3 subscription lifecycle on a supported database", 
       taxRate: draft.taxRate, paymentTermsDays: draft.paymentTermsDays, trialDays: draft.trialDays,
       effectiveFrom: draft.effectiveFrom, selfServicePolicy: draft.selfServicePolicy,
       version: draft.version,
-      modules: [{ moduleId: coreModuleId, selectionMode: "INCLUDED", additionalRecurringFee: null }],
+      modules: activeModules.map((module) => ({
+        moduleId: module.id, selectionMode: "INCLUDED", additionalRecurringFee: null,
+      })),
     });
-    expect(updated.version.modules).toEqual([expect.objectContaining({ code: "CORE_ACCOUNTING", selectionMode: "INCLUDED" })]);
+    expect(updated.version.modules.map((module) => module.code).sort()).toEqual(activeModules.map((module) => module.code).sort());
+    expect(updated.version.modules.every((module) => module.selectionMode === "INCLUDED")).toBe(true);
+    expect(await prisma!.platformPlanEntitlement.count({ where: { planVersionId: BigInt(draft.id) } })).toBe(activeModules.length);
   });
 
   it("publishes a safe opt-in public projection and rejects stale visibility writes without changing financial terms", async () => {
