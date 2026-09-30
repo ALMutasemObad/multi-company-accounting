@@ -9,9 +9,20 @@ export class ApiError extends Error {
     public readonly status: number,
     public readonly code?: string,
     public readonly reason?: string,
+    public readonly requestId?: string,
   ) {
     super(message);
   }
+}
+
+const safeRequestId = /^[A-Za-z0-9._-]{8,128}$/;
+
+function requestIdFromError(response: Response, body: unknown): string | undefined {
+  const header = response.headers.get("X-Request-ID");
+  if (header && safeRequestId.test(header)) return header;
+  const candidate = body && typeof body === "object" && "requestId" in body
+    ? (body as { requestId?: unknown }).requestId : undefined;
+  return typeof candidate === "string" && safeRequestId.test(candidate) ? candidate : undefined;
 }
 
 let csrfToken = "";
@@ -97,7 +108,8 @@ async function requestApi<T>(
         clearCsrfToken();
         expireSession();
       }
-      throw new ApiError(messageForError(body?.code, body?.reason), response.status, body?.code, body?.reason);
+      throw new ApiError(messageForError(body?.code, body?.reason), response.status, body?.code, body?.reason,
+        requestIdFromError(response, body));
     }
     return body as T;
   }, { signal: options.signal, timeoutMs });
@@ -271,7 +283,8 @@ async function requestFile(path: string, signal: AbortSignal, headers?: HeadersI
       clearCsrfToken();
       expireSession();
     }
-    throw new ApiError(messageForError(body.code, body.reason), response.status, body.code, body.reason);
+    throw new ApiError(messageForError(body.code, body.reason), response.status, body.code, body.reason,
+      requestIdFromError(response, body));
   }
   const blob = await response.blob();
   assertRequestActive(signal);

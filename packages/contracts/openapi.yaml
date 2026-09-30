@@ -11986,9 +11986,10 @@ components:
       name: X-Request-Id
       in: header
       required: false
+      description: معرّف تتبع آمن اختياري؛ يقبل UUID أو قيمة من 8 إلى 128 حرفًا من الحروف والأرقام والنقطة والشرطة والشرطة السفلية. يولد الخادم UUID إذا لم تطابق القيمة السياسة.
       schema:
         type: string
-        format: uuid
+        pattern: '^[A-Za-z0-9._-]{8,128}$'
     InventoryCountSessionId:
       name: sessionId
       in: path
@@ -12198,7 +12199,7 @@ components:
           type: string
         requestId:
           type: string
-          format: uuid
+          pattern: '^[A-Za-z0-9._-]{8,128}$'
         fieldErrors:
           type: object
           additionalProperties:

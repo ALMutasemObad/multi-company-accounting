@@ -63,7 +63,9 @@ describe.runIf(process.env.RUN_GROUP_ONBOARDING_BROWSER_TESTS === "true")("group
     await page.route("**/api/v1/organizations/1/company-options", route => route.fulfill({ json: companyOptions() }));
     await page.route("**/api/v1/organizations/1/companies", async route => {
       calls.push({ key: route.request().headers()["idempotency-key"], body: route.request().postData() });
-      if (calls.length === 1) await route.fulfill({ status: 503, json: { code: "COMPANY_SETUP_UNAVAILABLE" } });
+      if (calls.length === 1) await route.fulfill({ status: 503,
+        headers: { "X-Request-ID": "group-create-12345678" },
+        json: { code: "COMPANY_SETUP_UNAVAILABLE", requestId: "group-create-12345678" } });
       else await route.fulfill({ status: 201, json: { organizationId: "1", company: { id: "2", code: "generated", name: "شركة جديدة", timezone: "UTC", baseCurrencyCode: "SAR" } } });
     });
     await page.goto(`${origin}/__group-company-test`);
@@ -71,13 +73,34 @@ describe.runIf(process.env.RUN_GROUP_ONBOARDING_BROWSER_TESTS === "true")("group
     if (process.env.GROUP_ONBOARDING_ARTIFACT_DIR) await page.screenshot({ path: `${process.env.GROUP_ONBOARDING_ARTIFACT_DIR}/company-create-390.png`, fullPage: true });
     await page.locator('button[type="submit"]').click();
     await browserExpect(page.getByRole("alert")).toBeVisible();
+    await browserExpect(page.getByText("group-create-12345678")).toBeVisible();
     await browserExpect(page.locator('input[name="companyName"]')).toBeDisabled();
     await browserExpect(page.locator("body")).toHaveAttribute("data-pending", "true");
     await page.locator('button[type="submit"]').dblclick();
     await browserExpect(page.locator("body")).toHaveAttribute("data-created", "true");
     await browserExpect(page.getByText("تم إنشاء شركة شركة جديدة.")).toBeVisible();
+    await browserExpect(page.getByText("group-create-12345678")).not.toBeVisible();
     expect(calls).toHaveLength(2); expect(calls[0]).toEqual(calls[1]);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.close();
+  }, 60_000);
+
+  it("shows the options request ID for support and clears it after a successful retry", async () => {
+    const page = await browser.newPage();
+    let optionsCalls = 0;
+    await page.route("**/api/v1/organizations/1/company-options", route => {
+      optionsCalls += 1;
+      return optionsCalls === 1
+        ? route.fulfill({ status: 503, headers: { "X-Request-ID": "group-options-12345678" },
+          json: { code: "COMPANY_SETUP_UNAVAILABLE", requestId: "group-options-12345678" } })
+        : route.fulfill({ json: companyOptions() });
+    });
+    await page.goto(`${origin}/__group-company-test`);
+    await browserExpect(page.getByText("group-options-12345678")).toBeVisible();
+    await page.getByRole("button", { name: "إعادة المحاولة" }).click();
+    await browserExpect(page.locator('input[name="companyName"]')).toBeVisible();
+    await browserExpect(page.getByText("group-options-12345678")).not.toBeVisible();
+    expect(optionsCalls).toBe(2);
     await page.close();
   }, 60_000);
 

@@ -16,6 +16,28 @@ export function configuredStartPlanVersionId(value: string | undefined): bigint 
   return BigInt(value);
 }
 
+/** A complete currency map replaces, rather than silently falling back to, the legacy single version. */
+export function configuredStartPlanVersions(singleId: string | undefined, currencyMap: string | undefined):
+  | { kind: "single"; id: bigint }
+  | { kind: "currency-map"; ids: Map<string, bigint> } {
+  if (currencyMap === undefined) return { kind: "single", id: configuredStartPlanVersionId(singleId) };
+  if (singleId !== undefined || currencyMap.length === 0) throw new SubscriptionStartPolicyError("INVALID_CONFIGURATION");
+  const entries = currencyMap.split(",");
+  if (entries.length > 50) throw new SubscriptionStartPolicyError("INVALID_CONFIGURATION");
+  const ids = new Map<string, bigint>();
+  const usedIds = new Set<bigint>();
+  for (const entry of entries) {
+    const match = /^([A-Z]{3}):([1-9][0-9]{0,19})$/.exec(entry);
+    if (!match) throw new SubscriptionStartPolicyError("INVALID_CONFIGURATION");
+    const code = match[1]!;
+    const id = configuredStartPlanVersionId(match[2]);
+    if (ids.has(code) || usedIds.has(id)) throw new SubscriptionStartPolicyError("INVALID_CONFIGURATION");
+    ids.set(code, id);
+    usedIds.add(id);
+  }
+  return { kind: "currency-map", ids };
+}
+
 export type StartPlanVersion = Prisma.PlatformPlanVersionGetPayload<{
   include: {
     plan: true;

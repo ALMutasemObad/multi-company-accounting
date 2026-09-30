@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 import {
   configuredStartPlanVersionId,
+  configuredStartPlanVersions,
   SubscriptionStartPolicyError,
   type StartPlanVersion,
   validateNewCompanyStartPlan,
@@ -127,6 +128,23 @@ describe('server-configured new-company start plan identifier', () => {
   it.each(['1', '9007199254740993', '18446744073709551615'])('preserves the exact unsigned BIGINT (%s)', (value) => {
     expect(configuredStartPlanVersionId(value)).toBe(BigInt(value));
   });
+
+  it('accepts an explicit multi-currency version map without a legacy fallback', () => {
+    expect(configuredStartPlanVersions(undefined, 'SAR:8,AED:9'))
+      .toEqual({ kind: 'currency-map', ids: new Map([['SAR', 8n], ['AED', 9n]]) });
+    expect(configuredStartPlanVersions('8', undefined)).toEqual({ kind: 'single', id: 8n });
+  });
+
+  it.each(['', 'SAR:0', 'sar:8', 'SAR:8,', ' SAR:8', 'SAR:8,AED:8', 'SAR:8,SAR:9',
+    'SAR:18446744073709551616'])('rejects an invalid currency map (%s)', value => {
+    expect(() => configuredStartPlanVersions(undefined, value))
+      .toThrowError(new SubscriptionStartPolicyError('INVALID_CONFIGURATION'));
+  });
+
+  it('rejects competing single and mapped configuration', () => {
+    expect(() => configuredStartPlanVersions('8', 'SAR:8,AED:9'))
+      .toThrowError(new SubscriptionStartPolicyError('INVALID_CONFIGURATION'));
+  });
 });
 
 describe('new-company start plan eligibility', () => {
@@ -222,6 +240,76 @@ describe('new-company start plan eligibility', () => {
 });
 
 describe('PrismaNewCompanySubscriptionProvisioningAdapter', () => {
+  it('selects the matching immutable free version for SAR and AED and never crosses currencies', async () => {
+    const aedId = versionId + 1n;
+    const sarPlan = startPlan();
+    const aedPlan = startPlan({ id: aedId, currencyCode: 'AED' });
+    const fixture = adapterFixture();
+    fixture.planFind.mockImplementation(async ({ where }: { where: { id: bigint } }) =>
+      where.id === versionId ? sarPlan : where.id === aedId ? aedPlan : null);
+    const adapter = new PrismaNewCompanySubscriptionProvisioningAdapter(undefined, `SAR:${versionId},AED:${aedId}`);
+    await expect(adapter.eligibleStartCurrencies(fixture.tx, effectiveAt)).resolves.toEqual(['SAR', 'AED']);
+    for (const write of fixture.writes) expect(write).not.toHaveBeenCalled();
+
+    await adapter.provisionNewCompanyAccess(fixture.tx, { ...provisioningInput, baseCurrencyCode: 'AED' });
+    expect(fixture.subscriptionCreate.mock.calls[0]?.[0].data.planVersionId).toBe(aedId);
+    expect(fixture.planFind.mock.calls.at(-1)?.[0].where.id).toBe(aedId);
+  });
+
+  it('rejects an unmapped currency before reading a plan or writing a subscription', async () => {
+    const fixture = adapterFixture();
+    const adapter = new PrismaNewCompanySubscriptionProvisioningAdapter(undefined, `SAR:${versionId}`);
+    await expect(adapter.provisionNewCompanyAccess(fixture.tx, { ...provisioningInput, baseCurrencyCode: 'AED' }))
+      .rejects.toThrowError(new SubscriptionStartPolicyError('PLAN_NOT_ELIGIBLE'));
+    expect(fixture.planFind).not.toHaveBeenCalled();
+    for (const write of fixture.writes) expect(write).not.toHaveBeenCalled();
+  });
+
+  it('rejects a mapped plan whose actual currency does not match its key', async () => {
+    const fixture = adapterFixture(startPlan({ currencyCode: 'SAR' }));
+    const adapter = new PrismaNewCompanySubscriptionProvisioningAdapter(undefined, `AED:${versionId}`);
+    await expect(adapter.eligibleStartCurrencies(fixture.tx, effectiveAt))
+      .rejects.toThrowError(new SubscriptionStartPolicyError('PLAN_NOT_ELIGIBLE'));
+    for (const write of fixture.writes) expect(write).not.toHaveBeenCalled();
+  });
+
+  it('preflights the configured eligible currency without writing subscriptions or catalog rows', async () => {
+    const fixture = adapterFixture();
+    const adapter = new PrismaNewCompanySubscriptionProvisioningAdapter(versionId.toString());
+    await expect(adapter.eligibleStartCurrencies(fixture.tx, effectiveAt)).resolves.toEqual(['SAR']);
+    expect(fixture.planFind).toHaveBeenCalledExactlyOnceWith({ where: { id: versionId },
+      include: { plan: true, entitlements: { include: { module: { include: { dependencies: true } } } } } });
+    expect(fixture.subscriptionFind).not.toHaveBeenCalled();
+    for (const write of fixture.writes) expect(write).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, '', 'bad-id'])('does not query or write when preflight configuration is invalid (%s)', async configuration => {
+    const fixture = adapterFixture();
+    await expect(new PrismaNewCompanySubscriptionProvisioningAdapter(configuration)
+      .eligibleStartCurrencies(fixture.tx, effectiveAt)).rejects.toBeInstanceOf(SubscriptionStartPolicyError);
+    expect(fixture.planFind).not.toHaveBeenCalled();
+    for (const write of fixture.writes) expect(write).not.toHaveBeenCalled();
+  });
+
+  it.each([null, startPlan({ recurringFee: new Prisma.Decimal('1') }), startPlan({ currencyCode: 'sar' })])
+    ('rejects an absent or ineligible configured plan during preflight', async plan => {
+      const fixture = adapterFixture(plan);
+      await expect(new PrismaNewCompanySubscriptionProvisioningAdapter(versionId.toString())
+        .eligibleStartCurrencies(fixture.tx, effectiveAt)).rejects.toThrowError(new SubscriptionStartPolicyError('PLAN_NOT_ELIGIBLE'));
+      for (const write of fixture.writes) expect(write).not.toHaveBeenCalled();
+    });
+
+  it('rechecks the plan at creation after a successful options preflight', async () => {
+    const fixture = adapterFixture();
+    const adapter = new PrismaNewCompanySubscriptionProvisioningAdapter(versionId.toString());
+    await expect(adapter.eligibleStartCurrencies(fixture.tx, effectiveAt)).resolves.toEqual(['SAR']);
+    fixture.planFind.mockResolvedValueOnce(startPlan({ currencyCode: 'USD' }));
+    await expect(adapter.provisionNewCompanyAccess(fixture.tx, provisioningInput))
+      .rejects.toThrowError(new SubscriptionStartPolicyError('PLAN_NOT_ELIGIBLE'));
+    expect(fixture.planFind).toHaveBeenCalledTimes(2);
+    for (const write of fixture.writes) expect(write).not.toHaveBeenCalled();
+  });
+
   it('creates one company-scoped subscription with PLAN rights and operator-configured provenance', async () => {
     const plan = startPlan({ trialDays: 11 });
     plan.entitlements.push(entitlement(3n, 'POS', [2n], 'OPTIONAL'));

@@ -21,14 +21,18 @@ test("Prisma tooling resolves the patched deepmerge-ts release", async () => {
 
 test("the lockfile pins the reviewed URI and query parser patches", async () => {
   const lockfile = await readJson("../../package-lock.json");
+  const prismaToolchainLockfile = await readJson("../../deploy/scripts/prisma-toolchain/package-lock.json");
   const fastUri = lockfile.packages?.["node_modules/fast-uri"];
+  const toolchainFastUri = prismaToolchainLockfile.packages?.["node_modules/fast-uri"];
   const queryString = lockfile.packages?.["node_modules/qs"];
 
-  assert.equal(fastUri?.version, "3.1.7");
+  assert.equal(fastUri?.version, "3.1.8");
   assert.equal(
     fastUri?.integrity,
-    "sha512-dOvZVzjdZdz7phd9v6jCbwxrBW3fK6n8Rc0CtdmM4bumzMnxywBYhuph6J819RRw/ku+rLbelwfMunktuzVVHg==",
+    "sha512-GZMtZUTNRpOVIECoXwLNZS5xUGE+mVNbTB8h/7Rwh2TFWcBQiPzTgyZi05BF9UMZKkLJv8XBRJTlU7zg8+ZfMg==",
   );
+  assert.equal(toolchainFastUri?.version, fastUri?.version);
+  assert.equal(toolchainFastUri?.integrity, fastUri?.integrity);
   assert.equal(queryString?.version, "6.16.0");
   assert.equal(
     queryString?.integrity,

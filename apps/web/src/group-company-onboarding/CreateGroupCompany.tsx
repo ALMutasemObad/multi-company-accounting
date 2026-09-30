@@ -29,6 +29,7 @@ export function CreateGroupCompany({ organizationId, onCreated, onOpenCreated, o
   const { t } = useI18n();
   const [options, setOptions] = useState<Options | null>(null);
   const [error, setError] = useState("");
+  const [errorRequestId, setErrorRequestId] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState("");
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -63,9 +64,15 @@ export function CreateGroupCompany({ organizationId, onCreated, onOpenCreated, o
             chartTemplateCode: value.chartTemplates.some(template => template.code === current.chartTemplateCode) ? current.chartTemplateCode : value.chartTemplates[0]?.code ?? "",
           }));
           setError("");
+          setErrorRequestId(null);
         }
       })
-      .catch((cause: unknown) => { if (!controller.signal.aborted && generation === optionsGeneration.current) setError(cause instanceof Error ? cause.message : t("organization.create.failed")); });
+      .catch((cause: unknown) => {
+        if (!controller.signal.aborted && generation === optionsGeneration.current) {
+          setError(cause instanceof Error ? cause.message : t("organization.create.failed"));
+          setErrorRequestId(cause instanceof ApiError ? cause.requestId ?? null : null);
+        }
+      });
     return () => { controller.abort(); };
   }, [organizationId, reload, t]);
 
@@ -94,6 +101,7 @@ export function CreateGroupCompany({ organizationId, onCreated, onOpenCreated, o
     setAttempt(request);
     setBusy(true);
     setError("");
+    setErrorRequestId(null);
     try {
       const response = await api<unknown>(`/organizations/${organizationId}/companies`, {
         method: "POST", headers: { "Idempotency-Key": request.key }, body: request.body,
@@ -107,6 +115,7 @@ export function CreateGroupCompany({ organizationId, onCreated, onOpenCreated, o
     } catch (cause) {
       if (mounted.current) {
         setError(cause instanceof Error ? cause.message : t("organization.create.failed"));
+        setErrorRequestId(cause instanceof ApiError ? cause.requestId ?? null : null);
         if (cause instanceof ApiError && [400, 401, 403, 422].includes(cause.status)) {
           setAttempt(null);
           onPendingChange(false);
@@ -128,9 +137,21 @@ export function CreateGroupCompany({ organizationId, onCreated, onOpenCreated, o
     <h2>{t("organization.create.title")}</h2>
     <p>{t("organization.create.description")}</p>
     <p className="group-company-boundary">{t("organization.create.boundary")}</p>
-    {error && <div className="form-error" role="alert">{error}</div>}
-    {result ? <div className="group-company-result" role="status"><strong>{t("organization.create.created", { name: result.company.name })}</strong><p>{createdCompany ? t("organization.create.openReady") : t("organization.create.openHint")}</p>{refreshError && <div className="form-error" role="alert">{refreshError}</div>}<div className="group-company-result-actions">{createdCompany && <Button variant="secondary" disabled={opening} onClick={() => void openCreatedCompany()}>{opening ? t("common.loading") : t("organization.openCompany")}</Button>}<Button variant="ghost" disabled={refreshing} onClick={() => void refreshCreatedCompany(result)}>{refreshing ? t("common.loading") : t("organization.create.refresh")}</Button><Button variant="ghost" disabled={refreshing || opening} onClick={() => { setResult(null); setCreatedCompany(null); setAttempt(null); setError(""); setRefreshError(""); setDraft({ companyName: "", timezone: options?.timezones[0] ?? "UTC", baseCurrencyCode: options?.currencies[0]?.code ?? "", phone: "", countryCode: options?.countries.find(country => country.code === "YE")?.code ?? options?.countries[0]?.code ?? "", primaryBusinessActivityCode: options?.businessActivities[0]?.code ?? "", chartTemplateCode: options?.chartTemplates[0]?.code ?? "" }); }}>{t("organization.create.another")}</Button></div></div> : <>
-      {!options ? error ? <Button onClick={() => setReload(value => value + 1)}>{t("common.retry")}</Button> : <Spinner label={t("organization.loading")} /> :
+    {error && <div className="form-error" role="alert"><p>{error}</p>{errorRequestId && <p>{t("organization.create.requestId")} <bdi dir="ltr">{errorRequestId}</bdi></p>}</div>}
+    {result ? <div className="group-company-result" role="status">
+      <strong>{t("organization.create.created", { name: result.company.name })}</strong>
+      <p>{createdCompany ? t("organization.create.openReady") : t("organization.create.openHint")}</p>
+      {refreshError && <div className="form-error" role="alert">{refreshError}</div>}
+      <div className="group-company-result-actions">
+        {createdCompany && <Button variant="secondary" disabled={opening} onClick={() => void openCreatedCompany()}>{opening ? t("common.loading") : t("organization.openCompany")}</Button>}
+        <Button variant="ghost" disabled={refreshing} onClick={() => void refreshCreatedCompany(result)}>{refreshing ? t("common.loading") : t("organization.create.refresh")}</Button>
+        <Button variant="ghost" disabled={refreshing || opening} onClick={() => {
+          setResult(null); setCreatedCompany(null); setAttempt(null); setError(""); setErrorRequestId(null); setRefreshError("");
+          setDraft({ companyName: "", timezone: options?.timezones[0] ?? "UTC", baseCurrencyCode: options?.currencies[0]?.code ?? "", phone: "", countryCode: options?.countries.find(country => country.code === "YE")?.code ?? options?.countries[0]?.code ?? "", primaryBusinessActivityCode: options?.businessActivities[0]?.code ?? "", chartTemplateCode: options?.chartTemplates[0]?.code ?? "" });
+        }}>{t("organization.create.another")}</Button>
+      </div>
+    </div> : <>
+      {!options ? error ? <Button onClick={() => { setError(""); setErrorRequestId(null); setReload(value => value + 1); }}>{t("common.retry")}</Button> : <Spinner label={t("organization.loading")} /> :
         <form onSubmit={event => void submit(event)}>
           <fieldset disabled={attempt !== null}>
             <label><span>{t("registration.companyName")}</span><input name="companyName" required maxLength={200} value={draft.companyName} onChange={event => setDraft(current => ({ ...current, companyName: event.target.value }))} /></label>

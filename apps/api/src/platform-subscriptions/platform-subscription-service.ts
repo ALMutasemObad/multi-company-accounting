@@ -469,10 +469,12 @@ export class PlatformSubscriptionCatalogService {
       });
       if (updated.count !== 1) throw new PlatformSubscriptionError("VERSION_CONFLICT");
       await tx.platformPlanEntitlement.deleteMany({ where: { planVersionId: versionId } });
-      if (modules.length) await tx.platformPlanEntitlement.createMany({ data: modules.map((module) => ({
-        planVersionId: versionId, moduleId: module.moduleId,
-        selectionMode: module.selectionMode, additionalRecurringFee: module.additionalRecurringFee,
-      })) });
+      for (const module of modules) {
+        await tx.platformPlanEntitlement.create({ data: {
+          planVersionId: versionId, moduleId: module.moduleId,
+          selectionMode: module.selectionMode, additionalRecurringFee: module.additionalRecurringFee,
+        } });
+      }
       await tx.platformPlan.update({ where: { id: existing.planId }, data: { updatedById: actor.userId } });
       const version = await tx.platformPlanVersion.findUniqueOrThrow({
         where: { id: versionId }, include: { plan: true, entitlements: { include: { module: { include: { dependencies: true } } } } },

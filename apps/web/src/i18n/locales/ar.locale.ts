@@ -77,6 +77,7 @@ export const localeDictionary = {
   "organization.create.refresh": "تحديث قائمة الشركات",
   "organization.create.another": "إنشاء شركة أخرى",
   "organization.create.retryHint": "أعد المحاولة من هنا بالطلب نفسه للتحقق من النتيجة. احتفظ بهذه الشاشة مفتوحة حتى تتضح النتيجة.",
+  "organization.create.requestId": "معرّف الطلب:",
   "organization.registration.received": "تم استلام الطلب",
   "organization.registration.nextSteps": "إذا كان البريد مؤهلًا لتسجيل جديد، ستصلك رسالة تحقق. إن كان لديك حساب، سجّل الدخول أو استعد كلمة المرور، ثم افتح مساحة المجموعة لإنشاء شركة. هذه الرسالة لا تؤكد إرسال بريد.",
   "organization.registration.recover": "استعادة كلمة المرور للحساب الحالي",
