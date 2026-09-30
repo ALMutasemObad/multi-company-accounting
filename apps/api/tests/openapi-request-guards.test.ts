@@ -22,6 +22,27 @@ import {
 } from '../src/generated/openapi-request-guards.js';
 
 describe('generated OpenAPI request guards', () => {
+  it('accepts distinct subscription modules after BigInt conversion and rejects duplicates', () => {
+    const draft = {
+      displayName: 'Free BHD', description: null, billingCycle: 'MONTHLY', currencyCode: 'BHD',
+      recurringFee: '0', includedUsers: 1000000, pricePerAdditionalUser: '0',
+      includedEmployees: 1000000, pricePerAdditionalEmployee: '0',
+      includedPostedDocuments: 1000000, pricePerAdditionalPostedDocument: '0',
+      taxRate: '0', paymentTermsDays: 0, trialDays: 0,
+      effectiveFrom: '2026-09-30T00:00:00.000Z', selfServicePolicy: 'IMMEDIATE_FREE',
+      modules: [
+        { moduleId: '1', selectionMode: 'INCLUDED', additionalRecurringFee: null },
+        { moduleId: '2', selectionMode: 'INCLUDED', additionalRecurringFee: null },
+      ],
+      version: 2,
+    };
+    expect(openApiRequestBodySchemas.updatePlatformSubscriptionPlanDraft.parse(draft).modules)
+      .toEqual([{ ...draft.modules[0], moduleId: 1n }, { ...draft.modules[1], moduleId: 2n }]);
+    expect(openApiRequestBodySchemas.updatePlatformSubscriptionPlanDraft.safeParse({
+      ...draft, modules: [draft.modules[0], { ...draft.modules[0] }],
+    }).success).toBe(false);
+  });
+
   it('exposes the guarded operation inventory', () => {
     expect(openApiContractCoverage).toEqual({ operations: 400, requestBodies: 199, responseBodies: 2607 });
     expect(openApiOperationRoutes).toMatchObject({
