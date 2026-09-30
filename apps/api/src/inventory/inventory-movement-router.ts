@@ -14,7 +14,7 @@ import {
   ExternalStockPositionError,
 } from "./stock-position/external-stock-position-service.js";
 import { InventoryCountError } from "./inventory-count/inventory-count-service.js";
-import { inventoryCountReportXlsx } from "./inventory-count/inventory-count-report.js";
+import { inventoryCountHistoryXlsx, inventoryCountReportXlsx } from "./inventory-count/inventory-count-report.js";
 import { externalStockPositionsXlsx } from "./stock-position/external-stock-position-report.js";
 
 const id = z.string().regex(/^[1-9][0-9]*$/u).transform(BigInt);
@@ -187,8 +187,18 @@ export function createInventoryMovementRouter(
 
   router.get("/inventory-count-sessions/:sessionId/entries", async (request, response) => {
     const context = await authorize(request, "inventory_counts.manage", false);
-    const query = z.object({ lineId: id.optional(), page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(50) }).parse(request.query);
+    const query = z.object({ lineId: id.optional(), search: z.string().trim().max(160).optional(), page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(50) }).parse(request.query);
     response.json(await service.inventoryCount.listEntries(context, id.parse(request.params.sessionId), query));
+  });
+
+  router.get("/inventory-count-sessions/:sessionId/entries.xlsx", async (request, response) => {
+    const context = await authorize(request, "inventory_counts.manage", false);
+    const sessionId = id.parse(request.params.sessionId);
+    const query = z.object({ lineId: id.optional(), search: z.string().trim().max(160).optional() }).parse(request.query);
+    const entries = await service.inventoryCount.exportEntries(context, sessionId, query);
+    response.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    response.setHeader("Content-Disposition", `attachment; filename=inventory-count-history-${sessionId}.xlsx`);
+    response.send(inventoryCountHistoryXlsx(sessionId.toString(), entries.data));
   });
 
   router.post("/inventory-count-sessions/:sessionId/entries/:entryId/reverse", async (request, response) => {

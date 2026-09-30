@@ -1,4 +1,4 @@
-import { tableToXlsx } from "../../document-output-kernel/tabular-profile.js";
+import { protectSpreadsheetFormula, tableToXlsx } from "../../document-output-kernel/tabular-profile.js";
 import type { TabularRows } from "../../document-output-kernel/model.js";
 
 export type InventoryCountReport = {
@@ -13,7 +13,7 @@ export type InventoryCountReport = {
   rows: Array<{
     code: string; barcode: string | null; publicationIdentifier: string | null; title: string; unitCode: string; locationReference: string | null;
     bookQuantity: string; countedQuantity: string; varianceQuantity: string;
-    unitCostBase: string; varianceValueBase: string; varianceReason: string; countedBy: string;
+    unitCostBase: string; varianceValueBase: string; varianceReason: string; countedBy: string; notes: string[];
   }>;
 };
 
@@ -45,13 +45,34 @@ export function inventoryCountReportXlsx(report: InventoryCountReport, selection
     [{ value: "لجنة الجرد", style: 3 }, { value: report.session.committee.map((member) => member.role ? `${member.name} (${member.role})` : member.name).join("، ") || "غير مسجلة" }],
     [{ value: "الاعتماد", style: 3 }, { value: report.session.approvedByName ? `${report.session.approvedByName}${report.session.approvedAt ? ` - ${report.session.approvedAt}` : ""}` : "غير معتمد" }],
     [{ value: "التسوية", style: 3 }, { value: report.session.settlement ? `تاريخ ${report.session.settlement.date}؛ حركة الزيادة ${report.session.settlement.surplusMovementId ?? "لا يوجد"}؛ حركة النقص ${report.session.settlement.shortageMovementId ?? "لا يوجد"}` : "لم ترحّل" }],
-    ["معرّف النشر ISBN/ISSN", "الباركود", "الصنف", "الوحدة", "مرجع الموقع/المجموعة", "الرصيد الدفتري", "الرصيد الفعلي", "فرق الكمية", "تكلفة الوحدة", "قيمة الفرق", "سبب الفرق", "آخر من أدخل"].map((value) => ({ value, style: 2 })),
+    ["معرّف النشر ISBN/ISSN", "الباركود", "الصنف", "الوحدة", "مرجع الموقع/المجموعة", "الرصيد الدفتري", "الرصيد الفعلي", "فرق الكمية", "تكلفة الوحدة", "قيمة الفرق", "سبب الفرق", "آخر من أدخل", "ملاحظات دفعات العد"].map((value) => ({ value, style: 2 })),
     ...report.rows.map((row) => [
       { value: row.publicationIdentifier ?? "" }, { value: row.barcode ?? "" }, { value: row.title }, { value: row.unitCode }, { value: row.locationReference ?? "" },
       { value: row.bookQuantity, numeric: true }, { value: row.countedQuantity, numeric: Boolean(row.countedQuantity) },
       { value: row.varianceQuantity, numeric: Boolean(row.varianceQuantity) }, { value: row.unitCostBase, numeric: true },
       { value: row.varianceValueBase, numeric: Boolean(row.varianceValueBase) }, { value: reasonLabel(row.varianceReason) }, { value: row.countedBy },
+      { value: protectSpreadsheetFormula(row.notes.join("\n")) },
     ]),
   ];
   return tableToXlsx(rows, selection === "counted" ? "محضر الجرد" : "غير المجرودة");
+}
+
+export type InventoryCountHistoryExportEntry = {
+  code: string; title: string; publicationIdentifier: string | null; barcode: string | null;
+  quantity: string; locationReference: string | null; note: string | null;
+  counterName: string; createdAt: string; reversedAt: string | null; reversalReason: string | null;
+};
+
+export function inventoryCountHistoryXlsx(sessionId: string, entries: readonly InventoryCountHistoryExportEntry[]) {
+  const safe = (value: string | null) => ({ value: protectSpreadsheetFormula(value ?? "") });
+  const rows: TabularRows = [
+    [{ value: `سجل العد — الجلسة ${sessionId}`, style: 1 }],
+    ["العنوان", "معرّف النشر ISBN/ISSN", "الباركود", "رمز الصنف", "الكمية", "الموقع", "الملاحظة", "أدخل بواسطة", "وقت الإدخال", "الحالة", "سبب التراجع"].map((value) => ({ value, style: 2 })),
+    ...entries.map((entry) => [
+      safe(entry.title), safe(entry.publicationIdentifier), safe(entry.barcode), safe(entry.code),
+      { value: entry.quantity, numeric: true }, safe(entry.locationReference), safe(entry.note),
+      safe(entry.counterName), safe(entry.createdAt), { value: entry.reversedAt ? "أُلغيَت" : "فعالة" }, safe(entry.reversalReason),
+    ]),
+  ];
+  return tableToXlsx(rows, "سجل العد");
 }

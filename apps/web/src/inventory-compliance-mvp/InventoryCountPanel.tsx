@@ -224,20 +224,32 @@ function SummaryCard({ label, value }: { label: string; value: number | string }
 
 function CountHistory({ copy, session, onClose, onChanged, notify }: { copy: InventoryCountLocalizedCopy; session: CountSession; onClose: () => void; onChanged: () => Promise<void>; notify: Notice }) {
   const [entries, setEntries] = useState<CountEntry[]>([]);
+  const [search, setSearch] = useState("");
+  const [submittedSearch, setSubmittedSearch] = useState("");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reversing, setReversing] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
   const load = useCallback(async () => {
     setLoading(true); setError("");
     try {
-      const result = await api<{ data: CountEntry[]; total: number }>(`/inventory-count-sessions/${session.id}/entries?page=${page}&pageSize=50`);
+      const query = new URLSearchParams({ page: String(page), pageSize: "50", ...(submittedSearch ? { search: submittedSearch } : {}) });
+      const result = await api<{ data: CountEntry[]; total: number }>(`/inventory-count-sessions/${session.id}/entries?${query}`);
       setEntries(result.data); setTotal(result.total);
     } catch (cause) { setError(cause instanceof Error ? cause.message : copy.historyLoadError); }
     finally { setLoading(false); }
-  }, [session.id, page, copy.historyLoadError]);
+  }, [session.id, page, submittedSearch, copy.historyLoadError]);
   useEffect(() => { void load(); }, [load]);
+  async function exportHistory() {
+    setExporting(true); setError("");
+    try {
+      const query = new URLSearchParams(submittedSearch ? { search: submittedSearch } : {});
+      await downloadFile(`/inventory-count-sessions/${session.id}/entries.xlsx${query.size ? `?${query}` : ""}`, `inventory-count-history-${session.id}.xlsx`);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : copy.historyLoadError); }
+    finally { setExporting(false); }
+  }
   async function reverse(entry: CountEntry) {
     const reason = window.prompt(copy.undoReasonPrompt);
     if (!reason?.trim()) return;
@@ -248,14 +260,21 @@ function CountHistory({ copy, session, onClose, onChanged, notify }: { copy: Inv
     } catch (cause) { setError(cause instanceof Error ? cause.message : copy.undoError); }
     finally { setReversing(null); }
   }
-  return <Modal title={copy.history} description={copy.historyDescription} onClose={onClose}>
+  return <Modal title={copy.history} description={copy.historyDescription} onClose={onClose} wide>
+    <div className="count-history-controls">
+      <form className="search-box" onSubmit={(event) => { event.preventDefault(); setPage(1); setSubmittedSearch(search.trim()); }}>
+        <input aria-label={copy.historySearchLabel} value={search} onChange={(event) => setSearch(event.target.value)} placeholder={copy.historySearchPlaceholder} maxLength={160} />
+        <button type="submit">{copy.search}</button>
+      </form>
+      <Button variant="secondary" disabled={exporting || loading} onClick={() => void exportHistory()}>{copy.historyExport}</Button>
+    </div>
     {error && <div className="form-error" role="alert">{error}</div>}
     {loading ? <Spinner label={copy.loading} /> : <div className="count-history-list">{entries.map((entry) => <div className="count-history-entry" key={entry.id}>
       <div><strong>{entry.title}</strong><small dir="ltr">{entry.publicationIdentifier ?? entry.barcode ?? entry.code}</small></div>
       <div><strong dir="ltr">{entry.quantity}</strong><small>{entry.counterName} · {new Date(entry.createdAt).toLocaleString(activeIntlLocale())}</small></div>
-      {entry.locationReference && <small>{entry.locationReference}</small>}{entry.note && <p>{entry.note}</p>}
+      {entry.locationReference && <small>{entry.locationReference}</small>}{entry.note && <div className="count-history-note"><strong>{copy.entryNote}</strong><p>{entry.note}</p></div>}
       {entry.reversedAt ? <small>{copy.reversed}: {entry.reversalReason}</small> : session.status === "DRAFT" && entry.canReverse && <Button variant="ghost" disabled={reversing !== null} onClick={() => void reverse(entry)}>{copy.undo}</Button>}
-    </div>)}</div>}
+    </div>)}{entries.length === 0 && <EmptyState title={copy.noLines} description={copy.noLinesDescription} />}</div>}
     <div className="form-actions"><Button variant="ghost" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>{copy.previous}</Button><span>{copy.page.replace("{page}", String(page))}</span><Button variant="ghost" disabled={page * 50 >= total} onClick={() => setPage((value) => value + 1)}>{copy.next}</Button></div>
   </Modal>;
 }

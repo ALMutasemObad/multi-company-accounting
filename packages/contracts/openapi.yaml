@@ -7719,6 +7719,7 @@ paths:
       - $ref: '#/components/parameters/RequestId'
       - $ref: '#/components/parameters/InventoryCountSessionId'
       - { name: lineId, in: query, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
+      - { name: search, in: query, description: بحث بالعنوان أو الردمك أو الباركود أو الملاحظة, schema: { type: string, maxLength: 160 } }
       - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
       - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
       responses:
@@ -7760,6 +7761,24 @@ paths:
         '422': { $ref: '#/components/responses/BusinessRuleViolation' }
       x-permission: inventory_counts.enter
       security: [{ SessionCookie: [], CsrfToken: [] }]
+  /inventory-count-sessions/{sessionId}/entries.xlsx:
+    get:
+      tags: [Inventory]
+      summary: تصدير سجل العد المطابق للبحث كاملًا مع الملاحظات
+      operationId: exportInventoryCountEntriesXlsx
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/InventoryCountSessionId'
+      - { name: lineId, in: query, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
+      - { name: search, in: query, description: بحث بالعنوان أو الردمك أو الباركود أو الملاحظة, schema: { type: string, maxLength: 160 } }
+      responses:
+        '200': { description: ملف Excel لسجل العد, content: { application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: { schema: { type: string, format: binary } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: inventory_counts.manage
+      security: [{ SessionCookie: [] }]
   /inventory-count-sessions/{sessionId}/entries/{entryId}/reverse:
     post:
       tags: [Inventory]

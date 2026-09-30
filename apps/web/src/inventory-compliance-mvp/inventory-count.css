@@ -126,6 +126,16 @@
   overflow-y: auto;
 }
 
+.count-history-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 24px;
+}
+
+.count-history-controls .search-box { max-width: none; }
+
 .count-history-entry {
   display: grid;
   grid-template-columns: minmax(200px, 2fr) minmax(160px, 1fr) auto;
@@ -139,6 +149,7 @@
 .count-history-entry > div { display: grid; gap: 4px; }
 .count-history-entry small { color: var(--muted); }
 .count-history-entry p { grid-column: 1 / -1; margin: 0; }
+.count-history-note { grid-column: 1 / -1; padding: 10px 12px; border-radius: 9px; background: var(--surface-subtle, #f3f8f5); white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .quick-count-grid input,
 .quick-count-grid select {
