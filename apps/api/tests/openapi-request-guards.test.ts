@@ -44,7 +44,7 @@ describe('generated OpenAPI request guards', () => {
   });
 
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 400, requestBodies: 199, responseBodies: 2607 });
+    expect(openApiContractCoverage).toEqual({ operations: 401, requestBodies: 199, responseBodies: 2611 });
     expect(openApiOperationRoutes).toMatchObject({
       'GET /pos/context/identity': 'getPosContextIdentity',
       'GET /auth/social/accounts': 'getCurrentSocialAccounts',
@@ -63,6 +63,7 @@ describe('generated OpenAPI request guards', () => {
       'GET /inventory-valuation-report': 'getInventoryValuationReport',
       'GET /inventory-valuation-report.xlsx': 'exportInventoryValuationReportXlsx',
       'GET /inventory-count-sessions/{sessionId}/lookup': 'lookupInventoryCountItem',
+      'GET /inventory-count-sessions/{sessionId}/entries.xlsx': 'exportInventoryCountEntriesXlsx',
       'GET /inventory-aging-report': 'getInventoryAgingReport',
       'GET /inventory-aging-report.xlsx': 'exportInventoryAgingReportXlsx',
       'GET /external-stock-positions.xlsx': 'exportExternalStockPositionsXlsx',
