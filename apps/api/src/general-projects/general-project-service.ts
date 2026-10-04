@@ -231,6 +231,45 @@ export class GeneralProjectService {
     });
   }
 
+  updatePhase(context: ActorContext, projectPublicId: string, phasePublicId: string, input: {
+    expectedPlanVersion: number; expectedVersion: number; title: string; description?: string | null;
+    plannedStartDate?: string | null; targetEndDate?: string | null; idempotencyKey: string;
+  }) {
+    return this.command(context, "UPDATE_GENERAL_PROJECT_PHASE", input.idempotencyKey,
+      { projectPublicId, phasePublicId, ...input }, 200, async tx => {
+        const project = await this.lockProject(tx, context, projectPublicId);
+        if (!mutable(project.status)) throw new GeneralProjectError("PROJECT_FINAL");
+        if (project.planVersion !== input.expectedPlanVersion) throw new GeneralProjectError("VERSION_CONFLICT");
+        const current = await tx.generalProjectPhase.findFirst({ where: { companyId: context.companyId,
+          projectId: project.id, publicId: phasePublicId } });
+        if (!current) throw new GeneralProjectError("NOT_FOUND");
+        if (current.version !== input.expectedVersion) throw new GeneralProjectError("VERSION_CONFLICT");
+        if (current.status === "COMPLETED" || current.status === "CANCELLED") throw new GeneralProjectError("PROJECT_FINAL");
+        const start = input.plannedStartDate === undefined ? dateOnly(current.plannedStartDate) : input.plannedStartDate;
+        const end = input.targetEndDate === undefined ? dateOnly(current.targetEndDate) : input.targetEndDate;
+        this.validatePlanDates(start ?? null, end ?? null,
+          dateOnly(project.plannedStartDate), dateOnly(project.targetEndDate));
+        const outside: Prisma.GeneralProjectTaskWhereInput[] = [];
+        if (start) outside.push({ OR: [{ plannedStartDate: { lt: day(start) } }, { dueDate: { lt: day(start) } }] });
+        if (end) outside.push({ OR: [{ plannedStartDate: { gt: day(end) } }, { dueDate: { gt: day(end) } }] });
+        if (outside.length && await tx.generalProjectTask.findFirst({ where: { companyId: context.companyId,
+          projectId: project.id, phaseId: current.id, OR: outside }, select: { id: true } }))
+          throw new GeneralProjectError("INVALID_DATE_RANGE");
+        const changed = await tx.generalProjectPhase.updateMany({ where: { id: current.id,
+          companyId: context.companyId, projectId: project.id, version: input.expectedVersion }, data: {
+          title: input.title, ...(input.description !== undefined ? { description: input.description } : {}),
+          ...(input.plannedStartDate !== undefined ? { plannedStartDate: start ? day(start) : null } : {}),
+          ...(input.targetEndDate !== undefined ? { targetEndDate: end ? day(end) : null } : {}),
+          version: { increment: 1 }, updatedById: context.userId } });
+        if (changed.count !== 1) throw new GeneralProjectError("VERSION_CONFLICT");
+        await this.bumpPlanVersion(tx, context, project);
+        const row = await tx.generalProjectPhase.findUniqueOrThrow({ where: { id: current.id } });
+        await this.audit(tx, context, "GENERAL_PROJECT_PHASE_UPDATED", projectPublicId,
+          { phaseId: phasePublicId, nextPlanVersion: project.planVersion + 1 });
+        return { phase: phaseJson(row), planVersion: project.planVersion + 1 };
+      });
+  }
+
   transitionPhase(context: ActorContext, projectPublicId: string, phasePublicId: string, input: {
     expectedPlanVersion: number; expectedVersion: number; to: GeneralProjectPhase["status"]; reason?: string; idempotencyKey: string;
   }) {
@@ -333,6 +372,46 @@ export class GeneralProjectService {
         await this.bumpPlanVersion(tx, context, project);
         await this.audit(tx, context, "GENERAL_PROJECT_TASK_CREATED", projectPublicId,
           { phaseId: phasePublicId, taskId: row.publicId, nextPlanVersion: project.planVersion + 1 });
+        return { task: taskJson(row), planVersion: project.planVersion + 1 };
+      });
+  }
+
+  updateTask(context: ActorContext, projectPublicId: string, taskPublicId: string, input: {
+    expectedPlanVersion: number; expectedVersion: number; title: string; description?: string | null;
+    priority?: GeneralProjectTask["priority"]; plannedStartDate?: string | null;
+    dueDate?: string | null; idempotencyKey: string;
+  }) {
+    return this.command(context, "UPDATE_GENERAL_PROJECT_TASK", input.idempotencyKey,
+      { projectPublicId, taskPublicId, ...input }, 200, async tx => {
+        const project = await this.lockProject(tx, context, projectPublicId);
+        if (!mutable(project.status)) throw new GeneralProjectError("PROJECT_FINAL");
+        if (project.planVersion !== input.expectedPlanVersion) throw new GeneralProjectError("VERSION_CONFLICT");
+        const current = await tx.generalProjectTask.findFirst({ where: { companyId: context.companyId,
+          projectId: project.id, publicId: taskPublicId } });
+        if (!current) throw new GeneralProjectError("NOT_FOUND");
+        if (current.version !== input.expectedVersion) throw new GeneralProjectError("VERSION_CONFLICT");
+        if (current.status === "COMPLETED" || current.status === "CANCELLED") throw new GeneralProjectError("PROJECT_FINAL");
+        const phase = await tx.generalProjectPhase.findFirstOrThrow({ where: { companyId: context.companyId,
+          projectId: project.id, id: current.phaseId } });
+        if (phase.status === "COMPLETED" || phase.status === "CANCELLED") throw new GeneralProjectError("PROJECT_FINAL");
+        const start = input.plannedStartDate === undefined ? dateOnly(current.plannedStartDate) : input.plannedStartDate;
+        const end = input.dueDate === undefined ? dateOnly(current.dueDate) : input.dueDate;
+        this.validatePlanDates(start ?? null, end ?? null,
+          dateOnly(project.plannedStartDate), dateOnly(project.targetEndDate));
+        this.validatePlanDates(start ?? null, end ?? null,
+          dateOnly(phase.plannedStartDate), dateOnly(phase.targetEndDate));
+        const changed = await tx.generalProjectTask.updateMany({ where: { id: current.id,
+          companyId: context.companyId, projectId: project.id, version: input.expectedVersion }, data: {
+          title: input.title, ...(input.description !== undefined ? { description: input.description } : {}),
+          ...(input.priority !== undefined ? { priority: input.priority } : {}),
+          ...(input.plannedStartDate !== undefined ? { plannedStartDate: start ? day(start) : null } : {}),
+          ...(input.dueDate !== undefined ? { dueDate: end ? day(end) : null } : {}),
+          version: { increment: 1 }, updatedById: context.userId } });
+        if (changed.count !== 1) throw new GeneralProjectError("VERSION_CONFLICT");
+        await this.bumpPlanVersion(tx, context, project);
+        const row = await tx.generalProjectTask.findUniqueOrThrow({ where: { id: current.id } });
+        await this.audit(tx, context, "GENERAL_PROJECT_TASK_UPDATED", projectPublicId,
+          { taskId: taskPublicId, nextPlanVersion: project.planVersion + 1 });
         return { task: taskJson(row), planVersion: project.planVersion + 1 };
       });
   }

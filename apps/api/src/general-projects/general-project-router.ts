@@ -95,6 +95,13 @@ export function createGeneralProjectRouter(auth: AuthService, projects: GeneralP
       ...bodies.createGeneralProjectPhase.parse(request.body), idempotencyKey: idempotencyKey(request),
     }));
   });
+  router.patch("/general-projects/:generalProjectId/phases/:phaseId", async (request, response) => {
+    const context = await authorize(request, "general_projects.manage", true);
+    response.json(await projects.updatePhase(context, publicId.parse(request.params.generalProjectId),
+      publicId.parse(request.params.phaseId), {
+        ...bodies.updateGeneralProjectPhase.parse(request.body), idempotencyKey: idempotencyKey(request),
+      }));
+  });
   router.post("/general-projects/:generalProjectId/phases/:phaseId/transition", async (request, response) => {
     const context = await authorize(request, "general_projects.manage", true);
     response.json(await projects.transitionPhase(context, publicId.parse(request.params.generalProjectId),
@@ -117,6 +124,13 @@ export function createGeneralProjectRouter(auth: AuthService, projects: GeneralP
     response.status(201).json(await projects.createTask(context, publicId.parse(request.params.generalProjectId),
       publicId.parse(request.params.phaseId), {
         ...bodies.createGeneralProjectTask.parse(request.body), idempotencyKey: idempotencyKey(request),
+      }));
+  });
+  router.patch("/general-projects/:generalProjectId/tasks/:taskId", async (request, response) => {
+    const context = await authorize(request, "general_projects.manage", true);
+    response.json(await projects.updateTask(context, publicId.parse(request.params.generalProjectId),
+      publicId.parse(request.params.taskId), {
+        ...bodies.updateGeneralProjectTask.parse(request.body), idempotencyKey: idempotencyKey(request),
       }));
   });
   router.get("/general-projects/:generalProjectId/tasks/:taskId/assignments", async (request, response) => {

@@ -40,7 +40,7 @@ describe.runIf(enabled)("general project register on isolated MySQL/MariaDB", ()
     if (!prisma) return;
     const companies = [companyId, foreignCompanyId].filter((value): value is bigint => value !== undefined);
     if (companies.length) {
-      await prisma.idempotencyRecord.deleteMany({ where: { companyId: { in: companies }, operation: { in: ["CREATE_GENERAL_PROJECT", "UPDATE_GENERAL_PROJECT", "TRANSITION_GENERAL_PROJECT", "ASSIGN_GENERAL_PROJECT_MEMBER", "UNASSIGN_GENERAL_PROJECT_MEMBER", "CREATE_GENERAL_PROJECT_PHASE", "TRANSITION_GENERAL_PROJECT_PHASE", "CREATE_GENERAL_PROJECT_TASK", "ASSIGN_GENERAL_PROJECT_TASK_MEMBER", "UNASSIGN_GENERAL_PROJECT_TASK_MEMBER", "TRANSITION_GENERAL_PROJECT_TASK", "PROGRESS_GENERAL_PROJECT_TASK", "ADD_GENERAL_PROJECT_TASK_DEPENDENCY", "REMOVE_GENERAL_PROJECT_TASK_DEPENDENCY", "FOLLOW_GENERAL_PROJECT", "UNFOLLOW_GENERAL_PROJECT", "COMMENT_GENERAL_PROJECT"] } } });
+      await prisma.idempotencyRecord.deleteMany({ where: { companyId: { in: companies }, operation: { in: ["CREATE_GENERAL_PROJECT", "UPDATE_GENERAL_PROJECT", "TRANSITION_GENERAL_PROJECT", "ASSIGN_GENERAL_PROJECT_MEMBER", "UNASSIGN_GENERAL_PROJECT_MEMBER", "CREATE_GENERAL_PROJECT_PHASE", "UPDATE_GENERAL_PROJECT_PHASE", "TRANSITION_GENERAL_PROJECT_PHASE", "CREATE_GENERAL_PROJECT_TASK", "UPDATE_GENERAL_PROJECT_TASK", "ASSIGN_GENERAL_PROJECT_TASK_MEMBER", "UNASSIGN_GENERAL_PROJECT_TASK_MEMBER", "TRANSITION_GENERAL_PROJECT_TASK", "PROGRESS_GENERAL_PROJECT_TASK", "ADD_GENERAL_PROJECT_TASK_DEPENDENCY", "REMOVE_GENERAL_PROJECT_TASK_DEPENDENCY", "FOLLOW_GENERAL_PROJECT", "UNFOLLOW_GENERAL_PROJECT", "COMMENT_GENERAL_PROJECT"] } } });
       await prisma.auditLog.deleteMany({ where: { companyId: { in: companies }, entityType: "GENERAL_PROJECT" } });
       await prisma.generalProjectTaskAssignment.deleteMany({ where: { companyId: { in: companies } } });
       await prisma.generalProjectComment.deleteMany({ where: { companyId: { in: companies } } });
@@ -175,6 +175,46 @@ describe.runIf(enabled)("general project register on isolated MySQL/MariaDB", ()
     const finished = await service.transitionPhase(context(), planId, phase.phase.id, { expectedPlanVersion: 8,
       expectedVersion: 1, to: "COMPLETED", idempotencyKey: "it-general-project-phase-complete-0001" });
     expect(finished.phase.status).toBe("COMPLETED");
+  });
+
+  it("edits phase and task with scoped versions, replay, and preserved date bounds", async () => {
+    const created = await service.createProject(context(), { nameAr: "مشروع تعديل الخطة", managerEmployeeId: managerId,
+      plannedStartDate: "2059-02-01", targetEndDate: "2059-02-28",
+      idempotencyKey: "it-general-project-edit-create-0001" });
+    const id = created.project.id;
+    const phase = await service.createPhase(context(), id, { expectedPlanVersion: 0, title: "مرحلة أولى",
+      plannedStartDate: "2059-02-05", targetEndDate: "2059-02-20",
+      idempotencyKey: "it-general-project-edit-phase-0001" });
+    const task = await service.createTask(context(), id, phase.phase.id, { expectedPlanVersion: 1,
+      title: "مهمة أولى", plannedStartDate: "2059-02-06", dueDate: "2059-02-19",
+      idempotencyKey: "it-general-project-edit-task-0001" });
+    await expect(service.updatePhase(context(), id, phase.phase.id, { expectedPlanVersion: 2,
+      expectedVersion: 0, title: "مرحلة ضيقة", targetEndDate: "2059-02-18",
+      idempotencyKey: "it-general-project-edit-phase-invalid-0001" }))
+      .rejects.toMatchObject({ reason: "INVALID_DATE_RANGE" });
+    await expect(service.updateTask(context(), id, task.task.id, { expectedPlanVersion: 2,
+      expectedVersion: 0, title: "مهمة خارج المدة", dueDate: "2059-02-21",
+      idempotencyKey: "it-general-project-edit-task-invalid-0001" }))
+      .rejects.toMatchObject({ reason: "INVALID_DATE_RANGE" });
+    const taskInput = { expectedPlanVersion: 2, expectedVersion: 0, title: "مهمة معدلة",
+      description: "تفاصيل محدثة", priority: "HIGH" as const, dueDate: "2059-02-18",
+      idempotencyKey: "it-general-project-edit-task-valid-0001" };
+    const updatedTask = await service.updateTask(context(), id, task.task.id, taskInput);
+    expect(await service.updateTask(context(), id, task.task.id, taskInput)).toEqual(updatedTask);
+    expect(updatedTask).toMatchObject({ task: { title: "مهمة معدلة", priority: "HIGH", dueDate: "2059-02-18", version: 1 }, planVersion: 3 });
+    await expect(service.updateTask(context(), id, task.task.id, { ...taskInput,
+      idempotencyKey: "it-general-project-edit-task-stale-0001" })).rejects.toMatchObject({ reason: "VERSION_CONFLICT" });
+    await expect(service.updateTask(context(), projectId, task.task.id, { ...taskInput, expectedPlanVersion: 0,
+      idempotencyKey: "it-general-project-edit-task-cross-0001" })).rejects.toMatchObject({ reason: "NOT_FOUND" });
+    const phaseInput = { expectedPlanVersion: 3, expectedVersion: 0, title: "مرحلة معدلة",
+      description: "وصف جديد", targetEndDate: "2059-02-18",
+      idempotencyKey: "it-general-project-edit-phase-valid-0001" };
+    const updatedPhase = await service.updatePhase(context(), id, phase.phase.id, phaseInput);
+    expect(await service.updatePhase(context(), id, phase.phase.id, phaseInput)).toEqual(updatedPhase);
+    expect(updatedPhase).toMatchObject({ phase: { title: "مرحلة معدلة", targetEndDate: "2059-02-18", version: 1 }, planVersion: 4 });
+    await expect(service.updatePhase({ companyId: foreignCompanyId, userId }, id, phase.phase.id,
+      { ...phaseInput, expectedPlanVersion: 4, idempotencyKey: "it-general-project-edit-foreign-0001" }))
+      .rejects.toMatchObject({ reason: "NOT_FOUND" });
   });
 
   it("allows progress only for the active responsible employee, independently of project management", async () => {
@@ -312,6 +352,44 @@ describe.runIf(enabled)("general project register on isolated MySQL/MariaDB", ()
     expect(await service.unfollowProject(context(), other.project.id,
       { idempotencyKey: "it-general-project-unfollow-final-0001" }))
       .toEqual({ isFollowing: false });
+  });
+
+  it("serializes concurrent edits and completes the full project lifecycle", async () => {
+    const created = await service.createProject(context(), { nameAr: "مشروع دورة الحياة", managerEmployeeId: managerId,
+      idempotencyKey: "it-general-project-lifecycle-create-0001" });
+    const id = created.project.id;
+    const phase = await service.createPhase(context(), id, { expectedPlanVersion: 0, title: "تنفيذ",
+      idempotencyKey: "it-general-project-lifecycle-phase-0001" });
+    const task = await service.createTask(context(), id, phase.phase.id, { expectedPlanVersion: 1, title: "عمل",
+      idempotencyKey: "it-general-project-lifecycle-task-0001" });
+    const edits = await Promise.allSettled(["أ", "ب"].map((suffix, index) => service.updateTask(context(), id, task.task.id, {
+      expectedPlanVersion: 2, expectedVersion: 0, title: `عمل ${suffix}`,
+      idempotencyKey: `it-general-project-lifecycle-race-${index}-0001`,
+    })));
+    expect(edits.filter(result => result.status === "fulfilled")).toHaveLength(1);
+    expect(edits.filter(result => result.status === "rejected")).toHaveLength(1);
+    expect(edits.find(result => result.status === "rejected")).toMatchObject({ reason: { reason: "VERSION_CONFLICT" } });
+    expect((await service.listTasks(context(), id, phase.phase.id, { page: 1, pageSize: 10 })).planVersion).toBe(3);
+    await service.transition(context(), id, { version: 0, status: "ACTIVE",
+      idempotencyKey: "it-general-project-lifecycle-active-0001" });
+    await service.transitionPhase(context(), id, phase.phase.id, { expectedPlanVersion: 3,
+      expectedVersion: 0, to: "IN_PROGRESS", idempotencyKey: "it-general-project-lifecycle-phase-start-0001" });
+    const manager = (await service.getProject(context(), id)).members.find(member => member.role === "MANAGER")!;
+    await service.assignTaskMember(context(), id, task.task.id, { expectedPlanVersion: 4,
+      memberId: manager.id, role: "RESPONSIBLE", idempotencyKey: "it-general-project-lifecycle-assign-0001" });
+    await service.transitionTask(context(), id, task.task.id, { expectedPlanVersion: 5,
+      expectedVersion: 1, to: "IN_PROGRESS", idempotencyKey: "it-general-project-lifecycle-task-start-0001" });
+    await service.transitionTask(context(), id, task.task.id, { expectedPlanVersion: 6,
+      expectedVersion: 2, to: "COMPLETED", idempotencyKey: "it-general-project-lifecycle-task-finish-0001" });
+    await service.transitionPhase(context(), id, phase.phase.id, { expectedPlanVersion: 7,
+      expectedVersion: 1, to: "COMPLETED", idempotencyKey: "it-general-project-lifecycle-phase-finish-0001" });
+    const finished = await service.transition(context(), id, { version: 1, status: "COMPLETED",
+      idempotencyKey: "it-general-project-lifecycle-finish-0001" });
+    expect(finished.project.status).toBe("COMPLETED");
+    await expect(service.updateTask(context(), id, task.task.id, { expectedPlanVersion: 8,
+      expectedVersion: 3, title: "لا تعديل بعد الإقفال",
+      idempotencyKey: "it-general-project-lifecycle-final-edit-0001" }))
+      .rejects.toMatchObject({ reason: "PROJECT_FINAL" });
   });
 
   it("refuses completion while a phase or task is open", async () => {

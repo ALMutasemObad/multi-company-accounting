@@ -3567,6 +3567,28 @@ paths:
       x-permission: general_projects.manage
       security: [{ SessionCookie: [], CsrfToken: [] }]
       x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/phases/{phaseId}:
+    patch:
+      tags: [General Projects]
+      summary: تعديل بيانات مرحلة غير نهائية مع فحص حدود مهامها
+      operationId: updateGeneralProjectPhase
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: phaseId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UpdateGeneralProjectPhaseRequest' } } } }
+      responses:
+        '200': { description: المرحلة بعد التعديل, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectPhaseMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
   /general-projects/{generalProjectId}/phases/{phaseId}/tasks:
     get:
       tags: [General Projects]
@@ -3676,6 +3698,28 @@ paths:
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RemoveGeneralProjectTaskDependencyRequest' } } } }
       responses:
         '200': { description: الاعتمادية بعد الإزالة, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectTaskDependencyMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/tasks/{taskId}:
+    patch:
+      tags: [General Projects]
+      summary: تعديل بيانات مهمة غير نهائية ضمن حدود المرحلة والمشروع
+      operationId: updateGeneralProjectTask
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: taskId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UpdateGeneralProjectTaskRequest' } } } }
+      responses:
+        '200': { description: المهمة بعد التعديل, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectTaskMutationResponse' } } } }
         '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -21700,6 +21744,17 @@ components:
         description: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
         plannedStartDate: { type: [string, 'null'], format: date }
         targetEndDate: { type: [string, 'null'], format: date }
+    UpdateGeneralProjectPhaseRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedPlanVersion, expectedVersion, title]
+      properties:
+        expectedPlanVersion: { type: integer, minimum: 0 }
+        expectedVersion: { type: integer, minimum: 0 }
+        title: { type: string, x-trim: true, minLength: 1, maxLength: 200 }
+        description: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
+        plannedStartDate: { type: [string, 'null'], format: date }
+        targetEndDate: { type: [string, 'null'], format: date }
     TransitionGeneralProjectPhaseRequest:
       type: object
       additionalProperties: false
@@ -21749,6 +21804,18 @@ components:
       required: [expectedPlanVersion, title]
       properties:
         expectedPlanVersion: { type: integer, minimum: 0 }
+        title: { type: string, x-trim: true, minLength: 1, maxLength: 200 }
+        description: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
+        priority: { $ref: '#/components/schemas/GeneralProjectPriority' }
+        plannedStartDate: { type: [string, 'null'], format: date }
+        dueDate: { type: [string, 'null'], format: date }
+    UpdateGeneralProjectTaskRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedPlanVersion, expectedVersion, title]
+      properties:
+        expectedPlanVersion: { type: integer, minimum: 0 }
+        expectedVersion: { type: integer, minimum: 0 }
         title: { type: string, x-trim: true, minLength: 1, maxLength: 200 }
         description: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
         priority: { $ref: '#/components/schemas/GeneralProjectPriority' }

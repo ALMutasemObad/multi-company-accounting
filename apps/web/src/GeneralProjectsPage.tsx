@@ -7,6 +7,7 @@ import { Button, EmptyState, PageHeader, Pagination, Spinner, TableRegion } from
 type Notice = (message: string, tone?: "success" | "error") => void;
 type Status = "DRAFT" | "ACTIVE" | "ON_HOLD" | "COMPLETED" | "CANCELLED";
 type Role = "MANAGER" | "CONTRIBUTOR";
+type Priority = "LOW" | "NORMAL" | "HIGH" | "URGENT";
 type Customer = { id: string; code: string; nameAr: string; nameEn: string | null };
 type Employee = { id: string; employeeNumber: string; nameAr: string; nameEn: string | null; status: string };
 type Project = { id: string; code: string; nameAr: string; nameEn: string | null; description: string | null; status: Status; priority: string;
@@ -17,7 +18,9 @@ type Phase = { id: string; sequence: number; title: string; description: string 
   plannedStartDate: string | null; targetEndDate: string | null };
 type PhaseList = { data: Phase[]; planVersion: number; meta: List["meta"] };
 type TaskStatus = "TODO" | "IN_PROGRESS" | "BLOCKED" | "COMPLETED" | "CANCELLED";
-type Task = { id: string; sequence: number; title: string; priority: string; status: TaskStatus; version: number; canProgress?: boolean; dependencyBlocked?: boolean };
+type Task = { id: string; sequence: number; title: string; description: string | null; priority: Priority;
+  plannedStartDate: string | null; dueDate: string | null; status: TaskStatus; version: number;
+  canProgress?: boolean; dependencyBlocked?: boolean };
 type TaskList = { data: Task[]; planVersion: number; meta: List["meta"] };
 type TaskOption = { id: string; title: string; status: TaskStatus; sequence: number; phaseTitle: string; phaseSequence: number };
 type TaskDependency = { id: string; predecessorTaskId: string; successorTaskId: string; predecessorTitle: string;
@@ -60,11 +63,14 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
   const [phasePage, setPhasePage] = useState(1);
   const [newPhaseTitle, setNewPhaseTitle] = useState("");
   const [selectedPhaseId, setSelectedPhaseId] = useState("");
+  const [phaseDraft, setPhaseDraft] = useState({ title: "", description: "", plannedStartDate: "", targetEndDate: "" });
   const [tasks, setTasks] = useState<(TaskList & { projectId: string; phaseId: string }) | null>(null);
   const taskRequestSequence = useRef(0);
   const [taskPage, setTaskPage] = useState(1);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [selectedTaskId, setSelectedTaskId] = useState("");
+  const [taskDraft, setTaskDraft] = useState({ title: "", description: "", priority: "NORMAL" as Priority,
+    plannedStartDate: "", dueDate: "" });
   const [dependencies, setDependencies] = useState<(DependencyList & { projectId: string }) | null>(null);
   const dependencyRequestSequence = useRef(0);
   const [dependencyPage, setDependencyPage] = useState(1);
@@ -190,7 +196,17 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
     setComments(null); setCommentPage(1); setCommentBody(""); setCommentTargetTaskId(""); }, [selectedId]);
   useEffect(() => { void loadPhases(); }, [loadPhases]);
   useEffect(() => { setTasks(null); setTaskPage(1); setSelectedTaskId(""); setTaskAssignments(null); }, [selectedPhaseId]);
+  useEffect(() => {
+    const phase = phases?.data.find(row => row.id === selectedPhaseId);
+    if (phase) setPhaseDraft({ title: phase.title, description: phase.description ?? "",
+      plannedStartDate: phase.plannedStartDate ?? "", targetEndDate: phase.targetEndDate ?? "" });
+  }, [selectedPhaseId, phases]);
   useEffect(() => { void loadTasks(); }, [loadTasks]);
+  useEffect(() => {
+    const task = tasks?.data.find(row => row.id === selectedTaskId);
+    if (task) setTaskDraft({ title: task.title, description: task.description ?? "", priority: task.priority,
+      plannedStartDate: task.plannedStartDate ?? "", dueDate: task.dueDate ?? "" });
+  }, [selectedTaskId, tasks]);
   useEffect(() => { setTaskAssignments(null); setAssignmentPage(1); }, [selectedTaskId]);
   useEffect(() => { setCommentTargetTaskId(""); }, [selectedTaskId]);
   useEffect(() => { setDependencies(null); setDependencyPage(1); setPredecessorTaskId(""); }, [selectedTaskId]);
@@ -311,6 +327,17 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
       setNewPhaseTitle("");
     }, t("generalProjects.phaseSaved"));
   };
+  const updatePhase = (event: FormEvent) => {
+    event.preventDefault();
+    const phase = phases?.data.find(row => row.id === selectedPhaseId);
+    if (!detail || !phases || phases.projectId !== detail.project.id || !phase || !phaseDraft.title.trim()) return;
+    void execute(() => api(`/general-projects/${detail.project.id}/phases/${phase.id}`, { method: "PATCH",
+      idempotencyKey: projectIdempotencyKey("phase-update", phase.id),
+      body: JSON.stringify({ expectedPlanVersion: phases.planVersion, expectedVersion: phase.version,
+        title: phaseDraft.title.trim(), description: phaseDraft.description.trim() || null,
+        plannedStartDate: phaseDraft.plannedStartDate || null, targetEndDate: phaseDraft.targetEndDate || null }) }),
+    t("generalProjects.phaseSaved"));
+  };
   const changePhase = (phase: Phase, to: PhaseStatus) => {
     if (!detail || !phases || phases.projectId !== detail.project.id || (to === "CANCELLED" && reason.trim().length < 10)) return;
     void execute(() => api(`/general-projects/${detail.project.id}/phases/${phase.id}/transition`, { method: "POST",
@@ -327,6 +354,17 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
         body: JSON.stringify({ expectedPlanVersion: phases.planVersion, title: newTaskTitle.trim() }) });
       setNewTaskTitle("");
     }, t("generalProjects.taskSaved"));
+  };
+  const updateTask = (event: FormEvent) => {
+    event.preventDefault();
+    const task = tasks?.data.find(row => row.id === selectedTaskId);
+    if (!detail || !tasks || tasks.projectId !== detail.project.id || !task || !taskDraft.title.trim()) return;
+    void execute(() => api(`/general-projects/${detail.project.id}/tasks/${task.id}`, { method: "PATCH",
+      idempotencyKey: projectIdempotencyKey("task-update", task.id),
+      body: JSON.stringify({ expectedPlanVersion: tasks.planVersion, expectedVersion: task.version,
+        title: taskDraft.title.trim(), description: taskDraft.description.trim() || null,
+        priority: taskDraft.priority, plannedStartDate: taskDraft.plannedStartDate || null,
+        dueDate: taskDraft.dueDate || null }) }), t("generalProjects.taskSaved"));
   };
   const assignTaskMember = (event: FormEvent) => {
     event.preventDefault();
@@ -498,6 +536,20 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
           <Button type="submit" disabled={working || !newPhaseTitle.trim()}>{t("generalProjects.addPhase")}</Button>
         </form>}
       {selectedPhaseId && phases?.projectId === selectedId && phases.data.some(phase => phase.id === selectedPhaseId) && <div>
+        {canManage && detail.project.status !== "COMPLETED" && detail.project.status !== "CANCELLED" &&
+          phases.data.some(phase => phase.id === selectedPhaseId && phase.status !== "COMPLETED" && phase.status !== "CANCELLED") &&
+          <form onSubmit={updatePhase} className="form-grid">
+            <h3>{t("generalProjects.editPhase")}</h3>
+            <label>{t("generalProjects.phaseTitle")}<input required maxLength={200} value={phaseDraft.title}
+              onChange={event => setPhaseDraft(current => ({ ...current, title: event.target.value }))} /></label>
+            <label>{t("generalProjects.phaseDescription")}<textarea maxLength={1000} value={phaseDraft.description}
+              onChange={event => setPhaseDraft(current => ({ ...current, description: event.target.value }))} /></label>
+            <label>{t("generalProjects.plannedStart")}<input type="date" value={phaseDraft.plannedStartDate}
+              onChange={event => setPhaseDraft(current => ({ ...current, plannedStartDate: event.target.value }))} /></label>
+            <label>{t("generalProjects.targetEnd")}<input type="date" value={phaseDraft.targetEndDate}
+              onChange={event => setPhaseDraft(current => ({ ...current, targetEndDate: event.target.value }))} /></label>
+            <Button type="submit" disabled={working || !phaseDraft.title.trim()}>{t("common.save")}</Button>
+          </form>}
         <h3>{t("generalProjects.tasks")}</h3>
         {!canManage && canProgress && selectedTaskId && <label>{t("generalProjects.reason")}
           <input value={reason} maxLength={500} onChange={event => setReason(event.target.value)} /></label>}
@@ -531,6 +583,26 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
           </form>}
       </div>}
       {selectedTaskId && tasks?.projectId === selectedId && tasks.data.some(task => task.id === selectedTaskId) && <div>
+        {canManage && detail.project.status !== "COMPLETED" && detail.project.status !== "CANCELLED" &&
+          tasks.data.some(task => task.id === selectedTaskId && task.status !== "COMPLETED" && task.status !== "CANCELLED") &&
+          phases?.data.some(phase => phase.id === selectedPhaseId && phase.status !== "COMPLETED" && phase.status !== "CANCELLED") &&
+          <form onSubmit={updateTask} className="form-grid">
+            <h3>{t("generalProjects.editTask")}</h3>
+            <label>{t("generalProjects.taskTitle")}<input required maxLength={200} value={taskDraft.title}
+              onChange={event => setTaskDraft(current => ({ ...current, title: event.target.value }))} /></label>
+            <label>{t("generalProjects.taskDescription")}<textarea maxLength={1000} value={taskDraft.description}
+              onChange={event => setTaskDraft(current => ({ ...current, description: event.target.value }))} /></label>
+            <label>{t("generalProjects.priority")}<select value={taskDraft.priority}
+              onChange={event => setTaskDraft(current => ({ ...current, priority: event.target.value as Priority }))}>
+              {(["LOW", "NORMAL", "HIGH", "URGENT"] as const).map(value =>
+                <option key={value} value={value}>{t(`generalProjects.priority.${value}`)}</option>)}
+            </select></label>
+            <label>{t("generalProjects.plannedStart")}<input type="date" value={taskDraft.plannedStartDate}
+              onChange={event => setTaskDraft(current => ({ ...current, plannedStartDate: event.target.value }))} /></label>
+            <label>{t("generalProjects.dueDate")}<input type="date" value={taskDraft.dueDate}
+              onChange={event => setTaskDraft(current => ({ ...current, dueDate: event.target.value }))} /></label>
+            <Button type="submit" disabled={working || !taskDraft.title.trim()}>{t("common.save")}</Button>
+          </form>}
         <h3>{t("generalProjects.dependencies")}</h3>
         {dependencies?.projectId === selectedId && dependencies.data.filter(link =>
           link.successorTaskId === selectedTaskId || link.predecessorTaskId === selectedTaskId).map(link =>

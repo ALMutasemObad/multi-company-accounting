@@ -53,7 +53,7 @@ describe('generated OpenAPI request guards', () => {
   });
 
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 445, requestBodies: 223, responseBodies: 2868 });
+    expect(openApiContractCoverage).toEqual({ operations: 447, requestBodies: 225, responseBodies: 2882 });
     expect(openApiOperationRoutes).toMatchObject({
       'GET /service-catalog/selection-options': 'listServiceSelectionOptions',
       'GET /service-catalog/reference-options/revenue-accounts': 'listServiceRevenueAccountOptions',
@@ -61,8 +61,10 @@ describe('generated OpenAPI request guards', () => {
       'GET /general-projects': 'listGeneralProjects',
       'GET /general-projects/{generalProjectId}/phases': 'listGeneralProjectPhases',
       'POST /general-projects/{generalProjectId}/phases': 'createGeneralProjectPhase',
+      'PATCH /general-projects/{generalProjectId}/phases/{phaseId}': 'updateGeneralProjectPhase',
       'GET /general-projects/{generalProjectId}/phases/{phaseId}/tasks': 'listGeneralProjectTasks',
       'POST /general-projects/{generalProjectId}/phases/{phaseId}/tasks': 'createGeneralProjectTask',
+      'PATCH /general-projects/{generalProjectId}/tasks/{taskId}': 'updateGeneralProjectTask',
       'GET /general-projects/{generalProjectId}/tasks/{taskId}/assignments': 'listGeneralProjectTaskAssignments',
       'POST /general-projects/{generalProjectId}/tasks/{taskId}/assignments': 'assignGeneralProjectTaskMember',
       'POST /general-projects/{generalProjectId}/tasks/{taskId}/assignments/{assignmentId}/unassign': 'unassignGeneralProjectTaskMember',
@@ -112,7 +114,7 @@ describe('generated OpenAPI request guards', () => {
       'POST /auth/social/onboarding': 'completeSocialOnboarding',
       'DELETE /auth/social/onboarding': 'cancelSocialOnboarding',
     });
-    expect(guardedOpenApiOperations).toHaveLength(223);
+    expect(guardedOpenApiOperations).toHaveLength(225);
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
       'updateInventoryBarcodeSettings', 'previewInventoryCatalogImport', 'commitInventoryCatalogImport',
     ]));

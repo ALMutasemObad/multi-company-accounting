@@ -19,9 +19,11 @@ function fixture() {
     transition: vi.fn().mockResolvedValue({ project: { id: projectId } }),
     listPhases: vi.fn().mockResolvedValue({ data: [], planVersion: 0, meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 } }),
     createPhase: vi.fn().mockResolvedValue({ phase: {}, planVersion: 1 }),
+    updatePhase: vi.fn().mockResolvedValue({ phase: {}, planVersion: 2 }),
     transitionPhase: vi.fn().mockResolvedValue({ phase: {}, planVersion: 2 }),
     listTasks: vi.fn().mockResolvedValue({ data: [], planVersion: 2, meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 } }),
     createTask: vi.fn().mockResolvedValue({ task: {}, planVersion: 3 }),
+    updateTask: vi.fn().mockResolvedValue({ task: {}, planVersion: 4 }),
     listTaskAssignments: vi.fn().mockResolvedValue({ data: [], planVersion: 3, meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 } }),
     assignTaskMember: vi.fn().mockResolvedValue({ assignment: {}, planVersion: 4 }),
     unassignTaskMember: vi.fn().mockResolvedValue({ assignment: {}, planVersion: 5 }),
@@ -44,6 +46,25 @@ function fixture() {
 }
 
 describe("general project HTTP boundary", () => {
+  it("guards phase and task edits with manager permission and versioned payloads", async () => {
+    const { app, authorize, projects } = fixture();
+    const phaseId = "b5c7025d-260e-4697-9ba9-57c55ed063a2";
+    const taskId = "5759ba65-f0e0-48c4-b0dc-b12ca2bd958d";
+    const headers = (call: request.Test) => call.set("X-CSRF-Token", "csrf")
+      .set("Idempotency-Key", "general-project-edit-key-1234");
+    await headers(request(app).patch(`/general-projects/${projectId}/phases/${phaseId}`))
+      .send({ expectedPlanVersion: 2, expectedVersion: 0, title: "مرحلة معدلة" }).expect(200);
+    await headers(request(app).patch(`/general-projects/${projectId}/tasks/${taskId}`))
+      .send({ expectedPlanVersion: 3, expectedVersion: 0, title: "مهمة معدلة", priority: "HIGH" }).expect(200);
+    await headers(request(app).patch(`/general-projects/${projectId}/tasks/${taskId}`))
+      .send({ expectedPlanVersion: 3, expectedVersion: 0, title: "مهمة", status: "COMPLETED" }).expect(400);
+    expect(authorize.mock.calls.map(([value]) => [value.permission, value.requireCsrf])).toEqual([
+      ["general_projects.manage", true], ["general_projects.manage", true], ["general_projects.manage", true],
+    ]);
+    expect(projects.updatePhase).toHaveBeenCalledWith(context, projectId, phaseId,
+      expect.objectContaining({ expectedPlanVersion: 2, expectedVersion: 0, title: "مرحلة معدلة" }));
+    expect(projects.updateTask).toHaveBeenCalledOnce();
+  });
   it("requires view plus the distinct follow/comment permissions", async () => {
     const { app, authorize, projects } = fixture();
     await request(app).post(`/general-projects/${projectId}/follow`)
