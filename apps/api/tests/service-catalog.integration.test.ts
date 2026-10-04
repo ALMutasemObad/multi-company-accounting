@@ -16,6 +16,8 @@ describe.runIf(enabled)("standalone service catalog on isolated MySQL/MariaDB", 
   let userId: bigint;
   let catalog: ServiceCatalogService;
   let categoryId = "";
+  let revenueAccountId: bigint;
+  let zeroTaxRateId: bigint;
   const context = (companyId: bigint) => ({ companyId, userId });
 
   beforeAll(async () => {
@@ -33,6 +35,15 @@ describe.runIf(enabled)("standalone service catalog on isolated MySQL/MariaDB", 
       } });
       companyIds.push(company.id);
     }
+    const revenueType = await prisma!.accountType.findFirstOrThrow({ where: { class: "REVENUE" } });
+    revenueAccountId = (await prisma!.account.create({ data: {
+      companyId: companyIds[0]!, accountTypeId: revenueType.id, code: `IT-SVC-${key().slice(0, 8)}`,
+      nameAr: "إيراد اختبار الخدمات", level: 1, allowsPosting: true,
+    } })).id;
+    zeroTaxRateId = (await prisma!.taxRate.create({ data: {
+      companyId: companyIds[0]!, code: `IT-SVC-${key().slice(0, 8)}`,
+      nameAr: "ضريبة اختبار صفرية", rate: "0",
+    } })).id;
     catalog = new ServiceCatalogService(prisma!, new ServiceCatalogRevenueAccountAdapter(prisma!),
       new ServiceCatalogOutputTaxAdapter(prisma!));
   });
@@ -53,6 +64,8 @@ describe.runIf(enabled)("standalone service catalog on isolated MySQL/MariaDB", 
       await prisma.serviceOffering.deleteMany({ where: { companyId } });
       await prisma.serviceCategory.deleteMany({ where: { companyId } });
       await prisma.masterDataCodeSequence.deleteMany({ where: { companyId } });
+      await prisma.taxRate.deleteMany({ where: { companyId, id: zeroTaxRateId } });
+      await prisma.account.deleteMany({ where: { companyId, id: revenueAccountId } });
       await prisma.company.deleteMany({ where: { id: companyId } });
     }
     if (organizationId !== undefined) await prisma.organization.delete({ where: { id: organizationId } });
@@ -92,8 +105,12 @@ describe.runIf(enabled)("standalone service catalog on isolated MySQL/MariaDB", 
 
     const active = await catalog.createVariant(first, offering.offering.id, {
       nameAr: "تنفيذ أساسي", pricingUnit: "SESSION", availableFrom: "2049-12-01",
-      availableUntil: "2050-02-01", idempotencyKey: key(),
+      availableUntil: "2050-02-01", defaultRevenueAccountId: revenueAccountId,
+      defaultOutputTaxRateId: zeroTaxRateId, idempotencyKey: key(),
     });
+    const persisted = await prisma!.serviceOfferingVariant.findUniqueOrThrow({ where: { publicId: active.variant.id } });
+    expect(persisted.defaultRevenueAccountId).toBe(revenueAccountId);
+    expect(persisted.defaultOutputTaxRateId).toBe(zeroTaxRateId);
     const expired = await catalog.createVariant(first, offering.offering.id, {
       nameAr: "عرض منتهٍ", pricingUnit: "EACH", availableUntil: "2049-12-31", idempotencyKey: key(),
     });
@@ -118,6 +135,10 @@ describe.runIf(enabled)("standalone service catalog on isolated MySQL/MariaDB", 
     expect((await catalog.listSelectionOptions(other, page, asOf)).data).toHaveLength(0);
     expect((await catalog.listRevenueAccountOptions(other, page)).meta.total).toBe(0);
     expect((await catalog.listOutputTaxOptions(other, page)).meta.total).toBe(0);
+    expect((await catalog.listRevenueAccountOptions(first, page)).data.map(item => item.id))
+      .toContain(String(revenueAccountId));
+    expect((await catalog.listOutputTaxOptions(first, page)).data.map(item => item.id))
+      .toContain(String(zeroTaxRateId));
     expect((await catalog.listSelectionOptions(first, page, new Date("2050-02-01T08:00:00.000Z"))).data).toHaveLength(0);
   });
 
