@@ -4,10 +4,16 @@ import { createHash } from "node:crypto";
 export type PayrollLineKind = "EARNING" | "DEDUCTION";
 export type PayrollLineSource = "RECURRING" | "ONE_OFF";
 
+export type PayrollComponentDefinition = Readonly<{
+  code: string;
+  version: number;
+  kind: PayrollLineKind;
+  active: boolean;
+}>;
+
 export type PayrollInputLine = Readonly<{
   id: string;
   componentCode: string;
-  kind: PayrollLineKind;
   source: PayrollLineSource;
   amount: string;
 }>;
@@ -25,10 +31,11 @@ export type PayrollCalculationInput = Readonly<{
   currencyDecimals: number;
   periodStart: string;
   periodEndExclusive: string;
+  components: readonly PayrollComponentDefinition[];
   employees: readonly PayrollEmployeeInput[];
 }>;
 
-export type PayrollCalculatedLine = Readonly<PayrollInputLine>;
+export type PayrollCalculatedLine = Readonly<PayrollInputLine & { kind: PayrollLineKind; componentVersion: number }>;
 export type PayrollCalculatedEmployee = Readonly<{
   employeeId: string;
   agreementVersion: number;
@@ -105,6 +112,15 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
   const periodStart = dateValue(input.periodStart);
   const periodEndExclusive = dateValue(input.periodEndExclusive);
   assert(periodStart < periodEndExclusive, "INVALID_PERIOD");
+  assert(Array.isArray(input.components), "COMPONENTS_REQUIRED");
+  const components = new Map<string, PayrollComponentDefinition>();
+  for (const definition of input.components) {
+    const code = nonEmpty(definition.code, "COMPONENT_REQUIRED");
+    assert(!components.has(code), "DUPLICATE_COMPONENT");
+    assert(Number.isSafeInteger(definition.version) && definition.version > 0, "INVALID_COMPONENT_VERSION");
+    assert(definition.kind === "EARNING" || definition.kind === "DEDUCTION", "INVALID_LINE_KIND");
+    components.set(code, definition);
+  }
   assert(Array.isArray(input.employees) && input.employees.length > 0, "EMPLOYEES_REQUIRED");
 
   const employeeIds = new Set<string>();
@@ -128,11 +144,14 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
       assert(!lineIds.has(id), "DUPLICATE_LINE");
       lineIds.add(id);
       const componentCode = nonEmpty(line.componentCode, "COMPONENT_REQUIRED");
-      assert(line.kind === "EARNING" || line.kind === "DEDUCTION", "INVALID_LINE_KIND");
+      const component = components.get(componentCode);
+      assert(component, "COMPONENT_NOT_FOUND");
+      assert(component.active, "COMPONENT_INACTIVE");
       assert(line.source === "RECURRING" || line.source === "ONE_OFF", "INVALID_LINE_SOURCE");
       const amount = money(line.amount, decimals);
-      const snapshotLine = Object.freeze({ id, componentCode, kind: line.kind, source: line.source, amount: formatMoney(amount, decimals) });
-      if (line.kind === "EARNING") {
+      const snapshotLine = Object.freeze({ id, componentCode, componentVersion: component.version, kind: component.kind,
+        source: line.source, amount: formatMoney(amount, decimals) });
+      if (component.kind === "EARNING") {
         gross += amount;
         earnings.push(snapshotLine);
       } else {

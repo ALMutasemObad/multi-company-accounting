@@ -7,14 +7,19 @@ const input = (): PayrollCalculationInput => ({
   currencyDecimals: 2,
   periodStart: "2026-09-01",
   periodEndExclusive: "2026-10-01",
+  components: [
+    { code: "BASIC", version: 1, kind: "EARNING", active: true },
+    { code: "ALLOWANCE", version: 1, kind: "EARNING", active: true },
+    { code: "MANUAL", version: 1, kind: "DEDUCTION", active: true },
+  ],
   employees: [{
     employeeId: "employee-1",
     agreementVersion: 1,
     currencyCode: "SAR",
     lines: [
-      { id: "base", componentCode: "BASIC", kind: "EARNING", source: "RECURRING", amount: "7000.10" },
-      { id: "allowance", componentCode: "ALLOWANCE", kind: "EARNING", source: "ONE_OFF", amount: "100.20" },
-      { id: "deduction", componentCode: "MANUAL", kind: "DEDUCTION", source: "ONE_OFF", amount: "50.05" },
+      { id: "base", componentCode: "BASIC", source: "RECURRING", amount: "7000.10" },
+      { id: "allowance", componentCode: "ALLOWANCE", source: "ONE_OFF", amount: "100.20" },
+      { id: "deduction", componentCode: "MANUAL", source: "ONE_OFF", amount: "50.05" },
     ],
   }],
 });
@@ -29,6 +34,7 @@ describe("country-neutral payroll calculation", () => {
     expect(result.netPayable).toBe("7050.25");
     expect(result.employees[0]!.earnings).toHaveLength(2);
     expect(result.employees[0]!.deductions).toHaveLength(1);
+    expect(result.employees[0]!.deductions[0]!.kind).toBe("DEDUCTION");
     expect(Object.isFrozen(result.employees[0]!.earnings)).toBe(true);
   });
 
@@ -37,7 +43,7 @@ describe("country-neutral payroll calculation", () => {
     const second: PayrollCalculationInput = { ...first, employees: [
       { ...first.employees[0]!, lines: [...first.employees[0]!.lines].reverse() },
       { employeeId: "employee-2", agreementVersion: 2, currencyCode: "SAR", lines: [
-        { id: "salary", componentCode: "BASIC", kind: "EARNING", source: "RECURRING", amount: "10" },
+        { id: "salary", componentCode: "BASIC", source: "RECURRING", amount: "10" },
       ] },
     ] };
     const reversed = { ...second, employees: [...second.employees].reverse() };
@@ -48,19 +54,25 @@ describe("country-neutral payroll calculation", () => {
     expect(calculatePayroll({ ...first, employees: [{ ...first.employees[0]!, lines: [
       { ...first.employees[0]!.lines[0]!, amount: "7000.11" }, ...first.employees[0]!.lines.slice(1),
     ] }] }).snapshotHash).not.toBe(calculatePayroll(first).snapshotHash);
+    expect(calculatePayroll({ ...first, components: [{ ...first.components[0]!, version: 2 }, ...first.components.slice(1)] }).snapshotHash)
+      .not.toBe(calculatePayroll(first).snapshotHash);
   });
 
   it("supports zero and eight decimal currencies without floating-point math", () => {
     const zero = input();
     expect(calculatePayroll({ ...zero, currencyCode: "JPY", currencyDecimals: 0, employees: [
       { ...zero.employees[0]!, currencyCode: "JPY", lines: [
-        { id: "base", componentCode: "BASIC", kind: "EARNING", source: "RECURRING", amount: "100" },
+        { id: "base", componentCode: "BASIC", source: "RECURRING", amount: "100" },
       ] },
     ] }).netPayable).toBe("100");
-    const eight = { ...zero, currencyCode: "BHD", currencyDecimals: 8, employees: [
+    const eight = { ...zero, currencyCode: "BHD", currencyDecimals: 8, components: [
+      ...zero.components,
+      { code: "A", version: 1, kind: "EARNING" as const, active: true },
+      { code: "B", version: 1, kind: "EARNING" as const, active: true },
+    ], employees: [
       { ...zero.employees[0]!, currencyCode: "BHD", lines: [
-        { id: "a", componentCode: "A", kind: "EARNING" as const, source: "ONE_OFF" as const, amount: "0.00000001" },
-        { id: "b", componentCode: "B", kind: "EARNING" as const, source: "ONE_OFF" as const, amount: "0.00000002" },
+        { id: "a", componentCode: "A", source: "ONE_OFF" as const, amount: "0.00000001" },
+        { id: "b", componentCode: "B", source: "ONE_OFF" as const, amount: "0.00000002" },
       ] },
     ] };
     expect(calculatePayroll(eight).netPayable).toBe("0.00000003");
@@ -97,6 +109,15 @@ describe("country-neutral payroll calculation", () => {
       try { calculatePayroll(candidate); } catch (cause) { expect(code(cause)).toBe(expected); continue; }
       throw new Error(`Expected ${expected}`);
     }
+  });
+
+  it("rejects unknown, inactive, or duplicate component definitions", () => {
+    const original = input();
+    expect(() => calculatePayroll({ ...original, components: original.components.slice(1) })).toThrowError("COMPONENT_NOT_FOUND");
+    expect(() => calculatePayroll({ ...original, components: [{ ...original.components[0]!, active: false }, ...original.components.slice(1)] }))
+      .toThrowError("COMPONENT_INACTIVE");
+    expect(() => calculatePayroll({ ...original, components: [...original.components, original.components[0]!] }))
+      .toThrowError("DUPLICATE_COMPONENT");
   });
 
   it("rejects impossible dates and amounts whose aggregate exceeds DECIMAL(27,8)", () => {
