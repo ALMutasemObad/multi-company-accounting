@@ -9,6 +9,8 @@ const context = { companyId: 11n, userId: 22n };
 function fixture() {
   const authorize = vi.fn().mockResolvedValue(context);
   const catalog = {
+    listRevenueAccountOptions: vi.fn().mockResolvedValue({ data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } }),
+    listOutputTaxOptions: vi.fn().mockResolvedValue({ data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } }),
     listCategories: vi.fn().mockResolvedValue({ data: [], meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 } }),
     getCategory: vi.fn().mockResolvedValue({ category: {} }),
     createCategory: vi.fn().mockResolvedValue({ category: {} }),
@@ -33,6 +35,19 @@ function fixture() {
 }
 
 describe("service catalog category HTTP boundary", () => {
+  it("uses only services.manage for bounded company-scoped account and tax options", async () => {
+    const { app, authorize, catalog } = fixture();
+    await request(app).get("/service-catalog/reference-options/revenue-accounts?page=2&pageSize=10&search=400").expect(200);
+    await request(app).get("/service-catalog/reference-options/output-tax-rates").expect(200);
+    await request(app).get("/service-catalog/reference-options/revenue-accounts?pageSize=51").expect(400);
+    expect(authorize.mock.calls.map(([input]) => [input.permission, input.requireCsrf])).toEqual([
+      ["services.manage", false], ["services.manage", false], ["services.manage", false],
+    ]);
+    expect(catalog.listRevenueAccountOptions).toHaveBeenCalledWith(context, { page: 2, pageSize: 10, search: "400" });
+    expect(catalog.listOutputTaxOptions).toHaveBeenCalledWith(context, { page: 1, pageSize: 20 });
+    expect(catalog.listRevenueAccountOptions).toHaveBeenCalledTimes(1);
+  });
+
   it("requires catalog administration permissions and forwards idempotency", async () => {
     const { app, authorize, catalog, write } = fixture();
     await request(app).get("/service-catalog/categories?page=2&pageSize=10").expect(200);

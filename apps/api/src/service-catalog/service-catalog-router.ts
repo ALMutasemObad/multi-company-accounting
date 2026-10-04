@@ -22,6 +22,11 @@ const pageQuery = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
 });
+const referenceQuery = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(50).default(20),
+  search: z.string().trim().min(1).max(200).optional(),
+});
 const idempotencyKey = (request: Request) => z.string().min(16).max(100).parse(request.header("Idempotency-Key"));
 
 function sid(request: Request) {
@@ -33,6 +38,15 @@ export function createServiceCatalogRouter(auth: AuthService, catalog: ServiceCa
   const authorize = (request: Request, permission: string, requireCsrf: boolean) => auth.authorize({
     sid: sid(request), csrfToken: request.header("X-CSRF-Token") ?? undefined,
     permission, requireCsrf,
+  });
+
+  router.get("/service-catalog/reference-options/revenue-accounts", async (request, response) => {
+    const context = await authorize(request, "services.manage", false);
+    response.json(await catalog.listRevenueAccountOptions(context, referenceQuery.parse(request.query)));
+  });
+  router.get("/service-catalog/reference-options/output-tax-rates", async (request, response) => {
+    const context = await authorize(request, "services.manage", false);
+    response.json(await catalog.listOutputTaxOptions(context, referenceQuery.parse(request.query)));
   });
 
   router.get("/service-catalog/categories", async (request, response) => {

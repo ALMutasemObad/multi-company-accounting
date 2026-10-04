@@ -4290,6 +4290,40 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
       x-permission: professional_billing.view
       security: [{ SessionCookie: [] }]
+  /service-catalog/reference-options/revenue-accounts:
+    get:
+      tags: [Service Catalog]
+      summary: حسابات الإيراد الجاهزة لاختيار افتراضي في بديل الخدمة
+      operationId: listServiceRevenueAccountOptions
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+      - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      - { name: search, in: query, schema: { type: string, minLength: 1, maxLength: 200 } }
+      responses:
+        '200': { description: خيارات حسابات الإيراد المؤهلة داخل الشركة فقط, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceRevenueAccountOptionListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: services.manage
+      security: [{ SessionCookie: [] }]
+  /service-catalog/reference-options/output-tax-rates:
+    get:
+      tags: [Service Catalog]
+      summary: ضرائب المخرجات الجاهزة لاختيار افتراضي في بديل الخدمة
+      operationId: listServiceOutputTaxOptions
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+      - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      - { name: search, in: query, schema: { type: string, minLength: 1, maxLength: 200 } }
+      responses:
+        '200': { description: خيارات ضريبة المخرجات المؤهلة داخل الشركة فقط, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceOutputTaxOptionListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: services.manage
+      security: [{ SessionCookie: [] }]
   /service-catalog/offerings:
     get:
       tags: [Service Catalog]
@@ -22241,6 +22275,38 @@ components:
     ServicePricingUnit:
       type: string
       enum: [EACH, HOUR, DAY, SESSION, MONTH]
+    ServiceRevenueAccountOption:
+      type: object
+      additionalProperties: false
+      required: [id, code, nameAr, nameEn]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        code: { type: string }
+        nameAr: { type: string }
+        nameEn: { type: [string, 'null'] }
+    ServiceRevenueAccountOptionListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/ServiceRevenueAccountOption' } }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    ServiceOutputTaxOption:
+      type: object
+      additionalProperties: false
+      required: [id, code, nameAr, rate]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        code: { type: string }
+        nameAr: { type: string }
+        rate: { type: string, pattern: '^[0-9]+\.[0-9]{4}$' }
+    ServiceOutputTaxOptionListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/ServiceOutputTaxOption' } }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
     ServiceVariant:
       type: object
       additionalProperties: false

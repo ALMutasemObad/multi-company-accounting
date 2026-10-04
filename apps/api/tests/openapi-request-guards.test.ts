@@ -53,8 +53,10 @@ describe('generated OpenAPI request guards', () => {
   });
 
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 424, requestBodies: 213, responseBodies: 2742 });
+    expect(openApiContractCoverage).toEqual({ operations: 426, requestBodies: 213, responseBodies: 2750 });
     expect(openApiOperationRoutes).toMatchObject({
+      'GET /service-catalog/reference-options/revenue-accounts': 'listServiceRevenueAccountOptions',
+      'GET /service-catalog/reference-options/output-tax-rates': 'listServiceOutputTaxOptions',
       'GET /general-projects': 'listGeneralProjects',
       'POST /general-projects': 'createGeneralProject',
       'POST /general-projects/{generalProjectId}/transition': 'transitionGeneralProject',
@@ -121,6 +123,20 @@ describe('generated OpenAPI request guards', () => {
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
       'login', 'upsertPlatformBillingAccount', 'createPlatformSubscriptionPlan', 'updatePlatformSubscriptionPlanDraft', 'publishPlatformSubscriptionPlanVersion', 'schedulePlatformCompanySubscriptionChange', 'requestCompanySubscriptionChange', 'issuePlatformBillingInvoice', 'recordPlatformBillingPayment', 'voidPlatformBillingInvoice', 'createUser', 'linkUserEmployee', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'initializeInventoryBalanceValuation', 'reverseInventoryMovement', 'createInventoryItemBarcode', 'updateInventoryItemBarcode', 'setPrimaryInventoryItemBarcode', 'deactivateInventoryItemBarcode', 'resolveInventoryBarcode', 'resolveInventoryBarcodeBatch', 'previewDataImport', 'commitDataImport', 'previewBankStatement', 'commitBankStatementImport', 'createBankReconciliationSession', 'generateBankReconciliationSuggestions', 'approveBankReconciliationMatch', 'createManualBankReconciliationMatch', 'releaseBankReconciliationMatch', 'classifyBankStatementLine', 'closeBankReconciliationSession', 'startFinancialCloseRun', 'refreshFinancialCloseRun', 'createApprovalRequest', 'approveApprovalRequest', 'rejectApprovalRequest', 'createEmployeeExpenseClaim', 'updateEmployeeExpenseClaim', 'createProfessionalProject', 'assignProfessionalProjectMember', 'createProfessionalTimeEntry', 'createProfessionalTimesheet', 'createProfessionalServiceContract', 'endProfessionalServiceContract', 'createProfessionalServiceRate', 'endProfessionalServiceRate', 'createProfessionalBillingRun', 'updateProfessionalProjectAccess', 'grantProfessionalProjectAccess', 'revokeProfessionalProjectAccess', 'updateProfessionalProjectTimeBudget', 'createProfessionalProjectStage', 'updateProfessionalProjectStage', 'transitionProfessionalProjectStage', 'createProfessionalProjectTask', 'updateProfessionalProjectTask', 'transitionProfessionalProjectTask', 'createProfessionalProjectTaskDependency', 'removeProfessionalProjectTaskDependency', 'createHrDepartment', 'updateHrDepartment', 'createHrPosition', 'updateHrPosition', 'createEmployee', 'updateEmployee', 'transitionEmployee', 'createEmploymentContract', 'endEmploymentContract', 'returnFinancialCloseRun', 'updateCashFlowMapping',
     ]));
+  });
+
+  it('validates narrow service account and output-tax option responses', () => {
+    const meta = { page: 1, pageSize: 20, total: 1, totalPages: 1 };
+    const accounts = { data: [{ id: '31', code: '4101', nameAr: 'إيراد', nameEn: null }], meta };
+    const taxes = { data: [{ id: '41', code: 'TAX-1', nameAr: 'ضريبة', rate: '15.0000' }], meta };
+    expect(parseOpenApiResponseBody('listServiceRevenueAccountOptions', 200, accounts)).toEqual(accounts);
+    expect(parseOpenApiResponseBody('listServiceOutputTaxOptions', 200, taxes)).toEqual(taxes);
+    expect(() => parseOpenApiResponseBody('listServiceOutputTaxOptions', 200, {
+      ...taxes, data: [{ ...taxes.data[0], rate: '15' }],
+    })).toThrow();
+    expect(() => parseOpenApiResponseBody('listServiceRevenueAccountOptions', 200, {
+      ...accounts, data: [{ ...accounts.data[0], accountBalance: '999' }],
+    })).toThrow();
   });
 
   it('requires Account expectedVersion and exposes the resulting version', () => {

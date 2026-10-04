@@ -317,7 +317,7 @@ const approvals = new ApprovalService(database, {
 });
 const hr = new HrService(database, new HrIdentityAdapter(database));
 const serviceCatalog = new ServiceCatalogService(database,
-  new ServiceCatalogRevenueAccountAdapter(), new ServiceCatalogOutputTaxAdapter());
+  new ServiceCatalogRevenueAccountAdapter(database), new ServiceCatalogOutputTaxAdapter(database));
 const users = new UserService(database);
 const workforceAccess = new WorkforceAccessService(
   database,

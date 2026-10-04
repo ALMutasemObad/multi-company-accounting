@@ -59,26 +59,26 @@ describe('independent service catalog entitlement', () => {
     }
   });
 
-  it('preserves variant references when unchanged or unreadable', () => {
+  it('preserves variant references when unchanged or options are unavailable', () => {
     const original = { defaultRevenueAccountId: '11', defaultOutputTaxRateId: '22' };
     expect(variantReferencePatch(original, {
-      revenueAccountId: '11', outputTaxRateId: '22', canReadAccounts: true, canReadOutputTax: true,
+      revenueAccountId: '11', outputTaxRateId: '22', canSelectAccounts: true, canSelectOutputTax: true,
     })).toEqual({});
     expect(variantReferencePatch(original, {
-      revenueAccountId: '', outputTaxRateId: '', canReadAccounts: false, canReadOutputTax: false,
+      revenueAccountId: '', outputTaxRateId: '', canSelectAccounts: false, canSelectOutputTax: false,
     })).toEqual({});
   });
 
-  it('changes or clears only a reference explicitly selected with read access', () => {
+  it('changes or clears only a reference explicitly selected from available options', () => {
     const original = { defaultRevenueAccountId: '11', defaultOutputTaxRateId: '22' };
     expect(variantReferencePatch(original, {
-      revenueAccountId: '33', outputTaxRateId: '22', canReadAccounts: true, canReadOutputTax: false,
+      revenueAccountId: '33', outputTaxRateId: '22', canSelectAccounts: true, canSelectOutputTax: false,
     })).toEqual({ defaultRevenueAccountId: '33' });
     expect(variantReferencePatch(original, {
-      revenueAccountId: '11', outputTaxRateId: '', canReadAccounts: false, canReadOutputTax: true,
+      revenueAccountId: '11', outputTaxRateId: '', canSelectAccounts: false, canSelectOutputTax: true,
     })).toEqual({ defaultOutputTaxRateId: null });
     expect(variantReferencePatch(undefined, {
-      revenueAccountId: '', outputTaxRateId: '44', canReadAccounts: true, canReadOutputTax: true,
+      revenueAccountId: '', outputTaxRateId: '44', canSelectAccounts: true, canSelectOutputTax: true,
     })).toEqual({ defaultOutputTaxRateId: '44' });
   });
 });

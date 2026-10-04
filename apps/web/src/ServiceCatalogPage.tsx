@@ -2,7 +2,6 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import { api, idempotencyKey } from "./api";
 import { useAuthorization } from "./authorization-context";
 import { useI18n, type TranslationKey } from "./i18n";
-import type { Account, TaxRate } from "./types";
 import { Button, EmptyState, Modal, PageHeader, Pagination, Spinner } from "./ui";
 import "./service-catalog.css";
 
@@ -18,6 +17,8 @@ type Variant = { id: string; nameAr: string; nameEn: string | null; pricingUnit:
   availableFrom: string | null; availableUntil: string | null;
   defaultRevenueAccountId: string | null; defaultOutputTaxRateId: string | null;
   status: Status; version: number };
+type AccountOption = { id: string; code: string; nameAr: string; nameEn: string | null };
+type TaxOption = { id: string; code: string; nameAr: string; rate: string };
 type Form = { kind: "category"; item?: Category } | { kind: "offering"; item?: Offering }
   | { kind: "variant"; offering: Offering; item?: Variant }
   | { kind: "transition"; subject: "category" | "offering" | "variant"; id: string;
@@ -27,12 +28,12 @@ const units: Unit[] = ["EACH", "HOUR", "DAY", "SESSION", "MONTH"];
 
 export function variantReferencePatch(
   original: { defaultRevenueAccountId: string | null; defaultOutputTaxRateId: string | null } | undefined,
-  selected: { revenueAccountId: string; outputTaxRateId: string; canReadAccounts: boolean; canReadOutputTax: boolean },
+  selected: { revenueAccountId: string; outputTaxRateId: string; canSelectAccounts: boolean; canSelectOutputTax: boolean },
 ) {
   return {
-    ...(selected.canReadAccounts && selected.revenueAccountId !== (original?.defaultRevenueAccountId ?? "")
+    ...(selected.canSelectAccounts && selected.revenueAccountId !== (original?.defaultRevenueAccountId ?? "")
       ? { defaultRevenueAccountId: selected.revenueAccountId || null } : {}),
-    ...(selected.canReadOutputTax && selected.outputTaxRateId !== (original?.defaultOutputTaxRateId ?? "")
+    ...(selected.canSelectOutputTax && selected.outputTaxRateId !== (original?.defaultOutputTaxRateId ?? "")
       ? { defaultOutputTaxRateId: selected.outputTaxRateId || null } : {}),
   };
 }
@@ -46,8 +47,6 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
   const { t, locale } = useI18n();
   const { permissionSet } = useAuthorization();
   const canManage = permissionSet.has("services.manage");
-  const canReadAccounts = permissionSet.has("accounts.view");
-  const canReadOutputTax = permissionSet.has("sales_invoices.view");
   const [categories, setCategories] = useState<Category[]>([]);
   const [offerings, setOfferings] = useState<Offering[]>([]);
   const [variants, setVariants] = useState<Variant[]>([]);
@@ -65,10 +64,12 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
   const [categoryOptions, setCategoryOptions] = useState<Category[]>([]);
   const [categorySelected, setCategorySelected] = useState<Category | null>(null);
   const [accountLookup, setAccountLookup] = useState("");
-  const [accountOptions, setAccountOptions] = useState<Account[]>([]);
+  const [accountOptions, setAccountOptions] = useState<AccountOption[]>([]);
+  const [accountOptionsReady, setAccountOptionsReady] = useState(false);
   const [revenueAccountId, setRevenueAccountId] = useState("");
   const [taxLookup, setTaxLookup] = useState("");
-  const [taxOptions, setTaxOptions] = useState<TaxRate[]>([]);
+  const [taxOptions, setTaxOptions] = useState<TaxOption[]>([]);
+  const [taxOptionsReady, setTaxOptionsReady] = useState(false);
   const [outputTaxRateId, setOutputTaxRateId] = useState("");
   const [loading, setLoading] = useState(true);
   const [variantsLoading, setVariantsLoading] = useState(false);
@@ -126,26 +127,28 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
     return () => controller.abort();
   }, [form?.kind, categoryLookup, notify, t]);
   useEffect(() => {
-    if (form?.kind !== "variant" || !canReadAccounts) return;
+    if (form?.kind !== "variant") return;
     const controller = new AbortController();
     const query = accountLookup.trim() ? `&search=${encodeURIComponent(accountLookup.trim())}` : "";
-    void api<{ data: Account[] }>(
-      `/accounts?page=1&pageSize=20&active=true&allowsPosting=true&accountClasses=REVENUE${query}`,
+    void api<{ data: AccountOption[] }>(
+      `/service-catalog/reference-options/revenue-accounts?page=1&pageSize=20${query}`,
       { signal: controller.signal },
-    ).then(result => { if (!controller.signal.aborted) setAccountOptions(result.data); })
-      .catch(cause => { if (!controller.signal.aborted) notify(cause instanceof Error ? cause.message : t("service.loadError"), "error"); });
+    ).then(result => { if (!controller.signal.aborted) { setAccountOptions(result.data); setAccountOptionsReady(true); } })
+      .catch(cause => { if (!controller.signal.aborted) { setAccountOptionsReady(false);
+        notify(cause instanceof Error ? cause.message : t("service.loadError"), "error"); } });
     return () => controller.abort();
-  }, [form?.kind, canReadAccounts, accountLookup, notify, t]);
+  }, [form?.kind, accountLookup, notify, t]);
   useEffect(() => {
-    if (form?.kind !== "variant" || !canReadOutputTax) return;
+    if (form?.kind !== "variant") return;
     const controller = new AbortController();
     const query = taxLookup.trim() ? `&search=${encodeURIComponent(taxLookup.trim())}` : "";
-    void api<{ data: TaxRate[] }>(`/tax-rates?page=1&pageSize=20&activeOnly=true${query}`,
+    void api<{ data: TaxOption[] }>(`/service-catalog/reference-options/output-tax-rates?page=1&pageSize=20${query}`,
       { signal: controller.signal })
-      .then(result => { if (!controller.signal.aborted) setTaxOptions(result.data.filter(item => item.isReady)); })
-      .catch(cause => { if (!controller.signal.aborted) notify(cause instanceof Error ? cause.message : t("service.loadError"), "error"); });
+      .then(result => { if (!controller.signal.aborted) { setTaxOptions(result.data); setTaxOptionsReady(true); } })
+      .catch(cause => { if (!controller.signal.aborted) { setTaxOptionsReady(false);
+        notify(cause instanceof Error ? cause.message : t("service.loadError"), "error"); } });
     return () => controller.abort();
-  }, [form?.kind, canReadOutputTax, taxLookup, notify, t]);
+  }, [form?.kind, taxLookup, notify, t]);
   const send = async (path: string, method: "POST" | "PATCH", body: Record<string, unknown>, signal: AbortSignal) => {
     const payload = JSON.stringify(body);
     const fingerprint = JSON.stringify([path, method, payload]);
@@ -181,8 +184,8 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
     setForm(item ? { kind: "offering", item } : { kind: "offering" });
   };
   const openVariant = (offering: Offering, item?: Variant) => {
-    setAccountLookup(""); setAccountOptions([]); setRevenueAccountId(item?.defaultRevenueAccountId ?? "");
-    setTaxLookup(""); setTaxOptions([]); setOutputTaxRateId(item?.defaultOutputTaxRateId ?? "");
+    setAccountLookup(""); setAccountOptions([]); setAccountOptionsReady(false); setRevenueAccountId(item?.defaultRevenueAccountId ?? "");
+    setTaxLookup(""); setTaxOptions([]); setTaxOptionsReady(false); setOutputTaxRateId(item?.defaultOutputTaxRateId ?? "");
     setForm(item ? { kind: "variant", offering, item } : { kind: "variant", offering });
   };
   const transitionButtons = (subject: "category" | "offering" | "variant", item: { id: string; nameAr: string; nameEn?: string | null; status: Status; version: number }, offeringId?: string) => {
@@ -281,31 +284,32 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
         nameAr: String(data.get("nameAr") ?? "").trim(), nameEn: String(data.get("nameEn") ?? "").trim() || null,
         ...(!form.item ? { pricingUnit: data.get("pricingUnit") } : {}), availableFrom: data.get("availableFrom") || null,
         availableUntil: data.get("availableUntil") || null,
-        ...variantReferencePatch(form.item, { revenueAccountId, outputTaxRateId, canReadAccounts, canReadOutputTax }),
+        ...variantReferencePatch(form.item, { revenueAccountId, outputTaxRateId,
+          canSelectAccounts: accountOptionsReady, canSelectOutputTax: taxOptionsReady }),
       }); }}><fieldset className="form-grid" disabled={busy}>
         <label><span>{t("service.nameAr")}</span><input name="nameAr" required maxLength={160} defaultValue={form.item?.nameAr ?? ""} autoFocus /></label>
         <label><span>{t("service.nameEn")}</span><input name="nameEn" maxLength={160} defaultValue={form.item?.nameEn ?? ""} /></label>
         {!form.item && <label><span>{t("service.pricingUnit")}</span><select name="pricingUnit">{units.map(unit => <option key={unit} value={unit}>{t(`service.unit.${unit}` as TranslationKey)}</option>)}</select></label>}
         <label><span>{t("service.start")}</span><input name="availableFrom" type="date" defaultValue={form.item?.availableFrom ?? ""} /></label>
         <label><span>{t("service.until")}</span><input name="availableUntil" type="date" defaultValue={form.item?.availableUntil ?? ""} /></label>
-        {canReadAccounts && <>
+        <>
           <label className="full"><span>{t("service.searchRevenueAccount")}</span><input type="search" maxLength={200} value={accountLookup} onChange={event => setAccountLookup(event.target.value)} /></label>
-          <label className="full"><span>{t("service.revenueAccount")}</span><select value={revenueAccountId} onChange={event => setRevenueAccountId(event.target.value)}>
+          <label className="full"><span>{t("service.revenueAccount")}</span><select disabled={!accountOptionsReady} value={revenueAccountId} onChange={event => setRevenueAccountId(event.target.value)}>
             <option value="">{t("service.noDefault")}</option>
             {revenueAccountId && !accountOptions.some(item => item.id === revenueAccountId) &&
               <option value={revenueAccountId}>#{revenueAccountId}</option>}
             {accountOptions.map(item => <option key={item.id} value={item.id}>{item.code} — {displayName(item)}</option>)}
           </select></label>
-        </>}
-        {canReadOutputTax && <>
+        </>
+        <>
           <label className="full"><span>{t("service.searchOutputTax")}</span><input type="search" maxLength={200} value={taxLookup} onChange={event => setTaxLookup(event.target.value)} /></label>
-          <label className="full"><span>{t("service.outputTaxRate")}</span><select value={outputTaxRateId} onChange={event => setOutputTaxRateId(event.target.value)}>
+          <label className="full"><span>{t("service.outputTaxRate")}</span><select disabled={!taxOptionsReady} value={outputTaxRateId} onChange={event => setOutputTaxRateId(event.target.value)}>
             <option value="">{t("service.noDefault")}</option>
             {outputTaxRateId && !taxOptions.some(item => item.id === outputTaxRateId) &&
               <option value={outputTaxRateId}>#{outputTaxRateId}</option>}
             {taxOptions.map(item => <option key={item.id} value={item.id}>{item.code} — {item.nameAr} ({item.rate}%)</option>)}
           </select></label>
-        </>}
+        </>
         <div className="modal-actions full"><Button type="button" variant="ghost" onClick={() => setForm(null)}>{t("common.cancel")}</Button><Button type="submit">{t("service.save")}</Button></div>
       </fieldset></form>
     </Modal>}

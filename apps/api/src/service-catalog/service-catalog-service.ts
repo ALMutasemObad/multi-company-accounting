@@ -4,7 +4,7 @@ import type { ActorContext } from "../platform/actor-context.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
 import { reserveMasterDataCode } from "../platform/master-data-code-service.js";
 import { TransactionExecutor } from "../platform/transaction-executor.js";
-import type { ServiceCatalogOutputTaxQueryPort, ServiceCatalogRevenueAccountQueryPort } from "./service-catalog-reference-ports.js";
+import type { ServiceCatalogOutputTaxQueryPort, ServiceCatalogReferenceQuery, ServiceCatalogRevenueAccountQueryPort } from "./service-catalog-reference-ports.js";
 import { transitionServiceCategory, transitionServiceOffering, transitionServiceVariant,
   validateAvailabilityWindow, validateServiceVariantEdit, type ServiceAvailabilityWindow, type ServiceCategoryStatus,
   type ServiceOfferingStatus, type ServicePricingUnit } from "./service-offering-policy.js";
@@ -80,6 +80,14 @@ export class ServiceCatalogService {
     private readonly accounts: ServiceCatalogRevenueAccountQueryPort,
     private readonly tax: ServiceCatalogOutputTaxQueryPort) {
     this.commands = new IdempotentCommandExecutor(prisma, new TransactionExecutor(prisma));
+  }
+
+  listRevenueAccountOptions(context: ActorContext, query: ServiceCatalogReferenceQuery) {
+    return this.accounts.listOptions(context.companyId, query);
+  }
+
+  listOutputTaxOptions(context: ActorContext, query: ServiceCatalogReferenceQuery) {
+    return this.tax.listOptions(context.companyId, query);
   }
 
   async listCategories(context: ActorContext, input: { page: number; pageSize: number; search?: string | undefined; status?: ServiceCategoryStatus | undefined }) {
