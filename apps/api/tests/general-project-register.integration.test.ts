@@ -40,10 +40,12 @@ describe.runIf(enabled)("general project register on isolated MySQL/MariaDB", ()
     if (!prisma) return;
     const companies = [companyId, foreignCompanyId].filter((value): value is bigint => value !== undefined);
     if (companies.length) {
-      await prisma.idempotencyRecord.deleteMany({ where: { companyId: { in: companies }, operation: { in: ["CREATE_GENERAL_PROJECT", "UPDATE_GENERAL_PROJECT", "TRANSITION_GENERAL_PROJECT", "ASSIGN_GENERAL_PROJECT_MEMBER", "UNASSIGN_GENERAL_PROJECT_MEMBER", "CREATE_GENERAL_PROJECT_PHASE", "TRANSITION_GENERAL_PROJECT_PHASE", "CREATE_GENERAL_PROJECT_TASK", "ASSIGN_GENERAL_PROJECT_TASK_MEMBER", "UNASSIGN_GENERAL_PROJECT_TASK_MEMBER", "TRANSITION_GENERAL_PROJECT_TASK", "PROGRESS_GENERAL_PROJECT_TASK", "ADD_GENERAL_PROJECT_TASK_DEPENDENCY", "REMOVE_GENERAL_PROJECT_TASK_DEPENDENCY"] } } });
+      await prisma.idempotencyRecord.deleteMany({ where: { companyId: { in: companies }, operation: { in: ["CREATE_GENERAL_PROJECT", "UPDATE_GENERAL_PROJECT", "TRANSITION_GENERAL_PROJECT", "ASSIGN_GENERAL_PROJECT_MEMBER", "UNASSIGN_GENERAL_PROJECT_MEMBER", "CREATE_GENERAL_PROJECT_PHASE", "TRANSITION_GENERAL_PROJECT_PHASE", "CREATE_GENERAL_PROJECT_TASK", "ASSIGN_GENERAL_PROJECT_TASK_MEMBER", "UNASSIGN_GENERAL_PROJECT_TASK_MEMBER", "TRANSITION_GENERAL_PROJECT_TASK", "PROGRESS_GENERAL_PROJECT_TASK", "ADD_GENERAL_PROJECT_TASK_DEPENDENCY", "REMOVE_GENERAL_PROJECT_TASK_DEPENDENCY", "FOLLOW_GENERAL_PROJECT", "UNFOLLOW_GENERAL_PROJECT", "COMMENT_GENERAL_PROJECT"] } } });
       await prisma.auditLog.deleteMany({ where: { companyId: { in: companies }, entityType: "GENERAL_PROJECT" } });
       await prisma.generalProjectTaskAssignment.deleteMany({ where: { companyId: { in: companies } } });
+      await prisma.generalProjectComment.deleteMany({ where: { companyId: { in: companies } } });
       await prisma.generalProjectTaskDependency.deleteMany({ where: { companyId: { in: companies } } });
+      await prisma.generalProjectFollower.deleteMany({ where: { companyId: { in: companies } } });
       await prisma.generalProjectTask.deleteMany({ where: { companyId: { in: companies } } });
       await prisma.generalProjectPhase.deleteMany({ where: { companyId: { in: companies } } });
       await prisma.generalProjectMember.deleteMany({ where: { companyId: { in: companies } } });
@@ -250,6 +252,66 @@ describe.runIf(enabled)("general project register on isolated MySQL/MariaDB", ()
     const started = await service.transitionTask(context(), id, b.task.id, { expectedPlanVersion: 8,
       expectedVersion: 0, to: "IN_PROGRESS", idempotencyKey: "it-general-project-dependency-start-b-0001" }, "PROGRESS");
     expect(started.task.status).toBe("IN_PROGRESS");
+  });
+
+  it("keeps following self-owned and comments scoped to a live project task", async () => {
+    const created = await service.createProject(context(), { nameAr: "مشروع تعاون",
+      managerEmployeeId: managerId, idempotencyKey: "it-general-project-collaboration-create-0001" });
+    const id = created.project.id;
+    const phase = await service.createPhase(context(), id, { expectedPlanVersion: 0,
+      title: "مرحلة التعاون", idempotencyKey: "it-general-project-collaboration-phase-0001" });
+    const task = await service.createTask(context(), id, phase.phase.id, { expectedPlanVersion: 1,
+      title: "مهمة التعاون", idempotencyKey: "it-general-project-collaboration-task-0001" });
+    expect((await service.getProject(context(), id)).isFollowing).toBe(false);
+    expect(await service.followProject(context(), id, { idempotencyKey: "it-general-project-follow-0001" }))
+      .toEqual({ isFollowing: true });
+    expect(await service.followProject(context(), id, { idempotencyKey: "it-general-project-follow-0001" }))
+      .toEqual({ isFollowing: true });
+    expect((await service.listProjects(context(), { page: 1, pageSize: 25,
+      scope: "FOLLOWING" })).data.some(project => project.id === id)).toBe(true);
+    const comment = await service.addComment(context(), id, { taskId: task.task.id,
+      body: "  Ready to coordinate  ", idempotencyKey: "it-general-project-comment-0001" });
+    const replayed = await service.addComment(context(), id, { taskId: task.task.id,
+      body: "  Ready to coordinate  ", idempotencyKey: "it-general-project-comment-0001" });
+    expect(replayed.comment.id).toBe(comment.comment.id);
+    const listed = await service.listComments(context(), id, { page: 1, pageSize: 25, taskId: task.task.id });
+    expect(listed.data).toHaveLength(1);
+    expect(listed.data[0]).toMatchObject({ taskId: task.task.id, body: "Ready to coordinate" });
+    const other = await service.createProject(context(), { nameAr: "مشروع تعاون آخر",
+      managerEmployeeId: managerId, idempotencyKey: "it-general-project-collaboration-other-0001" });
+    const otherPhase = await service.createPhase(context(), other.project.id, { expectedPlanVersion: 0,
+      title: "مرحلة أخرى", idempotencyKey: "it-general-project-collaboration-other-phase-0001" });
+    const otherTask = await service.createTask(context(), other.project.id, otherPhase.phase.id, {
+      expectedPlanVersion: 1, title: "مهمة أخرى", idempotencyKey: "it-general-project-collaboration-other-task-0001" });
+    await expect(service.addComment(context(), id, { taskId: otherTask.task.id,
+      body: "Must not cross projects", idempotencyKey: "it-general-project-comment-cross-0001" }))
+      .rejects.toMatchObject({ reason: "NOT_FOUND" });
+    await service.transition(context(), id, { version: 0, status: "ACTIVE",
+      idempotencyKey: "it-general-project-collaboration-active-0001" });
+    await service.transitionTask(context(), id, task.task.id, { expectedPlanVersion: 2,
+      expectedVersion: 0, to: "CANCELLED", reason: "Task is no longer needed",
+      idempotencyKey: "it-general-project-collaboration-task-cancel-0001" });
+    await expect(service.addComment(context(), id, { taskId: task.task.id,
+      body: "Cannot comment on final task", idempotencyKey: "it-general-project-comment-final-task-0001" }))
+      .rejects.toMatchObject({ reason: "PROJECT_FINAL" });
+    expect(await service.unfollowProject(context(), id, { idempotencyKey: "it-general-project-unfollow-0001" }))
+      .toEqual({ isFollowing: false });
+    expect((await service.getProject(context(), id)).isFollowing).toBe(false);
+    await expect(service.listComments({ companyId: foreignCompanyId, userId }, id,
+      { page: 1, pageSize: 25 })).rejects.toMatchObject({ reason: "NOT_FOUND" });
+    await service.followProject(context(), other.project.id,
+      { idempotencyKey: "it-general-project-follow-final-0001" });
+    await service.transition(context(), other.project.id, { version: 0, status: "CANCELLED",
+      reason: "Project no longer needed", idempotencyKey: "it-general-project-cancel-final-0001" });
+    await expect(service.addComment(context(), other.project.id, { body: "No new comments",
+      idempotencyKey: "it-general-project-comment-final-project-0001" }))
+      .rejects.toMatchObject({ reason: "PROJECT_FINAL" });
+    await expect(service.followProject(context(), other.project.id,
+      { idempotencyKey: "it-general-project-follow-again-final-0001" }))
+      .rejects.toMatchObject({ reason: "PROJECT_FINAL" });
+    expect(await service.unfollowProject(context(), other.project.id,
+      { idempotencyKey: "it-general-project-unfollow-final-0001" }))
+      .toEqual({ isFollowing: false });
   });
 
   it("refuses completion while a phase or task is open", async () => {

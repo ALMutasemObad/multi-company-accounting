@@ -51,6 +51,7 @@ CREATE TABLE `general_project_members` (
   UNIQUE KEY `general_project_members_public_id_key` (`public_id`),
   UNIQUE KEY `general_project_members_project_employee_key` (`project_id`, `employee_id`),
   UNIQUE KEY `general_project_members_id_company_key` (`id`, `company_id`),
+  UNIQUE KEY `general_project_members_id_project_company_key` (`id`, `project_id`, `company_id`),
   KEY `general_project_members_company_employee_active_idx` (`company_id`, `employee_id`, `is_active`),
   KEY `general_project_members_project_active_role_idx` (`project_id`, `is_active`, `role`),
   CONSTRAINT `general_project_members_company_fkey` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,

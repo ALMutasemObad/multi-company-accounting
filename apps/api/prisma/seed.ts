@@ -98,6 +98,8 @@ try {
     ['general_projects.view', 'general_projects', 'عرض إدارة المشاريع'],
     ['general_projects.manage', 'general_projects', 'إنشاء وإدارة المشاريع وفريقها'],
     ['general_projects.progress', 'general_projects', 'تحديث تقدم المهام المسندة'],
+    ['general_projects.follow', 'general_projects', 'متابعة المشاريع ذاتيًا'],
+    ['general_projects.comment', 'general_projects', 'إضافة تعليقات المشاريع'],
     ['professional_projects.manage', 'professional_projects', 'إدارة المشاريع والقضايا المهنية وأعضائها'],
     ['professional_time.view', 'professional_projects', 'عرض سجلات الوقت المهنية'],
     ['professional_time.log', 'professional_projects', 'تسجيل الوقت المهني وتعديل السجل الشخصي'],

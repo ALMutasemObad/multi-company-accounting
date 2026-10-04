@@ -53,7 +53,7 @@ describe('generated OpenAPI request guards', () => {
   });
 
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 441, requestBodies: 222, responseBodies: 2842 });
+    expect(openApiContractCoverage).toEqual({ operations: 445, requestBodies: 223, responseBodies: 2868 });
     expect(openApiOperationRoutes).toMatchObject({
       'GET /service-catalog/selection-options': 'listServiceSelectionOptions',
       'GET /service-catalog/reference-options/revenue-accounts': 'listServiceRevenueAccountOptions',
@@ -70,6 +70,10 @@ describe('generated OpenAPI request guards', () => {
       'POST /general-projects/{generalProjectId}/tasks/{taskId}/progress': 'progressGeneralProjectTask',
       'GET /general-projects/{generalProjectId}/task-dependencies': 'listGeneralProjectTaskDependencies',
       'GET /general-projects/{generalProjectId}/task-options': 'listGeneralProjectTaskOptions',
+      'POST /general-projects/{generalProjectId}/follow': 'followGeneralProject',
+      'POST /general-projects/{generalProjectId}/unfollow': 'unfollowGeneralProject',
+      'GET /general-projects/{generalProjectId}/comments': 'listGeneralProjectComments',
+      'POST /general-projects/{generalProjectId}/comments': 'addGeneralProjectComment',
       'POST /general-projects/{generalProjectId}/task-dependencies': 'addGeneralProjectTaskDependency',
       'POST /general-projects/{generalProjectId}/task-dependencies/{dependencyId}/remove': 'removeGeneralProjectTaskDependency',
       'POST /general-projects/{generalProjectId}/phases/{phaseId}/transition': 'transitionGeneralProjectPhase',
@@ -108,7 +112,7 @@ describe('generated OpenAPI request guards', () => {
       'POST /auth/social/onboarding': 'completeSocialOnboarding',
       'DELETE /auth/social/onboarding': 'cancelSocialOnboarding',
     });
-    expect(guardedOpenApiOperations).toHaveLength(222);
+    expect(guardedOpenApiOperations).toHaveLength(223);
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
       'updateInventoryBarcodeSettings', 'previewInventoryCatalogImport', 'commitInventoryCatalogImport',
     ]));
@@ -770,9 +774,9 @@ describe('generated OpenAPI request guards', () => {
     expect(parseOpenApiResponseBody('getCurrentAuthorization', 200, {
       user: { id: '7', displayName: 'مستخدم' },
       selectedCompany: { id: '12', name: 'المنشأة التجريبية', timezone: 'Asia/Riyadh' },
-      modules: ['SALES', 'TREASURY'],
+      modules: ['SALES', 'TREASURY', 'GENERAL_PROJECTS'],
       permissions: ['receipts.view', 'sales_invoices.view'],
-    })).toMatchObject({ selectedCompany: { id: '12' }, modules: ['SALES', 'TREASURY'], permissions: ['receipts.view', 'sales_invoices.view'] });
+    })).toMatchObject({ selectedCompany: { id: '12' }, modules: ['SALES', 'TREASURY', 'GENERAL_PROJECTS'], permissions: ['receipts.view', 'sales_invoices.view'] });
     expect(() => parseOpenApiResponseBody('getCurrentAuthorization', 200, {
       user: { id: '7', displayName: 'مستخدم' },
       selectedCompany: null,

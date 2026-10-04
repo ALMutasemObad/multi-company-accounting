@@ -3378,7 +3378,7 @@ paths:
       - { name: status, in: query, schema: { $ref: '#/components/schemas/GeneralProjectStatus' } }
       - { name: priority, in: query, schema: { $ref: '#/components/schemas/GeneralProjectPriority' } }
       - { name: customerId, in: query, schema: { $ref: '#/components/schemas/Id' } }
-      - { name: scope, in: query, schema: { type: string, enum: [ALL, MINE] } }
+      - { name: scope, in: query, schema: { type: string, enum: [ALL, MINE, FOLLOWING] } }
       responses:
         '200': { description: قائمة المشاريع, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectListResponse' } } } }
         '401': { $ref: '#/components/responses/Unauthenticated' }
@@ -3430,6 +3430,85 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/BusinessRuleViolation' }
       x-permission: general_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/follow:
+    post:
+      tags: [General Projects]
+      summary: متابعة المستخدم للمشروع بنفسه، وتتطلب صلاحية العرض أيضًا
+      operationId: followGeneralProject
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: حالة المتابعة, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectFollowResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.follow
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/unfollow:
+    post:
+      tags: [General Projects]
+      summary: إلغاء المستخدم متابعته الذاتية، وتتطلب صلاحية العرض أيضًا
+      operationId: unfollowGeneralProject
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: حالة المتابعة, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectFollowResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.follow
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/comments:
+    get:
+      tags: [General Projects]
+      summary: تعليقات المشروع أو مهمة منه
+      operationId: listGeneralProjectComments
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: taskId, in: query, schema: { type: string, format: uuid } }
+      - { $ref: '#/components/parameters/Page' }
+      - { $ref: '#/components/parameters/PageSize' }
+      responses:
+        '200': { description: التعليقات, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectCommentListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: general_projects.view
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [General Projects]
+      summary: تعليق نصي جديد؛ يتطلب صلاحية عرض المشروع أيضًا
+      operationId: addGeneralProjectComment
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AddGeneralProjectCommentRequest' } } } }
+      responses:
+        '201': { description: التعليق الجديد, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectCommentMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.comment
       security: [{ SessionCookie: [], CsrfToken: [] }]
       x-idempotency-scope: user + company + operation + key
   /general-projects/{generalProjectId}/transition:
@@ -13390,6 +13469,7 @@ components:
             - DATA_IMPORT
             - APPROVALS
             - PROFESSIONAL_PROJECTS
+            - GENERAL_PROJECTS
             - HUMAN_RESOURCES
             - TAX
             - CRM
@@ -21524,10 +21604,56 @@ components:
         project: { $ref: '#/components/schemas/GeneralProject' }
     GeneralProjectDetailResponse:
       type: object
-      required: [project, members]
+      required: [project, members, isFollowing]
       properties:
         project: { $ref: '#/components/schemas/GeneralProject' }
         members: { type: array, items: { $ref: '#/components/schemas/GeneralProjectMember' } }
+        isFollowing: { type: boolean }
+    GeneralProjectFollowResponse:
+      type: object
+      additionalProperties: false
+      required: [isFollowing]
+      properties:
+        isFollowing: { type: boolean }
+    GeneralProjectComment:
+      type: object
+      additionalProperties: false
+      required: [id, taskId, taskTitle, authorName, body, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        taskId: { type: [string, 'null'], format: uuid }
+        taskTitle: { type: [string, 'null'] }
+        authorName: { type: string }
+        body: { type: string }
+        createdAt: { type: string, format: date-time }
+    GeneralProjectCommentListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/GeneralProjectComment' } }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    GeneralProjectCommentMutationResponse:
+      type: object
+      additionalProperties: false
+      required: [comment]
+      properties:
+        comment:
+          type: object
+          additionalProperties: false
+          required: [id, taskId, body, createdAt]
+          properties:
+            id: { type: string, format: uuid }
+            taskId: { type: [string, 'null'], format: uuid }
+            body: { type: string }
+            createdAt: { type: string, format: date-time }
+    AddGeneralProjectCommentRequest:
+      type: object
+      additionalProperties: false
+      required: [body]
+      properties:
+        taskId: { type: string, format: uuid }
+        body: { type: string, x-trim: true, minLength: 1, maxLength: 2000 }
     GeneralProjectListResponse:
       type: object
       required: [data, meta]

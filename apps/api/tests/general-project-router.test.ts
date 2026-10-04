@@ -28,6 +28,10 @@ function fixture() {
     transitionTask: vi.fn().mockResolvedValue({ task: {}, planVersion: 5 }),
     listDependencies: vi.fn().mockResolvedValue({ data: [], planVersion: 5, meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 } }),
     listTaskOptions: vi.fn().mockResolvedValue({ data: [] }),
+    followProject: vi.fn().mockResolvedValue({ isFollowing: true }),
+    unfollowProject: vi.fn().mockResolvedValue({ isFollowing: false }),
+    listComments: vi.fn().mockResolvedValue({ data: [], meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 } }),
+    addComment: vi.fn().mockResolvedValue({ comment: {} }),
     addDependency: vi.fn().mockResolvedValue({ dependency: {}, planVersion: 6 }),
     removeDependency: vi.fn().mockResolvedValue({ dependency: {}, planVersion: 7 }),
     assignMember: vi.fn().mockResolvedValue({ member: {}, projectVersion: 1 }),
@@ -40,6 +44,29 @@ function fixture() {
 }
 
 describe("general project HTTP boundary", () => {
+  it("requires view plus the distinct follow/comment permissions", async () => {
+    const { app, authorize, projects } = fixture();
+    await request(app).post(`/general-projects/${projectId}/follow`)
+      .set("X-CSRF-Token", "csrf").set("Idempotency-Key", "general-project-follow-1234").expect(200);
+    await request(app).post(`/general-projects/${projectId}/unfollow`)
+      .set("X-CSRF-Token", "csrf").set("Idempotency-Key", "general-project-unfollow-1234").expect(200);
+    await request(app).get(`/general-projects/${projectId}/comments?page=2`).expect(200);
+    await request(app).post(`/general-projects/${projectId}/comments`)
+      .set("X-CSRF-Token", "csrf").set("Idempotency-Key", "general-project-comment-1234")
+      .send({ body: "A project update" }).expect(201);
+    await request(app).post(`/general-projects/${projectId}/comments`)
+      .set("X-CSRF-Token", "csrf").set("Idempotency-Key", "general-project-comment-5678")
+      .send({ body: " " }).expect(400);
+    expect(authorize.mock.calls.map(([value]) => [value.permission, value.requireCsrf])).toEqual([
+      ["general_projects.view", false], ["general_projects.follow", true],
+      ["general_projects.view", false], ["general_projects.follow", true],
+      ["general_projects.view", false],
+      ["general_projects.view", false], ["general_projects.comment", true],
+      ["general_projects.view", false], ["general_projects.comment", true],
+    ]);
+    expect(projects.listComments).toHaveBeenCalledWith(context, projectId, { page: 2, pageSize: 25 });
+    expect(projects.addComment).toHaveBeenCalledOnce();
+  });
   it("guards dependency listing, addition and reasoned removal", async () => {
     const { app, authorize, projects } = fixture();
     const predecessorTaskId = "5759ba65-f0e0-48c4-b0dc-b12ca2bd958d";

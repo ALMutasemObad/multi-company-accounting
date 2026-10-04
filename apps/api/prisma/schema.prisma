@@ -729,6 +729,8 @@ model Company {
   generalProjectTasks               GeneralProjectTask[]
   generalProjectTaskAssignments     GeneralProjectTaskAssignment[]
   generalProjectTaskDependencies    GeneralProjectTaskDependency[]
+  generalProjectFollowers           GeneralProjectFollower[]
+  generalProjectComments            GeneralProjectComment[]
   crmLeads                          CrmLead[]
   crmOpportunities                  CrmOpportunity[]
   crmActivities                     CrmActivity[]
@@ -1353,6 +1355,8 @@ model UserCompany {
   professionalTimesheets          ProfessionalTimesheet[]
   professionalServiceRates        ProfessionalServiceRate[]
   employee                        Employee?
+  generalProjectFollowers         GeneralProjectFollower[]
+  generalProjectComments          GeneralProjectComment[]
 
   @@id([userId, companyId])
   @@index([companyId])
@@ -2098,6 +2102,8 @@ model GeneralProject {
   phases             GeneralProjectPhase[]
   tasks              GeneralProjectTask[]
   dependencies       GeneralProjectTaskDependency[]
+  followers          GeneralProjectFollower[]
+  comments           GeneralProjectComment[]
 
   @@unique([companyId, code])
   @@unique([id, companyId])
@@ -2225,6 +2231,7 @@ model GeneralProjectTask {
   assignments      GeneralProjectTaskAssignment[]
   predecessorFor   GeneralProjectTaskDependency[] @relation("GeneralProjectDependencyPredecessor")
   successorFor     GeneralProjectTaskDependency[] @relation("GeneralProjectDependencySuccessor")
+  comments         GeneralProjectComment[]
 
   @@unique([phaseId, sequence])
   @@unique([id, projectId, companyId])
@@ -2288,6 +2295,43 @@ model GeneralProjectTaskDependency {
   @@index([predecessorTaskId, projectId, companyId])
   @@index([successorTaskId, projectId, companyId, isActive])
   @@map("general_project_task_dependencies")
+}
+
+model GeneralProjectFollower {
+  id           BigInt         @id @default(autoincrement()) @db.UnsignedBigInt
+  companyId    BigInt         @map("company_id") @db.UnsignedBigInt
+  projectId    BigInt         @map("project_id") @db.UnsignedBigInt
+  userId       BigInt         @map("user_id") @db.UnsignedBigInt
+  isActive     Boolean        @default(true) @map("is_active")
+  version      Int            @default(0) @db.UnsignedInt
+  followedAt   DateTime       @default(now()) @map("followed_at")
+  unfollowedAt DateTime?      @map("unfollowed_at")
+  company      Company        @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  project      GeneralProject @relation(fields: [projectId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  userCompany  UserCompany    @relation(fields: [userId, companyId], references: [userId, companyId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([projectId, userId])
+  @@index([companyId, userId, isActive])
+  @@map("general_project_followers")
+}
+
+model GeneralProjectComment {
+  id           BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId     String              @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId    BigInt              @map("company_id") @db.UnsignedBigInt
+  projectId    BigInt              @map("project_id") @db.UnsignedBigInt
+  taskId       BigInt?             @map("task_id") @db.UnsignedBigInt
+  authorUserId BigInt              @map("author_user_id") @db.UnsignedBigInt
+  body         String              @db.VarChar(2000)
+  createdAt    DateTime            @default(now()) @map("created_at")
+  company      Company             @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  project      GeneralProject      @relation(fields: [projectId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  task         GeneralProjectTask? @relation(fields: [taskId, projectId, companyId], references: [id, projectId, companyId], onDelete: Restrict, onUpdate: Restrict)
+  author       UserCompany         @relation(fields: [authorUserId, companyId], references: [userId, companyId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([companyId, projectId, createdAt, id])
+  @@index([companyId, projectId, taskId, createdAt, id])
+  @@map("general_project_comments")
 }
 
 model ProfessionalProject {

@@ -13,7 +13,7 @@ const projectQuery = z.object({
   search: z.string().trim().min(1).max(200).optional(),
   status: z.enum(["DRAFT", "ACTIVE", "ON_HOLD", "COMPLETED", "CANCELLED"]).optional(),
   priority: z.enum(["LOW", "NORMAL", "HIGH", "URGENT"]).optional(),
-  customerId: id.optional(), scope: z.enum(["ALL", "MINE"]).default("ALL"),
+  customerId: id.optional(), scope: z.enum(["ALL", "MINE", "FOLLOWING"]).default("ALL"),
 });
 const optionQuery = z.object({ search: z.string().trim().min(1).max(200).optional() });
 const pageQuery = z.object({ page: z.coerce.number().int().min(1).default(1),
@@ -49,6 +49,29 @@ export function createGeneralProjectRouter(auth: AuthService, projects: GeneralP
   router.get("/general-projects/:generalProjectId", async (request, response) => {
     const context = await authorize(request, "general_projects.view", false);
     response.json(await projects.getProject(context, publicId.parse(request.params.generalProjectId)));
+  });
+  router.post("/general-projects/:generalProjectId/follow", async (request, response) => {
+    await authorize(request, "general_projects.view", false);
+    const context = await authorize(request, "general_projects.follow", true);
+    response.json(await projects.followProject(context, publicId.parse(request.params.generalProjectId),
+      { idempotencyKey: idempotencyKey(request) }));
+  });
+  router.post("/general-projects/:generalProjectId/unfollow", async (request, response) => {
+    await authorize(request, "general_projects.view", false);
+    const context = await authorize(request, "general_projects.follow", true);
+    response.json(await projects.unfollowProject(context, publicId.parse(request.params.generalProjectId),
+      { idempotencyKey: idempotencyKey(request) }));
+  });
+  router.get("/general-projects/:generalProjectId/comments", async (request, response) => {
+    const context = await authorize(request, "general_projects.view", false);
+    response.json(await projects.listComments(context, publicId.parse(request.params.generalProjectId),
+      dependencyQuery.parse(request.query)));
+  });
+  router.post("/general-projects/:generalProjectId/comments", async (request, response) => {
+    await authorize(request, "general_projects.view", false);
+    const context = await authorize(request, "general_projects.comment", true);
+    response.status(201).json(await projects.addComment(context, publicId.parse(request.params.generalProjectId),
+      { ...bodies.addGeneralProjectComment.parse(request.body), idempotencyKey: idempotencyKey(request) }));
   });
   router.patch("/general-projects/:generalProjectId", async (request, response) => {
     const context = await authorize(request, "general_projects.manage", true);

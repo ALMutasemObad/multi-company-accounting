@@ -7,7 +7,7 @@ import { TransactionExecutor } from "../platform/transaction-executor.js";
 import { transitionPhase, transitionProject, transitionTask, validateDependencyAddition, validateDependencyRemoval } from "./general-project-policy.js";
 import type { GeneralProjectCustomerPort, GeneralProjectCustomerReference, GeneralProjectEmployeePort, GeneralProjectEmployeeReference } from "./general-project-reference-ports.js";
 
-export type GeneralProjectFailureReason = "NOT_FOUND" | "CUSTOMER_NOT_FOUND" | "CUSTOMER_INACTIVE" | "EMPLOYEE_NOT_FOUND" | "EMPLOYEE_INACTIVE" | "INVALID_DATE_RANGE" | "INVALID_REASON" | "PROJECT_FINAL" | "LAST_MANAGER" | "MEMBER_NOT_FOUND" | "ASSIGNMENT_NOT_FOUND" | "ACTIVE_TASK_RESPONSIBILITY" | "VERSION_CONFLICT" | "IDEMPOTENCY_MISMATCH" | "IDEMPOTENCY_IN_PROGRESS";
+export type GeneralProjectFailureReason = "NOT_FOUND" | "CUSTOMER_NOT_FOUND" | "CUSTOMER_INACTIVE" | "EMPLOYEE_NOT_FOUND" | "EMPLOYEE_INACTIVE" | "INVALID_DATE_RANGE" | "INVALID_REASON" | "INVALID_COMMENT" | "PROJECT_FINAL" | "LAST_MANAGER" | "MEMBER_NOT_FOUND" | "ASSIGNMENT_NOT_FOUND" | "ACTIVE_TASK_RESPONSIBILITY" | "VERSION_CONFLICT" | "IDEMPOTENCY_MISMATCH" | "IDEMPOTENCY_IN_PROGRESS";
 export class GeneralProjectError extends Error {
   constructor(readonly reason: GeneralProjectFailureReason) { super(reason); }
 }
@@ -59,7 +59,7 @@ export class GeneralProjectService {
     this.commands = new IdempotentCommandExecutor(prisma, this.transactions);
   }
 
-  async listProjects(context: ActorContext, input: { page: number; pageSize: number; search?: string | undefined; status?: GeneralProject["status"] | undefined; priority?: GeneralProject["priority"] | undefined; customerId?: bigint | undefined; scope?: "ALL" | "MINE" | undefined }) {
+  async listProjects(context: ActorContext, input: { page: number; pageSize: number; search?: string | undefined; status?: GeneralProject["status"] | undefined; priority?: GeneralProject["priority"] | undefined; customerId?: bigint | undefined; scope?: "ALL" | "MINE" | "FOLLOWING" | undefined }) {
     const where: Prisma.GeneralProjectWhereInput = { companyId: context.companyId,
       ...(input.search ? { OR: [{ code: { contains: input.search } }, { nameAr: { contains: input.search } }, { nameEn: { contains: input.search } }] } : {}),
       ...(input.status ? { status: input.status } : {}), ...(input.priority ? { priority: input.priority } : {}),
@@ -70,6 +70,8 @@ export class GeneralProjectService {
       if (!employee) return { data: [], meta: { page: input.page, pageSize: input.pageSize, total: 0, totalPages: 0 } };
       where.members = { some: { companyId: context.companyId, employeeId: employee.id, isActive: true } };
     }
+    if (input.scope === "FOLLOWING") where.followers = { some: { companyId: context.companyId,
+      userId: context.userId, isActive: true } };
     const { rows, total, counts } = await this.prisma.$transaction(async tx => {
       const [rows, total] = await Promise.all([
         tx.generalProject.findMany({ where, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: (input.page - 1) * input.pageSize, take: input.pageSize }),
@@ -89,14 +91,104 @@ export class GeneralProjectService {
       const project = await tx.generalProject.findFirst({ where: { companyId: context.companyId, publicId } });
       if (!project) throw new GeneralProjectError("NOT_FOUND");
       const members = await tx.generalProjectMember.findMany({ where: { companyId: context.companyId, projectId: project.id }, orderBy: [{ isActive: "desc" }, { role: "asc" }, { id: "asc" }] });
-      return { project, members };
+      const follower = await tx.generalProjectFollower.findUnique({ where: {
+        projectId_userId: { projectId: project.id, userId: context.userId } }, select: { isActive: true } });
+      return { project, members, follower };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
     const [customers, employees] = await Promise.all([
       this.customerMap(context.companyId, result.project.customerId === null ? [] : [result.project.customerId]),
       this.employeeMap(context.companyId, result.members.map(row => row.employeeId)),
     ]);
     return { project: projectJson(result.project, result.project.customerId === null ? null : customers.get(result.project.customerId) ?? null, result.members.filter(row => row.isActive).length),
+      isFollowing: result.follower?.isActive ?? false,
       members: result.members.map(row => { const employee = employees.get(row.employeeId); if (!employee) throw new GeneralProjectError("EMPLOYEE_NOT_FOUND"); return memberJson(row, employee); }) };
+  }
+
+  followProject(context: ActorContext, projectPublicId: string, input: { idempotencyKey: string }) {
+    return this.command(context, "FOLLOW_GENERAL_PROJECT", input.idempotencyKey,
+      { projectPublicId }, 200, async tx => {
+        await this.requireActiveMembershipForCollaboration(tx, context);
+        const project = await this.lockProject(tx, context, projectPublicId);
+        if (!mutable(project.status)) throw new GeneralProjectError("PROJECT_FINAL");
+        const existing = await tx.generalProjectFollower.findUnique({ where: { projectId_userId: {
+          projectId: project.id, userId: context.userId } } });
+        if (!existing?.isActive) {
+          if (existing) await tx.generalProjectFollower.update({ where: { id: existing.id }, data: {
+            isActive: true, version: { increment: 1 }, followedAt: new Date(), unfollowedAt: null } });
+          else await tx.generalProjectFollower.create({ data: { companyId: context.companyId,
+            projectId: project.id, userId: context.userId } });
+          await this.audit(tx, context, "GENERAL_PROJECT_FOLLOWED", projectPublicId);
+        }
+        return { isFollowing: true };
+      });
+  }
+
+  unfollowProject(context: ActorContext, projectPublicId: string, input: { idempotencyKey: string }) {
+    return this.command(context, "UNFOLLOW_GENERAL_PROJECT", input.idempotencyKey,
+      { projectPublicId }, 200, async tx => {
+        await this.requireActiveMembershipForCollaboration(tx, context);
+        const project = await this.lockProject(tx, context, projectPublicId);
+        const existing = await tx.generalProjectFollower.findUnique({ where: { projectId_userId: {
+          projectId: project.id, userId: context.userId } } });
+        if (existing?.isActive) {
+          await tx.generalProjectFollower.update({ where: { id: existing.id }, data: {
+            isActive: false, version: { increment: 1 }, unfollowedAt: new Date() } });
+          await this.audit(tx, context, "GENERAL_PROJECT_UNFOLLOWED", projectPublicId);
+        }
+        return { isFollowing: false };
+      });
+  }
+
+  async listComments(context: ActorContext, projectPublicId: string,
+    input: { page: number; pageSize: number; taskId?: string | undefined }) {
+    const { rows, total } = await this.prisma.$transaction(async tx => {
+      const project = await tx.generalProject.findFirst({ where: { companyId: context.companyId,
+        publicId: projectPublicId }, select: { id: true } });
+      if (!project) throw new GeneralProjectError("NOT_FOUND");
+      const task = input.taskId ? await tx.generalProjectTask.findFirst({ where: {
+        companyId: context.companyId, projectId: project.id, publicId: input.taskId }, select: { id: true } }) : null;
+      if (input.taskId && !task) throw new GeneralProjectError("NOT_FOUND");
+      const where: Prisma.GeneralProjectCommentWhereInput = { companyId: context.companyId,
+        projectId: project.id, ...(task ? { taskId: task.id } : {}) };
+      const [rows, total] = await Promise.all([
+        tx.generalProjectComment.findMany({ where, include: { author: { select: {
+          user: { select: { displayName: true } } } }, task: { select: { publicId: true, title: true } } },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }], skip: (input.page - 1) * input.pageSize,
+        take: input.pageSize }),
+        tx.generalProjectComment.count({ where }),
+      ]);
+      return { rows, total };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+    return { data: rows.map(row => ({ id: row.publicId, taskId: row.task?.publicId ?? null,
+      taskTitle: row.task?.title ?? null,
+      authorName: row.author.user.displayName, body: row.body, createdAt: row.createdAt.toISOString() })),
+    meta: { page: input.page, pageSize: input.pageSize, total,
+      totalPages: Math.ceil(total / input.pageSize) } };
+  }
+
+  addComment(context: ActorContext, projectPublicId: string,
+    input: { taskId?: string | undefined; body: string; idempotencyKey: string }) {
+    return this.command(context, "COMMENT_GENERAL_PROJECT", input.idempotencyKey,
+      { projectPublicId, taskId: input.taskId ?? null, body: input.body }, 201, async tx => {
+        await this.requireActiveMembershipForCollaboration(tx, context);
+        const project = await this.lockProject(tx, context, projectPublicId);
+        if (!mutable(project.status)) throw new GeneralProjectError("PROJECT_FINAL");
+        if (input.body.trim().length < 1 || input.body.trim().length > 2000)
+          throw new GeneralProjectError("INVALID_COMMENT");
+        const task = input.taskId ? await tx.generalProjectTask.findFirst({ where: {
+          companyId: context.companyId, projectId: project.id, publicId: input.taskId },
+          select: { id: true, status: true } }) : null;
+        if (input.taskId && !task) throw new GeneralProjectError("NOT_FOUND");
+        if (task && (task.status === "COMPLETED" || task.status === "CANCELLED"))
+          throw new GeneralProjectError("PROJECT_FINAL");
+        const row = await tx.generalProjectComment.create({ data: { companyId: context.companyId,
+          projectId: project.id, taskId: task?.id ?? null, authorUserId: context.userId,
+          body: input.body.trim() } });
+        await this.audit(tx, context, "GENERAL_PROJECT_COMMENT_ADDED", projectPublicId,
+          { commentId: row.publicId, taskId: input.taskId ?? null });
+        return { comment: { id: row.publicId, taskId: input.taskId ?? null,
+          body: row.body, createdAt: row.createdAt.toISOString() } };
+      });
   }
 
   async listCustomerOptions(context: ActorContext, search?: string) { return { data: (await this.customers.listActiveInCompany(context.companyId, search)).map(customerJson) }; }
@@ -640,6 +732,11 @@ export class GeneralProjectService {
     if (!row) throw new GeneralProjectError("NOT_FOUND");
     if (version !== undefined && row.version !== version) throw new GeneralProjectError("VERSION_CONFLICT");
     return row;
+  }
+  private async requireActiveMembershipForCollaboration(tx: Prisma.TransactionClient, context: ActorContext) {
+    const rows = await tx.$queryRaw<Array<{ isActive: number | boolean }>>`SELECT is_active AS isActive
+      FROM user_companies WHERE user_id = ${context.userId} AND company_id = ${context.companyId} FOR UPDATE`;
+    if (!rows[0]?.isActive) throw new GeneralProjectError("NOT_FOUND");
   }
   private async bumpProject(tx: Prisma.TransactionClient, context: ActorContext, project: GeneralProject) {
     const changed = await tx.generalProject.updateMany({ where: { id: project.id, companyId: context.companyId, version: project.version }, data: { version: { increment: 1 }, updatedById: context.userId } });

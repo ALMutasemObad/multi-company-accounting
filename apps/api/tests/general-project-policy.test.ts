@@ -23,6 +23,8 @@ const planMigration = readFileSync(new URL("../prisma/migrations/20261005_genera
 const planRollback = readFileSync(new URL("../prisma/migrations/20261005_general_project_plan/rollback.sql", import.meta.url), "utf8");
 const dependencyMigration = readFileSync(new URL("../prisma/migrations/20261006_general_project_dependencies/migration.sql", import.meta.url), "utf8");
 const dependencyRollback = readFileSync(new URL("../prisma/migrations/20261006_general_project_dependencies/rollback.sql", import.meta.url), "utf8");
+const collaborationMigration = readFileSync(new URL("../prisma/migrations/20261007_general_project_collaboration/migration.sql", import.meta.url), "utf8");
+const collaborationRollback = readFileSync(new URL("../prisma/migrations/20261007_general_project_collaboration/rollback.sql", import.meta.url), "utf8");
 const schema = readFileSync(new URL("../prisma/schema.prisma", import.meta.url), "utf8");
 
 describe("general project migration boundaries", () => {
@@ -34,6 +36,20 @@ describe("general project migration boundaries", () => {
     const referencedTables = [...migration.matchAll(/REFERENCES `([a-z_]+)`/gu)].map(match => match[1]);
     expect(new Set(referencedTables)).toEqual(new Set(["companies", "customers", "employees", "users", "general_projects"]));
     expect(migration).not.toMatch(/(?:professional_services|service_catalog|cases|legal_matters)/u);
+    expect(migration).toContain("UNIQUE KEY `general_project_members_id_project_company_key` (`id`, `project_id`, `company_id`)");
+  });
+});
+
+describe("general project collaboration persistence boundary", () => {
+  it("keeps followers and comments inside one company project with guarded rollback", () => {
+    expect(collaborationMigration).toContain("FOREIGN KEY (`project_id`, `company_id`) REFERENCES `general_projects` (`id`, `company_id`)");
+    expect(collaborationMigration).toContain("FOREIGN KEY (`task_id`, `project_id`, `company_id`) REFERENCES `general_project_tasks` (`id`, `project_id`, `company_id`)");
+    expect(collaborationMigration).toContain("FOREIGN KEY (`author_user_id`, `company_id`) REFERENCES `user_companies` (`user_id`, `company_id`)");
+    expect(collaborationMigration).toContain("'general_projects.follow'");
+    expect(collaborationMigration).toContain("'general_projects.comment'");
+    expect(collaborationRollback).toContain("@gp_collaboration_rows = 0 AND @gp_collaboration_replays = 0");
+    expect(schema).toContain("model GeneralProjectFollower {");
+    expect(schema).toContain("model GeneralProjectComment {");
   });
 });
 

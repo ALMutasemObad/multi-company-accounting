@@ -23,10 +23,16 @@ type TaskOption = { id: string; title: string; status: TaskStatus; sequence: num
 type TaskDependency = { id: string; predecessorTaskId: string; successorTaskId: string; predecessorTitle: string;
   successorTitle: string; isActive: boolean; version: number; removalReason: string | null };
 type DependencyList = { data: TaskDependency[]; planVersion: number; meta: List["meta"] };
+type Comment = { id: string; taskId: string | null; taskTitle: string | null;
+  authorName: string; body: string; createdAt: string };
+type CommentList = { data: Comment[]; meta: List["meta"] };
 type TaskAssignment = { id: string; memberId: string; role: "RESPONSIBLE" | "CONTRIBUTOR"; isActive: boolean; version: number };
 type TaskAssignmentList = { data: TaskAssignment[]; planVersion: number; meta: List["meta"] };
-type Detail = { project: Project; members: Member[] };
+type Detail = { project: Project; members: Member[]; isFollowing: boolean };
 type List = { data: Project[]; meta: { page: number; pageSize: number; total: number; totalPages: number } };
+
+// The API caps Idempotency-Key at 100 characters; project ids and nonces are UUIDs.
+const projectIdempotencyKey = (operation: string, id: string) => idempotencyKey(`gp-${operation}`, id);
 
 export function GeneralProjectsPage({ notify }: { notify: Notice }) {
   const { selectedCompany, user, permissionSet } = useAuthorization();
@@ -34,16 +40,19 @@ export function GeneralProjectsPage({ notify }: { notify: Notice }) {
 }
 
 function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
-  const { t } = useI18n();
+  const { t, formatDateTime } = useI18n();
   const { permissionSet } = useAuthorization();
   const canManage = permissionSet.has("general_projects.manage");
   const canProgress = permissionSet.has("general_projects.progress");
+  const canFollow = permissionSet.has("general_projects.follow");
+  const canComment = permissionSet.has("general_projects.comment");
   const canReadCustomers = permissionSet.has("customers.view");
   const [projects, setProjects] = useState<Project[]>([]);
   const [meta, setMeta] = useState<List["meta"]>({ page: 1, pageSize: 10, total: 0, totalPages: 0 });
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<Status | "">("");
+  const [scope, setScope] = useState<"ALL" | "MINE" | "FOLLOWING">("ALL");
   const [selectedId, setSelectedId] = useState("");
   const [detail, setDetail] = useState<Detail | null>(null);
   const [phases, setPhases] = useState<(PhaseList & { projectId: string }) | null>(null);
@@ -62,6 +71,11 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
   const [taskOptions, setTaskOptions] = useState<TaskOption[]>([]);
   const [taskOptionSearch, setTaskOptionSearch] = useState("");
   const [predecessorTaskId, setPredecessorTaskId] = useState("");
+  const [comments, setComments] = useState<(CommentList & { projectId: string }) | null>(null);
+  const commentRequestSequence = useRef(0);
+  const [commentPage, setCommentPage] = useState(1);
+  const [commentBody, setCommentBody] = useState("");
+  const [commentTargetTaskId, setCommentTargetTaskId] = useState("");
   const [taskAssignments, setTaskAssignments] = useState<(TaskAssignmentList & { projectId: string; taskId: string }) | null>(null);
   const assignmentRequestSequence = useRef(0);
   const [assignmentPage, setAssignmentPage] = useState(1);
@@ -89,7 +103,7 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const query = new URLSearchParams({ page: String(page), pageSize: "10" });
+      const query = new URLSearchParams({ page: String(page), pageSize: "10", scope });
       if (search.trim()) query.set("search", search.trim());
       if (status) query.set("status", status);
       const result = await api<List>(`/general-projects?${query}`);
@@ -98,7 +112,7 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
       setError("");
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("generalProjects.loadingError")); }
     finally { setLoading(false); }
-  }, [page, search, status, t]);
+  }, [page, search, status, scope, t]);
 
   const loadDetail = useCallback(async () => {
     if (!selectedId) { setDetail(null); return; }
@@ -156,18 +170,33 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
       }
     }
   }, [selectedId, selectedTaskId, dependencyPage, notify, t]);
+  const loadComments = useCallback(async () => {
+    const sequence = ++commentRequestSequence.current;
+    if (!selectedId) { setComments(null); return; }
+    try {
+      const result = await api<CommentList>(`/general-projects/${selectedId}/comments?page=${commentPage}&pageSize=10`);
+      if (sequence === commentRequestSequence.current) setComments({ ...result, projectId: selectedId });
+    } catch (cause) {
+      if (sequence === commentRequestSequence.current) {
+        setComments(null); notify(cause instanceof Error ? cause.message : t("generalProjects.loadingError"), "error");
+      }
+    }
+  }, [selectedId, commentPage, notify, t]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { void loadDetail(); }, [loadDetail]);
   useEffect(() => { setPhases(null); setPhasePage(1); setSelectedPhaseId(""); setTasks(null);
-    setDependencies(null); setDependencyPage(1); setPredecessorTaskId(""); setTaskOptions([]); }, [selectedId]);
+    setDependencies(null); setDependencyPage(1); setPredecessorTaskId(""); setTaskOptions([]);
+    setComments(null); setCommentPage(1); setCommentBody(""); setCommentTargetTaskId(""); }, [selectedId]);
   useEffect(() => { void loadPhases(); }, [loadPhases]);
   useEffect(() => { setTasks(null); setTaskPage(1); setSelectedTaskId(""); setTaskAssignments(null); }, [selectedPhaseId]);
   useEffect(() => { void loadTasks(); }, [loadTasks]);
   useEffect(() => { setTaskAssignments(null); setAssignmentPage(1); }, [selectedTaskId]);
+  useEffect(() => { setCommentTargetTaskId(""); }, [selectedTaskId]);
   useEffect(() => { setDependencies(null); setDependencyPage(1); setPredecessorTaskId(""); }, [selectedTaskId]);
   useEffect(() => { void loadTaskAssignments(); }, [loadTaskAssignments]);
   useEffect(() => { void loadDependencies(); }, [loadDependencies]);
+  useEffect(() => { void loadComments(); }, [loadComments]);
   useEffect(() => {
     if (!selectedId || !canManage) { setTaskOptions([]); return; }
     const controller = new AbortController();
@@ -223,42 +252,49 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
   const execute = async (work: () => Promise<unknown>, message: string) => {
     setWorking(true);
     try { await work(); await load(); await loadDetail(); await loadPhases(); await loadTasks();
-      await loadTaskAssignments(); await loadDependencies(); notify(message); }
+      await loadTaskAssignments(); await loadDependencies(); await loadComments(); notify(message); }
     catch (cause) { notify(cause instanceof Error ? cause.message : t("generalProjects.loadingError"), "error"); }
     finally { setWorking(false); }
   };
   const create = (event: FormEvent) => {
     event.preventDefault();
     if (!newName.trim() || !newManagerId) return;
-    void execute(async () => {
-      const result = await api<{ project: Project }>("/general-projects", { method: "POST", idempotencyKey: idempotencyKey("general-project-create", newManagerId),
-        body: JSON.stringify({ nameAr: newName.trim(), managerEmployeeId: newManagerId,
-          ...(canReadCustomers && newCustomerId ? { customerId: newCustomerId } : {}) }) });
-      setNewName(""); setNewCustomerId(""); setSelectedId(result.project.id);
-    }, t("generalProjects.saved"));
+    void (async () => {
+      setWorking(true);
+      try {
+        const result = await api<{ project: Project }>("/general-projects", { method: "POST", idempotencyKey: projectIdempotencyKey("create", newManagerId),
+          body: JSON.stringify({ nameAr: newName.trim(), managerEmployeeId: newManagerId,
+            ...(canReadCustomers && newCustomerId ? { customerId: newCustomerId } : {}) }) });
+        setNewName(""); setNewCustomerId("");
+        await load();
+        setSelectedId(result.project.id);
+        notify(t("generalProjects.saved"));
+      } catch (cause) { notify(cause instanceof Error ? cause.message : t("generalProjects.loadingError"), "error"); }
+      finally { setWorking(false); }
+    })();
   };
   const assign = (event: FormEvent) => {
     event.preventDefault();
     if (!detail || !memberId) return;
-    void execute(() => api(`/general-projects/${detail.project.id}/members`, { method: "POST", idempotencyKey: idempotencyKey("general-project-assign", detail.project.id),
+    void execute(() => api(`/general-projects/${detail.project.id}/members`, { method: "POST", idempotencyKey: projectIdempotencyKey("assign", detail.project.id),
       body: JSON.stringify({ version: detail.project.version, employeeId: memberId, role: memberRole }) }), t("generalProjects.memberSaved"));
   };
   const update = (event: FormEvent) => {
     event.preventDefault();
     if (!detail || !editName.trim()) return;
-    void execute(() => api(`/general-projects/${detail.project.id}`, { method: "PATCH", idempotencyKey: idempotencyKey("general-project-update", detail.project.id),
+    void execute(() => api(`/general-projects/${detail.project.id}`, { method: "PATCH", idempotencyKey: projectIdempotencyKey("update", detail.project.id),
       body: JSON.stringify({ version: detail.project.version, nameAr: editName.trim(), description: editDescription.trim() || null,
         ...(canReadCustomers && editCustomerId !== (detail.project.customer?.id ?? "") ? { customerId: editCustomerId || null } : {}) }) }), t("generalProjects.saved"));
   };
   const unassign = (member: Member) => {
     if (!detail || reason.trim().length < 10) return;
-    void execute(() => api(`/general-projects/${detail.project.id}/members/${member.id}/unassign`, { method: "POST", idempotencyKey: idempotencyKey("general-project-unassign", member.id),
+    void execute(() => api(`/general-projects/${detail.project.id}/members/${member.id}/unassign`, { method: "POST", idempotencyKey: projectIdempotencyKey("unassign", member.id),
       body: JSON.stringify({ version: detail.project.version, reason: reason.trim() }) }), t("generalProjects.memberSaved"));
   };
   const transition = (next: Status) => {
     if (!detail) return;
     if ((next === "CANCELLED" || next === "ON_HOLD" || detail.project.status === "ON_HOLD") && reason.trim().length < 10) return;
-    void execute(() => api(`/general-projects/${detail.project.id}/transition`, { method: "POST", idempotencyKey: idempotencyKey("general-project-transition", detail.project.id),
+    void execute(() => api(`/general-projects/${detail.project.id}/transition`, { method: "POST", idempotencyKey: projectIdempotencyKey("transition", detail.project.id),
       body: JSON.stringify({ version: detail.project.version, status: next, ...(reason.trim() ? { reason: reason.trim() } : {}) }) }), t("generalProjects.updated"));
   };
   const transitions: Record<Status, Status[]> = { DRAFT: ["ACTIVE", "CANCELLED"], ACTIVE: ["ON_HOLD", "COMPLETED", "CANCELLED"],
@@ -270,7 +306,7 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
     if (!detail || !phases || phases.projectId !== detail.project.id || !newPhaseTitle.trim()) return;
     void execute(async () => {
       await api(`/general-projects/${detail.project.id}/phases`, { method: "POST",
-        idempotencyKey: idempotencyKey("general-project-phase-create", detail.project.id),
+        idempotencyKey: projectIdempotencyKey("phase-create", detail.project.id),
         body: JSON.stringify({ expectedPlanVersion: phases.planVersion, title: newPhaseTitle.trim() }) });
       setNewPhaseTitle("");
     }, t("generalProjects.phaseSaved"));
@@ -278,7 +314,7 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
   const changePhase = (phase: Phase, to: PhaseStatus) => {
     if (!detail || !phases || phases.projectId !== detail.project.id || (to === "CANCELLED" && reason.trim().length < 10)) return;
     void execute(() => api(`/general-projects/${detail.project.id}/phases/${phase.id}/transition`, { method: "POST",
-      idempotencyKey: idempotencyKey("general-project-phase-transition", phase.id),
+      idempotencyKey: projectIdempotencyKey("phase-transition", phase.id),
       body: JSON.stringify({ expectedPlanVersion: phases.planVersion, expectedVersion: phase.version, to,
         ...(to === "CANCELLED" ? { reason: reason.trim() } : {}) }) }), t("generalProjects.phaseSaved"));
   };
@@ -287,7 +323,7 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
     if (!detail || !phases || phases.projectId !== detail.project.id || !selectedPhaseId || !newTaskTitle.trim()) return;
     void execute(async () => {
       await api(`/general-projects/${detail.project.id}/phases/${selectedPhaseId}/tasks`, { method: "POST",
-        idempotencyKey: idempotencyKey("general-project-task-create", selectedPhaseId),
+        idempotencyKey: projectIdempotencyKey("task-create", selectedPhaseId),
         body: JSON.stringify({ expectedPlanVersion: phases.planVersion, title: newTaskTitle.trim() }) });
       setNewTaskTitle("");
     }, t("generalProjects.taskSaved"));
@@ -296,7 +332,7 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
     event.preventDefault();
     if (!detail || !tasks || tasks.projectId !== detail.project.id || !selectedTaskId || !taskMemberId) return;
     void execute(() => api(`/general-projects/${detail.project.id}/tasks/${selectedTaskId}/assignments`, { method: "POST",
-      idempotencyKey: idempotencyKey("general-project-task-assign", selectedTaskId),
+      idempotencyKey: projectIdempotencyKey("task-assign", selectedTaskId),
       body: JSON.stringify({ expectedPlanVersion: tasks.planVersion, memberId: taskMemberId, role: taskMemberRole }) }),
     t("generalProjects.taskSaved"));
   };
@@ -304,7 +340,7 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
     if (!detail || !taskAssignments || taskAssignments.projectId !== detail.project.id ||
       taskAssignments.taskId !== selectedTaskId || reason.trim().length < 10) return;
     void execute(() => api(`/general-projects/${detail.project.id}/tasks/${selectedTaskId}/assignments/${assignment.id}/unassign`, {
-      method: "POST", idempotencyKey: idempotencyKey("general-project-task-unassign", assignment.id),
+      method: "POST", idempotencyKey: projectIdempotencyKey("task-unassign", assignment.id),
       body: JSON.stringify({ expectedPlanVersion: taskAssignments.planVersion,
         expectedVersion: assignment.version, reason: reason.trim() }) }), t("generalProjects.taskSaved"));
   };
@@ -317,7 +353,7 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
     if (needsReason && reason.trim().length < 10) return;
     const action = canManage ? "transition" : "progress";
     void execute(() => api(`/general-projects/${detail.project.id}/tasks/${task.id}/${action}`, { method: "POST",
-      idempotencyKey: idempotencyKey("general-project-task-transition", task.id),
+      idempotencyKey: projectIdempotencyKey("task-transition", task.id),
       body: JSON.stringify({ expectedPlanVersion: tasks.planVersion, expectedVersion: task.version, to,
         ...(needsReason ? { reason: reason.trim() } : {}) }) }), t("generalProjects.taskSaved"));
   };
@@ -327,7 +363,7 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
       !selectedTaskId || !predecessorTaskId || predecessorTaskId === selectedTaskId) return;
     void execute(async () => {
       await api(`/general-projects/${detail.project.id}/task-dependencies`, { method: "POST",
-        idempotencyKey: idempotencyKey("general-project-dependency-add", selectedTaskId),
+        idempotencyKey: projectIdempotencyKey("dependency-add", selectedTaskId),
         body: JSON.stringify({ expectedPlanVersion: dependencies.planVersion,
           predecessorTaskId, successorTaskId: selectedTaskId }) });
       setPredecessorTaskId("");
@@ -336,9 +372,28 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
   const removeDependency = (dependency: TaskDependency) => {
     if (!detail || !dependencies || dependencies.projectId !== detail.project.id || reason.trim().length < 10) return;
     void execute(() => api(`/general-projects/${detail.project.id}/task-dependencies/${dependency.id}/remove`, {
-      method: "POST", idempotencyKey: idempotencyKey("general-project-dependency-remove", dependency.id),
+      method: "POST", idempotencyKey: projectIdempotencyKey("dependency-remove", dependency.id),
       body: JSON.stringify({ expectedPlanVersion: dependencies.planVersion,
         expectedVersion: dependency.version, reason: reason.trim() }) }), t("generalProjects.dependencySaved"));
+  };
+  const changeFollowing = () => {
+    if (!detail || !canFollow || (!detail.isFollowing &&
+      (detail.project.status === "COMPLETED" || detail.project.status === "CANCELLED"))) return;
+    const action = detail.isFollowing ? "unfollow" : "follow";
+    void execute(() => api(`/general-projects/${detail.project.id}/${action}`, { method: "POST",
+      idempotencyKey: projectIdempotencyKey(action, detail.project.id) }),
+    t("generalProjects.followSaved"));
+  };
+  const addComment = (event: FormEvent) => {
+    event.preventDefault();
+    if (!detail || !canComment || !commentBody.trim()) return;
+    void execute(async () => {
+      await api(`/general-projects/${detail.project.id}/comments`, { method: "POST",
+        idempotencyKey: projectIdempotencyKey("comment", detail.project.id),
+        body: JSON.stringify({ body: commentBody.trim(),
+          ...(commentTargetTaskId ? { taskId: commentTargetTaskId } : {}) }) });
+      setCommentBody(""); setCommentTargetTaskId("");
+    }, t("generalProjects.commentSaved"));
   };
 
   return <div className="page-content">
@@ -360,6 +415,11 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
         <select aria-label={t("generalProjects.title")} value={status} onChange={event => { setPage(1); setStatus(event.target.value as Status | ""); }}>
           <option value="">—</option>{(["DRAFT", "ACTIVE", "ON_HOLD", "COMPLETED", "CANCELLED"] as const).map(value => <option key={value} value={value}>{t(`generalProjects.status.${value}`)}</option>)}
         </select>
+        <select aria-label={t("generalProjects.scope")} value={scope}
+          onChange={event => { setPage(1); setScope(event.target.value as typeof scope); }}>
+          {(["ALL", "MINE", "FOLLOWING"] as const).map(value => <option key={value} value={value}>
+            {t(`generalProjects.scope.${value}`)}</option>)}
+        </select>
       </div>
       {error && <p role="alert">{error}</p>}
       {loading ? <Spinner /> : projects.length === 0 ? <EmptyState title={t("generalProjects.empty")} description={t("generalProjects.description")} /> : <TableRegion>
@@ -372,6 +432,9 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
     {detail && detail.project.id === selectedId && <section className="card">
       <h2>{detail.project.code} · {detail.project.nameAr}</h2>
       <p>{t(`generalProjects.status.${detail.project.status}`)} · {detail.project.description ?? ""}</p>
+      {canFollow && <Button variant="secondary" disabled={working || !detail.isFollowing &&
+        (detail.project.status === "COMPLETED" || detail.project.status === "CANCELLED")}
+        onClick={changeFollowing}>{detail.isFollowing ? t("generalProjects.unfollow") : t("generalProjects.follow")}</Button>}
       {canManage && transitions[detail.project.status].length > 0 && <form onSubmit={update} className="form-grid">
         <label>{t("generalProjects.name")}<input required maxLength={200} value={editName} onChange={event => setEditName(event.target.value)} /></label>
         <label>{t("generalProjects.description")}<textarea maxLength={1000} value={editDescription} onChange={event => setEditDescription(event.target.value)} /></label>
@@ -394,6 +457,29 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
         <label>{t("generalProjects.role")}<select value={memberRole} onChange={event => setMemberRole(event.target.value as Role)}><option value="MANAGER">{t("generalProjects.role.MANAGER")}</option><option value="CONTRIBUTOR">{t("generalProjects.role.CONTRIBUTOR")}</option></select></label>
         <Button type="submit" disabled={working || !memberId}>{t("generalProjects.assign")}</Button>
       </form>}
+      <h3>{t("generalProjects.comments")}</h3>
+      {comments?.projectId === selectedId && comments.data.length === 0 &&
+        <p>{t("generalProjects.noComments")}</p>}
+      {comments?.projectId === selectedId && comments.data.map(comment => <div key={comment.id}>
+        <p>{comment.authorName}{comment.taskTitle ? ` · ${comment.taskTitle}` : ""}
+          {` · ${formatDateTime(comment.createdAt)}`}</p>
+        <p>{comment.body}</p>
+      </div>)}
+      {comments?.projectId === selectedId && <Pagination page={comments.meta.page}
+        totalPages={comments.meta.totalPages} total={comments.meta.total} onChange={setCommentPage} />}
+      {canComment && detail.project.status !== "COMPLETED" && detail.project.status !== "CANCELLED" &&
+        <form onSubmit={addComment} className="form-grid">
+          <label>{t("generalProjects.commentTarget")}
+            <select value={commentTargetTaskId} onChange={event => setCommentTargetTaskId(event.target.value)}>
+              <option value="">{t("generalProjects.projectTarget")}</option>
+              {selectedTaskId && tasks?.data.find(task => task.id === selectedTaskId &&
+                task.status !== "COMPLETED" && task.status !== "CANCELLED") &&
+                <option value={selectedTaskId}>{tasks.data.find(task => task.id === selectedTaskId)?.title}</option>}
+            </select></label>
+          <label>{t("generalProjects.commentBody")}<textarea maxLength={2000} required value={commentBody}
+            onChange={event => setCommentBody(event.target.value)} /></label>
+          <Button type="submit" disabled={working || !commentBody.trim()}>{t("generalProjects.addComment")}</Button>
+        </form>}
       <h3>{t("generalProjects.phases")}</h3>
       {phases?.projectId === selectedId && phases.data.length === 0 && <p>{t("generalProjects.noPhases")}</p>}
       {phases?.projectId === selectedId && phases.data.map(phase => <div key={phase.id}>
