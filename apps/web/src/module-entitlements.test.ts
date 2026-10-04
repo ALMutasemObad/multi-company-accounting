@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { effectivePermissionSet, permissionModule } from './module-entitlements';
+import { localeDictionary as arLocale } from './i18n/locales/ar.locale';
+import { localeDictionary as enLocale } from './i18n/locales/en.locale';
+import { localeDictionary as hiLocale } from './i18n/locales/hi.locale';
+import { localeDictionary as urLocale } from './i18n/locales/ur.locale';
 
 describe('sales catalogue entitlement boundary', () => {
   it('maps both catalogue permissions to SALES without granting manage from view', () => {
@@ -39,5 +43,18 @@ describe('independent service catalog entitlement', () => {
     expect(permissionModule('services.view')).toBe('SERVICE_CATALOG');
     expect(permissionModule('sales_catalog.view')).toBe('SALES');
     expect([...effectivePermissionSet(['services.manage'], new Set(['SALES', 'PROFESSIONAL_PROJECTS']))]).toEqual([]);
+  });
+
+  it('names the standalone catalog as general service management in every locale', () => {
+    for (const [dictionary, label] of [
+      [arLocale, 'إدارة الخدمات'],
+      [enLocale, 'Service management'],
+      [hiLocale, 'सेवाओं का प्रबंधन'],
+      [urLocale, 'خدمات کا انتظام'],
+    ] as const) {
+      expect(dictionary['nav.services']).toBe(label);
+      expect(dictionary['view.services']).toBe(label);
+      expect(dictionary['service.title']).toBe(label);
+    }
   });
 });
