@@ -21987,6 +21987,8 @@ components:
         pricingUnit: { $ref: '#/components/schemas/ServicePricingUnit' }
         availableFrom: { type: [string, 'null'], format: date }
         availableUntil: { type: [string, 'null'], format: date }
+        defaultRevenueAccountId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+        defaultOutputTaxRateId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
     UpdateServiceVariantRequest:
       type: object
       additionalProperties: false
@@ -21999,6 +22001,8 @@ components:
         pricingUnit: { $ref: '#/components/schemas/ServicePricingUnit' }
         availableFrom: { type: [string, 'null'], format: date }
         availableUntil: { type: [string, 'null'], format: date }
+        defaultRevenueAccountId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+        defaultOutputTaxRateId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
     TransitionServiceOfferingRequest:
       type: object
       additionalProperties: false

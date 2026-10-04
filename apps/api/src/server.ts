@@ -72,6 +72,8 @@ import { ProfessionalCustomerAdapter } from './sales/professional-customer-adapt
 import { ProfessionalPeopleAdapter } from './users/professional-people-adapter.js';
 import { HrService } from './hr/hr-service.js';
 import { ServiceCatalogService } from './service-catalog/service-catalog-service.js';
+import { ServiceCatalogRevenueAccountAdapter } from './accounts/service-catalog-revenue-account-adapter.js';
+import { ServiceCatalogOutputTaxAdapter } from './tax/service-catalog-output-tax-adapter.js';
 import { HrIdentityAdapter } from './users/hr-identity-adapter.js';
 import { HrEmployeeAccountAdapter } from './hr/employee-account-adapter.js';
 import { IdentityAccountAdapter } from './users/identity-account-adapter.js';
@@ -310,7 +312,8 @@ const approvals = new ApprovalService(database, {
   EMPLOYEE_EXPENSE_CLAIM: new EmployeeExpenseApprovalAdapter(employeeExpenses),
 });
 const hr = new HrService(database, new HrIdentityAdapter(database));
-const serviceCatalog = new ServiceCatalogService(database);
+const serviceCatalog = new ServiceCatalogService(database,
+  new ServiceCatalogRevenueAccountAdapter(), new ServiceCatalogOutputTaxAdapter());
 const users = new UserService(database);
 const workforceAccess = new WorkforceAccessService(
   database,

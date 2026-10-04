@@ -83,9 +83,10 @@ describe("service catalog category HTTP boundary", () => {
     await request(app).get(`/service-catalog/offerings/${offeringId}/variants?page=2&pageSize=10`).expect(200);
     await write(request(app).post(`/service-catalog/offerings/${offeringId}/variants`)).send({
       nameAr: "جلسة", pricingUnit: "SESSION", availableFrom: "2026-10-01", availableUntil: "2026-11-01",
+      defaultRevenueAccountId: "31", defaultOutputTaxRateId: "41",
     }).expect(201);
     await write(request(app).patch(`/service-catalog/offerings/${offeringId}/variants/${variantId}`)).send({
-      expectedVersion: 0, nameAr: "جلسة موسعة",
+      expectedVersion: 0, nameAr: "جلسة موسعة", defaultOutputTaxRateId: null,
     }).expect(200);
     await write(request(app).post(`/service-catalog/offerings/${offeringId}/variants/${variantId}/transition`)).send({
       expectedVersion: 0, to: "ACTIVE", reason: "Approved service variant",
@@ -96,10 +97,15 @@ describe("service catalog category HTTP boundary", () => {
     await write(request(app).post(`/service-catalog/offerings/${offeringId}/variants`)).send({
       nameAr: "جلسة", pricingUnit: "SESSION", inventoryItemId: "1",
     }).expect(400);
+    await write(request(app).post(`/service-catalog/offerings/${offeringId}/variants`)).send({
+      nameAr: "جلسة", pricingUnit: "SESSION", defaultRevenueAccountId: "0",
+    }).expect(400);
     expect(authorize.mock.calls.every(([input]) => input.permission === "services.manage")).toBe(true);
     expect(catalog.listVariants).toHaveBeenCalledWith(context, offeringId, { page: 2, pageSize: 10 });
-    expect(catalog.createVariant).toHaveBeenCalledWith(context, offeringId, expect.objectContaining({ pricingUnit: "SESSION" }));
-    expect(catalog.updateVariant).toHaveBeenCalledWith(context, offeringId, variantId, expect.objectContaining({ nameAr: "جلسة موسعة" }));
+    expect(catalog.createVariant).toHaveBeenCalledWith(context, offeringId,
+      expect.objectContaining({ pricingUnit: "SESSION", defaultRevenueAccountId: 31n, defaultOutputTaxRateId: 41n }));
+    expect(catalog.updateVariant).toHaveBeenCalledWith(context, offeringId, variantId,
+      expect.objectContaining({ nameAr: "جلسة موسعة", defaultOutputTaxRateId: null }));
     expect(catalog.transitionVariant).toHaveBeenCalledWith(context, offeringId, variantId, expect.objectContaining({ to: "ACTIVE" }));
   });
 });

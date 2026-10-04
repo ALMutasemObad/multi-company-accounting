@@ -4,12 +4,14 @@ import type { ActorContext } from "../platform/actor-context.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
 import { reserveMasterDataCode } from "../platform/master-data-code-service.js";
 import { TransactionExecutor } from "../platform/transaction-executor.js";
+import type { ServiceCatalogOutputTaxQueryPort, ServiceCatalogRevenueAccountQueryPort } from "./service-catalog-reference-ports.js";
 import { transitionServiceCategory, transitionServiceOffering, transitionServiceVariant,
   validateAvailabilityWindow, validateServiceVariantEdit, type ServiceAvailabilityWindow, type ServiceCategoryStatus,
   type ServiceOfferingStatus, type ServicePricingUnit } from "./service-offering-policy.js";
 
 export type ServiceCatalogFailureReason = "NOT_FOUND" | "VERSION_CONFLICT" | "CATEGORY_RETIRED"
   | "CATEGORY_NOT_ACTIVE" | "OFFERING_RETIRED" | "VARIANT_RETIRED"
+  | "REVENUE_ACCOUNT_INVALID" | "OUTPUT_TAX_RATE_INVALID"
   | "IDEMPOTENCY_MISMATCH" | "IDEMPOTENCY_IN_PROGRESS";
 
 export class ServiceCatalogError extends Error {
@@ -29,7 +31,9 @@ const categoryJson = (row: ServiceCategory) => ({
 function changedCatalogFields(before: object | null, after: object, fields: readonly string[]) {
   const next = after as Record<string, unknown>;
   const previous = before as Record<string, unknown> | null;
-  return fields.filter(field => previous === null ? next[field] !== null && next[field] !== undefined : previous[field] !== next[field]);
+  return fields.filter(field => previous === null ? next[field] !== null && next[field] !== undefined
+    : (previous[field] instanceof Date ? previous[field].valueOf() : previous[field])
+      !== (next[field] instanceof Date ? next[field].valueOf() : next[field]));
 }
 const offeringJson = (row: ServiceOffering, category: ServiceCategory | null, variantCount: number) => ({
   id: row.publicId, code: row.code,
@@ -56,9 +60,11 @@ type OfferingCreate = { nameAr: string; nameEn?: string | null; description?: st
 type OfferingPatch = { expectedVersion: number; nameAr?: string; nameEn?: string | null; description?: string | null; categoryId?: string | null; idempotencyKey: string };
 type StatusTransition = { expectedVersion: number; to: ServiceOfferingStatus; reason: string; idempotencyKey: string };
 type VariantCreate = { nameAr: string; nameEn?: string | null; pricingUnit: ServicePricingUnit;
-  availableFrom?: string | null; availableUntil?: string | null; idempotencyKey: string };
+  availableFrom?: string | null; availableUntil?: string | null;
+  defaultRevenueAccountId?: bigint | null; defaultOutputTaxRateId?: bigint | null; idempotencyKey: string };
 type VariantPatch = { expectedVersion: number; nameAr?: string; nameEn?: string | null;
-  pricingUnit?: ServicePricingUnit; availableFrom?: string | null; availableUntil?: string | null; idempotencyKey: string };
+  pricingUnit?: ServicePricingUnit; availableFrom?: string | null; availableUntil?: string | null;
+  defaultRevenueAccountId?: bigint | null; defaultOutputTaxRateId?: bigint | null; idempotencyKey: string };
 const dbDate = (value: string | null) => value === null ? null : new Date(`${value}T00:00:00.000Z`);
 function localDate(now: Date, timezone: string) {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" })
@@ -70,7 +76,9 @@ function localDate(now: Date, timezone: string) {
 export class ServiceCatalogService {
   private readonly commands: IdempotentCommandExecutor;
 
-  constructor(private readonly prisma: PrismaClient) {
+  constructor(private readonly prisma: PrismaClient,
+    private readonly accounts: ServiceCatalogRevenueAccountQueryPort,
+    private readonly tax: ServiceCatalogOutputTaxQueryPort) {
     this.commands = new IdempotentCommandExecutor(prisma, new TransactionExecutor(prisma));
   }
 
@@ -277,15 +285,20 @@ export class ServiceCatalogService {
         availableFrom: input.availableFrom ?? null, availableUntil: input.availableUntil ?? null,
       };
       validateAvailabilityWindow(availability);
+      const defaults = await this.resolveDefaultReferences(tx, context.companyId,
+        input.defaultRevenueAccountId, input.defaultOutputTaxRateId);
       const row = await tx.serviceOfferingVariant.create({ data: {
         companyId: context.companyId, offeringId: offering.id,
         nameAr: input.nameAr, nameEn: input.nameEn ?? null, pricingUnit: input.pricingUnit,
         availableFrom: dbDate(availability.availableFrom), availableUntil: dbDate(availability.availableUntil),
+        defaultRevenueAccountId: defaults.defaultRevenueAccountId ?? null,
+        defaultOutputTaxRateId: defaults.defaultOutputTaxRateId ?? null,
         createdById: context.userId, updatedById: context.userId,
       } });
       await this.audit(tx, context, "SERVICE_VARIANT_CREATED", row.publicId, {
         beforeVersion: null, afterVersion: row.version,
-        changedFields: changedCatalogFields(null, row, ["nameAr", "nameEn", "pricingUnit", "availableFrom", "availableUntil", "status"]),
+        changedFields: changedCatalogFields(null, row, ["nameAr", "nameEn", "pricingUnit", "availableFrom", "availableUntil",
+          "defaultRevenueAccountId", "defaultOutputTaxRateId", "status"]),
       }, "SERVICE_OFFERING_VARIANT");
       return { variant: variantJson(row) };
     });
@@ -310,6 +323,8 @@ export class ServiceCatalogService {
         validateServiceVariantEdit({ everActivated: current.firstActivatedAt !== null,
           previousUnit: current.pricingUnit, nextUnit: input.pricingUnit ?? current.pricingUnit,
           previousAvailability, nextAvailability, asOf: localDate(new Date(), company.timezone) });
+        const defaults = await this.resolveDefaultReferences(tx, context.companyId,
+          input.defaultRevenueAccountId, input.defaultOutputTaxRateId);
         const changed = await tx.serviceOfferingVariant.updateMany({
           where: { id: current.id, companyId: context.companyId, offeringId: offering.id,
             version: input.expectedVersion, status: { not: "RETIRED" } },
@@ -319,6 +334,8 @@ export class ServiceCatalogService {
             ...(input.pricingUnit !== undefined ? { pricingUnit: input.pricingUnit } : {}),
             ...(input.availableFrom !== undefined ? { availableFrom: dbDate(input.availableFrom) } : {}),
             ...(input.availableUntil !== undefined ? { availableUntil: dbDate(input.availableUntil) } : {}),
+            ...(input.defaultRevenueAccountId !== undefined ? { defaultRevenueAccountId: defaults.defaultRevenueAccountId ?? null } : {}),
+            ...(input.defaultOutputTaxRateId !== undefined ? { defaultOutputTaxRateId: defaults.defaultOutputTaxRateId ?? null } : {}),
             version: { increment: 1 }, updatedById: context.userId,
           },
         });
@@ -326,7 +343,8 @@ export class ServiceCatalogService {
         const row = await tx.serviceOfferingVariant.findUniqueOrThrow({ where: { id: current.id } });
         await this.audit(tx, context, "SERVICE_VARIANT_UPDATED", row.publicId, {
           beforeVersion: current.version, afterVersion: row.version,
-          changedFields: changedCatalogFields(current, row, ["nameAr", "nameEn", "pricingUnit", "availableFrom", "availableUntil"]),
+          changedFields: changedCatalogFields(current, row, ["nameAr", "nameEn", "pricingUnit", "availableFrom", "availableUntil",
+            "defaultRevenueAccountId", "defaultOutputTaxRateId"]),
         }, "SERVICE_OFFERING_VARIANT");
         return { variant: variantJson(row) };
       });
@@ -387,11 +405,26 @@ export class ServiceCatalogService {
     return rows[0].id;
   }
 
+  private async resolveDefaultReferences(tx: Prisma.TransactionClient, companyId: bigint,
+    accountId: bigint | null | undefined, taxRateId: bigint | null | undefined) {
+    const defaultRevenueAccountId = accountId;
+    const defaultOutputTaxRateId = taxRateId;
+    if (typeof defaultRevenueAccountId === "bigint") {
+      const ready = await this.accounts.readyIds(tx, companyId, [defaultRevenueAccountId]);
+      if (!ready.has(String(defaultRevenueAccountId))) throw new ServiceCatalogError("REVENUE_ACCOUNT_INVALID");
+    }
+    if (typeof defaultOutputTaxRateId === "bigint") {
+      const ready = await this.tax.readyIds(tx, companyId, [defaultOutputTaxRateId]);
+      if (!ready.has(String(defaultOutputTaxRateId))) throw new ServiceCatalogError("OUTPUT_TAX_RATE_INVALID");
+    }
+    return { defaultRevenueAccountId, defaultOutputTaxRateId };
+  }
+
   private execute<T>(context: ActorContext, operation: string, key: string, body: Record<string, unknown>, responseStatus: number,
     work: (tx: Prisma.TransactionClient) => Promise<T>) {
     return this.commands.execute({
       context, operation, key, responseStatus,
-      fingerprint: JSON.stringify(body),
+      fingerprint: JSON.stringify(body, (_key, value: unknown) => typeof value === "bigint" ? value.toString() : value),
       errors: {
         mismatch: () => new ServiceCatalogError("IDEMPOTENCY_MISMATCH"),
         inProgress: () => new ServiceCatalogError("IDEMPOTENCY_IN_PROGRESS"),
