@@ -40,9 +40,10 @@ describe.runIf(enabled)("general project register on isolated MySQL/MariaDB", ()
     if (!prisma) return;
     const companies = [companyId, foreignCompanyId].filter((value): value is bigint => value !== undefined);
     if (companies.length) {
-      await prisma.idempotencyRecord.deleteMany({ where: { companyId: { in: companies }, operation: { in: ["CREATE_GENERAL_PROJECT", "UPDATE_GENERAL_PROJECT", "TRANSITION_GENERAL_PROJECT", "ASSIGN_GENERAL_PROJECT_MEMBER", "UNASSIGN_GENERAL_PROJECT_MEMBER", "CREATE_GENERAL_PROJECT_PHASE", "TRANSITION_GENERAL_PROJECT_PHASE", "CREATE_GENERAL_PROJECT_TASK", "ASSIGN_GENERAL_PROJECT_TASK_MEMBER", "UNASSIGN_GENERAL_PROJECT_TASK_MEMBER", "TRANSITION_GENERAL_PROJECT_TASK", "PROGRESS_GENERAL_PROJECT_TASK"] } } });
+      await prisma.idempotencyRecord.deleteMany({ where: { companyId: { in: companies }, operation: { in: ["CREATE_GENERAL_PROJECT", "UPDATE_GENERAL_PROJECT", "TRANSITION_GENERAL_PROJECT", "ASSIGN_GENERAL_PROJECT_MEMBER", "UNASSIGN_GENERAL_PROJECT_MEMBER", "CREATE_GENERAL_PROJECT_PHASE", "TRANSITION_GENERAL_PROJECT_PHASE", "CREATE_GENERAL_PROJECT_TASK", "ASSIGN_GENERAL_PROJECT_TASK_MEMBER", "UNASSIGN_GENERAL_PROJECT_TASK_MEMBER", "TRANSITION_GENERAL_PROJECT_TASK", "PROGRESS_GENERAL_PROJECT_TASK", "ADD_GENERAL_PROJECT_TASK_DEPENDENCY", "REMOVE_GENERAL_PROJECT_TASK_DEPENDENCY"] } } });
       await prisma.auditLog.deleteMany({ where: { companyId: { in: companies }, entityType: "GENERAL_PROJECT" } });
       await prisma.generalProjectTaskAssignment.deleteMany({ where: { companyId: { in: companies } } });
+      await prisma.generalProjectTaskDependency.deleteMany({ where: { companyId: { in: companies } } });
       await prisma.generalProjectTask.deleteMany({ where: { companyId: { in: companies } } });
       await prisma.generalProjectPhase.deleteMany({ where: { companyId: { in: companies } } });
       await prisma.generalProjectMember.deleteMany({ where: { companyId: { in: companies } } });
@@ -207,6 +208,48 @@ describe.runIf(enabled)("general project register on isolated MySQL/MariaDB", ()
     await expect(service.transitionTask(context(), id, unassigned.task.id, { expectedPlanVersion: 7,
       expectedVersion: 0, to: "IN_PROGRESS", idempotencyKey: "it-general-project-progress-denied-0001" }, "PROGRESS"))
       .rejects.toMatchObject({ reason: "NOT_FOUND" });
+  });
+
+  it("blocks a successor, rejects cycles and recovers after a predecessor is cancelled", async () => {
+    const created = await service.createProject(context(), { nameAr: "مشروع اعتمادية", managerEmployeeId: managerId,
+      idempotencyKey: "it-general-project-dependency-create-0001" });
+    const id = created.project.id;
+    const phase = await service.createPhase(context(), id, { expectedPlanVersion: 0, title: "مرحلة مترابطة",
+      idempotencyKey: "it-general-project-dependency-phase-0001" });
+    const a = await service.createTask(context(), id, phase.phase.id, { expectedPlanVersion: 1,
+      title: "السابقة", idempotencyKey: "it-general-project-dependency-a-0001" });
+    const b = await service.createTask(context(), id, phase.phase.id, { expectedPlanVersion: 2,
+      title: "التابعة", idempotencyKey: "it-general-project-dependency-b-0001" });
+    await service.transition(context(), id, { version: 0, status: "ACTIVE",
+      idempotencyKey: "it-general-project-dependency-active-0001" });
+    await service.transitionPhase(context(), id, phase.phase.id, { expectedPlanVersion: 3,
+      expectedVersion: 0, to: "IN_PROGRESS", idempotencyKey: "it-general-project-dependency-phase-start-0001" });
+    const manager = (await service.getProject(context(), id)).members.find(member => member.role === "MANAGER")!;
+    await service.assignTaskMember(context(), id, b.task.id, { expectedPlanVersion: 4,
+      memberId: manager.id, role: "RESPONSIBLE", idempotencyKey: "it-general-project-dependency-assign-0001" });
+    const link = await service.addDependency(context(), id, { expectedPlanVersion: 5,
+      predecessorTaskId: a.task.id, successorTaskId: b.task.id,
+      idempotencyKey: "it-general-project-dependency-link-0001" });
+    expect(link.planVersion).toBe(6);
+    expect((await service.listTasks(context(), id, phase.phase.id, { page: 1, pageSize: 25 })).data
+      .find(row => row.id === b.task.id)?.dependencyBlocked).toBe(true);
+    await expect(service.transitionTask(context(), id, b.task.id, { expectedPlanVersion: 6,
+      expectedVersion: 0, to: "IN_PROGRESS", idempotencyKey: "it-general-project-dependency-blocked-0001" }, "PROGRESS"))
+      .rejects.toMatchObject({ code: "DEPENDENCY_BLOCKED" });
+    await expect(service.addDependency(context(), id, { expectedPlanVersion: 6,
+      predecessorTaskId: b.task.id, successorTaskId: a.task.id,
+      idempotencyKey: "it-general-project-dependency-cycle-0001" }))
+      .rejects.toMatchObject({ code: "DEPENDENCY_CYCLE" });
+    await service.transitionTask(context(), id, a.task.id, { expectedPlanVersion: 6, expectedVersion: 0,
+      to: "CANCELLED", reason: "Previous work cancelled", idempotencyKey: "it-general-project-dependency-cancel-a-0001" });
+    const removed = await service.removeDependency(context(), id, link.dependency.id, {
+      expectedPlanVersion: 7, expectedVersion: 0, reason: "Recover after cancellation",
+      idempotencyKey: "it-general-project-dependency-remove-0001" });
+    expect(removed.dependency.isActive).toBe(false);
+    expect(removed.planVersion).toBe(8);
+    const started = await service.transitionTask(context(), id, b.task.id, { expectedPlanVersion: 8,
+      expectedVersion: 0, to: "IN_PROGRESS", idempotencyKey: "it-general-project-dependency-start-b-0001" }, "PROGRESS");
+    expect(started.task.status).toBe("IN_PROGRESS");
   });
 
   it("refuses completion while a phase or task is open", async () => {

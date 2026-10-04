@@ -1,10 +1,10 @@
-import { Prisma, type GeneralProject, type GeneralProjectMember, type GeneralProjectPhase, type GeneralProjectTask, type GeneralProjectTaskAssignment, type PrismaClient } from "@prisma/client";
+import { Prisma, type GeneralProject, type GeneralProjectMember, type GeneralProjectPhase, type GeneralProjectTask, type GeneralProjectTaskAssignment, type GeneralProjectTaskDependency, type PrismaClient } from "@prisma/client";
 import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import type { ActorContext } from "../platform/actor-context.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
 import { reserveMasterDataCode } from "../platform/master-data-code-service.js";
 import { TransactionExecutor } from "../platform/transaction-executor.js";
-import { transitionPhase, transitionProject, transitionTask } from "./general-project-policy.js";
+import { transitionPhase, transitionProject, transitionTask, validateDependencyAddition, validateDependencyRemoval } from "./general-project-policy.js";
 import type { GeneralProjectCustomerPort, GeneralProjectCustomerReference, GeneralProjectEmployeePort, GeneralProjectEmployeeReference } from "./general-project-reference-ports.js";
 
 export type GeneralProjectFailureReason = "NOT_FOUND" | "CUSTOMER_NOT_FOUND" | "CUSTOMER_INACTIVE" | "EMPLOYEE_NOT_FOUND" | "EMPLOYEE_INACTIVE" | "INVALID_DATE_RANGE" | "INVALID_REASON" | "PROJECT_FINAL" | "LAST_MANAGER" | "MEMBER_NOT_FOUND" | "ASSIGNMENT_NOT_FOUND" | "ACTIVE_TASK_RESPONSIBILITY" | "VERSION_CONFLICT" | "IDEMPOTENCY_MISMATCH" | "IDEMPOTENCY_IN_PROGRESS";
@@ -40,6 +40,13 @@ const taskJson = (row: GeneralProjectTask) => ({
 const assignmentJson = (row: GeneralProjectTaskAssignment, memberPublicId: string) => ({
   id: row.publicId, memberId: memberPublicId, role: row.role, isActive: row.isActive,
   version: row.version, assignedAt: row.assignedAt.toISOString(), unassignedAt: row.unassignedAt?.toISOString() ?? null,
+});
+const dependencyJson = (row: GeneralProjectTaskDependency, predecessorTaskId: string, successorTaskId: string,
+  predecessorTitle: string, successorTitle: string) => ({
+  id: row.publicId, predecessorTaskId, successorTaskId, predecessorTitle, successorTitle,
+  isActive: row.isActive, version: row.version,
+  createdAt: row.createdAt.toISOString(), removedAt: row.removedAt?.toISOString() ?? null,
+  removalReason: row.removalReason,
 });
 const mutable = (status: GeneralProject["status"]) => status !== "COMPLETED" && status !== "CANCELLED";
 
@@ -159,7 +166,7 @@ export class GeneralProjectService {
   }
 
   async listTasks(context: ActorContext, projectPublicId: string, phasePublicId: string, input: { page: number; pageSize: number }) {
-    const { project, rows, total, assignedTaskIds } = await this.prisma.$transaction(async tx => {
+    const { project, rows, total, assignedTaskIds, dependencyBlockedIds } = await this.prisma.$transaction(async tx => {
       const project = await tx.generalProject.findFirst({ where: { companyId: context.companyId, publicId: projectPublicId },
         select: { id: true, planVersion: true } });
       if (!project) throw new GeneralProjectError("NOT_FOUND");
@@ -179,11 +186,32 @@ export class GeneralProjectService {
           member: { companyId: context.companyId, projectId: project.id,
             employeeId: actorEmployee.id, isActive: true } }, select: { taskId: true } })).map(row => row.taskId)
         : [];
-      return { project, rows, total, assignedTaskIds };
+      const dependencyBlockedIds = rows.length
+        ? (await tx.generalProjectTaskDependency.findMany({ where: { companyId: context.companyId,
+          projectId: project.id, successorTaskId: { in: rows.map(row => row.id) }, isActive: true,
+          predecessorTask: { status: { not: "COMPLETED" } } }, select: { successorTaskId: true } }))
+          .map(row => row.successorTaskId)
+        : [];
+      return { project, rows, total, assignedTaskIds, dependencyBlockedIds };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
     const assigned = new Set(assignedTaskIds);
-    return { data: rows.map(row => ({ ...taskJson(row), canProgress: assigned.has(row.id) })), planVersion: project.planVersion,
+    const blocked = new Set(dependencyBlockedIds);
+    return { data: rows.map(row => ({ ...taskJson(row), canProgress: assigned.has(row.id),
+      dependencyBlocked: blocked.has(row.id) })), planVersion: project.planVersion,
       meta: { page: input.page, pageSize: input.pageSize, total, totalPages: Math.ceil(total / input.pageSize) } };
+  }
+
+  async listTaskOptions(context: ActorContext, projectPublicId: string, search?: string) {
+    const project = await this.prisma.generalProject.findFirst({ where: { companyId: context.companyId,
+      publicId: projectPublicId }, select: { id: true } });
+    if (!project) throw new GeneralProjectError("NOT_FOUND");
+    const rows = await this.prisma.generalProjectTask.findMany({ where: { companyId: context.companyId,
+      projectId: project.id, ...(search ? { title: { contains: search } } : {}) },
+      select: { publicId: true, title: true, status: true, sequence: true,
+        phase: { select: { title: true, sequence: true } } },
+      orderBy: [{ phase: { sequence: "asc" } }, { sequence: "asc" }, { id: "asc" }], take: 100 });
+    return { data: rows.map(row => ({ id: row.publicId, title: row.title, status: row.status,
+      sequence: row.sequence, phaseTitle: row.phase.title, phaseSequence: row.phase.sequence })) };
   }
 
   createTask(context: ActorContext, projectPublicId: string, phasePublicId: string, input: { expectedPlanVersion: number;
@@ -338,6 +366,9 @@ export class GeneralProjectService {
         select: { member: { select: { employeeId: true } } } });
         const activeResponsibleCount = await this.employees.countActiveInCompany(tx, context.companyId,
           responsibilities.map(row => row.member.employeeId));
+        const predecessors = await tx.generalProjectTaskDependency.findMany({ where: { companyId: context.companyId,
+          projectId: project.id, successorTaskId: task.id, isActive: true },
+        select: { predecessorTask: { select: { status: true } } } });
         const actorEmployee = mode === "PROGRESS"
           ? await this.employees.findByUserInCompanyTx(tx, context.companyId, context.userId) : null;
         const actorIsActiveResponsible = mode === "PROGRESS" && actorEmployee?.status === "ACTIVE"
@@ -345,7 +376,8 @@ export class GeneralProjectService {
         if (mode === "PROGRESS" && !actorIsActiveResponsible) throw new GeneralProjectError("NOT_FOUND");
         const next = transitionTask({ projectStatus: project.status, phaseStatus: phase.status,
           from: task.status, to: input.to, actorCanManage: mode === "MANAGE", actorCanProgress: mode === "PROGRESS",
-          actorIsActiveResponsible: Boolean(actorIsActiveResponsible), activeResponsibleCount, predecessorStatuses: [],
+          actorIsActiveResponsible: Boolean(actorIsActiveResponsible), activeResponsibleCount,
+          predecessorStatuses: predecessors.map(row => row.predecessorTask.status),
           ...(input.reason === undefined ? {} : { reason: input.reason }) });
         const changed = await tx.generalProjectTask.updateMany({ where: { id: task.id, companyId: context.companyId,
           projectId: project.id, version: input.expectedVersion, status: task.status }, data: {
@@ -357,6 +389,115 @@ export class GeneralProjectService {
           { taskId: taskPublicId, from: task.status, to: next, mode, reason: input.reason ?? null,
             nextPlanVersion: project.planVersion + 1 });
         return { task: taskJson(updated), planVersion: project.planVersion + 1 };
+      });
+  }
+
+  async listDependencies(context: ActorContext, projectPublicId: string,
+    input: { page: number; pageSize: number; taskId?: string | undefined }) {
+    const { project, rows, total } = await this.prisma.$transaction(async tx => {
+      const project = await tx.generalProject.findFirst({ where: { companyId: context.companyId,
+        publicId: projectPublicId }, select: { id: true, planVersion: true } });
+      if (!project) throw new GeneralProjectError("NOT_FOUND");
+      const task = input.taskId ? await tx.generalProjectTask.findFirst({ where: {
+        companyId: context.companyId, projectId: project.id, publicId: input.taskId }, select: { id: true } }) : null;
+      if (input.taskId && !task) throw new GeneralProjectError("NOT_FOUND");
+      const where: Prisma.GeneralProjectTaskDependencyWhereInput = { companyId: context.companyId,
+        projectId: project.id, ...(task ? { OR: [{ predecessorTaskId: task.id },
+          { successorTaskId: task.id }] } : {}) };
+      const [rows, total] = await Promise.all([
+        tx.generalProjectTaskDependency.findMany({ where, include: {
+          predecessorTask: { select: { publicId: true, title: true } },
+          successorTask: { select: { publicId: true, title: true } },
+        }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], skip: (input.page - 1) * input.pageSize,
+        take: input.pageSize }),
+        tx.generalProjectTaskDependency.count({ where }),
+      ]);
+      return { project, rows, total };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+    return { data: rows.map(row => dependencyJson(row, row.predecessorTask.publicId,
+      row.successorTask.publicId, row.predecessorTask.title, row.successorTask.title)),
+      planVersion: project.planVersion,
+      meta: { page: input.page, pageSize: input.pageSize, total,
+        totalPages: Math.ceil(total / input.pageSize) } };
+  }
+
+  addDependency(context: ActorContext, projectPublicId: string, input: { expectedPlanVersion: number;
+    predecessorTaskId: string; successorTaskId: string; idempotencyKey: string }) {
+    return this.command(context, "ADD_GENERAL_PROJECT_TASK_DEPENDENCY", input.idempotencyKey,
+      { projectPublicId, ...input }, 201, async tx => {
+        const project = await this.lockProject(tx, context, projectPublicId);
+        if (!mutable(project.status)) throw new GeneralProjectError("PROJECT_FINAL");
+        if (project.planVersion !== input.expectedPlanVersion) throw new GeneralProjectError("VERSION_CONFLICT");
+        const [taskRows, linkRows] = await Promise.all([
+          tx.generalProjectTask.findMany({ where: { companyId: context.companyId, projectId: project.id },
+            select: { id: true, publicId: true, title: true, status: true } }),
+          tx.generalProjectTaskDependency.findMany({ where: { companyId: context.companyId,
+            projectId: project.id, isActive: true }, select: { predecessorTaskId: true,
+            successorTaskId: true } }),
+        ]);
+        const predecessor = taskRows.find(row => row.publicId === input.predecessorTaskId);
+        const successor = taskRows.find(row => row.publicId === input.successorTaskId);
+        if (!predecessor || !successor) throw new GeneralProjectError("NOT_FOUND");
+        const companyId = context.companyId.toString();
+        const projectId = project.id.toString();
+        const nodes = taskRows.map(row => ({ id: row.id.toString(), companyId, projectId,
+          status: row.status }));
+        validateDependencyAddition({ predecessor: { id: predecessor.id.toString(), companyId, projectId,
+          status: predecessor.status }, successor: { id: successor.id.toString(), companyId, projectId,
+          status: successor.status }, tasks: nodes,
+        dependencies: linkRows.map(row => ({ predecessorId: row.predecessorTaskId.toString(),
+          successorId: row.successorTaskId.toString(), active: true })) });
+        const existing = await tx.generalProjectTaskDependency.findUnique({ where: {
+          projectId_predecessorTaskId_successorTaskId: { projectId: project.id,
+            predecessorTaskId: predecessor.id, successorTaskId: successor.id },
+        } });
+        const row = existing ? await tx.generalProjectTaskDependency.update({ where: { id: existing.id },
+          data: { isActive: true, version: { increment: 1 }, removedAt: null, removalReason: null,
+            updatedById: context.userId } })
+          : await tx.generalProjectTaskDependency.create({ data: { companyId: context.companyId,
+            projectId: project.id, predecessorTaskId: predecessor.id, successorTaskId: successor.id,
+            createdById: context.userId, updatedById: context.userId } });
+        await this.bumpPlanVersion(tx, context, project);
+        await this.audit(tx, context, "GENERAL_PROJECT_TASK_DEPENDENCY_ADDED", projectPublicId,
+          { dependencyId: row.publicId, predecessorTaskId: input.predecessorTaskId,
+            successorTaskId: input.successorTaskId, nextPlanVersion: project.planVersion + 1 });
+        return { dependency: dependencyJson(row, predecessor.publicId, successor.publicId,
+          predecessor.title, successor.title),
+          planVersion: project.planVersion + 1 };
+      });
+  }
+
+  removeDependency(context: ActorContext, projectPublicId: string, dependencyPublicId: string,
+    input: { expectedPlanVersion: number; expectedVersion: number; reason: string; idempotencyKey: string }) {
+    return this.command(context, "REMOVE_GENERAL_PROJECT_TASK_DEPENDENCY", input.idempotencyKey,
+      { projectPublicId, dependencyPublicId, ...input }, 200, async tx => {
+        const project = await this.lockProject(tx, context, projectPublicId);
+        if (project.planVersion !== input.expectedPlanVersion) throw new GeneralProjectError("VERSION_CONFLICT");
+        const current = await tx.generalProjectTaskDependency.findFirst({ where: { companyId: context.companyId,
+          projectId: project.id, publicId: dependencyPublicId, isActive: true }, include: {
+            predecessorTask: { select: { publicId: true, title: true, status: true } },
+            successorTask: { select: { publicId: true, title: true, status: true } },
+          } });
+        if (!current) throw new GeneralProjectError("NOT_FOUND");
+        if (current.version !== input.expectedVersion) throw new GeneralProjectError("VERSION_CONFLICT");
+        const kind = validateDependencyRemoval({ projectStatus: project.status,
+          predecessorStatus: current.predecessorTask.status,
+          successorStatus: current.successorTask.status, reason: input.reason });
+        const changed = await tx.generalProjectTaskDependency.updateMany({ where: { id: current.id,
+          companyId: context.companyId, projectId: project.id, version: input.expectedVersion,
+          isActive: true }, data: { isActive: false, version: { increment: 1 },
+            removedAt: new Date(), removalReason: input.reason.trim(), updatedById: context.userId } });
+        if (changed.count !== 1) throw new GeneralProjectError("VERSION_CONFLICT");
+        await this.bumpPlanVersion(tx, context, project);
+        const updated = await tx.generalProjectTaskDependency.findUniqueOrThrow({ where: { id: current.id } });
+        const action = kind === "PREDECESSOR_CANCELLED_RECOVERY"
+          ? "GENERAL_PROJECT_TASK_DEPENDENCY_REMOVED_AFTER_PREDECESSOR_CANCELLED"
+          : "GENERAL_PROJECT_TASK_DEPENDENCY_REMOVED";
+        await this.audit(tx, context, action, projectPublicId, { dependencyId: dependencyPublicId,
+          reason: input.reason.trim(), nextPlanVersion: project.planVersion + 1 });
+        return { dependency: dependencyJson(updated, current.predecessorTask.publicId,
+          current.successorTask.publicId, current.predecessorTask.title,
+          current.successorTask.title), planVersion: project.planVersion + 1 };
       });
   }
 

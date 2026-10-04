@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
-  GeneralProjectPolicyError, transitionProject, transitionPhase, transitionTask, validateDependencyAddition,
+  GeneralProjectPolicyError, transitionProject, transitionPhase, transitionTask, validateDependencyAddition, validateDependencyRemoval,
   type GeneralProjectTaskNode,
 } from "../src/general-projects/general-project-policy.js";
 
@@ -21,6 +21,8 @@ const errorCode = (action: () => unknown) => {
 const migration = readFileSync(new URL("../prisma/migrations/20261004_general_project_register/migration.sql", import.meta.url), "utf8");
 const planMigration = readFileSync(new URL("../prisma/migrations/20261005_general_project_plan/migration.sql", import.meta.url), "utf8");
 const planRollback = readFileSync(new URL("../prisma/migrations/20261005_general_project_plan/rollback.sql", import.meta.url), "utf8");
+const dependencyMigration = readFileSync(new URL("../prisma/migrations/20261006_general_project_dependencies/migration.sql", import.meta.url), "utf8");
+const dependencyRollback = readFileSync(new URL("../prisma/migrations/20261006_general_project_dependencies/rollback.sql", import.meta.url), "utf8");
 const schema = readFileSync(new URL("../prisma/schema.prisma", import.meta.url), "utf8");
 
 describe("general project migration boundaries", () => {
@@ -56,6 +58,20 @@ describe("general project plan persistence boundary", () => {
     expect(planMigration).toContain("FOREIGN KEY (`member_id`, `project_id`, `company_id`) REFERENCES `general_project_members` (`id`, `project_id`, `company_id`)");
     expect(planMigration).not.toMatch(/REFERENCES `professional_/u);
     expect(planRollback).toContain("@gp_plan_rows = 0 AND @gp_plan_replays = 0");
+  });
+});
+
+describe("general project dependency persistence boundary", () => {
+  it("applies after the plan and constrains both tasks to the same project and company", () => {
+    expect("20261006_general_project_dependencies" > "20261005_general_project_plan").toBe(true);
+    expect(schema).toContain("model GeneralProjectTaskDependency {");
+    expect(dependencyMigration).toContain("FOREIGN KEY (`predecessor_task_id`, `project_id`, `company_id`) REFERENCES `general_project_tasks` (`id`, `project_id`, `company_id`)");
+    expect(dependencyMigration).toContain("FOREIGN KEY (`successor_task_id`, `project_id`, `company_id`) REFERENCES `general_project_tasks` (`id`, `project_id`, `company_id`)");
+    expect(dependencyMigration).toContain("CHECK (`predecessor_task_id` <> `successor_task_id`)");
+    expect(dependencyMigration).not.toMatch(/REFERENCES `professional_/u);
+  });
+  it("refuses rollback after a dependency or replay exists", () => {
+    expect(dependencyRollback).toContain("@gp_dep_rows = 0 AND @gp_dep_replays = 0");
   });
 });
 
@@ -114,5 +130,16 @@ describe("general project domain policy", () => {
       .toBe("DEPENDENCY_SCOPE_MISMATCH");
     expect(errorCode(() => validateDependencyAddition({ predecessor: { ...a, status: "CANCELLED" }, successor: b, tasks, dependencies })))
       .toBe("DEPENDENCY_FINAL_TASK");
+  });
+  it("removes dependencies normally or through the narrow cancelled-predecessor recovery", () => {
+    const ordinary = { projectStatus: "ACTIVE" as const, predecessorStatus: "TODO" as const,
+      successorStatus: "BLOCKED" as const, reason: "Replanned the work" };
+    expect(validateDependencyRemoval(ordinary)).toBe("NORMAL");
+    expect(validateDependencyRemoval({ ...ordinary, predecessorStatus: "CANCELLED" })).toBe("PREDECESSOR_CANCELLED_RECOVERY");
+    expect(errorCode(() => validateDependencyRemoval({ ...ordinary, predecessorStatus: "COMPLETED" })))
+      .toBe("DEPENDENCY_FINAL_TASK");
+    expect(errorCode(() => validateDependencyRemoval({ ...ordinary, successorStatus: "CANCELLED" })))
+      .toBe("DEPENDENCY_FINAL_TASK");
+    expect(errorCode(() => validateDependencyRemoval({ ...ordinary, reason: "short" }))).toBe("REASON_REQUIRED");
   });
 });

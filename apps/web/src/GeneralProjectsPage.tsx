@@ -17,8 +17,12 @@ type Phase = { id: string; sequence: number; title: string; description: string 
   plannedStartDate: string | null; targetEndDate: string | null };
 type PhaseList = { data: Phase[]; planVersion: number; meta: List["meta"] };
 type TaskStatus = "TODO" | "IN_PROGRESS" | "BLOCKED" | "COMPLETED" | "CANCELLED";
-type Task = { id: string; sequence: number; title: string; priority: string; status: TaskStatus; version: number; canProgress?: boolean };
+type Task = { id: string; sequence: number; title: string; priority: string; status: TaskStatus; version: number; canProgress?: boolean; dependencyBlocked?: boolean };
 type TaskList = { data: Task[]; planVersion: number; meta: List["meta"] };
+type TaskOption = { id: string; title: string; status: TaskStatus; sequence: number; phaseTitle: string; phaseSequence: number };
+type TaskDependency = { id: string; predecessorTaskId: string; successorTaskId: string; predecessorTitle: string;
+  successorTitle: string; isActive: boolean; version: number; removalReason: string | null };
+type DependencyList = { data: TaskDependency[]; planVersion: number; meta: List["meta"] };
 type TaskAssignment = { id: string; memberId: string; role: "RESPONSIBLE" | "CONTRIBUTOR"; isActive: boolean; version: number };
 type TaskAssignmentList = { data: TaskAssignment[]; planVersion: number; meta: List["meta"] };
 type Detail = { project: Project; members: Member[] };
@@ -52,6 +56,12 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
   const [taskPage, setTaskPage] = useState(1);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [selectedTaskId, setSelectedTaskId] = useState("");
+  const [dependencies, setDependencies] = useState<(DependencyList & { projectId: string }) | null>(null);
+  const dependencyRequestSequence = useRef(0);
+  const [dependencyPage, setDependencyPage] = useState(1);
+  const [taskOptions, setTaskOptions] = useState<TaskOption[]>([]);
+  const [taskOptionSearch, setTaskOptionSearch] = useState("");
+  const [predecessorTaskId, setPredecessorTaskId] = useState("");
   const [taskAssignments, setTaskAssignments] = useState<(TaskAssignmentList & { projectId: string; taskId: string }) | null>(null);
   const assignmentRequestSequence = useRef(0);
   const [assignmentPage, setAssignmentPage] = useState(1);
@@ -132,15 +142,43 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
       }
     }
   }, [selectedId, selectedTaskId, assignmentPage, notify, t]);
+  const loadDependencies = useCallback(async () => {
+    const sequence = ++dependencyRequestSequence.current;
+    if (!selectedId) { setDependencies(null); return; }
+    try {
+      const query = new URLSearchParams({ page: String(dependencyPage), pageSize: "10" });
+      if (selectedTaskId) query.set("taskId", selectedTaskId);
+      const result = await api<DependencyList>(`/general-projects/${selectedId}/task-dependencies?${query}`);
+      if (sequence === dependencyRequestSequence.current) setDependencies({ ...result, projectId: selectedId });
+    } catch (cause) {
+      if (sequence === dependencyRequestSequence.current) {
+        setDependencies(null); notify(cause instanceof Error ? cause.message : t("generalProjects.loadingError"), "error");
+      }
+    }
+  }, [selectedId, selectedTaskId, dependencyPage, notify, t]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { void loadDetail(); }, [loadDetail]);
-  useEffect(() => { setPhases(null); setPhasePage(1); setSelectedPhaseId(""); setTasks(null); }, [selectedId]);
+  useEffect(() => { setPhases(null); setPhasePage(1); setSelectedPhaseId(""); setTasks(null);
+    setDependencies(null); setDependencyPage(1); setPredecessorTaskId(""); setTaskOptions([]); }, [selectedId]);
   useEffect(() => { void loadPhases(); }, [loadPhases]);
   useEffect(() => { setTasks(null); setTaskPage(1); setSelectedTaskId(""); setTaskAssignments(null); }, [selectedPhaseId]);
   useEffect(() => { void loadTasks(); }, [loadTasks]);
   useEffect(() => { setTaskAssignments(null); setAssignmentPage(1); }, [selectedTaskId]);
+  useEffect(() => { setDependencies(null); setDependencyPage(1); setPredecessorTaskId(""); }, [selectedTaskId]);
   useEffect(() => { void loadTaskAssignments(); }, [loadTaskAssignments]);
+  useEffect(() => { void loadDependencies(); }, [loadDependencies]);
+  useEffect(() => {
+    if (!selectedId || !canManage) { setTaskOptions([]); return; }
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      const query = taskOptionSearch.trim() ? `?search=${encodeURIComponent(taskOptionSearch.trim())}` : "";
+      void api<{ data: TaskOption[] }>(`/general-projects/${selectedId}/task-options${query}`, { signal: controller.signal })
+        .then(result => { if (!controller.signal.aborted) setTaskOptions(result.data); })
+        .catch(cause => { if (!controller.signal.aborted) notify(cause instanceof Error ? cause.message : t("generalProjects.loadingError"), "error"); });
+    }, 250);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [selectedId, canManage, taskOptionSearch, notify, t]);
   useEffect(() => {
     setEditName(detail?.project.nameAr ?? "");
     setEditDescription(detail?.project.description ?? "");
@@ -184,7 +222,8 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
 
   const execute = async (work: () => Promise<unknown>, message: string) => {
     setWorking(true);
-    try { await work(); await load(); await loadDetail(); await loadPhases(); await loadTasks(); await loadTaskAssignments(); notify(message); }
+    try { await work(); await load(); await loadDetail(); await loadPhases(); await loadTasks();
+      await loadTaskAssignments(); await loadDependencies(); notify(message); }
     catch (cause) { notify(cause instanceof Error ? cause.message : t("generalProjects.loadingError"), "error"); }
     finally { setWorking(false); }
   };
@@ -282,6 +321,25 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
       body: JSON.stringify({ expectedPlanVersion: tasks.planVersion, expectedVersion: task.version, to,
         ...(needsReason ? { reason: reason.trim() } : {}) }) }), t("generalProjects.taskSaved"));
   };
+  const addDependency = (event: FormEvent) => {
+    event.preventDefault();
+    if (!detail || !dependencies || dependencies.projectId !== detail.project.id ||
+      !selectedTaskId || !predecessorTaskId || predecessorTaskId === selectedTaskId) return;
+    void execute(async () => {
+      await api(`/general-projects/${detail.project.id}/task-dependencies`, { method: "POST",
+        idempotencyKey: idempotencyKey("general-project-dependency-add", selectedTaskId),
+        body: JSON.stringify({ expectedPlanVersion: dependencies.planVersion,
+          predecessorTaskId, successorTaskId: selectedTaskId }) });
+      setPredecessorTaskId("");
+    }, t("generalProjects.dependencySaved"));
+  };
+  const removeDependency = (dependency: TaskDependency) => {
+    if (!detail || !dependencies || dependencies.projectId !== detail.project.id || reason.trim().length < 10) return;
+    void execute(() => api(`/general-projects/${detail.project.id}/task-dependencies/${dependency.id}/remove`, {
+      method: "POST", idempotencyKey: idempotencyKey("general-project-dependency-remove", dependency.id),
+      body: JSON.stringify({ expectedPlanVersion: dependencies.planVersion,
+        expectedVersion: dependency.version, reason: reason.trim() }) }), t("generalProjects.dependencySaved"));
+  };
 
   return <div className="page-content">
     <PageHeader kicker={t("nav.generalProjects")} title={t("generalProjects.title")} description={t("generalProjects.description")} />
@@ -363,13 +421,15 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
           <div key={task.id}>
             <Button variant="ghost" onClick={() => setSelectedTaskId(task.id)}>
               {task.sequence}. {task.title} · {t(`generalProjects.taskStatus.${task.status}`)}
+              {task.dependencyBlocked && ` · ${t("generalProjects.dependencyBlocked")}`}
             </Button>
             {(canManage || canProgress && task.canProgress) && task.id === selectedTaskId && detail.project.status === "ACTIVE" &&
               taskTransitions[task.status].filter(next => canManage || next !== "CANCELLED").map(next => {
               const needsReason = next === "BLOCKED" || next === "CANCELLED" || task.status === "BLOCKED" && next === "TODO";
               const phaseReady = phases.data.find(phase => phase.id === selectedPhaseId)?.status === "IN_PROGRESS";
               return <Button key={next} variant="secondary"
-                disabled={working || needsReason && reason.trim().length < 10 || next === "IN_PROGRESS" && !phaseReady}
+                disabled={working || needsReason && reason.trim().length < 10 ||
+                  next === "IN_PROGRESS" && (!phaseReady || task.dependencyBlocked)}
                 onClick={() => changeTask(task, next)}>{t(`generalProjects.taskStatus.${next}`)}</Button>;
             })}
           </div>)}
@@ -385,6 +445,33 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
           </form>}
       </div>}
       {selectedTaskId && tasks?.projectId === selectedId && tasks.data.some(task => task.id === selectedTaskId) && <div>
+        <h3>{t("generalProjects.dependencies")}</h3>
+        {dependencies?.projectId === selectedId && dependencies.data.filter(link =>
+          link.successorTaskId === selectedTaskId || link.predecessorTaskId === selectedTaskId).map(link =>
+          <div key={link.id}>{link.predecessorTitle} → {link.successorTitle}
+            {!link.isActive && ` · ${t("generalProjects.dependencyRemoved")}`}
+            {canManage && link.isActive && <Button variant="ghost" disabled={working || reason.trim().length < 10}
+              onClick={() => removeDependency(link)}>{t("generalProjects.removeDependency")}</Button>}
+          </div>)}
+        {dependencies?.projectId === selectedId && <Pagination page={dependencies.meta.page}
+          totalPages={dependencies.meta.totalPages} total={dependencies.meta.total} onChange={setDependencyPage} />}
+        {canManage && dependencies?.projectId === selectedId && detail.project.status !== "COMPLETED" &&
+          detail.project.status !== "CANCELLED" && tasks.data.find(task => task.id === selectedTaskId)?.status !== "COMPLETED" &&
+          tasks.data.find(task => task.id === selectedTaskId)?.status !== "CANCELLED" &&
+          <form onSubmit={addDependency} className="form-grid">
+            <label>{t("common.search")} — {t("generalProjects.predecessor")}
+              <input type="search" maxLength={200} value={taskOptionSearch}
+                onChange={event => { setTaskOptionSearch(event.target.value); setPredecessorTaskId(""); }} /></label>
+            <label>{t("generalProjects.predecessor")}
+              <select value={predecessorTaskId} onChange={event => setPredecessorTaskId(event.target.value)}>
+                <option value="">—</option>{taskOptions.filter(option => option.id !== selectedTaskId &&
+                  option.status !== "COMPLETED" && option.status !== "CANCELLED")
+                  .map(option => <option key={option.id} value={option.id}>
+                    {option.phaseSequence}.{option.sequence} · {option.phaseTitle} · {option.title}</option>)}
+              </select></label>
+            <Button type="submit" disabled={working || !predecessorTaskId || predecessorTaskId === selectedTaskId}>
+              {t("generalProjects.addDependency")}</Button>
+          </form>}
         <h3>{t("generalProjects.taskAssignments")}</h3>
         {taskAssignments?.projectId === selectedId && taskAssignments.taskId === selectedTaskId && taskAssignments.data.map(assignment =>
           <div key={assignment.id}>{detail.members.find(member => member.id === assignment.memberId)?.employee.nameAr ?? assignment.memberId}

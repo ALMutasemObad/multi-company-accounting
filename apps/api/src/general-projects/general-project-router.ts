@@ -18,6 +18,7 @@ const projectQuery = z.object({
 const optionQuery = z.object({ search: z.string().trim().min(1).max(200).optional() });
 const pageQuery = z.object({ page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25) });
+const dependencyQuery = pageQuery.extend({ taskId: publicId.optional() });
 
 function sid(request: Request) {
   return Object.fromEntries((request.headers.cookie ?? "").split(";").map(part => part.trim().split("=", 2)).filter(([key, value]) => key && value)).sid;
@@ -83,6 +84,11 @@ export function createGeneralProjectRouter(auth: AuthService, projects: GeneralP
     response.json(await projects.listTasks(context, publicId.parse(request.params.generalProjectId),
       publicId.parse(request.params.phaseId), pageQuery.parse(request.query)));
   });
+  router.get("/general-projects/:generalProjectId/task-options", async (request, response) => {
+    const context = await authorize(request, "general_projects.view", false);
+    response.json(await projects.listTaskOptions(context, publicId.parse(request.params.generalProjectId),
+      optionQuery.parse(request.query).search));
+  });
   router.post("/general-projects/:generalProjectId/phases/:phaseId/tasks", async (request, response) => {
     const context = await authorize(request, "general_projects.manage", true);
     response.status(201).json(await projects.createTask(context, publicId.parse(request.params.generalProjectId),
@@ -122,6 +128,24 @@ export function createGeneralProjectRouter(auth: AuthService, projects: GeneralP
       publicId.parse(request.params.taskId), {
         ...bodies.progressGeneralProjectTask.parse(request.body), idempotencyKey: idempotencyKey(request),
       }, "PROGRESS"));
+  });
+  router.get("/general-projects/:generalProjectId/task-dependencies", async (request, response) => {
+    const context = await authorize(request, "general_projects.view", false);
+    response.json(await projects.listDependencies(context, publicId.parse(request.params.generalProjectId),
+      dependencyQuery.parse(request.query)));
+  });
+  router.post("/general-projects/:generalProjectId/task-dependencies", async (request, response) => {
+    const context = await authorize(request, "general_projects.manage", true);
+    response.status(201).json(await projects.addDependency(context, publicId.parse(request.params.generalProjectId), {
+      ...bodies.addGeneralProjectTaskDependency.parse(request.body), idempotencyKey: idempotencyKey(request),
+    }));
+  });
+  router.post("/general-projects/:generalProjectId/task-dependencies/:dependencyId/remove", async (request, response) => {
+    const context = await authorize(request, "general_projects.manage", true);
+    response.json(await projects.removeDependency(context, publicId.parse(request.params.generalProjectId),
+      publicId.parse(request.params.dependencyId), {
+        ...bodies.removeGeneralProjectTaskDependency.parse(request.body), idempotencyKey: idempotencyKey(request),
+      }));
   });
   router.post("/general-projects/:generalProjectId/members", async (request, response) => {
     const context = await authorize(request, "general_projects.manage", true);

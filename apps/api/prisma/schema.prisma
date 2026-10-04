@@ -728,6 +728,7 @@ model Company {
   generalProjectPhases              GeneralProjectPhase[]
   generalProjectTasks               GeneralProjectTask[]
   generalProjectTaskAssignments     GeneralProjectTaskAssignment[]
+  generalProjectTaskDependencies    GeneralProjectTaskDependency[]
   crmLeads                          CrmLead[]
   crmOpportunities                  CrmOpportunity[]
   crmActivities                     CrmActivity[]
@@ -950,6 +951,8 @@ model User {
   generalProjectTasksUpdated           GeneralProjectTask[]               @relation("GeneralProjectTaskUpdatedBy")
   generalProjectAssignmentsCreated     GeneralProjectTaskAssignment[]     @relation("GeneralProjectAssignmentCreatedBy")
   generalProjectAssignmentsUpdated     GeneralProjectTaskAssignment[]     @relation("GeneralProjectAssignmentUpdatedBy")
+  generalProjectDependenciesCreated    GeneralProjectTaskDependency[]     @relation("GeneralProjectDependencyCreatedBy")
+  generalProjectDependenciesUpdated    GeneralProjectTaskDependency[]     @relation("GeneralProjectDependencyUpdatedBy")
   crmLeadsCreated                      CrmLead[]                          @relation("CrmLeadCreatedBy")
   crmLeadsUpdated                      CrmLead[]                          @relation("CrmLeadUpdatedBy")
   crmOpportunitiesCreated              CrmOpportunity[]                   @relation("CrmOpportunityCreatedBy")
@@ -2094,6 +2097,7 @@ model GeneralProject {
   members            GeneralProjectMember[]
   phases             GeneralProjectPhase[]
   tasks              GeneralProjectTask[]
+  dependencies       GeneralProjectTaskDependency[]
 
   @@unique([companyId, code])
   @@unique([id, companyId])
@@ -2219,6 +2223,8 @@ model GeneralProjectTask {
   createdBy        User                      @relation("GeneralProjectTaskCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
   updatedBy        User                      @relation("GeneralProjectTaskUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
   assignments      GeneralProjectTaskAssignment[]
+  predecessorFor   GeneralProjectTaskDependency[] @relation("GeneralProjectDependencyPredecessor")
+  successorFor     GeneralProjectTaskDependency[] @relation("GeneralProjectDependencySuccessor")
 
   @@unique([phaseId, sequence])
   @@unique([id, projectId, companyId])
@@ -2253,6 +2259,35 @@ model GeneralProjectTaskAssignment {
   @@index([companyId, projectId, isActive])
   @@index([memberId, projectId, companyId, isActive])
   @@map("general_project_task_assignments")
+}
+
+model GeneralProjectTaskDependency {
+  id                BigInt             @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId          String             @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId         BigInt             @map("company_id") @db.UnsignedBigInt
+  projectId         BigInt             @map("project_id") @db.UnsignedBigInt
+  predecessorTaskId BigInt             @map("predecessor_task_id") @db.UnsignedBigInt
+  successorTaskId   BigInt             @map("successor_task_id") @db.UnsignedBigInt
+  isActive          Boolean            @default(true) @map("is_active")
+  version           Int                @default(0) @db.UnsignedInt
+  removedAt         DateTime?          @map("removed_at")
+  removalReason     String?            @map("removal_reason") @db.VarChar(500)
+  createdById       BigInt             @map("created_by_id") @db.UnsignedBigInt
+  updatedById       BigInt             @map("updated_by_id") @db.UnsignedBigInt
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  company           Company            @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  project           GeneralProject     @relation(fields: [projectId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  predecessorTask   GeneralProjectTask @relation("GeneralProjectDependencyPredecessor", fields: [predecessorTaskId, projectId, companyId], references: [id, projectId, companyId], onDelete: Restrict, onUpdate: Restrict)
+  successorTask     GeneralProjectTask @relation("GeneralProjectDependencySuccessor", fields: [successorTaskId, projectId, companyId], references: [id, projectId, companyId], onDelete: Restrict, onUpdate: Restrict)
+  createdBy         User               @relation("GeneralProjectDependencyCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy         User               @relation("GeneralProjectDependencyUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([projectId, predecessorTaskId, successorTaskId])
+  @@index([companyId, projectId, isActive])
+  @@index([predecessorTaskId, projectId, companyId])
+  @@index([successorTaskId, projectId, companyId, isActive])
+  @@map("general_project_task_dependencies")
 }
 
 model ProfessionalProject {

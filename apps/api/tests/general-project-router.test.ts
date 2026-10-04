@@ -26,6 +26,10 @@ function fixture() {
     assignTaskMember: vi.fn().mockResolvedValue({ assignment: {}, planVersion: 4 }),
     unassignTaskMember: vi.fn().mockResolvedValue({ assignment: {}, planVersion: 5 }),
     transitionTask: vi.fn().mockResolvedValue({ task: {}, planVersion: 5 }),
+    listDependencies: vi.fn().mockResolvedValue({ data: [], planVersion: 5, meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 } }),
+    listTaskOptions: vi.fn().mockResolvedValue({ data: [] }),
+    addDependency: vi.fn().mockResolvedValue({ dependency: {}, planVersion: 6 }),
+    removeDependency: vi.fn().mockResolvedValue({ dependency: {}, planVersion: 7 }),
     assignMember: vi.fn().mockResolvedValue({ member: {}, projectVersion: 1 }),
     unassignMember: vi.fn().mockResolvedValue({ memberId: managerId, projectVersion: 2 }),
   };
@@ -36,6 +40,31 @@ function fixture() {
 }
 
 describe("general project HTTP boundary", () => {
+  it("guards dependency listing, addition and reasoned removal", async () => {
+    const { app, authorize, projects } = fixture();
+    const predecessorTaskId = "5759ba65-f0e0-48c4-b0dc-b12ca2bd958d";
+    const successorTaskId = "14cc89cf-dcf9-4c9d-a21b-0cfc9780aa9e";
+    const dependencyId = "9080c479-0451-4de9-a68e-9b692dff90b8";
+    await request(app).get(`/general-projects/${projectId}/task-options?search=First`).expect(200);
+    await request(app).get(`/general-projects/${projectId}/task-dependencies?page=2`).expect(200);
+    await request(app).post(`/general-projects/${projectId}/task-dependencies`)
+      .set("X-CSRF-Token", "csrf").set("Idempotency-Key", "general-project-dependency-add-1234")
+      .send({ expectedPlanVersion: 5, predecessorTaskId, successorTaskId }).expect(201);
+    await request(app).post(`/general-projects/${projectId}/task-dependencies/${dependencyId}/remove`)
+      .set("X-CSRF-Token", "csrf").set("Idempotency-Key", "general-project-dependency-remove-1234")
+      .send({ expectedPlanVersion: 6, expectedVersion: 0, reason: "Replanned the work" }).expect(200);
+    await request(app).post(`/general-projects/${projectId}/task-dependencies/${dependencyId}/remove`)
+      .set("X-CSRF-Token", "csrf").set("Idempotency-Key", "general-project-dependency-remove-5678")
+      .send({ expectedPlanVersion: 6, expectedVersion: 0, reason: "short" }).expect(400);
+    expect(authorize.mock.calls.map(([value]) => [value.permission, value.requireCsrf])).toEqual([
+      ["general_projects.view", false], ["general_projects.view", false], ["general_projects.manage", true],
+      ["general_projects.manage", true], ["general_projects.manage", true],
+    ]);
+    expect(projects.listTaskOptions).toHaveBeenCalledWith(context, projectId, "First");
+    expect(projects.addDependency).toHaveBeenCalledWith(context, projectId,
+      expect.objectContaining({ predecessorTaskId, successorTaskId }));
+    expect(projects.removeDependency).toHaveBeenCalledOnce();
+  });
   it("guards task assignments and manager-only task transitions", async () => {
     const { app, authorize, projects } = fixture();
     const taskId = "5759ba65-f0e0-48c4-b0dc-b12ca2bd958d";

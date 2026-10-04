@@ -3528,6 +3528,84 @@ paths:
       x-permission: general_projects.manage
       security: [{ SessionCookie: [], CsrfToken: [] }]
       x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/task-options:
+    get:
+      tags: [General Projects]
+      summary: خيارات مهام المشروع للبحث عن الاعتماديات
+      operationId: listGeneralProjectTaskOptions
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: search, in: query, schema: { type: string, minLength: 1, maxLength: 200 } }
+      responses:
+        '200': { description: خيارات المهام, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectTaskOptionsResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: general_projects.view
+      security: [{ SessionCookie: [] }]
+  /general-projects/{generalProjectId}/task-dependencies:
+    get:
+      tags: [General Projects]
+      summary: روابط اعتماديات المهام ضمن مشروع الشركة
+      operationId: listGeneralProjectTaskDependencies
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { $ref: '#/components/parameters/Page' }
+      - { $ref: '#/components/parameters/PageSize' }
+      - { name: taskId, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: الاعتماديات, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectTaskDependencyListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: general_projects.view
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [General Projects]
+      summary: إضافة اعتمادية Finish-to-Start دون دورة
+      operationId: addGeneralProjectTaskDependency
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AddGeneralProjectTaskDependencyRequest' } } } }
+      responses:
+        '201': { description: الاعتمادية المنشأة, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectTaskDependencyMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/task-dependencies/{dependencyId}/remove:
+    post:
+      tags: [General Projects]
+      summary: إزالة اعتمادية منطقيًا بسبب أو بعد إلغاء سابقتها
+      operationId: removeGeneralProjectTaskDependency
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: dependencyId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RemoveGeneralProjectTaskDependencyRequest' } } } }
+      responses:
+        '200': { description: الاعتمادية بعد الإزالة, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectTaskDependencyMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
   /general-projects/{generalProjectId}/tasks/{taskId}/assignments:
     get:
       tags: [General Projects]
@@ -21520,6 +21598,7 @@ components:
         dueDate: { type: [string, 'null'], format: date }
         status: { $ref: '#/components/schemas/GeneralProjectTaskStatus' }
         canProgress: { type: boolean, description: صلاحية التقدم الفعلية لهذه المهمة ضمن الإسناد الحالي عند القراءة }
+        dependencyBlocked: { type: boolean, description: هل تمنع اعتمادية فعالة بدء المهمة الآن }
         version: { type: integer, minimum: 0 }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
@@ -21610,6 +21689,69 @@ components:
         expectedPlanVersion: { type: integer, minimum: 0 }
         expectedVersion: { type: integer, minimum: 0 }
         to: { type: string, enum: [IN_PROGRESS, BLOCKED, COMPLETED, TODO] }
+        reason: { type: string, x-trim: true, minLength: 10, maxLength: 500 }
+    GeneralProjectTaskOption:
+      type: object
+      additionalProperties: false
+      required: [id, title, status, sequence, phaseTitle, phaseSequence]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        status: { $ref: '#/components/schemas/GeneralProjectTaskStatus' }
+        sequence: { type: integer, minimum: 1 }
+        phaseTitle: { type: string }
+        phaseSequence: { type: integer, minimum: 1 }
+    GeneralProjectTaskOptionsResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/GeneralProjectTaskOption' } }
+    GeneralProjectTaskDependency:
+      type: object
+      additionalProperties: false
+      required: [id, predecessorTaskId, successorTaskId, predecessorTitle, successorTitle, isActive, version, createdAt, removedAt, removalReason]
+      properties:
+        id: { type: string, format: uuid }
+        predecessorTaskId: { type: string, format: uuid }
+        successorTaskId: { type: string, format: uuid }
+        predecessorTitle: { type: string }
+        successorTitle: { type: string }
+        isActive: { type: boolean }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        removedAt: { type: [string, 'null'], format: date-time }
+        removalReason: { type: [string, 'null'], maxLength: 500 }
+    GeneralProjectTaskDependencyListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, planVersion, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/GeneralProjectTaskDependency' } }
+        planVersion: { type: integer, minimum: 0 }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    GeneralProjectTaskDependencyMutationResponse:
+      type: object
+      additionalProperties: false
+      required: [dependency, planVersion]
+      properties:
+        dependency: { $ref: '#/components/schemas/GeneralProjectTaskDependency' }
+        planVersion: { type: integer, minimum: 0 }
+    AddGeneralProjectTaskDependencyRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedPlanVersion, predecessorTaskId, successorTaskId]
+      properties:
+        expectedPlanVersion: { type: integer, minimum: 0 }
+        predecessorTaskId: { type: string, format: uuid }
+        successorTaskId: { type: string, format: uuid }
+    RemoveGeneralProjectTaskDependencyRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedPlanVersion, expectedVersion, reason]
+      properties:
+        expectedPlanVersion: { type: integer, minimum: 0 }
+        expectedVersion: { type: integer, minimum: 0 }
         reason: { type: string, x-trim: true, minLength: 10, maxLength: 500 }
     CreateGeneralProjectRequest:
       type: object

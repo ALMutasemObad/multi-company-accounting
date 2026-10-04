@@ -155,3 +155,17 @@ export function validateDependencyAddition(input: Readonly<{
     queue.push(...(outgoing.get(current) ?? []));
   }
 }
+
+export function validateDependencyRemoval(input: Readonly<{
+  projectStatus: GeneralProjectStatus;
+  predecessorStatus: GeneralProjectTaskStatus;
+  successorStatus: GeneralProjectTaskStatus;
+  reason: string;
+}>): "NORMAL" | "PREDECESSOR_CANCELLED_RECOVERY" {
+  requirePolicy(!finalProject(input.projectStatus), "PROJECT_FINAL");
+  reasonRequired(input.reason);
+  requirePolicy(!finalTask(input.successorStatus), "DEPENDENCY_FINAL_TASK");
+  if (input.predecessorStatus === "CANCELLED") return "PREDECESSOR_CANCELLED_RECOVERY";
+  requirePolicy(!finalTask(input.predecessorStatus), "DEPENDENCY_FINAL_TASK");
+  return "NORMAL";
+}
