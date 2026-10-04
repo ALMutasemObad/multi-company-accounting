@@ -49,6 +49,18 @@ describe('CompanyCapabilityService', () => {
     expect(permissionEntitlement('unknown.future.permission')).toBeNull();
   });
 
+  it('keeps independent service-catalogue permissions dark without an explicit entitlement', async () => {
+    expect(permissionEntitlement('services.view')).toBe('SERVICE_CATALOG');
+    expect(permissionEntitlement('services.manage')).toBe('SERVICE_CATALOG');
+    expect(permissionEntitlement('services.prices.manage')).toBe('SERVICE_CATALOG');
+    expect(permissionEntitlement('sales_catalog.view')).toBe('SALES');
+    const dark = new CompanyCapabilityService(entitlementQuery(['SALES', 'PROFESSIONAL_PROJECTS']));
+    await expect(dark.resolve(20n, ['services.view', 'services.manage', 'services.prices.manage'])).resolves.toEqual({
+      moduleCodes: ['PROFESSIONAL_PROJECTS', 'SALES'], permissions: [],
+    });
+    await expect(dark.allows(20n, 'services.view')).resolves.toBe(false);
+  });
+
   it('intersects dated company entitlements with RBAC and fails closed for unknown permissions', async () => {
     const service = new CompanyCapabilityService(entitlementQuery(['SALES']));
 

@@ -309,6 +309,27 @@ enum ProfessionalProjectKind {
   PROFESSIONAL_PROJECT
 }
 
+enum ServiceCategoryStatus {
+  ACTIVE
+  INACTIVE
+  RETIRED
+}
+
+enum ServiceOfferingStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+  RETIRED
+}
+
+enum ServicePricingUnit {
+  EACH
+  HOUR
+  DAY
+  SESSION
+  MONTH
+}
+
 enum ProfessionalProjectBillingModel {
   TIME_AND_MATERIALS
   FIXED_FEE
@@ -659,6 +680,9 @@ model Company {
   cashFlowAccountMappings           CashFlowAccountMapping[]
   posSales                          PosSale[]
   professionalProjects              ProfessionalProject[]
+  serviceCategories                  ServiceCategory[]
+  serviceOfferings                   ServiceOffering[]
+  serviceOfferingVariants            ServiceOfferingVariant[]
   crmLeads                          CrmLead[]
   crmOpportunities                  CrmOpportunity[]
   crmActivities                     CrmActivity[]
@@ -865,6 +889,12 @@ model User {
   posSalesCompleted                    PosSale[]                          @relation("PosSaleCompletedBy")
   professionalProjectsCreated          ProfessionalProject[]              @relation("ProfessionalProjectCreatedBy")
   professionalProjectsUpdated          ProfessionalProject[]              @relation("ProfessionalProjectUpdatedBy")
+  serviceCategoriesCreated             ServiceCategory[]                 @relation("ServiceCategoryCreatedBy")
+  serviceCategoriesUpdated             ServiceCategory[]                 @relation("ServiceCategoryUpdatedBy")
+  serviceOfferingsCreated              ServiceOffering[]                 @relation("ServiceOfferingCreatedBy")
+  serviceOfferingsUpdated              ServiceOffering[]                 @relation("ServiceOfferingUpdatedBy")
+  serviceVariantsCreated               ServiceOfferingVariant[]          @relation("ServiceVariantCreatedBy")
+  serviceVariantsUpdated               ServiceOfferingVariant[]          @relation("ServiceVariantUpdatedBy")
   crmLeadsCreated                      CrmLead[]                          @relation("CrmLeadCreatedBy")
   crmLeadsUpdated                      CrmLead[]                          @relation("CrmLeadUpdatedBy")
   crmOpportunitiesCreated              CrmOpportunity[]                   @relation("CrmOpportunityCreatedBy")
@@ -1709,6 +1739,7 @@ model Account {
   purchaseInvoiceLines     PurchaseInvoiceLine[]     @relation("PurchaseDebitAccount")
   inventoryOffsetMovements InventoryMovement[]       @relation("InventoryMovementOffsetAccount")
   cashFlowMappings         CashFlowAccountMapping[]
+  serviceRevenueVariants   ServiceOfferingVariant[]  @relation("ServiceVariantRevenueAccount")
 
   @@unique([companyId, code])
   @@unique([companyId, sourceTemplateCode, sourceTemplateKey])
@@ -1928,6 +1959,91 @@ model CrmActivity {
   @@index([companyId, leadId, createdAt, id])
   @@index([companyId, opportunityId, createdAt, id])
   @@map("crm_activities")
+}
+
+model ServiceCategory {
+  id          BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId    String                @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId   BigInt                @map("company_id") @db.UnsignedBigInt
+  nameAr      String                @map("name_ar") @db.VarChar(160)
+  nameEn      String?               @map("name_en") @db.VarChar(160)
+  description String?               @db.VarChar(1000)
+  status      ServiceCategoryStatus @default(ACTIVE)
+  version     Int                   @default(0) @db.UnsignedInt
+  createdById BigInt                @map("created_by_id") @db.UnsignedBigInt
+  updatedById BigInt                @map("updated_by_id") @db.UnsignedBigInt
+  createdAt   DateTime              @default(now()) @map("created_at")
+  updatedAt   DateTime              @updatedAt @map("updated_at")
+  company     Company               @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  createdBy   User                  @relation("ServiceCategoryCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy   User                  @relation("ServiceCategoryUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  offerings   ServiceOffering[]
+
+  @@unique([id, companyId])
+  @@index([companyId, status, nameAr, id])
+  @@map("service_categories")
+}
+
+model ServiceOffering {
+  id          BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId    String                @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId   BigInt                @map("company_id") @db.UnsignedBigInt
+  categoryId  BigInt?               @map("category_id") @db.UnsignedBigInt
+  code        String                @db.VarChar(40)
+  nameAr      String                @map("name_ar") @db.VarChar(200)
+  nameEn      String?               @map("name_en") @db.VarChar(200)
+  description String?               @db.VarChar(1000)
+  status      ServiceOfferingStatus @default(DRAFT)
+  version     Int                   @default(0) @db.UnsignedInt
+  createdById BigInt                @map("created_by_id") @db.UnsignedBigInt
+  updatedById BigInt                @map("updated_by_id") @db.UnsignedBigInt
+  createdAt   DateTime              @default(now()) @map("created_at")
+  updatedAt   DateTime              @updatedAt @map("updated_at")
+  company     Company               @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  category    ServiceCategory?      @relation(fields: [categoryId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  createdBy   User                  @relation("ServiceOfferingCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy   User                  @relation("ServiceOfferingUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  variants    ServiceOfferingVariant[]
+
+  @@unique([companyId, code])
+  @@unique([id, companyId])
+  @@index([companyId, status, createdAt, id])
+  @@index([categoryId, companyId, status])
+  @@map("service_offerings")
+}
+
+model ServiceOfferingVariant {
+  id                       BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId                 String                @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId                BigInt                @map("company_id") @db.UnsignedBigInt
+  offeringId               BigInt                @map("offering_id") @db.UnsignedBigInt
+  nameAr                   String                @map("name_ar") @db.VarChar(160)
+  nameEn                   String?               @map("name_en") @db.VarChar(160)
+  pricingUnit              ServicePricingUnit    @map("pricing_unit")
+  availableFrom            DateTime?             @map("available_from") @db.Date
+  availableUntil           DateTime?             @map("available_until") @db.Date
+  defaultRevenueAccountId  BigInt?               @map("default_revenue_account_id") @db.UnsignedBigInt
+  defaultOutputTaxRateId   BigInt?               @map("default_output_tax_rate_id") @db.UnsignedBigInt
+  status                   ServiceOfferingStatus @default(DRAFT)
+  firstActivatedAt         DateTime?             @map("first_activated_at")
+  version                  Int                   @default(0) @db.UnsignedInt
+  createdById              BigInt                @map("created_by_id") @db.UnsignedBigInt
+  updatedById              BigInt                @map("updated_by_id") @db.UnsignedBigInt
+  createdAt                DateTime              @default(now()) @map("created_at")
+  updatedAt                DateTime              @updatedAt @map("updated_at")
+  company                  Company               @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  offering                 ServiceOffering       @relation(fields: [offeringId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  defaultRevenueAccount    Account?              @relation("ServiceVariantRevenueAccount", fields: [defaultRevenueAccountId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict, map: "svc_variant_revenue_account_fk")
+  defaultOutputTaxRate     TaxRate?              @relation("ServiceVariantOutputTax", fields: [defaultOutputTaxRateId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict, map: "svc_variant_output_tax_fk")
+  createdBy                User                  @relation("ServiceVariantCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy                User                  @relation("ServiceVariantUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([id, companyId])
+  @@index([offeringId, companyId, createdAt, id], map: "svc_variant_offering_order_idx")
+  @@index([companyId, status, availableFrom, availableUntil], map: "svc_variant_availability_idx")
+  @@index([defaultRevenueAccountId, companyId], map: "svc_variant_revenue_account_idx")
+  @@index([defaultOutputTaxRateId, companyId], map: "svc_variant_output_tax_idx")
+  @@map("service_offering_variants")
 }
 
 model ProfessionalProject {
@@ -3103,6 +3219,7 @@ model TaxRate {
   invoiceLines         SalesInvoiceLine[]
   itemSellingProfiles  SalesItemSellingProfile[]
   purchaseInvoiceLines PurchaseInvoiceLine[]
+  serviceOutputVariants ServiceOfferingVariant[] @relation("ServiceVariantOutputTax")
 
   @@unique([companyId, code])
   @@unique([id, companyId])
