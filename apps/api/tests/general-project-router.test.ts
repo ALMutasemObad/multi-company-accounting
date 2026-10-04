@@ -17,6 +17,9 @@ function fixture() {
     createProject: vi.fn().mockResolvedValue({ project: { id: projectId } }),
     updateProject: vi.fn().mockResolvedValue({ project: { id: projectId } }),
     transition: vi.fn().mockResolvedValue({ project: { id: projectId } }),
+    listPhases: vi.fn().mockResolvedValue({ data: [], planVersion: 0, meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 } }),
+    createPhase: vi.fn().mockResolvedValue({ phase: {}, planVersion: 1 }),
+    transitionPhase: vi.fn().mockResolvedValue({ phase: {}, planVersion: 2 }),
     assignMember: vi.fn().mockResolvedValue({ member: {}, projectVersion: 1 }),
     unassignMember: vi.fn().mockResolvedValue({ memberId: managerId, projectVersion: 2 }),
   };
@@ -27,6 +30,29 @@ function fixture() {
 }
 
 describe("general project HTTP boundary", () => {
+  it("guards phase reads and versioned commands without accepting status on creation", async () => {
+    const { app, authorize, projects } = fixture();
+    const phaseId = "b5c7025d-260e-4697-9ba9-57c55ed063a2";
+    const write = (call: request.Test) => call.set("Cookie", "sid=session").set("X-CSRF-Token", "csrf")
+      .set("Idempotency-Key", "general-project-phase-key-1234");
+    await request(app).get(`/general-projects/${projectId}/phases?page=2&pageSize=10`).expect(200);
+    await write(request(app).post(`/general-projects/${projectId}/phases`))
+      .send({ expectedPlanVersion: 0, title: "مرحلة التحضير" }).expect(201);
+    await write(request(app).post(`/general-projects/${projectId}/phases/${phaseId}/transition`))
+      .send({ expectedPlanVersion: 1, expectedVersion: 0, to: "IN_PROGRESS" }).expect(200);
+    await write(request(app).post(`/general-projects/${projectId}/phases`))
+      .send({ expectedPlanVersion: 0, title: "مرحلة", status: "COMPLETED" }).expect(400);
+    expect(authorize.mock.calls.map(([value]) => [value.permission, value.requireCsrf])).toEqual([
+      ["general_projects.view", false], ["general_projects.manage", true],
+      ["general_projects.manage", true], ["general_projects.manage", true],
+    ]);
+    expect(projects.listPhases).toHaveBeenCalledWith(context, projectId, { page: 2, pageSize: 10 });
+    expect(projects.createPhase).toHaveBeenCalledWith(context, projectId,
+      expect.objectContaining({ title: "مرحلة التحضير", idempotencyKey: "general-project-phase-key-1234" }));
+    expect(projects.transitionPhase).toHaveBeenCalledWith(context, projectId, phaseId,
+      expect.objectContaining({ to: "IN_PROGRESS", expectedVersion: 0 }));
+    expect(projects.createPhase).toHaveBeenCalledTimes(1);
+  });
   it("requires Sales visibility for the full optional customer list and manage permission for employee options", async () => {
     const { app, authorize } = fixture();
     await request(app).get("/general-projects/customer-options").set("Cookie", "sid=session").expect(200);

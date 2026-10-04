@@ -53,12 +53,15 @@ describe('generated OpenAPI request guards', () => {
   });
 
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 427, requestBodies: 213, responseBodies: 2754 });
+    expect(openApiContractCoverage).toEqual({ operations: 430, requestBodies: 215, responseBodies: 2773 });
     expect(openApiOperationRoutes).toMatchObject({
       'GET /service-catalog/selection-options': 'listServiceSelectionOptions',
       'GET /service-catalog/reference-options/revenue-accounts': 'listServiceRevenueAccountOptions',
       'GET /service-catalog/reference-options/output-tax-rates': 'listServiceOutputTaxOptions',
       'GET /general-projects': 'listGeneralProjects',
+      'GET /general-projects/{generalProjectId}/phases': 'listGeneralProjectPhases',
+      'POST /general-projects/{generalProjectId}/phases': 'createGeneralProjectPhase',
+      'POST /general-projects/{generalProjectId}/phases/{phaseId}/transition': 'transitionGeneralProjectPhase',
       'POST /general-projects': 'createGeneralProject',
       'POST /general-projects/{generalProjectId}/transition': 'transitionGeneralProject',
       'GET /pos/context/identity': 'getPosContextIdentity',
@@ -94,7 +97,7 @@ describe('generated OpenAPI request guards', () => {
       'POST /auth/social/onboarding': 'completeSocialOnboarding',
       'DELETE /auth/social/onboarding': 'cancelSocialOnboarding',
     });
-    expect(guardedOpenApiOperations).toHaveLength(213);
+    expect(guardedOpenApiOperations).toHaveLength(215);
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
       'updateInventoryBarcodeSettings', 'previewInventoryCatalogImport', 'commitInventoryCatalogImport',
     ]));

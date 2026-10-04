@@ -1,4 +1,4 @@
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { api, idempotencyKey } from "./api";
 import { useAuthorization } from "./authorization-context";
 import { useI18n } from "./i18n";
@@ -10,8 +10,12 @@ type Role = "MANAGER" | "CONTRIBUTOR";
 type Customer = { id: string; code: string; nameAr: string; nameEn: string | null };
 type Employee = { id: string; employeeNumber: string; nameAr: string; nameEn: string | null; status: string };
 type Project = { id: string; code: string; nameAr: string; nameEn: string | null; description: string | null; status: Status; priority: string;
-  customer: Customer | null; plannedStartDate: string | null; targetEndDate: string | null; memberCount: number; version: number };
+  customer: Customer | null; plannedStartDate: string | null; targetEndDate: string | null; memberCount: number; version: number; planVersion: number };
 type Member = { id: string; employee: Employee; role: Role; isActive: boolean; version: number };
+type PhaseStatus = "PLANNED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+type Phase = { id: string; sequence: number; title: string; description: string | null; status: PhaseStatus; version: number;
+  plannedStartDate: string | null; targetEndDate: string | null };
+type PhaseList = { data: Phase[]; planVersion: number; meta: List["meta"] };
 type Detail = { project: Project; members: Member[] };
 type List = { data: Project[]; meta: { page: number; pageSize: number; total: number; totalPages: number } };
 
@@ -32,6 +36,10 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
   const [status, setStatus] = useState<Status | "">("");
   const [selectedId, setSelectedId] = useState("");
   const [detail, setDetail] = useState<Detail | null>(null);
+  const [phases, setPhases] = useState<(PhaseList & { projectId: string }) | null>(null);
+  const phaseRequestSequence = useRef(0);
+  const [phasePage, setPhasePage] = useState(1);
+  const [newPhaseTitle, setNewPhaseTitle] = useState("");
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [customerSearch, setCustomerSearch] = useState("");
@@ -71,8 +79,23 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
     catch (cause) { notify(cause instanceof Error ? cause.message : t("generalProjects.loadingError"), "error"); }
   }, [selectedId, notify, t]);
 
+  const loadPhases = useCallback(async () => {
+    const sequence = ++phaseRequestSequence.current;
+    if (!selectedId) { setPhases(null); return; }
+    try {
+      const result = await api<PhaseList>(`/general-projects/${selectedId}/phases?page=${phasePage}&pageSize=10`);
+      if (sequence === phaseRequestSequence.current) setPhases({ ...result, projectId: selectedId });
+    } catch (cause) {
+      if (sequence === phaseRequestSequence.current) {
+        setPhases(null); notify(cause instanceof Error ? cause.message : t("generalProjects.loadingError"), "error");
+      }
+    }
+  }, [selectedId, phasePage, notify, t]);
+
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { void loadDetail(); }, [loadDetail]);
+  useEffect(() => { setPhases(null); setPhasePage(1); }, [selectedId]);
+  useEffect(() => { void loadPhases(); }, [loadPhases]);
   useEffect(() => {
     setEditName(detail?.project.nameAr ?? "");
     setEditDescription(detail?.project.description ?? "");
@@ -116,7 +139,7 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
 
   const execute = async (work: () => Promise<unknown>, message: string) => {
     setWorking(true);
-    try { await work(); await load(); await loadDetail(); notify(message); }
+    try { await work(); await load(); await loadDetail(); await loadPhases(); notify(message); }
     catch (cause) { notify(cause instanceof Error ? cause.message : t("generalProjects.loadingError"), "error"); }
     finally { setWorking(false); }
   };
@@ -156,6 +179,25 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
   };
   const transitions: Record<Status, Status[]> = { DRAFT: ["ACTIVE", "CANCELLED"], ACTIVE: ["ON_HOLD", "COMPLETED", "CANCELLED"],
     ON_HOLD: ["ACTIVE", "CANCELLED"], COMPLETED: [], CANCELLED: [] };
+  const phaseTransitions: Record<PhaseStatus, PhaseStatus[]> = { PLANNED: ["IN_PROGRESS", "CANCELLED"],
+    IN_PROGRESS: ["COMPLETED", "CANCELLED"], COMPLETED: [], CANCELLED: [] };
+  const createPhase = (event: FormEvent) => {
+    event.preventDefault();
+    if (!detail || !phases || phases.projectId !== detail.project.id || !newPhaseTitle.trim()) return;
+    void execute(async () => {
+      await api(`/general-projects/${detail.project.id}/phases`, { method: "POST",
+        idempotencyKey: idempotencyKey("general-project-phase-create", detail.project.id),
+        body: JSON.stringify({ expectedPlanVersion: phases.planVersion, title: newPhaseTitle.trim() }) });
+      setNewPhaseTitle("");
+    }, t("generalProjects.phaseSaved"));
+  };
+  const changePhase = (phase: Phase, to: PhaseStatus) => {
+    if (!detail || !phases || phases.projectId !== detail.project.id || (to === "CANCELLED" && reason.trim().length < 10)) return;
+    void execute(() => api(`/general-projects/${detail.project.id}/phases/${phase.id}/transition`, { method: "POST",
+      idempotencyKey: idempotencyKey("general-project-phase-transition", phase.id),
+      body: JSON.stringify({ expectedPlanVersion: phases.planVersion, expectedVersion: phase.version, to,
+        ...(to === "CANCELLED" ? { reason: reason.trim() } : {}) }) }), t("generalProjects.phaseSaved"));
+  };
 
   return <div className="page-content">
     <PageHeader kicker={t("nav.generalProjects")} title={t("generalProjects.title")} description={t("generalProjects.description")} />
@@ -210,6 +252,21 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
         <label>{t("generalProjects.role")}<select value={memberRole} onChange={event => setMemberRole(event.target.value as Role)}><option value="MANAGER">{t("generalProjects.role.MANAGER")}</option><option value="CONTRIBUTOR">{t("generalProjects.role.CONTRIBUTOR")}</option></select></label>
         <Button type="submit" disabled={working || !memberId}>{t("generalProjects.assign")}</Button>
       </form>}
+      <h3>{t("generalProjects.phases")}</h3>
+      {phases?.projectId === selectedId && phases.data.length === 0 && <p>{t("generalProjects.noPhases")}</p>}
+      {phases?.projectId === selectedId && phases.data.map(phase => <div key={phase.id}>
+        {phase.sequence}. {phase.title} · {t(`generalProjects.phaseStatus.${phase.status}`)}
+        {canManage && detail.project.status === "ACTIVE" && phaseTransitions[phase.status].map(next =>
+          <Button key={next} variant="secondary" disabled={working || (next === "CANCELLED" && reason.trim().length < 10)}
+            onClick={() => changePhase(phase, next)}>{t(`generalProjects.phaseStatus.${next}`)}</Button>)}
+      </div>)}
+      {phases?.projectId === selectedId && <Pagination page={phases.meta.page} totalPages={phases.meta.totalPages} total={phases.meta.total} onChange={setPhasePage} />}
+      {canManage && phases?.projectId === selectedId && detail.project.status !== "COMPLETED" && detail.project.status !== "CANCELLED" &&
+        <form onSubmit={createPhase} className="form-grid">
+          <label>{t("generalProjects.phaseTitle")}<input required maxLength={200} value={newPhaseTitle}
+            onChange={event => setNewPhaseTitle(event.target.value)} /></label>
+          <Button type="submit" disabled={working || !newPhaseTitle.trim()}>{t("generalProjects.addPhase")}</Button>
+        </form>}
     </section>}
   </div>;
 }

@@ -19,8 +19,8 @@ const errorCode = (action: () => unknown) => {
 };
 
 const migration = readFileSync(new URL("../prisma/migrations/20261004_general_project_register/migration.sql", import.meta.url), "utf8");
-const planMigration = readFileSync(new URL("../prisma/migrations/20261004180000_general_project_plan/migration.sql", import.meta.url), "utf8");
-const planRollback = readFileSync(new URL("../prisma/migrations/20261004180000_general_project_plan/rollback.sql", import.meta.url), "utf8");
+const planMigration = readFileSync(new URL("../prisma/migrations/20261005_general_project_plan/migration.sql", import.meta.url), "utf8");
+const planRollback = readFileSync(new URL("../prisma/migrations/20261005_general_project_plan/rollback.sql", import.meta.url), "utf8");
 const schema = readFileSync(new URL("../prisma/schema.prisma", import.meta.url), "utf8");
 
 describe("general project migration boundaries", () => {
@@ -36,6 +36,10 @@ describe("general project migration boundaries", () => {
 });
 
 describe("general project plan persistence boundary", () => {
+  it("applies the plan migration after its project register dependency", () => {
+    expect("20261005_general_project_plan" > "20261004_general_project_register").toBe(true);
+  });
+
   it("adds phases, tasks and member assignments without activating the module", () => {
     expect([...planMigration.matchAll(/CREATE TABLE `([^`]+)`/gu)].map(match => match[1])).toEqual([
       "general_project_phases", "general_project_tasks", "general_project_task_assignments",

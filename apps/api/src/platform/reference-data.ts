@@ -34,6 +34,7 @@ export const permissionDefinitions = [
   ['professional_projects.view', 'professional_projects', 'عرض المشاريع والقضايا المهنية'],
   ['general_projects.view', 'general_projects', 'عرض إدارة المشاريع'],
   ['general_projects.manage', 'general_projects', 'إنشاء وإدارة المشاريع وفريقها'],
+  ['general_projects.progress', 'general_projects', 'تحديث تقدم المهام المسندة'],
   ['professional_projects.manage', 'professional_projects', 'إدارة المشاريع والقضايا المهنية وأعضائها'],
   ['professional_time.view', 'professional_projects', 'عرض سجلات الوقت المهنية'],
   ['professional_time.log', 'professional_projects', 'تسجيل الوقت المهني وتعديل السجل الشخصي'],

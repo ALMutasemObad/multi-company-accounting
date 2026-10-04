@@ -1,10 +1,10 @@
-import { Prisma, type GeneralProject, type GeneralProjectMember, type PrismaClient } from "@prisma/client";
+import { Prisma, type GeneralProject, type GeneralProjectMember, type GeneralProjectPhase, type PrismaClient } from "@prisma/client";
 import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import type { ActorContext } from "../platform/actor-context.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
 import { reserveMasterDataCode } from "../platform/master-data-code-service.js";
 import { TransactionExecutor } from "../platform/transaction-executor.js";
-import { transitionProject } from "./general-project-policy.js";
+import { transitionPhase, transitionProject } from "./general-project-policy.js";
 import type { GeneralProjectCustomerPort, GeneralProjectCustomerReference, GeneralProjectEmployeePort, GeneralProjectEmployeeReference } from "./general-project-reference-ports.js";
 
 export type GeneralProjectFailureReason = "NOT_FOUND" | "CUSTOMER_NOT_FOUND" | "CUSTOMER_INACTIVE" | "EMPLOYEE_NOT_FOUND" | "EMPLOYEE_INACTIVE" | "INVALID_DATE_RANGE" | "PROJECT_FINAL" | "LAST_MANAGER" | "MEMBER_NOT_FOUND" | "VERSION_CONFLICT" | "IDEMPOTENCY_MISMATCH" | "IDEMPOTENCY_IN_PROGRESS";
@@ -26,6 +26,11 @@ const projectJson = (row: GeneralProject, customer: GeneralProjectCustomerRefere
 const memberJson = (row: GeneralProjectMember, employee: GeneralProjectEmployeeReference) => ({
   id: row.publicId, employee: employeeJson(employee), role: row.role, isActive: row.isActive,
   version: row.version, assignedAt: row.assignedAt.toISOString(), unassignedAt: row.unassignedAt?.toISOString() ?? null,
+});
+const phaseJson = (row: GeneralProjectPhase) => ({
+  id: row.publicId, sequence: row.sequence, title: row.title, description: row.description,
+  plannedStartDate: dateOnly(row.plannedStartDate), targetEndDate: dateOnly(row.targetEndDate),
+  status: row.status, version: row.version, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(),
 });
 const mutable = (status: GeneralProject["status"]) => status !== "COMPLETED" && status !== "CANCELLED";
 
@@ -81,6 +86,69 @@ export class GeneralProjectService {
   async listCustomerOptions(context: ActorContext, search?: string) { return { data: (await this.customers.listActiveInCompany(context.companyId, search)).map(customerJson) }; }
   async listEmployeeOptions(context: ActorContext, search?: string) { return { data: (await this.employees.listActiveInCompany(context.companyId, search)).map(employeeJson) }; }
 
+  async listPhases(context: ActorContext, projectPublicId: string, input: { page: number; pageSize: number }) {
+    const { project, rows, total } = await this.prisma.$transaction(async tx => {
+      const project = await tx.generalProject.findFirst({ where: { companyId: context.companyId, publicId: projectPublicId }, select: { id: true, planVersion: true } });
+      if (!project) throw new GeneralProjectError("NOT_FOUND");
+      const where: Prisma.GeneralProjectPhaseWhereInput = { companyId: context.companyId, projectId: project.id };
+      const [rows, total] = await Promise.all([
+        tx.generalProjectPhase.findMany({ where, orderBy: [{ sequence: "asc" }, { id: "asc" }], skip: (input.page - 1) * input.pageSize, take: input.pageSize }),
+        tx.generalProjectPhase.count({ where }),
+      ]);
+      return { project, rows, total };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+    return { data: rows.map(phaseJson), planVersion: project.planVersion,
+      meta: { page: input.page, pageSize: input.pageSize, total, totalPages: Math.ceil(total / input.pageSize) } };
+  }
+
+  createPhase(context: ActorContext, projectPublicId: string, input: { expectedPlanVersion: number; title: string; description?: string | null;
+    plannedStartDate?: string | null; targetEndDate?: string | null; idempotencyKey: string }) {
+    return this.command(context, "CREATE_GENERAL_PROJECT_PHASE", input.idempotencyKey, { projectPublicId, ...input }, 201, async tx => {
+      const project = await this.lockProject(tx, context, projectPublicId);
+      if (!mutable(project.status)) throw new GeneralProjectError("PROJECT_FINAL");
+      if (project.planVersion !== input.expectedPlanVersion) throw new GeneralProjectError("VERSION_CONFLICT");
+      this.validatePlanDates(input.plannedStartDate ?? null, input.targetEndDate ?? null,
+        dateOnly(project.plannedStartDate), dateOnly(project.targetEndDate));
+      const last = await tx.generalProjectPhase.aggregate({ where: { companyId: context.companyId, projectId: project.id }, _max: { sequence: true } });
+      const sequence = (last._max.sequence ?? 0) + 1;
+      const row = await tx.generalProjectPhase.create({ data: { companyId: context.companyId, projectId: project.id,
+        sequence, title: input.title, description: input.description ?? null,
+        plannedStartDate: input.plannedStartDate ? day(input.plannedStartDate) : null,
+        targetEndDate: input.targetEndDate ? day(input.targetEndDate) : null,
+        createdById: context.userId, updatedById: context.userId } });
+      await this.bumpPlanVersion(tx, context, project);
+      await this.audit(tx, context, "GENERAL_PROJECT_PHASE_CREATED", projectPublicId,
+        { phaseId: row.publicId, expectedPlanVersion: input.expectedPlanVersion, nextPlanVersion: project.planVersion + 1 });
+      return { phase: phaseJson(row), planVersion: project.planVersion + 1 };
+    });
+  }
+
+  transitionPhase(context: ActorContext, projectPublicId: string, phasePublicId: string, input: {
+    expectedPlanVersion: number; expectedVersion: number; to: GeneralProjectPhase["status"]; reason?: string; idempotencyKey: string;
+  }) {
+    return this.command(context, "TRANSITION_GENERAL_PROJECT_PHASE", input.idempotencyKey,
+      { projectPublicId, phasePublicId, ...input }, 200, async tx => {
+        const project = await this.lockProject(tx, context, projectPublicId);
+        if (project.planVersion !== input.expectedPlanVersion) throw new GeneralProjectError("VERSION_CONFLICT");
+        const current = await tx.generalProjectPhase.findFirst({ where: { companyId: context.companyId, projectId: project.id, publicId: phasePublicId } });
+        if (!current) throw new GeneralProjectError("NOT_FOUND");
+        if (current.version !== input.expectedVersion) throw new GeneralProjectError("VERSION_CONFLICT");
+        const tasks = await tx.generalProjectTask.findMany({ where: { companyId: context.companyId, projectId: project.id, phaseId: current.id }, select: { status: true } });
+        const next = transitionPhase({ projectStatus: project.status, from: current.status, to: input.to,
+          taskStatuses: tasks.map(row => row.status), ...(input.reason === undefined ? {} : { reason: input.reason }) });
+        const changed = await tx.generalProjectPhase.updateMany({ where: { id: current.id, companyId: context.companyId,
+          projectId: project.id, version: input.expectedVersion, status: current.status },
+        data: { status: next, version: { increment: 1 }, updatedById: context.userId } });
+        if (changed.count !== 1) throw new GeneralProjectError("VERSION_CONFLICT");
+        await this.bumpPlanVersion(tx, context, project);
+        const row = await tx.generalProjectPhase.findUniqueOrThrow({ where: { id: current.id } });
+        await this.audit(tx, context, "GENERAL_PROJECT_PHASE_TRANSITIONED", projectPublicId,
+          { phaseId: row.publicId, from: current.status, to: next, reason: input.reason ?? null,
+            expectedPlanVersion: input.expectedPlanVersion, nextPlanVersion: project.planVersion + 1 });
+        return { phase: phaseJson(row), planVersion: project.planVersion + 1 };
+      });
+  }
+
   async createProject(context: ActorContext, input: { nameAr: string; nameEn?: string | null; description?: string | null; customerId?: bigint | null; priority?: GeneralProject["priority"]; plannedStartDate?: string | null; targetEndDate?: string | null; managerEmployeeId?: string; idempotencyKey: string }) {
     const managerId = input.managerEmployeeId ?? (await this.employees.findByUserInCompany(context.companyId, context.userId))?.publicId;
     if (!managerId) throw new GeneralProjectError("EMPLOYEE_NOT_FOUND");
@@ -108,6 +176,13 @@ export class GeneralProjectService {
       const start = input.plannedStartDate === undefined ? dateOnly(project.plannedStartDate) : input.plannedStartDate;
       const end = input.targetEndDate === undefined ? dateOnly(project.targetEndDate) : input.targetEndDate;
       this.validateDates(start ?? null, end ?? null);
+      if (input.plannedStartDate !== undefined || input.targetEndDate !== undefined) {
+        const outside: Prisma.GeneralProjectPhaseWhereInput[] = [];
+        if (start) outside.push({ OR: [{ plannedStartDate: { lt: day(start) } }, { targetEndDate: { lt: day(start) } }] });
+        if (end) outside.push({ OR: [{ plannedStartDate: { gt: day(end) } }, { targetEndDate: { gt: day(end) } }] });
+        if (outside.length && await tx.generalProjectPhase.findFirst({ where: { companyId: context.companyId,
+          projectId: project.id, OR: outside }, select: { id: true } })) throw new GeneralProjectError("INVALID_DATE_RANGE");
+      }
       const customerId = input.customerId === undefined ? project.customerId : input.customerId;
       const customer = customerId === null ? null : input.customerId === undefined
         ? await this.customers.findInCompany(tx, context.companyId, customerId)
@@ -191,16 +266,22 @@ export class GeneralProjectService {
     return this.commands.execute({ context, operation, key, fingerprint: JSON.stringify(input, (_key, value: unknown) => typeof value === "bigint" ? value.toString() : value), responseStatus,
       errors: { mismatch: () => new GeneralProjectError("IDEMPOTENCY_MISMATCH"), inProgress: () => new GeneralProjectError("IDEMPOTENCY_IN_PROGRESS") } }, work);
   }
-  private async lockProject(tx: Prisma.TransactionClient, context: ActorContext, publicId: string, version: number) {
+  private async lockProject(tx: Prisma.TransactionClient, context: ActorContext, publicId: string, version?: number) {
     const rows = await tx.$queryRaw<Array<{ id: bigint }>>`SELECT id FROM general_projects WHERE company_id = ${context.companyId} AND public_id = ${publicId} FOR UPDATE`;
     if (!rows[0]) throw new GeneralProjectError("NOT_FOUND");
     const row = await tx.generalProject.findFirst({ where: { companyId: context.companyId, id: rows[0].id } });
     if (!row) throw new GeneralProjectError("NOT_FOUND");
-    if (row.version !== version) throw new GeneralProjectError("VERSION_CONFLICT");
+    if (version !== undefined && row.version !== version) throw new GeneralProjectError("VERSION_CONFLICT");
     return row;
   }
   private async bumpProject(tx: Prisma.TransactionClient, context: ActorContext, project: GeneralProject) {
     const changed = await tx.generalProject.updateMany({ where: { id: project.id, companyId: context.companyId, version: project.version }, data: { version: { increment: 1 }, updatedById: context.userId } });
+    if (changed.count !== 1) throw new GeneralProjectError("VERSION_CONFLICT");
+  }
+  private async bumpPlanVersion(tx: Prisma.TransactionClient, context: ActorContext, project: GeneralProject) {
+    const changed = await tx.generalProject.updateMany({ where: { id: project.id, companyId: context.companyId,
+      planVersion: project.planVersion, status: { notIn: ["COMPLETED", "CANCELLED"] } },
+    data: { planVersion: { increment: 1 }, updatedById: context.userId } });
     if (changed.count !== 1) throw new GeneralProjectError("VERSION_CONFLICT");
   }
   private async requireCustomer(tx: Prisma.TransactionClient, companyId: bigint, id: bigint) {
@@ -210,6 +291,14 @@ export class GeneralProjectService {
     return row;
   }
   private validateDates(start: string | null, end: string | null) { if (start && end && end < start) throw new GeneralProjectError("INVALID_DATE_RANGE"); }
+  private validatePlanDates(start: string | null, end: string | null, projectStart: string | null, projectEnd: string | null) {
+    this.validateDates(start, end);
+    for (const date of [start, end]) {
+      if (date && ((projectStart && date < projectStart) || (projectEnd && date > projectEnd))) {
+        throw new GeneralProjectError("INVALID_DATE_RANGE");
+      }
+    }
+  }
   private customerMap = async (companyId: bigint, ids: bigint[]) => new Map((await this.customers.listByIds(companyId, [...new Set(ids)])).map(row => [row.id, row]));
   private employeeMap = async (companyId: bigint, ids: bigint[]) => new Map((await this.employees.listByInternalIds(companyId, [...new Set(ids)])).map(row => [row.id, row]));
   private audit(tx: Prisma.TransactionClient, context: ActorContext, action: string, entityId: string, details?: Prisma.InputJsonObject) {

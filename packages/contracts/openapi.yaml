@@ -3450,6 +3450,66 @@ paths:
       x-permission: general_projects.manage
       security: [{ SessionCookie: [], CsrfToken: [] }]
       x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/phases:
+    get:
+      tags: [General Projects]
+      summary: مراحل خطة المشروع العام داخل الشركة
+      operationId: listGeneralProjectPhases
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { $ref: '#/components/parameters/Page' }
+      - { $ref: '#/components/parameters/PageSize' }
+      responses:
+        '200': { description: المراحل, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectPhaseListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: general_projects.view
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [General Projects]
+      summary: إنشاء مرحلة بترتيب خادمي ونسخة خطة متفائلة
+      operationId: createGeneralProjectPhase
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateGeneralProjectPhaseRequest' } } } }
+      responses:
+        '201': { description: المرحلة المنشأة, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectPhaseMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/phases/{phaseId}/transition:
+    post:
+      tags: [General Projects]
+      summary: انتقال حالة مرحلة مع فحص مهامها
+      operationId: transitionGeneralProjectPhase
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: phaseId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TransitionGeneralProjectPhaseRequest' } } } }
+      responses:
+        '200': { description: المرحلة بعد الانتقال, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectPhaseMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
   /general-projects/{generalProjectId}/members:
     post:
       tags: [General Projects]
@@ -21170,6 +21230,7 @@ components:
     GeneralProjectStatus: { type: string, enum: [DRAFT, ACTIVE, ON_HOLD, COMPLETED, CANCELLED] }
     GeneralProjectPriority: { type: string, enum: [LOW, NORMAL, HIGH, URGENT] }
     GeneralProjectMemberRole: { type: string, enum: [MANAGER, CONTRIBUTOR] }
+    GeneralProjectPhaseStatus: { type: string, enum: [PLANNED, IN_PROGRESS, COMPLETED, CANCELLED] }
     GeneralProjectCustomer:
       type: object
       required: [id, code, nameAr, nameEn, isActive]
@@ -21248,6 +21309,55 @@ components:
       properties:
         data: { type: array, items: { $ref: '#/components/schemas/GeneralProject' } }
         meta: { $ref: '#/components/schemas/PaginationMeta' }
+    GeneralProjectPhase:
+      type: object
+      additionalProperties: false
+      required: [id, sequence, title, description, plannedStartDate, targetEndDate, status, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        sequence: { type: integer, minimum: 1, readOnly: true }
+        title: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: [string, 'null'], maxLength: 1000 }
+        plannedStartDate: { type: [string, 'null'], format: date }
+        targetEndDate: { type: [string, 'null'], format: date }
+        status: { $ref: '#/components/schemas/GeneralProjectPhaseStatus' }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    GeneralProjectPhaseListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, planVersion, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/GeneralProjectPhase' } }
+        planVersion: { type: integer, minimum: 0 }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    GeneralProjectPhaseMutationResponse:
+      type: object
+      additionalProperties: false
+      required: [phase, planVersion]
+      properties:
+        phase: { $ref: '#/components/schemas/GeneralProjectPhase' }
+        planVersion: { type: integer, minimum: 0 }
+    CreateGeneralProjectPhaseRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedPlanVersion, title]
+      properties:
+        expectedPlanVersion: { type: integer, minimum: 0 }
+        title: { type: string, x-trim: true, minLength: 1, maxLength: 200 }
+        description: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
+        plannedStartDate: { type: [string, 'null'], format: date }
+        targetEndDate: { type: [string, 'null'], format: date }
+    TransitionGeneralProjectPhaseRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedPlanVersion, expectedVersion, to]
+      properties:
+        expectedPlanVersion: { type: integer, minimum: 0 }
+        expectedVersion: { type: integer, minimum: 0 }
+        to: { $ref: '#/components/schemas/GeneralProjectPhaseStatus' }
+        reason: { type: string, x-trim: true, minLength: 10, maxLength: 500 }
     CreateGeneralProjectRequest:
       type: object
       additionalProperties: false
