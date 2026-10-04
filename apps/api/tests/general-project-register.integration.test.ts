@@ -42,6 +42,9 @@ describe.runIf(enabled)("general project register on isolated MySQL/MariaDB", ()
     if (companies.length) {
       await prisma.idempotencyRecord.deleteMany({ where: { companyId: { in: companies }, operation: { in: ["CREATE_GENERAL_PROJECT", "UPDATE_GENERAL_PROJECT", "TRANSITION_GENERAL_PROJECT", "ASSIGN_GENERAL_PROJECT_MEMBER", "UNASSIGN_GENERAL_PROJECT_MEMBER"] } } });
       await prisma.auditLog.deleteMany({ where: { companyId: { in: companies }, entityType: "GENERAL_PROJECT" } });
+      await prisma.generalProjectTaskAssignment.deleteMany({ where: { companyId: { in: companies } } });
+      await prisma.generalProjectTask.deleteMany({ where: { companyId: { in: companies } } });
+      await prisma.generalProjectPhase.deleteMany({ where: { companyId: { in: companies } } });
       await prisma.generalProjectMember.deleteMany({ where: { companyId: { in: companies } } });
       await prisma.generalProject.deleteMany({ where: { companyId: { in: companies } } });
       await prisma.employee.deleteMany({ where: { companyId: { in: companies } } });
@@ -86,5 +89,23 @@ describe.runIf(enabled)("general project register on isolated MySQL/MariaDB", ()
     expect(unassigned.projectVersion).toBe(4);
     await expect(service.transition(context(), projectId, { version: 4, status: "ON_HOLD", idempotencyKey: "it-general-project-hold-no-reason-0001" }))
       .rejects.toMatchObject({ code: "REASON_REQUIRED" });
+  });
+
+  it("refuses completion while a phase or task is open", async () => {
+    const project = await prisma!.generalProject.findFirstOrThrow({ where: { companyId, publicId: projectId } });
+    const phase = await prisma!.generalProjectPhase.create({ data: {
+      companyId, projectId: project.id, sequence: 1, title: "مرحلة تنفيذ", createdById: userId, updatedById: userId,
+    } });
+    const task = await prisma!.generalProjectTask.create({ data: {
+      companyId, projectId: project.id, phaseId: phase.id, sequence: 1, title: "مهمة تنفيذ", createdById: userId, updatedById: userId,
+    } });
+    const input = { version: project.version, status: "COMPLETED" as const, idempotencyKey: "it-general-project-complete-0001" };
+    await expect(service.transition(context(), projectId, input)).rejects.toMatchObject({ code: "PROJECT_WORK_OPEN" });
+    await prisma!.generalProjectTask.update({ where: { id: task.id }, data: { status: "COMPLETED" } });
+    await expect(service.transition(context(), projectId, { ...input, idempotencyKey: "it-general-project-complete-0002" }))
+      .rejects.toMatchObject({ code: "PROJECT_WORK_OPEN" });
+    await prisma!.generalProjectPhase.update({ where: { id: phase.id }, data: { status: "COMPLETED" } });
+    const completed = await service.transition(context(), projectId, { ...input, idempotencyKey: "it-general-project-complete-0003" });
+    expect(completed.project.status).toBe("COMPLETED");
   });
 });

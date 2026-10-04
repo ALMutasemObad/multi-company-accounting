@@ -19,6 +19,9 @@ const errorCode = (action: () => unknown) => {
 };
 
 const migration = readFileSync(new URL("../prisma/migrations/20261004_general_project_register/migration.sql", import.meta.url), "utf8");
+const planMigration = readFileSync(new URL("../prisma/migrations/20261004180000_general_project_plan/migration.sql", import.meta.url), "utf8");
+const planRollback = readFileSync(new URL("../prisma/migrations/20261004180000_general_project_plan/rollback.sql", import.meta.url), "utf8");
+const schema = readFileSync(new URL("../prisma/schema.prisma", import.meta.url), "utf8");
 
 describe("general project migration boundaries", () => {
   it("starts disabled until the project register passes database acceptance", () => {
@@ -29,6 +32,26 @@ describe("general project migration boundaries", () => {
     const referencedTables = [...migration.matchAll(/REFERENCES `([a-z_]+)`/gu)].map(match => match[1]);
     expect(new Set(referencedTables)).toEqual(new Set(["companies", "customers", "employees", "users", "general_projects"]));
     expect(migration).not.toMatch(/(?:professional_services|service_catalog|cases|legal_matters)/u);
+  });
+});
+
+describe("general project plan persistence boundary", () => {
+  it("adds phases, tasks and member assignments without activating the module", () => {
+    expect([...planMigration.matchAll(/CREATE TABLE `([^`]+)`/gu)].map(match => match[1])).toEqual([
+      "general_project_phases", "general_project_tasks", "general_project_task_assignments",
+    ]);
+    expect(planMigration).not.toMatch(/UPDATE `platform_modules`|INSERT INTO `platform_plan_entitlements`/u);
+    expect(schema).toContain("model GeneralProjectPhase {");
+    expect(schema).toContain("model GeneralProjectTask {");
+    expect(schema).toContain("model GeneralProjectTaskAssignment {");
+  });
+
+  it("enforces project and company scope in plan and assignment foreign keys", () => {
+    expect(planMigration).toContain("FOREIGN KEY (`phase_id`, `project_id`, `company_id`) REFERENCES `general_project_phases` (`id`, `project_id`, `company_id`)");
+    expect(planMigration).toContain("FOREIGN KEY (`task_id`, `project_id`, `company_id`) REFERENCES `general_project_tasks` (`id`, `project_id`, `company_id`)");
+    expect(planMigration).toContain("FOREIGN KEY (`member_id`, `project_id`, `company_id`) REFERENCES `general_project_members` (`id`, `project_id`, `company_id`)");
+    expect(planMigration).not.toMatch(/REFERENCES `professional_/u);
+    expect(planRollback).toContain("@gp_plan_rows = 0 AND @gp_plan_replays = 0");
   });
 });
 

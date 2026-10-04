@@ -350,6 +350,26 @@ enum GeneralProjectMemberRole {
   CONTRIBUTOR
 }
 
+enum GeneralProjectPhaseStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum GeneralProjectTaskStatus {
+  TODO
+  IN_PROGRESS
+  BLOCKED
+  COMPLETED
+  CANCELLED
+}
+
+enum GeneralProjectTaskAssignmentRole {
+  RESPONSIBLE
+  CONTRIBUTOR
+}
+
 enum ProfessionalProjectBillingModel {
   TIME_AND_MATERIALS
   FIXED_FEE
@@ -705,6 +725,9 @@ model Company {
   serviceOfferingVariants            ServiceOfferingVariant[]
   generalProjects                   GeneralProject[]
   generalProjectMembers             GeneralProjectMember[]
+  generalProjectPhases              GeneralProjectPhase[]
+  generalProjectTasks               GeneralProjectTask[]
+  generalProjectTaskAssignments     GeneralProjectTaskAssignment[]
   crmLeads                          CrmLead[]
   crmOpportunities                  CrmOpportunity[]
   crmActivities                     CrmActivity[]
@@ -921,6 +944,12 @@ model User {
   generalProjectsUpdated               GeneralProject[]                   @relation("GeneralProjectUpdatedBy")
   generalProjectMembersAssigned        GeneralProjectMember[]             @relation("GeneralProjectMemberAssignedBy")
   generalProjectMembersUpdated         GeneralProjectMember[]             @relation("GeneralProjectMemberUpdatedBy")
+  generalProjectPhasesCreated          GeneralProjectPhase[]              @relation("GeneralProjectPhaseCreatedBy")
+  generalProjectPhasesUpdated          GeneralProjectPhase[]              @relation("GeneralProjectPhaseUpdatedBy")
+  generalProjectTasksCreated           GeneralProjectTask[]               @relation("GeneralProjectTaskCreatedBy")
+  generalProjectTasksUpdated           GeneralProjectTask[]               @relation("GeneralProjectTaskUpdatedBy")
+  generalProjectAssignmentsCreated     GeneralProjectTaskAssignment[]     @relation("GeneralProjectAssignmentCreatedBy")
+  generalProjectAssignmentsUpdated     GeneralProjectTaskAssignment[]     @relation("GeneralProjectAssignmentUpdatedBy")
   crmLeadsCreated                      CrmLead[]                          @relation("CrmLeadCreatedBy")
   crmLeadsUpdated                      CrmLead[]                          @relation("CrmLeadUpdatedBy")
   crmOpportunitiesCreated              CrmOpportunity[]                   @relation("CrmOpportunityCreatedBy")
@@ -2063,6 +2092,8 @@ model GeneralProject {
   createdBy          User                   @relation("GeneralProjectCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
   updatedBy          User                   @relation("GeneralProjectUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
   members            GeneralProjectMember[]
+  phases             GeneralProjectPhase[]
+  tasks              GeneralProjectTask[]
 
   @@unique([companyId, code])
   @@unique([id, companyId])
@@ -2126,12 +2157,102 @@ model GeneralProjectMember {
   employee     Employee                 @relation(fields: [employeeId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
   assignedBy   User                     @relation("GeneralProjectMemberAssignedBy", fields: [assignedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
   updatedBy    User                     @relation("GeneralProjectMemberUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  taskAssignments GeneralProjectTaskAssignment[]
 
   @@unique([projectId, employeeId])
   @@unique([id, companyId])
+  @@unique([id, projectId, companyId])
   @@index([companyId, employeeId, isActive])
   @@index([projectId, isActive, role])
   @@map("general_project_members")
+}
+
+model GeneralProjectPhase {
+  id               BigInt                    @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId         String                    @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId        BigInt                    @map("company_id") @db.UnsignedBigInt
+  projectId        BigInt                    @map("project_id") @db.UnsignedBigInt
+  sequence         Int                       @db.UnsignedInt
+  title            String                    @db.VarChar(200)
+  description      String?                   @db.VarChar(1000)
+  plannedStartDate DateTime?                 @map("planned_start_date") @db.Date
+  targetEndDate    DateTime?                 @map("target_end_date") @db.Date
+  status           GeneralProjectPhaseStatus @default(PLANNED)
+  version          Int                       @default(0) @db.UnsignedInt
+  createdById      BigInt                    @map("created_by_id") @db.UnsignedBigInt
+  updatedById      BigInt                    @map("updated_by_id") @db.UnsignedBigInt
+  createdAt        DateTime                  @default(now()) @map("created_at")
+  updatedAt        DateTime                  @updatedAt @map("updated_at")
+  company          Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  project          GeneralProject            @relation(fields: [projectId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  createdBy        User                      @relation("GeneralProjectPhaseCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy        User                      @relation("GeneralProjectPhaseUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  tasks            GeneralProjectTask[]
+
+  @@unique([projectId, sequence])
+  @@unique([id, projectId, companyId])
+  @@index([companyId, projectId, status])
+  @@map("general_project_phases")
+}
+
+model GeneralProjectTask {
+  id               BigInt                    @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId         String                    @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId        BigInt                    @map("company_id") @db.UnsignedBigInt
+  projectId        BigInt                    @map("project_id") @db.UnsignedBigInt
+  phaseId          BigInt                    @map("phase_id") @db.UnsignedBigInt
+  sequence         Int                       @db.UnsignedInt
+  title            String                    @db.VarChar(200)
+  description      String?                   @db.VarChar(1000)
+  priority         GeneralProjectPriority    @default(NORMAL)
+  plannedStartDate DateTime?                 @map("planned_start_date") @db.Date
+  dueDate          DateTime?                 @map("due_date") @db.Date
+  status           GeneralProjectTaskStatus  @default(TODO)
+  version          Int                       @default(0) @db.UnsignedInt
+  createdById      BigInt                    @map("created_by_id") @db.UnsignedBigInt
+  updatedById      BigInt                    @map("updated_by_id") @db.UnsignedBigInt
+  createdAt        DateTime                  @default(now()) @map("created_at")
+  updatedAt        DateTime                  @updatedAt @map("updated_at")
+  company          Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  project          GeneralProject            @relation(fields: [projectId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  phase            GeneralProjectPhase       @relation(fields: [phaseId, projectId, companyId], references: [id, projectId, companyId], onDelete: Restrict, onUpdate: Restrict)
+  createdBy        User                      @relation("GeneralProjectTaskCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy        User                      @relation("GeneralProjectTaskUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  assignments      GeneralProjectTaskAssignment[]
+
+  @@unique([phaseId, sequence])
+  @@unique([id, projectId, companyId])
+  @@index([companyId, projectId, status])
+  @@index([phaseId, status, sequence])
+  @@map("general_project_tasks")
+}
+
+model GeneralProjectTaskAssignment {
+  id           BigInt                           @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId     String                           @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId    BigInt                           @map("company_id") @db.UnsignedBigInt
+  projectId    BigInt                           @map("project_id") @db.UnsignedBigInt
+  taskId       BigInt                           @map("task_id") @db.UnsignedBigInt
+  memberId     BigInt                           @map("member_id") @db.UnsignedBigInt
+  role         GeneralProjectTaskAssignmentRole
+  isActive     Boolean                          @default(true) @map("is_active")
+  version      Int                              @default(0) @db.UnsignedInt
+  assignedById BigInt                           @map("assigned_by_id") @db.UnsignedBigInt
+  updatedById  BigInt                           @map("updated_by_id") @db.UnsignedBigInt
+  assignedAt   DateTime                         @default(now()) @map("assigned_at")
+  unassignedAt DateTime?                        @map("unassigned_at")
+  createdAt    DateTime                         @default(now()) @map("created_at")
+  updatedAt    DateTime                         @updatedAt @map("updated_at")
+  company      Company                          @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  task         GeneralProjectTask               @relation(fields: [taskId, projectId, companyId], references: [id, projectId, companyId], onDelete: Restrict, onUpdate: Restrict)
+  member       GeneralProjectMember             @relation(fields: [memberId, projectId, companyId], references: [id, projectId, companyId], onDelete: Restrict, onUpdate: Restrict)
+  assignedBy   User                             @relation("GeneralProjectAssignmentCreatedBy", fields: [assignedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy    User                             @relation("GeneralProjectAssignmentUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([taskId, memberId])
+  @@index([companyId, projectId, isActive])
+  @@index([memberId, projectId, companyId, isActive])
+  @@map("general_project_task_assignments")
 }
 
 model ProfessionalProject {

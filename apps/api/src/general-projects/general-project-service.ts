@@ -131,7 +131,13 @@ export class GeneralProjectService {
       const project = await this.lockProject(tx, context, publicId, input.version);
       const managers = await tx.generalProjectMember.findMany({ where: { companyId: context.companyId, projectId: project.id, isActive: true, role: "MANAGER" }, select: { employeeId: true } });
       const activeManagerCount = await this.employees.countActiveInCompany(tx, context.companyId, managers.map(row => row.employeeId));
-      transitionProject({ from: project.status, to: input.status, activeManagerCount, phaseStatuses: [], taskStatuses: [], ...(input.reason === undefined ? {} : { reason: input.reason }) });
+      const [phases, tasks] = input.status === "COMPLETED" ? await Promise.all([
+        tx.generalProjectPhase.findMany({ where: { companyId: context.companyId, projectId: project.id }, select: { status: true } }),
+        tx.generalProjectTask.findMany({ where: { companyId: context.companyId, projectId: project.id }, select: { status: true } }),
+      ]) : [[], []];
+      transitionProject({ from: project.status, to: input.status, activeManagerCount,
+        phaseStatuses: phases.map(row => row.status), taskStatuses: tasks.map(row => row.status),
+        ...(input.reason === undefined ? {} : { reason: input.reason }) });
       const result = await tx.generalProject.updateMany({ where: { id: project.id, companyId: context.companyId, version: input.version, status: project.status },
         data: { status: input.status, version: { increment: 1 }, updatedById: context.userId } });
       if (result.count !== 1) throw new GeneralProjectError("VERSION_CONFLICT");
