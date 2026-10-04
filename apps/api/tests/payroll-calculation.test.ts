@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { calculatePayroll, type PayrollCalculationInput, PayrollCalculationError } from "../src/payroll/payroll-calculation.js";
 import { calculateEarningsOnlyPayrollPreview, summarizePayrollPreview, type PayrollCoverage } from "../src/payroll/payroll-earnings-preview.js";
 import { transitionPayrollRun, type PayrollRunRecord } from "../src/payroll/payroll-run-policy.js";
+import { decryptPayrollAmount, encryptPayrollAmount, type PayrollAmountScope } from "../src/payroll/payroll-amount-crypto.js";
 
 const input = (): PayrollCalculationInput => ({
   companyId: "company-1",
@@ -112,6 +113,37 @@ describe("payroll run maker/checker policy", () => {
     expect(transitionPayrollRun(submitted, { action: "REJECT", companyId: "company-1",
       actorUserId: "owner", actorIsOwner: true, expectedVersion: 2, snapshotHash: hash }))
       .toMatchObject({ state: "DRAFT", version: 3, snapshotHash: null, approvedByUserId: null });
+  });
+});
+
+describe("payroll amount envelope", () => {
+  const key = { id: "test-key-1", bytes: Buffer.alloc(32, 7) };
+  const scope: PayrollAmountScope = { companyId: "company-1", employeeId: "employee-1", recordId: "pay-line-1",
+    field: "RECURRING_AMOUNT", recordVersion: 1 };
+  it("round-trips an amount without storing plaintext or key bytes", () => {
+    const envelope = encryptPayrollAmount("7000.10", scope, key);
+    expect(decryptPayrollAmount(envelope, scope, key)).toBe("7000.10");
+    expect(JSON.stringify(envelope)).not.toContain("7000.10");
+    expect(JSON.stringify(envelope)).not.toContain("employee-1");
+    expect(encryptPayrollAmount("7000.10", scope, key).ciphertext).not.toBe(envelope.ciphertext);
+  });
+  it("rejects swapping amounts across company, employee, field or version", () => {
+    const envelope = encryptPayrollAmount("7000.10", scope, key);
+    for (const changed of [
+      { companyId: "company-2" }, { employeeId: "employee-2" }, { recordId: "pay-line-2" },
+      { field: "ONE_OFF_AMOUNT" as const }, { recordVersion: 2 },
+    ]) {
+      expect(() => decryptPayrollAmount(envelope, { ...scope, ...changed }, key)).toThrowError("PAYROLL_DECRYPTION_FAILED");
+    }
+  });
+  it("rejects wrong keys and modified ciphertext without leaking salary", () => {
+    const envelope = encryptPayrollAmount("7000.10", scope, key);
+    expect(() => decryptPayrollAmount(envelope, scope, { id: "other-key", bytes: key.bytes }))
+      .toThrowError("PAYROLL_KEY_MISMATCH");
+    expect(() => decryptPayrollAmount(envelope, scope, { id: key.id, bytes: Buffer.alloc(32, 8) }))
+      .toThrowError("PAYROLL_DECRYPTION_FAILED");
+    expect(() => decryptPayrollAmount({ ...envelope, tag: Buffer.alloc(16).toString("base64") }, scope, key))
+      .toThrowError("PAYROLL_DECRYPTION_FAILED");
   });
 });
 
