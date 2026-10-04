@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { calculatePayroll, type PayrollCalculationInput, PayrollCalculationError } from "../src/payroll/payroll-calculation.js";
+import { calculateEarningsOnlyPayrollPreview, summarizePayrollPreview, type PayrollCoverage } from "../src/payroll/payroll-earnings-preview.js";
 
 const input = (): PayrollCalculationInput => ({
   companyId: "company-1",
@@ -22,6 +23,51 @@ const input = (): PayrollCalculationInput => ({
       { id: "deduction", componentCode: "MANUAL", source: "ONE_OFF", amount: "50.05" },
     ],
   }],
+});
+
+describe("conservative earnings-only payroll preview", () => {
+  const coverage = (): PayrollCoverage[] => [{
+    employeeId: "employee-1", employmentStart: "2026-01-01", employmentEndExclusive: null,
+    agreementStart: "2026-09-01", agreementEndExclusive: "2026-10-01",
+  }];
+  const earningsOnly = (): PayrollCalculationInput => {
+    const original = input();
+    return { ...original, employees: [{ ...original.employees[0]!, lines: original.employees[0]!.lines.slice(0, 2) }] };
+  };
+
+  it("calculates a fully covered earnings-only period without deductions", () => {
+    const result = calculateEarningsOnlyPayrollPreview(earningsOnly(), coverage());
+    expect(result.grossEarnings).toBe("7100.30");
+    expect(result.totalDeductions).toBe("0.00");
+    expect(result.netPayable).toBe("7100.30");
+    const preparerView = summarizePayrollPreview(result);
+    expect(preparerView.employeeCount).toBe(1);
+    expect(preparerView.netPayable).toBe("7100.30");
+    expect(JSON.stringify(preparerView)).not.toContain("employee-1");
+    expect(preparerView).not.toHaveProperty("employees");
+  });
+
+  it("rejects deductions even when the country-neutral kernel can calculate them", () => {
+    expect(() => calculateEarningsOnlyPayrollPreview(input(), coverage())).toThrowError("DEDUCTIONS_NOT_ENABLED");
+  });
+
+  it.each([
+    [{ employmentStart: "2026-09-02" }, "PARTIAL_PERIOD_UNSUPPORTED"],
+    [{ employmentEndExclusive: "2026-09-30" }, "PARTIAL_PERIOD_UNSUPPORTED"],
+    [{ agreementStart: "2026-09-02" }, "PARTIAL_PERIOD_UNSUPPORTED"],
+    [{ agreementEndExclusive: "2026-09-30" }, "PARTIAL_PERIOD_UNSUPPORTED"],
+    [{ employmentStart: "2026-02-30" }, "INVALID_COVERAGE"],
+  ] as const)("rejects incomplete or invalid coverage %#", (change, expected) => {
+    expect(() => calculateEarningsOnlyPayrollPreview(earningsOnly(), [{ ...coverage()[0]!, ...change }]))
+      .toThrowError(expected);
+  });
+
+  it("requires one trusted coverage record per employee", () => {
+    expect(() => calculateEarningsOnlyPayrollPreview(earningsOnly(), [])).toThrowError("COVERAGE_REQUIRED");
+    expect(() => calculateEarningsOnlyPayrollPreview(earningsOnly(), [
+      { ...coverage()[0]!, employeeId: "different" },
+    ])).toThrowError("COVERAGE_REQUIRED");
+  });
 });
 
 const code = (cause: unknown) => cause instanceof PayrollCalculationError ? cause.code : "UNKNOWN";
