@@ -17,6 +17,7 @@ describe.runIf(enabled)("general projects in immutable free start-plan versions"
   const organizationIds: bigint[] = [];
   let operatorId: bigint;
   let originalPublishedId: bigint;
+  let projectModuleInitiallyActive: boolean;
   let moduleIds: { core: bigint; hr: bigint; projects: bigint };
   const catalog = () => new PlatformSubscriptionCatalogService(prisma!, {
     isOperator: async (candidate) => candidate === operatorId,
@@ -43,9 +44,13 @@ describe.runIf(enabled)("general projects in immutable free start-plan versions"
       select: { id: true, code: true, isActive: true },
     });
     expect(modules).toHaveLength(3);
-    expect(modules.every((module) => module.isActive)).toBe(true);
+    expect(modules.filter((module) => module.code !== "GENERAL_PROJECTS").every((module) => module.isActive)).toBe(true);
     const id = (code: string) => modules.find((module) => module.code === code)!.id;
     moduleIds = { core: id("CORE_ACCOUNTING"), hr: id("HUMAN_RESOURCES"), projects: id("GENERAL_PROJECTS") };
+    projectModuleInitiallyActive = modules.find((module) => module.code === "GENERAL_PROJECTS")!.isActive;
+    if (!projectModuleInitiallyActive) {
+      await prisma!.platformModule.update({ where: { id: moduleIds.projects }, data: { isActive: true } });
+    }
   });
 
   afterAll(async () => {
@@ -65,6 +70,9 @@ describe.runIf(enabled)("general projects in immutable free start-plan versions"
       await prisma.platformPlanEntitlement.deleteMany({ where: { planVersionId: { in: versions.map((item) => item.id) } } });
       await prisma.platformPlanVersion.deleteMany({ where: { planId: { in: planIds } } });
       await prisma.platformPlan.deleteMany({ where: { id: { in: planIds } } });
+    }
+    if (moduleIds?.projects !== undefined && !projectModuleInitiallyActive) {
+      await prisma.platformModule.update({ where: { id: moduleIds.projects }, data: { isActive: false } });
     }
     await prisma.$disconnect();
   });
