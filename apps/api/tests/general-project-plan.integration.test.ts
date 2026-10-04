@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDatabase } from "../src/database.js";
+import { auditGeneralProjectRollout } from "../src/general-projects/general-project-rollout-audit.js";
 import { PrismaNewCompanySubscriptionProvisioningAdapter } from "../src/platform-subscriptions/prisma-new-company-subscription-provisioning-adapter.js";
 import { PlatformSubscriptionCatalogService } from "../src/platform-subscriptions/platform-subscription-service.js";
 import { configuredStartPlanVersions, validateNewCompanyStartPlan } from "../src/platform-subscriptions/new-company-start-policy.js";
@@ -15,6 +16,7 @@ describe.runIf(enabled)("general projects in immutable free start-plan versions"
   const companyIds: bigint[] = [];
   const organizationIds: bigint[] = [];
   let operatorId: bigint;
+  let originalPublishedId: bigint;
   let moduleIds: { core: bigint; hr: bigint; projects: bigint };
   const catalog = () => new PlatformSubscriptionCatalogService(prisma!, {
     isOperator: async (candidate) => candidate === operatorId,
@@ -71,6 +73,7 @@ describe.runIf(enabled)("general projects in immutable free start-plan versions"
     const created = await catalog().createPlan({ userId: operatorId }, freeInput(`GPMCLONE_${randomUUID().slice(0, 8)}`, "SAR", false));
     planIds.push(BigInt(created.plan.id));
     const original = (await catalog().publish({ userId: operatorId }, BigInt(created.version.id), created.version.version)).version;
+    originalPublishedId = BigInt(original.id);
     const draft = (await catalog().createDraft({ userId: operatorId }, BigInt(created.plan.id))).version;
     const input = freeInput(created.plan.code, "SAR", true);
     const updated = (await catalog().updateDraft({ userId: operatorId }, BigInt(draft.id), {
@@ -106,6 +109,19 @@ describe.runIf(enabled)("general projects in immutable free start-plan versions"
     }
     const serialized = [...mapping].map(([code, id]) => `${code}:${id}`).join(",");
     expect(configuredStartPlanVersions(undefined, serialized)).toMatchObject({ kind: "currency-map" });
+    const ready = await auditGeneralProjectRollout(prisma!, undefined, serialized, now);
+    expect(ready.status).toBe("READY");
+    expect(ready.moduleActive).toBe(true);
+    expect(ready.currencies).toHaveLength(currencies.length);
+    expect(ready.currencies.every((item) => item.finding === null)).toBe(true);
+    const missing = [...mapping].filter(([code]) => code !== "USD").map(([code, id]) => `${code}:${id}`).join(",");
+    expect((await auditGeneralProjectRollout(prisma!, undefined, missing, now)).currencies)
+      .toContainEqual({ code: "USD", finding: "CURRENCY_NOT_CONFIGURED" });
+    const olderSar = [...mapping].map(([code, id]) => `${code}:${code === "SAR" ? originalPublishedId : id}`).join(",");
+    expect((await auditGeneralProjectRollout(prisma!, undefined, olderSar, now)).currencies)
+      .toContainEqual({ code: "SAR", finding: "PROJECTS_NOT_INCLUDED" });
+    const extra = await auditGeneralProjectRollout(prisma!, undefined, `${serialized},JPY:999999`, now);
+    expect(extra).toMatchObject({ status: "NOT_READY", configuration: "EXTRA_CURRENCY_CONFIGURED" });
     const adapter = new PrismaNewCompanySubscriptionProvisioningAdapter(undefined, serialized);
     const available = await prisma!.$transaction((tx) => adapter.eligibleStartCurrencies(tx, now));
     expect(available.sort()).toEqual([...currencies].sort());
