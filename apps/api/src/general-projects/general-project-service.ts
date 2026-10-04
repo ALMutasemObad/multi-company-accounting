@@ -236,6 +236,16 @@ export class GeneralProjectService {
   }) {
     return this.command(context, "ASSIGN_GENERAL_PROJECT_TASK_MEMBER", input.idempotencyKey,
       { projectPublicId, taskPublicId, ...input }, 200, async tx => {
+        const projectReference = await tx.generalProject.findFirst({ where: { companyId: context.companyId,
+          publicId: projectPublicId }, select: { id: true } });
+        if (!projectReference) throw new GeneralProjectError("NOT_FOUND");
+        const memberReference = await tx.generalProjectMember.findFirst({ where: { companyId: context.companyId,
+          projectId: projectReference.id, publicId: input.memberId }, select: { id: true, employeeId: true } });
+        if (!memberReference) throw new GeneralProjectError("MEMBER_NOT_FOUND");
+        const employeeReference = await this.employees.findByInternalIdInCompany(tx, context.companyId,
+          memberReference.employeeId);
+        if (!employeeReference || !(await this.employees.lockActiveInCompany(tx, context.companyId,
+          employeeReference.publicId))) throw new GeneralProjectError("EMPLOYEE_INACTIVE");
         const project = await this.lockProject(tx, context, projectPublicId);
         if (!mutable(project.status)) throw new GeneralProjectError("PROJECT_FINAL");
         if (project.planVersion !== input.expectedPlanVersion) throw new GeneralProjectError("VERSION_CONFLICT");
@@ -244,10 +254,9 @@ export class GeneralProjectService {
         if (!task) throw new GeneralProjectError("NOT_FOUND");
         if (task.status === "COMPLETED" || task.status === "CANCELLED") throw new GeneralProjectError("PROJECT_FINAL");
         const member = await tx.generalProjectMember.findFirst({ where: { companyId: context.companyId,
-          projectId: project.id, publicId: input.memberId, isActive: true } });
+          projectId: project.id, id: memberReference.id, employeeId: memberReference.employeeId,
+          publicId: input.memberId, isActive: true } });
         if (!member) throw new GeneralProjectError("MEMBER_NOT_FOUND");
-        const employee = await this.employees.findByInternalIdInCompany(tx, context.companyId, member.employeeId);
-        if (employee?.status !== "ACTIVE") throw new GeneralProjectError("EMPLOYEE_INACTIVE");
         const existing = await tx.generalProjectTaskAssignment.findUnique({ where: { taskId_memberId: {
           taskId: task.id, memberId: member.id } } });
         if (task.status === "IN_PROGRESS" && existing?.isActive && existing.role === "RESPONSIBLE" && input.role !== "RESPONSIBLE") {
@@ -450,7 +459,7 @@ export class GeneralProjectService {
       }
       const ongoingResponsibility = await tx.generalProjectTaskAssignment.findFirst({ where: {
         companyId: context.companyId, projectId: project.id, memberId: member.id,
-        role: "RESPONSIBLE", isActive: true, task: { status: "IN_PROGRESS" },
+        role: "RESPONSIBLE", isActive: true, task: { status: { notIn: ["COMPLETED", "CANCELLED"] } },
       }, select: { id: true } });
       if (ongoingResponsibility) throw new GeneralProjectError("ACTIVE_TASK_RESPONSIBILITY");
       const assignments = await tx.generalProjectTaskAssignment.updateMany({ where: {
