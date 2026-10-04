@@ -1,5 +1,4 @@
 import type { Prisma } from "@prisma/client";
-import { validRevenueAccount } from "../sales/selling-profile-policy.js";
 import type { ServiceCatalogRevenueAccountQueryPort } from "../service-catalog/service-catalog-reference-ports.js";
 
 export class ServiceCatalogRevenueAccountAdapter implements ServiceCatalogRevenueAccountQueryPort {
@@ -9,8 +8,7 @@ export class ServiceCatalogRevenueAccountAdapter implements ServiceCatalogRevenu
     const rows = await tx.account.findMany({ where: { companyId, id: { in: ids } },
       select: { id: true, isActive: true, allowsPosting: true,
         accountType: { select: { class: true } }, _count: { select: { children: true } } } });
-    return new Set(rows.filter(row => validRevenueAccount({ isActive: row.isActive,
-      allowsPosting: row.allowsPosting, accountClass: row.accountType.class,
-      childCount: row._count.children })).map(row => String(row.id)));
+    return new Set(rows.filter(row => row.isActive && row.allowsPosting
+      && row.accountType.class === "REVENUE" && row._count.children === 0).map(row => String(row.id)));
   }
 }

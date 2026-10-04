@@ -15,7 +15,8 @@ type Offering = { id: string; code: string; nameAr: string; nameEn: string | nul
   status: Status; variantCount: number; version: number };
 type Variant = { id: string; nameAr: string; nameEn: string | null; pricingUnit: Unit;
   availableFrom: string | null; availableUntil: string | null; status: Status; version: number };
-type Form = { kind: "category" } | { kind: "offering" } | { kind: "variant"; offering: Offering }
+type Form = { kind: "category"; item?: Category } | { kind: "offering"; item?: Offering }
+  | { kind: "variant"; offering: Offering; item?: Variant }
   | { kind: "transition"; subject: "category" | "offering" | "variant"; id: string;
     offeringId?: string; name: string; version: number; to: CategoryStatus | Status };
 const emptyMeta: Meta = { page: 1, pageSize: 10, total: 0, totalPages: 0 };
@@ -43,6 +44,9 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
   const [submittedSearch, setSubmittedSearch] = useState("");
   const [selected, setSelected] = useState<Offering | null>(null);
   const [form, setForm] = useState<Form | null>(null);
+  const [categoryLookup, setCategoryLookup] = useState("");
+  const [categoryOptions, setCategoryOptions] = useState<Category[]>([]);
+  const [categorySelected, setCategorySelected] = useState<Category | null>(null);
   const [loading, setLoading] = useState(true);
   const [variantsLoading, setVariantsLoading] = useState(false);
   const [error, setError] = useState("");
@@ -88,6 +92,16 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
   }, [selected?.id, variantPage, t, notify]);
 
   useEffect(() => () => writeController.current?.abort(), []);
+  useEffect(() => {
+    if (form?.kind !== "offering") return;
+    const controller = new AbortController();
+    const query = categoryLookup.trim() ? `&search=${encodeURIComponent(categoryLookup.trim())}` : "";
+    void api<{ data: Category[] }>(`/service-catalog/categories?page=1&pageSize=20&status=ACTIVE${query}`,
+      { signal: controller.signal })
+      .then(result => { if (!controller.signal.aborted) setCategoryOptions(result.data); })
+      .catch(cause => { if (!controller.signal.aborted) notify(cause instanceof Error ? cause.message : t("service.loadError"), "error"); });
+    return () => controller.abort();
+  }, [form?.kind, categoryLookup, notify, t]);
   const send = async (path: string, method: "POST" | "PATCH", body: Record<string, unknown>, signal: AbortSignal) => {
     const payload = JSON.stringify(body);
     const fingerprint = JSON.stringify([path, method, payload]);
@@ -118,6 +132,10 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
     }
   };
   const openTransition = (subject: Form & { kind: "transition" }) => setForm(subject);
+  const openOffering = (item?: Offering) => {
+    setCategoryLookup(""); setCategorySelected(item?.category ?? null);
+    setForm(item ? { kind: "offering", item } : { kind: "offering" });
+  };
   const transitionButtons = (subject: "category" | "offering" | "variant", item: { id: string; nameAr: string; nameEn?: string | null; status: Status; version: number }, offeringId?: string) => {
     if (!canManage || item.status === "RETIRED") return null;
     const action = (to: Status) => openTransition({ kind: "transition", subject, id: item.id, offeringId,
@@ -132,14 +150,16 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
   const submitSearch = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); setOfferingPage(1); setSubmittedSearch(search.trim()); };
   return <div className="workspace-page service-catalog-page">
     <PageHeader kicker={t("service.kicker")} title={t("service.title")} description={t("service.description")}
-      actions={canManage ? <Button disabled={busy} icon="plus" onClick={() => setForm({ kind: "offering" })}>{t("service.newOffering")}</Button> : undefined} />
+      actions={canManage ? <Button disabled={busy} icon="plus" onClick={() => openOffering()}>{t("service.newOffering")}</Button> : undefined} />
     <p role="note">{t("service.boundary")}</p>
     {error && <div className="alert error" role="alert">{error}<Button variant="ghost" onClick={() => void load()}>{t("common.retry")}</Button></div>}
     {loading ? <Spinner label={t("service.loading")} /> : !error && <>
       <section className="panel" aria-labelledby="service-categories-title">
         <header><h2 id="service-categories-title">{t("service.categories")}</h2><Button disabled={busy} variant="secondary" icon="plus" onClick={() => setForm({ kind: "category" })}>{t("service.newCategory")}</Button></header>
         {!categories.length ? <EmptyState title={t("service.emptyCategories")} description={t("service.boundary")} />
-          : <ul>{categories.map(item => <li key={item.id}><strong>{displayName(item)}</strong> · {statusLabel(item.status)} {transitionButtons("category", item)}</li>)}</ul>}
+          : <ul>{categories.map(item => <li key={item.id}><strong>{displayName(item)}</strong> · {statusLabel(item.status)}
+            {canManage && item.status !== "RETIRED" && <Button disabled={busy} variant="ghost" onClick={() => setForm({ kind: "category", item })}>{t("service.edit")}</Button>}
+            {transitionButtons("category", item)}</li>)}</ul>}
         <Pagination page={categoryMeta.page} totalPages={categoryMeta.totalPages} total={categoryMeta.total} onChange={setCategoryPage} />
       </section>
       <section className="panel" aria-labelledby="service-offerings-title">
@@ -149,6 +169,7 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
           {offerings.map(item => <li key={item.id}>
             <Button variant="ghost" onClick={() => { setSelected(item); setVariantPage(1); }}>{displayName(item)} · <span dir="ltr">{item.code}</span></Button>
             <span>{statusLabel(item.status)} · {item.category ? displayName(item.category) : t("service.noCategory")}</span>
+            {canManage && item.status !== "RETIRED" && <Button disabled={busy} variant="ghost" onClick={() => openOffering(item)}>{t("service.edit")}</Button>}
             {transitionButtons("offering", item)}
           </li>)}
         </ul>}
@@ -164,44 +185,59 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
             <strong>{displayName(item)}</strong> · {t(`service.unit.${item.pricingUnit}` as TranslationKey)} · {statusLabel(item.status)}
             {item.availableFrom && <span> · {t("service.start")}: <time>{item.availableFrom}</time></span>}
             {item.availableUntil && <span> · {t("service.until")}: <time>{item.availableUntil}</time></span>}
+            {canManage && item.status !== "RETIRED" && selected.status !== "RETIRED" &&
+              <Button disabled={busy} variant="ghost" onClick={() => setForm({ kind: "variant", offering: selected, item })}>{t("service.edit")}</Button>}
             {transitionButtons("variant", item, selected.id)}
           </li>)}</ul>}
         <Pagination page={variantMeta.page} totalPages={variantMeta.totalPages} total={variantMeta.total} onChange={setVariantPage} />
       </section>
     </>}
-    {form?.kind === "category" && <Modal title={t("service.newCategory")} onClose={() => { if (!busy) setForm(null); }}>
-      <form onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); void mutate("/service-catalog/categories", "POST", {
+    {form?.kind === "category" && <Modal title={t(form.item ? "service.editCategory" : "service.newCategory")} onClose={() => { if (!busy) setForm(null); }}>
+      <form onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); void mutate(
+        form.item ? `/service-catalog/categories/${form.item.id}` : "/service-catalog/categories", form.item ? "PATCH" : "POST", {
+        ...(form.item ? { expectedVersion: form.item.version } : {}),
         nameAr: String(data.get("nameAr") ?? "").trim(), nameEn: String(data.get("nameEn") ?? "").trim() || null,
       }); }}><fieldset className="form-grid" disabled={busy}>
-        <label><span>{t("service.nameAr")}</span><input name="nameAr" required maxLength={160} autoFocus /></label>
-        <label><span>{t("service.nameEn")}</span><input name="nameEn" maxLength={160} /></label>
+        <label><span>{t("service.nameAr")}</span><input name="nameAr" required maxLength={160} defaultValue={form.item?.nameAr ?? ""} autoFocus /></label>
+        <label><span>{t("service.nameEn")}</span><input name="nameEn" maxLength={160} defaultValue={form.item?.nameEn ?? ""} /></label>
         <div className="modal-actions full"><Button type="button" variant="ghost" onClick={() => setForm(null)}>{t("common.cancel")}</Button><Button type="submit">{t("service.save")}</Button></div>
       </fieldset></form>
     </Modal>}
-    {form?.kind === "offering" && <Modal title={t("service.newOffering")} onClose={() => { if (!busy) setForm(null); }}>
-      <form onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); void mutate("/service-catalog/offerings", "POST", {
+    {form?.kind === "offering" && <Modal title={t(form.item ? "service.editOffering" : "service.newOffering")} onClose={() => { if (!busy) setForm(null); }}>
+      <form onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); void mutate(
+        form.item ? `/service-catalog/offerings/${form.item.id}` : "/service-catalog/offerings", form.item ? "PATCH" : "POST", {
+        ...(form.item ? { expectedVersion: form.item.version } : {}),
         nameAr: String(data.get("nameAr") ?? "").trim(), nameEn: String(data.get("nameEn") ?? "").trim() || null,
-        categoryId: String(data.get("categoryId") ?? "") || null,
+        ...(form.item && categorySelected?.id === form.item.category?.id ? {} : { categoryId: categorySelected?.id ?? null }),
       }); }}><fieldset className="form-grid" disabled={busy}>
-        <label><span>{t("service.nameAr")}</span><input name="nameAr" required maxLength={200} autoFocus /></label>
-        <label><span>{t("service.nameEn")}</span><input name="nameEn" maxLength={200} /></label>
-        <label className="full"><span>{t("service.category")}</span><select name="categoryId" defaultValue=""><option value="">{t("service.noCategory")}</option>
-          {categories.filter(item => item.status === "ACTIVE").map(item => <option key={item.id} value={item.id}>{displayName(item)}</option>)}
+        <label><span>{t("service.nameAr")}</span><input name="nameAr" required maxLength={200} defaultValue={form.item?.nameAr ?? ""} autoFocus /></label>
+        <label><span>{t("service.nameEn")}</span><input name="nameEn" maxLength={200} defaultValue={form.item?.nameEn ?? ""} /></label>
+        <label className="full"><span>{t("service.searchCategory")}</span><input type="search" value={categoryLookup} onChange={event => setCategoryLookup(event.target.value)} /></label>
+        <label className="full"><span>{t("service.category")}</span><select value={categorySelected?.id ?? ""} onChange={event => {
+          const choice = [categorySelected, ...categoryOptions].find(item => item?.id === event.target.value);
+          setCategorySelected(choice ?? null);
+        }}><option value="">{t("service.noCategory")}</option>
+          {[categorySelected, ...categoryOptions].filter((item, index, items): item is Category =>
+            !!item && (item === categorySelected || item.status === "ACTIVE") && items.findIndex(candidate => candidate?.id === item.id) === index)
+            .map(item => <option key={item.id} value={item.id}>{displayName(item)}{item.status !== "ACTIVE" ? ` · ${statusLabel(item.status)}` : ""}</option>)}
         </select></label>
         <div className="modal-actions full"><Button type="button" variant="ghost" onClick={() => setForm(null)}>{t("common.cancel")}</Button><Button type="submit">{t("service.save")}</Button></div>
       </fieldset></form>
     </Modal>}
-    {form?.kind === "variant" && <Modal title={t("service.newVariant")} onClose={() => { if (!busy) setForm(null); }}>
-      <form onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); void mutate(`/service-catalog/offerings/${form.offering.id}/variants`, "POST", {
+    {form?.kind === "variant" && <Modal title={t(form.item ? "service.editVariant" : "service.newVariant")} onClose={() => { if (!busy) setForm(null); }}>
+      <form onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); void mutate(
+        form.item ? `/service-catalog/offerings/${form.offering.id}/variants/${form.item.id}` : `/service-catalog/offerings/${form.offering.id}/variants`,
+        form.item ? "PATCH" : "POST", {
+        ...(form.item ? { expectedVersion: form.item.version } : {}),
         nameAr: String(data.get("nameAr") ?? "").trim(), nameEn: String(data.get("nameEn") ?? "").trim() || null,
-        pricingUnit: data.get("pricingUnit"), availableFrom: data.get("availableFrom") || null,
+        ...(!form.item ? { pricingUnit: data.get("pricingUnit") } : {}), availableFrom: data.get("availableFrom") || null,
         availableUntil: data.get("availableUntil") || null,
       }); }}><fieldset className="form-grid" disabled={busy}>
-        <label><span>{t("service.nameAr")}</span><input name="nameAr" required maxLength={160} autoFocus /></label>
-        <label><span>{t("service.nameEn")}</span><input name="nameEn" maxLength={160} /></label>
-        <label><span>{t("service.pricingUnit")}</span><select name="pricingUnit">{units.map(unit => <option key={unit} value={unit}>{t(`service.unit.${unit}` as TranslationKey)}</option>)}</select></label>
-        <label><span>{t("service.start")}</span><input name="availableFrom" type="date" /></label>
-        <label><span>{t("service.until")}</span><input name="availableUntil" type="date" /></label>
+        <label><span>{t("service.nameAr")}</span><input name="nameAr" required maxLength={160} defaultValue={form.item?.nameAr ?? ""} autoFocus /></label>
+        <label><span>{t("service.nameEn")}</span><input name="nameEn" maxLength={160} defaultValue={form.item?.nameEn ?? ""} /></label>
+        {!form.item && <label><span>{t("service.pricingUnit")}</span><select name="pricingUnit">{units.map(unit => <option key={unit} value={unit}>{t(`service.unit.${unit}` as TranslationKey)}</option>)}</select></label>}
+        <label><span>{t("service.start")}</span><input name="availableFrom" type="date" defaultValue={form.item?.availableFrom ?? ""} /></label>
+        <label><span>{t("service.until")}</span><input name="availableUntil" type="date" defaultValue={form.item?.availableUntil ?? ""} /></label>
         <div className="modal-actions full"><Button type="button" variant="ghost" onClick={() => setForm(null)}>{t("common.cancel")}</Button><Button type="submit">{t("service.save")}</Button></div>
       </fieldset></form>
     </Modal>}
