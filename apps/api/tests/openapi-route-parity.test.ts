@@ -37,6 +37,7 @@ import { createPosRouter } from '../src/pos/pos-router.js';
 import { createCashierContextRouter } from '../src/pos/cashier-context-router.js';
 import { createApprovalRouter } from '../src/approvals/approval-router.js';
 import { createProfessionalProjectRouter } from '../src/projects/professional-project-router.js';
+import { createGeneralProjectRouter } from '../src/general-projects/general-project-router.js';
 import { createProfessionalProjectPlanningRouter } from '../src/projects/professional-project-planning-router.js';
 import { createProfessionalBillingRouter } from '../src/projects/professional-billing-router.js';
 import { createProfessionalProjectAccessRouter } from '../src/projects/professional-project-access-router.js';
@@ -78,6 +79,7 @@ const routers = [
   { prefix: '', router: createFiscalRouter(stub, stub, stub) },
   { prefix: '', router: createApprovalRouter(stub, stub) },
   { prefix: '', router: createProfessionalProjectRouter(stub, stub) },
+  { prefix: '', router: createGeneralProjectRouter(stub, stub) },
   { prefix: '', router: createProfessionalProjectPlanningRouter(stub, stub) },
   { prefix: '', router: createProfessionalBillingRouter(stub, stub) },
   { prefix: '', router: createProfessionalProjectAccessRouter(stub, stub) },

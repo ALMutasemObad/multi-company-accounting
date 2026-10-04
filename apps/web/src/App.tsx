@@ -55,6 +55,7 @@ const DataImportsPage = lazy(() => import("./DataImportsPage").then((module) => 
 const PosPage = lazy(() => import("./PosPage").then((module) => ({ default: module.PosPage })));
 const ApprovalsPage = lazy(() => import("./ApprovalsPage").then((module) => ({ default: module.ApprovalsPage })));
 const ProfessionalProjectsPage = lazy(() => import("./ProfessionalProjectsPage").then((module) => ({ default: module.ProfessionalProjectsPage })));
+const GeneralProjectsPage = lazy(() => import("./GeneralProjectsPage").then((module) => ({ default: module.GeneralProjectsPage })));
 const HumanResourcesPage = lazy(() => import("./HumanResourcesPage").then((module) => ({ default: module.HumanResourcesPage })));
 const EmployeeExpensesPage = lazy(() => import("./EmployeeExpensesPage").then((module) => ({ default: module.EmployeeExpensesPage })));
 
@@ -509,6 +510,7 @@ export default function App() {
             {activeView === "crm" && <CrmPage notify={notify} />}
             {activeView === "services" && <ServiceCatalogPage notify={notify} />}
             {activeView === "professionalProjects" && <ProfessionalProjectsPage notify={notify} />}
+            {activeView === "generalProjects" && <GeneralProjectsPage notify={notify} />}
             {activeView === "humanResources" && <HumanResourcesPage notify={notify} />}
             {activeView === "employeeExpenses" && <EmployeeExpensesPage notify={notify} />}
             {activeView === "sales" && <SalesInvoicesPage notify={notify} />}

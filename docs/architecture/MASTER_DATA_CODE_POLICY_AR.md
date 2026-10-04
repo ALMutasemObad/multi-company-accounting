@@ -32,6 +32,7 @@ related:
 | فرصة البيع | الشركة + نوع الكيان | `OPP-` | `OPP-000001` | CRM / Business Development |
 | عرض الخدمة | الشركة + نوع الكيان | `SVC-` | `SVC-000001` | Service Catalog؛ مستقل عن المشاريع والمخزون والفوترة |
 | المشروع/القضية المهنية | الشركة + نوع الكيان | `PRJ-` | `PRJ-000001` | Professional Services & Projects |
+| المشروع العام | الشركة + نوع الكيان | `GPR-` | `GPR-000001` | General Project Delivery |
 | قسم الموارد البشرية | الشركة + نوع الكيان | `DEP-` | `DEP-000001` | Human Resources |
 | المنصب الوظيفي | الشركة + نوع الكيان | `JOB-` | `JOB-000001` | Human Resources |
 | الموظف | الشركة + نوع الكيان | `EMP-` | `EMP-000001` | Human Resources |

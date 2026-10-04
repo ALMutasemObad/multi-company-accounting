@@ -330,6 +330,26 @@ enum ServicePricingUnit {
   MONTH
 }
 
+enum GeneralProjectStatus {
+  DRAFT
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum GeneralProjectPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum GeneralProjectMemberRole {
+  MANAGER
+  CONTRIBUTOR
+}
+
 enum ProfessionalProjectBillingModel {
   TIME_AND_MATERIALS
   FIXED_FEE
@@ -683,6 +703,8 @@ model Company {
   serviceCategories                  ServiceCategory[]
   serviceOfferings                   ServiceOffering[]
   serviceOfferingVariants            ServiceOfferingVariant[]
+  generalProjects                   GeneralProject[]
+  generalProjectMembers             GeneralProjectMember[]
   crmLeads                          CrmLead[]
   crmOpportunities                  CrmOpportunity[]
   crmActivities                     CrmActivity[]
@@ -895,6 +917,10 @@ model User {
   serviceOfferingsUpdated              ServiceOffering[]                 @relation("ServiceOfferingUpdatedBy")
   serviceVariantsCreated               ServiceOfferingVariant[]          @relation("ServiceVariantCreatedBy")
   serviceVariantsUpdated               ServiceOfferingVariant[]          @relation("ServiceVariantUpdatedBy")
+  generalProjectsCreated               GeneralProject[]                   @relation("GeneralProjectCreatedBy")
+  generalProjectsUpdated               GeneralProject[]                   @relation("GeneralProjectUpdatedBy")
+  generalProjectMembersAssigned        GeneralProjectMember[]             @relation("GeneralProjectMemberAssignedBy")
+  generalProjectMembersUpdated         GeneralProjectMember[]             @relation("GeneralProjectMemberUpdatedBy")
   crmLeadsCreated                      CrmLead[]                          @relation("CrmLeadCreatedBy")
   crmLeadsUpdated                      CrmLead[]                          @relation("CrmLeadUpdatedBy")
   crmOpportunitiesCreated              CrmOpportunity[]                   @relation("CrmOpportunityCreatedBy")
@@ -1815,6 +1841,7 @@ model Customer {
   salesInvoices        SalesInvoice[]
   receivableItems      ReceivableItem[]
   professionalProjects ProfessionalProject[]
+  generalProjects      GeneralProject[]
   crmLeads             CrmLead[]
   crmOpportunities     CrmOpportunity[]
 
@@ -2012,6 +2039,39 @@ model ServiceOffering {
   @@map("service_offerings")
 }
 
+model GeneralProject {
+  id                 BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId           String                 @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId          BigInt                 @map("company_id") @db.UnsignedBigInt
+  customerId         BigInt?                @map("customer_id") @db.UnsignedBigInt
+  code               String                 @db.VarChar(40)
+  nameAr             String                 @map("name_ar") @db.VarChar(200)
+  nameEn             String?                @map("name_en") @db.VarChar(200)
+  description        String?                @db.VarChar(1000)
+  status             GeneralProjectStatus   @default(DRAFT)
+  priority           GeneralProjectPriority @default(NORMAL)
+  plannedStartDate   DateTime?              @map("planned_start_date") @db.Date
+  targetEndDate      DateTime?              @map("target_end_date") @db.Date
+  version            Int                    @default(0) @db.UnsignedInt
+  planVersion        Int                    @default(0) @map("plan_version") @db.UnsignedInt
+  createdById        BigInt                 @map("created_by_id") @db.UnsignedBigInt
+  updatedById        BigInt                 @map("updated_by_id") @db.UnsignedBigInt
+  createdAt          DateTime               @default(now()) @map("created_at")
+  updatedAt          DateTime               @updatedAt @map("updated_at")
+  company            Company                @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  customer           Customer?              @relation(fields: [customerId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  createdBy          User                   @relation("GeneralProjectCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy          User                   @relation("GeneralProjectUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  members            GeneralProjectMember[]
+
+  @@unique([companyId, code])
+  @@unique([id, companyId])
+  @@index([companyId, status, createdAt, id])
+  @@index([companyId, priority, createdAt, id])
+  @@index([customerId, companyId, status])
+  @@map("general_projects")
+}
+
 model ServiceOfferingVariant {
   id                       BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
   publicId                 String                @unique @default(uuid()) @map("public_id") @db.Char(36)
@@ -2044,6 +2104,34 @@ model ServiceOfferingVariant {
   @@index([defaultRevenueAccountId, companyId], map: "svc_variant_revenue_account_idx")
   @@index([defaultOutputTaxRateId, companyId], map: "svc_variant_output_tax_idx")
   @@map("service_offering_variants")
+}
+
+model GeneralProjectMember {
+  id           BigInt                   @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId     String                   @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId    BigInt                   @map("company_id") @db.UnsignedBigInt
+  projectId    BigInt                   @map("project_id") @db.UnsignedBigInt
+  employeeId   BigInt                   @map("employee_id") @db.UnsignedBigInt
+  role         GeneralProjectMemberRole
+  isActive     Boolean                  @default(true) @map("is_active")
+  version      Int                      @default(0) @db.UnsignedInt
+  assignedById BigInt                   @map("assigned_by_id") @db.UnsignedBigInt
+  updatedById  BigInt                   @map("updated_by_id") @db.UnsignedBigInt
+  assignedAt   DateTime                 @default(now()) @map("assigned_at")
+  unassignedAt DateTime?                @map("unassigned_at")
+  createdAt    DateTime                 @default(now()) @map("created_at")
+  updatedAt    DateTime                 @updatedAt @map("updated_at")
+  company      Company                  @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  project      GeneralProject           @relation(fields: [projectId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  employee     Employee                 @relation(fields: [employeeId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  assignedBy   User                     @relation("GeneralProjectMemberAssignedBy", fields: [assignedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedBy    User                     @relation("GeneralProjectMemberUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([projectId, employeeId])
+  @@unique([id, companyId])
+  @@index([companyId, employeeId, isActive])
+  @@index([projectId, isActive, role])
+  @@map("general_project_members")
 }
 
 model ProfessionalProject {
@@ -2515,6 +2603,7 @@ model Employee {
   directReports         Employee[]             @relation("EmployeeManager")
   contracts             EmploymentContract[]
   expenseClaims         EmployeeExpenseClaim[]
+  generalProjectMemberships GeneralProjectMember[]
   createdBy             User                   @relation("EmployeeCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
   updatedBy             User                   @relation("EmployeeUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
   crmLeadsOwned         CrmLead[]              @relation("CrmLeadOwner")

@@ -1,7 +1,7 @@
 ---
 title: "ADR-021 — General Project Delivery Context"
-status: "proposed for acceptance; implementation not started"
-version: "1.3"
+status: "accepted; GPM-1 implementation in progress"
+version: "1.4"
 date: "2026-09-09"
 decision_owner: "Architecture"
 related:
@@ -14,7 +14,7 @@ related:
   - "CONCURRENCY_DEADLOCK_DEADLINE_POLICY_AR.md"
 ---
 
-# ADR-021: فصل إدارة المشاريع العامة عن تسليم المشاريع المهنية
+# ADR-021: إدارة المشاريع العامة المستقلة
 
 ## السياق
 

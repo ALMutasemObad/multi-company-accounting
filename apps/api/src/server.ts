@@ -66,6 +66,9 @@ import { PrismaPosSaleQueryAdapter } from './pos/adapters/prisma-pos-sale-query-
 import { ApprovalService } from './approvals/approval-service.js';
 import { FinancialCloseApprovalAdapter } from './fiscal/financial-close-approval-adapter.js';
 import { ProfessionalProjectService } from './projects/professional-project-service.js';
+import { GeneralProjectService } from './general-projects/general-project-service.js';
+import { GeneralProjectEmployeeAdapter } from './hr/general-project-employee-adapter.js';
+import { GeneralProjectCustomerAdapter } from './sales/general-project-customer-adapter.js';
 import { ProfessionalProjectPlanningService } from './projects/professional-project-planning-service.js';
 import { ProfessionalProjectAccessService } from './projects/professional-project-access-service.js';
 import { ProfessionalCustomerAdapter } from './sales/professional-customer-adapter.js';
@@ -285,6 +288,7 @@ const professionalProjects = new ProfessionalProjectService(
   new ProfessionalPeopleAdapter(database),
   new ProfessionalEmployeeAdapter(database),
 );
+const generalProjects = new GeneralProjectService(database, new GeneralProjectEmployeeAdapter(database), new GeneralProjectCustomerAdapter(database));
 const professionalProjectPlanning = new ProfessionalProjectPlanningService(database);
 const professionalProjectAccess = new ProfessionalProjectAccessService(database, new ProfessionalPeopleAdapter(database));
 const professionalBilling = new ProfessionalBillingService(
@@ -391,6 +395,7 @@ async function startServer() {
     financialClose,
     approvals,
     professionalProjects,
+    generalProjects,
     crm,
     professionalProjectPlanning,
     professionalProjectAccess,

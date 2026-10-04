@@ -18,6 +18,7 @@ export type PlatformModuleCode =
   | "DATA_IMPORT"
   | "APPROVALS"
   | "PROFESSIONAL_PROJECTS"
+  | "GENERAL_PROJECTS"
   | "HUMAN_RESOURCES"
   | "TAX"
   | "CRM"

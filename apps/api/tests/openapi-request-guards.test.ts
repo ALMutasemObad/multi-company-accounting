@@ -22,6 +22,15 @@ import {
 } from '../src/generated/openapi-request-guards.js';
 
 describe('generated OpenAPI request guards', () => {
+  it('guards general project requests independently of the legacy professional project contract', () => {
+    const managerEmployeeId = '7a76e4d7-cfa4-49fa-846f-e7b024d67820';
+    expect(openApiRequestBodySchemas.createGeneralProject.parse({ nameAr: ' مشروع عام ', customerId: '9007199254740993', managerEmployeeId }))
+      .toMatchObject({ nameAr: 'مشروع عام', customerId: 9007199254740993n, managerEmployeeId });
+    expect(openApiRequestBodySchemas.createGeneralProject.safeParse({ nameAr: 'مشروع', kind: 'LEGAL_MATTER' }).success).toBe(false);
+    expect(openApiRequestBodySchemas.updateGeneralProject.safeParse({ version: 0 }).success).toBe(false);
+    expect(openApiRequestBodySchemas.assignGeneralProjectMember.safeParse({ version: 0, employeeId: managerEmployeeId, role: 'PROFESSIONAL' }).success).toBe(false);
+    expect(openApiRequestBodySchemas.transitionGeneralProject.safeParse({ version: 0, status: 'ON_HOLD', reason: 'short' }).success).toBe(false);
+  });
   it('accepts distinct subscription modules after BigInt conversion and rejects duplicates', () => {
     const draft = {
       displayName: 'Free BHD', description: null, billingCycle: 'MONTHLY', currencyCode: 'BHD',
@@ -44,8 +53,11 @@ describe('generated OpenAPI request guards', () => {
   });
 
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 415, requestBodies: 208, responseBodies: 2694 });
+    expect(openApiContractCoverage).toEqual({ operations: 424, requestBodies: 213, responseBodies: 2742 });
     expect(openApiOperationRoutes).toMatchObject({
+      'GET /general-projects': 'listGeneralProjects',
+      'POST /general-projects': 'createGeneralProject',
+      'POST /general-projects/{generalProjectId}/transition': 'transitionGeneralProject',
       'GET /pos/context/identity': 'getPosContextIdentity',
       'GET /auth/social/accounts': 'getCurrentSocialAccounts',
       'DELETE /auth/social/accounts/{provider}': 'unlinkCurrentSocialAccount',
@@ -79,7 +91,7 @@ describe('generated OpenAPI request guards', () => {
       'POST /auth/social/onboarding': 'completeSocialOnboarding',
       'DELETE /auth/social/onboarding': 'cancelSocialOnboarding',
     });
-    expect(guardedOpenApiOperations).toHaveLength(208);
+    expect(guardedOpenApiOperations).toHaveLength(213);
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
       'updateInventoryBarcodeSettings', 'previewInventoryCatalogImport', 'commitInventoryCatalogImport',
     ]));

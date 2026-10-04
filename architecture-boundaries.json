@@ -9,7 +9,7 @@
     {
       "id": "general-projects",
       "name": "General Project Delivery",
-      "status": "reserved",
+      "status": "partial-implementation",
       "paths": ["apps/api/src/general-projects/**"],
       "reference": "docs/architecture/ADR-021-general-project-delivery-context.md"
     },
@@ -124,8 +124,17 @@
       "fromPaths": ["apps/api/src/hr/general-project-employee-adapter.ts"],
       "toPaths": ["apps/api/src/general-projects/general-project-reference-ports.ts"],
       "typeOnly": true,
-      "status": "reserved",
-      "reason": "Reserve a narrow HR adapter for the consumer-owned employee query port."
+      "status": "implemented",
+      "reason": "HR implements the consumer-owned employee reference port."
+    },
+    {
+      "id": "general-project-customer-adapter",
+      "kind": "adapter-to-port",
+      "fromPaths": ["apps/api/src/sales/general-project-customer-adapter.ts"],
+      "toPaths": ["apps/api/src/general-projects/general-project-reference-ports.ts"],
+      "typeOnly": true,
+      "status": "implemented",
+      "reason": "Sales implements the consumer-owned optional customer reference port."
     },
     {
       "id": "hr-workforce-query-consumers",
