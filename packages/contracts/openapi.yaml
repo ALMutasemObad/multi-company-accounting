@@ -4145,6 +4145,104 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
       x-permission: professional_billing.view
       security: [{ SessionCookie: [] }]
+  /service-catalog/categories:
+    get:
+      tags: [Service Catalog]
+      summary: عرض تصنيفات الخدمات في الشركة
+      operationId: listServiceCategories
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+      - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      - { name: search, in: query, schema: { type: string, minLength: 1, maxLength: 160 } }
+      - { name: status, in: query, schema: { $ref: '#/components/schemas/ServiceCategoryStatus' } }
+      responses:
+        '200': { description: تصنيفات الشركة, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceCategoryListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: services.view
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [Service Catalog]
+      summary: إنشاء تصنيف خدمة
+      operationId: createServiceCategory
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateServiceCategoryRequest' } } }
+      responses:
+        '201': { description: التصنيف المنشأ, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceCategoryResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+      x-permission: services.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /service-catalog/categories/{categoryId}:
+    get:
+      tags: [Service Catalog]
+      summary: تفاصيل تصنيف خدمة
+      operationId: getServiceCategory
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: categoryId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: التصنيف, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceCategoryResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: services.view
+      security: [{ SessionCookie: [] }]
+    patch:
+      tags: [Service Catalog]
+      summary: تعديل تصنيف خدمة بالنسخة
+      operationId: updateServiceCategory
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: categoryId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/UpdateServiceCategoryRequest' } } }
+      responses:
+        '200': { description: التصنيف المحدث, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceCategoryResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: services.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /service-catalog/categories/{categoryId}/transition:
+    post:
+      tags: [Service Catalog]
+      summary: نقل حالة تصنيف الخدمة بسبب
+      operationId: transitionServiceCategory
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: categoryId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/TransitionServiceCategoryRequest' } } }
+      responses:
+        '200': { description: التصنيف بعد الانتقال, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceCategoryResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: services.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
   /hr/departments:
     get:
       tags: [Human Resources]
@@ -21598,6 +21696,61 @@ components:
       required: [position]
       properties:
         position: { $ref: '#/components/schemas/HrStructureReference' }
+    ServiceCategoryStatus:
+      type: string
+      enum: [ACTIVE, INACTIVE, RETIRED]
+    ServiceCategory:
+      type: object
+      additionalProperties: false
+      required: [id, nameAr, nameEn, description, status, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        nameAr: { type: string, maxLength: 160 }
+        nameEn: { type: [string, 'null'], maxLength: 160 }
+        description: { type: [string, 'null'], maxLength: 1000 }
+        status: { $ref: '#/components/schemas/ServiceCategoryStatus' }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ServiceCategoryResponse:
+      type: object
+      additionalProperties: false
+      required: [category]
+      properties:
+        category: { $ref: '#/components/schemas/ServiceCategory' }
+    ServiceCategoryListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/ServiceCategory' } }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    CreateServiceCategoryRequest:
+      type: object
+      additionalProperties: false
+      required: [nameAr]
+      properties:
+        nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 160 }
+        nameEn: { type: [string, 'null'], x-trim: true, maxLength: 160 }
+        description: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
+    UpdateServiceCategoryRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      minProperties: 2
+      properties:
+        expectedVersion: { type: integer, minimum: 0 }
+        nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 160 }
+        nameEn: { type: [string, 'null'], x-trim: true, maxLength: 160 }
+        description: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
+    TransitionServiceCategoryRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, to, reason]
+      properties:
+        expectedVersion: { type: integer, minimum: 0 }
+        to: { $ref: '#/components/schemas/ServiceCategoryStatus' }
+        reason: { type: string, x-trim: true, minLength: 10, maxLength: 500 }
     CreateHrDepartmentRequest:
       type: object
       additionalProperties: false

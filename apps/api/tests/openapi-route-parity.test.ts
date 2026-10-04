@@ -41,6 +41,7 @@ import { createProfessionalProjectPlanningRouter } from '../src/projects/profess
 import { createProfessionalBillingRouter } from '../src/projects/professional-billing-router.js';
 import { createProfessionalProjectAccessRouter } from '../src/projects/professional-project-access-router.js';
 import { createHrRouter } from '../src/hr/hr-router.js';
+import { createServiceCatalogRouter } from '../src/service-catalog/service-catalog-router.js';
 import { createPlatformOperationsRouter } from '../src/platform-operations/platform-operations-router.js';
 import { createPlatformPaymentRouter } from '../src/platform-operations/payments/platform-payment-router.js';
 import { createPlatformSubscriptionRouter } from '../src/platform-subscriptions/platform-subscription-router.js';
@@ -81,6 +82,7 @@ const routers = [
   { prefix: '', router: createProfessionalBillingRouter(stub, stub) },
   { prefix: '', router: createProfessionalProjectAccessRouter(stub, stub) },
   { prefix: '', router: createHrRouter(stub, stub) },
+  { prefix: '', router: createServiceCatalogRouter(stub, stub) },
   { prefix: '', router: createEmployeeExpenseRouter(stub, stub) },
   { prefix: '', router: createAccountRouter(stub, stub) },
   { prefix: '', router: createManualJournalRouter(stub, stub) },

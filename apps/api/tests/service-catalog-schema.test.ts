@@ -24,7 +24,7 @@ describe("SC-1A catalog-only persistence boundary", () => {
     for (const foreignKey of ["project_id", "sales_invoice_id", "customer_id", "inventory_item_id"]) {
       expect(migration).not.toContain(`\`${foreignKey}\``);
     }
-    for (const name of [...migration.matchAll(/`([^`]+)`/g)].map((match) => match[1])) {
+    for (const name of [...migration.matchAll(/`([^`]+)`/g)].map((match) => match[1] ?? "")) {
       expect(name.length).toBeLessThanOrEqual(64);
     }
   });
