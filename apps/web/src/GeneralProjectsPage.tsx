@@ -19,6 +19,8 @@ type PhaseList = { data: Phase[]; planVersion: number; meta: List["meta"] };
 type TaskStatus = "TODO" | "IN_PROGRESS" | "BLOCKED" | "COMPLETED" | "CANCELLED";
 type Task = { id: string; sequence: number; title: string; priority: string; status: TaskStatus; version: number };
 type TaskList = { data: Task[]; planVersion: number; meta: List["meta"] };
+type TaskAssignment = { id: string; memberId: string; role: "RESPONSIBLE" | "CONTRIBUTOR"; isActive: boolean; version: number };
+type TaskAssignmentList = { data: TaskAssignment[]; planVersion: number; meta: List["meta"] };
 type Detail = { project: Project; members: Member[] };
 type List = { data: Project[]; meta: { page: number; pageSize: number; total: number; totalPages: number } };
 
@@ -48,6 +50,12 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
   const taskRequestSequence = useRef(0);
   const [taskPage, setTaskPage] = useState(1);
   const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [selectedTaskId, setSelectedTaskId] = useState("");
+  const [taskAssignments, setTaskAssignments] = useState<(TaskAssignmentList & { projectId: string; taskId: string }) | null>(null);
+  const assignmentRequestSequence = useRef(0);
+  const [assignmentPage, setAssignmentPage] = useState(1);
+  const [taskMemberId, setTaskMemberId] = useState("");
+  const [taskMemberRole, setTaskMemberRole] = useState<TaskAssignment["role"]>("RESPONSIBLE");
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [customerSearch, setCustomerSearch] = useState("");
@@ -111,13 +119,27 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
       }
     }
   }, [selectedId, selectedPhaseId, taskPage, notify, t]);
+  const loadTaskAssignments = useCallback(async () => {
+    const sequence = ++assignmentRequestSequence.current;
+    if (!selectedId || !selectedTaskId) { setTaskAssignments(null); return; }
+    try {
+      const result = await api<TaskAssignmentList>(`/general-projects/${selectedId}/tasks/${selectedTaskId}/assignments?page=${assignmentPage}&pageSize=10`);
+      if (sequence === assignmentRequestSequence.current) setTaskAssignments({ ...result, projectId: selectedId, taskId: selectedTaskId });
+    } catch (cause) {
+      if (sequence === assignmentRequestSequence.current) {
+        setTaskAssignments(null); notify(cause instanceof Error ? cause.message : t("generalProjects.loadingError"), "error");
+      }
+    }
+  }, [selectedId, selectedTaskId, assignmentPage, notify, t]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { void loadDetail(); }, [loadDetail]);
   useEffect(() => { setPhases(null); setPhasePage(1); setSelectedPhaseId(""); setTasks(null); }, [selectedId]);
   useEffect(() => { void loadPhases(); }, [loadPhases]);
-  useEffect(() => { setTasks(null); setTaskPage(1); }, [selectedPhaseId]);
+  useEffect(() => { setTasks(null); setTaskPage(1); setSelectedTaskId(""); setTaskAssignments(null); }, [selectedPhaseId]);
   useEffect(() => { void loadTasks(); }, [loadTasks]);
+  useEffect(() => { setTaskAssignments(null); setAssignmentPage(1); }, [selectedTaskId]);
+  useEffect(() => { void loadTaskAssignments(); }, [loadTaskAssignments]);
   useEffect(() => {
     setEditName(detail?.project.nameAr ?? "");
     setEditDescription(detail?.project.description ?? "");
@@ -161,7 +183,7 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
 
   const execute = async (work: () => Promise<unknown>, message: string) => {
     setWorking(true);
-    try { await work(); await load(); await loadDetail(); await loadPhases(); await loadTasks(); notify(message); }
+    try { await work(); await load(); await loadDetail(); await loadPhases(); await loadTasks(); await loadTaskAssignments(); notify(message); }
     catch (cause) { notify(cause instanceof Error ? cause.message : t("generalProjects.loadingError"), "error"); }
     finally { setWorking(false); }
   };
@@ -229,6 +251,33 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
         body: JSON.stringify({ expectedPlanVersion: phases.planVersion, title: newTaskTitle.trim() }) });
       setNewTaskTitle("");
     }, t("generalProjects.taskSaved"));
+  };
+  const assignTaskMember = (event: FormEvent) => {
+    event.preventDefault();
+    if (!detail || !tasks || tasks.projectId !== detail.project.id || !selectedTaskId || !taskMemberId) return;
+    void execute(() => api(`/general-projects/${detail.project.id}/tasks/${selectedTaskId}/assignments`, { method: "POST",
+      idempotencyKey: idempotencyKey("general-project-task-assign", selectedTaskId),
+      body: JSON.stringify({ expectedPlanVersion: tasks.planVersion, memberId: taskMemberId, role: taskMemberRole }) }),
+    t("generalProjects.taskSaved"));
+  };
+  const unassignTaskMember = (assignment: TaskAssignment) => {
+    if (!detail || !taskAssignments || taskAssignments.projectId !== detail.project.id ||
+      taskAssignments.taskId !== selectedTaskId || reason.trim().length < 10) return;
+    void execute(() => api(`/general-projects/${detail.project.id}/tasks/${selectedTaskId}/assignments/${assignment.id}/unassign`, {
+      method: "POST", idempotencyKey: idempotencyKey("general-project-task-unassign", assignment.id),
+      body: JSON.stringify({ expectedPlanVersion: taskAssignments.planVersion,
+        expectedVersion: assignment.version, reason: reason.trim() }) }), t("generalProjects.taskSaved"));
+  };
+  const taskTransitions: Record<TaskStatus, TaskStatus[]> = { TODO: ["IN_PROGRESS", "BLOCKED", "CANCELLED"],
+    IN_PROGRESS: ["BLOCKED", "COMPLETED", "CANCELLED"], BLOCKED: ["TODO", "CANCELLED"], COMPLETED: [], CANCELLED: [] };
+  const changeTask = (task: Task, to: TaskStatus) => {
+    if (!detail || !tasks || tasks.projectId !== detail.project.id) return;
+    const needsReason = to === "BLOCKED" || to === "CANCELLED" || (task.status === "BLOCKED" && to === "TODO");
+    if (needsReason && reason.trim().length < 10) return;
+    void execute(() => api(`/general-projects/${detail.project.id}/tasks/${task.id}/transition`, { method: "POST",
+      idempotencyKey: idempotencyKey("general-project-task-transition", task.id),
+      body: JSON.stringify({ expectedPlanVersion: tasks.planVersion, expectedVersion: task.version, to,
+        ...(needsReason ? { reason: reason.trim() } : {}) }) }), t("generalProjects.taskSaved"));
   };
 
   return <div className="page-content">
@@ -306,7 +355,18 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
         {tasks?.projectId === selectedId && tasks.phaseId === selectedPhaseId && tasks.data.length === 0 &&
           <p>{t("generalProjects.noTasks")}</p>}
         {tasks?.projectId === selectedId && tasks.phaseId === selectedPhaseId && tasks.data.map(task =>
-          <div key={task.id}>{task.sequence}. {task.title} · {t(`generalProjects.taskStatus.${task.status}`)}</div>)}
+          <div key={task.id}>
+            <Button variant="ghost" onClick={() => setSelectedTaskId(task.id)}>
+              {task.sequence}. {task.title} · {t(`generalProjects.taskStatus.${task.status}`)}
+            </Button>
+            {canManage && task.id === selectedTaskId && detail.project.status === "ACTIVE" && taskTransitions[task.status].map(next => {
+              const needsReason = next === "BLOCKED" || next === "CANCELLED" || task.status === "BLOCKED" && next === "TODO";
+              const phaseReady = phases.data.find(phase => phase.id === selectedPhaseId)?.status === "IN_PROGRESS";
+              return <Button key={next} variant="secondary"
+                disabled={working || needsReason && reason.trim().length < 10 || next === "IN_PROGRESS" && !phaseReady}
+                onClick={() => changeTask(task, next)}>{t(`generalProjects.taskStatus.${next}`)}</Button>;
+            })}
+          </div>)}
         {tasks?.projectId === selectedId && tasks.phaseId === selectedPhaseId &&
           <Pagination page={tasks.meta.page} totalPages={tasks.meta.totalPages} total={tasks.meta.total} onChange={setTaskPage} />}
         {canManage && detail.project.status !== "COMPLETED" && detail.project.status !== "CANCELLED" &&
@@ -316,6 +376,35 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
             <label>{t("generalProjects.taskTitle")}<input required maxLength={200} value={newTaskTitle}
               onChange={event => setNewTaskTitle(event.target.value)} /></label>
             <Button type="submit" disabled={working || !newTaskTitle.trim()}>{t("generalProjects.addTask")}</Button>
+          </form>}
+      </div>}
+      {selectedTaskId && tasks?.projectId === selectedId && tasks.data.some(task => task.id === selectedTaskId) && <div>
+        <h3>{t("generalProjects.taskAssignments")}</h3>
+        {taskAssignments?.projectId === selectedId && taskAssignments.taskId === selectedTaskId && taskAssignments.data.map(assignment =>
+          <div key={assignment.id}>{detail.members.find(member => member.id === assignment.memberId)?.employee.nameAr ?? assignment.memberId}
+            {" · "}{t(`generalProjects.taskRole.${assignment.role}`)}{assignment.isActive ? "" : " · —"}
+            {canManage && assignment.isActive && tasks.data.find(task => task.id === selectedTaskId)?.status !== "COMPLETED" &&
+              tasks.data.find(task => task.id === selectedTaskId)?.status !== "CANCELLED" &&
+              <Button variant="ghost" disabled={working || reason.trim().length < 10}
+                onClick={() => unassignTaskMember(assignment)}>{t("generalProjects.unassign")}</Button>}
+          </div>)}
+        {taskAssignments?.projectId === selectedId && taskAssignments.taskId === selectedTaskId &&
+          <Pagination page={taskAssignments.meta.page} totalPages={taskAssignments.meta.totalPages}
+            total={taskAssignments.meta.total} onChange={setAssignmentPage} />}
+        {canManage && detail.project.status !== "COMPLETED" && detail.project.status !== "CANCELLED" &&
+          tasks.data.find(task => task.id === selectedTaskId)?.status !== "COMPLETED" &&
+          tasks.data.find(task => task.id === selectedTaskId)?.status !== "CANCELLED" &&
+          <form onSubmit={assignTaskMember} className="form-grid">
+            <label>{t("generalProjects.member")}<select value={taskMemberId} onChange={event => setTaskMemberId(event.target.value)}>
+              <option value="">—</option>{detail.members.filter(member => member.isActive && member.employee.status === "ACTIVE")
+                .map(member => <option key={member.id} value={member.id}>{member.employee.employeeNumber} · {member.employee.nameAr}</option>)}
+            </select></label>
+            <label>{t("generalProjects.role")}<select value={taskMemberRole}
+              onChange={event => setTaskMemberRole(event.target.value as TaskAssignment["role"])}>
+              <option value="RESPONSIBLE">{t("generalProjects.taskRole.RESPONSIBLE")}</option>
+              <option value="CONTRIBUTOR">{t("generalProjects.taskRole.CONTRIBUTOR")}</option>
+            </select></label>
+            <Button type="submit" disabled={working || !taskMemberId}>{t("generalProjects.assignToTask")}</Button>
           </form>}
       </div>}
     </section>}

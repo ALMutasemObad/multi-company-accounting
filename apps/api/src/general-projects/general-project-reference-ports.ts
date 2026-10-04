@@ -11,6 +11,7 @@ export type GeneralProjectEmployeeReference = Readonly<{
 
 export interface GeneralProjectEmployeePort {
   findInCompany(tx: Prisma.TransactionClient, companyId: bigint, publicId: string): Promise<GeneralProjectEmployeeReference | null>;
+  findByInternalIdInCompany(tx: Prisma.TransactionClient, companyId: bigint, id: bigint): Promise<GeneralProjectEmployeeReference | null>;
   lockActiveInCompany(tx: Prisma.TransactionClient, companyId: bigint, publicId: string): Promise<GeneralProjectEmployeeReference | null>;
   countActiveInCompany(tx: Prisma.TransactionClient, companyId: bigint, ids: readonly bigint[]): Promise<number>;
   findByUserInCompany(companyId: bigint, userId: bigint): Promise<GeneralProjectEmployeeReference | null>;

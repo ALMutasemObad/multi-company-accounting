@@ -1,13 +1,13 @@
-import { Prisma, type GeneralProject, type GeneralProjectMember, type GeneralProjectPhase, type GeneralProjectTask, type PrismaClient } from "@prisma/client";
+import { Prisma, type GeneralProject, type GeneralProjectMember, type GeneralProjectPhase, type GeneralProjectTask, type GeneralProjectTaskAssignment, type PrismaClient } from "@prisma/client";
 import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import type { ActorContext } from "../platform/actor-context.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
 import { reserveMasterDataCode } from "../platform/master-data-code-service.js";
 import { TransactionExecutor } from "../platform/transaction-executor.js";
-import { transitionPhase, transitionProject } from "./general-project-policy.js";
+import { transitionPhase, transitionProject, transitionTask } from "./general-project-policy.js";
 import type { GeneralProjectCustomerPort, GeneralProjectCustomerReference, GeneralProjectEmployeePort, GeneralProjectEmployeeReference } from "./general-project-reference-ports.js";
 
-export type GeneralProjectFailureReason = "NOT_FOUND" | "CUSTOMER_NOT_FOUND" | "CUSTOMER_INACTIVE" | "EMPLOYEE_NOT_FOUND" | "EMPLOYEE_INACTIVE" | "INVALID_DATE_RANGE" | "PROJECT_FINAL" | "LAST_MANAGER" | "MEMBER_NOT_FOUND" | "VERSION_CONFLICT" | "IDEMPOTENCY_MISMATCH" | "IDEMPOTENCY_IN_PROGRESS";
+export type GeneralProjectFailureReason = "NOT_FOUND" | "CUSTOMER_NOT_FOUND" | "CUSTOMER_INACTIVE" | "EMPLOYEE_NOT_FOUND" | "EMPLOYEE_INACTIVE" | "INVALID_DATE_RANGE" | "INVALID_REASON" | "PROJECT_FINAL" | "LAST_MANAGER" | "MEMBER_NOT_FOUND" | "ASSIGNMENT_NOT_FOUND" | "ACTIVE_TASK_RESPONSIBILITY" | "VERSION_CONFLICT" | "IDEMPOTENCY_MISMATCH" | "IDEMPOTENCY_IN_PROGRESS";
 export class GeneralProjectError extends Error {
   constructor(readonly reason: GeneralProjectFailureReason) { super(reason); }
 }
@@ -36,6 +36,10 @@ const taskJson = (row: GeneralProjectTask) => ({
   id: row.publicId, sequence: row.sequence, title: row.title, description: row.description,
   priority: row.priority, plannedStartDate: dateOnly(row.plannedStartDate), dueDate: dateOnly(row.dueDate),
   status: row.status, version: row.version, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(),
+});
+const assignmentJson = (row: GeneralProjectTaskAssignment, memberPublicId: string) => ({
+  id: row.publicId, memberId: memberPublicId, role: row.role, isActive: row.isActive,
+  version: row.version, assignedAt: row.assignedAt.toISOString(), unassignedAt: row.unassignedAt?.toISOString() ?? null,
 });
 const mutable = (status: GeneralProject["status"]) => status !== "COMPLETED" && status !== "CANCELLED";
 
@@ -205,6 +209,134 @@ export class GeneralProjectService {
       });
   }
 
+  async listTaskAssignments(context: ActorContext, projectPublicId: string, taskPublicId: string,
+    input: { page: number; pageSize: number }) {
+    const { project, rows, total } = await this.prisma.$transaction(async tx => {
+      const project = await tx.generalProject.findFirst({ where: { companyId: context.companyId, publicId: projectPublicId },
+        select: { id: true, planVersion: true } });
+      if (!project) throw new GeneralProjectError("NOT_FOUND");
+      const task = await tx.generalProjectTask.findFirst({ where: { companyId: context.companyId, projectId: project.id,
+        publicId: taskPublicId }, select: { id: true } });
+      if (!task) throw new GeneralProjectError("NOT_FOUND");
+      const where: Prisma.GeneralProjectTaskAssignmentWhereInput = { companyId: context.companyId, projectId: project.id,
+        taskId: task.id };
+      const [rows, total] = await Promise.all([
+        tx.generalProjectTaskAssignment.findMany({ where, include: { member: { select: { publicId: true } } },
+          orderBy: [{ assignedAt: "asc" }, { id: "asc" }], skip: (input.page - 1) * input.pageSize, take: input.pageSize }),
+        tx.generalProjectTaskAssignment.count({ where }),
+      ]);
+      return { project, rows, total };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+    return { data: rows.map(row => assignmentJson(row, row.member.publicId)), planVersion: project.planVersion,
+      meta: { page: input.page, pageSize: input.pageSize, total, totalPages: Math.ceil(total / input.pageSize) } };
+  }
+
+  assignTaskMember(context: ActorContext, projectPublicId: string, taskPublicId: string, input: {
+    expectedPlanVersion: number; memberId: string; role: GeneralProjectTaskAssignment["role"]; idempotencyKey: string;
+  }) {
+    return this.command(context, "ASSIGN_GENERAL_PROJECT_TASK_MEMBER", input.idempotencyKey,
+      { projectPublicId, taskPublicId, ...input }, 200, async tx => {
+        const project = await this.lockProject(tx, context, projectPublicId);
+        if (!mutable(project.status)) throw new GeneralProjectError("PROJECT_FINAL");
+        if (project.planVersion !== input.expectedPlanVersion) throw new GeneralProjectError("VERSION_CONFLICT");
+        const task = await tx.generalProjectTask.findFirst({ where: { companyId: context.companyId,
+          projectId: project.id, publicId: taskPublicId } });
+        if (!task) throw new GeneralProjectError("NOT_FOUND");
+        if (task.status === "COMPLETED" || task.status === "CANCELLED") throw new GeneralProjectError("PROJECT_FINAL");
+        const member = await tx.generalProjectMember.findFirst({ where: { companyId: context.companyId,
+          projectId: project.id, publicId: input.memberId, isActive: true } });
+        if (!member) throw new GeneralProjectError("MEMBER_NOT_FOUND");
+        const employee = await this.employees.findByInternalIdInCompany(tx, context.companyId, member.employeeId);
+        if (employee?.status !== "ACTIVE") throw new GeneralProjectError("EMPLOYEE_INACTIVE");
+        const existing = await tx.generalProjectTaskAssignment.findUnique({ where: { taskId_memberId: {
+          taskId: task.id, memberId: member.id } } });
+        if (task.status === "IN_PROGRESS" && existing?.isActive && existing.role === "RESPONSIBLE" && input.role !== "RESPONSIBLE") {
+          await this.requireOtherResponsible(tx, context, project.id, task.id, existing.id);
+        }
+        const assignment = existing ? await tx.generalProjectTaskAssignment.update({ where: { id: existing.id }, data: {
+          role: input.role, isActive: true, version: { increment: 1 }, assignedAt: new Date(), unassignedAt: null,
+          assignedById: context.userId, updatedById: context.userId } })
+          : await tx.generalProjectTaskAssignment.create({ data: { companyId: context.companyId,
+            projectId: project.id, taskId: task.id, memberId: member.id, role: input.role,
+            assignedById: context.userId, updatedById: context.userId } });
+        await this.bumpPlanVersion(tx, context, project);
+        await this.audit(tx, context, "GENERAL_PROJECT_TASK_MEMBER_ASSIGNED", projectPublicId,
+          { taskId: taskPublicId, memberId: input.memberId, role: input.role, nextPlanVersion: project.planVersion + 1 });
+        return { assignment: assignmentJson(assignment, member.publicId), planVersion: project.planVersion + 1 };
+      });
+  }
+
+  unassignTaskMember(context: ActorContext, projectPublicId: string, taskPublicId: string,
+    assignmentPublicId: string, input: { expectedPlanVersion: number; expectedVersion: number;
+      reason: string; idempotencyKey: string }) {
+    return this.command(context, "UNASSIGN_GENERAL_PROJECT_TASK_MEMBER", input.idempotencyKey,
+      { projectPublicId, taskPublicId, assignmentPublicId, ...input }, 200, async tx => {
+        if (input.reason.trim().length < 10 || input.reason.trim().length > 500) throw new GeneralProjectError("INVALID_REASON");
+        const project = await this.lockProject(tx, context, projectPublicId);
+        if (!mutable(project.status)) throw new GeneralProjectError("PROJECT_FINAL");
+        if (project.planVersion !== input.expectedPlanVersion) throw new GeneralProjectError("VERSION_CONFLICT");
+        const task = await tx.generalProjectTask.findFirst({ where: { companyId: context.companyId,
+          projectId: project.id, publicId: taskPublicId } });
+        if (!task) throw new GeneralProjectError("NOT_FOUND");
+        if (task.status === "COMPLETED" || task.status === "CANCELLED") throw new GeneralProjectError("PROJECT_FINAL");
+        const assignment = await tx.generalProjectTaskAssignment.findFirst({ where: { companyId: context.companyId,
+          projectId: project.id, taskId: task.id, publicId: assignmentPublicId, isActive: true } });
+        if (!assignment) throw new GeneralProjectError("ASSIGNMENT_NOT_FOUND");
+        if (assignment.version !== input.expectedVersion) throw new GeneralProjectError("VERSION_CONFLICT");
+        if (task.status === "IN_PROGRESS" && assignment.role === "RESPONSIBLE") {
+          await this.requireOtherResponsible(tx, context, project.id, task.id, assignment.id);
+        }
+        const changed = await tx.generalProjectTaskAssignment.updateMany({ where: { id: assignment.id,
+          companyId: context.companyId, projectId: project.id, taskId: task.id,
+          version: input.expectedVersion, isActive: true }, data: { isActive: false, unassignedAt: new Date(),
+            updatedById: context.userId, version: { increment: 1 } } });
+        if (changed.count !== 1) throw new GeneralProjectError("VERSION_CONFLICT");
+        await this.bumpPlanVersion(tx, context, project);
+        const updated = await tx.generalProjectTaskAssignment.findUniqueOrThrow({ where: { id: assignment.id } });
+        const member = await tx.generalProjectMember.findUniqueOrThrow({ where: { id: assignment.memberId } });
+        await this.audit(tx, context, "GENERAL_PROJECT_TASK_MEMBER_UNASSIGNED", projectPublicId,
+          { taskId: taskPublicId, assignmentId: assignmentPublicId, reason: input.reason,
+            nextPlanVersion: project.planVersion + 1 });
+        return { assignment: assignmentJson(updated, member.publicId), planVersion: project.planVersion + 1 };
+      });
+  }
+
+  transitionTask(context: ActorContext, projectPublicId: string, taskPublicId: string, input: {
+    expectedPlanVersion: number; expectedVersion: number; to: GeneralProjectTask["status"]; reason?: string;
+    idempotencyKey: string;
+  }) {
+    return this.command(context, "TRANSITION_GENERAL_PROJECT_TASK", input.idempotencyKey,
+      { projectPublicId, taskPublicId, ...input }, 200, async tx => {
+        const project = await this.lockProject(tx, context, projectPublicId);
+        if (project.planVersion !== input.expectedPlanVersion) throw new GeneralProjectError("VERSION_CONFLICT");
+        const task = await tx.generalProjectTask.findFirst({ where: { companyId: context.companyId,
+          projectId: project.id, publicId: taskPublicId } });
+        if (!task) throw new GeneralProjectError("NOT_FOUND");
+        if (task.version !== input.expectedVersion) throw new GeneralProjectError("VERSION_CONFLICT");
+        const phase = await tx.generalProjectPhase.findFirstOrThrow({ where: { companyId: context.companyId,
+          projectId: project.id, id: task.phaseId } });
+        const responsibilities = await tx.generalProjectTaskAssignment.findMany({ where: { companyId: context.companyId,
+          projectId: project.id, taskId: task.id, role: "RESPONSIBLE", isActive: true, member: { isActive: true } },
+        select: { member: { select: { employeeId: true } } } });
+        const activeResponsibleCount = await this.employees.countActiveInCompany(tx, context.companyId,
+          responsibilities.map(row => row.member.employeeId));
+        const next = transitionTask({ projectStatus: project.status, phaseStatus: phase.status,
+          from: task.status, to: input.to, actorCanManage: true, actorCanProgress: false,
+          actorIsActiveResponsible: false, activeResponsibleCount, predecessorStatuses: [],
+          ...(input.reason === undefined ? {} : { reason: input.reason }) });
+        const changed = await tx.generalProjectTask.updateMany({ where: { id: task.id, companyId: context.companyId,
+          projectId: project.id, version: input.expectedVersion, status: task.status }, data: {
+          status: next, version: { increment: 1 }, updatedById: context.userId } });
+        if (changed.count !== 1) throw new GeneralProjectError("VERSION_CONFLICT");
+        await this.bumpPlanVersion(tx, context, project);
+        const updated = await tx.generalProjectTask.findUniqueOrThrow({ where: { id: task.id } });
+        await this.audit(tx, context, "GENERAL_PROJECT_TASK_TRANSITIONED", projectPublicId,
+          { taskId: taskPublicId, from: task.status, to: next, reason: input.reason ?? null,
+            nextPlanVersion: project.planVersion + 1 });
+        return { task: taskJson(updated), planVersion: project.planVersion + 1 };
+      });
+  }
+
   async createProject(context: ActorContext, input: { nameAr: string; nameEn?: string | null; description?: string | null; customerId?: bigint | null; priority?: GeneralProject["priority"]; plannedStartDate?: string | null; targetEndDate?: string | null; managerEmployeeId?: string; idempotencyKey: string }) {
     const managerId = input.managerEmployeeId ?? (await this.employees.findByUserInCompany(context.companyId, context.userId))?.publicId;
     if (!managerId) throw new GeneralProjectError("EMPLOYEE_NOT_FOUND");
@@ -316,8 +448,18 @@ export class GeneralProjectService {
         const managers = await tx.generalProjectMember.findMany({ where: { companyId: context.companyId, projectId: project.id, isActive: true, role: "MANAGER", id: { not: member.id } }, select: { employeeId: true } });
         if (await this.employees.countActiveInCompany(tx, context.companyId, managers.map(row => row.employeeId)) < 1) throw new GeneralProjectError("LAST_MANAGER");
       }
+      const ongoingResponsibility = await tx.generalProjectTaskAssignment.findFirst({ where: {
+        companyId: context.companyId, projectId: project.id, memberId: member.id,
+        role: "RESPONSIBLE", isActive: true, task: { status: "IN_PROGRESS" },
+      }, select: { id: true } });
+      if (ongoingResponsibility) throw new GeneralProjectError("ACTIVE_TASK_RESPONSIBILITY");
+      const assignments = await tx.generalProjectTaskAssignment.updateMany({ where: {
+        companyId: context.companyId, projectId: project.id, memberId: member.id, isActive: true,
+      }, data: { isActive: false, unassignedAt: new Date(), updatedById: context.userId,
+        version: { increment: 1 } } });
       const updated = await tx.generalProjectMember.update({ where: { id: member.id }, data: { isActive: false, unassignedAt: new Date(), updatedById: context.userId, version: { increment: 1 } } });
       await this.bumpProject(tx, context, project);
+      if (assignments.count > 0) await this.bumpPlanVersion(tx, context, project);
       await this.audit(tx, context, "GENERAL_PROJECT_MEMBER_UNASSIGNED", publicId, { memberId: memberPublicId, reason: input.reason });
       return { memberId: updated.publicId, projectVersion: project.version + 1 };
     });
@@ -344,6 +486,14 @@ export class GeneralProjectService {
       planVersion: project.planVersion, status: { notIn: ["COMPLETED", "CANCELLED"] } },
     data: { planVersion: { increment: 1 }, updatedById: context.userId } });
     if (changed.count !== 1) throw new GeneralProjectError("VERSION_CONFLICT");
+  }
+  private async requireOtherResponsible(tx: Prisma.TransactionClient, context: ActorContext,
+    projectId: bigint, taskId: bigint, exceptId: bigint) {
+    const others = await tx.generalProjectTaskAssignment.findMany({ where: { companyId: context.companyId,
+      projectId, taskId, id: { not: exceptId }, role: "RESPONSIBLE", isActive: true,
+      member: { isActive: true } }, select: { member: { select: { employeeId: true } } } });
+    if (await this.employees.countActiveInCompany(tx, context.companyId,
+      others.map(row => row.member.employeeId)) < 1) throw new GeneralProjectError("ACTIVE_TASK_RESPONSIBILITY");
   }
   private async requireCustomer(tx: Prisma.TransactionClient, companyId: bigint, id: bigint) {
     const row = await this.customers.findInCompany(tx, companyId, id);

@@ -22,6 +22,10 @@ function fixture() {
     transitionPhase: vi.fn().mockResolvedValue({ phase: {}, planVersion: 2 }),
     listTasks: vi.fn().mockResolvedValue({ data: [], planVersion: 2, meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 } }),
     createTask: vi.fn().mockResolvedValue({ task: {}, planVersion: 3 }),
+    listTaskAssignments: vi.fn().mockResolvedValue({ data: [], planVersion: 3, meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 } }),
+    assignTaskMember: vi.fn().mockResolvedValue({ assignment: {}, planVersion: 4 }),
+    unassignTaskMember: vi.fn().mockResolvedValue({ assignment: {}, planVersion: 5 }),
+    transitionTask: vi.fn().mockResolvedValue({ task: {}, planVersion: 5 }),
     assignMember: vi.fn().mockResolvedValue({ member: {}, projectVersion: 1 }),
     unassignMember: vi.fn().mockResolvedValue({ memberId: managerId, projectVersion: 2 }),
   };
@@ -32,6 +36,27 @@ function fixture() {
 }
 
 describe("general project HTTP boundary", () => {
+  it("guards task assignments and manager-only task transitions", async () => {
+    const { app, authorize, projects } = fixture();
+    const taskId = "5759ba65-f0e0-48c4-b0dc-b12ca2bd958d";
+    await request(app).get(`/general-projects/${projectId}/tasks/${taskId}/assignments`).expect(200);
+    await request(app).post(`/general-projects/${projectId}/tasks/${taskId}/assignments`)
+      .set("X-CSRF-Token", "csrf").set("Idempotency-Key", "general-project-task-assign-1234")
+      .send({ expectedPlanVersion: 3, memberId: managerId, role: "RESPONSIBLE" }).expect(200);
+    await request(app).post(`/general-projects/${projectId}/tasks/${taskId}/transition`)
+      .set("X-CSRF-Token", "csrf").set("Idempotency-Key", "general-project-task-transition-1234")
+      .send({ expectedPlanVersion: 4, expectedVersion: 0, to: "IN_PROGRESS" }).expect(200);
+    const assignmentId = "03e667a2-466f-498b-aa27-83453be31c4c";
+    await request(app).post(`/general-projects/${projectId}/tasks/${taskId}/assignments/${assignmentId}/unassign`)
+      .set("X-CSRF-Token", "csrf").set("Idempotency-Key", "general-project-task-unassign-1234")
+      .send({ expectedPlanVersion: 5, expectedVersion: 0, reason: "Reassigned safely" }).expect(200);
+    expect(authorize.mock.calls.map(([value]) => [value.permission, value.requireCsrf])).toEqual([
+      ["general_projects.view", false], ["general_projects.manage", true], ["general_projects.manage", true],
+      ["general_projects.manage", true],
+    ]);
+    expect(projects.assignTaskMember).toHaveBeenCalledWith(context, projectId, taskId,
+      expect.objectContaining({ memberId: managerId, role: "RESPONSIBLE" }));
+  });
   it("scopes task reads and creation to a project phase with guarded input", async () => {
     const { app, authorize, projects } = fixture();
     const phaseId = "b5c7025d-260e-4697-9ba9-57c55ed063a2";

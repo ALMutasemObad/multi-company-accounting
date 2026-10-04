@@ -10,6 +10,10 @@ export class GeneralProjectEmployeeAdapter implements GeneralProjectEmployeePort
     return tx.employee.findFirst({ where: { companyId, publicId }, select });
   }
 
+  findByInternalIdInCompany(tx: Prisma.TransactionClient, companyId: bigint, id: bigint) {
+    return tx.employee.findFirst({ where: { companyId, id }, select });
+  }
+
   async lockActiveInCompany(tx: Prisma.TransactionClient, companyId: bigint, publicId: string) {
     const rows = await tx.$queryRaw<Array<{ id: bigint }>>`
       SELECT id FROM employees WHERE company_id = ${companyId} AND public_id = ${publicId} AND status = 'ACTIVE' FOR UPDATE

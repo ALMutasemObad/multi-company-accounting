@@ -3528,6 +3528,91 @@ paths:
       x-permission: general_projects.manage
       security: [{ SessionCookie: [], CsrfToken: [] }]
       x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/tasks/{taskId}/assignments:
+    get:
+      tags: [General Projects]
+      summary: إسنادات المهمة داخل المشروع
+      operationId: listGeneralProjectTaskAssignments
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: taskId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { $ref: '#/components/parameters/Page' }
+      - { $ref: '#/components/parameters/PageSize' }
+      responses:
+        '200': { description: إسنادات المهمة, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectTaskAssignmentListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: general_projects.view
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [General Projects]
+      summary: إسناد عضو نشط من فريق المشروع إلى مهمة
+      operationId: assignGeneralProjectTaskMember
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: taskId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AssignGeneralProjectTaskMemberRequest' } } } }
+      responses:
+        '200': { description: الإسناد, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectTaskAssignmentMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/tasks/{taskId}/assignments/{assignmentId}/unassign:
+    post:
+      tags: [General Projects]
+      summary: سحب إسناد مهمة مع حماية آخر مسؤول عن مهمة جارية
+      operationId: unassignGeneralProjectTaskMember
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: taskId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: assignmentId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UnassignGeneralProjectTaskMemberRequest' } } } }
+      responses:
+        '200': { description: الإسناد المسحوب, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectTaskAssignmentMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/tasks/{taskId}/transition:
+    post:
+      tags: [General Projects]
+      summary: نقل المهمة بين حالات التنفيذ بإشراف مدير المشروع
+      operationId: transitionGeneralProjectTask
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: taskId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TransitionGeneralProjectTaskRequest' } } } }
+      responses:
+        '200': { description: المهمة بعد الانتقال, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectTaskMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
   /general-projects/{generalProjectId}/phases/{phaseId}/transition:
     post:
       tags: [General Projects]
@@ -21441,6 +21526,59 @@ components:
         priority: { $ref: '#/components/schemas/GeneralProjectPriority' }
         plannedStartDate: { type: [string, 'null'], format: date }
         dueDate: { type: [string, 'null'], format: date }
+    GeneralProjectTaskAssignmentRole: { type: string, enum: [RESPONSIBLE, CONTRIBUTOR] }
+    GeneralProjectTaskAssignment:
+      type: object
+      additionalProperties: false
+      required: [id, memberId, role, isActive, version, assignedAt, unassignedAt]
+      properties:
+        id: { type: string, format: uuid }
+        memberId: { type: string, format: uuid }
+        role: { $ref: '#/components/schemas/GeneralProjectTaskAssignmentRole' }
+        isActive: { type: boolean }
+        version: { type: integer, minimum: 0 }
+        assignedAt: { type: string, format: date-time }
+        unassignedAt: { type: [string, 'null'], format: date-time }
+    GeneralProjectTaskAssignmentListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, planVersion, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/GeneralProjectTaskAssignment' } }
+        planVersion: { type: integer, minimum: 0 }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    GeneralProjectTaskAssignmentMutationResponse:
+      type: object
+      additionalProperties: false
+      required: [assignment, planVersion]
+      properties:
+        assignment: { $ref: '#/components/schemas/GeneralProjectTaskAssignment' }
+        planVersion: { type: integer, minimum: 0 }
+    AssignGeneralProjectTaskMemberRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedPlanVersion, memberId, role]
+      properties:
+        expectedPlanVersion: { type: integer, minimum: 0 }
+        memberId: { type: string, format: uuid }
+        role: { $ref: '#/components/schemas/GeneralProjectTaskAssignmentRole' }
+    UnassignGeneralProjectTaskMemberRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedPlanVersion, expectedVersion, reason]
+      properties:
+        expectedPlanVersion: { type: integer, minimum: 0 }
+        expectedVersion: { type: integer, minimum: 0 }
+        reason: { type: string, x-trim: true, minLength: 10, maxLength: 500 }
+    TransitionGeneralProjectTaskRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedPlanVersion, expectedVersion, to]
+      properties:
+        expectedPlanVersion: { type: integer, minimum: 0 }
+        expectedVersion: { type: integer, minimum: 0 }
+        to: { $ref: '#/components/schemas/GeneralProjectTaskStatus' }
+        reason: { type: string, x-trim: true, minLength: 10, maxLength: 500 }
     CreateGeneralProjectRequest:
       type: object
       additionalProperties: false

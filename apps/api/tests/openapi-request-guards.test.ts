@@ -53,7 +53,7 @@ describe('generated OpenAPI request guards', () => {
   });
 
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 432, requestBodies: 216, responseBodies: 2785 });
+    expect(openApiContractCoverage).toEqual({ operations: 436, requestBodies: 219, responseBodies: 2811 });
     expect(openApiOperationRoutes).toMatchObject({
       'GET /service-catalog/selection-options': 'listServiceSelectionOptions',
       'GET /service-catalog/reference-options/revenue-accounts': 'listServiceRevenueAccountOptions',
@@ -63,6 +63,10 @@ describe('generated OpenAPI request guards', () => {
       'POST /general-projects/{generalProjectId}/phases': 'createGeneralProjectPhase',
       'GET /general-projects/{generalProjectId}/phases/{phaseId}/tasks': 'listGeneralProjectTasks',
       'POST /general-projects/{generalProjectId}/phases/{phaseId}/tasks': 'createGeneralProjectTask',
+      'GET /general-projects/{generalProjectId}/tasks/{taskId}/assignments': 'listGeneralProjectTaskAssignments',
+      'POST /general-projects/{generalProjectId}/tasks/{taskId}/assignments': 'assignGeneralProjectTaskMember',
+      'POST /general-projects/{generalProjectId}/tasks/{taskId}/assignments/{assignmentId}/unassign': 'unassignGeneralProjectTaskMember',
+      'POST /general-projects/{generalProjectId}/tasks/{taskId}/transition': 'transitionGeneralProjectTask',
       'POST /general-projects/{generalProjectId}/phases/{phaseId}/transition': 'transitionGeneralProjectPhase',
       'POST /general-projects': 'createGeneralProject',
       'POST /general-projects/{generalProjectId}/transition': 'transitionGeneralProject',
@@ -99,7 +103,7 @@ describe('generated OpenAPI request guards', () => {
       'POST /auth/social/onboarding': 'completeSocialOnboarding',
       'DELETE /auth/social/onboarding': 'cancelSocialOnboarding',
     });
-    expect(guardedOpenApiOperations).toHaveLength(216);
+    expect(guardedOpenApiOperations).toHaveLength(219);
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
       'updateInventoryBarcodeSettings', 'previewInventoryCatalogImport', 'commitInventoryCatalogImport',
     ]));

@@ -90,6 +90,32 @@ export function createGeneralProjectRouter(auth: AuthService, projects: GeneralP
         ...bodies.createGeneralProjectTask.parse(request.body), idempotencyKey: idempotencyKey(request),
       }));
   });
+  router.get("/general-projects/:generalProjectId/tasks/:taskId/assignments", async (request, response) => {
+    const context = await authorize(request, "general_projects.view", false);
+    response.json(await projects.listTaskAssignments(context, publicId.parse(request.params.generalProjectId),
+      publicId.parse(request.params.taskId), pageQuery.parse(request.query)));
+  });
+  router.post("/general-projects/:generalProjectId/tasks/:taskId/assignments", async (request, response) => {
+    const context = await authorize(request, "general_projects.manage", true);
+    response.json(await projects.assignTaskMember(context, publicId.parse(request.params.generalProjectId),
+      publicId.parse(request.params.taskId), {
+        ...bodies.assignGeneralProjectTaskMember.parse(request.body), idempotencyKey: idempotencyKey(request),
+      }));
+  });
+  router.post("/general-projects/:generalProjectId/tasks/:taskId/assignments/:assignmentId/unassign", async (request, response) => {
+    const context = await authorize(request, "general_projects.manage", true);
+    response.json(await projects.unassignTaskMember(context, publicId.parse(request.params.generalProjectId),
+      publicId.parse(request.params.taskId), publicId.parse(request.params.assignmentId), {
+        ...bodies.unassignGeneralProjectTaskMember.parse(request.body), idempotencyKey: idempotencyKey(request),
+      }));
+  });
+  router.post("/general-projects/:generalProjectId/tasks/:taskId/transition", async (request, response) => {
+    const context = await authorize(request, "general_projects.manage", true);
+    response.json(await projects.transitionTask(context, publicId.parse(request.params.generalProjectId),
+      publicId.parse(request.params.taskId), {
+        ...bodies.transitionGeneralProjectTask.parse(request.body), idempotencyKey: idempotencyKey(request),
+      }));
+  });
   router.post("/general-projects/:generalProjectId/members", async (request, response) => {
     const context = await authorize(request, "general_projects.manage", true);
     response.json(await projects.assignMember(context, publicId.parse(request.params.generalProjectId), {
@@ -106,7 +132,7 @@ export function createGeneralProjectRouter(auth: AuthService, projects: GeneralP
     if (error instanceof ZodError) { response.status(400).json({ status: 400, code: "VALIDATION_ERROR", errors: error.issues }); return; }
     if (error instanceof GeneralProjectError || error instanceof GeneralProjectPolicyError) {
       const reason = error instanceof GeneralProjectError ? error.reason : error.code;
-      const status = ["NOT_FOUND", "CUSTOMER_NOT_FOUND", "EMPLOYEE_NOT_FOUND", "MEMBER_NOT_FOUND"].includes(reason) ? 404
+      const status = ["NOT_FOUND", "CUSTOMER_NOT_FOUND", "EMPLOYEE_NOT_FOUND", "MEMBER_NOT_FOUND", "ASSIGNMENT_NOT_FOUND"].includes(reason) ? 404
         : ["VERSION_CONFLICT", "IDEMPOTENCY_MISMATCH", "IDEMPOTENCY_IN_PROGRESS"].includes(reason) ? 409 : 422;
       response.status(status).json({ status, code: "BUSINESS_RULE_VIOLATION", reason }); return;
     }

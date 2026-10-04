@@ -40,7 +40,7 @@ describe.runIf(enabled)("general project register on isolated MySQL/MariaDB", ()
     if (!prisma) return;
     const companies = [companyId, foreignCompanyId].filter((value): value is bigint => value !== undefined);
     if (companies.length) {
-      await prisma.idempotencyRecord.deleteMany({ where: { companyId: { in: companies }, operation: { in: ["CREATE_GENERAL_PROJECT", "UPDATE_GENERAL_PROJECT", "TRANSITION_GENERAL_PROJECT", "ASSIGN_GENERAL_PROJECT_MEMBER", "UNASSIGN_GENERAL_PROJECT_MEMBER", "CREATE_GENERAL_PROJECT_PHASE", "TRANSITION_GENERAL_PROJECT_PHASE", "CREATE_GENERAL_PROJECT_TASK"] } } });
+      await prisma.idempotencyRecord.deleteMany({ where: { companyId: { in: companies }, operation: { in: ["CREATE_GENERAL_PROJECT", "UPDATE_GENERAL_PROJECT", "TRANSITION_GENERAL_PROJECT", "ASSIGN_GENERAL_PROJECT_MEMBER", "UNASSIGN_GENERAL_PROJECT_MEMBER", "CREATE_GENERAL_PROJECT_PHASE", "TRANSITION_GENERAL_PROJECT_PHASE", "CREATE_GENERAL_PROJECT_TASK", "ASSIGN_GENERAL_PROJECT_TASK_MEMBER", "UNASSIGN_GENERAL_PROJECT_TASK_MEMBER", "TRANSITION_GENERAL_PROJECT_TASK"] } } });
       await prisma.auditLog.deleteMany({ where: { companyId: { in: companies }, entityType: "GENERAL_PROJECT" } });
       await prisma.generalProjectTaskAssignment.deleteMany({ where: { companyId: { in: companies } } });
       await prisma.generalProjectTask.deleteMany({ where: { companyId: { in: companies } } });
@@ -131,14 +131,45 @@ describe.runIf(enabled)("general project register on isolated MySQL/MariaDB", ()
     const started = await service.transitionPhase(context(), planId, phase.phase.id, { expectedPlanVersion: 2,
       expectedVersion: 0, to: "IN_PROGRESS", idempotencyKey: "it-general-project-phase-start-0001" });
     expect(started.planVersion).toBe(3);
+    const managerMember = (await service.getProject(context(), planId)).members.find(member => member.role === "MANAGER")!;
+    const assignment = await service.assignTaskMember(context(), planId, task.task.id, { expectedPlanVersion: 3,
+      memberId: managerMember.id, role: "RESPONSIBLE", idempotencyKey: "it-general-project-task-assign-0001" });
+    expect(assignment.planVersion).toBe(4);
+    expect((await service.listTaskAssignments(context(), planId, task.task.id, { page: 1, pageSize: 25 })).data)
+      .toEqual([assignment.assignment]);
+    await expect(service.assignTaskMember(context(), planId, task.task.id, { expectedPlanVersion: 4,
+      memberId: "70fae73c-31f8-4eb7-a097-ade50f0a357e", role: "RESPONSIBLE",
+      idempotencyKey: "it-general-project-task-foreign-member-0001" })).rejects.toMatchObject({ reason: "MEMBER_NOT_FOUND" });
+    const taskStarted = await service.transitionTask(context(), planId, task.task.id, { expectedPlanVersion: 4,
+      expectedVersion: 0, to: "IN_PROGRESS", idempotencyKey: "it-general-project-task-start-0001" });
+    expect(taskStarted.planVersion).toBe(5);
+    await expect(service.unassignTaskMember(context(), planId, task.task.id, assignment.assignment.id, {
+      expectedPlanVersion: 5, expectedVersion: 0, reason: "Change task owner safely",
+      idempotencyKey: "it-general-project-task-unassign-last-0001" })).rejects.toMatchObject({ reason: "ACTIVE_TASK_RESPONSIBILITY" });
+    const secondMember = await service.assignMember(context(), planId, { version: 1,
+      employeeId: contributorId, role: "CONTRIBUTOR", idempotencyKey: "it-general-project-plan-contributor-0001" });
+    const secondAssignment = await service.assignTaskMember(context(), planId, task.task.id, {
+      expectedPlanVersion: 5, memberId: secondMember.member.id, role: "RESPONSIBLE",
+      idempotencyKey: "it-general-project-task-second-responsible-0001" });
+    expect(secondAssignment.planVersion).toBe(6);
+    await expect(service.unassignMember(context(), planId, secondMember.member.id, { version: 2,
+      reason: "Switch project contributor", idempotencyKey: "it-general-project-unassign-active-0001" }))
+      .rejects.toMatchObject({ reason: "ACTIVE_TASK_RESPONSIBILITY" });
+    const removed = await service.unassignTaskMember(context(), planId, task.task.id, assignment.assignment.id, {
+      expectedPlanVersion: 6, expectedVersion: 0, reason: "Moved responsibility safely",
+      idempotencyKey: "it-general-project-task-unassign-first-0001" });
+    expect(removed.assignment.isActive).toBe(false);
+    expect(removed.planVersion).toBe(7);
     await expect(service.transitionPhase(context(), planId, phase.phase.id, { expectedPlanVersion: 1,
       expectedVersion: 0, to: "COMPLETED", idempotencyKey: "it-general-project-phase-stale-transition-0001" }))
       .rejects.toMatchObject({ reason: "VERSION_CONFLICT" });
-    await expect(service.transitionPhase(context(), planId, phase.phase.id, { expectedPlanVersion: 3,
+    await expect(service.transitionPhase(context(), planId, phase.phase.id, { expectedPlanVersion: 7,
       expectedVersion: 1, to: "COMPLETED", idempotencyKey: "it-general-project-phase-open-task-0001" }))
       .rejects.toMatchObject({ code: "PHASE_WORK_OPEN" });
-    await prisma!.generalProjectTask.update({ where: { publicId: task.task.id }, data: { status: "COMPLETED" } });
-    const finished = await service.transitionPhase(context(), planId, phase.phase.id, { expectedPlanVersion: 3,
+    const taskFinished = await service.transitionTask(context(), planId, task.task.id, { expectedPlanVersion: 7,
+      expectedVersion: 1, to: "COMPLETED", idempotencyKey: "it-general-project-task-complete-0001" });
+    expect(taskFinished.planVersion).toBe(8);
+    const finished = await service.transitionPhase(context(), planId, phase.phase.id, { expectedPlanVersion: 8,
       expectedVersion: 1, to: "COMPLETED", idempotencyKey: "it-general-project-phase-complete-0001" });
     expect(finished.phase.status).toBe("COMPLETED");
   });
