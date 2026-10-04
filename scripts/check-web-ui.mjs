@@ -164,7 +164,7 @@ for (const [pattern, description] of responsiveCssContracts) {
   if (!pattern.test(styles)) failures.push(`apps/web/src/styles.css: missing responsive contract: ${description}`);
 }
 // POS has separate, mutually exclusive headings for scoped content and quarantine.
-if (pageHeaders !== 32) failures.push(`Expected 32 shared PageHeader usages; found ${pageHeaders}`);
+if (pageHeaders !== 33) failures.push(`Expected 33 shared PageHeader usages; found ${pageHeaders}`);
 if (tableRegions !== 73) failures.push(`Expected 73 accessible table regions; found ${tableRegions}`);
 
 if (failures.length) {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isNavigationItemVisible, navigationItems, resolveAuthorizedView } from "./app-navigation";
+import { arGeneralProjects } from "./i18n/locales/general-projects";
 
 const item = navigationItems.find(entry => entry.view === "generalProjects")!;
 const access = (modules: string[], permissions: string[]) => ({
@@ -12,6 +13,7 @@ describe("general project navigation boundary", () => {
   it("uses an independent project module and permission", () => {
     expect(item.label).toBe("nav.generalProjects");
     expect(item.module).toBe("GENERAL_PROJECTS");
+    expect(Object.values(arGeneralProjects).join(" ")).not.toMatch(/مهن/);
     expect(isNavigationItemVisible(item, access(["PROFESSIONAL_PROJECTS"], ["professional_projects.view"]))).toBe(false);
     expect(isNavigationItemVisible(item, access(["GENERAL_PROJECTS"], ["professional_projects.view"]))).toBe(false);
     expect(isNavigationItemVisible(item, access(["GENERAL_PROJECTS"], ["general_projects.view"]))).toBe(true);

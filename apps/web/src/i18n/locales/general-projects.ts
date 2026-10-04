@@ -1,6 +1,6 @@
 export const arGeneralProjects = {
   "nav.generalProjects": "إدارة المشاريع",
-  "home.module.generalProjects": "أنشئ المشاريع العامة وأدر حالاتها وأعضاء فريقها دون ربط مهني أو فوترة.",
+  "home.module.generalProjects": "أنشئ المشاريع العامة وأدر حالاتها وأعضاء فريقها بصورة مستقلة.",
   "generalProjects.title": "إدارة المشاريع",
   "generalProjects.description": "سجل مستقل للمشاريع العامة وفرق العمل.",
   "generalProjects.new": "مشروع جديد",

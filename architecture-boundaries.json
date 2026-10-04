@@ -23,7 +23,7 @@
     {
       "id": "service-catalog",
       "name": "Service Catalog & Pricing",
-      "status": "reserved",
+      "status": "partial-implementation",
       "paths": ["apps/api/src/service-catalog/**"],
       "reference": "docs/architecture/ADR-022-service-catalog-context.md"
     },
@@ -135,6 +135,18 @@
       "typeOnly": true,
       "status": "implemented",
       "reason": "Sales implements the consumer-owned optional customer reference port."
+    },
+    {
+      "id": "service-catalog-financial-reference-adapters",
+      "kind": "adapter-to-port",
+      "fromPaths": [
+        "apps/api/src/accounts/service-catalog-revenue-account-adapter.ts",
+        "apps/api/src/tax/service-catalog-output-tax-adapter.ts"
+      ],
+      "toPaths": ["apps/api/src/service-catalog/service-catalog-reference-ports.ts"],
+      "typeOnly": true,
+      "status": "partial-implementation",
+      "reason": "Accounting and Tax implement consumer-owned read-only default reference ports; catalog does not own their records or posting policy."
     },
     {
       "id": "hr-workforce-query-consumers",
