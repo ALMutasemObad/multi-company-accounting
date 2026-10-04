@@ -58,6 +58,21 @@ describe("country-neutral payroll calculation", () => {
       .not.toBe(calculatePayroll(first).snapshotHash);
   });
 
+  it("separates snapshots by company, pay period, currency, and line source", () => {
+    const original = input();
+    const snapshotHash = calculatePayroll(original).snapshotHash;
+    const changes: PayrollCalculationInput[] = [
+      { ...original, companyId: "company-2" },
+      { ...original, periodEndExclusive: "2026-10-02" },
+      { ...original, currencyCode: "AED", employees: [{ ...original.employees[0]!, currencyCode: "AED" }] },
+      { ...original, employees: [{ ...original.employees[0]!, lines: [
+        { ...original.employees[0]!.lines[0]!, source: "ONE_OFF" },
+        ...original.employees[0]!.lines.slice(1),
+      ] }] },
+    ];
+    for (const changed of changes) expect(calculatePayroll(changed).snapshotHash).not.toBe(snapshotHash);
+  });
+
   it("orders snapshot identifiers by code point, independent of host locale", () => {
     const original = input();
     const first = { ...original, employees: [
