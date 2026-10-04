@@ -116,6 +116,13 @@ export function createGeneralProjectRouter(auth: AuthService, projects: GeneralP
         ...bodies.transitionGeneralProjectTask.parse(request.body), idempotencyKey: idempotencyKey(request),
       }));
   });
+  router.post("/general-projects/:generalProjectId/tasks/:taskId/progress", async (request, response) => {
+    const context = await authorize(request, "general_projects.progress", true);
+    response.json(await projects.transitionTask(context, publicId.parse(request.params.generalProjectId),
+      publicId.parse(request.params.taskId), {
+        ...bodies.progressGeneralProjectTask.parse(request.body), idempotencyKey: idempotencyKey(request),
+      }, "PROGRESS"));
+  });
   router.post("/general-projects/:generalProjectId/members", async (request, response) => {
     const context = await authorize(request, "general_projects.manage", true);
     response.json(await projects.assignMember(context, publicId.parse(request.params.generalProjectId), {

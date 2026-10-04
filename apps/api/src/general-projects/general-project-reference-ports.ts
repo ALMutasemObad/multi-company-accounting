@@ -15,6 +15,7 @@ export interface GeneralProjectEmployeePort {
   lockActiveInCompany(tx: Prisma.TransactionClient, companyId: bigint, publicId: string): Promise<GeneralProjectEmployeeReference | null>;
   countActiveInCompany(tx: Prisma.TransactionClient, companyId: bigint, ids: readonly bigint[]): Promise<number>;
   findByUserInCompany(companyId: bigint, userId: bigint): Promise<GeneralProjectEmployeeReference | null>;
+  findByUserInCompanyTx(tx: Prisma.TransactionClient, companyId: bigint, userId: bigint): Promise<GeneralProjectEmployeeReference | null>;
   listActiveInCompany(companyId: bigint, search?: string): Promise<GeneralProjectEmployeeReference[]>;
   listByInternalIds(companyId: bigint, ids: readonly bigint[]): Promise<GeneralProjectEmployeeReference[]>;
 }

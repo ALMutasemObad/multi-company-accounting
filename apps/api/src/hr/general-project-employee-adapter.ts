@@ -31,6 +31,10 @@ export class GeneralProjectEmployeeAdapter implements GeneralProjectEmployeePort
     return this.prisma.employee.findFirst({ where: { companyId, userId }, select });
   }
 
+  findByUserInCompanyTx(tx: Prisma.TransactionClient, companyId: bigint, userId: bigint) {
+    return tx.employee.findFirst({ where: { companyId, userId }, select });
+  }
+
   listActiveInCompany(companyId: bigint, search?: string) {
     return this.prisma.employee.findMany({
       where: { companyId, status: "ACTIVE", ...(search ? { OR: [

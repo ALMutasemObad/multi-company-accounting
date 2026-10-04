@@ -40,7 +40,7 @@ describe.runIf(enabled)("general project register on isolated MySQL/MariaDB", ()
     if (!prisma) return;
     const companies = [companyId, foreignCompanyId].filter((value): value is bigint => value !== undefined);
     if (companies.length) {
-      await prisma.idempotencyRecord.deleteMany({ where: { companyId: { in: companies }, operation: { in: ["CREATE_GENERAL_PROJECT", "UPDATE_GENERAL_PROJECT", "TRANSITION_GENERAL_PROJECT", "ASSIGN_GENERAL_PROJECT_MEMBER", "UNASSIGN_GENERAL_PROJECT_MEMBER", "CREATE_GENERAL_PROJECT_PHASE", "TRANSITION_GENERAL_PROJECT_PHASE", "CREATE_GENERAL_PROJECT_TASK", "ASSIGN_GENERAL_PROJECT_TASK_MEMBER", "UNASSIGN_GENERAL_PROJECT_TASK_MEMBER", "TRANSITION_GENERAL_PROJECT_TASK"] } } });
+      await prisma.idempotencyRecord.deleteMany({ where: { companyId: { in: companies }, operation: { in: ["CREATE_GENERAL_PROJECT", "UPDATE_GENERAL_PROJECT", "TRANSITION_GENERAL_PROJECT", "ASSIGN_GENERAL_PROJECT_MEMBER", "UNASSIGN_GENERAL_PROJECT_MEMBER", "CREATE_GENERAL_PROJECT_PHASE", "TRANSITION_GENERAL_PROJECT_PHASE", "CREATE_GENERAL_PROJECT_TASK", "ASSIGN_GENERAL_PROJECT_TASK_MEMBER", "UNASSIGN_GENERAL_PROJECT_TASK_MEMBER", "TRANSITION_GENERAL_PROJECT_TASK", "PROGRESS_GENERAL_PROJECT_TASK"] } } });
       await prisma.auditLog.deleteMany({ where: { companyId: { in: companies }, entityType: "GENERAL_PROJECT" } });
       await prisma.generalProjectTaskAssignment.deleteMany({ where: { companyId: { in: companies } } });
       await prisma.generalProjectTask.deleteMany({ where: { companyId: { in: companies } } });
@@ -172,6 +172,41 @@ describe.runIf(enabled)("general project register on isolated MySQL/MariaDB", ()
     const finished = await service.transitionPhase(context(), planId, phase.phase.id, { expectedPlanVersion: 8,
       expectedVersion: 1, to: "COMPLETED", idempotencyKey: "it-general-project-phase-complete-0001" });
     expect(finished.phase.status).toBe("COMPLETED");
+  });
+
+  it("allows progress only for the active responsible employee, independently of project management", async () => {
+    const project = await service.createProject(context(), { nameAr: "مشروع التقدم", managerEmployeeId: managerId,
+      idempotencyKey: "it-general-project-progress-create-0001" });
+    const id = project.project.id;
+    const phase = await service.createPhase(context(), id, { expectedPlanVersion: 0, title: "مرحلة عمل",
+      idempotencyKey: "it-general-project-progress-phase-0001" });
+    const task = await service.createTask(context(), id, phase.phase.id, { expectedPlanVersion: 1, title: "مهمة مسؤول",
+      idempotencyKey: "it-general-project-progress-task-0001" });
+    await service.transition(context(), id, { version: 0, status: "ACTIVE",
+      idempotencyKey: "it-general-project-progress-active-0001" });
+    await service.transitionPhase(context(), id, phase.phase.id, { expectedPlanVersion: 2, expectedVersion: 0,
+      to: "IN_PROGRESS", idempotencyKey: "it-general-project-progress-phase-start-0001" });
+    const manager = (await service.getProject(context(), id)).members.find(member => member.role === "MANAGER")!;
+    await service.assignTaskMember(context(), id, task.task.id, { expectedPlanVersion: 3, memberId: manager.id,
+      role: "RESPONSIBLE", idempotencyKey: "it-general-project-progress-assign-0001" });
+    expect((await service.listTasks(context(), id, phase.phase.id, { page: 1, pageSize: 25 })).data[0]?.canProgress).toBe(true);
+    const started = await service.transitionTask(context(), id, task.task.id, { expectedPlanVersion: 4,
+      expectedVersion: 0, to: "IN_PROGRESS", idempotencyKey: "it-general-project-progress-start-0001" }, "PROGRESS");
+    expect(started.planVersion).toBe(5);
+    await expect(service.transitionTask(context(), id, task.task.id, { expectedPlanVersion: 5,
+      expectedVersion: 1, to: "CANCELLED", reason: "Cannot finish this work",
+      idempotencyKey: "it-general-project-progress-cancel-0001" }, "PROGRESS"))
+      .rejects.toMatchObject({ code: "TASK_MANAGE_REQUIRED" });
+    const completed = await service.transitionTask(context(), id, task.task.id, { expectedPlanVersion: 5,
+      expectedVersion: 1, to: "COMPLETED", idempotencyKey: "it-general-project-progress-complete-0001" }, "PROGRESS");
+    expect(completed.task.status).toBe("COMPLETED");
+    const unassigned = await service.createTask(context(), id, phase.phase.id, { expectedPlanVersion: 6,
+      title: "مهمة غير مسندة", idempotencyKey: "it-general-project-progress-unassigned-0001" });
+    expect((await service.listTasks(context(), id, phase.phase.id, { page: 1, pageSize: 25 })).data
+      .find(row => row.id === unassigned.task.id)?.canProgress).toBe(false);
+    await expect(service.transitionTask(context(), id, unassigned.task.id, { expectedPlanVersion: 7,
+      expectedVersion: 0, to: "IN_PROGRESS", idempotencyKey: "it-general-project-progress-denied-0001" }, "PROGRESS"))
+      .rejects.toMatchObject({ reason: "NOT_FOUND" });
   });
 
   it("refuses completion while a phase or task is open", async () => {

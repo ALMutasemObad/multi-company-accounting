@@ -17,7 +17,7 @@ type Phase = { id: string; sequence: number; title: string; description: string 
   plannedStartDate: string | null; targetEndDate: string | null };
 type PhaseList = { data: Phase[]; planVersion: number; meta: List["meta"] };
 type TaskStatus = "TODO" | "IN_PROGRESS" | "BLOCKED" | "COMPLETED" | "CANCELLED";
-type Task = { id: string; sequence: number; title: string; priority: string; status: TaskStatus; version: number };
+type Task = { id: string; sequence: number; title: string; priority: string; status: TaskStatus; version: number; canProgress?: boolean };
 type TaskList = { data: Task[]; planVersion: number; meta: List["meta"] };
 type TaskAssignment = { id: string; memberId: string; role: "RESPONSIBLE" | "CONTRIBUTOR"; isActive: boolean; version: number };
 type TaskAssignmentList = { data: TaskAssignment[]; planVersion: number; meta: List["meta"] };
@@ -33,6 +33,7 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
   const { t } = useI18n();
   const { permissionSet } = useAuthorization();
   const canManage = permissionSet.has("general_projects.manage");
+  const canProgress = permissionSet.has("general_projects.progress");
   const canReadCustomers = permissionSet.has("customers.view");
   const [projects, setProjects] = useState<Project[]>([]);
   const [meta, setMeta] = useState<List["meta"]>({ page: 1, pageSize: 10, total: 0, totalPages: 0 });
@@ -272,9 +273,11 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
     IN_PROGRESS: ["BLOCKED", "COMPLETED", "CANCELLED"], BLOCKED: ["TODO", "CANCELLED"], COMPLETED: [], CANCELLED: [] };
   const changeTask = (task: Task, to: TaskStatus) => {
     if (!detail || !tasks || tasks.projectId !== detail.project.id) return;
+    if (!canManage && !(canProgress && task.canProgress && to !== "CANCELLED")) return;
     const needsReason = to === "BLOCKED" || to === "CANCELLED" || (task.status === "BLOCKED" && to === "TODO");
     if (needsReason && reason.trim().length < 10) return;
-    void execute(() => api(`/general-projects/${detail.project.id}/tasks/${task.id}/transition`, { method: "POST",
+    const action = canManage ? "transition" : "progress";
+    void execute(() => api(`/general-projects/${detail.project.id}/tasks/${task.id}/${action}`, { method: "POST",
       idempotencyKey: idempotencyKey("general-project-task-transition", task.id),
       body: JSON.stringify({ expectedPlanVersion: tasks.planVersion, expectedVersion: task.version, to,
         ...(needsReason ? { reason: reason.trim() } : {}) }) }), t("generalProjects.taskSaved"));
@@ -352,6 +355,8 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
         </form>}
       {selectedPhaseId && phases?.projectId === selectedId && phases.data.some(phase => phase.id === selectedPhaseId) && <div>
         <h3>{t("generalProjects.tasks")}</h3>
+        {!canManage && canProgress && selectedTaskId && <label>{t("generalProjects.reason")}
+          <input value={reason} maxLength={500} onChange={event => setReason(event.target.value)} /></label>}
         {tasks?.projectId === selectedId && tasks.phaseId === selectedPhaseId && tasks.data.length === 0 &&
           <p>{t("generalProjects.noTasks")}</p>}
         {tasks?.projectId === selectedId && tasks.phaseId === selectedPhaseId && tasks.data.map(task =>
@@ -359,7 +364,8 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
             <Button variant="ghost" onClick={() => setSelectedTaskId(task.id)}>
               {task.sequence}. {task.title} · {t(`generalProjects.taskStatus.${task.status}`)}
             </Button>
-            {canManage && task.id === selectedTaskId && detail.project.status === "ACTIVE" && taskTransitions[task.status].map(next => {
+            {(canManage || canProgress && task.canProgress) && task.id === selectedTaskId && detail.project.status === "ACTIVE" &&
+              taskTransitions[task.status].filter(next => canManage || next !== "CANCELLED").map(next => {
               const needsReason = next === "BLOCKED" || next === "CANCELLED" || task.status === "BLOCKED" && next === "TODO";
               const phaseReady = phases.data.find(phase => phase.id === selectedPhaseId)?.status === "IN_PROGRESS";
               return <Button key={next} variant="secondary"

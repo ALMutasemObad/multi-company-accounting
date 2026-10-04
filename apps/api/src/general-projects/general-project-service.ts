@@ -159,7 +159,7 @@ export class GeneralProjectService {
   }
 
   async listTasks(context: ActorContext, projectPublicId: string, phasePublicId: string, input: { page: number; pageSize: number }) {
-    const { project, rows, total } = await this.prisma.$transaction(async tx => {
+    const { project, rows, total, assignedTaskIds } = await this.prisma.$transaction(async tx => {
       const project = await tx.generalProject.findFirst({ where: { companyId: context.companyId, publicId: projectPublicId },
         select: { id: true, planVersion: true } });
       if (!project) throw new GeneralProjectError("NOT_FOUND");
@@ -172,9 +172,17 @@ export class GeneralProjectService {
           skip: (input.page - 1) * input.pageSize, take: input.pageSize }),
         tx.generalProjectTask.count({ where }),
       ]);
-      return { project, rows, total };
+      const actorEmployee = await this.employees.findByUserInCompanyTx(tx, context.companyId, context.userId);
+      const assignedTaskIds = actorEmployee?.status === "ACTIVE" && rows.length
+        ? (await tx.generalProjectTaskAssignment.findMany({ where: { companyId: context.companyId,
+          projectId: project.id, taskId: { in: rows.map(row => row.id) }, role: "RESPONSIBLE", isActive: true,
+          member: { companyId: context.companyId, projectId: project.id,
+            employeeId: actorEmployee.id, isActive: true } }, select: { taskId: true } })).map(row => row.taskId)
+        : [];
+      return { project, rows, total, assignedTaskIds };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
-    return { data: rows.map(taskJson), planVersion: project.planVersion,
+    const assigned = new Set(assignedTaskIds);
+    return { data: rows.map(row => ({ ...taskJson(row), canProgress: assigned.has(row.id) })), planVersion: project.planVersion,
       meta: { page: input.page, pageSize: input.pageSize, total, totalPages: Math.ceil(total / input.pageSize) } };
   }
 
@@ -313,9 +321,10 @@ export class GeneralProjectService {
   transitionTask(context: ActorContext, projectPublicId: string, taskPublicId: string, input: {
     expectedPlanVersion: number; expectedVersion: number; to: GeneralProjectTask["status"]; reason?: string;
     idempotencyKey: string;
-  }) {
-    return this.command(context, "TRANSITION_GENERAL_PROJECT_TASK", input.idempotencyKey,
-      { projectPublicId, taskPublicId, ...input }, 200, async tx => {
+  }, mode: "MANAGE" | "PROGRESS" = "MANAGE") {
+    const operation = mode === "MANAGE" ? "TRANSITION_GENERAL_PROJECT_TASK" : "PROGRESS_GENERAL_PROJECT_TASK";
+    return this.command(context, operation, input.idempotencyKey,
+      { projectPublicId, taskPublicId, mode, ...input }, 200, async tx => {
         const project = await this.lockProject(tx, context, projectPublicId);
         if (project.planVersion !== input.expectedPlanVersion) throw new GeneralProjectError("VERSION_CONFLICT");
         const task = await tx.generalProjectTask.findFirst({ where: { companyId: context.companyId,
@@ -329,9 +338,14 @@ export class GeneralProjectService {
         select: { member: { select: { employeeId: true } } } });
         const activeResponsibleCount = await this.employees.countActiveInCompany(tx, context.companyId,
           responsibilities.map(row => row.member.employeeId));
+        const actorEmployee = mode === "PROGRESS"
+          ? await this.employees.findByUserInCompanyTx(tx, context.companyId, context.userId) : null;
+        const actorIsActiveResponsible = mode === "PROGRESS" && actorEmployee?.status === "ACTIVE"
+          && responsibilities.some(row => row.member.employeeId === actorEmployee.id);
+        if (mode === "PROGRESS" && !actorIsActiveResponsible) throw new GeneralProjectError("NOT_FOUND");
         const next = transitionTask({ projectStatus: project.status, phaseStatus: phase.status,
-          from: task.status, to: input.to, actorCanManage: true, actorCanProgress: false,
-          actorIsActiveResponsible: false, activeResponsibleCount, predecessorStatuses: [],
+          from: task.status, to: input.to, actorCanManage: mode === "MANAGE", actorCanProgress: mode === "PROGRESS",
+          actorIsActiveResponsible: Boolean(actorIsActiveResponsible), activeResponsibleCount, predecessorStatuses: [],
           ...(input.reason === undefined ? {} : { reason: input.reason }) });
         const changed = await tx.generalProjectTask.updateMany({ where: { id: task.id, companyId: context.companyId,
           projectId: project.id, version: input.expectedVersion, status: task.status }, data: {
@@ -340,7 +354,7 @@ export class GeneralProjectService {
         await this.bumpPlanVersion(tx, context, project);
         const updated = await tx.generalProjectTask.findUniqueOrThrow({ where: { id: task.id } });
         await this.audit(tx, context, "GENERAL_PROJECT_TASK_TRANSITIONED", projectPublicId,
-          { taskId: taskPublicId, from: task.status, to: next, reason: input.reason ?? null,
+          { taskId: taskPublicId, from: task.status, to: next, mode, reason: input.reason ?? null,
             nextPlanVersion: project.planVersion + 1 });
         return { task: taskJson(updated), planVersion: project.planVersion + 1 };
       });

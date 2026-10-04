@@ -50,12 +50,20 @@ describe("general project HTTP boundary", () => {
     await request(app).post(`/general-projects/${projectId}/tasks/${taskId}/assignments/${assignmentId}/unassign`)
       .set("X-CSRF-Token", "csrf").set("Idempotency-Key", "general-project-task-unassign-1234")
       .send({ expectedPlanVersion: 5, expectedVersion: 0, reason: "Reassigned safely" }).expect(200);
+    await request(app).post(`/general-projects/${projectId}/tasks/${taskId}/progress`)
+      .set("X-CSRF-Token", "csrf").set("Idempotency-Key", "general-project-task-progress-1234")
+      .send({ expectedPlanVersion: 5, expectedVersion: 0, to: "IN_PROGRESS" }).expect(200);
+    await request(app).post(`/general-projects/${projectId}/tasks/${taskId}/progress`)
+      .set("X-CSRF-Token", "csrf").set("Idempotency-Key", "general-project-task-progress-5678")
+      .send({ expectedPlanVersion: 5, expectedVersion: 0, to: "CANCELLED", reason: "No longer needed" }).expect(400);
     expect(authorize.mock.calls.map(([value]) => [value.permission, value.requireCsrf])).toEqual([
       ["general_projects.view", false], ["general_projects.manage", true], ["general_projects.manage", true],
-      ["general_projects.manage", true],
+      ["general_projects.manage", true], ["general_projects.progress", true], ["general_projects.progress", true],
     ]);
     expect(projects.assignTaskMember).toHaveBeenCalledWith(context, projectId, taskId,
       expect.objectContaining({ memberId: managerId, role: "RESPONSIBLE" }));
+    expect(projects.transitionTask).toHaveBeenCalledWith(context, projectId, taskId,
+      expect.objectContaining({ to: "IN_PROGRESS" }), "PROGRESS");
   });
   it("scopes task reads and creation to a project phase with guarded input", async () => {
     const { app, authorize, projects } = fixture();

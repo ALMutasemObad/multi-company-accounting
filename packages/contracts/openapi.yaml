@@ -3591,6 +3591,28 @@ paths:
       x-permission: general_projects.manage
       security: [{ SessionCookie: [], CsrfToken: [] }]
       x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/tasks/{taskId}/progress:
+    post:
+      tags: [General Projects]
+      summary: تحديث تقدم المهمة من مسؤولها النشط فقط
+      operationId: progressGeneralProjectTask
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: taskId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ProgressGeneralProjectTaskRequest' } } } }
+      responses:
+        '200': { description: المهمة بعد تقدم المسؤول, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectTaskMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.progress
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
   /general-projects/{generalProjectId}/tasks/{taskId}/transition:
     post:
       tags: [General Projects]
@@ -21497,6 +21519,7 @@ components:
         plannedStartDate: { type: [string, 'null'], format: date }
         dueDate: { type: [string, 'null'], format: date }
         status: { $ref: '#/components/schemas/GeneralProjectTaskStatus' }
+        canProgress: { type: boolean, description: صلاحية التقدم الفعلية لهذه المهمة ضمن الإسناد الحالي عند القراءة }
         version: { type: integer, minimum: 0 }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
@@ -21578,6 +21601,15 @@ components:
         expectedPlanVersion: { type: integer, minimum: 0 }
         expectedVersion: { type: integer, minimum: 0 }
         to: { $ref: '#/components/schemas/GeneralProjectTaskStatus' }
+        reason: { type: string, x-trim: true, minLength: 10, maxLength: 500 }
+    ProgressGeneralProjectTaskRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedPlanVersion, expectedVersion, to]
+      properties:
+        expectedPlanVersion: { type: integer, minimum: 0 }
+        expectedVersion: { type: integer, minimum: 0 }
+        to: { type: string, enum: [IN_PROGRESS, BLOCKED, COMPLETED, TODO] }
         reason: { type: string, x-trim: true, minLength: 10, maxLength: 500 }
     CreateGeneralProjectRequest:
       type: object
