@@ -12,6 +12,12 @@ const categoryQuery = z.object({
   search: z.string().trim().min(1).max(160).optional(),
   status: z.enum(["ACTIVE", "INACTIVE", "RETIRED"]).optional(),
 });
+const offeringQuery = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  search: z.string().trim().min(1).max(160).optional(),
+  status: z.enum(["DRAFT", "ACTIVE", "INACTIVE", "RETIRED"]).optional(),
+});
 const idempotencyKey = (request: Request) => z.string().min(16).max(100).parse(request.header("Idempotency-Key"));
 
 function sid(request: Request) {
@@ -26,11 +32,11 @@ export function createServiceCatalogRouter(auth: AuthService, catalog: ServiceCa
   });
 
   router.get("/service-catalog/categories", async (request, response) => {
-    const context = await authorize(request, "services.view", false);
+    const context = await authorize(request, "services.manage", false);
     response.json(await catalog.listCategories(context, categoryQuery.parse(request.query)));
   });
   router.get("/service-catalog/categories/:categoryId", async (request, response) => {
-    const context = await authorize(request, "services.view", false);
+    const context = await authorize(request, "services.manage", false);
     response.json(await catalog.getCategory(context, publicId.parse(request.params.categoryId)));
   });
   router.post("/service-catalog/categories", async (request, response) => {
@@ -49,6 +55,27 @@ export function createServiceCatalogRouter(auth: AuthService, catalog: ServiceCa
     const context = await authorize(request, "services.manage", true);
     response.json(await catalog.transitionCategory(context, publicId.parse(request.params.categoryId), {
       ...bodies.transitionServiceCategory.parse(request.body), idempotencyKey: idempotencyKey(request),
+    }));
+  });
+
+  router.get("/service-catalog/offerings", async (request, response) => {
+    const context = await authorize(request, "services.manage", false);
+    response.json(await catalog.listOfferings(context, offeringQuery.parse(request.query)));
+  });
+  router.get("/service-catalog/offerings/:offeringId", async (request, response) => {
+    const context = await authorize(request, "services.manage", false);
+    response.json(await catalog.getOffering(context, publicId.parse(request.params.offeringId)));
+  });
+  router.post("/service-catalog/offerings", async (request, response) => {
+    const context = await authorize(request, "services.manage", true);
+    response.status(201).json(await catalog.createOffering(context, {
+      ...bodies.createServiceOffering.parse(request.body), idempotencyKey: idempotencyKey(request),
+    }));
+  });
+  router.patch("/service-catalog/offerings/:offeringId", async (request, response) => {
+    const context = await authorize(request, "services.manage", true);
+    response.json(await catalog.updateOffering(context, publicId.parse(request.params.offeringId), {
+      ...bodies.updateServiceOffering.parse(request.body), idempotencyKey: idempotencyKey(request),
     }));
   });
 
