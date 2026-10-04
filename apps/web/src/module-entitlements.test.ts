@@ -32,3 +32,12 @@ describe('inventory count entitlement boundary', () => {
     expect(effectivePermissionSet(permissions, new Set(['CORE_ACCOUNTING'])).size).toBe(0);
   });
 });
+
+describe('independent service catalog entitlement', () => {
+  it('does not inherit project or sales catalog permissions', () => {
+    expect(permissionModule('services.manage')).toBe('SERVICE_CATALOG');
+    expect(permissionModule('services.view')).toBe('SERVICE_CATALOG');
+    expect(permissionModule('sales_catalog.view')).toBe('SALES');
+    expect([...effectivePermissionSet(['services.manage'], new Set(['SALES', 'PROFESSIONAL_PROJECTS']))]).toEqual([]);
+  });
+});

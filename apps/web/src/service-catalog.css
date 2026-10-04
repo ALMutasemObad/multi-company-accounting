@@ -1,0 +1,20 @@
+.service-catalog-page { display: grid; gap: 18px; }
+.service-catalog-page > [role="note"] { margin: 0; padding: 12px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--muted); }
+.service-catalog-page .panel { min-width: 0; overflow: hidden; }
+.service-catalog-page .panel > header h2 { margin: 0; font-size: 1rem; }
+.service-catalog-page .panel > ul { list-style: none; margin: 0; padding: 0; }
+.service-catalog-page .panel > ul > li { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; min-width: 0; padding: 15px 22px; border-bottom: 1px solid var(--line); }
+.service-catalog-page .panel > ul > li:last-child { border-bottom: 0; }
+.service-catalog-page .panel > ul > li > strong { min-width: 0; overflow-wrap: anywhere; }
+.service-catalog-page .panel > ul > li .toolbar { margin-inline-start: auto; padding: 0; }
+.service-catalog-page .panel > .toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; padding: 16px 22px; border-bottom: 1px solid var(--line); }
+.service-catalog-page .panel > .toolbar label { display: grid; gap: 6px; flex: 1 1 250px; min-width: 0; }
+.service-catalog-page .panel > .toolbar input { width: 100%; }
+.service-catalog-page .panel > .pagination { padding: 12px 22px; border-top: 1px solid var(--line); }
+.service-catalog-page .panel > p { padding: 16px 22px; }
+@media (max-width: 640px) {
+  .service-catalog-page .panel > ul > li { padding-inline: 16px; }
+  .service-catalog-page .panel > ul > li .toolbar { width: 100%; margin-inline-start: 0; }
+  .service-catalog-page .panel > .toolbar { padding-inline: 16px; }
+  .service-catalog-page .panel > .pagination { padding-inline: 16px; }
+}

@@ -49,4 +49,12 @@ describe('permission-aware page sections', () => {
     expect(authorizedPageRoute(route, access(['cash_bank_accounts.view']))).toEqual(route);
     expect(authorizedPageRoute(route, { ...access([]), hasSelectedCompany: false, platformOperations: true })).toEqual({ view: 'platform' });
   });
+
+  it('keeps #services independent of projects and hidden until catalog entitlement and management permission exist', () => {
+    const route = parsePageRoute('#services');
+    expect(route).toEqual({ view: 'services' });
+    expect(authorizedPageRoute(route, access(['services.manage'], ['PROFESSIONAL_PROJECTS']))).toEqual({ view: 'home' });
+    expect(authorizedPageRoute(route, access(['services.view'], ['SERVICE_CATALOG']))).toEqual({ view: 'home' });
+    expect(authorizedPageRoute(route, access(['services.manage'], ['SERVICE_CATALOG']))).toEqual(route);
+  });
 });
