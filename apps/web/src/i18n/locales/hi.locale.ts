@@ -993,6 +993,7 @@ export const localeDictionary = {
   "service.emptyVariants": "इस प्रस्ताव के लिए कोई विकल्प नहीं है।",
   "service.nameAr": "अरबी नाम",
   "service.itemDescription": "सेवा या श्रेणी का विवरण (वैकल्पिक)",
+  "service.invalidAvailabilityWindow": "उपलब्धता की अंतिम तारीख प्रारंभ तारीख के बाद होनी चाहिए।",
   "service.nameEn": "अंग्रेज़ी नाम",
   "service.category": "श्रेणी",
   "service.noCategory": "बिना श्रेणी",

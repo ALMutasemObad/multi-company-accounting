@@ -1234,6 +1234,7 @@ export const localeDictionary = {
   "service.emptyVariants": "No variants for this offering.",
   "service.nameAr": "Arabic name",
   "service.itemDescription": "Service or category description (optional)",
+  "service.invalidAvailabilityWindow": "Availability end date must be after the start date.",
   "service.nameEn": "English name",
   "service.category": "Category",
   "service.noCategory": "Uncategorized",

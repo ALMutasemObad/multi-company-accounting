@@ -1234,6 +1234,7 @@ export const localeDictionary = {
   "service.emptyVariants": "لا توجد بدائل لهذا العرض.",
   "service.nameAr": "الاسم بالعربية",
   "service.itemDescription": "وصف الخدمة أو التصنيف (اختياري)",
+  "service.invalidAvailabilityWindow": "يجب أن يكون تاريخ نهاية التوفر بعد تاريخ البداية.",
   "service.nameEn": "الاسم بالإنجليزية",
   "service.category": "التصنيف",
   "service.noCategory": "بدون تصنيف",

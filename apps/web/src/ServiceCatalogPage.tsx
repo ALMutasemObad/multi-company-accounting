@@ -38,6 +38,10 @@ export function variantReferencePatch(
   };
 }
 
+export function validServiceDateWindow(from: string, until: string) {
+  return !from || !until || from < until;
+}
+
 export function ServiceCatalogPage({ notify }: { notify: Notice }) {
   const { selectedCompany, user, permissionSet } = useAuthorization();
   return <ServiceCatalogWorkspace key={JSON.stringify([user.id, selectedCompany?.id, [...permissionSet].sort()])} notify={notify} />;
@@ -283,13 +287,19 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
       </fieldset></form>
     </Modal>}
     {form?.kind === "variant" && <Modal title={t(form.item ? "service.editVariant" : "service.newVariant")} onClose={() => { if (!busy) setForm(null); }}>
-      <form onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); void mutate(
+      <form onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget);
+        const availableFrom = String(data.get("availableFrom") ?? "");
+        const availableUntil = String(data.get("availableUntil") ?? "");
+        if (!validServiceDateWindow(availableFrom, availableUntil)) {
+          notify(t("service.invalidAvailabilityWindow"), "error"); return;
+        }
+        void mutate(
         form.item ? `/service-catalog/offerings/${form.offering.id}/variants/${form.item.id}` : `/service-catalog/offerings/${form.offering.id}/variants`,
         form.item ? "PATCH" : "POST", {
         ...(form.item ? { expectedVersion: form.item.version } : {}),
         nameAr: String(data.get("nameAr") ?? "").trim(), nameEn: String(data.get("nameEn") ?? "").trim() || null,
-        ...(!form.item ? { pricingUnit: data.get("pricingUnit") } : {}), availableFrom: data.get("availableFrom") || null,
-        availableUntil: data.get("availableUntil") || null,
+        ...(!form.item ? { pricingUnit: data.get("pricingUnit") } : {}), availableFrom: availableFrom || null,
+        availableUntil: availableUntil || null,
         ...variantReferencePatch(form.item, { revenueAccountId, outputTaxRateId,
           canSelectAccounts: accountOptionsReady, canSelectOutputTax: taxOptionsReady }),
       }); }}><fieldset className="form-grid" disabled={busy}>

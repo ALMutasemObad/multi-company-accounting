@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { effectivePermissionSet, permissionModule } from './module-entitlements';
-import { variantReferencePatch } from './ServiceCatalogPage';
+import { validServiceDateWindow, variantReferencePatch } from './ServiceCatalogPage';
 import { localeDictionary as arLocale } from './i18n/locales/ar.locale';
 import { localeDictionary as enLocale } from './i18n/locales/en.locale';
 import { localeDictionary as hiLocale } from './i18n/locales/hi.locale';
@@ -80,5 +80,13 @@ describe('independent service catalog entitlement', () => {
     expect(variantReferencePatch(undefined, {
       revenueAccountId: '', outputTaxRateId: '44', canSelectAccounts: true, canSelectOutputTax: true,
     })).toEqual({ defaultOutputTaxRateId: '44' });
+  });
+
+  it('allows open bounds but rejects equal or reversed service availability dates', () => {
+    expect(validServiceDateWindow('', '')).toBe(true);
+    expect(validServiceDateWindow('2026-10-04', '')).toBe(true);
+    expect(validServiceDateWindow('2026-10-04', '2026-10-05')).toBe(true);
+    expect(validServiceDateWindow('2026-10-04', '2026-10-04')).toBe(false);
+    expect(validServiceDateWindow('2026-10-05', '2026-10-04')).toBe(false);
   });
 });
