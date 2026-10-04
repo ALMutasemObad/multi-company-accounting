@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   GeneralProjectPolicyError, transitionProject, transitionPhase, transitionTask, validateDependencyAddition,
@@ -16,6 +17,20 @@ const errorCode = (action: () => unknown) => {
   try { action(); } catch (cause) { return cause instanceof GeneralProjectPolicyError ? cause.code : "UNKNOWN"; }
   return "NONE";
 };
+
+const migration = readFileSync(new URL("../prisma/migrations/20261004_general_project_register/migration.sql", import.meta.url), "utf8");
+
+describe("general project migration boundaries", () => {
+  it("starts disabled until the project register passes database acceptance", () => {
+    expect(migration).toMatch(/VALUES \('GENERAL_PROJECTS', 'Project management', FALSE, 0,/u);
+  });
+
+  it("links only to company, customer, employee, user, and project records", () => {
+    const referencedTables = [...migration.matchAll(/REFERENCES `([a-z_]+)`/gu)].map(match => match[1]);
+    expect(new Set(referencedTables)).toEqual(new Set(["companies", "customers", "employees", "users", "general_projects"]));
+    expect(migration).not.toMatch(/(?:professional_services|service_catalog|cases|legal_matters)/u);
+  });
+});
 
 describe("general project domain policy", () => {
   it("activates with a manager and rejects other transitions or a final project", () => {
