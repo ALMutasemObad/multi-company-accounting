@@ -3488,6 +3488,46 @@ paths:
       x-permission: general_projects.manage
       security: [{ SessionCookie: [], CsrfToken: [] }]
       x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/phases/{phaseId}/tasks:
+    get:
+      tags: [General Projects]
+      summary: مهام مرحلة من مشروع الشركة
+      operationId: listGeneralProjectTasks
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: phaseId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { $ref: '#/components/parameters/Page' }
+      - { $ref: '#/components/parameters/PageSize' }
+      responses:
+        '200': { description: مهام المرحلة, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectTaskListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: general_projects.view
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [General Projects]
+      summary: إنشاء مهمة داخل مرحلة بخطة ذات نسخة متفائلة
+      operationId: createGeneralProjectTask
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: phaseId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateGeneralProjectTaskRequest' } } } }
+      responses:
+        '201': { description: المهمة المنشأة, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectTaskMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
   /general-projects/{generalProjectId}/phases/{phaseId}/transition:
     post:
       tags: [General Projects]
@@ -21358,6 +21398,49 @@ components:
         expectedVersion: { type: integer, minimum: 0 }
         to: { $ref: '#/components/schemas/GeneralProjectPhaseStatus' }
         reason: { type: string, x-trim: true, minLength: 10, maxLength: 500 }
+    GeneralProjectTaskStatus: { type: string, enum: [TODO, IN_PROGRESS, BLOCKED, COMPLETED, CANCELLED] }
+    GeneralProjectTask:
+      type: object
+      additionalProperties: false
+      required: [id, sequence, title, description, priority, plannedStartDate, dueDate, status, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        sequence: { type: integer, minimum: 1, readOnly: true }
+        title: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: [string, 'null'], maxLength: 1000 }
+        priority: { $ref: '#/components/schemas/GeneralProjectPriority' }
+        plannedStartDate: { type: [string, 'null'], format: date }
+        dueDate: { type: [string, 'null'], format: date }
+        status: { $ref: '#/components/schemas/GeneralProjectTaskStatus' }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    GeneralProjectTaskListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, planVersion, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/GeneralProjectTask' } }
+        planVersion: { type: integer, minimum: 0 }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    GeneralProjectTaskMutationResponse:
+      type: object
+      additionalProperties: false
+      required: [task, planVersion]
+      properties:
+        task: { $ref: '#/components/schemas/GeneralProjectTask' }
+        planVersion: { type: integer, minimum: 0 }
+    CreateGeneralProjectTaskRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedPlanVersion, title]
+      properties:
+        expectedPlanVersion: { type: integer, minimum: 0 }
+        title: { type: string, x-trim: true, minLength: 1, maxLength: 200 }
+        description: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
+        priority: { $ref: '#/components/schemas/GeneralProjectPriority' }
+        plannedStartDate: { type: [string, 'null'], format: date }
+        dueDate: { type: [string, 'null'], format: date }
     CreateGeneralProjectRequest:
       type: object
       additionalProperties: false

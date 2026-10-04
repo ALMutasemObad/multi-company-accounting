@@ -40,7 +40,7 @@ describe.runIf(enabled)("general project register on isolated MySQL/MariaDB", ()
     if (!prisma) return;
     const companies = [companyId, foreignCompanyId].filter((value): value is bigint => value !== undefined);
     if (companies.length) {
-      await prisma.idempotencyRecord.deleteMany({ where: { companyId: { in: companies }, operation: { in: ["CREATE_GENERAL_PROJECT", "UPDATE_GENERAL_PROJECT", "TRANSITION_GENERAL_PROJECT", "ASSIGN_GENERAL_PROJECT_MEMBER", "UNASSIGN_GENERAL_PROJECT_MEMBER", "CREATE_GENERAL_PROJECT_PHASE", "TRANSITION_GENERAL_PROJECT_PHASE"] } } });
+      await prisma.idempotencyRecord.deleteMany({ where: { companyId: { in: companies }, operation: { in: ["CREATE_GENERAL_PROJECT", "UPDATE_GENERAL_PROJECT", "TRANSITION_GENERAL_PROJECT", "ASSIGN_GENERAL_PROJECT_MEMBER", "UNASSIGN_GENERAL_PROJECT_MEMBER", "CREATE_GENERAL_PROJECT_PHASE", "TRANSITION_GENERAL_PROJECT_PHASE", "CREATE_GENERAL_PROJECT_TASK"] } } });
       await prisma.auditLog.deleteMany({ where: { companyId: { in: companies }, entityType: "GENERAL_PROJECT" } });
       await prisma.generalProjectTaskAssignment.deleteMany({ where: { companyId: { in: companies } } });
       await prisma.generalProjectTask.deleteMany({ where: { companyId: { in: companies } } });
@@ -110,16 +110,35 @@ describe.runIf(enabled)("general project register on isolated MySQL/MariaDB", ()
       .rejects.toMatchObject({ reason: "INVALID_DATE_RANGE" });
     await expect(service.updateProject(context(), planId, { version: 0, targetEndDate: "2059-02-15",
       idempotencyKey: "it-general-project-shrink-0001" })).rejects.toMatchObject({ reason: "INVALID_DATE_RANGE" });
+    const taskInput = { expectedPlanVersion: 1, title: "مهمة الخطة", plannedStartDate: "2059-02-06",
+      dueDate: "2059-02-19", idempotencyKey: "it-general-project-task-create-0001" };
+    const task = await service.createTask(context(), planId, phase.phase.id, taskInput);
+    expect(await service.createTask(context(), planId, phase.phase.id, taskInput)).toEqual(task);
+    expect(task.planVersion).toBe(2);
+    expect((await service.listTasks(context(), planId, phase.phase.id, { page: 1, pageSize: 25 })).data).toHaveLength(1);
+    await expect(service.listTasks({ companyId: foreignCompanyId, userId }, planId, phase.phase.id, { page: 1, pageSize: 25 }))
+      .rejects.toMatchObject({ reason: "NOT_FOUND" });
+    await expect(service.listTasks(context(), projectId, phase.phase.id, { page: 1, pageSize: 25 }))
+      .rejects.toMatchObject({ reason: "NOT_FOUND" });
+    await expect(service.createTask(context(), projectId, phase.phase.id, { ...taskInput, expectedPlanVersion: 0,
+      idempotencyKey: "it-general-project-task-cross-project-0001" })).rejects.toMatchObject({ reason: "NOT_FOUND" });
+    await expect(service.createTask(context(), planId, phase.phase.id, { ...taskInput, expectedPlanVersion: 2,
+      dueDate: "2059-02-21", idempotencyKey: "it-general-project-task-outside-0001" }))
+      .rejects.toMatchObject({ reason: "INVALID_DATE_RANGE" });
     const active = await service.transition(context(), planId, { version: 0, status: "ACTIVE",
       idempotencyKey: "it-general-project-plan-active-0001" });
     expect(active.project.status).toBe("ACTIVE");
-    const started = await service.transitionPhase(context(), planId, phase.phase.id, { expectedPlanVersion: 1,
+    const started = await service.transitionPhase(context(), planId, phase.phase.id, { expectedPlanVersion: 2,
       expectedVersion: 0, to: "IN_PROGRESS", idempotencyKey: "it-general-project-phase-start-0001" });
-    expect(started.planVersion).toBe(2);
+    expect(started.planVersion).toBe(3);
     await expect(service.transitionPhase(context(), planId, phase.phase.id, { expectedPlanVersion: 1,
       expectedVersion: 0, to: "COMPLETED", idempotencyKey: "it-general-project-phase-stale-transition-0001" }))
       .rejects.toMatchObject({ reason: "VERSION_CONFLICT" });
-    const finished = await service.transitionPhase(context(), planId, phase.phase.id, { expectedPlanVersion: 2,
+    await expect(service.transitionPhase(context(), planId, phase.phase.id, { expectedPlanVersion: 3,
+      expectedVersion: 1, to: "COMPLETED", idempotencyKey: "it-general-project-phase-open-task-0001" }))
+      .rejects.toMatchObject({ code: "PHASE_WORK_OPEN" });
+    await prisma!.generalProjectTask.update({ where: { publicId: task.task.id }, data: { status: "COMPLETED" } });
+    const finished = await service.transitionPhase(context(), planId, phase.phase.id, { expectedPlanVersion: 3,
       expectedVersion: 1, to: "COMPLETED", idempotencyKey: "it-general-project-phase-complete-0001" });
     expect(finished.phase.status).toBe("COMPLETED");
   });

@@ -53,7 +53,7 @@ describe('generated OpenAPI request guards', () => {
   });
 
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 430, requestBodies: 215, responseBodies: 2773 });
+    expect(openApiContractCoverage).toEqual({ operations: 432, requestBodies: 216, responseBodies: 2785 });
     expect(openApiOperationRoutes).toMatchObject({
       'GET /service-catalog/selection-options': 'listServiceSelectionOptions',
       'GET /service-catalog/reference-options/revenue-accounts': 'listServiceRevenueAccountOptions',
@@ -61,6 +61,8 @@ describe('generated OpenAPI request guards', () => {
       'GET /general-projects': 'listGeneralProjects',
       'GET /general-projects/{generalProjectId}/phases': 'listGeneralProjectPhases',
       'POST /general-projects/{generalProjectId}/phases': 'createGeneralProjectPhase',
+      'GET /general-projects/{generalProjectId}/phases/{phaseId}/tasks': 'listGeneralProjectTasks',
+      'POST /general-projects/{generalProjectId}/phases/{phaseId}/tasks': 'createGeneralProjectTask',
       'POST /general-projects/{generalProjectId}/phases/{phaseId}/transition': 'transitionGeneralProjectPhase',
       'POST /general-projects': 'createGeneralProject',
       'POST /general-projects/{generalProjectId}/transition': 'transitionGeneralProject',
@@ -97,7 +99,7 @@ describe('generated OpenAPI request guards', () => {
       'POST /auth/social/onboarding': 'completeSocialOnboarding',
       'DELETE /auth/social/onboarding': 'cancelSocialOnboarding',
     });
-    expect(guardedOpenApiOperations).toHaveLength(215);
+    expect(guardedOpenApiOperations).toHaveLength(216);
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
       'updateInventoryBarcodeSettings', 'previewInventoryCatalogImport', 'commitInventoryCatalogImport',
     ]));

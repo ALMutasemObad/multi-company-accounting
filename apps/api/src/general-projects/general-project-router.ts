@@ -78,6 +78,18 @@ export function createGeneralProjectRouter(auth: AuthService, projects: GeneralP
         ...bodies.transitionGeneralProjectPhase.parse(request.body), idempotencyKey: idempotencyKey(request),
       }));
   });
+  router.get("/general-projects/:generalProjectId/phases/:phaseId/tasks", async (request, response) => {
+    const context = await authorize(request, "general_projects.view", false);
+    response.json(await projects.listTasks(context, publicId.parse(request.params.generalProjectId),
+      publicId.parse(request.params.phaseId), pageQuery.parse(request.query)));
+  });
+  router.post("/general-projects/:generalProjectId/phases/:phaseId/tasks", async (request, response) => {
+    const context = await authorize(request, "general_projects.manage", true);
+    response.status(201).json(await projects.createTask(context, publicId.parse(request.params.generalProjectId),
+      publicId.parse(request.params.phaseId), {
+        ...bodies.createGeneralProjectTask.parse(request.body), idempotencyKey: idempotencyKey(request),
+      }));
+  });
   router.post("/general-projects/:generalProjectId/members", async (request, response) => {
     const context = await authorize(request, "general_projects.manage", true);
     response.json(await projects.assignMember(context, publicId.parse(request.params.generalProjectId), {

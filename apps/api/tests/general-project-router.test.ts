@@ -20,6 +20,8 @@ function fixture() {
     listPhases: vi.fn().mockResolvedValue({ data: [], planVersion: 0, meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 } }),
     createPhase: vi.fn().mockResolvedValue({ phase: {}, planVersion: 1 }),
     transitionPhase: vi.fn().mockResolvedValue({ phase: {}, planVersion: 2 }),
+    listTasks: vi.fn().mockResolvedValue({ data: [], planVersion: 2, meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 } }),
+    createTask: vi.fn().mockResolvedValue({ task: {}, planVersion: 3 }),
     assignMember: vi.fn().mockResolvedValue({ member: {}, projectVersion: 1 }),
     unassignMember: vi.fn().mockResolvedValue({ memberId: managerId, projectVersion: 2 }),
   };
@@ -30,6 +32,22 @@ function fixture() {
 }
 
 describe("general project HTTP boundary", () => {
+  it("scopes task reads and creation to a project phase with guarded input", async () => {
+    const { app, authorize, projects } = fixture();
+    const phaseId = "b5c7025d-260e-4697-9ba9-57c55ed063a2";
+    await request(app).get(`/general-projects/${projectId}/phases/${phaseId}/tasks?page=2`).expect(200);
+    await request(app).post(`/general-projects/${projectId}/phases/${phaseId}/tasks`)
+      .set("X-CSRF-Token", "csrf").set("Idempotency-Key", "general-project-task-create-1234")
+      .send({ expectedPlanVersion: 2, title: "مهمة مستقلة", priority: "HIGH" }).expect(201);
+    await request(app).post(`/general-projects/${projectId}/phases/${phaseId}/tasks`)
+      .set("X-CSRF-Token", "csrf").set("Idempotency-Key", "general-project-task-create-5678")
+      .send({ expectedPlanVersion: 2, title: "مهمة", status: "COMPLETED" }).expect(400);
+    expect(authorize.mock.calls.map(([value]) => [value.permission, value.requireCsrf])).toEqual([
+      ["general_projects.view", false], ["general_projects.manage", true], ["general_projects.manage", true],
+    ]);
+    expect(projects.listTasks).toHaveBeenCalledWith(context, projectId, phaseId, { page: 2, pageSize: 25 });
+    expect(projects.createTask).toHaveBeenCalledOnce();
+  });
   it("guards phase reads and versioned commands without accepting status on creation", async () => {
     const { app, authorize, projects } = fixture();
     const phaseId = "b5c7025d-260e-4697-9ba9-57c55ed063a2";

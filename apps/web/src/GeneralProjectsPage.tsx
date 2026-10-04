@@ -16,6 +16,9 @@ type PhaseStatus = "PLANNED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
 type Phase = { id: string; sequence: number; title: string; description: string | null; status: PhaseStatus; version: number;
   plannedStartDate: string | null; targetEndDate: string | null };
 type PhaseList = { data: Phase[]; planVersion: number; meta: List["meta"] };
+type TaskStatus = "TODO" | "IN_PROGRESS" | "BLOCKED" | "COMPLETED" | "CANCELLED";
+type Task = { id: string; sequence: number; title: string; priority: string; status: TaskStatus; version: number };
+type TaskList = { data: Task[]; planVersion: number; meta: List["meta"] };
 type Detail = { project: Project; members: Member[] };
 type List = { data: Project[]; meta: { page: number; pageSize: number; total: number; totalPages: number } };
 
@@ -40,6 +43,11 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
   const phaseRequestSequence = useRef(0);
   const [phasePage, setPhasePage] = useState(1);
   const [newPhaseTitle, setNewPhaseTitle] = useState("");
+  const [selectedPhaseId, setSelectedPhaseId] = useState("");
+  const [tasks, setTasks] = useState<(TaskList & { projectId: string; phaseId: string }) | null>(null);
+  const taskRequestSequence = useRef(0);
+  const [taskPage, setTaskPage] = useState(1);
+  const [newTaskTitle, setNewTaskTitle] = useState("");
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [customerSearch, setCustomerSearch] = useState("");
@@ -91,11 +99,25 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
       }
     }
   }, [selectedId, phasePage, notify, t]);
+  const loadTasks = useCallback(async () => {
+    const sequence = ++taskRequestSequence.current;
+    if (!selectedId || !selectedPhaseId) { setTasks(null); return; }
+    try {
+      const result = await api<TaskList>(`/general-projects/${selectedId}/phases/${selectedPhaseId}/tasks?page=${taskPage}&pageSize=10`);
+      if (sequence === taskRequestSequence.current) setTasks({ ...result, projectId: selectedId, phaseId: selectedPhaseId });
+    } catch (cause) {
+      if (sequence === taskRequestSequence.current) {
+        setTasks(null); notify(cause instanceof Error ? cause.message : t("generalProjects.loadingError"), "error");
+      }
+    }
+  }, [selectedId, selectedPhaseId, taskPage, notify, t]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { void loadDetail(); }, [loadDetail]);
-  useEffect(() => { setPhases(null); setPhasePage(1); }, [selectedId]);
+  useEffect(() => { setPhases(null); setPhasePage(1); setSelectedPhaseId(""); setTasks(null); }, [selectedId]);
   useEffect(() => { void loadPhases(); }, [loadPhases]);
+  useEffect(() => { setTasks(null); setTaskPage(1); }, [selectedPhaseId]);
+  useEffect(() => { void loadTasks(); }, [loadTasks]);
   useEffect(() => {
     setEditName(detail?.project.nameAr ?? "");
     setEditDescription(detail?.project.description ?? "");
@@ -139,7 +161,7 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
 
   const execute = async (work: () => Promise<unknown>, message: string) => {
     setWorking(true);
-    try { await work(); await load(); await loadDetail(); await loadPhases(); notify(message); }
+    try { await work(); await load(); await loadDetail(); await loadPhases(); await loadTasks(); notify(message); }
     catch (cause) { notify(cause instanceof Error ? cause.message : t("generalProjects.loadingError"), "error"); }
     finally { setWorking(false); }
   };
@@ -198,6 +220,16 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
       body: JSON.stringify({ expectedPlanVersion: phases.planVersion, expectedVersion: phase.version, to,
         ...(to === "CANCELLED" ? { reason: reason.trim() } : {}) }) }), t("generalProjects.phaseSaved"));
   };
+  const createTask = (event: FormEvent) => {
+    event.preventDefault();
+    if (!detail || !phases || phases.projectId !== detail.project.id || !selectedPhaseId || !newTaskTitle.trim()) return;
+    void execute(async () => {
+      await api(`/general-projects/${detail.project.id}/phases/${selectedPhaseId}/tasks`, { method: "POST",
+        idempotencyKey: idempotencyKey("general-project-task-create", selectedPhaseId),
+        body: JSON.stringify({ expectedPlanVersion: phases.planVersion, title: newTaskTitle.trim() }) });
+      setNewTaskTitle("");
+    }, t("generalProjects.taskSaved"));
+  };
 
   return <div className="page-content">
     <PageHeader kicker={t("nav.generalProjects")} title={t("generalProjects.title")} description={t("generalProjects.description")} />
@@ -255,7 +287,9 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
       <h3>{t("generalProjects.phases")}</h3>
       {phases?.projectId === selectedId && phases.data.length === 0 && <p>{t("generalProjects.noPhases")}</p>}
       {phases?.projectId === selectedId && phases.data.map(phase => <div key={phase.id}>
-        {phase.sequence}. {phase.title} · {t(`generalProjects.phaseStatus.${phase.status}`)}
+        <Button variant="ghost" onClick={() => setSelectedPhaseId(phase.id)}>
+          {phase.sequence}. {phase.title} · {t(`generalProjects.phaseStatus.${phase.status}`)}
+        </Button>
         {canManage && detail.project.status === "ACTIVE" && phaseTransitions[phase.status].map(next =>
           <Button key={next} variant="secondary" disabled={working || (next === "CANCELLED" && reason.trim().length < 10)}
             onClick={() => changePhase(phase, next)}>{t(`generalProjects.phaseStatus.${next}`)}</Button>)}
@@ -267,6 +301,23 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
             onChange={event => setNewPhaseTitle(event.target.value)} /></label>
           <Button type="submit" disabled={working || !newPhaseTitle.trim()}>{t("generalProjects.addPhase")}</Button>
         </form>}
+      {selectedPhaseId && phases?.projectId === selectedId && phases.data.some(phase => phase.id === selectedPhaseId) && <div>
+        <h3>{t("generalProjects.tasks")}</h3>
+        {tasks?.projectId === selectedId && tasks.phaseId === selectedPhaseId && tasks.data.length === 0 &&
+          <p>{t("generalProjects.noTasks")}</p>}
+        {tasks?.projectId === selectedId && tasks.phaseId === selectedPhaseId && tasks.data.map(task =>
+          <div key={task.id}>{task.sequence}. {task.title} · {t(`generalProjects.taskStatus.${task.status}`)}</div>)}
+        {tasks?.projectId === selectedId && tasks.phaseId === selectedPhaseId &&
+          <Pagination page={tasks.meta.page} totalPages={tasks.meta.totalPages} total={tasks.meta.total} onChange={setTaskPage} />}
+        {canManage && detail.project.status !== "COMPLETED" && detail.project.status !== "CANCELLED" &&
+          phases.data.find(phase => phase.id === selectedPhaseId)?.status !== "COMPLETED" &&
+          phases.data.find(phase => phase.id === selectedPhaseId)?.status !== "CANCELLED" &&
+          <form onSubmit={createTask} className="form-grid">
+            <label>{t("generalProjects.taskTitle")}<input required maxLength={200} value={newTaskTitle}
+              onChange={event => setNewTaskTitle(event.target.value)} /></label>
+            <Button type="submit" disabled={working || !newTaskTitle.trim()}>{t("generalProjects.addTask")}</Button>
+          </form>}
+      </div>}
     </section>}
   </div>;
 }
