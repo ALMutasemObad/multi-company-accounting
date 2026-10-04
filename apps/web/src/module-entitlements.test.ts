@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { effectivePermissionSet, permissionModule } from './module-entitlements';
+import { variantReferencePatch } from './ServiceCatalogPage';
 import { localeDictionary as arLocale } from './i18n/locales/ar.locale';
 import { localeDictionary as enLocale } from './i18n/locales/en.locale';
 import { localeDictionary as hiLocale } from './i18n/locales/hi.locale';
@@ -56,5 +57,28 @@ describe('independent service catalog entitlement', () => {
       expect(dictionary['view.services']).toBe(label);
       expect(dictionary['service.title']).toBe(label);
     }
+  });
+
+  it('preserves variant references when unchanged or unreadable', () => {
+    const original = { defaultRevenueAccountId: '11', defaultOutputTaxRateId: '22' };
+    expect(variantReferencePatch(original, {
+      revenueAccountId: '11', outputTaxRateId: '22', canReadAccounts: true, canReadOutputTax: true,
+    })).toEqual({});
+    expect(variantReferencePatch(original, {
+      revenueAccountId: '', outputTaxRateId: '', canReadAccounts: false, canReadOutputTax: false,
+    })).toEqual({});
+  });
+
+  it('changes or clears only a reference explicitly selected with read access', () => {
+    const original = { defaultRevenueAccountId: '11', defaultOutputTaxRateId: '22' };
+    expect(variantReferencePatch(original, {
+      revenueAccountId: '33', outputTaxRateId: '22', canReadAccounts: true, canReadOutputTax: false,
+    })).toEqual({ defaultRevenueAccountId: '33' });
+    expect(variantReferencePatch(original, {
+      revenueAccountId: '11', outputTaxRateId: '', canReadAccounts: false, canReadOutputTax: true,
+    })).toEqual({ defaultOutputTaxRateId: null });
+    expect(variantReferencePatch(undefined, {
+      revenueAccountId: '', outputTaxRateId: '44', canReadAccounts: true, canReadOutputTax: true,
+    })).toEqual({ defaultOutputTaxRateId: '44' });
   });
 });

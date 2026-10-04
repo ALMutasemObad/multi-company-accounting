@@ -2,6 +2,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import { api, idempotencyKey } from "./api";
 import { useAuthorization } from "./authorization-context";
 import { useI18n, type TranslationKey } from "./i18n";
+import type { Account, TaxRate } from "./types";
 import { Button, EmptyState, Modal, PageHeader, Pagination, Spinner } from "./ui";
 import "./service-catalog.css";
 
@@ -14,13 +15,27 @@ type Category = { id: string; nameAr: string; nameEn: string | null; status: Cat
 type Offering = { id: string; code: string; nameAr: string; nameEn: string | null; category: Category | null;
   status: Status; variantCount: number; version: number };
 type Variant = { id: string; nameAr: string; nameEn: string | null; pricingUnit: Unit;
-  availableFrom: string | null; availableUntil: string | null; status: Status; version: number };
+  availableFrom: string | null; availableUntil: string | null;
+  defaultRevenueAccountId: string | null; defaultOutputTaxRateId: string | null;
+  status: Status; version: number };
 type Form = { kind: "category"; item?: Category } | { kind: "offering"; item?: Offering }
   | { kind: "variant"; offering: Offering; item?: Variant }
   | { kind: "transition"; subject: "category" | "offering" | "variant"; id: string;
     offeringId?: string; name: string; version: number; to: CategoryStatus | Status };
 const emptyMeta: Meta = { page: 1, pageSize: 10, total: 0, totalPages: 0 };
 const units: Unit[] = ["EACH", "HOUR", "DAY", "SESSION", "MONTH"];
+
+export function variantReferencePatch(
+  original: { defaultRevenueAccountId: string | null; defaultOutputTaxRateId: string | null } | undefined,
+  selected: { revenueAccountId: string; outputTaxRateId: string; canReadAccounts: boolean; canReadOutputTax: boolean },
+) {
+  return {
+    ...(selected.canReadAccounts && selected.revenueAccountId !== (original?.defaultRevenueAccountId ?? "")
+      ? { defaultRevenueAccountId: selected.revenueAccountId || null } : {}),
+    ...(selected.canReadOutputTax && selected.outputTaxRateId !== (original?.defaultOutputTaxRateId ?? "")
+      ? { defaultOutputTaxRateId: selected.outputTaxRateId || null } : {}),
+  };
+}
 
 export function ServiceCatalogPage({ notify }: { notify: Notice }) {
   const { selectedCompany, user, permissionSet } = useAuthorization();
@@ -31,6 +46,8 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
   const { t, locale } = useI18n();
   const { permissionSet } = useAuthorization();
   const canManage = permissionSet.has("services.manage");
+  const canReadAccounts = permissionSet.has("accounts.view");
+  const canReadOutputTax = permissionSet.has("sales_invoices.view");
   const [categories, setCategories] = useState<Category[]>([]);
   const [offerings, setOfferings] = useState<Offering[]>([]);
   const [variants, setVariants] = useState<Variant[]>([]);
@@ -47,6 +64,12 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
   const [categoryLookup, setCategoryLookup] = useState("");
   const [categoryOptions, setCategoryOptions] = useState<Category[]>([]);
   const [categorySelected, setCategorySelected] = useState<Category | null>(null);
+  const [accountLookup, setAccountLookup] = useState("");
+  const [accountOptions, setAccountOptions] = useState<Account[]>([]);
+  const [revenueAccountId, setRevenueAccountId] = useState("");
+  const [taxLookup, setTaxLookup] = useState("");
+  const [taxOptions, setTaxOptions] = useState<TaxRate[]>([]);
+  const [outputTaxRateId, setOutputTaxRateId] = useState("");
   const [loading, setLoading] = useState(true);
   const [variantsLoading, setVariantsLoading] = useState(false);
   const [error, setError] = useState("");
@@ -102,6 +125,27 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
       .catch(cause => { if (!controller.signal.aborted) notify(cause instanceof Error ? cause.message : t("service.loadError"), "error"); });
     return () => controller.abort();
   }, [form?.kind, categoryLookup, notify, t]);
+  useEffect(() => {
+    if (form?.kind !== "variant" || !canReadAccounts) return;
+    const controller = new AbortController();
+    const query = accountLookup.trim() ? `&search=${encodeURIComponent(accountLookup.trim())}` : "";
+    void api<{ data: Account[] }>(
+      `/accounts?page=1&pageSize=20&active=true&allowsPosting=true&accountClasses=REVENUE${query}`,
+      { signal: controller.signal },
+    ).then(result => { if (!controller.signal.aborted) setAccountOptions(result.data); })
+      .catch(cause => { if (!controller.signal.aborted) notify(cause instanceof Error ? cause.message : t("service.loadError"), "error"); });
+    return () => controller.abort();
+  }, [form?.kind, canReadAccounts, accountLookup, notify, t]);
+  useEffect(() => {
+    if (form?.kind !== "variant" || !canReadOutputTax) return;
+    const controller = new AbortController();
+    const query = taxLookup.trim() ? `&search=${encodeURIComponent(taxLookup.trim())}` : "";
+    void api<{ data: TaxRate[] }>(`/tax-rates?page=1&pageSize=20&activeOnly=true${query}`,
+      { signal: controller.signal })
+      .then(result => { if (!controller.signal.aborted) setTaxOptions(result.data.filter(item => item.isReady)); })
+      .catch(cause => { if (!controller.signal.aborted) notify(cause instanceof Error ? cause.message : t("service.loadError"), "error"); });
+    return () => controller.abort();
+  }, [form?.kind, canReadOutputTax, taxLookup, notify, t]);
   const send = async (path: string, method: "POST" | "PATCH", body: Record<string, unknown>, signal: AbortSignal) => {
     const payload = JSON.stringify(body);
     const fingerprint = JSON.stringify([path, method, payload]);
@@ -135,6 +179,11 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
   const openOffering = (item?: Offering) => {
     setCategoryLookup(""); setCategorySelected(item?.category ?? null);
     setForm(item ? { kind: "offering", item } : { kind: "offering" });
+  };
+  const openVariant = (offering: Offering, item?: Variant) => {
+    setAccountLookup(""); setAccountOptions([]); setRevenueAccountId(item?.defaultRevenueAccountId ?? "");
+    setTaxLookup(""); setTaxOptions([]); setOutputTaxRateId(item?.defaultOutputTaxRateId ?? "");
+    setForm(item ? { kind: "variant", offering, item } : { kind: "variant", offering });
   };
   const transitionButtons = (subject: "category" | "offering" | "variant", item: { id: string; nameAr: string; nameEn?: string | null; status: Status; version: number }, offeringId?: string) => {
     if (!canManage || item.status === "RETIRED") return null;
@@ -177,7 +226,7 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
       </section>
       <section className="panel" aria-labelledby="service-variants-title">
         <header><h2 id="service-variants-title">{t("service.variants")}{selected ? ` · ${displayName(selected)}` : ""}</h2>
-          {selected && <Button disabled={busy || selected.status === "RETIRED"} variant="secondary" icon="plus" onClick={() => setForm({ kind: "variant", offering: selected })}>{t("service.newVariant")}</Button>}
+          {selected && <Button disabled={busy || selected.status === "RETIRED"} variant="secondary" icon="plus" onClick={() => openVariant(selected)}>{t("service.newVariant")}</Button>}
         </header>
         {!selected ? <p>{t("service.selectOffering")}</p> : variantsLoading ? <Spinner /> : !variants.length
           ? <EmptyState title={t("service.emptyVariants")} description={t("service.boundary")} />
@@ -186,7 +235,7 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
             {item.availableFrom && <span> · {t("service.start")}: <time>{item.availableFrom}</time></span>}
             {item.availableUntil && <span> · {t("service.until")}: <time>{item.availableUntil}</time></span>}
             {canManage && item.status !== "RETIRED" && selected.status !== "RETIRED" &&
-              <Button disabled={busy} variant="ghost" onClick={() => setForm({ kind: "variant", offering: selected, item })}>{t("service.edit")}</Button>}
+              <Button disabled={busy} variant="ghost" onClick={() => openVariant(selected, item)}>{t("service.edit")}</Button>}
             {transitionButtons("variant", item, selected.id)}
           </li>)}</ul>}
         <Pagination page={variantMeta.page} totalPages={variantMeta.totalPages} total={variantMeta.total} onChange={setVariantPage} />
@@ -232,12 +281,31 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
         nameAr: String(data.get("nameAr") ?? "").trim(), nameEn: String(data.get("nameEn") ?? "").trim() || null,
         ...(!form.item ? { pricingUnit: data.get("pricingUnit") } : {}), availableFrom: data.get("availableFrom") || null,
         availableUntil: data.get("availableUntil") || null,
+        ...variantReferencePatch(form.item, { revenueAccountId, outputTaxRateId, canReadAccounts, canReadOutputTax }),
       }); }}><fieldset className="form-grid" disabled={busy}>
         <label><span>{t("service.nameAr")}</span><input name="nameAr" required maxLength={160} defaultValue={form.item?.nameAr ?? ""} autoFocus /></label>
         <label><span>{t("service.nameEn")}</span><input name="nameEn" maxLength={160} defaultValue={form.item?.nameEn ?? ""} /></label>
         {!form.item && <label><span>{t("service.pricingUnit")}</span><select name="pricingUnit">{units.map(unit => <option key={unit} value={unit}>{t(`service.unit.${unit}` as TranslationKey)}</option>)}</select></label>}
         <label><span>{t("service.start")}</span><input name="availableFrom" type="date" defaultValue={form.item?.availableFrom ?? ""} /></label>
         <label><span>{t("service.until")}</span><input name="availableUntil" type="date" defaultValue={form.item?.availableUntil ?? ""} /></label>
+        {canReadAccounts && <>
+          <label className="full"><span>{t("service.searchRevenueAccount")}</span><input type="search" maxLength={200} value={accountLookup} onChange={event => setAccountLookup(event.target.value)} /></label>
+          <label className="full"><span>{t("service.revenueAccount")}</span><select value={revenueAccountId} onChange={event => setRevenueAccountId(event.target.value)}>
+            <option value="">{t("service.noDefault")}</option>
+            {revenueAccountId && !accountOptions.some(item => item.id === revenueAccountId) &&
+              <option value={revenueAccountId}>#{revenueAccountId}</option>}
+            {accountOptions.map(item => <option key={item.id} value={item.id}>{item.code} — {displayName(item)}</option>)}
+          </select></label>
+        </>}
+        {canReadOutputTax && <>
+          <label className="full"><span>{t("service.searchOutputTax")}</span><input type="search" maxLength={200} value={taxLookup} onChange={event => setTaxLookup(event.target.value)} /></label>
+          <label className="full"><span>{t("service.outputTaxRate")}</span><select value={outputTaxRateId} onChange={event => setOutputTaxRateId(event.target.value)}>
+            <option value="">{t("service.noDefault")}</option>
+            {outputTaxRateId && !taxOptions.some(item => item.id === outputTaxRateId) &&
+              <option value={outputTaxRateId}>#{outputTaxRateId}</option>}
+            {taxOptions.map(item => <option key={item.id} value={item.id}>{item.code} — {item.nameAr} ({item.rate}%)</option>)}
+          </select></label>
+        </>}
         <div className="modal-actions full"><Button type="button" variant="ghost" onClick={() => setForm(null)}>{t("common.cancel")}</Button><Button type="submit">{t("service.save")}</Button></div>
       </fieldset></form>
     </Modal>}
