@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { calculatePayroll, type PayrollCalculationInput, PayrollCalculationError } from "../src/payroll/payroll-calculation.js";
 import { calculateEarningsOnlyPayrollPreview, summarizePayrollPreview, type PayrollCoverage } from "../src/payroll/payroll-earnings-preview.js";
+import { transitionPayrollRun, type PayrollRunRecord } from "../src/payroll/payroll-run-policy.js";
 
 const input = (): PayrollCalculationInput => ({
   companyId: "company-1",
@@ -67,6 +68,50 @@ describe("conservative earnings-only payroll preview", () => {
     expect(() => calculateEarningsOnlyPayrollPreview(earningsOnly(), [
       { ...coverage()[0]!, employeeId: "different" },
     ])).toThrowError("COVERAGE_REQUIRED");
+  });
+});
+
+describe("payroll run maker/checker policy", () => {
+  const hash = "a".repeat(64);
+  const draft = (): PayrollRunRecord => ({
+    companyId: "company-1", makerUserId: "preparer", state: "DRAFT", version: 0,
+    snapshotHash: null, approvedByUserId: null,
+  });
+  it("requires the preparer to calculate and submit, then a different owner to approve the same snapshot", () => {
+    const calculated = transitionPayrollRun(draft(), { action: "CALCULATE", companyId: "company-1",
+      actorUserId: "preparer", expectedVersion: 0, snapshotHash: hash });
+    const submitted = transitionPayrollRun(calculated, { action: "SUBMIT", companyId: "company-1",
+      actorUserId: "preparer", expectedVersion: 1, snapshotHash: hash });
+    const approved = transitionPayrollRun(submitted, { action: "APPROVE", companyId: "company-1",
+      actorUserId: "owner", actorIsOwner: true, expectedVersion: 2, snapshotHash: hash });
+    expect(approved).toMatchObject({ state: "APPROVED", version: 3, approvedByUserId: "owner" });
+    expect(() => transitionPayrollRun(approved, { action: "APPROVE", companyId: "company-1",
+      actorUserId: "owner", actorIsOwner: true, expectedVersion: 3, snapshotHash: hash }))
+      .toThrowError("INVALID_TRANSITION");
+  });
+  it("rejects self-approval, non-owner approval, stale version, cross-company and changed snapshots", () => {
+    const calculated = transitionPayrollRun(draft(), { action: "CALCULATE", companyId: "company-1",
+      actorUserId: "preparer", expectedVersion: 0, snapshotHash: hash });
+    const submitted = transitionPayrollRun(calculated, { action: "SUBMIT", companyId: "company-1",
+      actorUserId: "preparer", expectedVersion: 1, snapshotHash: hash });
+    const approve = (overrides: Record<string, unknown> = {}) => transitionPayrollRun(submitted, {
+      action: "APPROVE", companyId: "company-1", actorUserId: "owner", actorIsOwner: true,
+      expectedVersion: 2, snapshotHash: hash, ...overrides,
+    });
+    expect(() => approve({ actorUserId: "preparer" })).toThrowError("OWNER_CHECKER_REQUIRED");
+    expect(() => approve({ actorIsOwner: false })).toThrowError("OWNER_CHECKER_REQUIRED");
+    expect(() => approve({ expectedVersion: 1 })).toThrowError("VERSION_CONFLICT");
+    expect(() => approve({ companyId: "company-2" })).toThrowError("COMPANY_MISMATCH");
+    expect(() => approve({ snapshotHash: "b".repeat(64) })).toThrowError("SNAPSHOT_MISMATCH");
+  });
+  it("returns a rejected run to draft without carrying an approved salary snapshot", () => {
+    const calculated = transitionPayrollRun(draft(), { action: "CALCULATE", companyId: "company-1",
+      actorUserId: "preparer", expectedVersion: 0, snapshotHash: hash });
+    const submitted = transitionPayrollRun(calculated, { action: "SUBMIT", companyId: "company-1",
+      actorUserId: "preparer", expectedVersion: 1, snapshotHash: hash });
+    expect(transitionPayrollRun(submitted, { action: "REJECT", companyId: "company-1",
+      actorUserId: "owner", actorIsOwner: true, expectedVersion: 2, snapshotHash: hash }))
+      .toMatchObject({ state: "DRAFT", version: 3, snapshotHash: null, approvedByUserId: null });
   });
 });
 
