@@ -58,6 +58,23 @@ describe("country-neutral payroll calculation", () => {
       .not.toBe(calculatePayroll(first).snapshotHash);
   });
 
+  it("orders snapshot identifiers by code point, independent of host locale", () => {
+    const original = input();
+    const first = { ...original, employees: [
+      { ...original.employees[0]!, employeeId: "a", lines: [
+        { id: "a", componentCode: "BASIC", source: "RECURRING" as const, amount: "1" },
+        { id: "Z", componentCode: "ALLOWANCE", source: "ONE_OFF" as const, amount: "2" },
+      ] },
+      { ...original.employees[0]!, employeeId: "Z", lines: [
+        { id: "salary", componentCode: "BASIC", source: "RECURRING" as const, amount: "3" },
+      ] },
+    ] };
+    const result = calculatePayroll(first);
+    expect(result.employees.map(employee => employee.employeeId)).toEqual(["Z", "a"]);
+    expect(result.employees[1]!.earnings.map(line => line.id)).toEqual(["Z", "a"]);
+    expect(calculatePayroll({ ...first, employees: [...first.employees].reverse() }).snapshotHash).toBe(result.snapshotHash);
+  });
+
   it("supports zero and eight decimal currencies without floating-point math", () => {
     const zero = input();
     expect(calculatePayroll({ ...zero, currencyCode: "JPY", currencyDecimals: 0, employees: [

@@ -101,7 +101,9 @@ const formatMoney = (minor: bigint, decimals: number): string => {
     : `${minor / scale}.${(minor % scale).toString().padStart(decimals, "0")}`;
 };
 
-const byId = <T extends { id: string }>(left: T, right: T) => left.id.localeCompare(right.id, "en");
+// Snapshot ordering must not depend on the host ICU/locale implementation.
+const compareId = (left: string, right: string) => left < right ? -1 : left > right ? 1 : 0;
+const byId = <T extends { id: string }>(left: T, right: T) => compareId(left.id, right.id);
 
 export function calculatePayroll(input: PayrollCalculationInput): PayrollCalculation {
   const companyId = nonEmpty(input.companyId, "COMPANY_REQUIRED");
@@ -176,7 +178,7 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     };
     return Object.freeze(result);
   });
-  employees.sort((left, right) => left.employeeId.localeCompare(right.employeeId, "en"));
+  employees.sort((left, right) => compareId(left.employeeId, right.employeeId));
   const canonical = {
     companyId, currencyCode, currencyDecimals: decimals, periodStart, periodEndExclusive,
     employees,
