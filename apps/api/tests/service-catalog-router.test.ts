@@ -18,6 +18,11 @@ function fixture() {
     getOffering: vi.fn().mockResolvedValue({ offering: {} }),
     createOffering: vi.fn().mockResolvedValue({ offering: {} }),
     updateOffering: vi.fn().mockResolvedValue({ offering: {} }),
+    transitionOffering: vi.fn().mockResolvedValue({ offering: {} }),
+    listVariants: vi.fn().mockResolvedValue({ data: [], meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 } }),
+    createVariant: vi.fn().mockResolvedValue({ variant: {} }),
+    updateVariant: vi.fn().mockResolvedValue({ variant: {} }),
+    transitionVariant: vi.fn().mockResolvedValue({ variant: {} }),
   };
   const app = express();
   app.use(express.json());
@@ -69,5 +74,32 @@ describe("service catalog category HTTP boundary", () => {
     expect(authorize.mock.calls.every(([input]) => input.permission === "services.manage")).toBe(true);
     expect(catalog.createOffering).toHaveBeenCalledWith(context, expect.objectContaining({ categoryId }));
     expect(catalog.updateOffering).toHaveBeenCalledWith(context, offeringId, expect.objectContaining({ categoryId: null }));
+  });
+
+  it("guards variant creation and lifecycle under the offering and company context", async () => {
+    const { app, authorize, catalog, write } = fixture();
+    const offeringId = "999f495d-e7b8-4a1c-b078-cfa77ad32cbf";
+    const variantId = "f7b3b238-8f7a-42f4-bf29-f6c10a8661e7";
+    await request(app).get(`/service-catalog/offerings/${offeringId}/variants?page=2&pageSize=10`).expect(200);
+    await write(request(app).post(`/service-catalog/offerings/${offeringId}/variants`)).send({
+      nameAr: "جلسة", pricingUnit: "SESSION", availableFrom: "2026-10-01", availableUntil: "2026-11-01",
+    }).expect(201);
+    await write(request(app).patch(`/service-catalog/offerings/${offeringId}/variants/${variantId}`)).send({
+      expectedVersion: 0, nameAr: "جلسة موسعة",
+    }).expect(200);
+    await write(request(app).post(`/service-catalog/offerings/${offeringId}/variants/${variantId}/transition`)).send({
+      expectedVersion: 0, to: "ACTIVE", reason: "Approved service variant",
+    }).expect(200);
+    await write(request(app).post(`/service-catalog/offerings/${offeringId}/transition`)).send({
+      expectedVersion: 0, to: "ACTIVE", reason: "Approved service offering",
+    }).expect(200);
+    await write(request(app).post(`/service-catalog/offerings/${offeringId}/variants`)).send({
+      nameAr: "جلسة", pricingUnit: "SESSION", inventoryItemId: "1",
+    }).expect(400);
+    expect(authorize.mock.calls.every(([input]) => input.permission === "services.manage")).toBe(true);
+    expect(catalog.listVariants).toHaveBeenCalledWith(context, offeringId, { page: 2, pageSize: 10 });
+    expect(catalog.createVariant).toHaveBeenCalledWith(context, offeringId, expect.objectContaining({ pricingUnit: "SESSION" }));
+    expect(catalog.updateVariant).toHaveBeenCalledWith(context, offeringId, variantId, expect.objectContaining({ nameAr: "جلسة موسعة" }));
+    expect(catalog.transitionVariant).toHaveBeenCalledWith(context, offeringId, variantId, expect.objectContaining({ to: "ACTIVE" }));
   });
 });

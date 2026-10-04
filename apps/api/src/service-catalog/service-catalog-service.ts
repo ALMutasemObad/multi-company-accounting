@@ -1,13 +1,15 @@
-import { Prisma, type PrismaClient, type ServiceCategory, type ServiceOffering } from "@prisma/client";
+import { Prisma, type PrismaClient, type ServiceCategory, type ServiceOffering, type ServiceOfferingVariant } from "@prisma/client";
 import { appendAudit } from "../audit/prisma-audit-append-adapter.js";
 import type { ActorContext } from "../platform/actor-context.js";
 import { IdempotentCommandExecutor } from "../platform/idempotent-command-executor.js";
 import { reserveMasterDataCode } from "../platform/master-data-code-service.js";
 import { TransactionExecutor } from "../platform/transaction-executor.js";
-import { transitionServiceCategory, type ServiceCategoryStatus } from "./service-offering-policy.js";
+import { transitionServiceCategory, transitionServiceOffering, transitionServiceVariant,
+  validateAvailabilityWindow, validateServiceVariantEdit, type ServiceAvailabilityWindow, type ServiceCategoryStatus,
+  type ServiceOfferingStatus, type ServicePricingUnit } from "./service-offering-policy.js";
 
 export type ServiceCatalogFailureReason = "NOT_FOUND" | "VERSION_CONFLICT" | "CATEGORY_RETIRED"
-  | "CATEGORY_NOT_ACTIVE" | "OFFERING_RETIRED"
+  | "CATEGORY_NOT_ACTIVE" | "OFFERING_RETIRED" | "VARIANT_RETIRED"
   | "IDEMPOTENCY_MISMATCH" | "IDEMPOTENCY_IN_PROGRESS";
 
 export class ServiceCatalogError extends Error {
@@ -36,12 +38,34 @@ const offeringJson = (row: ServiceOffering, category: ServiceCategory | null, va
   status: row.status, variantCount, version: row.version,
   createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(),
 });
+const variantJson = (row: ServiceOfferingVariant) => ({
+  id: row.publicId, nameAr: row.nameAr, nameEn: row.nameEn,
+  pricingUnit: row.pricingUnit,
+  availableFrom: row.availableFrom?.toISOString().slice(0, 10) ?? null,
+  availableUntil: row.availableUntil?.toISOString().slice(0, 10) ?? null,
+  defaultRevenueAccountId: row.defaultRevenueAccountId?.toString() ?? null,
+  defaultOutputTaxRateId: row.defaultOutputTaxRateId?.toString() ?? null,
+  status: row.status, version: row.version,
+  createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(),
+});
 
 type CategoryCreate = { nameAr: string; nameEn?: string | null; description?: string | null; idempotencyKey: string };
 type CategoryPatch = { expectedVersion: number; nameAr?: string; nameEn?: string | null; description?: string | null; idempotencyKey: string };
 type CategoryTransition = { expectedVersion: number; to: ServiceCategoryStatus; reason: string; idempotencyKey: string };
 type OfferingCreate = { nameAr: string; nameEn?: string | null; description?: string | null; categoryId?: string | null; idempotencyKey: string };
 type OfferingPatch = { expectedVersion: number; nameAr?: string; nameEn?: string | null; description?: string | null; categoryId?: string | null; idempotencyKey: string };
+type StatusTransition = { expectedVersion: number; to: ServiceOfferingStatus; reason: string; idempotencyKey: string };
+type VariantCreate = { nameAr: string; nameEn?: string | null; pricingUnit: ServicePricingUnit;
+  availableFrom?: string | null; availableUntil?: string | null; idempotencyKey: string };
+type VariantPatch = { expectedVersion: number; nameAr?: string; nameEn?: string | null;
+  pricingUnit?: ServicePricingUnit; availableFrom?: string | null; availableUntil?: string | null; idempotencyKey: string };
+const dbDate = (value: string | null) => value === null ? null : new Date(`${value}T00:00:00.000Z`);
+function localDate(now: Date, timezone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" })
+    .formatToParts(now);
+  const field = (name: string) => parts.find(part => part.type === name)?.value;
+  return `${field("year")}-${field("month")}-${field("day")}`;
+}
 
 export class ServiceCatalogService {
   private readonly commands: IdempotentCommandExecutor;
@@ -204,6 +228,150 @@ export class ServiceCatalogService {
       }, "SERVICE_OFFERING");
       return { offering: offeringJson(row, row.category, row._count.variants) };
     });
+  }
+
+  transitionOffering(context: ActorContext, publicId: string, input: StatusTransition) {
+    return this.execute(context, "TRANSITION_SERVICE_OFFERING", input.idempotencyKey, { publicId, ...input }, 200, async (tx) => {
+      const current = await this.lockOffering(tx, context.companyId, publicId);
+      if (current.version !== input.expectedVersion) throw new ServiceCatalogError("VERSION_CONFLICT");
+      const variants = await tx.serviceOfferingVariant.findMany({
+        where: { companyId: context.companyId, offeringId: current.id }, select: { status: true },
+      });
+      const next = transitionServiceOffering({ from: current.status, to: input.to,
+        variantStatuses: variants.map(row => row.status), reason: input.reason });
+      const changed = await tx.serviceOffering.updateMany({
+        where: { id: current.id, companyId: context.companyId, version: input.expectedVersion, status: current.status },
+        data: { status: next, version: { increment: 1 }, updatedById: context.userId },
+      });
+      if (changed.count !== 1) throw new ServiceCatalogError("VERSION_CONFLICT");
+      const row = await tx.serviceOffering.findUniqueOrThrow({
+        where: { id: current.id }, include: { category: true, _count: { select: { variants: true } } },
+      });
+      await this.audit(tx, context, "SERVICE_OFFERING_TRANSITIONED", row.publicId, {
+        beforeVersion: current.version, afterVersion: row.version,
+        changedFields: ["status"], from: current.status, to: next, reason: input.reason.trim(),
+      }, "SERVICE_OFFERING");
+      return { offering: offeringJson(row, row.category, row._count.variants) };
+    });
+  }
+
+  async listVariants(context: ActorContext, offeringPublicId: string, input: { page: number; pageSize: number }) {
+    const offering = await this.prisma.serviceOffering.findFirst({
+      where: { companyId: context.companyId, publicId: offeringPublicId }, select: { id: true },
+    });
+    if (!offering) throw new ServiceCatalogError("NOT_FOUND");
+    const where: Prisma.ServiceOfferingVariantWhereInput = { companyId: context.companyId, offeringId: offering.id };
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.serviceOfferingVariant.findMany({ where, orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        skip: (input.page - 1) * input.pageSize, take: input.pageSize }),
+      this.prisma.serviceOfferingVariant.count({ where }),
+    ]);
+    return { data: rows.map(variantJson), meta: { page: input.page, pageSize: input.pageSize, total, totalPages: Math.ceil(total / input.pageSize) } };
+  }
+
+  createVariant(context: ActorContext, offeringPublicId: string, input: VariantCreate) {
+    return this.execute(context, "CREATE_SERVICE_VARIANT", input.idempotencyKey, { offeringPublicId, ...input }, 201, async (tx) => {
+      const offering = await this.lockOffering(tx, context.companyId, offeringPublicId);
+      if (offering.status === "RETIRED") throw new ServiceCatalogError("OFFERING_RETIRED");
+      const availability: ServiceAvailabilityWindow = {
+        availableFrom: input.availableFrom ?? null, availableUntil: input.availableUntil ?? null,
+      };
+      validateAvailabilityWindow(availability);
+      const row = await tx.serviceOfferingVariant.create({ data: {
+        companyId: context.companyId, offeringId: offering.id,
+        nameAr: input.nameAr, nameEn: input.nameEn ?? null, pricingUnit: input.pricingUnit,
+        availableFrom: dbDate(availability.availableFrom), availableUntil: dbDate(availability.availableUntil),
+        createdById: context.userId, updatedById: context.userId,
+      } });
+      await this.audit(tx, context, "SERVICE_VARIANT_CREATED", row.publicId, {
+        beforeVersion: null, afterVersion: row.version,
+        changedFields: changedCatalogFields(null, row, ["nameAr", "nameEn", "pricingUnit", "availableFrom", "availableUntil", "status"]),
+      }, "SERVICE_OFFERING_VARIANT");
+      return { variant: variantJson(row) };
+    });
+  }
+
+  updateVariant(context: ActorContext, offeringPublicId: string, variantPublicId: string, input: VariantPatch) {
+    return this.execute(context, "UPDATE_SERVICE_VARIANT", input.idempotencyKey,
+      { offeringPublicId, variantPublicId, ...input }, 200, async (tx) => {
+        const offering = await this.lockOffering(tx, context.companyId, offeringPublicId);
+        if (offering.status === "RETIRED") throw new ServiceCatalogError("OFFERING_RETIRED");
+        const current = await tx.serviceOfferingVariant.findFirst({
+          where: { companyId: context.companyId, offeringId: offering.id, publicId: variantPublicId },
+        });
+        if (!current) throw new ServiceCatalogError("NOT_FOUND");
+        if (current.status === "RETIRED") throw new ServiceCatalogError("VARIANT_RETIRED");
+        if (current.version !== input.expectedVersion) throw new ServiceCatalogError("VERSION_CONFLICT");
+        const company = await tx.company.findUniqueOrThrow({ where: { id: context.companyId }, select: { timezone: true } });
+        const previousAvailability = { availableFrom: current.availableFrom?.toISOString().slice(0, 10) ?? null,
+          availableUntil: current.availableUntil?.toISOString().slice(0, 10) ?? null };
+        const nextAvailability = { availableFrom: input.availableFrom === undefined ? previousAvailability.availableFrom : input.availableFrom,
+          availableUntil: input.availableUntil === undefined ? previousAvailability.availableUntil : input.availableUntil };
+        validateServiceVariantEdit({ everActivated: current.firstActivatedAt !== null,
+          previousUnit: current.pricingUnit, nextUnit: input.pricingUnit ?? current.pricingUnit,
+          previousAvailability, nextAvailability, asOf: localDate(new Date(), company.timezone) });
+        const changed = await tx.serviceOfferingVariant.updateMany({
+          where: { id: current.id, companyId: context.companyId, offeringId: offering.id,
+            version: input.expectedVersion, status: { not: "RETIRED" } },
+          data: {
+            ...(input.nameAr !== undefined ? { nameAr: input.nameAr } : {}),
+            ...(input.nameEn !== undefined ? { nameEn: input.nameEn } : {}),
+            ...(input.pricingUnit !== undefined ? { pricingUnit: input.pricingUnit } : {}),
+            ...(input.availableFrom !== undefined ? { availableFrom: dbDate(input.availableFrom) } : {}),
+            ...(input.availableUntil !== undefined ? { availableUntil: dbDate(input.availableUntil) } : {}),
+            version: { increment: 1 }, updatedById: context.userId,
+          },
+        });
+        if (changed.count !== 1) throw new ServiceCatalogError("VERSION_CONFLICT");
+        const row = await tx.serviceOfferingVariant.findUniqueOrThrow({ where: { id: current.id } });
+        await this.audit(tx, context, "SERVICE_VARIANT_UPDATED", row.publicId, {
+          beforeVersion: current.version, afterVersion: row.version,
+          changedFields: changedCatalogFields(current, row, ["nameAr", "nameEn", "pricingUnit", "availableFrom", "availableUntil"]),
+        }, "SERVICE_OFFERING_VARIANT");
+        return { variant: variantJson(row) };
+      });
+  }
+
+  transitionVariant(context: ActorContext, offeringPublicId: string, variantPublicId: string, input: StatusTransition) {
+    return this.execute(context, "TRANSITION_SERVICE_VARIANT", input.idempotencyKey,
+      { offeringPublicId, variantPublicId, ...input }, 200, async (tx) => {
+        const offering = await this.lockOffering(tx, context.companyId, offeringPublicId);
+        const current = await tx.serviceOfferingVariant.findFirst({
+          where: { companyId: context.companyId, offeringId: offering.id, publicId: variantPublicId },
+        });
+        if (!current) throw new ServiceCatalogError("NOT_FOUND");
+        if (current.version !== input.expectedVersion) throw new ServiceCatalogError("VERSION_CONFLICT");
+        const next = transitionServiceVariant({
+          from: current.status, to: input.to, offeringStatus: offering.status,
+          availability: { availableFrom: current.availableFrom?.toISOString().slice(0, 10) ?? null,
+            availableUntil: current.availableUntil?.toISOString().slice(0, 10) ?? null },
+          reason: input.reason,
+        });
+        const changed = await tx.serviceOfferingVariant.updateMany({
+          where: { id: current.id, companyId: context.companyId, offeringId: offering.id,
+            version: input.expectedVersion, status: current.status },
+          data: { status: next, version: { increment: 1 }, updatedById: context.userId,
+            ...(next === "ACTIVE" && current.firstActivatedAt === null ? { firstActivatedAt: new Date() } : {}) },
+        });
+        if (changed.count !== 1) throw new ServiceCatalogError("VERSION_CONFLICT");
+        const row = await tx.serviceOfferingVariant.findUniqueOrThrow({ where: { id: current.id } });
+        await this.audit(tx, context, "SERVICE_VARIANT_TRANSITIONED", row.publicId, {
+          beforeVersion: current.version, afterVersion: row.version,
+          changedFields: ["status"], from: current.status, to: next, reason: input.reason.trim(),
+        }, "SERVICE_OFFERING_VARIANT");
+        return { variant: variantJson(row) };
+      });
+  }
+
+  private async lockOffering(tx: Prisma.TransactionClient, companyId: bigint, publicId: string) {
+    const rows = await tx.$queryRaw<Array<{ id: bigint; status: ServiceOfferingStatus; version: number }>>`
+      SELECT id, status, version FROM service_offerings
+      WHERE company_id = ${companyId} AND public_id = ${publicId}
+      FOR UPDATE
+    `;
+    const row = rows[0];
+    if (!row) throw new ServiceCatalogError("NOT_FOUND");
+    return row;
   }
 
   private async resolveActiveCategory(tx: Prisma.TransactionClient, companyId: bigint, publicId: string | null) {

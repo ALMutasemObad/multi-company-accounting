@@ -4221,6 +4221,117 @@ paths:
       x-permission: services.manage
       security: [{ SessionCookie: [], CsrfToken: [] }]
       x-idempotency-scope: user + company + operation + key
+  /service-catalog/offerings/{offeringId}/transition:
+    post:
+      tags: [Service Catalog]
+      summary: نقل حالة عرض الخدمة بسبب ونسخة
+      operationId: transitionServiceOffering
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: offeringId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/TransitionServiceOfferingRequest' } } }
+      responses:
+        '200': { description: العرض بعد الانتقال, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceOfferingResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: services.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /service-catalog/offerings/{offeringId}/variants:
+    get:
+      tags: [Service Catalog]
+      summary: عرض بدائل خدمة الشركة
+      operationId: listServiceVariants
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: offeringId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+      - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      responses:
+        '200': { description: بدائل العرض, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceVariantListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: services.manage
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [Service Catalog]
+      summary: إنشاء بديل لخدمة دون مرجع مشروع أو مخزون
+      operationId: createServiceVariant
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: offeringId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateServiceVariantRequest' } } }
+      responses:
+        '201': { description: البديل المنشأ, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceVariantResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: services.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /service-catalog/offerings/{offeringId}/variants/{variantId}:
+    patch:
+      tags: [Service Catalog]
+      summary: تعديل بديل الخدمة مع تثبيت وحدة التسعير بعد التنشيط
+      operationId: updateServiceVariant
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: offeringId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: variantId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/UpdateServiceVariantRequest' } } }
+      responses:
+        '200': { description: البديل المحدث, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceVariantResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: services.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /service-catalog/offerings/{offeringId}/variants/{variantId}/transition:
+    post:
+      tags: [Service Catalog]
+      summary: نقل حالة بديل الخدمة بسبب ونسخة
+      operationId: transitionServiceVariant
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: offeringId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: variantId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/TransitionServiceOfferingRequest' } } }
+      responses:
+        '200': { description: البديل بعد الانتقال, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceVariantResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: services.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
   /service-catalog/categories:
     get:
       tags: [Service Catalog]
@@ -21833,6 +21944,69 @@ components:
         nameEn: { type: [string, 'null'], x-trim: true, maxLength: 200 }
         description: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
         categoryId: { type: [string, 'null'], format: uuid }
+    ServicePricingUnit:
+      type: string
+      enum: [EACH, HOUR, DAY, SESSION, MONTH]
+    ServiceVariant:
+      type: object
+      additionalProperties: false
+      required: [id, nameAr, nameEn, pricingUnit, availableFrom, availableUntil, defaultRevenueAccountId, defaultOutputTaxRateId, status, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        nameAr: { type: string, maxLength: 160 }
+        nameEn: { type: [string, 'null'], maxLength: 160 }
+        pricingUnit: { $ref: '#/components/schemas/ServicePricingUnit' }
+        availableFrom: { type: [string, 'null'], format: date }
+        availableUntil: { type: [string, 'null'], format: date }
+        defaultRevenueAccountId: { type: [string, 'null'], pattern: '^[0-9]+$' }
+        defaultOutputTaxRateId: { type: [string, 'null'], pattern: '^[0-9]+$' }
+        status: { $ref: '#/components/schemas/ServiceOfferingStatus' }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ServiceVariantResponse:
+      type: object
+      additionalProperties: false
+      required: [variant]
+      properties:
+        variant: { $ref: '#/components/schemas/ServiceVariant' }
+    ServiceVariantListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/ServiceVariant' } }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    CreateServiceVariantRequest:
+      type: object
+      additionalProperties: false
+      required: [nameAr, pricingUnit]
+      properties:
+        nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 160 }
+        nameEn: { type: [string, 'null'], x-trim: true, maxLength: 160 }
+        pricingUnit: { $ref: '#/components/schemas/ServicePricingUnit' }
+        availableFrom: { type: [string, 'null'], format: date }
+        availableUntil: { type: [string, 'null'], format: date }
+    UpdateServiceVariantRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      minProperties: 2
+      properties:
+        expectedVersion: { type: integer, minimum: 0 }
+        nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 160 }
+        nameEn: { type: [string, 'null'], x-trim: true, maxLength: 160 }
+        pricingUnit: { $ref: '#/components/schemas/ServicePricingUnit' }
+        availableFrom: { type: [string, 'null'], format: date }
+        availableUntil: { type: [string, 'null'], format: date }
+    TransitionServiceOfferingRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, to, reason]
+      properties:
+        expectedVersion: { type: integer, minimum: 0 }
+        to: { $ref: '#/components/schemas/ServiceOfferingStatus' }
+        reason: { type: string, x-trim: true, minLength: 10, maxLength: 500 }
     ServiceCategoryStatus:
       type: string
       enum: [ACTIVE, INACTIVE, RETIRED]

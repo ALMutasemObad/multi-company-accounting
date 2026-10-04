@@ -44,7 +44,7 @@ describe('generated OpenAPI request guards', () => {
   });
 
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 410, requestBodies: 204, responseBodies: 2661 });
+    expect(openApiContractCoverage).toEqual({ operations: 415, requestBodies: 208, responseBodies: 2694 });
     expect(openApiOperationRoutes).toMatchObject({
       'GET /pos/context/identity': 'getPosContextIdentity',
       'GET /auth/social/accounts': 'getCurrentSocialAccounts',
@@ -79,7 +79,7 @@ describe('generated OpenAPI request guards', () => {
       'POST /auth/social/onboarding': 'completeSocialOnboarding',
       'DELETE /auth/social/onboarding': 'cancelSocialOnboarding',
     });
-    expect(guardedOpenApiOperations).toHaveLength(204);
+    expect(guardedOpenApiOperations).toHaveLength(208);
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
       'updateInventoryBarcodeSettings', 'previewInventoryCatalogImport', 'commitInventoryCatalogImport',
     ]));
@@ -100,6 +100,7 @@ describe('generated OpenAPI request guards', () => {
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
       "createServiceCategory", "updateServiceCategory", "transitionServiceCategory",
       "createServiceOffering", "updateServiceOffering",
+      "transitionServiceOffering", "createServiceVariant", "updateServiceVariant", "transitionServiceVariant",
     ]));
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
       'createCrmLead', 'markCrmLeadContacted', 'qualifyCrmLead', 'convertCrmLead',

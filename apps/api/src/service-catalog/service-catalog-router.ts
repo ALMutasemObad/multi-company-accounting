@@ -18,6 +18,10 @@ const offeringQuery = z.object({
   search: z.string().trim().min(1).max(160).optional(),
   status: z.enum(["DRAFT", "ACTIVE", "INACTIVE", "RETIRED"]).optional(),
 });
+const pageQuery = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
 const idempotencyKey = (request: Request) => z.string().min(16).max(100).parse(request.header("Idempotency-Key"));
 
 function sid(request: Request) {
@@ -77,6 +81,36 @@ export function createServiceCatalogRouter(auth: AuthService, catalog: ServiceCa
     response.json(await catalog.updateOffering(context, publicId.parse(request.params.offeringId), {
       ...bodies.updateServiceOffering.parse(request.body), idempotencyKey: idempotencyKey(request),
     }));
+  });
+  router.post("/service-catalog/offerings/:offeringId/transition", async (request, response) => {
+    const context = await authorize(request, "services.manage", true);
+    response.json(await catalog.transitionOffering(context, publicId.parse(request.params.offeringId), {
+      ...bodies.transitionServiceOffering.parse(request.body), idempotencyKey: idempotencyKey(request),
+    }));
+  });
+  router.get("/service-catalog/offerings/:offeringId/variants", async (request, response) => {
+    const context = await authorize(request, "services.manage", false);
+    response.json(await catalog.listVariants(context, publicId.parse(request.params.offeringId), pageQuery.parse(request.query)));
+  });
+  router.post("/service-catalog/offerings/:offeringId/variants", async (request, response) => {
+    const context = await authorize(request, "services.manage", true);
+    response.status(201).json(await catalog.createVariant(context, publicId.parse(request.params.offeringId), {
+      ...bodies.createServiceVariant.parse(request.body), idempotencyKey: idempotencyKey(request),
+    }));
+  });
+  router.patch("/service-catalog/offerings/:offeringId/variants/:variantId", async (request, response) => {
+    const context = await authorize(request, "services.manage", true);
+    response.json(await catalog.updateVariant(context,
+      publicId.parse(request.params.offeringId), publicId.parse(request.params.variantId), {
+        ...bodies.updateServiceVariant.parse(request.body), idempotencyKey: idempotencyKey(request),
+      }));
+  });
+  router.post("/service-catalog/offerings/:offeringId/variants/:variantId/transition", async (request, response) => {
+    const context = await authorize(request, "services.manage", true);
+    response.json(await catalog.transitionVariant(context,
+      publicId.parse(request.params.offeringId), publicId.parse(request.params.variantId), {
+        ...bodies.transitionServiceVariant.parse(request.body), idempotencyKey: idempotencyKey(request),
+      }));
   });
 
   const errors: ErrorRequestHandler = (error, _request, response, next) => {
