@@ -428,14 +428,17 @@ export class ServiceCatalogService {
   }
 
   private async lockOffering(tx: Prisma.TransactionClient, companyId: bigint, publicId: string) {
-    const rows = await tx.$queryRaw<Array<{ id: bigint; status: ServiceOfferingStatus; version: number }>>`
+    const rows = await tx.$queryRaw<Array<{ id: bigint; status: ServiceOfferingStatus; version: bigint | number }>>`
       SELECT id, status, version FROM service_offerings
       WHERE company_id = ${companyId} AND public_id = ${publicId}
       FOR UPDATE
     `;
     const row = rows[0];
     if (!row) throw new ServiceCatalogError("NOT_FOUND");
-    return row;
+    // Raw UNSIGNED INT is decoded as bigint by the MariaDB adapter, unlike Prisma model reads.
+    const version = Number(row.version);
+    if (!Number.isSafeInteger(version) || version < 0) throw new RangeError("INVALID_SERVICE_VERSION");
+    return { ...row, version };
   }
 
   private async resolveActiveCategory(tx: Prisma.TransactionClient, companyId: bigint, publicId: string | null) {
