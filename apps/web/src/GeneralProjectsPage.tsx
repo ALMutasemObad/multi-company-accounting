@@ -1,5 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
-import { api, ApiError, idempotencyKey } from "./api";
+import { api, idempotencyKey } from "./api";
 import { useAuthorization } from "./authorization-context";
 import { useI18n } from "./i18n";
 import { Button, EmptyState, PageHeader, Pagination, Spinner, TableRegion } from "./ui";
@@ -16,9 +16,15 @@ type Detail = { project: Project; members: Member[] };
 type List = { data: Project[]; meta: { page: number; pageSize: number; total: number; totalPages: number } };
 
 export function GeneralProjectsPage({ notify }: { notify: Notice }) {
+  const { selectedCompany, user, permissionSet } = useAuthorization();
+  return <GeneralProjectsWorkspace key={JSON.stringify([user.id, selectedCompany?.id, [...permissionSet].sort()])} notify={notify} />;
+}
+
+function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
   const { t } = useI18n();
   const { permissionSet } = useAuthorization();
   const canManage = permissionSet.has("general_projects.manage");
+  const canReadCustomers = permissionSet.has("customers.view");
   const [projects, setProjects] = useState<Project[]>([]);
   const [meta, setMeta] = useState<List["meta"]>({ page: 1, pageSize: 10, total: 0, totalPages: 0 });
   const [page, setPage] = useState(1);
@@ -28,6 +34,10 @@ export function GeneralProjectsPage({ notify }: { notify: Notice }) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const [pickedCustomers, setPickedCustomers] = useState<Customer[]>([]);
+  const [pickedEmployees, setPickedEmployees] = useState<Employee[]>([]);
   const [newName, setNewName] = useState("");
   const [newCustomerId, setNewCustomerId] = useState("");
   const [newManagerId, setNewManagerId] = useState("");
@@ -70,13 +80,39 @@ export function GeneralProjectsPage({ notify }: { notify: Notice }) {
   }, [detail?.project.id, detail?.project.version]);
   useEffect(() => {
     if (!canManage) return;
-    void api<{ data: Employee[] }>("/general-projects/employee-options")
-      .then(result => setEmployees(result.data))
-      .catch(cause => notify(cause instanceof Error ? cause.message : t("generalProjects.loadingError"), "error"));
-    void api<{ data: Customer[] }>("/general-projects/customer-options")
-      .then(result => setCustomers(result.data))
-      .catch(cause => { if (!(cause instanceof ApiError && cause.status === 403)) notify(cause instanceof Error ? cause.message : t("generalProjects.loadingError"), "error"); });
-  }, [canManage, notify, t]);
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      const query = employeeSearch.trim() ? `?search=${encodeURIComponent(employeeSearch.trim())}` : "";
+      void api<{ data: Employee[] }>(`/general-projects/employee-options${query}`, { signal: controller.signal })
+        .then(result => { if (!controller.signal.aborted) setEmployees(result.data); })
+        .catch(cause => { if (!controller.signal.aborted) notify(cause instanceof Error ? cause.message : t("generalProjects.loadingError"), "error"); });
+    }, 250);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [canManage, employeeSearch, notify, t]);
+  useEffect(() => {
+    if (!canManage || !canReadCustomers) { setCustomers([]); return; }
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      const query = customerSearch.trim() ? `?search=${encodeURIComponent(customerSearch.trim())}` : "";
+      void api<{ data: Customer[] }>(`/general-projects/customer-options${query}`, { signal: controller.signal })
+        .then(result => { if (!controller.signal.aborted) setCustomers(result.data); })
+        .catch(cause => { if (!controller.signal.aborted) notify(cause instanceof Error ? cause.message : t("generalProjects.loadingError"), "error"); });
+    }, 250);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [canManage, canReadCustomers, customerSearch, notify, t]);
+
+  const employeeOptions = [...pickedEmployees, ...employees].filter((employee, index, all) => all.findIndex(candidate => candidate.id === employee.id) === index);
+  const customerOptions = [...pickedCustomers, ...customers].filter((customer, index, all) => all.findIndex(candidate => candidate.id === customer.id) === index);
+  const selectEmployee = (id: string, setter: (value: string) => void) => {
+    setter(id);
+    const employee = employeeOptions.find(option => option.id === id);
+    if (employee) setPickedEmployees(current => current.some(option => option.id === id) ? current : [...current, employee]);
+  };
+  const selectCustomer = (id: string, setter: (value: string) => void) => {
+    setter(id);
+    const customer = customerOptions.find(option => option.id === id);
+    if (customer) setPickedCustomers(current => current.some(option => option.id === id) ? current : [...current, customer]);
+  };
 
   const execute = async (work: () => Promise<unknown>, message: string) => {
     setWorking(true);
@@ -89,7 +125,8 @@ export function GeneralProjectsPage({ notify }: { notify: Notice }) {
     if (!newName.trim() || !newManagerId) return;
     void execute(async () => {
       const result = await api<{ project: Project }>("/general-projects", { method: "POST", idempotencyKey: idempotencyKey("general-project-create", newManagerId),
-        body: JSON.stringify({ nameAr: newName.trim(), managerEmployeeId: newManagerId, ...(newCustomerId ? { customerId: newCustomerId } : {}) }) });
+        body: JSON.stringify({ nameAr: newName.trim(), managerEmployeeId: newManagerId,
+          ...(canReadCustomers && newCustomerId ? { customerId: newCustomerId } : {}) }) });
       setNewName(""); setNewCustomerId(""); setSelectedId(result.project.id);
     }, t("generalProjects.saved"));
   };
@@ -103,7 +140,8 @@ export function GeneralProjectsPage({ notify }: { notify: Notice }) {
     event.preventDefault();
     if (!detail || !editName.trim()) return;
     void execute(() => api(`/general-projects/${detail.project.id}`, { method: "PATCH", idempotencyKey: idempotencyKey("general-project-update", detail.project.id),
-      body: JSON.stringify({ version: detail.project.version, nameAr: editName.trim(), description: editDescription.trim() || null, customerId: editCustomerId || null }) }), t("generalProjects.saved"));
+      body: JSON.stringify({ version: detail.project.version, nameAr: editName.trim(), description: editDescription.trim() || null,
+        ...(canReadCustomers && editCustomerId !== (detail.project.customer?.id ?? "") ? { customerId: editCustomerId || null } : {}) }) }), t("generalProjects.saved"));
   };
   const unassign = (member: Member) => {
     if (!detail || reason.trim().length < 10) return;
@@ -125,8 +163,10 @@ export function GeneralProjectsPage({ notify }: { notify: Notice }) {
       <h2>{t("generalProjects.new")}</h2>
       <form onSubmit={create} className="form-grid">
         <label>{t("generalProjects.name")}<input required maxLength={200} value={newName} onChange={event => setNewName(event.target.value)} /></label>
-        <label>{t("generalProjects.customer")}<select value={newCustomerId} onChange={event => setNewCustomerId(event.target.value)}><option value="">—</option>{customers.map(customer => <option key={customer.id} value={customer.id}>{customer.code} · {customer.nameAr}</option>)}</select></label>
-        <label>{t("generalProjects.manager")}<select required value={newManagerId} onChange={event => setNewManagerId(event.target.value)}><option value="">—</option>{employees.map(employee => <option key={employee.id} value={employee.id}>{employee.employeeNumber} · {employee.nameAr}</option>)}</select></label>
+        {canReadCustomers && <label>{t("common.search")} — {t("generalProjects.customer")}<input type="search" maxLength={200} value={customerSearch} onChange={event => setCustomerSearch(event.target.value)} /></label>}
+        <label>{t("generalProjects.customer")}<select disabled={!canReadCustomers} value={newCustomerId} onChange={event => selectCustomer(event.target.value, setNewCustomerId)}><option value="">—</option>{customerOptions.map(customer => <option key={customer.id} value={customer.id}>{customer.code} · {customer.nameAr}</option>)}</select></label>
+        <label>{t("common.search")} — {t("generalProjects.manager")}<input type="search" maxLength={200} value={employeeSearch} onChange={event => setEmployeeSearch(event.target.value)} /></label>
+        <label>{t("generalProjects.manager")}<select required value={newManagerId} onChange={event => selectEmployee(event.target.value, setNewManagerId)}><option value="">—</option>{employeeOptions.map(employee => <option key={employee.id} value={employee.id}>{employee.employeeNumber} · {employee.nameAr}</option>)}</select></label>
         <Button type="submit" disabled={working || !newManagerId}>{t("generalProjects.create")}</Button>
       </form>
     </section>}
@@ -151,7 +191,8 @@ export function GeneralProjectsPage({ notify }: { notify: Notice }) {
       {canManage && transitions[detail.project.status].length > 0 && <form onSubmit={update} className="form-grid">
         <label>{t("generalProjects.name")}<input required maxLength={200} value={editName} onChange={event => setEditName(event.target.value)} /></label>
         <label>{t("generalProjects.description")}<textarea maxLength={1000} value={editDescription} onChange={event => setEditDescription(event.target.value)} /></label>
-        <label>{t("generalProjects.customer")}<select value={editCustomerId} onChange={event => setEditCustomerId(event.target.value)}><option value="">—</option>{detail.project.customer && !customers.some(customer => customer.id === detail.project.customer!.id) && <option value={detail.project.customer.id}>{detail.project.customer.code} · {detail.project.customer.nameAr}</option>}{customers.map(customer => <option key={customer.id} value={customer.id}>{customer.code} · {customer.nameAr}</option>)}</select></label>
+        {canReadCustomers && <label>{t("common.search")} — {t("generalProjects.customer")}<input type="search" maxLength={200} value={customerSearch} onChange={event => setCustomerSearch(event.target.value)} /></label>}
+        <label>{t("generalProjects.customer")}<select disabled={!canReadCustomers} value={editCustomerId} onChange={event => selectCustomer(event.target.value, setEditCustomerId)}><option value="">—</option>{detail.project.customer && !customerOptions.some(customer => customer.id === detail.project.customer!.id) && <option value={detail.project.customer.id}>{detail.project.customer.code} · {detail.project.customer.nameAr}</option>}{customerOptions.map(customer => <option key={customer.id} value={customer.id}>{customer.code} · {customer.nameAr}</option>)}</select></label>
         <Button type="submit" disabled={working || !editName.trim()}>{t("common.save")}</Button>
       </form>}
       {canManage && transitions[detail.project.status].length > 0 && <div>
@@ -164,7 +205,8 @@ export function GeneralProjectsPage({ notify }: { notify: Notice }) {
         {canManage && member.isActive && transitions[detail.project.status].length > 0 && <Button variant="ghost" disabled={working || reason.trim().length < 10} onClick={() => unassign(member)}>{t("generalProjects.unassign")}</Button>}
       </div>)}
       {canManage && transitions[detail.project.status].length > 0 && <form onSubmit={assign} className="form-grid">
-        <label>{t("generalProjects.member")}<select value={memberId} onChange={event => setMemberId(event.target.value)}><option value="">—</option>{employees.map(employee => <option key={employee.id} value={employee.id}>{employee.employeeNumber} · {employee.nameAr}</option>)}</select></label>
+        <label>{t("common.search")} — {t("generalProjects.member")}<input type="search" maxLength={200} value={employeeSearch} onChange={event => setEmployeeSearch(event.target.value)} /></label>
+        <label>{t("generalProjects.member")}<select value={memberId} onChange={event => selectEmployee(event.target.value, setMemberId)}><option value="">—</option>{employeeOptions.map(employee => <option key={employee.id} value={employee.id}>{employee.employeeNumber} · {employee.nameAr}</option>)}</select></label>
         <label>{t("generalProjects.role")}<select value={memberRole} onChange={event => setMemberRole(event.target.value as Role)}><option value="MANAGER">{t("generalProjects.role.MANAGER")}</option><option value="CONTRIBUTOR">{t("generalProjects.role.CONTRIBUTOR")}</option></select></label>
         <Button type="submit" disabled={working || !memberId}>{t("generalProjects.assign")}</Button>
       </form>}
