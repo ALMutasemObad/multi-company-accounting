@@ -10,8 +10,8 @@ type Status = "DRAFT" | "ACTIVE" | "INACTIVE" | "RETIRED";
 type CategoryStatus = Exclude<Status, "DRAFT">;
 type Unit = "EACH" | "HOUR" | "DAY" | "SESSION" | "MONTH";
 type Meta = { page: number; pageSize: number; total: number; totalPages: number };
-type Category = { id: string; nameAr: string; nameEn: string | null; status: CategoryStatus; version: number };
-type Offering = { id: string; code: string; nameAr: string; nameEn: string | null; category: Category | null;
+type Category = { id: string; nameAr: string; nameEn: string | null; description: string | null; status: CategoryStatus; version: number };
+type Offering = { id: string; code: string; nameAr: string; nameEn: string | null; description: string | null; category: Category | null;
   status: Status; variantCount: number; version: number };
 type Variant = { id: string; nameAr: string; nameEn: string | null; pricingUnit: Unit;
   availableFrom: string | null; availableUntil: string | null;
@@ -210,6 +210,7 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
         <header><h2 id="service-categories-title">{t("service.categories")}</h2><Button disabled={busy} variant="secondary" icon="plus" onClick={() => setForm({ kind: "category" })}>{t("service.newCategory")}</Button></header>
         {!categories.length ? <EmptyState title={t("service.emptyCategories")} description={t("service.boundary")} />
           : <ul>{categories.map(item => <li key={item.id}><strong>{displayName(item)}</strong> · {statusLabel(item.status)}
+            {item.description && <p>{item.description}</p>}
             {canManage && item.status !== "RETIRED" && <Button disabled={busy} variant="ghost" onClick={() => setForm({ kind: "category", item })}>{t("service.edit")}</Button>}
             {transitionButtons("category", item)}</li>)}</ul>}
         <Pagination page={categoryMeta.page} totalPages={categoryMeta.totalPages} total={categoryMeta.total} onChange={setCategoryPage} />
@@ -221,6 +222,7 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
           {offerings.map(item => <li key={item.id}>
             <Button variant="ghost" onClick={() => { setSelected(item); setVariantPage(1); }}>{displayName(item)} · <span dir="ltr">{item.code}</span></Button>
             <span>{statusLabel(item.status)} · {item.category ? displayName(item.category) : t("service.noCategory")}</span>
+            {item.description && <p>{item.description}</p>}
             {canManage && item.status !== "RETIRED" && <Button disabled={busy} variant="ghost" onClick={() => openOffering(item)}>{t("service.edit")}</Button>}
             {transitionButtons("offering", item)}
           </li>)}
@@ -249,9 +251,11 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
         form.item ? `/service-catalog/categories/${form.item.id}` : "/service-catalog/categories", form.item ? "PATCH" : "POST", {
         ...(form.item ? { expectedVersion: form.item.version } : {}),
         nameAr: String(data.get("nameAr") ?? "").trim(), nameEn: String(data.get("nameEn") ?? "").trim() || null,
+        description: String(data.get("description") ?? "").trim() || null,
       }); }}><fieldset className="form-grid" disabled={busy}>
         <label><span>{t("service.nameAr")}</span><input name="nameAr" required maxLength={160} defaultValue={form.item?.nameAr ?? ""} autoFocus /></label>
         <label><span>{t("service.nameEn")}</span><input name="nameEn" maxLength={160} defaultValue={form.item?.nameEn ?? ""} /></label>
+        <label className="full"><span>{t("service.itemDescription")}</span><textarea name="description" maxLength={1000} defaultValue={form.item?.description ?? ""} /></label>
         <div className="modal-actions full"><Button type="button" variant="ghost" onClick={() => setForm(null)}>{t("common.cancel")}</Button><Button type="submit">{t("service.save")}</Button></div>
       </fieldset></form>
     </Modal>}
@@ -260,10 +264,12 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
         form.item ? `/service-catalog/offerings/${form.item.id}` : "/service-catalog/offerings", form.item ? "PATCH" : "POST", {
         ...(form.item ? { expectedVersion: form.item.version } : {}),
         nameAr: String(data.get("nameAr") ?? "").trim(), nameEn: String(data.get("nameEn") ?? "").trim() || null,
+        description: String(data.get("description") ?? "").trim() || null,
         ...(form.item && categorySelected?.id === form.item.category?.id ? {} : { categoryId: categorySelected?.id ?? null }),
       }); }}><fieldset className="form-grid" disabled={busy}>
         <label><span>{t("service.nameAr")}</span><input name="nameAr" required maxLength={200} defaultValue={form.item?.nameAr ?? ""} autoFocus /></label>
         <label><span>{t("service.nameEn")}</span><input name="nameEn" maxLength={200} defaultValue={form.item?.nameEn ?? ""} /></label>
+        <label className="full"><span>{t("service.itemDescription")}</span><textarea name="description" maxLength={1000} defaultValue={form.item?.description ?? ""} /></label>
         <label className="full"><span>{t("service.searchCategory")}</span><input type="search" value={categoryLookup} onChange={event => setCategoryLookup(event.target.value)} /></label>
         <label className="full"><span>{t("service.category")}</span><select value={categorySelected?.id ?? ""} onChange={event => {
           const choice = [categorySelected, ...categoryOptions].find(item => item?.id === event.target.value);

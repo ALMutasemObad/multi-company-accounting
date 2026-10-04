@@ -992,6 +992,7 @@ export const localeDictionary = {
   "service.emptyOfferings": "کوئی مماثل خدمت نہیں۔",
   "service.emptyVariants": "اس عرض کے متبادل نہیں ہیں۔",
   "service.nameAr": "عربی نام",
+  "service.itemDescription": "خدمت یا زمرے کی تفصیل (اختیاری)",
   "service.nameEn": "انگریزی نام",
   "service.category": "زمرہ",
   "service.noCategory": "بلا زمرہ",

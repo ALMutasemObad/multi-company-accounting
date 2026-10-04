@@ -1233,6 +1233,7 @@ export const localeDictionary = {
   "service.emptyOfferings": "لا توجد خدمات مطابقة.",
   "service.emptyVariants": "لا توجد بدائل لهذا العرض.",
   "service.nameAr": "الاسم بالعربية",
+  "service.itemDescription": "وصف الخدمة أو التصنيف (اختياري)",
   "service.nameEn": "الاسم بالإنجليزية",
   "service.category": "التصنيف",
   "service.noCategory": "بدون تصنيف",

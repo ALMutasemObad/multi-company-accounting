@@ -90,6 +90,44 @@ export class ServiceCatalogService {
     return this.tax.listOptions(context.companyId, query);
   }
 
+  async listSelectionOptions(context: ActorContext, query: ServiceCatalogReferenceQuery, now = new Date()) {
+    const company = await this.prisma.company.findUniqueOrThrow({
+      where: { id: context.companyId }, select: { timezone: true },
+    });
+    const asOf = localDate(now, company.timezone);
+    const today = dbDate(asOf)!;
+    const where: Prisma.ServiceOfferingVariantWhereInput = {
+      companyId: context.companyId,
+      status: "ACTIVE",
+      offering: { status: "ACTIVE" },
+      AND: [
+        { OR: [{ availableFrom: null }, { availableFrom: { lte: today } }] },
+        { OR: [{ availableUntil: null }, { availableUntil: { gt: today } }] },
+        ...(query.search ? [{ OR: [
+          { nameAr: { contains: query.search } }, { nameEn: { contains: query.search } },
+          { offering: { code: { contains: query.search } } },
+          { offering: { nameAr: { contains: query.search } } },
+          { offering: { nameEn: { contains: query.search } } },
+        ] }] : []),
+      ],
+    };
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.serviceOfferingVariant.findMany({
+        where, select: { publicId: true, nameAr: true, nameEn: true, pricingUnit: true,
+          offering: { select: { publicId: true, code: true, nameAr: true, nameEn: true } } },
+        orderBy: [{ offering: { code: "asc" } }, { id: "asc" }],
+        skip: (query.page - 1) * query.pageSize, take: query.pageSize,
+      }),
+      this.prisma.serviceOfferingVariant.count({ where }),
+    ]);
+    return { data: rows.map(row => ({ id: row.publicId, nameAr: row.nameAr, nameEn: row.nameEn,
+      pricingUnit: row.pricingUnit, offering: {
+        id: row.offering.publicId, code: row.offering.code,
+        nameAr: row.offering.nameAr, nameEn: row.offering.nameEn,
+      } })), asOf,
+    meta: { page: query.page, pageSize: query.pageSize, total, totalPages: Math.ceil(total / query.pageSize) } };
+  }
+
   async listCategories(context: ActorContext, input: { page: number; pageSize: number; search?: string | undefined; status?: ServiceCategoryStatus | undefined }) {
     const where: Prisma.ServiceCategoryWhereInput = {
       companyId: context.companyId,

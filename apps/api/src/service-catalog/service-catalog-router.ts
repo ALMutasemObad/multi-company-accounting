@@ -49,6 +49,11 @@ export function createServiceCatalogRouter(auth: AuthService, catalog: ServiceCa
     response.json(await catalog.listOutputTaxOptions(context, referenceQuery.parse(request.query)));
   });
 
+  router.get("/service-catalog/selection-options", async (request, response) => {
+    const context = await authorize(request, "services.view", false);
+    response.json(await catalog.listSelectionOptions(context, referenceQuery.parse(request.query)));
+  });
+
   router.get("/service-catalog/categories", async (request, response) => {
     const context = await authorize(request, "services.manage", false);
     response.json(await catalog.listCategories(context, categoryQuery.parse(request.query)));

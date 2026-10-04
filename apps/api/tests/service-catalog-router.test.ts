@@ -2,6 +2,7 @@ import express from "express";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 import { createServiceCatalogRouter } from "../src/service-catalog/service-catalog-router.js";
+import { ServiceCatalogService } from "../src/service-catalog/service-catalog-service.js";
 
 const categoryId = "1b7a8d78-a340-46c0-a059-4bf1acd6a746";
 const context = { companyId: 11n, userId: 22n };
@@ -11,6 +12,7 @@ function fixture() {
   const catalog = {
     listRevenueAccountOptions: vi.fn().mockResolvedValue({ data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } }),
     listOutputTaxOptions: vi.fn().mockResolvedValue({ data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } }),
+    listSelectionOptions: vi.fn().mockResolvedValue({ data: [], asOf: "2026-10-04", meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } }),
     listCategories: vi.fn().mockResolvedValue({ data: [], meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 } }),
     getCategory: vi.fn().mockResolvedValue({ category: {} }),
     createCategory: vi.fn().mockResolvedValue({ category: {} }),
@@ -35,6 +37,15 @@ function fixture() {
 }
 
 describe("service catalog category HTTP boundary", () => {
+  it("exposes only bounded active service selection to services.view", async () => {
+    const { app, authorize, catalog } = fixture();
+    await request(app).get("/service-catalog/selection-options?page=2&pageSize=10&search=جلسة").expect(200);
+    await request(app).get("/service-catalog/selection-options?pageSize=51").expect(400);
+    expect(authorize.mock.calls.map(([input]) => [input.permission, input.requireCsrf]))
+      .toEqual([["services.view", false], ["services.view", false]]);
+    expect(catalog.listSelectionOptions).toHaveBeenCalledWith(context, { page: 2, pageSize: 10, search: "جلسة" });
+    expect(catalog.listSelectionOptions).toHaveBeenCalledTimes(1);
+  });
   it("uses only services.manage for bounded company-scoped account and tax options", async () => {
     const { app, authorize, catalog } = fixture();
     await request(app).get("/service-catalog/reference-options/revenue-accounts?page=2&pageSize=10&search=400").expect(200);
@@ -122,5 +133,34 @@ describe("service catalog category HTTP boundary", () => {
     expect(catalog.updateVariant).toHaveBeenCalledWith(context, offeringId, variantId,
       expect.objectContaining({ nameAr: "جلسة موسعة", defaultOutputTaxRateId: null }));
     expect(catalog.transitionVariant).toHaveBeenCalledWith(context, offeringId, variantId, expect.objectContaining({ to: "ACTIVE" }));
+  });
+});
+
+describe("service selection query", () => {
+  it("uses the company calendar date and excludes inactive or out-of-window variants in a bounded query", async () => {
+    const row = { publicId: "f7b3b238-8f7a-42f4-bf29-f6c10a8661e7", nameAr: "جلسة", nameEn: null,
+      pricingUnit: "SESSION", offering: { publicId: categoryId, code: "SVC-000001", nameAr: "خدمة", nameEn: null } };
+    const findMany = vi.fn().mockResolvedValue([row]);
+    const count = vi.fn().mockResolvedValue(1);
+    const companyLookup = vi.fn().mockResolvedValue({ timezone: "Asia/Riyadh" });
+    const prisma = { company: { findUniqueOrThrow: companyLookup }, serviceOfferingVariant: { findMany, count },
+      $transaction: (operations: Promise<unknown>[]) => Promise.all(operations) };
+    const service = new ServiceCatalogService(prisma as never, {} as never, {} as never);
+    const result = await service.listSelectionOptions(context, { page: 2, pageSize: 10, search: "جلسة" },
+      new Date("2026-10-04T21:30:00.000Z"));
+    expect(companyLookup).toHaveBeenCalledWith({ where: { id: context.companyId }, select: { timezone: true } });
+    expect(result).toEqual({ data: [{ id: row.publicId, nameAr: "جلسة", nameEn: null, pricingUnit: "SESSION",
+      offering: { id: categoryId, code: "SVC-000001", nameAr: "خدمة", nameEn: null } }],
+    asOf: "2026-10-05", meta: { page: 2, pageSize: 10, total: 1, totalPages: 1 } });
+    const where = findMany.mock.calls[0]?.[0]?.where;
+    expect(count.mock.calls[0]?.[0]?.where).toBe(where);
+    expect(where).toEqual({ companyId: context.companyId, status: "ACTIVE", offering: { status: "ACTIVE" }, AND: [
+      { OR: [{ availableFrom: null }, { availableFrom: { lte: new Date("2026-10-05T00:00:00.000Z") } }] },
+      { OR: [{ availableUntil: null }, { availableUntil: { gt: new Date("2026-10-05T00:00:00.000Z") } }] },
+      { OR: [{ nameAr: { contains: "جلسة" } }, { nameEn: { contains: "جلسة" } },
+        { offering: { code: { contains: "جلسة" } } }, { offering: { nameAr: { contains: "جلسة" } } },
+        { offering: { nameEn: { contains: "جلسة" } } }] },
+    ] });
+    expect(findMany.mock.calls[0]?.[0]).toMatchObject({ skip: 10, take: 10 });
   });
 });

@@ -992,6 +992,7 @@ export const localeDictionary = {
   "service.emptyOfferings": "कोई मिलती सेवा नहीं है।",
   "service.emptyVariants": "इस प्रस्ताव के लिए कोई विकल्प नहीं है।",
   "service.nameAr": "अरबी नाम",
+  "service.itemDescription": "सेवा या श्रेणी का विवरण (वैकल्पिक)",
   "service.nameEn": "अंग्रेज़ी नाम",
   "service.category": "श्रेणी",
   "service.noCategory": "बिना श्रेणी",

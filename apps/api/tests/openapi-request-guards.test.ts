@@ -53,8 +53,9 @@ describe('generated OpenAPI request guards', () => {
   });
 
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 426, requestBodies: 213, responseBodies: 2750 });
+    expect(openApiContractCoverage).toEqual({ operations: 427, requestBodies: 213, responseBodies: 2754 });
     expect(openApiOperationRoutes).toMatchObject({
+      'GET /service-catalog/selection-options': 'listServiceSelectionOptions',
       'GET /service-catalog/reference-options/revenue-accounts': 'listServiceRevenueAccountOptions',
       'GET /service-catalog/reference-options/output-tax-rates': 'listServiceOutputTaxOptions',
       'GET /general-projects': 'listGeneralProjects',
