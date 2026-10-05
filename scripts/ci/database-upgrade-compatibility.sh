@@ -148,6 +148,7 @@ log "building and testing the previous application against the upgraded schema"
 
 previous_log="$baseline_directory/previous-runtime.log"
 cd "$baseline_directory" || fail "cannot enter the materialized production baseline"
+mkdir -p "$baseline_directory/runtime-media"
 NODE_ENV=production \
 PORT=3101 \
 WEB_ORIGIN=https://upgrade-compatibility.mcap.example \
@@ -155,6 +156,8 @@ SESSION_COOKIE_SECURE=true \
 TRUST_PROXY=true \
 SELF_REGISTRATION_ENABLED=false \
 SERVE_WEB_ASSETS=false \
+MEDIA_ROOT="$baseline_directory/runtime-media" \
+RATE_LIMIT_IDENTITY_SECRET=CI-only-upgrade-runtime-rate-limit-secret-2026 \
 node apps/api/dist/server.js >"$previous_log" 2>&1 &
 previous_pid=$!
 cd "$workspace" || fail "cannot return to the candidate workspace"

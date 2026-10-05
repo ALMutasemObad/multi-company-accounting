@@ -58,6 +58,8 @@ test("upgrade compatibility proves the previous application on the advanced sche
   assert.ok(previousTests > candidateUpgrade);
   assert.ok(previousRuntime > previousTests);
   assert.match(script, /127\.0\.0\.1:3101\/ready/u);
+  assert.match(script, /MEDIA_ROOT="\$baseline_directory\/runtime-media"/u);
+  assert.match(script, /RATE_LIMIT_IDENTITY_SECRET=CI-only-upgrade-runtime-rate-limit-secret-2026/u);
   assert.match(script, /api_shutdown_completed/u);
   assert.doesNotMatch(script, /migrate reset|db push/u);
 });
