@@ -92,6 +92,17 @@ log "applying the production baseline migrations and representative fixtures"
   "$baseline_tsx" prisma/demo-seed.ts
 )
 
+if [[ "$baseline_mode" == deployed ]]; then
+  log "recording the deployed R2 Inventory sentinel before baseline compatibility tests"
+  R2_UPGRADE_SENTINEL_ITEM_ID=$(node "$workspace/scripts/ci/selling-profile-db-gate.mjs" prepare-deployed-upgrade)
+  [[ "$R2_UPGRADE_SENTINEL_ITEM_ID" =~ ^[1-9][0-9]*$ ]] \
+    || fail "the deployed-baseline R2 sentinel was not created"
+  export R2_UPGRADE_SENTINEL_ITEM_ID
+  if [[ -n "${GITHUB_ENV:-}" ]]; then
+    printf 'R2_UPGRADE_SENTINEL_ITEM_ID=%s\n' "$R2_UPGRADE_SENTINEL_ITEM_ID" >> "$GITHUB_ENV"
+  fi
+fi
+
 log "proving the unchanged baseline on its own schema before candidate migrations"
 (
   cd "$baseline_directory/apps/api" || fail "cannot enter the production-baseline API"
@@ -103,17 +114,15 @@ log "proving the unchanged baseline on its own schema before candidate migration
   fi
 )
 
-log "recording an Inventory sentinel before the R2 migration exists"
-if [[ "$baseline_mode" == deployed ]]; then
-  R2_UPGRADE_SENTINEL_ITEM_ID=$(node "$workspace/scripts/ci/selling-profile-db-gate.mjs" prepare-deployed-upgrade)
-else
+if [[ "$baseline_mode" == historical ]]; then
+  log "recording an Inventory sentinel before the R2 migration exists"
   R2_UPGRADE_SENTINEL_ITEM_ID=$(node "$workspace/scripts/ci/selling-profile-db-gate.mjs" prepare-upgrade)
-fi
-[[ "$R2_UPGRADE_SENTINEL_ITEM_ID" =~ ^[1-9][0-9]*$ ]] \
-  || fail "the pre-migration R2 sentinel was not created"
-export R2_UPGRADE_SENTINEL_ITEM_ID
-if [[ -n "${GITHUB_ENV:-}" ]]; then
-  printf 'R2_UPGRADE_SENTINEL_ITEM_ID=%s\n' "$R2_UPGRADE_SENTINEL_ITEM_ID" >> "$GITHUB_ENV"
+  [[ "$R2_UPGRADE_SENTINEL_ITEM_ID" =~ ^[1-9][0-9]*$ ]] \
+    || fail "the pre-migration R2 sentinel was not created"
+  export R2_UPGRADE_SENTINEL_ITEM_ID
+  if [[ -n "${GITHUB_ENV:-}" ]]; then
+    printf 'R2_UPGRADE_SENTINEL_ITEM_ID=%s\n' "$R2_UPGRADE_SENTINEL_ITEM_ID" >> "$GITHUB_ENV"
+  fi
 fi
 
 log "upgrading the populated baseline with the candidate migration history"

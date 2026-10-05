@@ -40,6 +40,11 @@ test("upgrade compatibility proves the unchanged baseline before any candidate m
   assert.ok(sentinel > baselineTests);
   assert.ok(candidateUpgrade > sentinel);
   assert.match(script, /proving the unchanged baseline on its own schema before candidate migrations/u);
+  assert.ok(
+    script.indexOf('log "recording the deployed R2 Inventory sentinel before baseline compatibility tests"')
+      < script.indexOf('log "proving the unchanged baseline on its own schema before candidate migrations"'),
+    "the deployed baseline's filtered upgrade-mode test requires its existing-schema sentinel first",
+  );
   assert.equal(script.match(/"\$baseline_vitest" run --no-file-parallelism/g)?.length, 2);
   assert.doesNotMatch(script, /--retry|--exclude|--testNamePattern/u);
   assert.match(script, /prepare-deployed-upgrade/u);
