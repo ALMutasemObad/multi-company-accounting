@@ -29,4 +29,24 @@ describe("payroll secret storage", () => {
     expect(() => PayrollVault.fromEnvironment({ PAYROLL_ENABLED: "true", NODE_ENV: "production" })).toThrow("PAYROLL_POLICY_REVIEW_REQUIRED");
     expect(() => new PayrollVault("old", { old: "bad" }, "old")).toThrow();
   });
+  it("recovers old envelopes only after restoring the exact external key", () => {
+    const original = new PayrollVault("old", keys, "current");
+    const backup = JSON.parse(JSON.stringify(original.seal(scope, { salary: "8123.45" })));
+    const missing = new PayrollVault("current", { current: keys.current }, "current");
+    expect(() => missing.open(scope, backup, schema)).toThrow("PAYROLL_PRIVATE_DATA_UNAVAILABLE");
+    const replaced = new PayrollVault("current", { ...keys, old: Buffer.alloc(32, 9).toString("base64") }, "current");
+    expect(() => replaced.open(scope, backup, schema)).toThrow("PAYROLL_PRIVATE_DATA_UNAVAILABLE");
+    const restored = PayrollVault.fromEnvironment({ NODE_ENV: "test", PAYROLL_ENABLED: "true",
+      PAYROLL_KEY_RING: JSON.stringify(keys), PAYROLL_ACTIVE_KEY_ID: "current", PAYROLL_FINGERPRINT_KEY_ID: "current" })!;
+    expect(restored.open(scope, backup, schema)).toEqual({ salary: "8123.45" });
+    expect(restored.fingerprint("pending-command")).toBe(original.fingerprint("pending-command"));
+    expect(backup.keyId).toBe("old");
+  });
+  it("preserves approval hashes across JSON database property ordering", () => {
+    const vault = new PayrollVault("old", keys, "current");
+    const envelope = vault.seal(scope, { salary: "1" });
+    const reordered = { ciphertext: envelope.ciphertext, tag: envelope.tag, nonce: envelope.nonce, keyId: envelope.keyId };
+    expect(vault.snapshotHash(reordered)).toBe(vault.snapshotHash(envelope));
+    expect(vault.snapshotHash({ ...envelope, ciphertext: "AAAA" })).not.toBe(vault.snapshotHash(envelope));
+  });
 });
