@@ -190,9 +190,11 @@ test('upgrade captures sentinel after baseline fixtures and verifies it immediat
   const prepare = upgradeScript.indexOf('selling-profile-db-gate.mjs" prepare-upgrade');
   const migration = upgradeScript.indexOf('"$prisma" migrate deploy');
   const gate = upgradeScript.indexOf('selling-profile-db-gate.mjs" run');
-  const previousTests = upgradeScript.indexOf('"$baseline_vitest" run');
+  const baselineTests = upgradeScript.indexOf('"$baseline_vitest" run');
+  const previousTests = upgradeScript.lastIndexOf('"$baseline_vitest" run');
   assert.ok(preflight > 0 && firstMigration > preflight && baselineSeed > firstMigration);
   assert.ok(prepare > baselineSeed && migration > prepare && gate > migration && previousTests > gate);
+  assert.ok(baselineTests > baselineSeed && baselineTests < prepare);
   assert.match(upgradeScript, /export R2_UPGRADE_SENTINEL_ITEM_ID/);
   assert.match(upgradeScript, /R2_UPGRADE_SENTINEL_ITEM_ID=%s\\n[\s\S]*GITHUB_ENV/);
   assert.doesNotMatch(upgradeScript, /selling-profile-db-gate[^\n]*\|\| true/);

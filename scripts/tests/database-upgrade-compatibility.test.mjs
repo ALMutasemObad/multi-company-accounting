@@ -29,9 +29,22 @@ test("upgrade compatibility starts from a pinned production ancestor and populat
   assert.ok(candidateUpgrade > baselineMigration, "candidate migrations must follow the populated production baseline");
 });
 
+test("upgrade compatibility proves the unchanged baseline before any candidate migration", () => {
+  const baselineFixtures = script.indexOf('"$baseline_tsx" prisma/demo-seed.ts');
+  const baselineTests = script.indexOf('"$baseline_vitest" run --no-file-parallelism');
+  const sentinel = script.indexOf('log "recording an Inventory sentinel');
+  const candidateUpgrade = script.indexOf('cd "$workspace/apps/api"');
+  assert.ok(baselineTests > baselineFixtures);
+  assert.ok(sentinel > baselineTests);
+  assert.ok(candidateUpgrade > sentinel);
+  assert.match(script, /proving the unchanged baseline on its own schema before candidate migrations/u);
+  assert.equal(script.match(/"\$baseline_vitest" run --no-file-parallelism/g)?.length, 2);
+  assert.doesNotMatch(script, /--retry|--exclude|--testNamePattern/u);
+});
+
 test("upgrade compatibility proves the previous application on the advanced schema", () => {
   const candidateUpgrade = script.indexOf('cd "$workspace/apps/api"');
-  const previousTests = script.indexOf('"$baseline_vitest" run --no-file-parallelism');
+  const previousTests = script.lastIndexOf('"$baseline_vitest" run --no-file-parallelism');
   const previousRuntime = script.indexOf("node apps/api/dist/server.js");
   assert.ok(previousTests > candidateUpgrade);
   assert.ok(previousRuntime > previousTests);

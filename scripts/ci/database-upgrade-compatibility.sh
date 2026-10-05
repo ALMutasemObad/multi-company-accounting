@@ -74,6 +74,13 @@ log "applying the production baseline migrations and representative fixtures"
   "$baseline_tsx" prisma/demo-seed.ts
 )
 
+log "proving the unchanged baseline on its own schema before candidate migrations"
+(
+  cd "$baseline_directory/apps/api" || fail "cannot enter the production-baseline API"
+  "$baseline_tsc" -p tsconfig.json
+  "$baseline_vitest" run --no-file-parallelism
+)
+
 log "recording an Inventory sentinel before the R2 migration exists"
 R2_UPGRADE_SENTINEL_ITEM_ID=$(node "$workspace/scripts/ci/selling-profile-db-gate.mjs" prepare-upgrade)
 [[ "$R2_UPGRADE_SENTINEL_ITEM_ID" =~ ^[1-9][0-9]*$ ]] \
