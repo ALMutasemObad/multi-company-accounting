@@ -23,7 +23,9 @@ fake_bin="$test_root/bin"
 state_root="$test_root/active-root"
 state_environment="$test_root/environment.json"
 metrics_token_file="$test_root/metrics-token"
+payroll_key_file="$home_root/apps/shared/payroll/keys.json"
 mkdir -p -- "$source_release/apps/api/dist" "$target_release/apps/api/dist" \
+  "$(dirname -- "$payroll_key_file")" \
   "$(dirname -- "$passenger_config")" "$(dirname -- "$media_fixture")" "$fake_bin"
 touch -- "$source_release/apps/api/dist/server.js" "$target_release/apps/api/dist/server.js"
 printf '%s' 'fixture-thumbnail' > "$media_fixture"
@@ -113,6 +115,11 @@ export FAKE_PASSENGER_CONFIG="$passenger_config"
 FAKE_NODE_BIN=${NODE_BIN:-$(command -v node)}
 export FAKE_NODE_BIN
 [[ -x "$FAKE_NODE_BIN" ]]
+"$FAKE_NODE_BIN" -e '
+  const fs = require("node:fs");
+  const keys = { enc_fixture: Buffer.alloc(32, 1).toString("base64"), fp_fixture: Buffer.alloc(32, 2).toString("base64") };
+  fs.writeFileSync(process.argv[1], JSON.stringify({ format: "mcap-payroll-keys-v1", activeKeyId: "enc_fixture", fingerprintKeyId: "fp_fixture", keys }), { mode: 0o600 });
+' "$payroll_key_file"
 
 run_switch() {
   MCAP_CLOUDLINUX_SELECTOR="$fake_bin/cloudlinux-selector" \
@@ -125,6 +132,8 @@ run_switch() {
   MCAP_CLOUDLINUX_BACKUP_DIRECTORY="$backup_directory" \
   MCAP_PASSENGER_CONFIG_FILE="$passenger_config" \
   MCAP_METRICS_TOKEN_FILE="${3:-}" \
+  MCAP_PAYROLL_KEY_FILE="$payroll_key_file" \
+  MCAP_PAYROLL_POLICY_REVIEWED=true \
   MCAP_MEDIA_ROOT="${4-$media_root}" \
     bash deploy/scripts/switch-cloudlinux-registration.sh "$1" "$2"
 }
@@ -156,8 +165,10 @@ run_switch "$source_release" "$target_release" "$metrics_token_file"
   if (environment.RESEND_API_KEY !== "re_fixture_12345678901234567890") process.exit(1);
   if (environment.REGISTRATION_TOKEN_SECRET !== "fixture-registration-token-secret-1234567890") process.exit(1);
   if (environment.REGISTRATION_AUDIT_PEPPER !== "fixture-registration-audit-pepper-1234567890") process.exit(1);
+  if (environment.PAYROLL_ENABLED !== "true" || environment.PAYROLL_POLICY_REVIEWED !== "true" || environment.PAYROLL_KEY_FILE !== process.argv[3]) process.exit(1);
+  if (environment.PAYROLL_KEY_RING !== undefined || environment.PAYROLL_ACTIVE_KEY_ID !== undefined || environment.PAYROLL_FINGERPRINT_KEY_ID !== undefined) process.exit(1);
   if (environment.MEDIA_ROOT !== process.argv[2]) process.exit(1);
-' "$state_environment" "$media_root"
+' "$state_environment" "$media_root" "$payroll_key_file"
 [[ "$(sha256sum -- "$media_fixture" | awk '{print $1}')" == "$media_fixture_digest" ]]
 [[ "$(stat -c '%a' -- "$passenger_config")" == 644 ]]
 [[ -n "$(find "$backup_directory" -maxdepth 1 -type f -name 'selector-before-target-*.json' -print -quit)" ]]

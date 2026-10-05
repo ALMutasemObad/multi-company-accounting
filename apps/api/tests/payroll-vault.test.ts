@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { z } from "zod";
 import { PayrollVault } from "../src/payroll/payroll-vault.js";
 
@@ -28,6 +31,25 @@ describe("payroll secret storage", () => {
     expect(() => PayrollVault.fromEnvironment({ PAYROLL_ENABLED: "true" })).toThrow("PAYROLL_CONFIGURATION_INVALID");
     expect(() => PayrollVault.fromEnvironment({ PAYROLL_ENABLED: "true", NODE_ENV: "production" })).toThrow("PAYROLL_POLICY_REVIEW_REQUIRED");
     expect(() => new PayrollVault("old", { old: "bad" }, "old")).toThrow();
+  });
+  it("loads production keys from a protected external file instead of a serialized environment value", () => {
+    const directory = mkdtempSync(path.join(os.tmpdir(), "payroll-key-file-"));
+    const file = path.join(directory, "keys.json");
+    try {
+      writeFileSync(file, JSON.stringify({ format: "mcap-payroll-keys-v1", activeKeyId: "current",
+        fingerprintKeyId: "current", keys }), { mode: 0o600 });
+      const vault = PayrollVault.fromEnvironment({ NODE_ENV: "production", PAYROLL_ENABLED: "true",
+        PAYROLL_POLICY_REVIEWED: "true", PAYROLL_KEY_FILE: file })!;
+      const envelope = vault.seal(scope, { salary: "9000" });
+      expect(vault.open(scope, envelope, schema)).toEqual({ salary: "9000" });
+      if (process.platform !== "win32") {
+        chmodSync(file, 0o644);
+        expect(() => PayrollVault.fromEnvironment({ NODE_ENV: "production", PAYROLL_ENABLED: "true",
+          PAYROLL_POLICY_REVIEWED: "true", PAYROLL_KEY_FILE: file })).toThrow("PAYROLL_CONFIGURATION_INVALID");
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
   it("recovers old envelopes only after restoring the exact external key", () => {
     const original = new PayrollVault("old", keys, "current");
