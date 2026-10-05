@@ -46,6 +46,22 @@ log "materializing the documented production baseline"
 git -C "$workspace" archive --format=tar "$baseline_commit" \
   | tar -xf - -C "$baseline_directory"
 
+if [[ "$baseline_mode" == deployed ]]; then
+  log "aligning the disposable baseline test's engine allowlist with the pinned deployed host"
+  node --input-type=module - "$baseline_directory/apps/api/tests/selling-profile.integration.test.ts" <<'NODE'
+import { readFile, writeFile } from "node:fs/promises";
+
+const path = process.argv[2];
+const source = await readFile(path, "utf8");
+const original = "expect(engine?.version).toMatch(/^(?:10\\.11\\..*MariaDB|8\\.4\\.)/i);";
+const compatible = "expect(engine?.version).toMatch(/^(?:10\\.11\\..*MariaDB|11\\.4\\.13-MariaDB(?:[-.]|$)|8\\.4\\.)/i);";
+if (!source.includes(original) || source.indexOf(original) !== source.lastIndexOf(original)) {
+  throw new Error("Expected exactly one historical engine allowlist in the disposable deployed-baseline test");
+}
+await writeFile(path, source.replace(original, compatible));
+NODE
+fi
+
 actual_baseline_migrations=$(find "$baseline_directory/apps/api/prisma/migrations" -mindepth 2 -maxdepth 2 -name migration.sql -type f | wc -l | tr -d '[:space:]')
 [[ "$actual_baseline_migrations" == "$expected_baseline_migrations" ]] \
   || fail "the production baseline migration count changed unexpectedly"

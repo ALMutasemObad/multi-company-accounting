@@ -18,6 +18,8 @@ test("upgrade compatibility starts from a pinned production ancestor and populat
   assert.match(script, /PRODUCTION_BASELINE_MIGRATION_COUNT/u);
   assert.match(script, /merge-base --is-ancestor/u);
   assert.match(script, /git -C "\$workspace" archive/u);
+  assert.match(script, /aligning the disposable baseline test's engine allowlist with the pinned deployed host/u);
+  assert.match(script, /Expected exactly one historical engine allowlist in the disposable deployed-baseline test/u);
   assert.match(script, /npm ci/u);
   assert.match(script, /npm run prisma:generate/u);
   assert.match(script, /"\$baseline_tsx" prisma\/seed\.ts/u);
