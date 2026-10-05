@@ -30,7 +30,7 @@ describe.runIf(enabled)("R2 actual database gate — requires MariaDB10.11/MySQL
 
   beforeAll(async () => {
     const [engine] = await db!.$queryRaw<Array<{ version: string }>>`SELECT VERSION() AS version`;
-    expect(engine?.version).toMatch(/^(?:10\.11\..*MariaDB|8\.4\.)/i);
+    expect(engine?.version).toMatch(/^(?:10\.11\..*MariaDB|11\.4\.13-MariaDB(?:[-.]|$)|8\.4\.)/i);
     const mode = process.env.R2_DB_MIGRATION_MODE;
     expect(["fresh", "upgrade"]).toContain(mode);
     if (mode === "upgrade") {

@@ -9,6 +9,7 @@ import { hiPos } from "./pos";
 import { hiBarcode } from "./barcode";
 import { hiApprovals } from "./approvals";
 import { hiProfessionalProjects } from "./professional-projects";
+import { hiGeneralProjects } from "./general-projects";
 import { hiHumanResources } from "./human-resources";
 import { hiSystemHomePlatform } from "./system-home-platform";
 import { hiPublicPlans } from "./public-plans";
@@ -38,6 +39,7 @@ export const hi = {
   ...hiBarcode,
   ...hiApprovals,
   ...hiProfessionalProjects,
+  ...hiGeneralProjects,
   ...hiHumanResources,
   ...hiSystemHomePlatform,
   ...hiPublicPlans,

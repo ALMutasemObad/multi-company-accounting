@@ -9,6 +9,7 @@ import { urPos } from "./pos";
 import { urBarcode } from "./barcode";
 import { urApprovals } from "./approvals";
 import { urProfessionalProjects } from "./professional-projects";
+import { urGeneralProjects } from "./general-projects";
 import { urHumanResources } from "./human-resources";
 import { urSystemHomePlatform } from "./system-home-platform";
 import { urPublicPlans } from "./public-plans";
@@ -38,6 +39,7 @@ export const ur = {
   ...urBarcode,
   ...urApprovals,
   ...urProfessionalProjects,
+  ...urGeneralProjects,
   ...urHumanResources,
   ...urSystemHomePlatform,
   ...urPublicPlans,

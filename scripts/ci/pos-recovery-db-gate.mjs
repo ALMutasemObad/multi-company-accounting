@@ -72,8 +72,9 @@ async function main(environment) {
   assert.equal(source.search + source.hash, '', 'No database URL overrides are allowed');
   assert.equal(decodeURIComponent(source.username), 'mcap_test', 'Use the existing CI test identity');
   const version = environment.POS_RECOVERY_EXPECTED_ENGINE_VERSION;
-  assert.ok(['10.11.11-MariaDB', '8.4.11'].includes(version), 'N1 requires one of the two pinned engines');
-  const versionPattern = version === '8.4.11' ? /^8\.4\.11(?:[-.]|$)/ : /^10\.11\.11-MariaDB(?:[-.]|$)/;
+  assert.ok(['10.11.11-MariaDB', '11.4.13-MariaDB', '8.4.11'].includes(version), 'N1 requires a pinned release engine');
+  const versionPattern = version === '8.4.11' ? /^8\.4\.11(?:[-.]|$)/
+    : version === '11.4.13-MariaDB' ? /^11\.4\.13-MariaDB(?:[-.]|$)/ : /^10\.11\.11-MariaDB(?:[-.]|$)/;
   assert.ok(environment.RUNNER_TEMP && environment.POS_RECOVERY_DB_GATE_ARTIFACT_DIR, 'CI evidence paths are required');
   const artifacts = path.resolve(environment.POS_RECOVERY_DB_GATE_ARTIFACT_DIR);
   const relative = path.relative(path.resolve(environment.RUNNER_TEMP), artifacts);

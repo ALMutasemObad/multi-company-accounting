@@ -11,10 +11,12 @@ export const PLATFORM_MODULE_CODES = [
   "DATA_IMPORT",
   "APPROVALS",
   "PROFESSIONAL_PROJECTS",
+  "GENERAL_PROJECTS",
   "HUMAN_RESOURCES",
   "TAX",
   "CRM",
   "SERVICE_CATALOG",
+  "PAYROLL",
 ] as const;
 
 export type PlatformModuleCode = (typeof PLATFORM_MODULE_CODES)[number];

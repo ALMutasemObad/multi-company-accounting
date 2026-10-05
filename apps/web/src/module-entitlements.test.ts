@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { effectivePermissionSet, permissionModule } from './module-entitlements';
+import { validServiceDateWindow, variantReferencePatch } from './ServiceCatalogPage';
+import { localeDictionary as arLocale } from './i18n/locales/ar.locale';
+import { localeDictionary as enLocale } from './i18n/locales/en.locale';
+import { localeDictionary as hiLocale } from './i18n/locales/hi.locale';
+import { localeDictionary as urLocale } from './i18n/locales/ur.locale';
 
 describe('sales catalogue entitlement boundary', () => {
   it('maps both catalogue permissions to SALES without granting manage from view', () => {
@@ -30,5 +35,58 @@ describe('inventory count entitlement boundary', () => {
     const permissions = ['inventory_counts.enter', 'inventory_counts.manage'];
     expect(effectivePermissionSet(permissions, new Set()).size).toBe(0);
     expect(effectivePermissionSet(permissions, new Set(['CORE_ACCOUNTING'])).size).toBe(0);
+  });
+});
+
+describe('independent service catalog entitlement', () => {
+  it('does not inherit project or sales catalog permissions', () => {
+    expect(permissionModule('services.manage')).toBe('SERVICE_CATALOG');
+    expect(permissionModule('services.view')).toBe('SERVICE_CATALOG');
+    expect(permissionModule('sales_catalog.view')).toBe('SALES');
+    expect([...effectivePermissionSet(['services.manage'], new Set(['SALES', 'PROFESSIONAL_PROJECTS']))]).toEqual([]);
+  });
+
+  it('names the standalone catalog as general service management in every locale', () => {
+    for (const [dictionary, label] of [
+      [arLocale, 'إدارة الخدمات'],
+      [enLocale, 'Service management'],
+      [hiLocale, 'सेवाओं का प्रबंधन'],
+      [urLocale, 'خدمات کا انتظام'],
+    ] as const) {
+      expect(dictionary['nav.services']).toBe(label);
+      expect(dictionary['view.services']).toBe(label);
+      expect(dictionary['service.title']).toBe(label);
+    }
+  });
+
+  it('preserves variant references when unchanged or options are unavailable', () => {
+    const original = { defaultRevenueAccountId: '11', defaultOutputTaxRateId: '22' };
+    expect(variantReferencePatch(original, {
+      revenueAccountId: '11', outputTaxRateId: '22', canSelectAccounts: true, canSelectOutputTax: true,
+    })).toEqual({});
+    expect(variantReferencePatch(original, {
+      revenueAccountId: '', outputTaxRateId: '', canSelectAccounts: false, canSelectOutputTax: false,
+    })).toEqual({});
+  });
+
+  it('changes or clears only a reference explicitly selected from available options', () => {
+    const original = { defaultRevenueAccountId: '11', defaultOutputTaxRateId: '22' };
+    expect(variantReferencePatch(original, {
+      revenueAccountId: '33', outputTaxRateId: '22', canSelectAccounts: true, canSelectOutputTax: false,
+    })).toEqual({ defaultRevenueAccountId: '33' });
+    expect(variantReferencePatch(original, {
+      revenueAccountId: '11', outputTaxRateId: '', canSelectAccounts: false, canSelectOutputTax: true,
+    })).toEqual({ defaultOutputTaxRateId: null });
+    expect(variantReferencePatch(undefined, {
+      revenueAccountId: '', outputTaxRateId: '44', canSelectAccounts: true, canSelectOutputTax: true,
+    })).toEqual({ defaultOutputTaxRateId: '44' });
+  });
+
+  it('allows open bounds but rejects equal or reversed service availability dates', () => {
+    expect(validServiceDateWindow('', '')).toBe(true);
+    expect(validServiceDateWindow('2026-10-04', '')).toBe(true);
+    expect(validServiceDateWindow('2026-10-04', '2026-10-05')).toBe(true);
+    expect(validServiceDateWindow('2026-10-04', '2026-10-04')).toBe(false);
+    expect(validServiceDateWindow('2026-10-05', '2026-10-04')).toBe(false);
   });
 });

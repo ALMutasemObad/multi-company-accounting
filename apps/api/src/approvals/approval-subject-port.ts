@@ -3,6 +3,7 @@ import type { ActorContext } from "../platform/actor-context.js";
 
 export type SupportedApprovalSubjectType =
   | "FINANCIAL_CLOSE_RUN"
+  | "PAYROLL_RUN"
   | "PROFESSIONAL_TIMESHEET"
   | "EMPLOYEE_EXPENSE_CLAIM";
 
@@ -43,4 +44,5 @@ export interface ApprovalSubjectPort {
   ): Promise<void>;
 }
 
-export type ApprovalSubjectPorts = Record<SupportedApprovalSubjectType, ApprovalSubjectPort>;
+export type ApprovalSubjectPorts = Record<Exclude<SupportedApprovalSubjectType, "PAYROLL_RUN">, ApprovalSubjectPort>
+  & Partial<Record<"PAYROLL_RUN", ApprovalSubjectPort>>;

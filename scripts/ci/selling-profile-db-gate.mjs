@@ -28,7 +28,7 @@ export function validateEnvironment(environment) {
 
 export async function verifyEngine(connection, expectedPrefix) {
   const [engine] = await connection.query('SELECT VERSION() AS version');
-  assert.match(engine?.version ?? '', /^(?:10\.11\..*MariaDB|8\.4\.)/i, 'R2 requires MariaDB 10.11 or MySQL 8.4');
+  assert.match(engine?.version ?? '', /^(?:10\.11\..*MariaDB|11\.4\.13-MariaDB(?:[-.]|$)|8\.4\.)/i, 'R2 requires MariaDB 10.11, verified hosting 11.4.13, or MySQL 8.4');
   assert.ok(engine.version.startsWith(expectedPrefix), 'R2 engine does not match the CI matrix');
   return engine.version;
 }
@@ -43,17 +43,21 @@ const readSentinel = async (connection, itemId) => {
 };
 
 // CI fixture only: no operational writer, user data, schema reset, or broad cleanup.
-export async function prepareUpgrade(connection, expectedBaselineCount) {
+export async function prepareUpgrade(connection, expectedBaselineCount, deployedBaseline = false) {
   assert.match(expectedBaselineCount ?? '', /^[1-9][0-9]*$/, 'The pinned baseline migration count is required');
   const migrations = await connection.query('SELECT migration_name, finished_at, rolled_back_at FROM _prisma_migrations');
   assert.equal(migrations.length, Number(expectedBaselineCount), 'Upgrade must start from the pinned populated baseline');
-  assert.ok(migrations.every((migration) => migration.finished_at && !migration.rolled_back_at && migration.migration_name < r2Migration),
-    'The sentinel must precede R2, with every baseline migration complete');
+  assert.ok(migrations.every((migration) => migration.finished_at && !migration.rolled_back_at &&
+    (deployedBaseline || migration.migration_name < r2Migration)),
+    'Every baseline migration must be complete and historical sentinel must precede R2');
+  assert.equal(migrations.some((migration) => migration.migration_name === r2Migration), deployedBaseline,
+    'Baseline R2 migration history does not match the declared source release');
   const [table] = await connection.query(
     'SELECT COUNT(*) AS count FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?',
     ['sales_item_selling_profiles'],
   );
-  assert.equal(String(table?.count), '0', 'Refusing to create a sentinel after the R2 table exists');
+  assert.equal(String(table?.count), deployedBaseline ? '1' : '0',
+    'R2 table presence does not match the declared source release');
   const [company] = await connection.query('SELECT id FROM companies ORDER BY id LIMIT 1');
   assert.ok(company, 'The production baseline must be populated before creating the sentinel');
   await connection.beginTransaction();
@@ -70,18 +74,19 @@ export async function prepareUpgrade(connection, expectedBaselineCount) {
     );
     const sentinel = await readSentinel(connection, item.insertId);
     await connection.commit();
-    return { migration: r2Migration, baselineMigrationCount: migrations.length, r2TableAbsentBeforeMigration: true, sentinel };
+    return { migration: r2Migration, baselineMigrationCount: migrations.length,
+      r2TableAbsentBeforeMigration: !deployedBaseline, sentinel };
   } catch (error) {
     await connection.rollback();
     throw error;
   }
 }
 
-export async function verifyUpgradedSentinel(connection, receipt, itemId, expectedBaselineCount) {
+export async function verifyUpgradedSentinel(connection, receipt, itemId, expectedBaselineCount, deployedBaseline = false) {
   assert.match(itemId ?? '', /^[1-9][0-9]*$/, 'Upgrade requires the pre-migration sentinel ID');
   assert.equal(receipt.migration, r2Migration);
   assert.equal(receipt.baselineMigrationCount, Number(expectedBaselineCount));
-  assert.equal(receipt.r2TableAbsentBeforeMigration, true);
+  assert.equal(receipt.r2TableAbsentBeforeMigration, !deployedBaseline);
   assert.equal(receipt.sentinel?.id, itemId);
   assert.equal(receipt.sentinel.name_ar, sentinelName);
   assert.deepEqual(await readSentinel(connection, itemId), receipt.sentinel, 'The pre-migration Inventory row changed during upgrade');
@@ -110,7 +115,8 @@ export function verifyTestReport(report) {
 }
 
 async function main(environment, action) {
-  assert.ok(['preflight-upgrade', 'prepare-upgrade', 'run'].includes(action), 'Usage: selling-profile-db-gate.mjs preflight-upgrade|prepare-upgrade|run');
+  assert.ok(['preflight-upgrade', 'prepare-upgrade', 'prepare-deployed-upgrade', 'run'].includes(action),
+    'Usage: selling-profile-db-gate.mjs preflight-upgrade|prepare-upgrade|prepare-deployed-upgrade|run');
   const configuration = validateEnvironment(environment);
   if (action !== 'run') assert.equal(configuration.mode, 'upgrade');
   await mkdir(configuration.artifactDirectory, { recursive: true });
@@ -134,8 +140,9 @@ async function main(environment, action) {
       console.log('R2 upgrade target and supported engine verified before baseline mutations');
       return;
     }
-    if (action === 'prepare-upgrade') {
-      const receipt = await prepareUpgrade(connection, environment.PRODUCTION_BASELINE_MIGRATION_COUNT);
+    if (action === 'prepare-upgrade' || action === 'prepare-deployed-upgrade') {
+      const receipt = await prepareUpgrade(connection, environment.PRODUCTION_BASELINE_MIGRATION_COUNT,
+        action === 'prepare-deployed-upgrade');
       await writeFile(receiptPath, `${JSON.stringify({ ...receipt, engine }, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
       process.stdout.write(receipt.sentinel.id);
       return;
@@ -148,7 +155,8 @@ async function main(environment, action) {
     if (configuration.mode === 'upgrade') {
       const receipt = JSON.parse(await readFile(receiptPath, 'utf8'));
       assert.equal(receipt.engine, engine, 'Sentinel proof must belong to the same engine run');
-      await verifyUpgradedSentinel(connection, receipt, environment.R2_UPGRADE_SENTINEL_ITEM_ID, environment.PRODUCTION_BASELINE_MIGRATION_COUNT);
+      await verifyUpgradedSentinel(connection, receipt, environment.R2_UPGRADE_SENTINEL_ITEM_ID,
+        environment.PRODUCTION_BASELINE_MIGRATION_COUNT, environment.PRODUCTION_BASELINE_MODE === 'deployed');
     }
   } finally {
     await connection.end();

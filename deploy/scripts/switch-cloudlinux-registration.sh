@@ -183,6 +183,26 @@ write_target_environment_snapshot() {
     environment.METRICS_BEARER_TOKEN = token;
     environment.PASSWORD_RESET_ENABLED = "true";
     environment.MEDIA_ROOT = mediaRoot;
+    const payrollKeyFile = process.env.MCAP_PAYROLL_KEY_FILE;
+    if (payrollKeyFile) {
+      const info = fs.lstatSync(payrollKeyFile);
+      if (!info.isFile() || info.isSymbolicLink() || (info.mode & 0o077) !== 0 ||
+          process.env.MCAP_PAYROLL_POLICY_REVIEWED !== "true") process.exit(6);
+      const keys = JSON.parse(fs.readFileSync(payrollKeyFile, "utf8"));
+      if (keys.format !== "mcap-payroll-keys-v1" || !keys.keys?.[keys.activeKeyId] || !keys.keys?.[keys.fingerprintKeyId]) process.exit(6);
+      const expected = {
+        PAYROLL_KEY_RING: JSON.stringify(keys.keys),
+        PAYROLL_ACTIVE_KEY_ID: keys.activeKeyId,
+        PAYROLL_FINGERPRINT_KEY_ID: keys.fingerprintKeyId,
+      };
+      // Never silently replace a previously configured payroll key or fingerprint.
+      for (const [name, value] of Object.entries(expected)) {
+        if (environment[name] !== undefined && environment[name] !== value) process.exit(6);
+        environment[name] = value;
+      }
+      environment.PAYROLL_POLICY_REVIEWED = "true";
+      environment.PAYROLL_ENABLED = "true";
+    }
     fs.writeFileSync(destination, JSON.stringify(environment), { mode: 0o600 });
   ' "$environment_file" "$target_environment_file" "$metrics_token_file" "$media_root"
 }

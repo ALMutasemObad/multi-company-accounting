@@ -18,6 +18,8 @@ test("upgrade compatibility starts from a pinned production ancestor and populat
   assert.match(script, /PRODUCTION_BASELINE_MIGRATION_COUNT/u);
   assert.match(script, /merge-base --is-ancestor/u);
   assert.match(script, /git -C "\$workspace" archive/u);
+  assert.match(script, /aligning the disposable baseline test's engine allowlist with the pinned deployed host/u);
+  assert.match(script, /Expected exactly one historical engine allowlist in the disposable deployed-baseline test/u);
   assert.match(script, /npm ci/u);
   assert.match(script, /npm run prisma:generate/u);
   assert.match(script, /"\$baseline_tsx" prisma\/seed\.ts/u);
@@ -29,13 +31,36 @@ test("upgrade compatibility starts from a pinned production ancestor and populat
   assert.ok(candidateUpgrade > baselineMigration, "candidate migrations must follow the populated production baseline");
 });
 
+test("upgrade compatibility proves the unchanged baseline before any candidate migration", () => {
+  const baselineFixtures = script.indexOf('"$baseline_tsx" prisma/demo-seed.ts');
+  const baselineTests = script.indexOf('"$baseline_vitest" run --no-file-parallelism');
+  const sentinel = script.indexOf('log "recording an Inventory sentinel');
+  const candidateUpgrade = script.indexOf('cd "$workspace/apps/api"');
+  assert.ok(baselineTests > baselineFixtures);
+  assert.ok(sentinel > baselineTests);
+  assert.ok(candidateUpgrade > sentinel);
+  assert.match(script, /proving the unchanged baseline on its own schema before candidate migrations/u);
+  assert.ok(
+    script.indexOf('log "recording the deployed R2 Inventory sentinel before baseline compatibility tests"')
+      < script.indexOf('log "proving the unchanged baseline on its own schema before candidate migrations"'),
+    "the deployed baseline's filtered upgrade-mode test requires its existing-schema sentinel first",
+  );
+  assert.equal(script.match(/"\$baseline_vitest" run --no-file-parallelism/g)?.length, 2);
+  assert.doesNotMatch(script, /--retry|--exclude|--testNamePattern/u);
+  assert.match(script, /prepare-deployed-upgrade/u);
+  assert.match(script, /tests\/selling-profile\.integration\.test\.ts --no-file-parallelism/u);
+});
+
 test("upgrade compatibility proves the previous application on the advanced schema", () => {
   const candidateUpgrade = script.indexOf('cd "$workspace/apps/api"');
-  const previousTests = script.indexOf('"$baseline_vitest" run --no-file-parallelism');
+  const previousTests = script.lastIndexOf('"$baseline_vitest" run --no-file-parallelism');
   const previousRuntime = script.indexOf("node apps/api/dist/server.js");
   assert.ok(previousTests > candidateUpgrade);
   assert.ok(previousRuntime > previousTests);
   assert.match(script, /127\.0\.0\.1:3101\/ready/u);
+  assert.match(script, /runtime_media_directory=\$\(mktemp -d "\$\{RUNNER_TEMP:-\/tmp\}\/mcap-upgrade-media\.XXXXXXXX"\)/u);
+  assert.match(script, /MEDIA_ROOT="\$runtime_media_directory"/u);
+  assert.match(script, /RATE_LIMIT_IDENTITY_SECRET=CI-only-upgrade-runtime-rate-limit-secret-2026/u);
   assert.match(script, /api_shutdown_completed/u);
   assert.doesNotMatch(script, /migrate reset|db push/u);
 });

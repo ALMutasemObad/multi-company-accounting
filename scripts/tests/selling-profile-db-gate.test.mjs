@@ -42,7 +42,7 @@ test('the CLI refuses missing opt-in before any driver connection or fixture wor
 });
 
 test('engine firewall accepts only supported releases and the exact CI matrix family', async () => {
-  for (const [version, prefix] of [['10.11.11-MariaDB-ubu2204', '10.11.11-MariaDB'], ['8.4.11', '8.4.']]) {
+  for (const [version, prefix] of [['10.11.11-MariaDB-ubu2204', '10.11.11-MariaDB'], ['11.4.13-MariaDB-cll-lve-log', '11.4.13-MariaDB'], ['8.4.11', '8.4.']]) {
     assert.equal(await verifyEngine({ query: async () => [{ version }] }, prefix), version);
   }
   for (const [version, prefix] of [['10.4.32-MariaDB', '10.4.'], ['8.0.41', '8.0.'], ['8.4.11', '10.11.11-MariaDB']]) {
@@ -124,6 +124,25 @@ test('after upgrade the exact Inventory snapshot survives without an invented se
   await assert.rejects(verifyUpgradedSentinel(fakeDatabase(), { ...receipt, r2TableAbsentBeforeMigration: false }, '91', '1'));
 });
 
+test('deployed baseline must already contain R2 and preserve its Inventory sentinel', async () => {
+  const migrations = [{ migration_name: r2Migration, finished_at: new Date(), rolled_back_at: null }];
+  const current = fakeDatabase({ migrations, tableCount: 1n });
+  const receipt = await prepareUpgrade(current, '1', true);
+  assert.equal(receipt.r2TableAbsentBeforeMigration, false);
+  await verifyUpgradedSentinel(fakeDatabase(), receipt, '91', '1', true);
+  for (const options of [
+    { migrations, tableCount: 0n },
+    { migrations: [{ ...migrations[0], finished_at: null }], tableCount: 1n },
+    { migrations: [{ migration_name: '20260824200000_inventory_item_catalog', finished_at: new Date(), rolled_back_at: null }], tableCount: 1n },
+  ]) {
+    const connection = fakeDatabase(options);
+    await assert.rejects(prepareUpgrade(connection, '1', true));
+    assert.ok(!connection.calls.some((call) => call.sql.startsWith('INSERT')));
+  }
+  await assert.rejects(verifyUpgradedSentinel(fakeDatabase({ profileCount: 1n }), receipt, '91', '1', true));
+  await assert.rejects(verifyUpgradedSentinel(fakeDatabase(), receipt, '91', '1', false));
+});
+
 function passingReport() {
   return { success: true, numTotalTests: 6, numPassedTests: 6, numFailedTests: 0, numPendingTests: 0, numTodoTests: 0,
     testResults: [{ name: '/repo/apps/api/tests/selling-profile.integration.test.ts', status: 'passed',
@@ -171,9 +190,20 @@ test('fresh MariaDB/MySQL and both populated upgrade jobs wire explicit R2 opt-i
       assert.equal(job.steps[gateIndex]['continue-on-error'], undefined);
     }
   }
-  assert.match(workflow.jobs['hosting-compatibility'].services.mariadb.image, /^mariadb:10\.11\./);
+  const hosting = workflow.jobs['hosting-compatibility'];
+  assert.equal(hosting.name, 'iFastNet compatibility (Node 22 / MariaDB ${{ matrix.engine_label }})');
+  assert.equal(hosting.services.mariadb.image, '${{ matrix.image }}');
+  assert.deepEqual(hosting.strategy.matrix.include.map((entry) => entry.engine_label), ['10.11', '11.4.13']);
+  assert.match(hosting.strategy.matrix.include[0].image, /^mariadb:10\.11\.11@sha256:/);
+  assert.match(hosting.strategy.matrix.include[1].image, /^mariadb:11\.4\.13@sha256:/);
+  assert.equal(hosting.env.EXPECTED_DATABASE_VERSION_PREFIX, '${{ matrix.expected_version }}');
   assert.match(workflow.jobs.verify.services.mysql.image, /^mysql:8\.4\./);
-  assert.deepEqual(workflow.jobs['migration-upgrade-compatibility'].strategy.matrix.include.map((entry) => entry.engine_name), ['MariaDB 10.11', 'MySQL 8.4']);
+  assert.deepEqual(workflow.jobs['migration-upgrade-compatibility'].strategy.matrix.include.map((entry) => entry.engine_name), ['MariaDB 11.4.13', 'MariaDB 10.11', 'MySQL 8.4']);
+  const upgradeMatrix = workflow.jobs['migration-upgrade-compatibility'].strategy.matrix.include;
+  assert.deepEqual(upgradeMatrix.map((entry) => entry.baseline_mode), ['deployed', 'historical', 'historical']);
+  assert.equal(upgradeMatrix[0].baseline_commit, '17917803dfec5c403066773009e8f60be462d70b');
+  assert.equal(String(upgradeMatrix[0].baseline_migration_count), '86');
+  assert.equal(workflow.jobs['migration-upgrade-compatibility'].env.PRODUCTION_BASELINE_COMMIT, '${{ matrix.baseline_commit }}');
   assert.deepEqual(workflow.jobs['deploy-staging'].needs, ['hosting-compatibility', 'migration-upgrade-compatibility', 'verify']);
 });
 
@@ -184,9 +214,11 @@ test('upgrade captures sentinel after baseline fixtures and verifies it immediat
   const prepare = upgradeScript.indexOf('selling-profile-db-gate.mjs" prepare-upgrade');
   const migration = upgradeScript.indexOf('"$prisma" migrate deploy');
   const gate = upgradeScript.indexOf('selling-profile-db-gate.mjs" run');
-  const previousTests = upgradeScript.indexOf('"$baseline_vitest" run');
+  const baselineTests = upgradeScript.indexOf('"$baseline_vitest" run');
+  const previousTests = upgradeScript.lastIndexOf('"$baseline_vitest" run');
   assert.ok(preflight > 0 && firstMigration > preflight && baselineSeed > firstMigration);
   assert.ok(prepare > baselineSeed && migration > prepare && gate > migration && previousTests > gate);
+  assert.ok(baselineTests > baselineSeed && baselineTests < prepare);
   assert.match(upgradeScript, /export R2_UPGRADE_SENTINEL_ITEM_ID/);
   assert.match(upgradeScript, /R2_UPGRADE_SENTINEL_ITEM_ID=%s\\n[\s\S]*GITHUB_ENV/);
   assert.doesNotMatch(upgradeScript, /selling-profile-db-gate[^\n]*\|\| true/);

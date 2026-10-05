@@ -15,6 +15,9 @@ import { TenantCompanyProvisioningAdapter } from '../src/companies/company-provi
 
 const enabled = process.env.RUN_DB_TESTS === 'true' && Boolean(process.env.DATABASE_URL);
 const db = enabled ? createDatabase(process.env.DATABASE_URL!) : null;
+const fixtureNow = Date.now();
+const dateAfterDays = (days: number) => new Date(fixtureNow + days * 86_400_000).toISOString().slice(0, 10);
+const issuedAt = dateAfterDays(-180), commercialExpiresAt = dateAfterDays(15), taxExpiresAt = dateAfterDays(365);
 
 describe.runIf(enabled)('company profile API on a real database', () => {
   let plan: Awaited<ReturnType<typeof createStartPlanFixture>>;
@@ -133,11 +136,11 @@ describe.runIf(enabled)('company profile API on a real database', () => {
         version: 1, legalName: 'First Company Legal', legalForm: 'LLC',
         commercialRegistration: {
           documentType: 'COMMERCIAL_REGISTRATION', number: 'CR-1234567890', issuingAuthority: 'Registry',
-          issuedAt: '2026-01-01', expiresAt: '2026-09-30',
+          issuedAt, expiresAt: commercialExpiresAt,
         },
         taxRegistration: {
           registrationType: 'VAT', countryCode: 'ye', number: 'VAT-0987654321',
-          issuedAt: '2026-01-01', expiresAt: '2030-01-01',
+          issuedAt, expiresAt: taxExpiresAt,
         },
         nationalAddress: { countryCode: 'ye', city: 'Sana’a', district: 'Old City' },
       })
@@ -180,17 +183,17 @@ describe.runIf(enabled)('company profile API on a real database', () => {
 
     await profiles.updateCompliance(context, {
       version: 3,
-      commercialRegistration: { documentType: 'COMMERCIAL_REGISTRATION', expiresAt: '2026-09-30' },
-      taxRegistration: { registrationType: 'VAT', countryCode: 'YE', expiresAt: '2030-01-01' },
+      commercialRegistration: { documentType: 'COMMERCIAL_REGISTRATION', expiresAt: commercialExpiresAt },
+      taxRegistration: { registrationType: 'VAT', countryCode: 'YE', expiresAt: taxExpiresAt },
       nationalAddress: { countryCode: 'YE', city: 'Aden' },
     });
     expect(await db!.companyRegistration.findFirstOrThrow({ where: { companyId } })).toMatchObject({
-      numberLast4: '7890', issuingAuthority: 'Registry', issuedAt: new Date('2026-01-01T00:00:00.000Z'),
-      expiresAt: new Date('2026-09-30T00:00:00.000Z'), status: 'VERIFIED', verifiedAt,
+      numberLast4: '7890', issuingAuthority: 'Registry', issuedAt: new Date(`${issuedAt}T00:00:00.000Z`),
+      expiresAt: new Date(`${commercialExpiresAt}T00:00:00.000Z`), status: 'VERIFIED', verifiedAt,
     });
     expect(await db!.companyTaxRegistration.findFirstOrThrow({ where: { companyId } })).toMatchObject({
-      numberLast4: '4321', issuedAt: new Date('2026-01-01T00:00:00.000Z'),
-      expiresAt: new Date('2030-01-01T00:00:00.000Z'), status: 'VERIFIED', verifiedAt,
+      numberLast4: '4321', issuedAt: new Date(`${issuedAt}T00:00:00.000Z`),
+      expiresAt: new Date(`${taxExpiresAt}T00:00:00.000Z`), status: 'VERIFIED', verifiedAt,
     });
     expect(await db!.companyAddress.findFirstOrThrow({ where: { companyId, type: 'NATIONAL' } })).toMatchObject({
       district: 'Old City', city: 'Aden', countryCode: 'YE',

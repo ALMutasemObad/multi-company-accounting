@@ -11,11 +11,13 @@ export type MasterDataEntityType =
   | "TAX_RATE"
   | "CUSTOM_ROLE"
   | "PROFESSIONAL_PROJECT"
+  | "GENERAL_PROJECT"
   | "HR_DEPARTMENT"
   | "HR_POSITION"
   | "EMPLOYEE"
   | "CRM_LEAD"
-  | "CRM_OPPORTUNITY";
+  | "CRM_OPPORTUNITY"
+  | "SERVICE_OFFERING";
 
 const defaults: Record<
   MasterDataEntityType,
@@ -37,11 +39,13 @@ const defaults: Record<
   TAX_RATE: { prefix: "TAX-", padding: 6 },
   CUSTOM_ROLE: { prefix: "ROL-", padding: 6 },
   PROFESSIONAL_PROJECT: { prefix: "PRJ-", padding: 6 },
+  GENERAL_PROJECT: { prefix: "GPR-", padding: 6 },
   HR_DEPARTMENT: { prefix: "DEP-", padding: 6 },
   HR_POSITION: { prefix: "JOB-", padding: 6 },
   EMPLOYEE: { prefix: "EMP-", padding: 6 },
   CRM_LEAD: { prefix: "LED-", padding: 6 },
   CRM_OPPORTUNITY: { prefix: "OPP-", padding: 6 },
+  SERVICE_OFFERING: { prefix: "SVC-", padding: 6 },
 };
 
 type ReservedSequenceRow = {

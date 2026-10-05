@@ -64,13 +64,25 @@ import { PosRecoveryService } from './pos/recovery-service.js';
 import { PrismaPosRecoveryQueryAdapter } from './platform/prisma-pos-recovery-query-adapter.js';
 import { PrismaPosSaleQueryAdapter } from './pos/adapters/prisma-pos-sale-query-adapter.js';
 import { ApprovalService } from './approvals/approval-service.js';
+import { PayrollService } from './payroll/payroll-service.js';
+import { PayrollVault } from './payroll/payroll-vault.js';
+import { PayrollApprovalAdapter } from './payroll/payroll-approval-adapter.js';
+import { PayrollCompanyAdapter } from './companies/payroll-company-adapter.js';
+import { PayrollOwnerAdapter } from './users/payroll-owner-adapter.js';
+import { PayrollEmployeeAdapter } from './hr/payroll-employee-adapter.js';
 import { FinancialCloseApprovalAdapter } from './fiscal/financial-close-approval-adapter.js';
 import { ProfessionalProjectService } from './projects/professional-project-service.js';
+import { GeneralProjectService } from './general-projects/general-project-service.js';
+import { GeneralProjectEmployeeAdapter } from './hr/general-project-employee-adapter.js';
+import { GeneralProjectCustomerAdapter } from './sales/general-project-customer-adapter.js';
 import { ProfessionalProjectPlanningService } from './projects/professional-project-planning-service.js';
 import { ProfessionalProjectAccessService } from './projects/professional-project-access-service.js';
 import { ProfessionalCustomerAdapter } from './sales/professional-customer-adapter.js';
 import { ProfessionalPeopleAdapter } from './users/professional-people-adapter.js';
 import { HrService } from './hr/hr-service.js';
+import { ServiceCatalogService } from './service-catalog/service-catalog-service.js';
+import { ServiceCatalogRevenueAccountAdapter } from './accounts/service-catalog-revenue-account-adapter.js';
+import { ServiceCatalogOutputTaxAdapter } from './tax/service-catalog-output-tax-adapter.js';
 import { HrIdentityAdapter } from './users/hr-identity-adapter.js';
 import { HrEmployeeAccountAdapter } from './hr/employee-account-adapter.js';
 import { IdentityAccountAdapter } from './users/identity-account-adapter.js';
@@ -282,6 +294,7 @@ const professionalProjects = new ProfessionalProjectService(
   new ProfessionalPeopleAdapter(database),
   new ProfessionalEmployeeAdapter(database),
 );
+const generalProjects = new GeneralProjectService(database, new GeneralProjectEmployeeAdapter(database), new GeneralProjectCustomerAdapter(database));
 const professionalProjectPlanning = new ProfessionalProjectPlanningService(database);
 const professionalProjectAccess = new ProfessionalProjectAccessService(database, new ProfessionalPeopleAdapter(database));
 const professionalBilling = new ProfessionalBillingService(
@@ -303,12 +316,17 @@ const employeeExpenses = new EmployeeExpenseService(
   new EmployeeExpenseCostCenterAdapter(database),
   new EmployeeExpenseCurrencyAdapter(),
 );
+const payrollVault = PayrollVault.fromEnvironment(process.env);
+const payroll = payrollVault ? new PayrollService(database, new PayrollCompanyAdapter(), new PayrollOwnerAdapter(), new PayrollEmployeeAdapter(), payrollVault) : undefined;
 const approvals = new ApprovalService(database, {
+  ...(payroll ? { PAYROLL_RUN: new PayrollApprovalAdapter(payroll) } : {}),
   FINANCIAL_CLOSE_RUN: new FinancialCloseApprovalAdapter(financialClose),
   PROFESSIONAL_TIMESHEET: new ProfessionalTimesheetApprovalAdapter(professionalProjects),
   EMPLOYEE_EXPENSE_CLAIM: new EmployeeExpenseApprovalAdapter(employeeExpenses),
 });
 const hr = new HrService(database, new HrIdentityAdapter(database));
+const serviceCatalog = new ServiceCatalogService(database,
+  new ServiceCatalogRevenueAccountAdapter(database), new ServiceCatalogOutputTaxAdapter(database));
 const users = new UserService(database);
 const workforceAccess = new WorkforceAccessService(
   database,
@@ -386,11 +404,14 @@ async function startServer() {
     financialClose,
     approvals,
     professionalProjects,
+    generalProjects,
     crm,
     professionalProjectPlanning,
     professionalProjectAccess,
     professionalBilling,
     hr,
+    serviceCatalog,
+    ...(payroll ? { payroll } : {}),
     employeeExpenses,
     accounts: new AccountService(database, accountUsageGuard),
     journals: new ManualJournalService(database, accountReferenceLocks),

@@ -11,6 +11,7 @@ import { arPos } from "./pos";
 import { arBarcode } from "./barcode";
 import { arApprovals } from "./approvals";
 import { arProfessionalProjects } from "./professional-projects";
+import { arGeneralProjects } from "./general-projects";
 import { arHumanResources } from "./human-resources";
 import { arSystemHomePlatform } from "./system-home-platform";
 import { arPublicPlans } from "./public-plans";
@@ -42,6 +43,7 @@ export const ar = {
   ...arBarcode,
   ...arApprovals,
   ...arProfessionalProjects,
+  ...arGeneralProjects,
   ...arHumanResources,
   ...arSystemHomePlatform,
   ...arPublicPlans,

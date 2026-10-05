@@ -1,0 +1,2 @@
+-- Application rollback only: retain encrypted history and external keys.
+-- Do not drop this table or delete evidence of previously reviewed calculations.

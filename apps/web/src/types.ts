@@ -18,7 +18,9 @@ export type PlatformModuleCode =
   | "DATA_IMPORT"
   | "APPROVALS"
   | "PROFESSIONAL_PROJECTS"
+  | "GENERAL_PROJECTS"
   | "HUMAN_RESOURCES"
+  | "PAYROLL"
   | "TAX"
   | "CRM"
   | "SERVICE_CATALOG";
@@ -413,7 +415,7 @@ export type FinancialCloseRun = {
 
 export type ApprovalRequest = {
   id: string;
-  subjectType: "FINANCIAL_CLOSE_RUN" | "PROFESSIONAL_TIMESHEET";
+  subjectType: "FINANCIAL_CLOSE_RUN" | "PROFESSIONAL_TIMESHEET" | "EMPLOYEE_EXPENSE_CLAIM" | "PAYROLL_RUN";
   subjectId: string;
   subjectVersion: number;
   subjectSnapshotHashSha256: string;

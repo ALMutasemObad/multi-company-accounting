@@ -22,6 +22,15 @@ import {
 } from '../src/generated/openapi-request-guards.js';
 
 describe('generated OpenAPI request guards', () => {
+  it('guards general project requests independently of the legacy professional project contract', () => {
+    const managerEmployeeId = '7a76e4d7-cfa4-49fa-846f-e7b024d67820';
+    expect(openApiRequestBodySchemas.createGeneralProject.parse({ nameAr: ' مشروع عام ', customerId: '9007199254740993', managerEmployeeId }))
+      .toMatchObject({ nameAr: 'مشروع عام', customerId: 9007199254740993n, managerEmployeeId });
+    expect(openApiRequestBodySchemas.createGeneralProject.safeParse({ nameAr: 'مشروع', kind: 'LEGAL_MATTER' }).success).toBe(false);
+    expect(openApiRequestBodySchemas.updateGeneralProject.safeParse({ version: 0 }).success).toBe(false);
+    expect(openApiRequestBodySchemas.assignGeneralProjectMember.safeParse({ version: 0, employeeId: managerEmployeeId, role: 'PROFESSIONAL' }).success).toBe(false);
+    expect(openApiRequestBodySchemas.transitionGeneralProject.safeParse({ version: 0, status: 'ON_HOLD', reason: 'short' }).success).toBe(false);
+  });
   it('accepts distinct subscription modules after BigInt conversion and rejects duplicates', () => {
     const draft = {
       displayName: 'Free BHD', description: null, billingCycle: 'MONTHLY', currencyCode: 'BHD',
@@ -44,8 +53,34 @@ describe('generated OpenAPI request guards', () => {
   });
 
   it('exposes the guarded operation inventory', () => {
-    expect(openApiContractCoverage).toEqual({ operations: 401, requestBodies: 199, responseBodies: 2611 });
+    expect(openApiContractCoverage).toEqual({ operations: 456, requestBodies: 229, responseBodies: 2963 });
     expect(openApiOperationRoutes).toMatchObject({
+      'GET /service-catalog/selection-options': 'listServiceSelectionOptions',
+      'GET /service-catalog/reference-options/revenue-accounts': 'listServiceRevenueAccountOptions',
+      'GET /service-catalog/reference-options/output-tax-rates': 'listServiceOutputTaxOptions',
+      'GET /general-projects': 'listGeneralProjects',
+      'GET /general-projects/{generalProjectId}/phases': 'listGeneralProjectPhases',
+      'POST /general-projects/{generalProjectId}/phases': 'createGeneralProjectPhase',
+      'PATCH /general-projects/{generalProjectId}/phases/{phaseId}': 'updateGeneralProjectPhase',
+      'GET /general-projects/{generalProjectId}/phases/{phaseId}/tasks': 'listGeneralProjectTasks',
+      'POST /general-projects/{generalProjectId}/phases/{phaseId}/tasks': 'createGeneralProjectTask',
+      'PATCH /general-projects/{generalProjectId}/tasks/{taskId}': 'updateGeneralProjectTask',
+      'GET /general-projects/{generalProjectId}/tasks/{taskId}/assignments': 'listGeneralProjectTaskAssignments',
+      'POST /general-projects/{generalProjectId}/tasks/{taskId}/assignments': 'assignGeneralProjectTaskMember',
+      'POST /general-projects/{generalProjectId}/tasks/{taskId}/assignments/{assignmentId}/unassign': 'unassignGeneralProjectTaskMember',
+      'POST /general-projects/{generalProjectId}/tasks/{taskId}/transition': 'transitionGeneralProjectTask',
+      'POST /general-projects/{generalProjectId}/tasks/{taskId}/progress': 'progressGeneralProjectTask',
+      'GET /general-projects/{generalProjectId}/task-dependencies': 'listGeneralProjectTaskDependencies',
+      'GET /general-projects/{generalProjectId}/task-options': 'listGeneralProjectTaskOptions',
+      'POST /general-projects/{generalProjectId}/follow': 'followGeneralProject',
+      'POST /general-projects/{generalProjectId}/unfollow': 'unfollowGeneralProject',
+      'GET /general-projects/{generalProjectId}/comments': 'listGeneralProjectComments',
+      'POST /general-projects/{generalProjectId}/comments': 'addGeneralProjectComment',
+      'POST /general-projects/{generalProjectId}/task-dependencies': 'addGeneralProjectTaskDependency',
+      'POST /general-projects/{generalProjectId}/task-dependencies/{dependencyId}/remove': 'removeGeneralProjectTaskDependency',
+      'POST /general-projects/{generalProjectId}/phases/{phaseId}/transition': 'transitionGeneralProjectPhase',
+      'POST /general-projects': 'createGeneralProject',
+      'POST /general-projects/{generalProjectId}/transition': 'transitionGeneralProject',
       'GET /pos/context/identity': 'getPosContextIdentity',
       'GET /auth/social/accounts': 'getCurrentSocialAccounts',
       'DELETE /auth/social/accounts/{provider}': 'unlinkCurrentSocialAccount',
@@ -79,7 +114,7 @@ describe('generated OpenAPI request guards', () => {
       'POST /auth/social/onboarding': 'completeSocialOnboarding',
       'DELETE /auth/social/onboarding': 'cancelSocialOnboarding',
     });
-    expect(guardedOpenApiOperations).toHaveLength(199);
+    expect(guardedOpenApiOperations).toHaveLength(229);
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
       'updateInventoryBarcodeSettings', 'previewInventoryCatalogImport', 'commitInventoryCatalogImport',
     ]));
@@ -98,12 +133,31 @@ describe('generated OpenAPI request guards', () => {
     ]));
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining(["createOrganizationMember", "updateOrganizationMember"]));
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
+      "createServiceCategory", "updateServiceCategory", "transitionServiceCategory",
+      "createServiceOffering", "updateServiceOffering",
+      "transitionServiceOffering", "createServiceVariant", "updateServiceVariant", "transitionServiceVariant",
+    ]));
+    expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
       'createCrmLead', 'markCrmLeadContacted', 'qualifyCrmLead', 'convertCrmLead',
       'moveCrmOpportunityStage', 'createCrmActivity', 'completeCrmActivity',
     ]));
     expect(guardedOpenApiOperations).toEqual(expect.arrayContaining([
       'login', 'upsertPlatformBillingAccount', 'createPlatformSubscriptionPlan', 'updatePlatformSubscriptionPlanDraft', 'publishPlatformSubscriptionPlanVersion', 'schedulePlatformCompanySubscriptionChange', 'requestCompanySubscriptionChange', 'issuePlatformBillingInvoice', 'recordPlatformBillingPayment', 'voidPlatformBillingInvoice', 'createUser', 'linkUserEmployee', 'createManualJournal', 'createReceipt', 'updatePaymentMethod', 'createWarehouse', 'createUnitOfMeasure', 'createInventoryItem', 'createInventoryMovement', 'initializeInventoryBalanceValuation', 'reverseInventoryMovement', 'createInventoryItemBarcode', 'updateInventoryItemBarcode', 'setPrimaryInventoryItemBarcode', 'deactivateInventoryItemBarcode', 'resolveInventoryBarcode', 'resolveInventoryBarcodeBatch', 'previewDataImport', 'commitDataImport', 'previewBankStatement', 'commitBankStatementImport', 'createBankReconciliationSession', 'generateBankReconciliationSuggestions', 'approveBankReconciliationMatch', 'createManualBankReconciliationMatch', 'releaseBankReconciliationMatch', 'classifyBankStatementLine', 'closeBankReconciliationSession', 'startFinancialCloseRun', 'refreshFinancialCloseRun', 'createApprovalRequest', 'approveApprovalRequest', 'rejectApprovalRequest', 'createEmployeeExpenseClaim', 'updateEmployeeExpenseClaim', 'createProfessionalProject', 'assignProfessionalProjectMember', 'createProfessionalTimeEntry', 'createProfessionalTimesheet', 'createProfessionalServiceContract', 'endProfessionalServiceContract', 'createProfessionalServiceRate', 'endProfessionalServiceRate', 'createProfessionalBillingRun', 'updateProfessionalProjectAccess', 'grantProfessionalProjectAccess', 'revokeProfessionalProjectAccess', 'updateProfessionalProjectTimeBudget', 'createProfessionalProjectStage', 'updateProfessionalProjectStage', 'transitionProfessionalProjectStage', 'createProfessionalProjectTask', 'updateProfessionalProjectTask', 'transitionProfessionalProjectTask', 'createProfessionalProjectTaskDependency', 'removeProfessionalProjectTaskDependency', 'createHrDepartment', 'updateHrDepartment', 'createHrPosition', 'updateHrPosition', 'createEmployee', 'updateEmployee', 'transitionEmployee', 'createEmploymentContract', 'endEmploymentContract', 'returnFinancialCloseRun', 'updateCashFlowMapping',
     ]));
+  });
+
+  it('validates narrow service account and output-tax option responses', () => {
+    const meta = { page: 1, pageSize: 20, total: 1, totalPages: 1 };
+    const accounts = { data: [{ id: '31', code: '4101', nameAr: 'إيراد', nameEn: null }], meta };
+    const taxes = { data: [{ id: '41', code: 'TAX-1', nameAr: 'ضريبة', rate: '15.0000' }], meta };
+    expect(parseOpenApiResponseBody('listServiceRevenueAccountOptions', 200, accounts)).toEqual(accounts);
+    expect(parseOpenApiResponseBody('listServiceOutputTaxOptions', 200, taxes)).toEqual(taxes);
+    expect(() => parseOpenApiResponseBody('listServiceOutputTaxOptions', 200, {
+      ...taxes, data: [{ ...taxes.data[0], rate: '15' }],
+    })).toThrow();
+    expect(() => parseOpenApiResponseBody('listServiceRevenueAccountOptions', 200, {
+      ...accounts, data: [{ ...accounts.data[0], accountBalance: '999' }],
+    })).toThrow();
   });
 
   it('requires Account expectedVersion and exposes the resulting version', () => {
@@ -722,9 +776,9 @@ describe('generated OpenAPI request guards', () => {
     expect(parseOpenApiResponseBody('getCurrentAuthorization', 200, {
       user: { id: '7', displayName: 'مستخدم' },
       selectedCompany: { id: '12', name: 'المنشأة التجريبية', timezone: 'Asia/Riyadh' },
-      modules: ['SALES', 'TREASURY'],
+      modules: ['SALES', 'TREASURY', 'GENERAL_PROJECTS'],
       permissions: ['receipts.view', 'sales_invoices.view'],
-    })).toMatchObject({ selectedCompany: { id: '12' }, modules: ['SALES', 'TREASURY'], permissions: ['receipts.view', 'sales_invoices.view'] });
+    })).toMatchObject({ selectedCompany: { id: '12' }, modules: ['SALES', 'TREASURY', 'GENERAL_PROJECTS'], permissions: ['receipts.view', 'sales_invoices.view'] });
     expect(() => parseOpenApiResponseBody('getCurrentAuthorization', 200, {
       user: { id: '7', displayName: 'مستخدم' },
       selectedCompany: null,

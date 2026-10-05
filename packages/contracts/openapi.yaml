@@ -70,6 +70,8 @@ servers:
 - url: /api/v1
   description: مسار نسبي يعمل على نفس أصل الواجهة في جميع البيئات
 tags:
+- name: Payroll
+  description: Private fixed-earnings payroll preparation and owner review.
 - name: CRM
   description: العملاء المحتملون والفرص وأنشطة المتابعة والتحويل الآمن إلى سجل العميل المملوك للمبيعات.
 - name: Sales Catalog
@@ -133,6 +135,217 @@ tags:
 security:
 - SessionCookie: []
 paths:
+  /payroll/capabilities:
+    get:
+      tags: [Payroll]
+      operationId: getPayrollCapabilities
+      summary: Read payroll access
+      x-permission: payroll.view
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Successful response
+          content: { application/json: { schema: { $ref: '#/components/schemas/PayrollCapabilities' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+  /payroll/employees:
+    get:
+      tags: [Payroll]
+      operationId: listPayrollEmployees
+      summary: Find eligible payroll employees
+      x-permission: payroll.agreements.manage
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: Successful response
+          content: { application/json: { schema: { $ref: '#/components/schemas/PayrollEmployeeOptions' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+  /payroll/agreements:
+    get:
+      tags: [Payroll]
+      operationId: listPayrollAgreements
+      summary: Read private salary agreements
+      x-permission: payroll.agreements.manage
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Successful response
+          content: { application/json: { schema: { $ref: '#/components/schemas/PayrollAgreementList' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+    post:
+      tags: [Payroll]
+      operationId: createPayrollAgreement
+      summary: Create dated salary agreement
+      x-permission: payroll.agreements.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreatePayrollAgreement' } } }
+      responses:
+        '201':
+          description: Successful response
+          content: { application/json: { schema: { $ref: '#/components/schemas/PayrollCommandResult' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+  /payroll/runs:
+    get:
+      tags: [Payroll]
+      operationId: listPayrollRuns
+      summary: Read payroll cycle metadata
+      x-permission: payroll.view
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Successful response
+          content: { application/json: { schema: { $ref: '#/components/schemas/PayrollRunList' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+    post:
+      tags: [Payroll]
+      operationId: createPayrollRun
+      summary: Prepare a monthly payroll cycle
+      x-permission: payroll.runs.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreatePayrollRun' } } }
+      responses:
+        '201':
+          description: Successful response
+          content: { application/json: { schema: { $ref: '#/components/schemas/PayrollCommandResult' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+  /payroll/runs/{runId}:
+    get:
+      tags: [Payroll]
+      operationId: getPayrollRun
+      summary: Read payroll cycle and owner details
+      x-permission: payroll.view
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: runId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Successful response
+          content: { application/json: { schema: { $ref: '#/components/schemas/PayrollRunDetail' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+  /payroll/runs/{runId}/calculate:
+    post:
+      tags: [Payroll]
+      operationId: calculatePayrollRun
+      summary: Calculate fixed earnings for enrolled employees
+      x-permission: payroll.runs.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: runId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CalculatePayrollRun' } } }
+      responses:
+        '200':
+          description: Successful response
+          content: { application/json: { schema: { $ref: '#/components/schemas/PayrollCommandResult' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+  /payroll/agreements/{agreementId}/end:
+    post:
+      tags: [Payroll]
+      operationId: endPayrollAgreement
+      summary: End an owner-managed agreement without changing calculated periods
+      x-permission: payroll.agreements.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: agreementId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/EndPayrollAgreement' } } }
+      responses:
+        '200':
+          description: Successful response
+          content: { application/json: { schema: { $ref: '#/components/schemas/PayrollCommandResult' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
   /metrics:
     get:
       tags:
@@ -3341,6 +3554,559 @@ paths:
         '422': { $ref: '#/components/responses/BusinessRuleViolation' }
       x-permission: fiscal_periods.close
       security: [{ SessionCookie: [], CsrfToken: [] }]
+  /general-projects/customer-options:
+    get:
+      tags: [General Projects]
+      summary: العملاء النشطون الاختياريون للمشروع العام
+      operationId: listGeneralProjectCustomerOptions
+      parameters: [{ $ref: '#/components/parameters/RequestId' }, { $ref: '#/components/parameters/Search' }]
+      responses:
+        '200': { description: خيارات العملاء, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectCustomerOptions' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: customers.view
+      security: [{ SessionCookie: [] }]
+  /general-projects/employee-options:
+    get:
+      tags: [General Projects]
+      summary: الموظفون النشطون القابلون لإسناد المشروع
+      operationId: listGeneralProjectEmployeeOptions
+      parameters: [{ $ref: '#/components/parameters/RequestId' }, { $ref: '#/components/parameters/Search' }]
+      responses:
+        '200': { description: خيارات الموظفين, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectEmployeeOptions' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: general_projects.manage
+      security: [{ SessionCookie: [] }]
+  /general-projects:
+    get:
+      tags: [General Projects]
+      summary: قائمة المشاريع العامة المستقلة داخل الشركة
+      operationId: listGeneralProjects
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { $ref: '#/components/parameters/Page' }
+      - { $ref: '#/components/parameters/PageSize' }
+      - { $ref: '#/components/parameters/Search' }
+      - { name: status, in: query, schema: { $ref: '#/components/schemas/GeneralProjectStatus' } }
+      - { name: priority, in: query, schema: { $ref: '#/components/schemas/GeneralProjectPriority' } }
+      - { name: customerId, in: query, schema: { $ref: '#/components/schemas/Id' } }
+      - { name: scope, in: query, schema: { type: string, enum: [ALL, MINE, FOLLOWING] } }
+      responses:
+        '200': { description: قائمة المشاريع, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectListResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: general_projects.view
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [General Projects]
+      summary: إنشاء مشروع عام مع مدير موظف نشط
+      operationId: createGeneralProject
+      parameters: [{ $ref: '#/components/parameters/RequestId' }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateGeneralProjectRequest' } } } }
+      responses:
+        '201': { description: مشروع جديد, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}:
+    get:
+      tags: [General Projects]
+      summary: مشروع عام وفريقه
+      operationId: getGeneralProject
+      parameters: [{ $ref: '#/components/parameters/RequestId' }, { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: تفاصيل المشروع, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectDetailResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: general_projects.view
+      security: [{ SessionCookie: [] }]
+    patch:
+      tags: [General Projects]
+      summary: تعديل المشروع العام غير النهائي
+      operationId: updateGeneralProject
+      parameters: [{ $ref: '#/components/parameters/RequestId' }, { $ref: '#/components/parameters/IdempotencyKey' }, { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UpdateGeneralProjectRequest' } } } }
+      responses:
+        '200': { description: المشروع المحدث, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/follow:
+    post:
+      tags: [General Projects]
+      summary: متابعة المستخدم للمشروع بنفسه، وتتطلب صلاحية العرض أيضًا
+      operationId: followGeneralProject
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: حالة المتابعة, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectFollowResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.follow
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/unfollow:
+    post:
+      tags: [General Projects]
+      summary: إلغاء المستخدم متابعته الذاتية، وتتطلب صلاحية العرض أيضًا
+      operationId: unfollowGeneralProject
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: حالة المتابعة, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectFollowResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.follow
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/comments:
+    get:
+      tags: [General Projects]
+      summary: تعليقات المشروع أو مهمة منه
+      operationId: listGeneralProjectComments
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: taskId, in: query, schema: { type: string, format: uuid } }
+      - { $ref: '#/components/parameters/Page' }
+      - { $ref: '#/components/parameters/PageSize' }
+      responses:
+        '200': { description: التعليقات, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectCommentListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: general_projects.view
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [General Projects]
+      summary: تعليق نصي جديد؛ يتطلب صلاحية عرض المشروع أيضًا
+      operationId: addGeneralProjectComment
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AddGeneralProjectCommentRequest' } } } }
+      responses:
+        '201': { description: التعليق الجديد, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectCommentMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.comment
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/transition:
+    post:
+      tags: [General Projects]
+      summary: انتقال حالة المشروع العام
+      operationId: transitionGeneralProject
+      parameters: [{ $ref: '#/components/parameters/RequestId' }, { $ref: '#/components/parameters/IdempotencyKey' }, { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TransitionGeneralProjectRequest' } } } }
+      responses:
+        '200': { description: حالة المشروع, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/phases:
+    get:
+      tags: [General Projects]
+      summary: مراحل خطة المشروع العام داخل الشركة
+      operationId: listGeneralProjectPhases
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { $ref: '#/components/parameters/Page' }
+      - { $ref: '#/components/parameters/PageSize' }
+      responses:
+        '200': { description: المراحل, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectPhaseListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: general_projects.view
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [General Projects]
+      summary: إنشاء مرحلة بترتيب خادمي ونسخة خطة متفائلة
+      operationId: createGeneralProjectPhase
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateGeneralProjectPhaseRequest' } } } }
+      responses:
+        '201': { description: المرحلة المنشأة, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectPhaseMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/phases/{phaseId}:
+    patch:
+      tags: [General Projects]
+      summary: تعديل بيانات مرحلة غير نهائية مع فحص حدود مهامها
+      operationId: updateGeneralProjectPhase
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: phaseId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UpdateGeneralProjectPhaseRequest' } } } }
+      responses:
+        '200': { description: المرحلة بعد التعديل, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectPhaseMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/phases/{phaseId}/tasks:
+    get:
+      tags: [General Projects]
+      summary: مهام مرحلة من مشروع الشركة
+      operationId: listGeneralProjectTasks
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: phaseId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { $ref: '#/components/parameters/Page' }
+      - { $ref: '#/components/parameters/PageSize' }
+      responses:
+        '200': { description: مهام المرحلة, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectTaskListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: general_projects.view
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [General Projects]
+      summary: إنشاء مهمة داخل مرحلة بخطة ذات نسخة متفائلة
+      operationId: createGeneralProjectTask
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: phaseId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateGeneralProjectTaskRequest' } } } }
+      responses:
+        '201': { description: المهمة المنشأة, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectTaskMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/task-options:
+    get:
+      tags: [General Projects]
+      summary: خيارات مهام المشروع للبحث عن الاعتماديات
+      operationId: listGeneralProjectTaskOptions
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: search, in: query, schema: { type: string, minLength: 1, maxLength: 200 } }
+      responses:
+        '200': { description: خيارات المهام, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectTaskOptionsResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: general_projects.view
+      security: [{ SessionCookie: [] }]
+  /general-projects/{generalProjectId}/task-dependencies:
+    get:
+      tags: [General Projects]
+      summary: روابط اعتماديات المهام ضمن مشروع الشركة
+      operationId: listGeneralProjectTaskDependencies
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { $ref: '#/components/parameters/Page' }
+      - { $ref: '#/components/parameters/PageSize' }
+      - { name: taskId, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: الاعتماديات, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectTaskDependencyListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: general_projects.view
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [General Projects]
+      summary: إضافة اعتمادية Finish-to-Start دون دورة
+      operationId: addGeneralProjectTaskDependency
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AddGeneralProjectTaskDependencyRequest' } } } }
+      responses:
+        '201': { description: الاعتمادية المنشأة, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectTaskDependencyMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/task-dependencies/{dependencyId}/remove:
+    post:
+      tags: [General Projects]
+      summary: إزالة اعتمادية منطقيًا بسبب أو بعد إلغاء سابقتها
+      operationId: removeGeneralProjectTaskDependency
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: dependencyId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RemoveGeneralProjectTaskDependencyRequest' } } } }
+      responses:
+        '200': { description: الاعتمادية بعد الإزالة, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectTaskDependencyMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/tasks/{taskId}:
+    patch:
+      tags: [General Projects]
+      summary: تعديل بيانات مهمة غير نهائية ضمن حدود المرحلة والمشروع
+      operationId: updateGeneralProjectTask
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: taskId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UpdateGeneralProjectTaskRequest' } } } }
+      responses:
+        '200': { description: المهمة بعد التعديل, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectTaskMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/tasks/{taskId}/assignments:
+    get:
+      tags: [General Projects]
+      summary: إسنادات المهمة داخل المشروع
+      operationId: listGeneralProjectTaskAssignments
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: taskId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { $ref: '#/components/parameters/Page' }
+      - { $ref: '#/components/parameters/PageSize' }
+      responses:
+        '200': { description: إسنادات المهمة, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectTaskAssignmentListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: general_projects.view
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [General Projects]
+      summary: إسناد عضو نشط من فريق المشروع إلى مهمة
+      operationId: assignGeneralProjectTaskMember
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: taskId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AssignGeneralProjectTaskMemberRequest' } } } }
+      responses:
+        '200': { description: الإسناد, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectTaskAssignmentMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/tasks/{taskId}/assignments/{assignmentId}/unassign:
+    post:
+      tags: [General Projects]
+      summary: سحب إسناد مهمة مع حماية آخر مسؤول عن مهمة جارية
+      operationId: unassignGeneralProjectTaskMember
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: taskId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: assignmentId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UnassignGeneralProjectTaskMemberRequest' } } } }
+      responses:
+        '200': { description: الإسناد المسحوب, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectTaskAssignmentMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/tasks/{taskId}/progress:
+    post:
+      tags: [General Projects]
+      summary: تحديث تقدم المهمة من مسؤولها النشط فقط
+      operationId: progressGeneralProjectTask
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: taskId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ProgressGeneralProjectTaskRequest' } } } }
+      responses:
+        '200': { description: المهمة بعد تقدم المسؤول, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectTaskMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.progress
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/tasks/{taskId}/transition:
+    post:
+      tags: [General Projects]
+      summary: نقل المهمة بين حالات التنفيذ بإشراف مدير المشروع
+      operationId: transitionGeneralProjectTask
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: taskId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TransitionGeneralProjectTaskRequest' } } } }
+      responses:
+        '200': { description: المهمة بعد الانتقال, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectTaskMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/phases/{phaseId}/transition:
+    post:
+      tags: [General Projects]
+      summary: انتقال حالة مرحلة مع فحص مهامها
+      operationId: transitionGeneralProjectPhase
+      parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { $ref: '#/components/parameters/IdempotencyKey' }
+      - { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: phaseId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TransitionGeneralProjectPhaseRequest' } } } }
+      responses:
+        '200': { description: المرحلة بعد الانتقال, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectPhaseMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/members:
+    post:
+      tags: [General Projects]
+      summary: إسناد موظف نشط للمشروع العام
+      operationId: assignGeneralProjectMember
+      parameters: [{ $ref: '#/components/parameters/RequestId' }, { $ref: '#/components/parameters/IdempotencyKey' }, { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AssignGeneralProjectMemberRequest' } } } }
+      responses:
+        '200': { description: العضو المسند, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectMemberMutationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /general-projects/{generalProjectId}/members/{memberId}/unassign:
+    post:
+      tags: [General Projects]
+      summary: إلغاء إسناد عضو مع حفظ تاريخ العضوية
+      operationId: unassignGeneralProjectMember
+      parameters: [{ $ref: '#/components/parameters/RequestId' }, { $ref: '#/components/parameters/IdempotencyKey' }, { name: generalProjectId, in: path, required: true, schema: { type: string, format: uuid } }, { name: memberId, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UnassignGeneralProjectMemberRequest' } } } }
+      responses:
+        '200': { description: إلغاء الإسناد, content: { application/json: { schema: { $ref: '#/components/schemas/GeneralProjectMemberUnassignResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: general_projects.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
   /professional-projects/customer-options:
     get:
       tags: [Professional Projects]
@@ -4145,6 +4911,342 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
       x-permission: professional_billing.view
       security: [{ SessionCookie: [] }]
+  /service-catalog/selection-options:
+    get:
+      tags: [Service Catalog]
+      summary: خيارات الخدمات النشطة والمتاحة بتاريخ الشركة المحلي
+      operationId: listServiceSelectionOptions
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+      - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      - { name: search, in: query, schema: { type: string, minLength: 1, maxLength: 200 } }
+      responses:
+        '200': { description: بدائل الخدمات المؤهلة للاختيار داخل الشركة فقط, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceSelectionOptionListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: services.view
+      security: [{ SessionCookie: [] }]
+  /service-catalog/reference-options/revenue-accounts:
+    get:
+      tags: [Service Catalog]
+      summary: حسابات الإيراد الجاهزة لاختيار افتراضي في بديل الخدمة
+      operationId: listServiceRevenueAccountOptions
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+      - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      - { name: search, in: query, schema: { type: string, minLength: 1, maxLength: 200 } }
+      responses:
+        '200': { description: خيارات حسابات الإيراد المؤهلة داخل الشركة فقط, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceRevenueAccountOptionListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: services.manage
+      security: [{ SessionCookie: [] }]
+  /service-catalog/reference-options/output-tax-rates:
+    get:
+      tags: [Service Catalog]
+      summary: ضرائب المخرجات الجاهزة لاختيار افتراضي في بديل الخدمة
+      operationId: listServiceOutputTaxOptions
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+      - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      - { name: search, in: query, schema: { type: string, minLength: 1, maxLength: 200 } }
+      responses:
+        '200': { description: خيارات ضريبة المخرجات المؤهلة داخل الشركة فقط, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceOutputTaxOptionListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: services.manage
+      security: [{ SessionCookie: [] }]
+  /service-catalog/offerings:
+    get:
+      tags: [Service Catalog]
+      summary: عرض عروض الخدمات في الشركة
+      operationId: listServiceOfferings
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+      - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      - { name: search, in: query, schema: { type: string, minLength: 1, maxLength: 160 } }
+      - { name: status, in: query, schema: { $ref: '#/components/schemas/ServiceOfferingStatus' } }
+      responses:
+        '200': { description: عروض الشركة, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceOfferingListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: services.manage
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [Service Catalog]
+      summary: إنشاء عرض خدمة برمز خادمي
+      operationId: createServiceOffering
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateServiceOfferingRequest' } } }
+      responses:
+        '201': { description: العرض المنشأ, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceOfferingResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: services.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /service-catalog/offerings/{offeringId}:
+    get:
+      tags: [Service Catalog]
+      summary: تفاصيل عرض خدمة
+      operationId: getServiceOffering
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: offeringId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: العرض, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceOfferingResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: services.manage
+      security: [{ SessionCookie: [] }]
+    patch:
+      tags: [Service Catalog]
+      summary: تعديل عرض خدمة بالنسخة
+      operationId: updateServiceOffering
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: offeringId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/UpdateServiceOfferingRequest' } } }
+      responses:
+        '200': { description: العرض المحدث, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceOfferingResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: services.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /service-catalog/offerings/{offeringId}/transition:
+    post:
+      tags: [Service Catalog]
+      summary: نقل حالة عرض الخدمة بسبب ونسخة
+      operationId: transitionServiceOffering
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: offeringId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/TransitionServiceOfferingRequest' } } }
+      responses:
+        '200': { description: العرض بعد الانتقال, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceOfferingResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: services.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /service-catalog/offerings/{offeringId}/variants:
+    get:
+      tags: [Service Catalog]
+      summary: عرض بدائل خدمة الشركة
+      operationId: listServiceVariants
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: offeringId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+      - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      responses:
+        '200': { description: بدائل العرض, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceVariantListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: services.manage
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [Service Catalog]
+      summary: إنشاء بديل لخدمة دون مرجع مشروع أو مخزون
+      operationId: createServiceVariant
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: offeringId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateServiceVariantRequest' } } }
+      responses:
+        '201': { description: البديل المنشأ, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceVariantResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: services.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /service-catalog/offerings/{offeringId}/variants/{variantId}:
+    patch:
+      tags: [Service Catalog]
+      summary: تعديل بديل الخدمة مع تثبيت وحدة التسعير بعد التنشيط
+      operationId: updateServiceVariant
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: offeringId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: variantId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/UpdateServiceVariantRequest' } } }
+      responses:
+        '200': { description: البديل المحدث, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceVariantResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: services.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /service-catalog/offerings/{offeringId}/variants/{variantId}/transition:
+    post:
+      tags: [Service Catalog]
+      summary: نقل حالة بديل الخدمة بسبب ونسخة
+      operationId: transitionServiceVariant
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: offeringId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: variantId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/TransitionServiceOfferingRequest' } } }
+      responses:
+        '200': { description: البديل بعد الانتقال, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceVariantResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: services.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /service-catalog/categories:
+    get:
+      tags: [Service Catalog]
+      summary: عرض تصنيفات الخدمات في الشركة
+      operationId: listServiceCategories
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+      - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      - { name: search, in: query, schema: { type: string, minLength: 1, maxLength: 160 } }
+      - { name: status, in: query, schema: { $ref: '#/components/schemas/ServiceCategoryStatus' } }
+      responses:
+        '200': { description: تصنيفات الشركة, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceCategoryListResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      x-permission: services.manage
+      security: [{ SessionCookie: [] }]
+    post:
+      tags: [Service Catalog]
+      summary: إنشاء تصنيف خدمة
+      operationId: createServiceCategory
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateServiceCategoryRequest' } } }
+      responses:
+        '201': { description: التصنيف المنشأ, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceCategoryResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+      x-permission: services.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /service-catalog/categories/{categoryId}:
+    get:
+      tags: [Service Catalog]
+      summary: تفاصيل تصنيف خدمة
+      operationId: getServiceCategory
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: categoryId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: التصنيف, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceCategoryResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-permission: services.manage
+      security: [{ SessionCookie: [] }]
+    patch:
+      tags: [Service Catalog]
+      summary: تعديل تصنيف خدمة بالنسخة
+      operationId: updateServiceCategory
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: categoryId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/UpdateServiceCategoryRequest' } } }
+      responses:
+        '200': { description: التصنيف المحدث, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceCategoryResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: services.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
+  /service-catalog/categories/{categoryId}/transition:
+    post:
+      tags: [Service Catalog]
+      summary: نقل حالة تصنيف الخدمة بسبب
+      operationId: transitionServiceCategory
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: categoryId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/TransitionServiceCategoryRequest' } } }
+      responses:
+        '200': { description: التصنيف بعد الانتقال, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceCategoryResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+      x-permission: services.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      x-idempotency-scope: user + company + operation + key
   /hr/departments:
     get:
       tags: [Human Resources]
@@ -4540,6 +5642,7 @@ paths:
         FINANCIAL_CLOSE_RUN: fiscal_periods.close
         PROFESSIONAL_TIMESHEET: professional_timesheets.submit
         EMPLOYEE_EXPENSE_CLAIM: employee_expenses.submit
+        PAYROLL_RUN: payroll.runs.manage
       security: [{ SessionCookie: [], CsrfToken: [] }]
       x-idempotency-scope: user + company + operation + key
   /approval-requests/{approvalRequestId}:
@@ -12104,6 +13207,21 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
   schemas:
+    PayrollCapabilities: {"type":"object","additionalProperties":false,"required":["canReadPrivate","currencyCode","currencyDecimals"],"properties":{"canReadPrivate":{"type":"boolean"},"currencyCode":{"type":"string"},"currencyDecimals":{"type":"integer","minimum":0,"maximum":8}}}
+    PayrollEmployeeOption: {"type":"object","additionalProperties":false,"required":["id","employeeNumber","nameAr"],"properties":{"id":{"type":"string","format":"uuid"},"employeeNumber":{"type":"string"},"nameAr":{"type":"string"}}}
+    PayrollEmployeeOptions: {"type":"object","additionalProperties":false,"required":["data"],"properties":{"data":{"type":"array","items":{"$ref":"#/components/schemas/PayrollEmployeeOption"}}}}
+    PayrollCommandResult: {"type":"object","additionalProperties":false,"required":["id","version"],"properties":{"id":{"type":"string","format":"uuid"},"version":{"type":"integer","minimum":0}}}
+    CreatePayrollAgreement: {"type":"object","additionalProperties":false,"required":["employeeId","startsOn","basicSalary"],"properties":{"employeeId":{"type":"string","format":"uuid"},"startsOn":{"type":"string","format":"date"},"endsBefore":{"type":["string","null"],"format":"date"},"basicSalary":{"type":"string","pattern":"^(?:0|[1-9][0-9]{0,18})(?:\\.[0-9]{1,8})?$"},"fixedAllowance":{"type":["string","null"],"pattern":"^(?:0|[1-9][0-9]{0,18})(?:\\.[0-9]{1,8})?$"}}}
+    PayrollAgreement: {"type":"object","additionalProperties":false,"required":["id","employeeId","employeeNumber","nameAr","startsOn","endsBefore","version","basicSalary","fixedAllowance"],"properties":{"id":{"type":"string","format":"uuid"},"employeeId":{"type":"string","format":"uuid"},"employeeNumber":{"type":"string"},"nameAr":{"type":"string"},"startsOn":{"type":"string","format":"date"},"endsBefore":{"type":["string","null"],"format":"date"},"version":{"type":"integer","minimum":0},"basicSalary":{"type":"string","pattern":"^(?:0|[1-9][0-9]{0,18})(?:\\.[0-9]{1,8})?$"},"fixedAllowance":{"type":["string","null"],"pattern":"^(?:0|[1-9][0-9]{0,18})(?:\\.[0-9]{1,8})?$"}}}
+    PayrollAgreementList: {"type":"object","additionalProperties":false,"required":["data","meta"],"properties":{"data":{"type":"array","items":{"$ref":"#/components/schemas/PayrollAgreement"}},"meta":{"$ref":"#/components/schemas/PaginationMeta"}}}
+    CreatePayrollRun: {"type":"object","additionalProperties":false,"required":["periodStart","periodEndExclusive"],"properties":{"periodStart":{"type":"string","format":"date"},"periodEndExclusive":{"type":"string","format":"date"}}}
+    CalculatePayrollRun: {"type":"object","additionalProperties":false,"required":["expectedVersion"],"properties":{"expectedVersion":{"type":"integer","minimum":0}}}
+    EndPayrollAgreement: {"type":"object","additionalProperties":false,"required":["expectedVersion","endsBefore"],"properties":{"expectedVersion":{"type":"integer","minimum":0},"endsBefore":{"type":"string","format":"date"}}}
+    PayrollRun: {"type":"object","additionalProperties":false,"required":["id","periodStart","periodEndExclusive","status","version","employeeCount","makerUserId","approvedByUserId"],"properties":{"id":{"type":"string","format":"uuid"},"periodStart":{"type":"string","format":"date"},"periodEndExclusive":{"type":"string","format":"date"},"status":{"type":"string","enum":["DRAFT","CALCULATED","AWAITING_APPROVAL","APPROVED"]},"version":{"type":"integer","minimum":0},"employeeCount":{"type":"integer","minimum":0},"makerUserId":{"type":"string"},"approvedByUserId":{"type":["string","null"]}}}
+    PayrollRunList: {"type":"object","additionalProperties":false,"required":["data","meta"],"properties":{"data":{"type":"array","items":{"$ref":"#/components/schemas/PayrollRun"}},"meta":{"$ref":"#/components/schemas/PaginationMeta"}}}
+    PayrollPrivateEmployee: {"type":"object","additionalProperties":false,"required":["employeeId","employeeNumber","nameAr","agreementId","agreementVersion","basicSalary","fixedAllowance","netPayable"],"properties":{"employeeId":{"type":"string","format":"uuid"},"employeeNumber":{"type":"string"},"nameAr":{"type":"string"},"agreementId":{"type":"string","format":"uuid"},"agreementVersion":{"type":"integer","minimum":0},"basicSalary":{"type":"string","pattern":"^(?:0|[1-9][0-9]{0,18})(?:\\.[0-9]{1,8})?$"},"fixedAllowance":{"type":["string","null"],"pattern":"^(?:0|[1-9][0-9]{0,18})(?:\\.[0-9]{1,8})?$"},"netPayable":{"type":"string","pattern":"^(?:0|[1-9][0-9]{0,18})(?:\\.[0-9]{1,8})?$"}}}
+    PayrollPrivateSnapshot: {"type":"object","additionalProperties":false,"required":["schemaVersion","currencyCode","grossEarnings","netPayable","employees"],"properties":{"schemaVersion":{"type":"integer","const":1},"currencyCode":{"type":"string"},"grossEarnings":{"type":"string","pattern":"^(?:0|[1-9][0-9]{0,18})(?:\\.[0-9]{1,8})?$"},"netPayable":{"type":"string","pattern":"^(?:0|[1-9][0-9]{0,18})(?:\\.[0-9]{1,8})?$"},"employees":{"type":"array","items":{"$ref":"#/components/schemas/PayrollPrivateEmployee"}}}}
+    PayrollRunDetail: {"type":"object","additionalProperties":false,"required":["run","details"],"properties":{"run":{"$ref":"#/components/schemas/PayrollRun"},"details":{"oneOf":[{"$ref":"#/components/schemas/PayrollPrivateSnapshot"},{"type":"null"}]}}}
     DataImportType:
       type: string
       enum: [CUSTOMERS, SUPPLIERS, SALES_INVOICES, PURCHASE_INVOICES]
@@ -12624,6 +13742,8 @@ components:
             - DATA_IMPORT
             - APPROVALS
             - PROFESSIONAL_PROJECTS
+            - GENERAL_PROJECTS
+            - PAYROLL
             - HUMAN_RESOURCES
             - TAX
             - CRM
@@ -15402,7 +16522,7 @@ components:
           items: { $ref: '#/components/schemas/EmployeeExpenseCostCenter' }
     ApprovalSubjectType:
       type: string
-      enum: [FINANCIAL_CLOSE_RUN, PROFESSIONAL_TIMESHEET, EMPLOYEE_EXPENSE_CLAIM]
+      enum: [FINANCIAL_CLOSE_RUN, PROFESSIONAL_TIMESHEET, EMPLOYEE_EXPENSE_CLAIM, PAYROLL_RUN]
     ApprovalRequestStatus:
       type: string
       enum: [PENDING, APPROVED, REJECTED, CANCELLED]
@@ -20686,6 +21806,444 @@ components:
               id: { $ref: '#/components/schemas/Id' }
               name: { type: string }
           - type: 'null'
+    GeneralProjectStatus: { type: string, enum: [DRAFT, ACTIVE, ON_HOLD, COMPLETED, CANCELLED] }
+    GeneralProjectPriority: { type: string, enum: [LOW, NORMAL, HIGH, URGENT] }
+    GeneralProjectMemberRole: { type: string, enum: [MANAGER, CONTRIBUTOR] }
+    GeneralProjectPhaseStatus: { type: string, enum: [PLANNED, IN_PROGRESS, COMPLETED, CANCELLED] }
+    GeneralProjectCustomer:
+      type: object
+      required: [id, code, nameAr, nameEn, isActive]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        code: { type: string }
+        nameAr: { type: string }
+        nameEn: { type: [string, 'null'] }
+        isActive: { type: boolean }
+    GeneralProjectEmployee:
+      type: object
+      required: [id, employeeNumber, nameAr, nameEn, status]
+      properties:
+        id: { type: string, format: uuid }
+        employeeNumber: { type: string }
+        nameAr: { type: string }
+        nameEn: { type: [string, 'null'] }
+        status: { type: string, enum: [ACTIVE, ON_LEAVE, TERMINATED] }
+    GeneralProjectCustomerOptions:
+      type: object
+      required: [data]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/GeneralProjectCustomer' } }
+    GeneralProjectEmployeeOptions:
+      type: object
+      required: [data]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/GeneralProjectEmployee' } }
+    GeneralProject:
+      type: object
+      required: [id, code, nameAr, nameEn, description, status, priority, customer, plannedStartDate, targetEndDate, memberCount, version, planVersion, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        nameAr: { type: string }
+        nameEn: { type: [string, 'null'] }
+        description: { type: [string, 'null'] }
+        status: { $ref: '#/components/schemas/GeneralProjectStatus' }
+        priority: { $ref: '#/components/schemas/GeneralProjectPriority' }
+        customer:
+          oneOf:
+          - { $ref: '#/components/schemas/GeneralProjectCustomer' }
+          - { type: 'null' }
+        plannedStartDate: { type: [string, 'null'], format: date }
+        targetEndDate: { type: [string, 'null'], format: date }
+        memberCount: { type: integer, minimum: 0 }
+        version: { type: integer, minimum: 0 }
+        planVersion: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    GeneralProjectMember:
+      type: object
+      required: [id, employee, role, isActive, version, assignedAt, unassignedAt]
+      properties:
+        id: { type: string, format: uuid }
+        employee: { $ref: '#/components/schemas/GeneralProjectEmployee' }
+        role: { $ref: '#/components/schemas/GeneralProjectMemberRole' }
+        isActive: { type: boolean }
+        version: { type: integer, minimum: 0 }
+        assignedAt: { type: string, format: date-time }
+        unassignedAt: { type: [string, 'null'], format: date-time }
+    GeneralProjectResponse:
+      type: object
+      required: [project]
+      properties:
+        project: { $ref: '#/components/schemas/GeneralProject' }
+    GeneralProjectDetailResponse:
+      type: object
+      required: [project, members, isFollowing]
+      properties:
+        project: { $ref: '#/components/schemas/GeneralProject' }
+        members: { type: array, items: { $ref: '#/components/schemas/GeneralProjectMember' } }
+        isFollowing: { type: boolean }
+    GeneralProjectFollowResponse:
+      type: object
+      additionalProperties: false
+      required: [isFollowing]
+      properties:
+        isFollowing: { type: boolean }
+    GeneralProjectComment:
+      type: object
+      additionalProperties: false
+      required: [id, taskId, taskTitle, authorName, body, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        taskId: { type: [string, 'null'], format: uuid }
+        taskTitle: { type: [string, 'null'] }
+        authorName: { type: string }
+        body: { type: string }
+        createdAt: { type: string, format: date-time }
+    GeneralProjectCommentListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/GeneralProjectComment' } }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    GeneralProjectCommentMutationResponse:
+      type: object
+      additionalProperties: false
+      required: [comment]
+      properties:
+        comment:
+          type: object
+          additionalProperties: false
+          required: [id, taskId, body, createdAt]
+          properties:
+            id: { type: string, format: uuid }
+            taskId: { type: [string, 'null'], format: uuid }
+            body: { type: string }
+            createdAt: { type: string, format: date-time }
+    AddGeneralProjectCommentRequest:
+      type: object
+      additionalProperties: false
+      required: [body]
+      properties:
+        taskId: { type: string, format: uuid }
+        body: { type: string, x-trim: true, minLength: 1, maxLength: 2000 }
+    GeneralProjectListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/GeneralProject' } }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    GeneralProjectPhase:
+      type: object
+      additionalProperties: false
+      required: [id, sequence, title, description, plannedStartDate, targetEndDate, status, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        sequence: { type: integer, minimum: 1, readOnly: true }
+        title: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: [string, 'null'], maxLength: 1000 }
+        plannedStartDate: { type: [string, 'null'], format: date }
+        targetEndDate: { type: [string, 'null'], format: date }
+        status: { $ref: '#/components/schemas/GeneralProjectPhaseStatus' }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    GeneralProjectPhaseListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, planVersion, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/GeneralProjectPhase' } }
+        planVersion: { type: integer, minimum: 0 }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    GeneralProjectPhaseMutationResponse:
+      type: object
+      additionalProperties: false
+      required: [phase, planVersion]
+      properties:
+        phase: { $ref: '#/components/schemas/GeneralProjectPhase' }
+        planVersion: { type: integer, minimum: 0 }
+    CreateGeneralProjectPhaseRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedPlanVersion, title]
+      properties:
+        expectedPlanVersion: { type: integer, minimum: 0 }
+        title: { type: string, x-trim: true, minLength: 1, maxLength: 200 }
+        description: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
+        plannedStartDate: { type: [string, 'null'], format: date }
+        targetEndDate: { type: [string, 'null'], format: date }
+    UpdateGeneralProjectPhaseRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedPlanVersion, expectedVersion, title]
+      properties:
+        expectedPlanVersion: { type: integer, minimum: 0 }
+        expectedVersion: { type: integer, minimum: 0 }
+        title: { type: string, x-trim: true, minLength: 1, maxLength: 200 }
+        description: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
+        plannedStartDate: { type: [string, 'null'], format: date }
+        targetEndDate: { type: [string, 'null'], format: date }
+    TransitionGeneralProjectPhaseRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedPlanVersion, expectedVersion, to]
+      properties:
+        expectedPlanVersion: { type: integer, minimum: 0 }
+        expectedVersion: { type: integer, minimum: 0 }
+        to: { $ref: '#/components/schemas/GeneralProjectPhaseStatus' }
+        reason: { type: string, x-trim: true, minLength: 10, maxLength: 500 }
+    GeneralProjectTaskStatus: { type: string, enum: [TODO, IN_PROGRESS, BLOCKED, COMPLETED, CANCELLED] }
+    GeneralProjectTask:
+      type: object
+      additionalProperties: false
+      required: [id, sequence, title, description, priority, plannedStartDate, dueDate, status, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        sequence: { type: integer, minimum: 1, readOnly: true }
+        title: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: [string, 'null'], maxLength: 1000 }
+        priority: { $ref: '#/components/schemas/GeneralProjectPriority' }
+        plannedStartDate: { type: [string, 'null'], format: date }
+        dueDate: { type: [string, 'null'], format: date }
+        status: { $ref: '#/components/schemas/GeneralProjectTaskStatus' }
+        canProgress: { type: boolean, description: صلاحية التقدم الفعلية لهذه المهمة ضمن الإسناد الحالي عند القراءة }
+        dependencyBlocked: { type: boolean, description: هل تمنع اعتمادية فعالة بدء المهمة الآن }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    GeneralProjectTaskListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, planVersion, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/GeneralProjectTask' } }
+        planVersion: { type: integer, minimum: 0 }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    GeneralProjectTaskMutationResponse:
+      type: object
+      additionalProperties: false
+      required: [task, planVersion]
+      properties:
+        task: { $ref: '#/components/schemas/GeneralProjectTask' }
+        planVersion: { type: integer, minimum: 0 }
+    CreateGeneralProjectTaskRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedPlanVersion, title]
+      properties:
+        expectedPlanVersion: { type: integer, minimum: 0 }
+        title: { type: string, x-trim: true, minLength: 1, maxLength: 200 }
+        description: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
+        priority: { $ref: '#/components/schemas/GeneralProjectPriority' }
+        plannedStartDate: { type: [string, 'null'], format: date }
+        dueDate: { type: [string, 'null'], format: date }
+    UpdateGeneralProjectTaskRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedPlanVersion, expectedVersion, title]
+      properties:
+        expectedPlanVersion: { type: integer, minimum: 0 }
+        expectedVersion: { type: integer, minimum: 0 }
+        title: { type: string, x-trim: true, minLength: 1, maxLength: 200 }
+        description: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
+        priority: { $ref: '#/components/schemas/GeneralProjectPriority' }
+        plannedStartDate: { type: [string, 'null'], format: date }
+        dueDate: { type: [string, 'null'], format: date }
+    GeneralProjectTaskAssignmentRole: { type: string, enum: [RESPONSIBLE, CONTRIBUTOR] }
+    GeneralProjectTaskAssignment:
+      type: object
+      additionalProperties: false
+      required: [id, memberId, role, isActive, version, assignedAt, unassignedAt]
+      properties:
+        id: { type: string, format: uuid }
+        memberId: { type: string, format: uuid }
+        role: { $ref: '#/components/schemas/GeneralProjectTaskAssignmentRole' }
+        isActive: { type: boolean }
+        version: { type: integer, minimum: 0 }
+        assignedAt: { type: string, format: date-time }
+        unassignedAt: { type: [string, 'null'], format: date-time }
+    GeneralProjectTaskAssignmentListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, planVersion, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/GeneralProjectTaskAssignment' } }
+        planVersion: { type: integer, minimum: 0 }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    GeneralProjectTaskAssignmentMutationResponse:
+      type: object
+      additionalProperties: false
+      required: [assignment, planVersion]
+      properties:
+        assignment: { $ref: '#/components/schemas/GeneralProjectTaskAssignment' }
+        planVersion: { type: integer, minimum: 0 }
+    AssignGeneralProjectTaskMemberRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedPlanVersion, memberId, role]
+      properties:
+        expectedPlanVersion: { type: integer, minimum: 0 }
+        memberId: { type: string, format: uuid }
+        role: { $ref: '#/components/schemas/GeneralProjectTaskAssignmentRole' }
+    UnassignGeneralProjectTaskMemberRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedPlanVersion, expectedVersion, reason]
+      properties:
+        expectedPlanVersion: { type: integer, minimum: 0 }
+        expectedVersion: { type: integer, minimum: 0 }
+        reason: { type: string, x-trim: true, minLength: 10, maxLength: 500 }
+    TransitionGeneralProjectTaskRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedPlanVersion, expectedVersion, to]
+      properties:
+        expectedPlanVersion: { type: integer, minimum: 0 }
+        expectedVersion: { type: integer, minimum: 0 }
+        to: { $ref: '#/components/schemas/GeneralProjectTaskStatus' }
+        reason: { type: string, x-trim: true, minLength: 10, maxLength: 500 }
+    ProgressGeneralProjectTaskRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedPlanVersion, expectedVersion, to]
+      properties:
+        expectedPlanVersion: { type: integer, minimum: 0 }
+        expectedVersion: { type: integer, minimum: 0 }
+        to: { type: string, enum: [IN_PROGRESS, BLOCKED, COMPLETED, TODO] }
+        reason: { type: string, x-trim: true, minLength: 10, maxLength: 500 }
+    GeneralProjectTaskOption:
+      type: object
+      additionalProperties: false
+      required: [id, title, status, sequence, phaseTitle, phaseSequence]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        status: { $ref: '#/components/schemas/GeneralProjectTaskStatus' }
+        sequence: { type: integer, minimum: 1 }
+        phaseTitle: { type: string }
+        phaseSequence: { type: integer, minimum: 1 }
+    GeneralProjectTaskOptionsResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/GeneralProjectTaskOption' } }
+    GeneralProjectTaskDependency:
+      type: object
+      additionalProperties: false
+      required: [id, predecessorTaskId, successorTaskId, predecessorTitle, successorTitle, isActive, version, createdAt, removedAt, removalReason]
+      properties:
+        id: { type: string, format: uuid }
+        predecessorTaskId: { type: string, format: uuid }
+        successorTaskId: { type: string, format: uuid }
+        predecessorTitle: { type: string }
+        successorTitle: { type: string }
+        isActive: { type: boolean }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        removedAt: { type: [string, 'null'], format: date-time }
+        removalReason: { type: [string, 'null'], maxLength: 500 }
+    GeneralProjectTaskDependencyListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, planVersion, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/GeneralProjectTaskDependency' } }
+        planVersion: { type: integer, minimum: 0 }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    GeneralProjectTaskDependencyMutationResponse:
+      type: object
+      additionalProperties: false
+      required: [dependency, planVersion]
+      properties:
+        dependency: { $ref: '#/components/schemas/GeneralProjectTaskDependency' }
+        planVersion: { type: integer, minimum: 0 }
+    AddGeneralProjectTaskDependencyRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedPlanVersion, predecessorTaskId, successorTaskId]
+      properties:
+        expectedPlanVersion: { type: integer, minimum: 0 }
+        predecessorTaskId: { type: string, format: uuid }
+        successorTaskId: { type: string, format: uuid }
+    RemoveGeneralProjectTaskDependencyRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedPlanVersion, expectedVersion, reason]
+      properties:
+        expectedPlanVersion: { type: integer, minimum: 0 }
+        expectedVersion: { type: integer, minimum: 0 }
+        reason: { type: string, x-trim: true, minLength: 10, maxLength: 500 }
+    CreateGeneralProjectRequest:
+      type: object
+      additionalProperties: false
+      required: [nameAr]
+      properties:
+        nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 200 }
+        nameEn: { type: [string, 'null'], x-trim: true, maxLength: 200 }
+        description: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
+        customerId:
+          oneOf:
+          - { $ref: '#/components/schemas/Id' }
+          - { type: 'null' }
+        priority: { $ref: '#/components/schemas/GeneralProjectPriority' }
+        plannedStartDate: { type: [string, 'null'], format: date }
+        targetEndDate: { type: [string, 'null'], format: date }
+        managerEmployeeId: { type: string, format: uuid }
+    UpdateGeneralProjectRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      minProperties: 2
+      properties:
+        version: { type: integer, minimum: 0 }
+        nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 200 }
+        nameEn: { type: [string, 'null'], x-trim: true, maxLength: 200 }
+        description: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
+        customerId:
+          oneOf:
+          - { $ref: '#/components/schemas/Id' }
+          - { type: 'null' }
+        priority: { $ref: '#/components/schemas/GeneralProjectPriority' }
+        plannedStartDate: { type: [string, 'null'], format: date }
+        targetEndDate: { type: [string, 'null'], format: date }
+    TransitionGeneralProjectRequest:
+      type: object
+      additionalProperties: false
+      required: [version, status]
+      properties:
+        version: { type: integer, minimum: 0 }
+        status: { $ref: '#/components/schemas/GeneralProjectStatus' }
+        reason: { type: string, x-trim: true, minLength: 10, maxLength: 500 }
+    AssignGeneralProjectMemberRequest:
+      type: object
+      additionalProperties: false
+      required: [version, employeeId, role]
+      properties:
+        version: { type: integer, minimum: 0 }
+        employeeId: { type: string, format: uuid }
+        role: { $ref: '#/components/schemas/GeneralProjectMemberRole' }
+    UnassignGeneralProjectMemberRequest:
+      type: object
+      additionalProperties: false
+      required: [version, reason]
+      properties:
+        version: { type: integer, minimum: 0 }
+        reason: { type: string, x-trim: true, minLength: 10, maxLength: 500 }
+    GeneralProjectMemberMutationResponse:
+      type: object
+      required: [member, projectVersion]
+      properties:
+        member: { $ref: '#/components/schemas/GeneralProjectMember' }
+        projectVersion: { type: integer, minimum: 0 }
+    GeneralProjectMemberUnassignResponse:
+      type: object
+      required: [memberId, projectVersion]
+      properties:
+        memberId: { type: string, format: uuid }
+        projectVersion: { type: integer, minimum: 0 }
     ProfessionalProjectKind:
       type: string
       enum: [LEGAL_MATTER, CONSULTING_ENGAGEMENT, PROFESSIONAL_PROJECT]
@@ -21598,6 +23156,248 @@ components:
       required: [position]
       properties:
         position: { $ref: '#/components/schemas/HrStructureReference' }
+    ServiceOfferingStatus:
+      type: string
+      enum: [DRAFT, ACTIVE, INACTIVE, RETIRED]
+    ServiceOfferingCategoryReference:
+      type: object
+      additionalProperties: false
+      required: [id, nameAr, nameEn, status]
+      properties:
+        id: { type: string, format: uuid }
+        nameAr: { type: string, maxLength: 160 }
+        nameEn: { type: [string, 'null'], maxLength: 160 }
+        status: { $ref: '#/components/schemas/ServiceCategoryStatus' }
+    ServiceOffering:
+      type: object
+      additionalProperties: false
+      required: [id, code, nameAr, nameEn, description, category, status, variantCount, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string, maxLength: 40, readOnly: true }
+        nameAr: { type: string, maxLength: 200 }
+        nameEn: { type: [string, 'null'], maxLength: 200 }
+        description: { type: [string, 'null'], maxLength: 1000 }
+        category: { oneOf: [{ $ref: '#/components/schemas/ServiceOfferingCategoryReference' }, { type: 'null' }] }
+        status: { $ref: '#/components/schemas/ServiceOfferingStatus' }
+        variantCount: { type: integer, minimum: 0 }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ServiceOfferingResponse:
+      type: object
+      additionalProperties: false
+      required: [offering]
+      properties:
+        offering: { $ref: '#/components/schemas/ServiceOffering' }
+    ServiceOfferingListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/ServiceOffering' } }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    CreateServiceOfferingRequest:
+      type: object
+      additionalProperties: false
+      required: [nameAr]
+      properties:
+        nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 200 }
+        nameEn: { type: [string, 'null'], x-trim: true, maxLength: 200 }
+        description: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
+        categoryId: { type: [string, 'null'], format: uuid }
+    UpdateServiceOfferingRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      minProperties: 2
+      properties:
+        expectedVersion: { type: integer, minimum: 0 }
+        nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 200 }
+        nameEn: { type: [string, 'null'], x-trim: true, maxLength: 200 }
+        description: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
+        categoryId: { type: [string, 'null'], format: uuid }
+    ServicePricingUnit:
+      type: string
+      enum: [EACH, HOUR, DAY, SESSION, MONTH]
+    ServiceSelectionOfferingReference:
+      type: object
+      additionalProperties: false
+      required: [id, code, nameAr, nameEn]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string, maxLength: 40 }
+        nameAr: { type: string, maxLength: 200 }
+        nameEn: { type: [string, 'null'], maxLength: 200 }
+    ServiceSelectionOption:
+      type: object
+      additionalProperties: false
+      required: [id, nameAr, nameEn, pricingUnit, offering]
+      properties:
+        id: { type: string, format: uuid }
+        nameAr: { type: string, maxLength: 160 }
+        nameEn: { type: [string, 'null'], maxLength: 160 }
+        pricingUnit: { $ref: '#/components/schemas/ServicePricingUnit' }
+        offering: { $ref: '#/components/schemas/ServiceSelectionOfferingReference' }
+    ServiceSelectionOptionListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, asOf, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/ServiceSelectionOption' } }
+        asOf: { type: string, format: date }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    ServiceRevenueAccountOption:
+      type: object
+      additionalProperties: false
+      required: [id, code, nameAr, nameEn]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        code: { type: string }
+        nameAr: { type: string }
+        nameEn: { type: [string, 'null'] }
+    ServiceRevenueAccountOptionListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/ServiceRevenueAccountOption' } }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    ServiceOutputTaxOption:
+      type: object
+      additionalProperties: false
+      required: [id, code, nameAr, rate]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        code: { type: string }
+        nameAr: { type: string }
+        rate: { type: string, pattern: '^[0-9]+\.[0-9]{4}$' }
+    ServiceOutputTaxOptionListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/ServiceOutputTaxOption' } }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    ServiceVariant:
+      type: object
+      additionalProperties: false
+      required: [id, nameAr, nameEn, pricingUnit, availableFrom, availableUntil, defaultRevenueAccountId, defaultOutputTaxRateId, status, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        nameAr: { type: string, maxLength: 160 }
+        nameEn: { type: [string, 'null'], maxLength: 160 }
+        pricingUnit: { $ref: '#/components/schemas/ServicePricingUnit' }
+        availableFrom: { type: [string, 'null'], format: date }
+        availableUntil: { type: [string, 'null'], format: date }
+        defaultRevenueAccountId: { type: [string, 'null'], pattern: '^[0-9]+$' }
+        defaultOutputTaxRateId: { type: [string, 'null'], pattern: '^[0-9]+$' }
+        status: { $ref: '#/components/schemas/ServiceOfferingStatus' }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ServiceVariantResponse:
+      type: object
+      additionalProperties: false
+      required: [variant]
+      properties:
+        variant: { $ref: '#/components/schemas/ServiceVariant' }
+    ServiceVariantListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/ServiceVariant' } }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    CreateServiceVariantRequest:
+      type: object
+      additionalProperties: false
+      required: [nameAr, pricingUnit]
+      properties:
+        nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 160 }
+        nameEn: { type: [string, 'null'], x-trim: true, maxLength: 160 }
+        pricingUnit: { $ref: '#/components/schemas/ServicePricingUnit' }
+        availableFrom: { type: [string, 'null'], format: date }
+        availableUntil: { type: [string, 'null'], format: date }
+        defaultRevenueAccountId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+        defaultOutputTaxRateId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+    UpdateServiceVariantRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      minProperties: 2
+      properties:
+        expectedVersion: { type: integer, minimum: 0 }
+        nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 160 }
+        nameEn: { type: [string, 'null'], x-trim: true, maxLength: 160 }
+        pricingUnit: { $ref: '#/components/schemas/ServicePricingUnit' }
+        availableFrom: { type: [string, 'null'], format: date }
+        availableUntil: { type: [string, 'null'], format: date }
+        defaultRevenueAccountId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+        defaultOutputTaxRateId: { type: [string, 'null'], pattern: '^[1-9][0-9]*$' }
+    TransitionServiceOfferingRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, to, reason]
+      properties:
+        expectedVersion: { type: integer, minimum: 0 }
+        to: { $ref: '#/components/schemas/ServiceOfferingStatus' }
+        reason: { type: string, x-trim: true, minLength: 10, maxLength: 500 }
+    ServiceCategoryStatus:
+      type: string
+      enum: [ACTIVE, INACTIVE, RETIRED]
+    ServiceCategory:
+      type: object
+      additionalProperties: false
+      required: [id, nameAr, nameEn, description, status, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        nameAr: { type: string, maxLength: 160 }
+        nameEn: { type: [string, 'null'], maxLength: 160 }
+        description: { type: [string, 'null'], maxLength: 1000 }
+        status: { $ref: '#/components/schemas/ServiceCategoryStatus' }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ServiceCategoryResponse:
+      type: object
+      additionalProperties: false
+      required: [category]
+      properties:
+        category: { $ref: '#/components/schemas/ServiceCategory' }
+    ServiceCategoryListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/ServiceCategory' } }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    CreateServiceCategoryRequest:
+      type: object
+      additionalProperties: false
+      required: [nameAr]
+      properties:
+        nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 160 }
+        nameEn: { type: [string, 'null'], x-trim: true, maxLength: 160 }
+        description: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
+    UpdateServiceCategoryRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      minProperties: 2
+      properties:
+        expectedVersion: { type: integer, minimum: 0 }
+        nameAr: { type: string, x-trim: true, minLength: 1, maxLength: 160 }
+        nameEn: { type: [string, 'null'], x-trim: true, maxLength: 160 }
+        description: { type: [string, 'null'], x-trim: true, maxLength: 1000 }
+    TransitionServiceCategoryRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, to, reason]
+      properties:
+        expectedVersion: { type: integer, minimum: 0 }
+        to: { $ref: '#/components/schemas/ServiceCategoryStatus' }
+        reason: { type: string, x-trim: true, minLength: 10, maxLength: 500 }
     CreateHrDepartmentRequest:
       type: object
       additionalProperties: false

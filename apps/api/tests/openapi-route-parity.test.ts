@@ -37,10 +37,13 @@ import { createPosRouter } from '../src/pos/pos-router.js';
 import { createCashierContextRouter } from '../src/pos/cashier-context-router.js';
 import { createApprovalRouter } from '../src/approvals/approval-router.js';
 import { createProfessionalProjectRouter } from '../src/projects/professional-project-router.js';
+import { createGeneralProjectRouter } from '../src/general-projects/general-project-router.js';
 import { createProfessionalProjectPlanningRouter } from '../src/projects/professional-project-planning-router.js';
 import { createProfessionalBillingRouter } from '../src/projects/professional-billing-router.js';
 import { createProfessionalProjectAccessRouter } from '../src/projects/professional-project-access-router.js';
 import { createHrRouter } from '../src/hr/hr-router.js';
+import { createPayrollRouter } from '../src/payroll/payroll-router.js';
+import { createServiceCatalogRouter } from '../src/service-catalog/service-catalog-router.js';
 import { createPlatformOperationsRouter } from '../src/platform-operations/platform-operations-router.js';
 import { createPlatformPaymentRouter } from '../src/platform-operations/payments/platform-payment-router.js';
 import { createPlatformSubscriptionRouter } from '../src/platform-subscriptions/platform-subscription-router.js';
@@ -77,10 +80,13 @@ const routers = [
   { prefix: '', router: createFiscalRouter(stub, stub, stub) },
   { prefix: '', router: createApprovalRouter(stub, stub) },
   { prefix: '', router: createProfessionalProjectRouter(stub, stub) },
+  { prefix: '', router: createGeneralProjectRouter(stub, stub) },
   { prefix: '', router: createProfessionalProjectPlanningRouter(stub, stub) },
   { prefix: '', router: createProfessionalBillingRouter(stub, stub) },
   { prefix: '', router: createProfessionalProjectAccessRouter(stub, stub) },
   { prefix: '', router: createHrRouter(stub, stub) },
+  { prefix: '', router: createPayrollRouter(stub, stub) },
+  { prefix: '', router: createServiceCatalogRouter(stub, stub) },
   { prefix: '', router: createEmployeeExpenseRouter(stub, stub) },
   { prefix: '', router: createAccountRouter(stub, stub) },
   { prefix: '', router: createManualJournalRouter(stub, stub) },

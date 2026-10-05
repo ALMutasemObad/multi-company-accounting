@@ -13,6 +13,7 @@ import { enPos } from "./pos";
 import { enBarcode } from "./barcode";
 import { enApprovals } from "./approvals";
 import { enProfessionalProjects } from "./professional-projects";
+import { enGeneralProjects } from "./general-projects";
 import { enHumanResources } from "./human-resources";
 import { enSystemHomePlatform } from "./system-home-platform";
 import { enPublicPlans } from "./public-plans";
@@ -44,6 +45,7 @@ export const en = {
   ...enBarcode,
   ...enApprovals,
   ...enProfessionalProjects,
+  ...enGeneralProjects,
   ...enHumanResources,
   ...enSystemHomePlatform,
   ...enPublicPlans,
