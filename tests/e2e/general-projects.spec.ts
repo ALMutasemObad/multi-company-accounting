@@ -34,8 +34,32 @@ test("manages an independent project plan, dependencies, comments and self-follo
   const managerOption = manager.locator("option").filter({ hasText: "GPM-BROWSER-001" });
   await expect(managerOption).toHaveCount(1);
   await manager.selectOption((await managerOption.getAttribute("value"))!);
+  let committedId = "";
+  let firstKey = "";
+  let loseResponse = true;
+  await page.route("**/api/v1/general-projects", async route => {
+    if (route.request().method() !== "POST") { await route.continue(); return; }
+    const key = route.request().headers()["idempotency-key"];
+    if (loseResponse) {
+      loseResponse = false; firstKey = key;
+      const committed = await route.fetch();
+      expect(committed.status()).toBe(201);
+      committedId = (await committed.json()).project.id;
+      await route.abort("failed");
+    } else {
+      expect(key).toBe(firstKey);
+      const replay = await route.fetch();
+      expect((await replay.json()).project.id).toBe(committedId);
+      await route.fulfill({ response: replay });
+    }
+  });
+  const lostResponse = page.waitForEvent("requestfailed", request => request.method() === "POST" && request.url().endsWith("/general-projects"));
+  await create.getByRole("button", { name: "Create project" }).click();
+  await lostResponse;
+  await expect(create.getByRole("button", { name: "Create project" })).toBeEnabled();
   await create.getByRole("button", { name: "Create project" }).click();
   await expect(page.getByRole("heading", { name: new RegExp(projectName) })).toBeVisible();
+  await page.unroute("**/api/v1/general-projects");
 
   await page.getByRole("button", { name: "Follow project" }).click();
   await expect(page.getByRole("button", { name: "Unfollow" })).toBeVisible();
@@ -135,10 +159,18 @@ test("rejects a stale project edit from a second browser session", async ({ page
     expect(responses.map(response => response.status()).sort()).toEqual([200, 409]);
     const winner = responses.find(response => response.status() === 200)!;
     const body = await winner.json() as { project: { nameAr: string } };
-    await page.reload();
-    await secondPage.reload();
+    const loser = responses[0].status() === 409 ? page : secondPage;
+    const losingDraft = `${projectName} ${responses[0].status() === 409 ? "A" : "B"}`;
+    await loser.getByRole("alert").getByRole("button", { name: "Try again" }).click();
+    await expect(loser.getByRole("heading", { name: new RegExp(body.project.nameAr) })).toBeVisible();
+    const recoveredEditor = loser.locator("section.card").filter({ has: loser.getByRole("heading", { name: new RegExp(body.project.nameAr) }) });
+    await expect(recoveredEditor.getByLabel("Project name")).toHaveValue(losingDraft);
     await expect(page.getByRole("heading", { name: new RegExp(body.project.nameAr) })).toBeVisible();
     await expect(secondPage.getByRole("heading", { name: new RegExp(body.project.nameAr) })).toBeVisible();
+    const recoveredResponse = loser.waitForResponse(isProjectEdit);
+    await recoveredEditor.getByRole("button", { name: "Save" }).click();
+    expect((await recoveredResponse).status()).toBe(200);
+    await expect(loser.getByRole("heading", { name: new RegExp(losingDraft) })).toBeVisible();
   } finally {
     await secondContext.close();
   }

@@ -1,5 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { api, idempotencyKey } from "./api";
+import { api as requestApi, ApiError, idempotencyKey } from "./api";
 import { useAuthorization } from "./authorization-context";
 import { useI18n } from "./i18n";
 import { Button, EmptyState, PageHeader, Pagination, Spinner, TableRegion } from "./ui";
@@ -37,12 +37,29 @@ type List = { data: Project[]; meta: { page: number; pageSize: number; total: nu
 // The API caps Idempotency-Key at 100 characters; project ids and nonces are UUIDs.
 const projectIdempotencyKey = (operation: string, id: string) => idempotencyKey(`gp-${operation}`, id);
 
+// A retry of an uncertain write must replay the original command, including its key.
+export function createProjectRequestSender(request: typeof requestApi = requestApi): typeof requestApi {
+  const attempts = new Map<string, string>();
+  return async <T,>(path: string, options: Parameters<typeof requestApi>[1] = {}): Promise<T> => {
+    if (!options.idempotencyKey) return request<T>(path, options);
+    const fingerprint = JSON.stringify([path, options.method, options.body ?? null]);
+    const key = attempts.get(fingerprint) ?? options.idempotencyKey;
+    attempts.set(fingerprint, key);
+    const result = await request<T>(path, { ...options, idempotencyKey: key });
+    attempts.delete(fingerprint);
+    return result;
+  };
+}
+
 export function GeneralProjectsPage({ notify }: { notify: Notice }) {
   const { selectedCompany, user, permissionSet } = useAuthorization();
   return <GeneralProjectsWorkspace key={JSON.stringify([user.id, selectedCompany?.id, [...permissionSet].sort()])} notify={notify} />;
 }
 
 function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
+  const [api] = useState(() => createProjectRequestSender());
+  const preserveDrafts = useRef(false);
+  const [conflict, setConflict] = useState("");
   const { t, formatDateTime } = useI18n();
   const { permissionSet } = useAuthorization();
   const canManage = permissionSet.has("general_projects.manage");
@@ -58,6 +75,7 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
   const [scope, setScope] = useState<"ALL" | "MINE" | "FOLLOWING">("ALL");
   const [selectedId, setSelectedId] = useState("");
   const [detail, setDetail] = useState<Detail | null>(null);
+  const detailRequestSequence = useRef(0);
   const [phases, setPhases] = useState<(PhaseList & { projectId: string }) | null>(null);
   const phaseRequestSequence = useRef(0);
   const [phasePage, setPhasePage] = useState(1);
@@ -69,6 +87,8 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
   const [taskPage, setTaskPage] = useState(1);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [selectedTaskId, setSelectedTaskId] = useState("");
+  const currentSelection = useRef("");
+  currentSelection.current = JSON.stringify([selectedId, selectedPhaseId, selectedTaskId]);
   const [taskDraft, setTaskDraft] = useState({ title: "", description: "", priority: "NORMAL" as Priority,
     plannedStartDate: "", dueDate: "" });
   const [dependencies, setDependencies] = useState<(DependencyList & { projectId: string }) | null>(null);
@@ -121,8 +141,12 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
   }, [page, search, status, scope, t]);
 
   const loadDetail = useCallback(async () => {
+    const sequence = ++detailRequestSequence.current;
     if (!selectedId) { setDetail(null); return; }
-    try { setDetail(await api<Detail>(`/general-projects/${selectedId}`)); }
+    try {
+      const result = await api<Detail>(`/general-projects/${selectedId}`);
+      if (sequence === detailRequestSequence.current) setDetail(result);
+    }
     catch (cause) { notify(cause instanceof Error ? cause.message : t("generalProjects.loadingError"), "error"); }
   }, [selectedId, notify, t]);
 
@@ -191,6 +215,7 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { void loadDetail(); }, [loadDetail]);
+  useEffect(() => { preserveDrafts.current = false; setConflict(""); }, [selectedId, selectedPhaseId, selectedTaskId]);
   useEffect(() => { setPhases(null); setPhasePage(1); setSelectedPhaseId(""); setTasks(null);
     setDependencies(null); setDependencyPage(1); setPredecessorTaskId(""); setTaskOptions([]);
     setComments(null); setCommentPage(1); setCommentBody(""); setCommentTargetTaskId(""); }, [selectedId]);
@@ -198,13 +223,13 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
   useEffect(() => { setTasks(null); setTaskPage(1); setSelectedTaskId(""); setTaskAssignments(null); }, [selectedPhaseId]);
   useEffect(() => {
     const phase = phases?.data.find(row => row.id === selectedPhaseId);
-    if (phase) setPhaseDraft({ title: phase.title, description: phase.description ?? "",
+    if (phase && !preserveDrafts.current) setPhaseDraft({ title: phase.title, description: phase.description ?? "",
       plannedStartDate: phase.plannedStartDate ?? "", targetEndDate: phase.targetEndDate ?? "" });
   }, [selectedPhaseId, phases]);
   useEffect(() => { void loadTasks(); }, [loadTasks]);
   useEffect(() => {
     const task = tasks?.data.find(row => row.id === selectedTaskId);
-    if (task) setTaskDraft({ title: task.title, description: task.description ?? "", priority: task.priority,
+    if (task && !preserveDrafts.current) setTaskDraft({ title: task.title, description: task.description ?? "", priority: task.priority,
       plannedStartDate: task.plannedStartDate ?? "", dueDate: task.dueDate ?? "" });
   }, [selectedTaskId, tasks]);
   useEffect(() => { setTaskAssignments(null); setAssignmentPage(1); }, [selectedTaskId]);
@@ -225,6 +250,7 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
     return () => { clearTimeout(timer); controller.abort(); };
   }, [selectedId, canManage, taskOptionSearch, notify, t]);
   useEffect(() => {
+    if (preserveDrafts.current) return;
     setEditName(detail?.project.nameAr ?? "");
     setEditDescription(detail?.project.description ?? "");
     setEditCustomerId(detail?.project.customer?.id ?? "");
@@ -265,11 +291,39 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
     if (customer) setPickedCustomers(current => current.some(option => option.id === id) ? current : [...current, customer]);
   };
 
+  const refreshConflict = async () => {
+    const selection = currentSelection.current;
+    const sequence = ++detailRequestSequence.current;
+    ++phaseRequestSequence.current; ++taskRequestSequence.current;
+    ++assignmentRequestSequence.current; ++dependencyRequestSequence.current;
+    setWorking(true);
+    preserveDrafts.current = true;
+    try {
+      const [freshDetail, freshPhases, freshTasks, freshAssignments, freshDependencies] = await Promise.all([
+        api<Detail>(`/general-projects/${selectedId}`),
+        api<PhaseList>(`/general-projects/${selectedId}/phases?page=${phasePage}&pageSize=10`),
+        selectedPhaseId ? api<TaskList>(`/general-projects/${selectedId}/phases/${selectedPhaseId}/tasks?page=${taskPage}&pageSize=10`) : null,
+        selectedTaskId ? api<TaskAssignmentList>(`/general-projects/${selectedId}/tasks/${selectedTaskId}/assignments?page=${assignmentPage}&pageSize=10`) : null,
+        api<DependencyList>(`/general-projects/${selectedId}/task-dependencies?page=${dependencyPage}&pageSize=10${selectedTaskId ? `&taskId=${selectedTaskId}` : ""}`),
+      ]);
+      if (selection !== currentSelection.current || sequence !== detailRequestSequence.current) return;
+      setDetail(freshDetail);
+      setPhases({ ...freshPhases, projectId: selectedId });
+      if (freshTasks) setTasks({ ...freshTasks, projectId: selectedId, phaseId: selectedPhaseId });
+      if (freshAssignments) setTaskAssignments({ ...freshAssignments, projectId: selectedId, taskId: selectedTaskId });
+      setDependencies({ ...freshDependencies, projectId: selectedId });
+      setConflict("");
+    } catch (cause) { notify(cause instanceof Error ? cause.message : t("generalProjects.loadingError"), "error"); }
+    finally { setWorking(false); }
+  };
   const execute = async (work: () => Promise<unknown>, message: string) => {
     setWorking(true);
-    try { await work(); await load(); await loadDetail(); await loadPhases(); await loadTasks();
+    try { await work(); preserveDrafts.current = false; setConflict(""); await load(); await loadDetail(); await loadPhases(); await loadTasks();
       await loadTaskAssignments(); await loadDependencies(); await loadComments(); notify(message); }
-    catch (cause) { notify(cause instanceof Error ? cause.message : t("generalProjects.loadingError"), "error"); }
+    catch (cause) {
+      if (cause instanceof ApiError && cause.reason === "VERSION_CONFLICT") setConflict(cause.message);
+      notify(cause instanceof Error ? cause.message : t("generalProjects.loadingError"), "error");
+    }
     finally { setWorking(false); }
   };
   const create = (event: FormEvent) => {
@@ -436,6 +490,7 @@ function GeneralProjectsWorkspace({ notify }: { notify: Notice }) {
 
   return <div className="page-content">
     <PageHeader kicker={t("nav.generalProjects")} title={t("generalProjects.title")} description={t("generalProjects.description")} />
+    {conflict && <div role="alert">{conflict}<Button disabled={working} onClick={() => void refreshConflict()}>{t("common.retry")}</Button></div>}
     {canManage && <section className="card">
       <h2>{t("generalProjects.new")}</h2>
       <form onSubmit={create} className="form-grid">

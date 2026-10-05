@@ -64,6 +64,59 @@ test("manages a standalone service catalogue in a real browser and database", as
   await page.getByLabel("Search services by name or code").fill(serviceName);
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(offeringRow).toBeVisible();
+
+  // A failed load for a different offering must not relabel the previous variants.
+  const otherService = `Other service ${suffix}`;
+  await page.getByRole("button", { name: "New service" }).click();
+  await page.getByRole("dialog").getByLabel("Arabic name").fill(otherService);
+  await page.getByRole("dialog").getByRole("button", { name: "Save" }).click();
+  await page.getByLabel("Search services by name or code").fill(otherService);
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  let failVariants = true;
+  await page.route("**/service-catalog/offerings/*/variants?*", async route => {
+    if (failVariants) {
+      failVariants = false;
+      await route.fulfill({ status: 503, json: { code: "SERVICE_UNAVAILABLE" } });
+    } else await route.continue();
+  });
+  await offerings.getByRole("button", { name: new RegExp(otherService) }).click();
+  await expect(variants.getByRole("alert")).toBeVisible();
+  await expect(variants.getByText(variantName)).toHaveCount(0);
+  await variants.getByRole("button", { name: "Try again" }).click();
+  await expect(variants.getByRole("alert")).toHaveCount(0);
+  await expect(variants.locator("li")).toHaveCount(0);
+  await page.unroute("**/service-catalog/offerings/*/variants?*");
+
+  // Simulate another writer winning, then recover without losing the open draft.
+  const categoryRow = page.locator("#service-categories-title").locator("..").locator("..").locator("li").filter({ hasText: categoryName });
+  await categoryRow.getByRole("button", { name: "Edit" }).click();
+  dialog = page.getByRole("dialog");
+  const draftName = `${categoryName} draft`;
+  await dialog.getByLabel("Arabic name").fill(draftName);
+  let collide = true;
+  let priorVersion = 0;
+  await page.route("**/service-catalog/categories/*", async route => {
+    if (route.request().method() !== "PATCH") { await route.continue(); return; }
+    const body = route.request().postDataJSON();
+    if (collide) {
+      collide = false; priorVersion = body.expectedVersion;
+      const competing = await route.fetch({ postData: JSON.stringify({ ...body, nameAr: `${categoryName} concurrent` }) });
+      expect(competing.ok()).toBe(true);
+      await route.fulfill({ status: 409, json: { code: "BUSINESS_RULE_VIOLATION", reason: "VERSION_CONFLICT" } });
+    } else {
+      expect(body.expectedVersion).toBeGreaterThan(priorVersion);
+      expect(body.nameAr).toBe(draftName);
+      await route.continue();
+    }
+  });
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await dialog.getByRole("alert").getByRole("button", { name: "Try again" }).click();
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await expect(dialog.getByLabel("Arabic name")).toHaveValue(draftName);
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByText(draftName, { exact: true })).toBeVisible();
+  await page.unroute("**/service-catalog/categories/*");
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole("heading", { name: "Service management" }).first()).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 2)).toBe(true);

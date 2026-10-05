@@ -1,5 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { api, idempotencyKey } from "./api";
+import { api, ApiError, idempotencyKey } from "./api";
 import { useAuthorization } from "./authorization-context";
 import { useI18n, type TranslationKey } from "./i18n";
 import { Button, EmptyState, Modal, PageHeader, Pagination, Spinner } from "./ui";
@@ -77,6 +77,10 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
   const [outputTaxRateId, setOutputTaxRateId] = useState("");
   const [loading, setLoading] = useState(true);
   const [variantsLoading, setVariantsLoading] = useState(false);
+  const [variantOwner, setVariantOwner] = useState("");
+  const [variantError, setVariantError] = useState("");
+  const [variantRevision, setVariantRevision] = useState(0);
+  const [conflict, setConflict] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const attempts = useRef(new Map<string, string>());
@@ -109,15 +113,17 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
   }, [load]);
 
   useEffect(() => {
-    if (!selected) { setVariants([]); setVariantMeta(emptyMeta); return; }
+    setVariants([]); setVariantMeta(emptyMeta); setVariantError(""); setVariantOwner("");
+    if (!selected) return;
     const controller = new AbortController();
+    const owner = `${selected.id}:${variantPage}`;
     setVariantsLoading(true);
     void api<{ data: Variant[]; meta: Meta }>(`/service-catalog/offerings/${selected.id}/variants?page=${variantPage}&pageSize=10`, { signal: controller.signal })
-      .then(result => { if (!controller.signal.aborted) { setVariants(result.data); setVariantMeta(result.meta); } })
-      .catch(cause => { if (!controller.signal.aborted) notify(cause instanceof Error ? cause.message : t("service.loadError"), "error"); })
+      .then(result => { if (!controller.signal.aborted) { setVariants(result.data); setVariantMeta(result.meta); setVariantOwner(owner); } })
+      .catch(cause => { if (!controller.signal.aborted) { setVariantOwner(owner); setVariantError(cause instanceof Error ? cause.message : t("service.loadError")); } })
       .finally(() => { if (!controller.signal.aborted) setVariantsLoading(false); });
     return () => controller.abort();
-  }, [selected?.id, variantPage, t, notify]);
+  }, [selected?.id, variantPage, variantRevision, t]);
 
   useEffect(() => () => writeController.current?.abort(), []);
   useEffect(() => {
@@ -169,12 +175,52 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
     try {
       await send(path, method, body, controller.signal);
       if (controller.signal.aborted) return;
-      setForm(null); notify(t("service.saved"));
+      setForm(null); setConflict(""); notify(t("service.saved"));
+      setVariantRevision(value => value + 1);
       await load(controller.signal);
-      if (selected) {
-        const result = await api<{ data: Variant[]; meta: Meta }>(`/service-catalog/offerings/${selected.id}/variants?page=${variantPage}&pageSize=10`, { signal: controller.signal });
-        if (!controller.signal.aborted) { setVariants(result.data); setVariantMeta(result.meta); }
+    } catch (cause) {
+      if (!controller.signal.aborted && cause instanceof ApiError && cause.reason === "VERSION_CONFLICT") setConflict(cause.message);
+      if (!controller.signal.aborted) notify(cause instanceof Error ? cause.message : t("service.loadError"), "error");
+    } finally {
+      if (writeController.current === controller) writeController.current = null;
+      if (!controller.signal.aborted) setBusy(false);
+    }
+  };
+  // Refresh only the optimistic version. Uncontrolled inputs and selected references
+  // remain the user's draft, and saving again always requires an explicit action.
+  const refreshConflict = async () => {
+    if (!form || writeController.current) return;
+    const current = form;
+    const controller = new AbortController();
+    writeController.current = controller; setBusy(true);
+    try {
+      const subject = current.kind === "transition" ? current.subject : current.kind;
+      const id = current.kind === "transition" ? current.id : current.item?.id;
+      if (!id) return;
+      let version: number;
+      if (subject === "category") {
+        version = (await api<{ category: Category }>(`/service-catalog/categories/${id}`, { signal: controller.signal })).category.version;
+      } else if (subject === "offering") {
+        version = (await api<{ offering: Offering }>(`/service-catalog/offerings/${id}`, { signal: controller.signal })).offering.version;
+      } else {
+        const offeringId = current.kind === "variant" ? current.offering.id : current.kind === "transition" ? current.offeringId : undefined;
+        let found: Variant | undefined;
+        for (let page = 1; ; page++) {
+          const result = await api<{ data: Variant[]; meta: Meta }>(`/service-catalog/offerings/${offeringId}/variants?page=${page}&pageSize=100`, { signal: controller.signal });
+          found = result.data.find(row => row.id === id);
+          if (found || page >= result.meta.totalPages) break;
+        }
+        if (!found) throw new Error(t("service.loadError"));
+        version = found.version;
       }
+      if (controller.signal.aborted) return;
+      setForm(previous => {
+        if (previous !== current) return previous;
+        if (previous.kind === "transition") return { ...previous, version };
+        return previous.item ? { ...previous, item: { ...previous.item, version } } as Form : previous;
+      });
+      setConflict("");
+      setVariantRevision(value => value + 1);
     } catch (cause) {
       if (!controller.signal.aborted) notify(cause instanceof Error ? cause.message : t("service.loadError"), "error");
     } finally {
@@ -182,6 +228,8 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
       if (!controller.signal.aborted) setBusy(false);
     }
   };
+  useEffect(() => { setConflict(""); }, [form?.kind, form && (form.kind === "transition" ? form.id : form.item?.id)]);
+  const conflictAction = conflict && <div role="alert">{conflict}<Button type="button" disabled={busy} onClick={() => void refreshConflict()}>{t("common.retry")}</Button></div>;
   const openTransition = (subject: Form & { kind: "transition" }) => setForm(subject);
   const openOffering = (item?: Offering) => {
     setCategoryLookup(""); setCategorySelected(item?.category ?? null);
@@ -237,7 +285,8 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
         <header><h2 id="service-variants-title">{t("service.variants")}{selected ? ` · ${displayName(selected)}` : ""}</h2>
           {selected && <Button disabled={busy || selected.status === "RETIRED"} variant="secondary" icon="plus" onClick={() => openVariant(selected)}>{t("service.newVariant")}</Button>}
         </header>
-        {!selected ? <p>{t("service.selectOffering")}</p> : variantsLoading ? <Spinner /> : !variants.length
+        {!selected ? <p>{t("service.selectOffering")}</p> : variantsLoading || variantOwner !== `${selected.id}:${variantPage}` ? <Spinner /> : variantError
+          ? <div role="alert">{variantError}<Button onClick={() => setVariantRevision(value => value + 1)}>{t("common.retry")}</Button></div> : !variants.length
           ? <EmptyState title={t("service.emptyVariants")} description={t("service.boundary")} />
           : <ul>{variants.map(item => <li key={item.id}>
             <strong>{displayName(item)}</strong> · {t(`service.unit.${item.pricingUnit}` as TranslationKey)} · {statusLabel(item.status)}
@@ -247,10 +296,11 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
               <Button disabled={busy} variant="ghost" onClick={() => openVariant(selected, item)}>{t("service.edit")}</Button>}
             {transitionButtons("variant", item, selected.id)}
           </li>)}</ul>}
-        <Pagination page={variantMeta.page} totalPages={variantMeta.totalPages} total={variantMeta.total} onChange={setVariantPage} />
+        {!variantError && variantOwner === `${selected?.id}:${variantPage}` && <Pagination page={variantMeta.page} totalPages={variantMeta.totalPages} total={variantMeta.total} onChange={setVariantPage} />}
       </section>
     </>}
     {form?.kind === "category" && <Modal title={t(form.item ? "service.editCategory" : "service.newCategory")} onClose={() => { if (!busy) setForm(null); }}>
+      {conflictAction}
       <form onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); void mutate(
         form.item ? `/service-catalog/categories/${form.item.id}` : "/service-catalog/categories", form.item ? "PATCH" : "POST", {
         ...(form.item ? { expectedVersion: form.item.version } : {}),
@@ -264,6 +314,7 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
       </fieldset></form>
     </Modal>}
     {form?.kind === "offering" && <Modal title={t(form.item ? "service.editOffering" : "service.newOffering")} onClose={() => { if (!busy) setForm(null); }}>
+      {conflictAction}
       <form onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); void mutate(
         form.item ? `/service-catalog/offerings/${form.item.id}` : "/service-catalog/offerings", form.item ? "PATCH" : "POST", {
         ...(form.item ? { expectedVersion: form.item.version } : {}),
@@ -287,6 +338,7 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
       </fieldset></form>
     </Modal>}
     {form?.kind === "variant" && <Modal title={t(form.item ? "service.editVariant" : "service.newVariant")} onClose={() => { if (!busy) setForm(null); }}>
+      {conflictAction}
       <form onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget);
         const availableFrom = String(data.get("availableFrom") ?? "");
         const availableUntil = String(data.get("availableUntil") ?? "");
@@ -330,6 +382,7 @@ function ServiceCatalogWorkspace({ notify }: { notify: Notice }) {
       </fieldset></form>
     </Modal>}
     {form?.kind === "transition" && <Modal title={`${displayName({ nameAr: form.name })} · ${statusLabel(form.to)}`} onClose={() => { if (!busy) setForm(null); }}>
+      {conflictAction}
       <form onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget);
         const path = form.subject === "category" ? `/service-catalog/categories/${form.id}/transition`
           : form.subject === "offering" ? `/service-catalog/offerings/${form.id}/transition`
