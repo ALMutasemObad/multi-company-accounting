@@ -1,10 +1,29 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from "node:crypto";
+import { lstatSync, readFileSync, realpathSync } from "node:fs";
+import path from "node:path";
 import { z } from "zod";
 
 const envelopeSchema = z.object({ keyId: z.string().min(1), nonce: z.string(), tag: z.string(), ciphertext: z.string() }).strict();
 export type PayrollEnvelope = z.infer<typeof envelopeSchema>;
 export type PayrollVaultScope = { companyId: bigint; kind: "AGREEMENT" | "RUN"; publicId: string };
 const aad = (scope: PayrollVaultScope) => Buffer.from(JSON.stringify(["payroll-v1", String(scope.companyId), scope.kind, scope.publicId]));
+const payrollKeyFileSchema = z.object({
+  format: z.literal("mcap-payroll-keys-v1"),
+  activeKeyId: z.string(),
+  fingerprintKeyId: z.string(),
+  keys: z.record(z.string(), z.string()),
+}).strict();
+
+function payrollKeysFromFile(file: string) {
+  if (!path.isAbsolute(file)) throw new Error("INVALID_PAYROLL_KEY_FILE");
+  const info = lstatSync(file);
+  if (!info.isFile() || info.isSymbolicLink() || realpathSync(file) !== path.resolve(file) ||
+      (process.platform !== "win32" && (info.mode & 0o077) !== 0)) {
+    throw new Error("INVALID_PAYROLL_KEY_FILE");
+  }
+  const value = payrollKeyFileSchema.parse(JSON.parse(readFileSync(file, "utf8")));
+  return { activeKeyId: value.activeKeyId, fingerprintKeyId: value.fingerprintKeyId, keys: value.keys };
+}
 
 /** Keys are injected by deployment secret storage, never loaded from the payroll database. */
 export class PayrollVault {
@@ -12,6 +31,10 @@ export class PayrollVault {
     if (env.PAYROLL_ENABLED !== "true") return null;
     if (env.NODE_ENV === "production" && env.PAYROLL_POLICY_REVIEWED !== "true") throw new Error("PAYROLL_POLICY_REVIEW_REQUIRED");
     try {
+      if (env.PAYROLL_KEY_FILE) {
+        const value = payrollKeysFromFile(env.PAYROLL_KEY_FILE);
+        return new PayrollVault(value.activeKeyId, value.keys, value.fingerprintKeyId);
+      }
       const keys = z.record(z.string(), z.string()).parse(JSON.parse(env.PAYROLL_KEY_RING ?? ""));
       return new PayrollVault(env.PAYROLL_ACTIVE_KEY_ID ?? "", keys, env.PAYROLL_FINGERPRINT_KEY_ID ?? "");
     } catch { throw new Error("PAYROLL_CONFIGURATION_INVALID"); }

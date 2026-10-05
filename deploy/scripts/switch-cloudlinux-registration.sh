@@ -19,6 +19,7 @@ passenger_log_file=${MCAP_CLOUDLINUX_PASSENGER_LOG_FILE:-}
 passenger_config_file=${MCAP_PASSENGER_CONFIG_FILE:-}
 backup_directory=${MCAP_CLOUDLINUX_BACKUP_DIRECTORY:-}
 metrics_token_file=${MCAP_METRICS_TOKEN_FILE:-}
+payroll_key_file=${MCAP_PAYROLL_KEY_FILE:-}
 media_root=${MCAP_MEDIA_ROOT:-}
 
 [[ "$source_release" == /* && "$target_release" == /* && "$source_release" != "$target_release" ]] \
@@ -45,6 +46,13 @@ media_root=${MCAP_MEDIA_ROOT:-}
 if [[ -n "$metrics_token_file" ]]; then
   [[ "$metrics_token_file" == /* && -f "$metrics_token_file" && ! -L "$metrics_token_file" ]] \
     || fail "MCAP_METRICS_TOKEN_FILE must be an explicit regular file"
+fi
+if [[ -n "$payroll_key_file" ]]; then
+  [[ "$payroll_key_file" == /* && -f "$payroll_key_file" && ! -L "$payroll_key_file" ]] \
+    || fail "MCAP_PAYROLL_KEY_FILE must be an explicit regular file"
+  case "$payroll_key_file" in "$cloudlinux_home"/*) ;; *) fail "Payroll key file is outside the protected account home" ;; esac
+  payroll_key_mode=$(stat -c '%a' -- "$payroll_key_file")
+  [[ "$payroll_key_mode" == "600" || "$payroll_key_mode" == "400" ]] || fail "Payroll key file permissions are not private"
 fi
 
 case "$source_release" in "$cloudlinux_home"/*) ;; *) fail "source release is outside MCAP_CLOUDLINUX_HOME" ;; esac
@@ -93,11 +101,11 @@ registered_root() {
 }
 
 validate_registered_environment() {
-  local expected_root=$1 expect_metrics=${2:-false} allow_missing_limiter_secret=${3:-false} expect_public_email=${4:-false} allow_missing_media=${5:-false}
+  local expected_root=$1 expect_metrics=${2:-false} allow_missing_limiter_secret=${3:-false} expect_public_email=${4:-false} allow_missing_media=${5:-false} expect_payroll=${6:-false} expected_payroll_key_file=${7:-}
   "$node_bin" -e '
     const fs = require("node:fs");
     const payload = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-    const [version, user, root, domain, startup, expectMetrics, allowMissingLimiterSecret, expectPublicEmail, expectedMediaRoot, allowMissingMedia] = process.argv.slice(2);
+    const [version, user, root, domain, startup, expectMetrics, allowMissingLimiterSecret, expectPublicEmail, expectedMediaRoot, allowMissingMedia, expectPayroll, expectedPayrollKeyFile] = process.argv.slice(2);
     const app = payload.available_versions?.[version]?.users?.[user]?.applications?.[root];
     if (!app || app.domain !== domain || app.startup_file !== startup) process.exit(2);
     for (const key of ["DATABASE_URL", "WEB_ORIGIN", "SESSION_COOKIE_SECURE", "TRUST_PROXY"]) {
@@ -133,7 +141,14 @@ validate_registered_environment() {
         process.exit(6);
       }
     }
-  ' "$state_file" "$cloudlinux_version" "$cloudlinux_user" "$expected_root" "$cloudlinux_domain" "$startup_file" "$expect_metrics" "$allow_missing_limiter_secret" "$expect_public_email" "$media_root" "$allow_missing_media"
+    if (expectPayroll === "true") {
+      const environment = app.env_vars || {};
+      if (environment.PAYROLL_ENABLED !== "true" || environment.PAYROLL_POLICY_REVIEWED !== "true" ||
+          environment.PAYROLL_KEY_FILE !== expectedPayrollKeyFile ||
+          environment.PAYROLL_KEY_RING !== undefined || environment.PAYROLL_ACTIVE_KEY_ID !== undefined ||
+          environment.PAYROLL_FINGERPRINT_KEY_ID !== undefined) process.exit(8);
+    }
+  ' "$state_file" "$cloudlinux_version" "$cloudlinux_user" "$expected_root" "$cloudlinux_domain" "$startup_file" "$expect_metrics" "$allow_missing_limiter_secret" "$expect_public_email" "$media_root" "$allow_missing_media" "$expect_payroll" "$expected_payroll_key_file"
 }
 
 write_environment_snapshot() {
@@ -152,7 +167,7 @@ write_target_environment_snapshot() {
   "$node_bin" -e '
     const { randomBytes } = require("node:crypto");
     const fs = require("node:fs");
-    const [source, destination, tokenPath, mediaRoot] = process.argv.slice(1);
+    const [source, destination, tokenPath, mediaRoot, expectedPayrollKeyFile] = process.argv.slice(1);
     const environment = JSON.parse(fs.readFileSync(source, "utf8"));
     const legacyOperatorEmails = environment.PLATFORM_OPERATOR_EMAILS;
     if (typeof legacyOperatorEmails === "string" && legacyOperatorEmails.trim().length > 0) process.exit(4);
@@ -187,24 +202,30 @@ write_target_environment_snapshot() {
     if (payrollKeyFile) {
       const info = fs.lstatSync(payrollKeyFile);
       if (!info.isFile() || info.isSymbolicLink() || (info.mode & 0o077) !== 0 ||
-          process.env.MCAP_PAYROLL_POLICY_REVIEWED !== "true") process.exit(6);
+          process.env.MCAP_PAYROLL_POLICY_REVIEWED !== "true" || payrollKeyFile !== expectedPayrollKeyFile) process.exit(6);
       const keys = JSON.parse(fs.readFileSync(payrollKeyFile, "utf8"));
       if (keys.format !== "mcap-payroll-keys-v1" || !keys.keys?.[keys.activeKeyId] || !keys.keys?.[keys.fingerprintKeyId]) process.exit(6);
-      const expected = {
-        PAYROLL_KEY_RING: JSON.stringify(keys.keys),
-        PAYROLL_ACTIVE_KEY_ID: keys.activeKeyId,
-        PAYROLL_FINGERPRINT_KEY_ID: keys.fingerprintKeyId,
-      };
+      const sameKeys = (left, right) => left && typeof left === "object" && !Array.isArray(left) &&
+        Object.keys(left).length === Object.keys(right).length &&
+        Object.entries(right).every(([id, value]) => left[id] === value);
+      if (environment.PAYROLL_KEY_FILE !== undefined && environment.PAYROLL_KEY_FILE !== payrollKeyFile) process.exit(6);
       // Never silently replace a previously configured payroll key or fingerprint.
-      for (const [name, value] of Object.entries(expected)) {
-        if (environment[name] !== undefined && environment[name] !== value) process.exit(6);
-        environment[name] = value;
+      if (environment.PAYROLL_KEY_RING !== undefined) {
+        let existingKeys;
+        try { existingKeys = JSON.parse(environment.PAYROLL_KEY_RING); } catch { process.exit(6); }
+        if (!sameKeys(existingKeys, keys.keys)) process.exit(6);
       }
+      if (environment.PAYROLL_ACTIVE_KEY_ID !== undefined && environment.PAYROLL_ACTIVE_KEY_ID !== keys.activeKeyId) process.exit(6);
+      if (environment.PAYROLL_FINGERPRINT_KEY_ID !== undefined && environment.PAYROLL_FINGERPRINT_KEY_ID !== keys.fingerprintKeyId) process.exit(6);
+      delete environment.PAYROLL_KEY_RING;
+      delete environment.PAYROLL_ACTIVE_KEY_ID;
+      delete environment.PAYROLL_FINGERPRINT_KEY_ID;
+      environment.PAYROLL_KEY_FILE = payrollKeyFile;
       environment.PAYROLL_POLICY_REVIEWED = "true";
       environment.PAYROLL_ENABLED = "true";
     }
     fs.writeFileSync(destination, JSON.stringify(environment), { mode: 0o600 });
-  ' "$environment_file" "$target_environment_file" "$metrics_token_file" "$media_root"
+  ' "$environment_file" "$target_environment_file" "$metrics_token_file" "$media_root" "$payroll_key_file"
 }
 
 summarize_result() {
@@ -357,7 +378,7 @@ destroy_registration "$source_root" "$destroy_result"
 [[ -z "$(registered_root)" ]] || fail "source registration still exists after destroy"
 create_registration "$target_root" "$create_result" "$target_environment_file"
 [[ "$(registered_root)" == "$target_root" ]] || fail "target registration was not created"
-validate_registered_environment "$target_root" true false true
+validate_registered_environment "$target_root" true false true false true "$payroll_key_file"
 restart_registration "$target_root" "$restart_result"
 ensure_https_redirect
 rollback_required=false

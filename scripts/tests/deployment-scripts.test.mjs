@@ -119,6 +119,9 @@ test("CloudLinux registration switching recreates immutable release roots and re
   assert.match(switcher, /randomBytes\(48\)\.toString\("base64url"\)/u);
   assert.match(switcher, /environment\.RATE_LIMIT_IDENTITY_SECRET/u);
   assert.match(switcher, /environment\.PASSWORD_RESET_ENABLED = "true"/u);
+  assert.match(switcher, /environment\.PAYROLL_KEY_FILE = payrollKeyFile/u);
+  assert.match(switcher, /PAYROLL_KEY_RING !== undefined/u);
+  assert.match(switcher, /validate_registered_environment "\$target_root" true false true false true "\$payroll_key_file"/u);
   assert.match(switcher, /environment\.REGISTRATION_EMAIL_MODE !== "resend"/u);
   assert.match(switcher, /environment\.REGISTRATION_EMAIL_FROM/u);
   assert.match(switcher, /environment\.RESEND_API_KEY/u);
