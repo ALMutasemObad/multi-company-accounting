@@ -8,7 +8,7 @@ import { configuredStartPlanVersions, validateNewCompanyStartPlan } from "../src
 
 const enabled = process.env.RUN_DB_TESTS === "true" && Boolean(process.env.DATABASE_URL);
 const prisma = enabled ? createDatabase(process.env.DATABASE_URL!) : null;
-const currencies = ["AED", "BHD", "EGP", "EUR", "GBP", "KWD", "OMR", "QAR", "SAR", "USD", "YER"];
+let currencies: string[];
 const now = new Date("2050-01-01T00:00:00.000Z");
 
 describe.runIf(enabled)("general projects in immutable free start-plan versions", () => {
@@ -36,6 +36,11 @@ describe.runIf(enabled)("general projects in immutable free start-plan versions"
   });
 
   beforeAll(async () => {
+    // Other integration fixtures may add active currencies to the shared isolated database.
+    // The rollout auditor must continue checking every active currency, not a hard-coded subset.
+    currencies = (await prisma!.currency.findMany({ where: { scopeKey: "GLOBAL", isActive: true }, select: { code: true } }))
+      .map((currency) => currency.code);
+    expect(currencies).toEqual(expect.arrayContaining(["AED", "BHD", "EGP", "EUR", "GBP", "KWD", "OMR", "QAR", "SAR", "USD", "YER"]));
     operatorId = (await prisma!.user.findUniqueOrThrow({
       where: { emailNormalized: "admin@mcap.local" }, select: { id: true },
     })).id;
@@ -128,7 +133,9 @@ describe.runIf(enabled)("general projects in immutable free start-plan versions"
     const olderSar = [...mapping].map(([code, id]) => `${code}:${code === "SAR" ? originalPublishedId : id}`).join(",");
     expect((await auditGeneralProjectRollout(prisma!, undefined, olderSar, now)).currencies)
       .toContainEqual({ code: "SAR", finding: "PROJECTS_NOT_INCLUDED" });
-    const extra = await auditGeneralProjectRollout(prisma!, undefined, `${serialized},JPY:999999`, now);
+    const absentCurrency = ["ZZZ", "ZZY", "ZZX"].find((code) => !currencies.includes(code));
+    expect(absentCurrency).toBeDefined();
+    const extra = await auditGeneralProjectRollout(prisma!, undefined, `${serialized},${absentCurrency}:999999`, now);
     expect(extra).toMatchObject({ status: "NOT_READY", configuration: "EXTRA_CURRENCY_CONFIGURED" });
     const adapter = new PrismaNewCompanySubscriptionProvisioningAdapter(undefined, serialized);
     const available = await prisma!.$transaction((tx) => adapter.eligibleStartCurrencies(tx, now));

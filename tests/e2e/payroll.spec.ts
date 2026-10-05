@@ -7,7 +7,8 @@ test("prepares private payroll and obtains a separate owner approval through the
   test.skip(process.env.E2E_PAYROLL_DB !== "true", "Requires isolated local payroll database");
   const url = new URL(process.env.DATABASE_URL!);
   expect(["127.0.0.1", "localhost"]).toContain(url.hostname);
-  expect(url.pathname).toBe("/juwar_gpm_acceptance2_20261005");
+  expect(url.pathname).toMatch(/^\/[a-zA-Z0-9_]+$/);
+  expect(process.env.PAYROLL_E2E_DATABASE_ACK).toBe(`TEST:${url.pathname.slice(1)}`);
   const db = createDatabase(url.toString());
   const suffix = randomUUID(), password = `Payroll-test-${randomUUID()}!`;
   const ownerEmail = `payroll-owner-${suffix}@example.test`, makerEmail = `payroll-maker-${suffix}@example.test`;

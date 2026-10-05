@@ -11,8 +11,8 @@ import {
 } from "../generate-openapi-guards.mjs";
 
 test("generated OpenAPI guards are committed and current", () => {
-  assert.equal(guardedOperationIds.length, 199);
-  assert.equal(responseOperationIds.length, 401);
+  assert.equal(guardedOperationIds.length, 229);
+  assert.equal(responseOperationIds.length, 456);
   assert.ok(responseOperationIds.includes('lookupInventoryCountItem'));
   assert.ok(responseOperationIds.includes('exportInventoryCountEntriesXlsx'));
   for (const operation of ['previewInventoryCatalogImport', 'commitInventoryCatalogImport']) {
@@ -121,7 +121,7 @@ test("guard generation reflects request constraints from the contract", () => {
 
 test("guard generation covers request transforms and response schemas", () => {
   const generated = buildGeneratedSource();
-  assert.match(generated, /openApiContractCoverage = \{ operations: 401, requestBodies: 199, responseBodies: 2611 \}/u);
+  assert.match(generated, /openApiContractCoverage = \{ operations: 456, requestBodies: 229, responseBodies: 2963 \}/u);
   assert.match(generated, /"receivableItemId": z\.string\(\).*\.transform\(\(value\) => BigInt\(value\)\)/u);
   assert.match(generated, /export const openApiResponseBodySchemas = \{/u);
 });

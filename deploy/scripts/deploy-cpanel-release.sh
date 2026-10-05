@@ -96,6 +96,7 @@ tar -xzf "$archive" -C "$backup_helper_directory" -- \
   ./scripts/media-backup.mjs \
   ./scripts/lib/backup-format.mjs \
   ./scripts/lib/backup-pair-verifier.mjs \
+  ./deploy/scripts/payroll-key-recovery.mjs \
   || fail "the verified incoming release does not contain media backup helpers"
 incoming_media_backup="$backup_helper_directory/scripts/media-backup.mjs"
 incoming_pair_verifier="$backup_helper_directory/scripts/lib/backup-pair-verifier.mjs"
@@ -127,6 +128,19 @@ pair_manifest_path=$("$node_bin" -e '
   "file://$incoming_pair_verifier" "$pair_manifest_path" \
   || fail "the pre-deployment backup pair failed verification"
 log "verified pre-deployment backup pair $(basename -- "$pair_manifest_path")"
+[[ "${MCAP_PAYROLL_POLICY_REVIEWED:-}" == true ]] || fail "payroll specialist review must be recorded before this release"
+payroll_key_directory="$deploy_root/shared/payroll"
+[[ ! -L "$payroll_key_directory" ]] || fail "payroll key directory must not be a symlink"
+mkdir -p -- "$payroll_key_directory"
+chmod 0700 -- "$payroll_key_directory"
+payroll_key_file="$payroll_key_directory/keys.json"
+# The backup passphrase stays in the protected GitHub environment, never in this file.
+# Bootstrap only from the verified pre-payroll baseline. Missing keys on later releases require recovery.
+payroll_bootstrap=false
+if [[ "$(basename -- "$current_release")" == 0.1.0-17917803dfec ]]; then payroll_bootstrap=true; fi
+printf '%s' "$backup_passphrase" | MCAP_PAYROLL_BOOTSTRAP="$payroll_bootstrap" "$node_bin" \
+  "$backup_helper_directory/deploy/scripts/payroll-key-recovery.mjs" "$payroll_key_file" "$backup_directory" \
+  || fail "payroll key backup and recovery verification failed before migration"
 unset backup_passphrase
 
 release_id=$(tar -xOzf "$archive" ./release-manifest.json | "$node_bin" -e '
@@ -152,6 +166,8 @@ MCAP_APP_URL="${MCAP_APP_URL:-}" \
 MCAP_PASSENGER_CONFIG_FILE="$passenger_config_file" \
 MCAP_CLOUDLINUX_SWITCHER="$cloudlinux_switcher" \
 MCAP_METRICS_TOKEN_FILE="$metrics_token_file" \
+MCAP_PAYROLL_KEY_FILE="$payroll_key_file" \
+MCAP_PAYROLL_POLICY_REVIEWED=true \
 MCAP_DEPLOY_CONFIRM="DEPLOY:$release_id" \
 MCAP_RUN_DATABASE_MIGRATIONS=true \
   bash "$script_directory/install-cpanel-release.sh" "$archive" "$expected_sha"

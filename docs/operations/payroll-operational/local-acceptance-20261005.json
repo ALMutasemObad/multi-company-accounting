@@ -2,7 +2,7 @@
   "date": "2026-10-05",
   "environment": "isolated-local-only",
   "baseMain": "17917803dfec5c403066773009e8f60be462d70b",
-  "database": "juwar_gpm_acceptance2_20261005",
+  "database": "isolated local acceptance database (physical name retained in local execution evidence)",
   "migrationsApplied": 95,
   "checks": {
     "apiSuite": { "passed": 1699, "skipped": 226 },

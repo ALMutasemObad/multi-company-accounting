@@ -452,6 +452,8 @@ jobs:
       CPANEL_BACKUP_DIRECTORY: /home/doralash/backups/mcap
       CPANEL_PASSENGER_CONFIG_FILE: /home/doralash/accounting.doralashab.com/.htaccess
       CPANEL_APP_URL: https://accounting.doralashab.com
+      # Owner confirmed specialist review and approved encrypted key custody on 2026-10-05.
+      MCAP_PAYROLL_POLICY_REVIEWED: 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -771,6 +773,7 @@ jobs:
                 MCAP_MYSQL_BIN=/usr/bin/mysql \
                 MCAP_MYSQLDUMP_BIN=/usr/bin/mysqldump \
                 MCAP_PIPELINE_LOCK_WAIT_SECONDS=900 \
+                MCAP_PAYROLL_POLICY_REVIEWED="$MCAP_PAYROLL_POLICY_REVIEWED" \
                 MCAP_HEALTH_URL="$CPANEL_APP_URL/ready" \
                 MCAP_APP_URL="$CPANEL_APP_URL" \
                 MCAP_PASSENGER_CONFIG_FILE="$CPANEL_PASSENGER_CONFIG_FILE" \
