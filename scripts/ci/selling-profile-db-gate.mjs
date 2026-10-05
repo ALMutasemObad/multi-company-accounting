@@ -28,7 +28,7 @@ export function validateEnvironment(environment) {
 
 export async function verifyEngine(connection, expectedPrefix) {
   const [engine] = await connection.query('SELECT VERSION() AS version');
-  assert.match(engine?.version ?? '', /^(?:10\.11\..*MariaDB|8\.4\.)/i, 'R2 requires MariaDB 10.11 or MySQL 8.4');
+  assert.match(engine?.version ?? '', /^(?:10\.11\..*MariaDB|11\.4\.13-MariaDB(?:[-.]|$)|8\.4\.)/i, 'R2 requires MariaDB 10.11, verified hosting 11.4.13, or MySQL 8.4');
   assert.ok(engine.version.startsWith(expectedPrefix), 'R2 engine does not match the CI matrix');
   return engine.version;
 }

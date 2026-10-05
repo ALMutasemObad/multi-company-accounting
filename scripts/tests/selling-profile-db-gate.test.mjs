@@ -42,7 +42,7 @@ test('the CLI refuses missing opt-in before any driver connection or fixture wor
 });
 
 test('engine firewall accepts only supported releases and the exact CI matrix family', async () => {
-  for (const [version, prefix] of [['10.11.11-MariaDB-ubu2204', '10.11.11-MariaDB'], ['8.4.11', '8.4.']]) {
+  for (const [version, prefix] of [['10.11.11-MariaDB-ubu2204', '10.11.11-MariaDB'], ['11.4.13-MariaDB-cll-lve-log', '11.4.13-MariaDB'], ['8.4.11', '8.4.']]) {
     assert.equal(await verifyEngine({ query: async () => [{ version }] }, prefix), version);
   }
   for (const [version, prefix] of [['10.4.32-MariaDB', '10.4.'], ['8.0.41', '8.0.'], ['8.4.11', '10.11.11-MariaDB']]) {
@@ -171,9 +171,9 @@ test('fresh MariaDB/MySQL and both populated upgrade jobs wire explicit R2 opt-i
       assert.equal(job.steps[gateIndex]['continue-on-error'], undefined);
     }
   }
-  assert.match(workflow.jobs['hosting-compatibility'].services.mariadb.image, /^mariadb:10\.11\./);
+  assert.match(workflow.jobs['hosting-compatibility'].services.mariadb.image, /^mariadb:11\.4\.13@sha256:/);
   assert.match(workflow.jobs.verify.services.mysql.image, /^mysql:8\.4\./);
-  assert.deepEqual(workflow.jobs['migration-upgrade-compatibility'].strategy.matrix.include.map((entry) => entry.engine_name), ['MariaDB 10.11', 'MySQL 8.4']);
+  assert.deepEqual(workflow.jobs['migration-upgrade-compatibility'].strategy.matrix.include.map((entry) => entry.engine_name), ['MariaDB 11.4.13', 'MariaDB 10.11', 'MySQL 8.4']);
   assert.deepEqual(workflow.jobs['deploy-staging'].needs, ['hosting-compatibility', 'migration-upgrade-compatibility', 'verify']);
 });
 

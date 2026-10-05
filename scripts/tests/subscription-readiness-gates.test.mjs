@@ -28,7 +28,7 @@ test('the local HTTP probe supplements but cannot replace either real database r
   const workflow = parseDocument(await read('.github/workflows/ci.yml')).toJS();
   const maria = workflow.jobs['hosting-compatibility'];
   const mysql = workflow.jobs.verify;
-  assert.match(maria.services.mariadb.image, /^mariadb:10\.11\./u);
+  assert.match(maria.services.mariadb.image, /^mariadb:11\.4\.13@sha256:/u);
   assert.match(mysql.services.mysql.image, /^mysql:8\.4/u);
   for (const job of [maria, mysql]) {
     const commands = job.steps.map((step) => step.run ?? '').join('\n');
