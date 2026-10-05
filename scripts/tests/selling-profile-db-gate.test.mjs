@@ -171,7 +171,13 @@ test('fresh MariaDB/MySQL and both populated upgrade jobs wire explicit R2 opt-i
       assert.equal(job.steps[gateIndex]['continue-on-error'], undefined);
     }
   }
-  assert.match(workflow.jobs['hosting-compatibility'].services.mariadb.image, /^mariadb:11\.4\.13@sha256:/);
+  const hosting = workflow.jobs['hosting-compatibility'];
+  assert.equal(hosting.name, 'iFastNet compatibility (Node 22 / MariaDB ${{ matrix.engine_label }})');
+  assert.equal(hosting.services.mariadb.image, '${{ matrix.image }}');
+  assert.deepEqual(hosting.strategy.matrix.include.map((entry) => entry.engine_label), ['10.11', '11.4.13']);
+  assert.match(hosting.strategy.matrix.include[0].image, /^mariadb:10\.11\.11@sha256:/);
+  assert.match(hosting.strategy.matrix.include[1].image, /^mariadb:11\.4\.13@sha256:/);
+  assert.equal(hosting.env.EXPECTED_DATABASE_VERSION_PREFIX, '${{ matrix.expected_version }}');
   assert.match(workflow.jobs.verify.services.mysql.image, /^mysql:8\.4\./);
   assert.deepEqual(workflow.jobs['migration-upgrade-compatibility'].strategy.matrix.include.map((entry) => entry.engine_name), ['MariaDB 11.4.13', 'MariaDB 10.11', 'MySQL 8.4']);
   assert.deepEqual(workflow.jobs['deploy-staging'].needs, ['hosting-compatibility', 'migration-upgrade-compatibility', 'verify']);

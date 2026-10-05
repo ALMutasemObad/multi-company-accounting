@@ -16,12 +16,23 @@ concurrency:
 
 jobs:
   hosting-compatibility:
-    name: iFastNet compatibility (Node 22 / MariaDB 11.4.13)
+    name: iFastNet compatibility (Node 22 / MariaDB ${{ matrix.engine_label }})
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Keep the protected-branch check while testing the current host too.
+          - engine_label: '10.11'
+            image: mariadb:10.11.11@sha256:96be0d3dfbeb07bc420e5fb8a6dc05c492676f1f89980a497a55e6fbbba3f1c4
+            expected_version: 10.11.11-MariaDB
+          - engine_label: '11.4.13'
+            image: mariadb:11.4.13@sha256:1292844148b311e4ed4300022a996d39083f415a963e970cf47cad1b3b18e3a6
+            expected_version: 11.4.13-MariaDB
     services:
       mariadb:
-        image: mariadb:11.4.13@sha256:1292844148b311e4ed4300022a996d39083f415a963e970cf47cad1b3b18e3a6
+        image: ${{ matrix.image }}
         env:
           MYSQL_DATABASE: test_mcap_finance
           MYSQL_USER: mcap_test
@@ -38,7 +49,7 @@ jobs:
       R2_DB_MIGRATION_MODE: fresh
       SEED_ADMIN_PASSWORD: CI-Only-Admin-Password-2026!
       RUN_DB_TESTS: 'true'
-      EXPECTED_DATABASE_VERSION_PREFIX: '11.4.13-MariaDB'
+      EXPECTED_DATABASE_VERSION_PREFIX: ${{ matrix.expected_version }}
       CI_ROOT_DATABASE_PASSWORD: test_root_password
       CI_DATABASE_USER: mcap_test
       CI_RESTORE_DATABASE: mcap_finance_restore_test
@@ -74,13 +85,13 @@ jobs:
           RUN_POS_RECOVERY_FINALIZATION_DB_TESTS: 'true'
           POS_RECOVERY_TEST_DATABASE: w1posrecovery
           POS_RECOVERY_CI_DATABASE_ACK: 'CREATE:w1posrecovery'
-          POS_RECOVERY_EXPECTED_ENGINE_VERSION: '11.4.13-MariaDB'
+          POS_RECOVERY_EXPECTED_ENGINE_VERSION: ${{ matrix.expected_version }}
           POS_RECOVERY_DB_GATE_ARTIFACT_DIR: ${{ runner.temp }}/pos-recovery-db-gate
         run: node scripts/ci/pos-recovery-db-gate.mjs
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
-          name: n1-pos-recovery-mariadb-fresh
+          name: n1-pos-recovery-mariadb-${{ matrix.engine_label }}-fresh
           path: ${{ runner.temp }}/pos-recovery-db-gate/
           if-no-files-found: error
           retention-days: 7
@@ -93,7 +104,7 @@ jobs:
         run: npm run i18n:check
       - name: Verify responsive and accessible web UI contracts
         run: npm run ui:check
-      - name: Test API against MariaDB 11.4.13
+      - name: Test API against MariaDB ${{ matrix.engine_label }}
         run: npm run test:db -w @mcap/api
       - name: Prove all R2 database tests executed on fresh MariaDB
         run: node scripts/ci/selling-profile-db-gate.mjs run
@@ -119,7 +130,7 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:
-          name: playwright-mariadb-failure
+          name: playwright-mariadb-${{ matrix.engine_label }}-failure
           path: |
             playwright-report/
             test-results/playwright/
@@ -128,7 +139,7 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
-          name: r2-database-mariadb-fresh
+          name: r2-database-mariadb-${{ matrix.engine_label }}-fresh
           path: ${{ runner.temp }}/r2-db-gate/
           if-no-files-found: warn
           retention-days: 7
