@@ -137,7 +137,9 @@ export class ApprovalService {
       subjectId: input.subjectId,
       subjectVersion: input.subjectVersion,
     }, async (tx) => {
-      const subject = await this.ports[input.subjectType].request(tx, context, {
+      const port = this.ports[input.subjectType];
+      if (!port) throw new ApprovalError("INVALID_STATE");
+      const subject = await port.request(tx, context, {
         subjectId: input.subjectId,
         expectedVersion: input.subjectVersion,
       });
@@ -174,12 +176,15 @@ export class ApprovalService {
     });
   }
 
-  reject(
+  async reject(
     context: ActorContext,
     publicId: string,
     input: { version: number; reason: string; idempotencyKey: string },
   ) {
-    const reason = input.reason.trim();
+    const subject = await this.prisma.approvalRequest.findFirst({ where: { publicId, companyId: context.companyId }, select: { subjectType: true } });
+    if (!subject) throw new ApprovalError("NOT_FOUND");
+    // Payroll rejection notes must not put an owner's salary details into the shared inbox or audit.
+    const reason = subject.subjectType === "PAYROLL_RUN" ? "Payroll returned for correction." : input.reason.trim();
     if (reason.length < 10) throw new ApprovalError("REJECTION_REASON_REQUIRED");
     return this.decide(context, publicId, {
       version: input.version,
@@ -232,6 +237,7 @@ export class ApprovalService {
       if (changed.count !== 1) throw new ApprovalError("VERSION_CONFLICT");
 
       const port = this.ports[request.subjectType];
+      if (!port) throw new ApprovalError("INVALID_STATE");
       const subject = {
         subjectId: request.subjectId,
         subjectVersion: request.subjectVersion,

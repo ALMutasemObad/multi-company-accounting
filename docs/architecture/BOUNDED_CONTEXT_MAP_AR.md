@@ -13,6 +13,8 @@ last_updated: "2026-09-09"
 
 ## 2. قاعدة الملكية
 
+تحديث تنفيذ محلي 2026-10-05: يملك سياق Payroll الجداول `PayrollCompanyScope` و`PayrollPayAgreement` و`PayrollRun`، ويستهلك منافذ HR وIdentity وTenant للقراءة والتحقق فقط. يبقى قرار الاعتماد لدى Approvals؛ لا أثر تلقائي في Ledger. التفاصيل والخصوصية وبوابة المراجعة قبل الإطلاق في [ADR-029](ADR-029-private-payroll-operations.md).
+
 لكل Aggregate وجدول مالك كتابة واحد. وجود Foreign Key أو Prisma relation لا يمنح Context آخر حق تعديل الكيان مباشرة.
 
 ## 3. السياقات والملكية المستهدفة

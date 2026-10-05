@@ -1,4 +1,7 @@
 export const permissionDefinitions = [
+  ['payroll.view', 'payroll', 'عرض دورات الرواتب وفق نطاق الخصوصية'],
+  ['payroll.runs.manage', 'payroll', 'إعداد وحساب وإرسال دورات الرواتب'],
+  ['payroll.agreements.manage', 'payroll', 'إدارة اتفاقات الأجر للمالك فقط'],
   ['audit_logs.view', 'audit_logs', 'عرض سجل التدقيق'],
   ['audit_logs.export', 'audit_logs', 'تصدير سجل التدقيق'],
   ['security_events.view', 'security', 'عرض سجل الأمان والتنبيهات'],

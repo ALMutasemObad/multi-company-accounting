@@ -16,6 +16,7 @@ export const PLATFORM_MODULE_CODES = [
   "TAX",
   "CRM",
   "SERVICE_CATALOG",
+  "PAYROLL",
 ] as const;
 
 export type PlatformModuleCode = (typeof PLATFORM_MODULE_CODES)[number];

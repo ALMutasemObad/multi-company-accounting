@@ -64,6 +64,12 @@ import { PosRecoveryService } from './pos/recovery-service.js';
 import { PrismaPosRecoveryQueryAdapter } from './platform/prisma-pos-recovery-query-adapter.js';
 import { PrismaPosSaleQueryAdapter } from './pos/adapters/prisma-pos-sale-query-adapter.js';
 import { ApprovalService } from './approvals/approval-service.js';
+import { PayrollService } from './payroll/payroll-service.js';
+import { PayrollVault } from './payroll/payroll-vault.js';
+import { PayrollApprovalAdapter } from './payroll/payroll-approval-adapter.js';
+import { PayrollCompanyAdapter } from './companies/payroll-company-adapter.js';
+import { PayrollOwnerAdapter } from './users/payroll-owner-adapter.js';
+import { PayrollEmployeeAdapter } from './hr/payroll-employee-adapter.js';
 import { FinancialCloseApprovalAdapter } from './fiscal/financial-close-approval-adapter.js';
 import { ProfessionalProjectService } from './projects/professional-project-service.js';
 import { GeneralProjectService } from './general-projects/general-project-service.js';
@@ -310,7 +316,10 @@ const employeeExpenses = new EmployeeExpenseService(
   new EmployeeExpenseCostCenterAdapter(database),
   new EmployeeExpenseCurrencyAdapter(),
 );
+const payrollVault = PayrollVault.fromEnvironment(process.env);
+const payroll = payrollVault ? new PayrollService(database, new PayrollCompanyAdapter(), new PayrollOwnerAdapter(), new PayrollEmployeeAdapter(), payrollVault) : undefined;
 const approvals = new ApprovalService(database, {
+  ...(payroll ? { PAYROLL_RUN: new PayrollApprovalAdapter(payroll) } : {}),
   FINANCIAL_CLOSE_RUN: new FinancialCloseApprovalAdapter(financialClose),
   PROFESSIONAL_TIMESHEET: new ProfessionalTimesheetApprovalAdapter(professionalProjects),
   EMPLOYEE_EXPENSE_CLAIM: new EmployeeExpenseApprovalAdapter(employeeExpenses),
@@ -402,6 +411,7 @@ async function startServer() {
     professionalBilling,
     hr,
     serviceCatalog,
+    ...(payroll ? { payroll } : {}),
     employeeExpenses,
     accounts: new AccountService(database, accountUsageGuard),
     journals: new ManualJournalService(database, accountReferenceLocks),

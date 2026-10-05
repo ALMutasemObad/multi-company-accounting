@@ -35,6 +35,7 @@ const CompanySubscriptionPage = lazy(() => import("./CompanySubscriptionPage").t
 const CustomersPage = lazy(() => import("./CustomersPage").then((module) => ({ default: module.CustomersPage })));
 const CrmPage = lazy(() => import("./CrmPage").then((module) => ({ default: module.CrmPage })));
 const ServiceCatalogPage = lazy(() => import("./ServiceCatalogPage").then((module) => ({ default: module.ServiceCatalogPage })));
+const PayrollPage = lazy(() => import("./PayrollPage").then((module) => ({ default: module.PayrollPage })));
 const SalesInvoicesPage = lazy(() => import("./SalesInvoicesPage").then((module) => ({ default: module.SalesInvoicesPage })));
 const ReceiptsPage = lazy(() => import("./ReceiptsPage").then((module) => ({ default: module.ReceiptsPage })));
 const SuppliersPage = lazy(() => import("./SuppliersPage").then((module) => ({ default: module.SuppliersPage })));
@@ -511,6 +512,7 @@ export default function App() {
             {activeView === "services" && <ServiceCatalogPage notify={notify} />}
             {activeView === "professionalProjects" && <ProfessionalProjectsPage notify={notify} />}
             {activeView === "generalProjects" && <GeneralProjectsPage notify={notify} />}
+            {activeView === "payroll" && company && <PayrollPage companyId={company.id} userId={user.id} permissions={[...navigationAccess.permissionSet]} notify={notify} />}
             {activeView === "humanResources" && <HumanResourcesPage notify={notify} />}
             {activeView === "employeeExpenses" && <EmployeeExpensesPage notify={notify} />}
             {activeView === "sales" && <SalesInvoicesPage notify={notify} />}

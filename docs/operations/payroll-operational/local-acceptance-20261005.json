@@ -1,0 +1,25 @@
+{
+  "date": "2026-10-05",
+  "environment": "isolated-local-only",
+  "baseMain": "17917803dfec5c403066773009e8f60be462d70b",
+  "database": "juwar_gpm_acceptance2_20261005",
+  "migrationsApplied": 95,
+  "checks": {
+    "apiSuite": { "passed": 1699, "skipped": 226 },
+    "webSuite": { "passed": 844, "skipped": 35 },
+    "threeTrackDatabaseIntegration": { "passed": 21 },
+    "payrollFocusedAfterEligibilityRevalidation": { "passed": 51, "databaseCases": 7 },
+    "projectsAndServicesChromium": { "passed": 3 },
+    "payrollChromium": { "passed": 1, "includes": ["owner agreement", "lost response replay", "preparer privacy", "CSRF denial", "separate owner approval", "private review link in shared inbox", "agreement end", "Arabic RTL mobile"] },
+    "contracts": { "operations": 456, "requestBodies": 229, "responseBodies": 2963 },
+    "architectureBoundaries": { "violations": 0, "warnings": 0 }
+  },
+  "limitations": [
+    "Payroll browser journey and targeted real-database regressions passed after the approval-time HR eligibility guard.",
+    "Skipped tests are not acceptance evidence.",
+    "No production upgrade, real employee data, payment, ledger posting, Mudad or legal-compliance verification.",
+    "Specialist privacy/retention review and deployment key backup/recovery remain launch gates.",
+    "Unique browser fixture companies are retained in the isolated database; screenshots remain under test-results."
+  ],
+  "publication": { "push": false, "pullRequest": null, "remoteCi": null, "deployed": false }
+}

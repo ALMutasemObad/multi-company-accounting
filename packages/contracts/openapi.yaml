@@ -70,6 +70,8 @@ servers:
 - url: /api/v1
   description: مسار نسبي يعمل على نفس أصل الواجهة في جميع البيئات
 tags:
+- name: Payroll
+  description: Private fixed-earnings payroll preparation and owner review.
 - name: CRM
   description: العملاء المحتملون والفرص وأنشطة المتابعة والتحويل الآمن إلى سجل العميل المملوك للمبيعات.
 - name: Sales Catalog
@@ -133,6 +135,217 @@ tags:
 security:
 - SessionCookie: []
 paths:
+  /payroll/capabilities:
+    get:
+      tags: [Payroll]
+      operationId: getPayrollCapabilities
+      summary: Read payroll access
+      x-permission: payroll.view
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Successful response
+          content: { application/json: { schema: { $ref: '#/components/schemas/PayrollCapabilities' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+  /payroll/employees:
+    get:
+      tags: [Payroll]
+      operationId: listPayrollEmployees
+      summary: Find eligible payroll employees
+      x-permission: payroll.agreements.manage
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: Successful response
+          content: { application/json: { schema: { $ref: '#/components/schemas/PayrollEmployeeOptions' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+  /payroll/agreements:
+    get:
+      tags: [Payroll]
+      operationId: listPayrollAgreements
+      summary: Read private salary agreements
+      x-permission: payroll.agreements.manage
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Successful response
+          content: { application/json: { schema: { $ref: '#/components/schemas/PayrollAgreementList' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+    post:
+      tags: [Payroll]
+      operationId: createPayrollAgreement
+      summary: Create dated salary agreement
+      x-permission: payroll.agreements.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreatePayrollAgreement' } } }
+      responses:
+        '201':
+          description: Successful response
+          content: { application/json: { schema: { $ref: '#/components/schemas/PayrollCommandResult' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+  /payroll/runs:
+    get:
+      tags: [Payroll]
+      operationId: listPayrollRuns
+      summary: Read payroll cycle metadata
+      x-permission: payroll.view
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Successful response
+          content: { application/json: { schema: { $ref: '#/components/schemas/PayrollRunList' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+    post:
+      tags: [Payroll]
+      operationId: createPayrollRun
+      summary: Prepare a monthly payroll cycle
+      x-permission: payroll.runs.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreatePayrollRun' } } }
+      responses:
+        '201':
+          description: Successful response
+          content: { application/json: { schema: { $ref: '#/components/schemas/PayrollCommandResult' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+  /payroll/runs/{runId}:
+    get:
+      tags: [Payroll]
+      operationId: getPayrollRun
+      summary: Read payroll cycle and owner details
+      x-permission: payroll.view
+      security: [{ SessionCookie: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - { name: runId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Successful response
+          content: { application/json: { schema: { $ref: '#/components/schemas/PayrollRunDetail' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+  /payroll/runs/{runId}/calculate:
+    post:
+      tags: [Payroll]
+      operationId: calculatePayrollRun
+      summary: Calculate fixed earnings for enrolled employees
+      x-permission: payroll.runs.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: runId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CalculatePayrollRun' } } }
+      responses:
+        '200':
+          description: Successful response
+          content: { application/json: { schema: { $ref: '#/components/schemas/PayrollCommandResult' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
+  /payroll/agreements/{agreementId}/end:
+    post:
+      tags: [Payroll]
+      operationId: endPayrollAgreement
+      summary: End an owner-managed agreement without changing calculated periods
+      x-permission: payroll.agreements.manage
+      security: [{ SessionCookie: [], CsrfToken: [] }]
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - { name: agreementId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/EndPayrollAgreement' } } }
+      responses:
+        '200':
+          description: Successful response
+          content: { application/json: { schema: { $ref: '#/components/schemas/PayrollCommandResult' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRuleViolation' }
+        '503': { $ref: '#/components/responses/ConcurrencyRetryExhausted' }
+        '504': { $ref: '#/components/responses/RequestDeadlineExceeded' }
   /metrics:
     get:
       tags:
@@ -5429,6 +5642,7 @@ paths:
         FINANCIAL_CLOSE_RUN: fiscal_periods.close
         PROFESSIONAL_TIMESHEET: professional_timesheets.submit
         EMPLOYEE_EXPENSE_CLAIM: employee_expenses.submit
+        PAYROLL_RUN: payroll.runs.manage
       security: [{ SessionCookie: [], CsrfToken: [] }]
       x-idempotency-scope: user + company + operation + key
   /approval-requests/{approvalRequestId}:
@@ -12993,6 +13207,21 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
   schemas:
+    PayrollCapabilities: {"type":"object","additionalProperties":false,"required":["canReadPrivate","currencyCode","currencyDecimals"],"properties":{"canReadPrivate":{"type":"boolean"},"currencyCode":{"type":"string"},"currencyDecimals":{"type":"integer","minimum":0,"maximum":8}}}
+    PayrollEmployeeOption: {"type":"object","additionalProperties":false,"required":["id","employeeNumber","nameAr"],"properties":{"id":{"type":"string","format":"uuid"},"employeeNumber":{"type":"string"},"nameAr":{"type":"string"}}}
+    PayrollEmployeeOptions: {"type":"object","additionalProperties":false,"required":["data"],"properties":{"data":{"type":"array","items":{"$ref":"#/components/schemas/PayrollEmployeeOption"}}}}
+    PayrollCommandResult: {"type":"object","additionalProperties":false,"required":["id","version"],"properties":{"id":{"type":"string","format":"uuid"},"version":{"type":"integer","minimum":0}}}
+    CreatePayrollAgreement: {"type":"object","additionalProperties":false,"required":["employeeId","startsOn","basicSalary"],"properties":{"employeeId":{"type":"string","format":"uuid"},"startsOn":{"type":"string","format":"date"},"endsBefore":{"type":["string","null"],"format":"date"},"basicSalary":{"type":"string","pattern":"^(?:0|[1-9][0-9]{0,18})(?:\\.[0-9]{1,8})?$"},"fixedAllowance":{"type":["string","null"],"pattern":"^(?:0|[1-9][0-9]{0,18})(?:\\.[0-9]{1,8})?$"}}}
+    PayrollAgreement: {"type":"object","additionalProperties":false,"required":["id","employeeId","employeeNumber","nameAr","startsOn","endsBefore","version","basicSalary","fixedAllowance"],"properties":{"id":{"type":"string","format":"uuid"},"employeeId":{"type":"string","format":"uuid"},"employeeNumber":{"type":"string"},"nameAr":{"type":"string"},"startsOn":{"type":"string","format":"date"},"endsBefore":{"type":["string","null"],"format":"date"},"version":{"type":"integer","minimum":0},"basicSalary":{"type":"string","pattern":"^(?:0|[1-9][0-9]{0,18})(?:\\.[0-9]{1,8})?$"},"fixedAllowance":{"type":["string","null"],"pattern":"^(?:0|[1-9][0-9]{0,18})(?:\\.[0-9]{1,8})?$"}}}
+    PayrollAgreementList: {"type":"object","additionalProperties":false,"required":["data","meta"],"properties":{"data":{"type":"array","items":{"$ref":"#/components/schemas/PayrollAgreement"}},"meta":{"$ref":"#/components/schemas/PaginationMeta"}}}
+    CreatePayrollRun: {"type":"object","additionalProperties":false,"required":["periodStart","periodEndExclusive"],"properties":{"periodStart":{"type":"string","format":"date"},"periodEndExclusive":{"type":"string","format":"date"}}}
+    CalculatePayrollRun: {"type":"object","additionalProperties":false,"required":["expectedVersion"],"properties":{"expectedVersion":{"type":"integer","minimum":0}}}
+    EndPayrollAgreement: {"type":"object","additionalProperties":false,"required":["expectedVersion","endsBefore"],"properties":{"expectedVersion":{"type":"integer","minimum":0},"endsBefore":{"type":"string","format":"date"}}}
+    PayrollRun: {"type":"object","additionalProperties":false,"required":["id","periodStart","periodEndExclusive","status","version","employeeCount","makerUserId","approvedByUserId"],"properties":{"id":{"type":"string","format":"uuid"},"periodStart":{"type":"string","format":"date"},"periodEndExclusive":{"type":"string","format":"date"},"status":{"type":"string","enum":["DRAFT","CALCULATED","AWAITING_APPROVAL","APPROVED"]},"version":{"type":"integer","minimum":0},"employeeCount":{"type":"integer","minimum":0},"makerUserId":{"type":"string"},"approvedByUserId":{"type":["string","null"]}}}
+    PayrollRunList: {"type":"object","additionalProperties":false,"required":["data","meta"],"properties":{"data":{"type":"array","items":{"$ref":"#/components/schemas/PayrollRun"}},"meta":{"$ref":"#/components/schemas/PaginationMeta"}}}
+    PayrollPrivateEmployee: {"type":"object","additionalProperties":false,"required":["employeeId","employeeNumber","nameAr","agreementId","agreementVersion","basicSalary","fixedAllowance","netPayable"],"properties":{"employeeId":{"type":"string","format":"uuid"},"employeeNumber":{"type":"string"},"nameAr":{"type":"string"},"agreementId":{"type":"string","format":"uuid"},"agreementVersion":{"type":"integer","minimum":0},"basicSalary":{"type":"string","pattern":"^(?:0|[1-9][0-9]{0,18})(?:\\.[0-9]{1,8})?$"},"fixedAllowance":{"type":["string","null"],"pattern":"^(?:0|[1-9][0-9]{0,18})(?:\\.[0-9]{1,8})?$"},"netPayable":{"type":"string","pattern":"^(?:0|[1-9][0-9]{0,18})(?:\\.[0-9]{1,8})?$"}}}
+    PayrollPrivateSnapshot: {"type":"object","additionalProperties":false,"required":["schemaVersion","currencyCode","grossEarnings","netPayable","employees"],"properties":{"schemaVersion":{"type":"integer","const":1},"currencyCode":{"type":"string"},"grossEarnings":{"type":"string","pattern":"^(?:0|[1-9][0-9]{0,18})(?:\\.[0-9]{1,8})?$"},"netPayable":{"type":"string","pattern":"^(?:0|[1-9][0-9]{0,18})(?:\\.[0-9]{1,8})?$"},"employees":{"type":"array","items":{"$ref":"#/components/schemas/PayrollPrivateEmployee"}}}}
+    PayrollRunDetail: {"type":"object","additionalProperties":false,"required":["run","details"],"properties":{"run":{"$ref":"#/components/schemas/PayrollRun"},"details":{"oneOf":[{"$ref":"#/components/schemas/PayrollPrivateSnapshot"},{"type":"null"}]}}}
     DataImportType:
       type: string
       enum: [CUSTOMERS, SUPPLIERS, SALES_INVOICES, PURCHASE_INVOICES]
@@ -13514,6 +13743,7 @@ components:
             - APPROVALS
             - PROFESSIONAL_PROJECTS
             - GENERAL_PROJECTS
+            - PAYROLL
             - HUMAN_RESOURCES
             - TAX
             - CRM
@@ -16292,7 +16522,7 @@ components:
           items: { $ref: '#/components/schemas/EmployeeExpenseCostCenter' }
     ApprovalSubjectType:
       type: string
-      enum: [FINANCIAL_CLOSE_RUN, PROFESSIONAL_TIMESHEET, EMPLOYEE_EXPENSE_CLAIM]
+      enum: [FINANCIAL_CLOSE_RUN, PROFESSIONAL_TIMESHEET, EMPLOYEE_EXPENSE_CLAIM, PAYROLL_RUN]
     ApprovalRequestStatus:
       type: string
       enum: [PENDING, APPROVED, REJECTED, CANCELLED]

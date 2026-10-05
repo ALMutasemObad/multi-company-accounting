@@ -126,6 +126,8 @@ import { createProfessionalProjectAccessRouter } from './projects/professional-p
 import type { HrService } from './hr/hr-service.js';
 import { createHrRouter } from './hr/hr-router.js';
 import type { ServiceCatalogService } from './service-catalog/service-catalog-service.js';
+import type { PayrollService } from './payroll/payroll-service.js';
+import { createPayrollRouter } from './payroll/payroll-router.js';
 import { createServiceCatalogRouter } from './service-catalog/service-catalog-router.js';
 import type { EmployeeExpenseService } from './employee-expenses/employee-expense-service.js';
 import { createEmployeeExpenseRouter } from './employee-expenses/employee-expense-router.js';
@@ -219,6 +221,7 @@ export type AppServices = {
   professionalProjectAccess?: ProfessionalProjectAccessService;
   hr?: HrService;
   serviceCatalog?: ServiceCatalogService;
+  payroll?: PayrollService;
   employeeExpenses?: EmployeeExpenseService;
   accounts?: AccountService;
   journals?: ManualJournalService;
@@ -441,6 +444,7 @@ export function createApp(config: AppConfig, services: AppServices = {}) {
   if (services.auth && services.professionalProjectAccess) app.use('/api/v1', createProfessionalProjectAccessRouter(services.auth, services.professionalProjectAccess));
   if (services.auth && services.hr) app.use('/api/v1', createHrRouter(services.auth, services.hr));
   if (services.auth && services.serviceCatalog) app.use('/api/v1', createServiceCatalogRouter(services.auth, services.serviceCatalog));
+  if (services.auth && services.payroll) app.use('/api/v1', createPayrollRouter(services.auth, services.payroll));
   if (services.auth && services.employeeExpenses) app.use('/api/v1', createEmployeeExpenseRouter(services.auth, services.employeeExpenses));
   if (services.auth && services.accounts) app.use('/api/v1', createAccountRouter(services.auth, services.accounts));
   if (services.auth && services.journals) app.use('/api/v1', createManualJournalRouter(services.auth, services.journals));

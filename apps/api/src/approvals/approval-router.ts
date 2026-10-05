@@ -11,7 +11,7 @@ const querySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
   status: z.enum(["PENDING", "APPROVED", "REJECTED", "CANCELLED"]).optional(),
-  subjectType: z.enum(["FINANCIAL_CLOSE_RUN", "PROFESSIONAL_TIMESHEET", "EMPLOYEE_EXPENSE_CLAIM"]).optional(),
+  subjectType: z.enum(["FINANCIAL_CLOSE_RUN", "PROFESSIONAL_TIMESHEET", "EMPLOYEE_EXPENSE_CLAIM", "PAYROLL_RUN"]).optional(),
   subjectId: z.string().min(1).max(80).optional(),
 });
 
@@ -42,7 +42,7 @@ export function createApprovalRouter(auth: AuthService, approvals: ApprovalServi
       ? "fiscal_periods.close"
       : body.subjectType === "PROFESSIONAL_TIMESHEET"
         ? "professional_timesheets.submit"
-        : "employee_expenses.submit";
+        : body.subjectType === "PAYROLL_RUN" ? "payroll.runs.manage" : "employee_expenses.submit";
     const context = await authorize(request, permission, true);
     response.status(201).json(await approvals.request(context, {
       ...body,
@@ -51,6 +51,8 @@ export function createApprovalRouter(auth: AuthService, approvals: ApprovalServi
   });
   router.post("/approval-requests/:approvalRequestId/approve", async (request, response) => {
     const context = await authorize(request, "approvals.decide", true);
+    const subject = await approvals.get(context, publicId.parse(request.params.approvalRequestId));
+    if (subject.approvalRequest.subjectType === "PAYROLL_RUN") await authorize(request, "payroll.view", true);
     const body = bodies.approveApprovalRequest.parse(request.body);
     response.json(await approvals.approve(context, publicId.parse(request.params.approvalRequestId), {
       ...body,
@@ -59,6 +61,8 @@ export function createApprovalRouter(auth: AuthService, approvals: ApprovalServi
   });
   router.post("/approval-requests/:approvalRequestId/reject", async (request, response) => {
     const context = await authorize(request, "approvals.decide", true);
+    const subject = await approvals.get(context, publicId.parse(request.params.approvalRequestId));
+    if (subject.approvalRequest.subjectType === "PAYROLL_RUN") await authorize(request, "payroll.view", true);
     const body = bodies.rejectApprovalRequest.parse(request.body);
     response.json(await approvals.reject(context, publicId.parse(request.params.approvalRequestId), {
       ...body,

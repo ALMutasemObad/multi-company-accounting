@@ -44,9 +44,9 @@
     {
       "id": "payroll",
       "name": "Payroll",
-      "status": "reserved",
+      "status": "partial-implementation",
       "paths": ["apps/api/src/payroll/**"],
-      "reference": "docs/architecture/PROFESSIONAL_SERVICES_HR_PROJECTS_ROADMAP_AR.md"
+      "reference": "docs/architecture/ADR-029-private-payroll-operations.md"
     },
     {
       "id": "branch-pos",
@@ -77,6 +77,15 @@
     "apps/api/src/composition/**"
   ],
   "integrations": [
+    {
+      "id": "payroll-reference-adapters",
+      "kind": "adapter-to-port",
+      "fromPaths": ["apps/api/src/hr/payroll-employee-adapter.ts", "apps/api/src/users/payroll-owner-adapter.ts", "apps/api/src/companies/payroll-company-adapter.ts"],
+      "toPaths": ["apps/api/src/payroll/payroll-reference-ports.ts"],
+      "typeOnly": true,
+      "status": "implemented",
+      "reason": "Provider-owned adapters implement Payroll reference queries; Payroll does not mutate HR, Identity or Tenant facts."
+    },
     {
       "id": "professional-reference-adapters",
       "kind": "adapter-to-port",

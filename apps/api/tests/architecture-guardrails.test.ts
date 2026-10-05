@@ -216,9 +216,20 @@ describe("core accounting architecture guardrails", () => {
   it("keeps the approval engine away from owner facts and Ledger writes", async () => {
     const approval = await source("approvals/approval-service.ts");
     expect(approval).not.toMatch(/\.(?:journalEntry|journalLine|accountingDocument|financialCloseRun|professionalTimesheet|professionalTimeEntry)\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
-    expect(approval).toContain("this.ports[input.subjectType].request");
+    expect(approval).toContain("this.ports[input.subjectType]");
+    expect(approval).toContain("await port.request");
     expect(approval).toContain("await port.approve");
     expect(approval).toContain("await port.reject");
+  });
+
+  it("keeps private payroll behind reference ports and out of foreign write models", async () => {
+    const payroll = await source("payroll/payroll-service.ts");
+    expect(payroll).not.toMatch(/\.(?:employee|user|organizationMembership|company|approvalRequest|approvalDecision|journalEntry|journalLine|accountingDocument)\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/u);
+    expect(payroll).toContain("this.owners.isOwner");
+    expect(payroll).toContain("this.employees.lock");
+    expect(payroll).toContain("this.vault.seal");
+    expect(payroll).toContain("details: { version }");
+    expect(payroll).not.toMatch(/payrollRunSnapshot\.(?:update|updateMany|delete|deleteMany|upsert)\s*\(/u);
   });
 
   it("keeps professional projects behind customer and people ports and away from financial facts", async () => {

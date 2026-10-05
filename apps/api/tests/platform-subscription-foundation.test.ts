@@ -52,7 +52,10 @@ describe("platform subscription SUB-1 foundation", () => {
 
     const newModuleMigration = await readFile(new URL("../prisma/migrations/20261004_general_project_register/migration.sql", import.meta.url), "utf8");
     expect(newModuleMigration).toContain("VALUES ('GENERAL_PROJECTS', 'Project management', FALSE");
-    expect([...seededCodes, "GENERAL_PROJECTS"].sort()).toEqual([...PLATFORM_MODULE_CODES].sort());
+    const payrollMigration = await readFile(new URL("../prisma/migrations/20261008020000_payroll_access/migration.sql", import.meta.url), "utf8");
+    expect(payrollMigration).toContain("VALUES ('PAYROLL', 'Payroll', FALSE");
+    expect(payrollMigration).toContain("('HUMAN_RESOURCES','APPROVALS')");
+    expect([...seededCodes, "GENERAL_PROJECTS", "PAYROLL"].sort()).toEqual([...PLATFORM_MODULE_CODES].sort());
     expect(migration).toContain("UNION ALL SELECT 'POS', 'SALES'");
     expect(migration).toContain("UNION ALL SELECT 'POS', 'TREASURY'");
     expect(migration).toContain("UNION ALL SELECT 'POS', 'INVENTORY'");

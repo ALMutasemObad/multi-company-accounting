@@ -52,6 +52,7 @@ enum FinancialCloseRunStatus {
 }
 
 enum ApprovalSubjectType {
+  PAYROLL_RUN
   FINANCIAL_CLOSE_RUN
   PROFESSIONAL_TIMESHEET
   EMPLOYEE_EXPENSE_CLAIM
@@ -617,6 +618,8 @@ model Organization {
 }
 
 model Currency {
+  payrollAgreements PayrollPayAgreement[]
+  payrollRuns PayrollRun[]
   id                BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
   code              String            @db.Char(3)
   nameAr            String            @map("name_ar") @db.VarChar(100)
@@ -642,6 +645,9 @@ model Currency {
 }
 
 model Company {
+  payrollScope PayrollCompanyScope?
+  payrollAgreements PayrollPayAgreement[]
+  payrollRuns PayrollRun[]
   id                                BigInt                             @id @default(autoincrement()) @db.UnsignedBigInt
   organizationId                    BigInt                             @map("organization_id") @db.UnsignedBigInt
   baseCurrencyId                    BigInt                             @map("base_currency_id") @db.UnsignedBigInt
@@ -873,6 +879,9 @@ model CompanyAddress {
 }
 
 model User {
+  payrollAgreementsCreated PayrollPayAgreement[] @relation("PayrollAgreementCreator")
+  payrollRunsPrepared PayrollRun[] @relation("PayrollRunMaker")
+  payrollRunsApproved PayrollRun[] @relation("PayrollRunApprover")
   id                                   BigInt                             @id @default(autoincrement()) @db.UnsignedBigInt
   emailNormalized                      String                             @unique @map("email_normalized") @db.VarChar(320)
   passwordHash                         String?                            @map("password_hash") @db.VarChar(255)
@@ -2773,7 +2782,75 @@ model HrPosition {
   @@map("hr_positions")
 }
 
+model PayrollCompanyScope {
+  companyId BigInt @id @map("company_id") @db.UnsignedBigInt
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  @@map("payroll_company_scopes")
+}
+
+model PayrollPayAgreement {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId String @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId BigInt @map("company_id") @db.UnsignedBigInt
+  employeeId BigInt @map("employee_id") @db.UnsignedBigInt
+  currencyId BigInt @map("currency_id") @db.UnsignedBigInt
+  startsOn DateTime @map("starts_on") @db.Date
+  endsBefore DateTime? @map("ends_before") @db.Date
+  encryptedTerms Json @map("encrypted_terms")
+  version Int @default(0) @db.UnsignedInt
+  createdById BigInt @map("created_by_id") @db.UnsignedBigInt
+  createdAt DateTime @default(now()) @map("created_at")
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  employee Employee @relation(fields: [employeeId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  currency Currency @relation(fields: [currencyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  createdBy User @relation("PayrollAgreementCreator", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  @@unique([id, companyId])
+  @@index([companyId, employeeId, startsOn, endsBefore])
+  @@map("payroll_pay_agreements")
+}
+
+model PayrollRun {
+  snapshots PayrollRunSnapshot[]
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId String @unique @default(uuid()) @map("public_id") @db.Char(36)
+  companyId BigInt @map("company_id") @db.UnsignedBigInt
+  currencyId BigInt @map("currency_id") @db.UnsignedBigInt
+  periodStart DateTime @map("period_start") @db.Date
+  periodEndExclusive DateTime @map("period_end_exclusive") @db.Date
+  status String @default("DRAFT") @db.VarChar(24)
+  version Int @default(0) @db.UnsignedInt
+  makerUserId BigInt @map("maker_user_id") @db.UnsignedBigInt
+  employeeCount Int @default(0) @map("employee_count") @db.UnsignedInt
+  encryptedSnapshot Json? @map("encrypted_snapshot")
+  snapshotHash String? @map("snapshot_hash") @db.Char(64)
+  approvedByUserId BigInt? @map("approved_by_user_id") @db.UnsignedBigInt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  currency Currency @relation(fields: [currencyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  maker User @relation("PayrollRunMaker", fields: [makerUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  approvedBy User? @relation("PayrollRunApprover", fields: [approvedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  @@unique([id, companyId])
+  @@index([companyId, periodStart, periodEndExclusive])
+  @@map("payroll_runs")
+}
+
+model PayrollRunSnapshot {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  runId BigInt @map("run_id") @db.UnsignedBigInt
+  companyId BigInt @map("company_id") @db.UnsignedBigInt
+  runVersion Int @map("run_version") @db.UnsignedInt
+  encryptedSnapshot Json @map("encrypted_snapshot")
+  snapshotHash String @map("snapshot_hash") @db.Char(64)
+  createdAt DateTime @default(now()) @map("created_at")
+  run PayrollRun @relation(fields: [runId, companyId], references: [id, companyId], onDelete: Restrict, onUpdate: Restrict)
+  @@unique([runId, runVersion])
+  @@index([companyId, runId])
+  @@map("payroll_run_snapshots")
+}
+
 model Employee {
+  payrollAgreements PayrollPayAgreement[]
   id                    BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
   publicId              String                 @unique @default(uuid()) @map("public_id") @db.Char(36)
   companyId             BigInt                 @map("company_id") @db.UnsignedBigInt

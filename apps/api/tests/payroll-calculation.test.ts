@@ -44,7 +44,7 @@ describe("conservative earnings-only payroll preview", () => {
     expect(result.netPayable).toBe("7100.30");
     const preparerView = summarizePayrollPreview(result);
     expect(preparerView.employeeCount).toBe(1);
-    expect(preparerView.netPayable).toBe("7100.30");
+    expect(preparerView).not.toHaveProperty("netPayable");
     expect(JSON.stringify(preparerView)).not.toContain("employee-1");
     expect(preparerView).not.toHaveProperty("employees");
   });

@@ -18,6 +18,7 @@ export type View =
   | "services"
   | "professionalProjects"
   | "generalProjects"
+  | "payroll"
   | "humanResources"
   | "employeeExpenses"
   | "sales"
@@ -74,6 +75,7 @@ export const viewPermissionPolicies: Record<TenantProtectedView, PermissionPolic
   services: { permission: "services.manage" },
   professionalProjects: { permission: "professional_projects.view" },
   generalProjects: { permission: "general_projects.view" },
+  payroll: { permission: "payroll.view" },
   humanResources: { anyOf: ["hr.employees.view", "hr.structure.view"] },
   employeeExpenses: { anyOf: ["employee_expenses.view", "employee_expenses.review"] },
   sales: { permission: "sales_invoices.view" },
@@ -109,6 +111,7 @@ export const navigationItems: NavigationItem[] = [
   { view: "services", icon: "document", label: "nav.services", module: 'SERVICE_CATALOG' },
   { view: "professionalProjects", icon: "users", label: "nav.professionalProjects", module: 'PROFESSIONAL_PROJECTS' },
   { view: "generalProjects", icon: "dashboard", label: "nav.generalProjects", module: 'GENERAL_PROJECTS' },
+  { view: "payroll", icon: "wallet", label: "nav.payroll", module: 'PAYROLL' },
   { view: "humanResources", icon: "building", label: "nav.humanResources", module: 'HUMAN_RESOURCES' },
   { view: "employeeExpenses", icon: "wallet", label: "nav.employeeExpenses", module: 'HUMAN_RESOURCES' },
   { view: "sales", icon: "document", label: "nav.sales", module: 'SALES' },
@@ -231,7 +234,7 @@ export const systemGroups: SystemGroup[] = [
     key: "workforce",
     title: "home.group.workforce",
     description: "home.group.workforceDescription",
-    modules: navigationItems.filter((item) => ["professionalProjects", "generalProjects", "humanResources", "employeeExpenses", "approvals"].includes(item.view))
+    modules: navigationItems.filter((item) => ["professionalProjects", "generalProjects", "humanResources", "payroll", "employeeExpenses", "approvals"].includes(item.view))
       .map((item) => ({ ...item, description: `home.module.${item.view}` as TranslationKey })),
   },
   {

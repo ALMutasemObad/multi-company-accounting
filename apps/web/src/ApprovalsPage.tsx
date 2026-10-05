@@ -38,6 +38,7 @@ export function ApprovalsPage({ notify }: { notify: Notice }) {
   useEffect(() => { void load(); }, [load]);
 
   async function decide(request: ApprovalRequest, decision: "approve" | "reject") {
+    if (request.subjectType === "PAYROLL_RUN") return;
     if (!canUseControlAction(permissionSet, "approvalsDecide")) return;
     let reason: string | undefined;
     if (decision === "approve") {
@@ -85,12 +86,12 @@ export function ApprovalsPage({ notify }: { notify: Notice }) {
           <table className="data-table approvals-table">
             <thead><tr><th>{t("approvals.subject")}</th><th>{t("approvals.requestedBy")}</th><th>{t("approvals.requestedAt")}</th><th>{t("approvals.statusLabel")}</th><th>{t("approvals.decision")}</th><th>{t("approvals.actions")}</th></tr></thead>
             <tbody>{requests.map((request) => <tr key={request.id}>
-              <td><strong>{t(`approvals.subject.${request.subjectType}`)}</strong><small className="approval-reference">{request.subjectId}</small></td>
+              <td><strong>{request.subjectType === "PAYROLL_RUN" ? t("payroll.title") : t(`approvals.subject.${request.subjectType}`)}</strong><small className="approval-reference">{request.subjectId}</small></td>
               <td>{request.requestedBy.displayName}<small>{request.makerCheckerRequired ? t("approvals.separationRequired") : ""}</small></td>
               <td>{new Date(request.createdAt).toLocaleString(activeIntlLocale())}</td>
               <td><span className={`status-chip ${request.status.toLowerCase()}`}>{t(`approvals.status.${request.status}`)}</span></td>
               <td>{request.decision ? <><strong>{request.decision.actor.displayName}</strong><small>{request.decision.reason ?? t("approvals.noReason")}</small></> : <span>{t("approvals.pendingDecision")}</span>}</td>
-              <td className="row-actions">{request.status === "PENDING" ? <Can policy={controlActionPermissionPolicies.approvalsDecide}><>
+              <td className="row-actions">{request.subjectType === "PAYROLL_RUN" ? (permissionSet.has("payroll.view") ? <a href="#payroll">{t("payroll.open")}</a> : <span>—</span>) : request.status === "PENDING" ? <Can policy={controlActionPermissionPolicies.approvalsDecide}><>
                 <Button disabled={working === request.id} onClick={() => void decide(request, "approve")}>{t("approvals.approve")}</Button>
                 <Button variant="danger" disabled={working === request.id} onClick={() => void decide(request, "reject")}>{t("approvals.reject")}</Button>
               </></Can> : <span>—</span>}</td>

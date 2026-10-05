@@ -41,6 +41,7 @@ const permissionEntitlementPrefixes = [
   ['professional_', 'PROFESSIONAL_PROJECTS'],
   ['general_projects.', 'GENERAL_PROJECTS'],
   ['hr.', 'HUMAN_RESOURCES'],
+  ['payroll.', 'PAYROLL'],
   ['employee_expenses.', 'HUMAN_RESOURCES'],
   ['tax_rates.', 'TAX'],
   ['input_tax_rates.', 'TAX'],

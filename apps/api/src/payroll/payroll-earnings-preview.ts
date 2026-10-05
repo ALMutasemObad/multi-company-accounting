@@ -66,9 +66,5 @@ export function summarizePayrollPreview(calculation: PayrollCalculation) {
     periodStart: calculation.periodStart,
     periodEndExclusive: calculation.periodEndExclusive,
     employeeCount: calculation.employees.length,
-    grossEarnings: calculation.grossEarnings,
-    totalDeductions: calculation.totalDeductions,
-    netPayable: calculation.netPayable,
-    snapshotHash: calculation.snapshotHash,
   });
 }
