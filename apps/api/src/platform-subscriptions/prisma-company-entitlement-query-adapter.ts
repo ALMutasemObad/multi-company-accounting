@@ -4,10 +4,15 @@ import {
   type CompanyEntitlementQueryPort,
   type CompanyEntitlementSnapshot,
 } from "./platform-entitlement-ports.js";
+import {
+  isPlatformWideFreeModuleCode,
+  PLATFORM_WIDE_FREE_MODULE_CODES,
+} from "./platform-wide-free-module-policy.js";
 import { resolveModuleDependencies } from "./platform-module-dependency-resolver.js";
 
 export class PrismaCompanyEntitlementQueryAdapter implements CompanyEntitlementQueryPort {
-  constructor(private readonly prisma: Pick<PrismaClient, "platformSubscription">) {}
+  constructor(private readonly prisma: Pick<PrismaClient, "platformSubscription">
+    & Partial<Pick<PrismaClient, "platformModule">>) {}
 
   async findCompanyEntitlements(
     companyId: bigint,
@@ -73,7 +78,7 @@ export class PrismaCompanyEntitlementQueryAdapter implements CompanyEntitlementQ
     const canonicalModules = subscription.entitlements.filter(({ module }) =>
       isPlatformModuleCode(module.code),
     );
-    const resolution = resolveModuleDependencies(canonicalModules.map(({ module }) => ({
+    const existingNodes = canonicalModules.map(({ module }) => ({
       // Older fixtures/adapters may omit the id; code remains a deterministic
       // projection key while the Prisma selection uses the real id in runtime.
       id: module.id ?? module.code,
@@ -86,7 +91,41 @@ export class PrismaCompanyEntitlementQueryAdapter implements CompanyEntitlementQ
         code: dependsOnModule.code,
         isActive: dependsOnModule.isActive,
       })),
-    })), { strict: false, deduplicate: true });
+    }));
+    // A platform-wide free module is available to every company whose current
+    // included modules satisfy its dependency graph. New-company onboarding
+    // uses the same projection; no plan version or subscription row is edited.
+    const rolloutModules = this.prisma.platformModule
+      ? await this.prisma.platformModule.findMany({
+        where: { code: { in: [...PLATFORM_WIDE_FREE_MODULE_CODES] }, isActive: true },
+        select: {
+          id: true,
+          code: true,
+          isActive: true,
+          dependencies: {
+            select: {
+              dependsOnModule: { select: { id: true, code: true, isActive: true } },
+            },
+          },
+        },
+      })
+      : [];
+    const rolloutNodes = rolloutModules
+      .filter(({ code }) => isPlatformWideFreeModuleCode(code))
+      .map((module) => ({
+        id: module.id,
+        code: module.code,
+        isActive: module.isActive,
+        dependencies: module.dependencies.map(({ dependsOnModule }) => ({
+          id: dependsOnModule.id,
+          code: dependsOnModule.code,
+          isActive: dependsOnModule.isActive,
+        })),
+      }));
+    const resolution = resolveModuleDependencies([...existingNodes, ...rolloutNodes], {
+      strict: false,
+      deduplicate: true,
+    });
     const moduleCodes = [...new Set(resolution.valid.map((module) => module.code))]
       .filter(isPlatformModuleCode)
       .sort();
