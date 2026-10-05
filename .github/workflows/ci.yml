@@ -156,14 +156,23 @@ jobs:
             image: mariadb:11.4.13@sha256:1292844148b311e4ed4300022a996d39083f415a963e970cf47cad1b3b18e3a6
             expected_version: 11.4.13-MariaDB
             health_command: mariadb-admin ping -h 127.0.0.1 -umcap_test -ptest_database_password
+            baseline_commit: 17917803dfec5c403066773009e8f60be462d70b
+            baseline_migration_count: '86'
+            baseline_mode: deployed
           - engine_name: MariaDB 10.11
             image: mariadb:10.11.11@sha256:96be0d3dfbeb07bc420e5fb8a6dc05c492676f1f89980a497a55e6fbbba3f1c4
             expected_version: 10.11.11-MariaDB
             health_command: mariadb-admin ping -h 127.0.0.1 -umcap_test -ptest_database_password
+            baseline_commit: c39b97949655f43c9fe35f98b3d47cce5c6c6054
+            baseline_migration_count: '38'
+            baseline_mode: historical
           - engine_name: MySQL 8.4
             image: mysql:8.4.11@sha256:b3b90af2a6552ae30c266fdb7d5dd55f3afb72404bb78d37fe8a23eb857fd3fb
             expected_version: '8.4.'
             health_command: mysqladmin ping -h 127.0.0.1 -umcap_test -ptest_database_password
+            baseline_commit: c39b97949655f43c9fe35f98b3d47cce5c6c6054
+            baseline_migration_count: '38'
+            baseline_mode: historical
     services:
       database:
         image: ${{ matrix.image }}
@@ -184,8 +193,9 @@ jobs:
       SEED_ADMIN_PASSWORD: CI-Only-Admin-Password-2026!
       RUN_DB_TESTS: 'true'
       EXPECTED_DATABASE_VERSION_PREFIX: ${{ matrix.expected_version }}
-      PRODUCTION_BASELINE_COMMIT: c39b97949655f43c9fe35f98b3d47cce5c6c6054
-      PRODUCTION_BASELINE_MIGRATION_COUNT: '38'
+      PRODUCTION_BASELINE_COMMIT: ${{ matrix.baseline_commit }}
+      PRODUCTION_BASELINE_MIGRATION_COUNT: ${{ matrix.baseline_migration_count }}
+      PRODUCTION_BASELINE_MODE: ${{ matrix.baseline_mode }}
     steps:
       - name: Configure isolated R2 database evidence directory
         run: echo "R2_DB_GATE_ARTIFACT_DIR=$RUNNER_TEMP/r2-db-gate" >> "$GITHUB_ENV"

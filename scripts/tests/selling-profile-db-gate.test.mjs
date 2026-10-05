@@ -124,6 +124,25 @@ test('after upgrade the exact Inventory snapshot survives without an invented se
   await assert.rejects(verifyUpgradedSentinel(fakeDatabase(), { ...receipt, r2TableAbsentBeforeMigration: false }, '91', '1'));
 });
 
+test('deployed baseline must already contain R2 and preserve its Inventory sentinel', async () => {
+  const migrations = [{ migration_name: r2Migration, finished_at: new Date(), rolled_back_at: null }];
+  const current = fakeDatabase({ migrations, tableCount: 1n });
+  const receipt = await prepareUpgrade(current, '1', true);
+  assert.equal(receipt.r2TableAbsentBeforeMigration, false);
+  await verifyUpgradedSentinel(fakeDatabase(), receipt, '91', '1', true);
+  for (const options of [
+    { migrations, tableCount: 0n },
+    { migrations: [{ ...migrations[0], finished_at: null }], tableCount: 1n },
+    { migrations: [{ migration_name: '20260824200000_inventory_item_catalog', finished_at: new Date(), rolled_back_at: null }], tableCount: 1n },
+  ]) {
+    const connection = fakeDatabase(options);
+    await assert.rejects(prepareUpgrade(connection, '1', true));
+    assert.ok(!connection.calls.some((call) => call.sql.startsWith('INSERT')));
+  }
+  await assert.rejects(verifyUpgradedSentinel(fakeDatabase({ profileCount: 1n }), receipt, '91', '1', true));
+  await assert.rejects(verifyUpgradedSentinel(fakeDatabase(), receipt, '91', '1', false));
+});
+
 function passingReport() {
   return { success: true, numTotalTests: 6, numPassedTests: 6, numFailedTests: 0, numPendingTests: 0, numTodoTests: 0,
     testResults: [{ name: '/repo/apps/api/tests/selling-profile.integration.test.ts', status: 'passed',
@@ -180,6 +199,11 @@ test('fresh MariaDB/MySQL and both populated upgrade jobs wire explicit R2 opt-i
   assert.equal(hosting.env.EXPECTED_DATABASE_VERSION_PREFIX, '${{ matrix.expected_version }}');
   assert.match(workflow.jobs.verify.services.mysql.image, /^mysql:8\.4\./);
   assert.deepEqual(workflow.jobs['migration-upgrade-compatibility'].strategy.matrix.include.map((entry) => entry.engine_name), ['MariaDB 11.4.13', 'MariaDB 10.11', 'MySQL 8.4']);
+  const upgradeMatrix = workflow.jobs['migration-upgrade-compatibility'].strategy.matrix.include;
+  assert.deepEqual(upgradeMatrix.map((entry) => entry.baseline_mode), ['deployed', 'historical', 'historical']);
+  assert.equal(upgradeMatrix[0].baseline_commit, '17917803dfec5c403066773009e8f60be462d70b');
+  assert.equal(String(upgradeMatrix[0].baseline_migration_count), '86');
+  assert.equal(workflow.jobs['migration-upgrade-compatibility'].env.PRODUCTION_BASELINE_COMMIT, '${{ matrix.baseline_commit }}');
   assert.deepEqual(workflow.jobs['deploy-staging'].needs, ['hosting-compatibility', 'migration-upgrade-compatibility', 'verify']);
 });
 

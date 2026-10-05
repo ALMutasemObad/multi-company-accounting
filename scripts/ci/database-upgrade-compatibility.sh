@@ -7,6 +7,8 @@ log() { printf 'mcap-upgrade-compatibility: %s\n' "$*"; }
 workspace=${GITHUB_WORKSPACE:-$(pwd)}
 baseline_commit=${PRODUCTION_BASELINE_COMMIT:-}
 expected_baseline_migrations=${PRODUCTION_BASELINE_MIGRATION_COUNT:-}
+baseline_mode=${PRODUCTION_BASELINE_MODE:-historical}
+[[ "$baseline_mode" == historical || "$baseline_mode" == deployed ]] || fail "unsupported baseline mode"
 
 [[ -n "$baseline_commit" && "$baseline_commit" =~ ^[0-9a-f]{40}$ ]] \
   || fail "PRODUCTION_BASELINE_COMMIT must be a full 40-character commit"
@@ -78,11 +80,19 @@ log "proving the unchanged baseline on its own schema before candidate migration
 (
   cd "$baseline_directory/apps/api" || fail "cannot enter the production-baseline API"
   "$baseline_tsc" -p tsconfig.json
-  "$baseline_vitest" run --no-file-parallelism
+  if [[ "$baseline_mode" == deployed ]]; then
+    "$baseline_vitest" run tests/selling-profile.integration.test.ts --no-file-parallelism
+  else
+    "$baseline_vitest" run --no-file-parallelism
+  fi
 )
 
 log "recording an Inventory sentinel before the R2 migration exists"
-R2_UPGRADE_SENTINEL_ITEM_ID=$(node "$workspace/scripts/ci/selling-profile-db-gate.mjs" prepare-upgrade)
+if [[ "$baseline_mode" == deployed ]]; then
+  R2_UPGRADE_SENTINEL_ITEM_ID=$(node "$workspace/scripts/ci/selling-profile-db-gate.mjs" prepare-deployed-upgrade)
+else
+  R2_UPGRADE_SENTINEL_ITEM_ID=$(node "$workspace/scripts/ci/selling-profile-db-gate.mjs" prepare-upgrade)
+fi
 [[ "$R2_UPGRADE_SENTINEL_ITEM_ID" =~ ^[1-9][0-9]*$ ]] \
   || fail "the pre-migration R2 sentinel was not created"
 export R2_UPGRADE_SENTINEL_ITEM_ID
@@ -104,7 +114,11 @@ log "building and testing the previous application against the upgraded schema"
 (
   cd "$baseline_directory/apps/api" || fail "cannot enter the production-baseline API"
   "$baseline_tsc" -p tsconfig.json
-  "$baseline_vitest" run --no-file-parallelism
+  if [[ "$baseline_mode" == deployed ]]; then
+    "$baseline_vitest" run tests/selling-profile.integration.test.ts --no-file-parallelism
+  else
+    "$baseline_vitest" run --no-file-parallelism
+  fi
 )
 
 previous_log="$baseline_directory/previous-runtime.log"

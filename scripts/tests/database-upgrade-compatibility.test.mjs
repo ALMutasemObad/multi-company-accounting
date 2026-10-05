@@ -40,6 +40,8 @@ test("upgrade compatibility proves the unchanged baseline before any candidate m
   assert.match(script, /proving the unchanged baseline on its own schema before candidate migrations/u);
   assert.equal(script.match(/"\$baseline_vitest" run --no-file-parallelism/g)?.length, 2);
   assert.doesNotMatch(script, /--retry|--exclude|--testNamePattern/u);
+  assert.match(script, /prepare-deployed-upgrade/u);
+  assert.match(script, /tests\/selling-profile\.integration\.test\.ts --no-file-parallelism/u);
 });
 
 test("upgrade compatibility proves the previous application on the advanced schema", () => {
